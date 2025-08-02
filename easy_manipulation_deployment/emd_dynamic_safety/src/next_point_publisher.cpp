@@ -19,18 +19,20 @@
 #include "emd/dynamic_safety/next_point_publisher.hpp"
 #include "moveit/robot_state/robot_state.h"
 
-namespace dynamic_safety {
+namespace dynamic_safety
+{
 
-static const rclcpp::Logger &LOGGER =
-    rclcpp::get_logger("dynamic_safety.next_point_publisher");
+static const rclcpp::Logger & LOGGER =
+  rclcpp::get_logger("dynamic_safety.next_point_publisher");
 
 NextPointPublisher::NextPointPublisher() {}
 
 NextPointPublisher::~NextPointPublisher() {}
 
 void NextPointPublisher::configure(
-    const robot_trajectory::RobotTrajectoryPtr &traj, const Option &option,
-    const rclcpp::Node::SharedPtr &node, double rate) {
+  const robot_trajectory::RobotTrajectoryPtr & traj, const Option & option,
+  const rclcpp::Node::SharedPtr & node, double rate)
+{
   node_ = node;
 
   // Deep copy trajectory
@@ -65,12 +67,12 @@ void NextPointPublisher::configure(
   }
   command_out_array_.data.resize(array_size);
   command_out_traj_.header.frame_id =
-      point_->getRobotModel()->getRootLinkName();
+    point_->getRobotModel()->getRootLinkName();
   command_out_traj_.header.stamp = rclcpp::Time(0);
   command_out_traj_.joint_names = traj_->getGroup()->getVariableNames();
   command_out_traj_.points.resize(1);
   command_out_traj_.points.front().time_from_start =
-      rclcpp::Duration::from_seconds(period_);
+    rclcpp::Duration::from_seconds(period_);
   command_out_traj_.points.front().positions.resize(dof);
   command_out_traj_.points.front().velocities.resize(dof);
   command_out_traj_.points.front().effort.resize(dof);
@@ -78,8 +80,9 @@ void NextPointPublisher::configure(
   status_ = IDLE;
 }
 
-void NextPointPublisher::start(double scale) {
-  auto qos = rclcpp::QoS(2); // .deadline(
+void NextPointPublisher::start(double scale)
+{
+  auto qos = rclcpp::QoS(2);  // .deadline(
   //   rclcpp::Duration::from_seconds(period_));
 
   rclcpp::PublisherOptions command_out_option;
@@ -88,16 +91,16 @@ void NextPointPublisher::start(double scale) {
   //   std::placeholders::_1);
 
   switch (command_out_type_) {
-  case Command::ARRAY:
-    command_out_array_pub_ =
+    case Command::ARRAY:
+      command_out_array_pub_ =
         node_->create_publisher<std_msgs::msg::Float64MultiArray>(
-            command_out_topic_, qos, command_out_option);
-    break;
-  case Command::TRAJECTORY:
-    command_out_traj_pub_ =
+        command_out_topic_, qos, command_out_option);
+      break;
+    case Command::TRAJECTORY:
+      command_out_traj_pub_ =
         node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-            command_out_topic_, qos, command_out_option);
-    break;
+        command_out_topic_, qos, command_out_option);
+      break;
   }
 
   start_time_ = clock::now();
@@ -109,7 +112,8 @@ void NextPointPublisher::start(double scale) {
   status_ = RUNNING;
 }
 
-void NextPointPublisher::scale(double scale, double time_to_scale) {
+void NextPointPublisher::scale(double scale, double time_to_scale)
+{
   if (std::abs(scale - get_scale()) > 1e-3) {
     double original_scale = get_scale();
     remaining_steps_to_scale_ = static_cast<int>(time_to_scale / period_);
@@ -117,33 +121,38 @@ void NextPointPublisher::scale(double scale, double time_to_scale) {
       this->_scale_impl(scale);
     }
     scale_step_ =
-        (scale_ - scale) / static_cast<double>(remaining_steps_to_scale_);
-    RCLCPP_WARN(LOGGER,
-                "Current scale: %f, New scale: %f, remaining steps: %d, scale "
-                "steps: %f",
-                original_scale, scale, remaining_steps_to_scale_, scale_step_);
+      (scale_ - scale) / static_cast<double>(remaining_steps_to_scale_);
+    RCLCPP_WARN(
+      LOGGER,
+      "Current scale: %f, New scale: %f, remaining steps: %d, scale "
+      "steps: %f",
+      original_scale, scale, remaining_steps_to_scale_, scale_step_);
   }
 }
 
-void NextPointPublisher::stop() {
+void NextPointPublisher::stop()
+{
   time_point_ = current_point();
   traj_->getStateAtDurationFromStart(time_point_, point_);
 
   _send_command();
 }
 
-void NextPointPublisher::halt() {
+void NextPointPublisher::halt()
+{
   stop();
   status_ = FAILED;
 }
 
-void NextPointPublisher::reset() {
+void NextPointPublisher::reset()
+{
   status_ = IDLE;
   command_out_array_pub_.reset();
 }
 
 void NextPointPublisher::update_traj(
-    const robot_trajectory::RobotTrajectoryPtr &traj) {
+  const robot_trajectory::RobotTrajectoryPtr & traj)
+{
   // Deep copy trajectory
   traj_ = std::make_shared<robot_trajectory::RobotTrajectory>(*traj, true);
   start_time_ = clock::now();
@@ -156,22 +165,25 @@ void NextPointPublisher::update_traj(
   RCLCPP_INFO(LOGGER, "Receive new trajectory");
 }
 
-void NextPointPublisher::run_once() {
+void NextPointPublisher::run_once()
+{
   _next_point();
   _send_command();
 }
 
-const double &NextPointPublisher::current_point() {
+const double & NextPointPublisher::current_point()
+{
   time_point_ =
-      static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                              (clock::now() - scale_time_) * scale_ +
-                              (scale_time_ - start_time_))
-                              .count()) /
-      1e9;
+    static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      (clock::now() - scale_time_) * scale_ +
+      (scale_time_ - start_time_))
+    .count()) /
+    1e9;
   return time_point_;
 }
 
-void NextPointPublisher::_next_point() {
+void NextPointPublisher::_next_point()
+{
   if (remaining_steps_to_scale_ > 0) {
     _scale_impl(scale_ - scale_step_);
     remaining_steps_to_scale_--;
@@ -186,8 +198,9 @@ void NextPointPublisher::_next_point() {
   }
 }
 
-void NextPointPublisher::_send_command() {
-  const auto &joints = traj_->getGroup()->getVariableNames();
+void NextPointPublisher::_send_command()
+{
+  const auto & joints = traj_->getGroup()->getVariableNames();
   for (size_t i = 0; i < command_out_.size(); i++) {
     command_out_[i] = *point_->getJointPositions(joints[i]);
     if (publish_joint_velocity_) {
@@ -198,55 +211,61 @@ void NextPointPublisher::_send_command() {
     }
   }
   switch (command_out_type_) {
-  case Command::ARRAY: {
-    size_t idx = 0;
-    if (publish_joint_position_) {
-      std::copy(command_out_.begin(), command_out_.end(),
-                command_out_array_.data.begin());
-      idx += command_out_.size();
-    }
-    if (publish_joint_velocity_) {
-      std::copy(command_out_vel_.begin(), command_out_vel_.end(),
-                command_out_array_.data.begin() + idx);
-      idx += command_out_vel_.size();
-    }
-    if (publish_joint_effort_) {
-      std::copy(command_out_eff_.begin(), command_out_eff_.end(),
-                command_out_array_.data.begin() + idx);
-    }
-    command_out_array_pub_->publish(command_out_array_);
-  } break;
-  case Command::TRAJECTORY:
-    command_out_traj_.points.front().positions = command_out_;
-    if (publish_joint_velocity_) {
-      command_out_traj_.points.front().velocities = command_out_vel_;
-    }
-    if (publish_joint_effort_) {
-      command_out_traj_.points.front().effort = command_out_eff_;
-    }
-    command_out_traj_pub_->publish(command_out_traj_);
-    break;
+    case Command::ARRAY: {
+        size_t idx = 0;
+        if (publish_joint_position_) {
+          std::copy(
+            command_out_.begin(), command_out_.end(),
+            command_out_array_.data.begin());
+          idx += command_out_.size();
+        }
+        if (publish_joint_velocity_) {
+          std::copy(
+            command_out_vel_.begin(), command_out_vel_.end(),
+            command_out_array_.data.begin() + idx);
+          idx += command_out_vel_.size();
+        }
+        if (publish_joint_effort_) {
+          std::copy(
+            command_out_eff_.begin(), command_out_eff_.end(),
+            command_out_array_.data.begin() + idx);
+        }
+        command_out_array_pub_->publish(command_out_array_);
+      } break;
+    case Command::TRAJECTORY:
+      command_out_traj_.points.front().positions = command_out_;
+      if (publish_joint_velocity_) {
+        command_out_traj_.points.front().velocities = command_out_vel_;
+      }
+      if (publish_joint_effort_) {
+        command_out_traj_.points.front().effort = command_out_eff_;
+      }
+      command_out_traj_pub_->publish(command_out_traj_);
+      break;
   }
 }
 
-void NextPointPublisher::_scale_impl(double scale) {
+void NextPointPublisher::_scale_impl(double scale)
+{
   start_time_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-      (clock::now() - scale_time_) * (1.0 - scale_));
+    (clock::now() - scale_time_) * (1.0 - scale_));
   scale_ = scale;
   scale_time_ = clock::now();
 }
 
 NextPointPublisher::Command
-NextPointPublisher::_from_string(const std::string &command_type) {
+NextPointPublisher::_from_string(const std::string & command_type)
+{
   if (command_type == "trajectory_msgs/JointTrajectory") {
     return Command::TRAJECTORY;
-  } else { // if (command_type == "std_msgs/Float64MultiArray"){
+    } else {  // if (command_type == "std_msgs/Float64MultiArray"){
     return Command::ARRAY;
   }
 }
 
-void NextPointPublisher::_deadline_cb(rclcpp::QOSDeadlineOfferedInfo &) {
+void NextPointPublisher::_deadline_cb(rclcpp::QOSDeadlineOfferedInfo &)
+{
   RCLCPP_WARN(node_->get_logger(), "Missed a deadline!!!!");
 }
 
-} // namespace dynamic_safety
+}  // namespace dynamic_safety

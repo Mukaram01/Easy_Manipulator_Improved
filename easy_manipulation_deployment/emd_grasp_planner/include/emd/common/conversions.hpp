@@ -52,7 +52,8 @@
 #include <tf2/transform_datatypes.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
-namespace octomap {
+namespace octomap
+{
 /**
  * @brief Conversion from octomap::point3d_list
  (e.g. all occupied nodes from getOccupied()) to
@@ -62,13 +63,15 @@ namespace octomap {
  * @param cloud
  */
 inline void
-points_octomap_to_pointcloud2(const point3d_list &points,
-                              sensor_msgs::msg::PointCloud2 &cloud) {
+points_octomap_to_pointcloud2(
+  const point3d_list & points,
+  sensor_msgs::msg::PointCloud2 & cloud)
+{
   bool has_x = false;
   bool has_y = false;
   bool has_z = false;
 
-  for (const auto &field : cloud.fields) {
+  for (const auto & field : cloud.fields) {
     if (field.name == "x" || field.name == "X") {
       has_x = true;
     } else if (field.name == "y" || field.name == "Y") {
@@ -90,7 +93,8 @@ points_octomap_to_pointcloud2(const point3d_list &points,
   sensor_msgs::PointCloud2Iterator<float> iter_z(cloud, "z");
 
   for (auto it = points.begin(); it != points.end();
-       ++it, ++iter_x, ++iter_y, ++iter_z) {
+    ++it, ++iter_x, ++iter_y, ++iter_z)
+  {
     *iter_x = it->x();
     *iter_y = it->y();
     *iter_z = it->z();
@@ -105,8 +109,10 @@ points_octomap_to_pointcloud2(const point3d_list &points,
  * @param octomapCloud
  */
 
-inline void pointcloud2_to_octomap(const sensor_msgs::msg::PointCloud2 &cloud,
-                                   Pointcloud &octomapCloud) {
+inline void pointcloud2_to_octomap(
+  const sensor_msgs::msg::PointCloud2 & cloud,
+  Pointcloud & octomapCloud)
+{
   octomapCloud.reserve(cloud.data.size() / cloud.point_step);
 
   sensor_msgs::PointCloud2ConstIterator<float> iter_x(cloud, "x");
@@ -115,7 +121,8 @@ inline void pointcloud2_to_octomap(const sensor_msgs::msg::PointCloud2 &cloud,
 
   for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z) {
     if (std::isfinite(*iter_x) && std::isfinite(*iter_y) &&
-        std::isfinite(*iter_z)) {
+      std::isfinite(*iter_z))
+    {
       octomapCloud.push_back(*iter_x, *iter_y, *iter_z);
     }
   }
@@ -123,7 +130,8 @@ inline void pointcloud2_to_octomap(const sensor_msgs::msg::PointCloud2 &cloud,
 
 /// Conversion from octomap::point3d to geometry_msgs::msg::Point
 static inline geometry_msgs::msg::Point
-pointOctomapToMsg(const point3d &octomapPt) {
+pointOctomapToMsg(const point3d & octomapPt)
+{
   geometry_msgs::msg::Point pt;
   pt.x = octomapPt.x();
   pt.y = octomapPt.y();
@@ -134,13 +142,15 @@ pointOctomapToMsg(const point3d &octomapPt) {
 
 /// Conversion from geometry_msgs::msg::Point to octomap::point3d
 static inline octomap::point3d
-pointmsg_to_octomap(const geometry_msgs::msg::Point &ptMsg) {
+pointmsg_to_octomap(const geometry_msgs::msg::Point & ptMsg)
+{
   return octomap::point3d(ptMsg.x, ptMsg.y, ptMsg.z);
 }
 
 /// Conversion from octomap::point3d to tf2::Point
 static inline geometry_msgs::msg::Point
-point_octomap_to_tf(const point3d &octomapPt) {
+point_octomap_to_tf(const point3d & octomapPt)
+{
   geometry_msgs::msg::Point pt;
   pt.x = octomapPt.x();
   pt.y = octomapPt.y();
@@ -150,36 +160,43 @@ point_octomap_to_tf(const point3d &octomapPt) {
 
 /// Conversion from tf2::Point to octomap::point3d
 static inline octomap::point3d
-point_tf_to_octomap(const geometry_msgs::msg::Point &ptTf) {
+point_tf_to_octomap(const geometry_msgs::msg::Point & ptTf)
+{
   return point3d(ptTf.x, ptTf.y, ptTf.z);
 }
 
 static inline octomap::point3d
-point_tf_to_octomap(const geometry_msgs::msg::Vector3 &ptTf) {
+point_tf_to_octomap(const geometry_msgs::msg::Vector3 & ptTf)
+{
   return point3d(ptTf.x, ptTf.y, ptTf.z);
 }
 
 /// Conversion from octomap Quaternion to tf2::Quaternion
 static inline tf2::Quaternion
-quaternion_octomap_to_tf(const octomath::Quaternion &octomapQ) {
-  return tf2::Quaternion(octomapQ.x(), octomapQ.y(), octomapQ.z(),
-                         octomapQ.u());
+quaternion_octomap_to_tf(const octomath::Quaternion & octomapQ)
+{
+  return tf2::Quaternion(
+    octomapQ.x(), octomapQ.y(), octomapQ.z(),
+    octomapQ.u());
 }
 
 /// Conversion from tf2::Quaternion to octomap Quaternion
 static inline octomath::Quaternion
-quaternion_tf_to_octomap(const tf2::Quaternion &qTf) {
+quaternion_tf_to_octomap(const tf2::Quaternion & qTf)
+{
   return octomath::Quaternion(qTf.w(), qTf.x(), qTf.y(), qTf.z());
 }
 
 static inline octomath::Quaternion
-quaternion_tf_to_octomap(const geometry_msgs::msg::Quaternion &qTf) {
+quaternion_tf_to_octomap(const geometry_msgs::msg::Quaternion & qTf)
+{
   return octomath::Quaternion(qTf.w, qTf.x, qTf.y, qTf.z);
 }
 
 /// Conversion from octomap::pose6f to tf2::Pose
 static inline geometry_msgs::msg::Pose
-pose_octomap_to_tf(const octomap::pose6d &octomapPose) {
+pose_octomap_to_tf(const octomap::pose6d & octomapPose)
+{
   auto r = quaternion_octomap_to_tf(octomapPose.rot());
   geometry_msgs::msg::Quaternion orientation;
   orientation.x = r.x();
@@ -195,10 +212,12 @@ pose_octomap_to_tf(const octomap::pose6d &octomapPose) {
 
 /// Conversion from tf2::Pose to octomap::pose6d
 static inline octomap::pose6d
-pose_tf_to_octomap(const geometry_msgs::msg::Pose &poseTf) {
-  return octomap::pose6d(point_tf_to_octomap(poseTf.position),
-                         quaternion_tf_to_octomap(poseTf.orientation));
+pose_tf_to_octomap(const geometry_msgs::msg::Pose & poseTf)
+{
+  return octomap::pose6d(
+    point_tf_to_octomap(poseTf.position),
+    quaternion_tf_to_octomap(poseTf.orientation));
 }
-} // namespace octomap
+}  // namespace octomap
 
-#endif // OCTOMAP_ROS_CONVERSIONS_HPP_ NOLINT
+#endif  // OCTOMAP_ROS_CONVERSIONS_HPP_ NOLINT

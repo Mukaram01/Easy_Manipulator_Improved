@@ -25,13 +25,16 @@
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 
-namespace dynamic_safety {
+namespace dynamic_safety
+{
 
 /// Next point publisher for dynamic safety.
-class NextPointPublisher {
+class NextPointPublisher
+{
 public:
   /// Next Point Publisher options.
-  struct Option {
+  struct Option
+  {
     /// Command out type, currently support
     /// `trajectory_msgs/JointTrajectory` and
     /// `std_msgs/Float64MultiArray`.
@@ -72,9 +75,10 @@ public:
    * \param[in] node ROS Node to use for the publisher.
    * \param[in] rate How fast the outer loop will run.
    */
-  void configure(const robot_trajectory::RobotTrajectoryPtr &traj,
-                 const Option &option, const rclcpp::Node::SharedPtr &node,
-                 double rate);
+  void configure(
+    const robot_trajectory::RobotTrajectoryPtr & traj,
+    const Option & option, const rclcpp::Node::SharedPtr & node,
+    double rate);
 
   /// Start the next point publisher.
   /**
@@ -112,7 +116,7 @@ public:
    *
    * \param[in] traj Trajectory to replace the current one.
    */
-  void update_traj(const robot_trajectory::RobotTrajectoryPtr &traj);
+  void update_traj(const robot_trajectory::RobotTrajectoryPtr & traj);
 
   /// Get execution status.
   /**
@@ -127,7 +131,7 @@ public:
    *
    * \return Current execution status.
    */
-  int8_t get_status() const { return static_cast<int8_t>(status_); }
+  int8_t get_status() const {return static_cast<int8_t>(status_);}
 
   /// Get scale.
   /**
@@ -137,7 +141,8 @@ public:
    *
    * \return Execution scale.
    */
-  double get_scale() const {
+  double get_scale() const
+  {
     // return target scale
     return scale_ - scale_step_ * remaining_steps_to_scale_;
   }
@@ -149,7 +154,7 @@ public:
    *
    * \return Time point reference.
    */
-  const double &get_time_point() const { return time_point_; }
+  const double & get_time_point() const {return time_point_;}
 
   /// Run the next point publisher once.
   /**
@@ -165,14 +170,14 @@ public:
    *
    * \return Time point.
    */
-  const double &current_point();
+  const double & current_point();
 
 protected:
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
-      command_out_array_pub_;
+    command_out_array_pub_;
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr
-      command_out_traj_pub_;
+    command_out_traj_pub_;
 
 private:
   // Get next point based on current time point.
@@ -185,7 +190,7 @@ private:
   void _scale_impl(double scale);
 
   // Utility function to convert command type from string to enum.
-  Command _from_string(const std::string &command_type);
+  Command _from_string(const std::string & command_type);
 
   // Deadline callback (not implemented)
   void _deadline_cb(rclcpp::QOSDeadlineOfferedInfo &);
@@ -228,6 +233,6 @@ private:
   bool publish_joint_effort_;
 };
 
-} // namespace dynamic_safety
+}  // namespace dynamic_safety
 
-#endif // EMD__DYNAMIC_SAFETY__NEXT_POINT_PUBLISHER_HPP_
+#endif  // EMD__DYNAMIC_SAFETY__NEXT_POINT_PUBLISHER_HPP_
