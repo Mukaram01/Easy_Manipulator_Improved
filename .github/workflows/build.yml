@@ -1,6 +1,7 @@
+---
 name: CI
 
-on: [push, pull_request]
+'on': [push, pull_request]
 
 jobs:
   industrial_ci:
@@ -8,7 +9,8 @@ jobs:
       matrix:
         env:
           - ROS_DISTRO: foxy
-            TARGET_CMAKE_ARGS: "-DCMAKE_C_FLAGS='--coverage' -DCMAKE_CXX_FLAGS='--coverage'"
+            TARGET_CMAKE_ARGS: >
+              -DCMAKE_C_FLAGS='--coverage' -DCMAKE_CXX_FLAGS='--coverage'
             AFTER_SCRIPT: "./coverage.sh ci"
             ISOLATION: "shell"
             CODE_COVERAGE: "codecov.io"
@@ -16,7 +18,7 @@ jobs:
       CCACHE_DIR: /github/home/.ccache
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:20.04
+      image: ros:${{ matrix.env.ROS_DISTRO }}-ros-base
     steps:
       - uses: actions/checkout@v2
       # step up caching
