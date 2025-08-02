@@ -100,9 +100,9 @@ Eigen::Vector3f MathFunctions::get_rotated_vector(
     result_vector(1) = target_vector(1) * cos(angle) - target_vector(2) * sin(angle);
     result_vector(2) = target_vector(1) * sin(angle) + target_vector(2) * cos(angle);
   } else if (axis == 'y') {
-    result_vector(0) = target_vector(0) * cos(angle) - target_vector(1) * sin(angle);
+    result_vector(0) = target_vector(0) * cos(angle) + target_vector(2) * sin(angle);
     result_vector(1) = target_vector(1);
-    result_vector(2) = target_vector(2) * -sin(angle) + target_vector(1) * cos(angle);
+    result_vector(2) = -target_vector(0) * sin(angle) + target_vector(2) * cos(angle);
   } else if (axis == 'z') {
     result_vector(0) = target_vector(0) * cos(angle) - target_vector(1) * sin(angle);
     result_vector(1) = target_vector(0) * sin(angle) + target_vector(1) * cos(angle);
