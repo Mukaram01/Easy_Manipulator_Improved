@@ -2,7 +2,8 @@ import os
 import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess
+from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from ament_index_python.packages import get_package_share_directory
 import xacro
 
@@ -33,6 +34,10 @@ def generate_launch_description():
     # moveit_cpp.yaml is passed by filename for now since it's node specific
     moveit_cpp_yaml_file_name = (
         get_package_share_directory("run_dynamic_safety") + "/config/moveit_cpp.yaml"
+    )
+
+    debug_arg = DeclareLaunchArgument(
+        'debug', default_value='false', description='Launch in debug mode'
     )
 
     # Component yaml files are grouped in separate namespaces
@@ -88,8 +93,13 @@ def generate_launch_description():
     run_moveit_cpp_node = Node(
         name="run_moveit_cpp",
         package="run_dynamic_safety",
-        # TODO(henningkayser): add debug argument
-        # prefix='xterm -e gdb --args',
+        prefix=PythonExpression(
+            [
+                '"xterm -e gdb --args" if ',
+                LaunchConfiguration('debug'),
+                ' == "true" else ""',
+            ]
+        ),
         executable="run_moveit_cpp",
         output="screen",
         parameters=[
@@ -167,6 +177,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            debug_arg,
             static_tf,
             robot_state_publisher,
             rviz_node,
