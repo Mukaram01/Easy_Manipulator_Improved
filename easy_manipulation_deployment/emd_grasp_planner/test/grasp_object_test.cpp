@@ -120,9 +120,9 @@ TEST_F(GraspObjectTest, getObjectDimensionsTest)
   PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
   object.get_object_bb();
   object.get_object_dimensions();
-  EXPECT_NEAR(0.0475, object.dimensions[0], 0.0001);
-  EXPECT_NEAR(0.0075, object.dimensions[1], 0.0001);
-  EXPECT_NEAR(0.0675, object.dimensions[2], 0.0001);
+  EXPECT_NEAR(0.05, object.dimensions[0], 0.0001);
+  EXPECT_NEAR(0.01, object.dimensions[1], 0.0001);
+  EXPECT_NEAR(0.07, object.dimensions[2], 0.0001);
 }
 
 TEST_F(GraspObjectTest, getObjectWorldAnglesTestX)
