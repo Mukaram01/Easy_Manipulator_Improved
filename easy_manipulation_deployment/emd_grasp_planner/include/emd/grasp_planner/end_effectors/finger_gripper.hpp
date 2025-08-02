@@ -33,7 +33,7 @@
 
 // ROS2 Libraries
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 // Custom msgs
 #include <emd_msgs/msg/grasp_method.hpp>

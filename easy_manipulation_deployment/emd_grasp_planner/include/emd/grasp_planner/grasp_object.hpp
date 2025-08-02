@@ -53,7 +53,7 @@
 #include <string>
 #include <algorithm>
 
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "shape_msgs/msg/solid_primitive.hpp"
 
 // Custom Msg

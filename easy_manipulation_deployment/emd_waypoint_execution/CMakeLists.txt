@@ -16,6 +16,7 @@ find_package(rclcpp REQUIRED)
 find_package(jsoncpp CONFIG REQUIRED)
 find_package(emd_grasp_execution REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 include_directories(
   PUBLIC
@@ -30,7 +31,8 @@ add_library(waypoint_execution_interface
 ament_target_dependencies(waypoint_execution_interface
   emd_grasp_execution
   rclcpp
-  geometry_msgs)
+  geometry_msgs
+  tf2_geometry_msgs)
 
 target_link_libraries(waypoint_execution_interface
   jsoncpp_lib
@@ -55,5 +57,5 @@ ament_export_include_directories(
 
 ament_export_libraries(waypoint_execution_interface)
 ament_export_targets(export_waypoint_execution_interface HAS_LIBRARY_TARGET)
-ament_export_dependencies(jsoncpp)
+ament_export_dependencies(jsoncpp tf2_geometry_msgs)
 ament_package()
