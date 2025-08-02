@@ -18,7 +18,8 @@ import tempfile
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.substitutions import LaunchConfiguration, PythonExpression
 
 import xacro
 import yaml
@@ -68,6 +69,14 @@ def load_yaml(package_name, file_path):
 
 
 def generate_launch_description():
+    declared_arguments = [
+        DeclareLaunchArgument(
+            'debug',
+            default_value='false',
+            description='Launch grasp execution demo node in debug mode')
+    ]
+    debug = LaunchConfiguration('debug')
+
     # moveit_cpp.yaml is passed by filename for now since it's node specific
     grasp_execution_yaml_file_name = (get_package_share_directory(package_name) +
                                       '/config/grasp_execution.yaml')
@@ -125,8 +134,8 @@ def generate_launch_description():
     grasp_execution_demo_node = Node(
         name='grasp_execution_node',
         package=package_name,
-        # TODO(henningkayser): add debug argument
-        # prefix='xterm -e gdb --args',
+        prefix=PythonExpression([
+            '"xterm -e gdb --args" if "', debug, '" == "true" else ""']),
         executable='demo_node',
         output='screen',
         parameters=[grasp_execution_yaml_file_name,
@@ -189,11 +198,13 @@ def generate_launch_description():
             )
         ]
 
-    return LaunchDescription([
-        robot_state_publisher,
-        rviz_node,
-        grasp_execution_demo_node,
-        ros2_control_node,
+    return LaunchDescription(
+        declared_arguments
+        + [
+            robot_state_publisher,
+            rviz_node,
+            grasp_execution_demo_node,
+            ros2_control_node,
         ]
         + load_controllers
     )
