@@ -18,7 +18,8 @@ import tempfile
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess
+from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration, PythonExpression
 
 import xacro
 import yaml
@@ -69,8 +70,13 @@ def load_yaml(package_name, file_path):
 
 def generate_launch_description():
     # moveit_cpp.yaml is passed by filename for now since it's node specific
-    grasp_execution_yaml_file_name = (get_package_share_directory(package_name) +
-                                      '/config/grasp_execution.yaml')
+    grasp_execution_yaml_file_name = (
+        get_package_share_directory(package_name) + '/config/grasp_execution.yaml'
+    )
+
+    debug_arg = DeclareLaunchArgument(
+        'debug', default_value='false', description='Launch in debug mode'
+    )
 
     # Initial position mapping
     initial_position_path = (get_package_share_directory(package_name) +
@@ -125,20 +131,27 @@ def generate_launch_description():
     grasp_execution_demo_node = Node(
         name='grasp_execution_node',
         package=package_name,
-        # TODO(henningkayser): add debug argument
-        # prefix='xterm -e gdb --args',
+        prefix=PythonExpression(
+            [
+                '"xterm -e gdb --args" if ',
+                LaunchConfiguration('debug'),
+                ' == "true" else ""',
+            ]
+        ),
         executable='demo_node',
         output='screen',
-        parameters=[grasp_execution_yaml_file_name,
-                    robot_description,
-                    robot_description_semantic,
-                    joint_limits,
-                    kinematics_yaml,
-                    ompl_planning_pipeline_config,
-                    trajectory_execution,
-                    workcell_context,
-                    moveit_controller]
-        )
+        parameters=[
+            grasp_execution_yaml_file_name,
+            robot_description,
+            robot_description_semantic,
+            joint_limits,
+            kinematics_yaml,
+            ompl_planning_pipeline_config,
+            trajectory_execution,
+            workcell_context,
+            moveit_controller,
+        ],
+    )
 
     # RViz
     rviz_config_file = (get_package_share_directory(package_name) +
@@ -189,11 +202,13 @@ def generate_launch_description():
             )
         ]
 
-    return LaunchDescription([
-        robot_state_publisher,
-        rviz_node,
-        grasp_execution_demo_node,
-        ros2_control_node,
+    return LaunchDescription(
+        [
+            debug_arg,
+            robot_state_publisher,
+            rviz_node,
+            grasp_execution_demo_node,
+            ros2_control_node,
         ]
         + load_controllers
     )
