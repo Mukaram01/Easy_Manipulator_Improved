@@ -151,6 +151,7 @@ target_link_libraries(${PROJECT_NAME}
 
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
+  realtime_tools
 )
 
 add_library(${PROJECT_NAME}_controller
