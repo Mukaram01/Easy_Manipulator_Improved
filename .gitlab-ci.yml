@@ -1,0 +1,35 @@
+# Build only merge request and default branch
+# and branches start with (develop).
+# save time for quick demo pushes
+workflow:
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^develop/
+
+foxy-coverage:
+  image:
+    name: ubuntu:20.04
+
+  cache:
+    key: ${CI_JOB_NAME}
+    paths:
+      - .ccache/
+
+  variables:
+    ISOLATION: "shell"
+    ROS_DISTRO: "foxy"
+    CCACHE_DIR: "${CI_PROJECT_DIR}/.ccache"
+    TARGET_CMAKE_ARGS: "-DCMAKE_C_FLAGS='--coverage' -DCMAKE_CXX_FLAGS='--coverage'"
+
+  script:
+    - apt-get update && apt-get install -y git
+    - git clone --quiet --depth 1 https://github.com/ros-industrial/industrial_ci .industrial_ci -b master
+    - .industrial_ci/gitlab.sh
+
+  after_script:
+    - ./coverage.sh ci
+    - curl -Os https://uploader.codecov.io/latest/linux/codecov
+    - chmod +x codecov
+    - ./codecov -f ./coverage.info

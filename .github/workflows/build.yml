@@ -1,0 +1,39 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  industrial_ci:
+    strategy:
+      matrix:
+        env:
+          - ROS_DISTRO: foxy
+            TARGET_CMAKE_ARGS: "-DCMAKE_C_FLAGS='--coverage' -DCMAKE_CXX_FLAGS='--coverage'"
+            AFTER_SCRIPT: "./coverage.sh ci"
+            ISOLATION: "shell"
+            CODE_COVERAGE: "codecov.io"
+    env:
+      CCACHE_DIR: /github/home/.ccache
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    steps:
+      - uses: actions/checkout@v2
+      # step up caching
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.env.ROS_DISTRO }}-${{ matrix.env.ROS_REPO }}
+      # Run industrial_ci
+      - uses: 'ros-industrial/industrial_ci@master'
+        env: ${{matrix.env}}
+      # Upload Coverage report if configured
+      - name: Install dependency for Codecov
+        run: sudo apt install curl git -y
+      - name: Upload coverage reports to Codecov
+        if: ${{ matrix.env.CODE_COVERAGE == 'codecov.io' }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.info
+          fail_ci_if_error: true
