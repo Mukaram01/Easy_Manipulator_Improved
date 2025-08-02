@@ -96,13 +96,26 @@ void GraspObject::get_object_bb()
 
 void GraspObject::get_object_dimensions()
 {
-  // this->dimensions[0] = abs(this->maxPoint.x - this->minPoint.x);
-  // this->dimensions[1] = abs(this->maxPoint.y - this->minPoint.y);
-  // this->dimensions[2] = abs(this->maxPoint.z - this->minPoint.z);
+  // Dimensions returned by pcl::getMinMax3D correspond to the PCA frame
+  // where the X axis represents the minor dimension, Y the intermediate
+  // (grasp) axis and Z the major axis.  The original implementation stored
+  // the values in this order which made the first two entries swapped with
+  // respect to the semantic meaning used throughout the planner.
+  //
+  // To provide dimensions that match the expected ordering of
+  // {grasp_axis, minor_axis, major_axis} we compute the raw extents first
+  // and then reorder them accordingly. Absolute values are used to guard
+  // against any potential min/max inversion.
+  const float dim_x = std::abs(this->maxPoint.x - this->minPoint.x);
+  const float dim_y = std::abs(this->maxPoint.y - this->minPoint.y);
+  const float dim_z = std::abs(this->maxPoint.z - this->minPoint.z);
 
-  this->dimensions[0] = this->maxPoint.x - this->minPoint.x;
-  this->dimensions[1] = this->maxPoint.y - this->minPoint.y;
-  this->dimensions[2] = this->maxPoint.z - this->minPoint.z;
+  // Map the dimensions so index 0 corresponds to the grasp axis (intermediate
+  // eigenvalue), index 1 to the minor axis (smallest eigenvalue) and index 2
+  // to the major axis (largest eigenvalue).
+  this->dimensions[0] = dim_y;  // grasp axis
+  this->dimensions[1] = dim_x;  // minor axis
+  this->dimensions[2] = dim_z;  // major axis
 }
 
 void GraspObject::get_object_world_angles()
