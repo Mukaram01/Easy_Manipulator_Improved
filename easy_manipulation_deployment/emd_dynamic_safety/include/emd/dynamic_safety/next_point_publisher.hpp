@@ -19,22 +19,19 @@
 #include <string>
 #include <vector>
 
-#include "rclcpp/rclcpp.hpp"
 #include "moveit/robot_trajectory/robot_trajectory.h"
+#include "rclcpp/rclcpp.hpp"
 
 #include "std_msgs/msg/float64_multi_array.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
 
-
-namespace dynamic_safety
-{
+namespace dynamic_safety {
 
 /// Next point publisher for dynamic safety.
-class NextPointPublisher
-{
+class NextPointPublisher {
 public:
   /// Next Point Publisher options.
-  struct Option
-  {
+  struct Option {
     /// Command out type, currently support
     /// `trajectory_msgs/JointTrajectory` and
     /// `std_msgs/Float64MultiArray`.
@@ -47,26 +44,17 @@ public:
     /// Whether to publish joint position.
     bool publish_joint_position;
 
-    // TODO(anyone): Implement velocity and effort.
-    /// Whether to publish joint velocity (not implemented).
+    /// Whether to publish joint velocity.
     bool publish_joint_velocity;
-    /// Whether to publish joint effort (not implemented).
+    /// Whether to publish joint effort.
     bool publish_joint_effort;
   };
 
   /// Command type.
-  enum class Command : uint8_t
-  {
-    TRAJECTORY,
-    ARRAY
-  };
+  enum class Command : uint8_t { TRAJECTORY, ARRAY };
 
   /// Status Macro.
-  static const int8_t
-    IDLE = 0,
-    SUCCEEDED = 1,
-    FAILED = 4,
-    RUNNING = 5;
+  static const int8_t IDLE = 0, SUCCEEDED = 1, FAILED = 4, RUNNING = 5;
 
   /// Constructor.
   NextPointPublisher();
@@ -76,30 +64,30 @@ public:
 
   /// Configure the next point publisher to start controlling the robot.
   /**
-   * rate will be how far ahead the next point will be relative to the current time stamp.
+   * rate will be how far ahead the next point will be relative to the current
+   * time stamp.
    *
    * \param[in] traj Trajectory to follow.
    * \param[in] option Next point publisher options.
    * \param[in] node ROS Node to use for the publisher.
    * \param[in] rate How fast the outer loop will run.
    */
-  void configure(
-    const robot_trajectory::RobotTrajectoryPtr & traj,
-    const Option & option,
-    const rclcpp::Node::SharedPtr & node,
-    double rate);
+  void configure(const robot_trajectory::RobotTrajectoryPtr &traj,
+                 const Option &option, const rclcpp::Node::SharedPtr &node,
+                 double rate);
 
   /// Start the next point publisher.
   /**
-   * \param[in] scale The speed scale at which the next point publisher will start with.
+   * \param[in] scale The speed scale at which the next point publisher will
+   * start with.
    */
   void start(double scale = 1);
 
   /// Scale the next point publisher speed.
   /**
-   * Configure the next point publisher to change the speed scale to the target scale
-   * within given time. If given time is shorter than given rate, the scale will be
-   * set immediately, otherwise it will decrease linearly.
+   * Configure the next point publisher to change the speed scale to the target
+   * scale within given time. If given time is shorter than given rate, the
+   * scale will be set immediately, otherwise it will decrease linearly.
    *
    * \param[in] scale The target scale to reach.
    * \param[in] time_to_scale Desired time to reach that scale.
@@ -124,8 +112,7 @@ public:
    *
    * \param[in] traj Trajectory to replace the current one.
    */
-  void update_traj(
-    const robot_trajectory::RobotTrajectoryPtr & traj);
+  void update_traj(const robot_trajectory::RobotTrajectoryPtr &traj);
 
   /// Get execution status.
   /**
@@ -140,10 +127,7 @@ public:
    *
    * \return Current execution status.
    */
-  int8_t get_status() const
-  {
-    return static_cast<int8_t>(status_);
-  }
+  int8_t get_status() const { return static_cast<int8_t>(status_); }
 
   /// Get scale.
   /**
@@ -153,8 +137,7 @@ public:
    *
    * \return Execution scale.
    */
-  double get_scale() const
-  {
+  double get_scale() const {
     // return target scale
     return scale_ - scale_step_ * remaining_steps_to_scale_;
   }
@@ -166,10 +149,7 @@ public:
    *
    * \return Time point reference.
    */
-  const double & get_time_point() const
-  {
-    return time_point_;
-  }
+  const double &get_time_point() const { return time_point_; }
 
   /// Run the next point publisher once.
   /**
@@ -185,12 +165,14 @@ public:
    *
    * \return Time point.
    */
-  const double & current_point();
+  const double &current_point();
 
 protected:
   rclcpp::Node::SharedPtr node_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr command_out_array_pub_;
-  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr command_out_traj_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr
+      command_out_array_pub_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr
+      command_out_traj_pub_;
 
 private:
   // Get next point based on current time point.
@@ -203,7 +185,7 @@ private:
   void _scale_impl(double scale);
 
   // Utility function to convert command type from string to enum.
-  Command _from_string(const std::string & command_type);
+  Command _from_string(const std::string &command_type);
 
   // Deadline callback (not implemented)
   void _deadline_cb(rclcpp::QOSDeadlineOfferedInfo &);
@@ -227,6 +209,8 @@ private:
   double time_point_;
   moveit::core::RobotStatePtr point_;
   std::vector<double> command_out_;
+  std::vector<double> command_out_vel_;
+  std::vector<double> command_out_eff_;
   trajectory_msgs::msg::JointTrajectory command_out_traj_;
   std_msgs::msg::Float64MultiArray command_out_array_;
 
@@ -240,13 +224,10 @@ private:
 
   // Joint output type.
   bool publish_joint_position_;
-
-  // TODO(anyone): Implement velocity and effort.
   bool publish_joint_velocity_;
   bool publish_joint_effort_;
 };
 
-}  // namespace dynamic_safety
+} // namespace dynamic_safety
 
-
-#endif  // EMD__DYNAMIC_SAFETY__NEXT_POINT_PUBLISHER_HPP_
+#endif // EMD__DYNAMIC_SAFETY__NEXT_POINT_PUBLISHER_HPP_
