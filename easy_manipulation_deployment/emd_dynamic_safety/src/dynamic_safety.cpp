@@ -23,6 +23,8 @@
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <moveit_msgs/msg/planning_scene.hpp>
 
 namespace dynamic_safety
 {
@@ -494,7 +496,6 @@ private:
 
   Option option_;
 
-  rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr env_state_sub_;
   rclcpp::Subscription<moveit_msgs::msg::PlanningScene>::SharedPtr moveit_scene_sub_;
   rclcpp::TimerBase::SharedPtr main_timer_;
@@ -547,8 +548,6 @@ void DynamicSafety::Impl::configure(
 template <typename NodePtrT>
 void DynamicSafety::Impl::configure_common(const NodePtrT & node)
 {
-  node_ = std::static_pointer_cast<rclcpp::Node>(node);
-
   // Initialize flags
   started = false;
   activated_ = false;
@@ -573,7 +572,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   if (option_.allow_replan) {
     replanner_.configure(
       option_.replanner_options,
-      node_,
+      node,
       option_.robot_description,
       option_.robot_description_semantic);
     option_.safety_zone_options.replan_deadline = option_.replanner_options.deadline;
@@ -588,7 +587,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
 
   if (option_.visualize) {
     visualizer_.configure(
-      node_, option_.visualizer_options,
+      node, option_.visualizer_options,
       option_.safety_zone_options,
       option_.robot_description,
       option_.robot_description_semantic);
@@ -609,7 +608,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   auto qos = rclcpp::QoS(2);
 
   if (!option_.environment_joint_states_topic.empty()) {
-    env_state_sub_ = node->create_subscription<sensor_msgs::msg::JointState>(
+    env_state_sub_ = node->template create_subscription<sensor_msgs::msg::JointState>(
       option_.environment_joint_states_topic,
       qos,
       [ = ](sensor_msgs::msg::JointState::UniquePtr joint_state_msg) -> void
@@ -627,7 +626,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   rclcpp::SubscriptionOptions moveit_scene_sub_option;
   moveit_scene_sub_option.callback_group = moveit_scene_callback_group_;
   if (!option_.moveit_scene_topic.empty()) {
-    moveit_scene_sub_ = node->create_subscription<moveit_msgs::msg::PlanningScene>(
+    moveit_scene_sub_ = node->template create_subscription<moveit_msgs::msg::PlanningScene>(
       option_.moveit_scene_topic,
       qos,
       [ = ](moveit_msgs::msg::PlanningScene::UniquePtr scene_msg) -> void
@@ -756,7 +755,6 @@ void DynamicSafety::Impl::stop()
   }
   started = false;
   activated_ = false;
-  // node_.reset();
 
   // Print out result
   if (option_.benchmark) {
@@ -796,7 +794,7 @@ void DynamicSafety::Impl::_main_loop()
 
   // get scaled time point
   double current_time_point = *current_time_cache_.readFromRT();
-  // RCLCPP_INFO(node_->get_logger(), "Current time: %f", current_time_point);
+  // RCLCPP_INFO(LOGGER, "Current time: %f", current_time_point);
   collision_time_point_ = -1;
 
   // Check collision once
@@ -828,7 +826,7 @@ void DynamicSafety::Impl::_main_loop()
       }
     } else if (scale != 0.0001) {
       RCLCPP_ERROR(
-        node_->get_logger(),
+        LOGGER,
         "There is no velocity state feedback from the robot. "
         "Please check /joint_states for velocity values!!"
         "Hard set the slow down time to 0.5s instead");
@@ -871,13 +869,13 @@ void DynamicSafety::Impl::_main_loop()
       if (zone <= SafetyZone::EMERGENCY) {
         // Emergency stop
         RCLCPP_ERROR_ONCE(
-          node_->get_logger(),
+          LOGGER,
           "Emergency stop!!");
         scale = 0.0001;
       } else {
         // Slow down
         RCLCPP_WARN_ONCE(
-          node_->get_logger(),
+          LOGGER,
           "Slowing down!!");
         scale -= scale_step;
         scale = std::max<double>(scale, 0.0001);
@@ -888,7 +886,7 @@ void DynamicSafety::Impl::_main_loop()
       if (zone <= SafetyZone::EMERGENCY) {
         // Emergency stop
         RCLCPP_ERROR_ONCE(
-          node_->get_logger(),
+          LOGGER,
           "Emergency stop!!");
         scale = 0.0001;
       } else if (zone == SafetyZone::SLOWDOWN) {
@@ -931,7 +929,7 @@ void DynamicSafety::Impl::_main_loop()
         scale += 1.0 * (1.0 / option_.rate) / scale_time;
       }
       scale = std::min<double>(scale, 1);
-      RCLCPP_WARN_ONCE(node_->get_logger(), "Speeding up");
+      RCLCPP_WARN_ONCE(LOGGER, "Speeding up");
     }
   }
   scale_cache_.writeFromNonRT(scale);
