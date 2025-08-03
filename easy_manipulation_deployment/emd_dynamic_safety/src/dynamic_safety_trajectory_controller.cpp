@@ -19,6 +19,7 @@
 #include "emd/dynamic_safety/dynamic_safety_trajectory_controller.hpp"
 #include "rclcpp_action/create_server.hpp"
 #include "rclcpp_action/server_goal_handle.hpp"
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <lifecycle_msgs/msg/state.hpp>
 #include <cmath>
 

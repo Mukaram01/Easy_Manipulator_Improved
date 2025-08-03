@@ -445,6 +445,9 @@ public:
   void configure(
     const rclcpp::Node::SharedPtr & node);
 
+  void configure(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & lifecycle_node);
+
   void add_trajectory(
     const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt);
 
@@ -482,6 +485,9 @@ protected:
 
   // Temporary functions to be moved into collision checker
   double _back_track_last_collision();
+private:
+  template <typename NodePtrT>
+  void configure_common(const NodePtrT & node);
   double full_duration_;
   // Temporary map better handling needed
   std::unordered_set<std::string> joint_names;
@@ -529,7 +535,19 @@ protected:
 void DynamicSafety::Impl::configure(
   const rclcpp::Node::SharedPtr & node)
 {
-  node_ = node;
+  configure_common(node);
+}
+
+void DynamicSafety::Impl::configure(
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & lifecycle_node)
+{
+  configure_common(lifecycle_node);
+}
+
+template <typename NodePtrT>
+void DynamicSafety::Impl::configure_common(const NodePtrT & node)
+{
+  node_ = std::static_pointer_cast<rclcpp::Node>(node);
 
   // Initialize flags
   started = false;
@@ -555,7 +573,7 @@ void DynamicSafety::Impl::configure(
   if (option_.allow_replan) {
     replanner_.configure(
       option_.replanner_options,
-      node,
+      node_,
       option_.robot_description,
       option_.robot_description_semantic);
     option_.safety_zone_options.replan_deadline = option_.replanner_options.deadline;
@@ -570,7 +588,7 @@ void DynamicSafety::Impl::configure(
 
   if (option_.visualize) {
     visualizer_.configure(
-      node, option_.visualizer_options,
+      node_, option_.visualizer_options,
       option_.safety_zone_options,
       option_.robot_description,
       option_.robot_description_semantic);
@@ -591,7 +609,7 @@ void DynamicSafety::Impl::configure(
   auto qos = rclcpp::QoS(2);
 
   if (!option_.environment_joint_states_topic.empty()) {
-    env_state_sub_ = node_->create_subscription<sensor_msgs::msg::JointState>(
+    env_state_sub_ = node->create_subscription<sensor_msgs::msg::JointState>(
       option_.environment_joint_states_topic,
       qos,
       [ = ](sensor_msgs::msg::JointState::UniquePtr joint_state_msg) -> void
@@ -609,7 +627,7 @@ void DynamicSafety::Impl::configure(
   rclcpp::SubscriptionOptions moveit_scene_sub_option;
   moveit_scene_sub_option.callback_group = moveit_scene_callback_group_;
   if (!option_.moveit_scene_topic.empty()) {
-    moveit_scene_sub_ = node_->create_subscription<moveit_msgs::msg::PlanningScene>(
+    moveit_scene_sub_ = node->create_subscription<moveit_msgs::msg::PlanningScene>(
       option_.moveit_scene_topic,
       qos,
       [ = ](moveit_msgs::msg::PlanningScene::UniquePtr scene_msg) -> void
@@ -623,7 +641,7 @@ void DynamicSafety::Impl::configure(
   }
 
   main_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-  main_timer_ = node_->create_wall_timer(
+  main_timer_ = node->create_wall_timer(
     rclcpp::Duration::from_seconds(1.0 / option_.rate).to_chrono<std::chrono::nanoseconds>(),
     [ = ]() -> void {
       if (started) {
