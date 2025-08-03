@@ -20,9 +20,56 @@
 #include "rclcpp_action/create_server.hpp"
 #include "rclcpp_action/server_goal_handle.hpp"
 #include <lifecycle_msgs/msg/state.hpp>
+#include <cmath>
 
 namespace dynamic_safety
 {
+namespace
+{
+static bool check_state_tolerance_per_joint(
+  const trajectory_msgs::msg::JointTrajectoryPoint & error,
+  size_t index,
+  const joint_trajectory_controller::StateTolerances & tolerance,
+  bool show_errors,
+  const rclcpp::Logger & logger)
+{
+  bool within = true;
+  if (tolerance.position > 0.0 &&
+    index < error.positions.size() &&
+    std::abs(error.positions[index]) > tolerance.position)
+  {
+    if (show_errors) {
+      RCLCPP_WARN(
+        logger, "Position deviation for joint %zu is %f, tolerance %f", index,
+        error.positions[index], tolerance.position);
+    }
+    within = false;
+  }
+  if (tolerance.velocity > 0.0 &&
+    index < error.velocities.size() &&
+    std::abs(error.velocities[index]) > tolerance.velocity)
+  {
+    if (show_errors) {
+      RCLCPP_WARN(
+        logger, "Velocity deviation for joint %zu is %f, tolerance %f", index,
+        error.velocities[index], tolerance.velocity);
+    }
+    within = false;
+  }
+  if (tolerance.acceleration > 0.0 &&
+    index < error.accelerations.size() &&
+    std::abs(error.accelerations[index]) > tolerance.acceleration)
+  {
+    if (show_errors) {
+      RCLCPP_WARN(
+        logger, "Acceleration deviation for joint %zu is %f, tolerance %f", index,
+        error.accelerations[index], tolerance.acceleration);
+    }
+    within = false;
+  }
+  return within;
+}
+}  // namespace
 controller_interface::InterfaceConfiguration
 DynamicSafetyTrajectoryController::state_interface_configuration() const
 {
@@ -70,7 +117,7 @@ DynamicSafetyTrajectoryController::on_configure(const rclcpp_lifecycle::State & 
       std::bind(&DynamicSafetyTrajectoryController::goal_cancelled_callback, this, _1),
       std::bind(&DynamicSafetyTrajectoryController::feedback_setup_callback, this, _1));
 
-    safety_officer_->configure(node->shared_from_this());
+    safety_officer_->configure(node);
     safety_officer_->set_new_trajectory_callback(
       std::bind(
         &DynamicSafetyTrajectoryController::add_new_trajectory_msg, this,
@@ -138,6 +185,7 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
   time_data.uptime = this->time_data_.readFromRT()->uptime + time_data.period;
   rclcpp::Time traj_time = this->time_data_.readFromRT()->uptime + time_data.period;
   this->time_data_.writeFromNonRT(time_data);
+  auto node = this->get_node();
 
   // Check if a new external message has been received from nonRT threads
   auto current_external_msg = this->traj_external_point_ptr_->get_trajectory_msg();
@@ -151,7 +199,7 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
 
   // TODO(Briancbn): Trajectory replacement.
   JointTrajectoryPoint state_current, state_desired, state_error;
-  const auto joint_num = this->joint_names_.size();
+  const auto joint_num = this->command_joint_names_.size();
   resize_joint_trajectory_point(state_current, joint_num);
 
   // Current state update
@@ -194,29 +242,29 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
   }
 
   // currently carrying out a trajectory
-  if (this->traj_point_active_ptr_ && (*this->traj_point_active_ptr_)->has_trajectory_msg()) {
+  if (this->traj_external_point_ptr_ && this->traj_external_point_ptr_->has_trajectory_msg()) {
     // if sampling the first time, set the point before you sample
-    if (!(*this->traj_point_active_ptr_)->is_sampled_already()) {
-      (*this->traj_point_active_ptr_)->set_point_before_trajectory_msg(traj_time, state_current);
+    if (!this->traj_external_point_ptr_->is_sampled_already()) {
+      this->traj_external_point_ptr_->set_point_before_trajectory_msg(traj_time, state_current);
       safety_officer_->start();
     }
     double current_time =
-      (traj_time - (*this->traj_point_active_ptr_)->get_trajectory_start_time()).seconds();
+      (traj_time - this->traj_external_point_ptr_->time_from_start()).seconds();
     safety_officer_->update_time(current_time);
-    safety_officer_->update_state(this->joint_names_, state_current);
+    safety_officer_->update_state(this->command_joint_names_, state_current);
     resize_joint_trajectory_point(state_error, joint_num);
 
     // find segment for current timestamp
     joint_trajectory_controller::TrajectoryPointConstIter start_segment_itr, end_segment_itr;
     const bool valid_point =
-      (*this->traj_point_active_ptr_)->sample(
+      this->traj_external_point_ptr_->sample(
       traj_time, state_desired, start_segment_itr,
       end_segment_itr);
 
     if (valid_point) {
       bool abort = false;
       bool outside_goal_tolerance = false;
-      const bool before_last_point = end_segment_itr != (*this->traj_point_active_ptr_)->end();
+      const bool before_last_point = end_segment_itr != this->traj_external_point_ptr_->end();
 
       // set values for next hardware write()
       if (this->has_position_command_interface_) {
@@ -234,16 +282,17 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
         compute_error_for_joint(state_error, static_cast<int>(index), state_current, state_desired);
 
         if (before_last_point &&
-          !this->check_state_tolerance_per_joint(
+          !check_state_tolerance_per_joint(
             state_error, static_cast<int>(index),
-            this->default_tolerances_.state_tolerance[index], true))
+            this->default_tolerances_.state_tolerance[index], true,
+            node->get_logger()))
         {
           abort = true;
         }
         // past the final point, check that we end up inside goal tolerance
-        if (!before_last_point && !this->check_state_tolerance_per_joint(
+        if (!before_last_point && !check_state_tolerance_per_joint(
             state_error, static_cast<int>(index), this->default_tolerances_.goal_state_tolerance[index],
-            true))
+            true, node->get_logger()))
         {
           outside_goal_tolerance = true;
         }
@@ -253,9 +302,8 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
       if (active_goal) {
         // send feedback
         auto feedback = std::make_shared<FollowJTrajAction::Feedback>();
-        auto node = this->get_node();
         feedback->header.stamp = node->now();
-        feedback->joint_names = this->joint_names_;
+        feedback->joint_names = this->command_joint_names_;
 
         feedback->actual = state_current;
         feedback->desired = state_desired;
@@ -292,12 +340,11 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
           } else if (this->default_tolerances_.goal_time_tolerance != 0.0) {
             // if we exceed goal_time_toleralance set it to aborted
             const rclcpp::Time traj_start =
-              (*this->traj_point_active_ptr_)->get_trajectory_start_time();
+              this->traj_external_point_ptr_->time_from_start();
             const rclcpp::Time traj_end = traj_start + start_segment_itr->time_from_start;
 
             // TODO(anyone): This will break in speed scaling we have to discuss
             // how to handle the goal time when the robot scales itself down.
-            auto node = this->get_node();
             const double difference = node->now().seconds() - traj_end.seconds();
             if (difference > this->default_tolerances_.goal_time_tolerance) {
               auto result = std::make_shared<FollowJTrajAction::Result>();
@@ -339,7 +386,7 @@ void DynamicSafetyTrajectoryController::feedback_setup_callback(
 
   // Update the active goal
   RealtimeGoalHandlePtr rt_goal = std::make_shared<RealtimeGoalHandle>(goal_handle);
-  rt_goal->preallocated_feedback_->joint_names = this->joint_names_;
+  rt_goal->preallocated_feedback_->joint_names = this->command_joint_names_;
   rt_goal->execute();
   this->rt_active_goal_.writeFromNonRT(rt_goal);
 

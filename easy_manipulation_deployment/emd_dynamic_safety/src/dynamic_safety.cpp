@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 namespace dynamic_safety
 {
@@ -1051,6 +1052,12 @@ void DynamicSafety::configure(
   const rclcpp::Node::SharedPtr & node)
 {
   impl_ptr_->configure(node);
+}
+
+void DynamicSafety::configure(
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & lifecycle_node)
+{
+  impl_ptr_->configure(lifecycle_node);
 }
 
 void DynamicSafety::add_trajectory(

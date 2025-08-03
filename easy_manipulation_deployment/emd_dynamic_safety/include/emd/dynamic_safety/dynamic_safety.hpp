@@ -30,6 +30,7 @@
 #include "emd/dynamic_safety/visualizer.hpp"
 #include "emd/profiler.hpp"
 #include "realtime_tools/realtime_buffer.hpp"
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 namespace dynamic_safety
 {
@@ -147,6 +148,9 @@ public:
    */
   void configure(
     const rclcpp::Node::SharedPtr & node);
+
+  void configure(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & lifecycle_node);
 
   /// Add a new trajectory to activate the dynamic safety node.
   /**
