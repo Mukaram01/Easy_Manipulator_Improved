@@ -22,7 +22,7 @@ find_package(emd_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(yaml_cpp_vendor REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 
 include_directories(
@@ -46,7 +46,7 @@ ament_target_dependencies(grasp_execution_interface
   tf2_geometry_msgs
   trajectory_msgs
   pluginlib
-  yaml_cpp_vendor
+  yaml-cpp
 )
 
 add_library(moveit_cpp_grasp_execution_interface
@@ -61,7 +61,7 @@ target_link_libraries(moveit_cpp_grasp_execution_interface
 ament_target_dependencies(moveit_cpp_grasp_execution_interface
   moveit_ros_planning_interface
   trajectory_msgs
-  #  yaml_cpp_vendor
+  #  yaml-cpp
 )
 
 # Default Executor, Gripper plugin
@@ -95,7 +95,7 @@ ament_export_dependencies(
   tf2
   tf2_ros
   trajectory_msgs
-  yaml_cpp_vendor
+  yaml-cpp
   tinyxml2_vendor
 )
 
