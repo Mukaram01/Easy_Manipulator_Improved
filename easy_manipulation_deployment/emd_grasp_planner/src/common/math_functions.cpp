@@ -16,6 +16,9 @@
 
 #include "emd/common/math_functions.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("EMD::MathFunctions");
 
@@ -65,7 +68,18 @@ float MathFunctions::get_angle_between_vectors(
   const Eigen::Vector3f & vector_1,
   const Eigen::Vector3f & vector_2)
 {
-  return 1e-8 + std::abs((vector_1.dot(vector_2)) / (vector_1.norm() * vector_2.norm()));
+  // Calculate the cosine of the angle using the dot product formula
+  float denominator = vector_1.norm() * vector_2.norm();
+
+  if (denominator == 0.0f) {
+    RCLCPP_ERROR(LOGGER, "Cannot compute angle with zero-length vector.");
+    throw std::invalid_argument("Zero-length vector provided");
+  }
+
+  float cos_angle = vector_1.dot(vector_2) / denominator;
+  // Numerical errors may lead to values slightly outside [-1,1]
+  cos_angle = std::clamp(cos_angle, -1.0f, 1.0f);
+  return std::acos(cos_angle);
 }
 
 Eigen::Vector3f MathFunctions::get_point_in_direction(
