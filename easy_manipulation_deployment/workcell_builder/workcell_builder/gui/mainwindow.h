@@ -36,8 +36,8 @@ public:
   boost::filesystem::path workcell_path;
   Workcell workcell;
   bool success;
-  // Supported ROS distributions for ROS 1 and ROS 2 respectively. Add Humble for ROS 2.
-  std::vector < std::vector < std::string >> ros_dist {{"melodic"}, {"eloquent", "foxy", "humble"}};
+  // Supported ROS distributions for ROS 1 and ROS 2 respectively. Humble listed first for ROS 2.
+  std::vector<std::vector<std::string>> ros_dist{{"melodic"}, {"humble", "foxy", "eloquent"}};
   bool is_good_scene(boost::filesystem::path original_path, std::string scene_name);
 
   explicit MainWindow(QWidget * parent = nullptr);
