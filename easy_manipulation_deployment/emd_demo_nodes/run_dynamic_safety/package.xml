@@ -3,9 +3,9 @@
 <package format="3">
   <name>run_dynamic_safety</name>
   <version>2.2.2</version>
-  <description>TODO: Package description</description>
+  <description>Example node demonstrating dynamic safety with MoveIt</description>
   <maintainer email="henningkayser@picknik.ai">Henning Kayser</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>moveit_common</build_depend>
