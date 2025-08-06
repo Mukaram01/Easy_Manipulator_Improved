@@ -19,6 +19,7 @@
 
 #include "emd/dynamic_safety/visualizer.hpp"
 #include "emd/interpolate.hpp"
+#include <rclcpp/node.hpp>
 
 #include "urdf/model.h"
 #include "srdfdom/model.h"
@@ -75,7 +76,7 @@ void Visualizer::configure(
   scene_ = std::make_shared<planning_scene::PlanningScene>(umodel, smodel);
   node_ = node;
   start_ = false;
-  pub_ = node_->create_publisher<visualization_msgs::msg::Marker>(
+  pub_ = node_->template create_publisher<visualization_msgs::msg::Marker>(
     option.topic, 2);
   rate_ = option.publish_frequency;
   step_ = option.step;
