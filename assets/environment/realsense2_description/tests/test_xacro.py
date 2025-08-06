@@ -24,8 +24,11 @@ pytest.importorskip("xacro")
 pytest.importorskip("roslaunch")
 
 # Determine the root of the realsense2_description package using the file
-# location instead of relying on ROS environment variables.
-PATH = os.path.dirname(os.path.dirname(__file__))
+# location instead of relying on ROS environment variables.  ``__file__`` may
+# be a relative path depending on how the test is invoked which would cause
+# the computed root to be incorrect.  ``os.path.abspath`` normalises the value
+# so the test works regardless of the current working directory.
+PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def run_xacro_in_file(filename: str) -> None:
