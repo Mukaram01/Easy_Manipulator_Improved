@@ -17,7 +17,7 @@
 #include <QFileDialog>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -36,7 +36,24 @@ MainWindow::MainWindow(QWidget * parent)
   success = false;
   ui->error_label->setWordWrap(true);
   ui->error_label->setText("<font color='red'>Workcell not available</font>");
+  // Default to ROS1 / Melodic until a supported ROS distro is detected
   on_ros_version_currentIndexChanged(0);
+
+  const char * distro = std::getenv("ROS_DISTRO");
+  if (distro != nullptr) {
+    std::string current_distro(distro);
+    for (size_t i = 0; i < ros_dist.size(); ++i) {
+      for (const auto & supported_distro : ros_dist[i]) {
+        if (supported_distro == current_distro) {
+          ui->ros_version->setCurrentIndex(static_cast<int>(i));
+          on_ros_version_currentIndexChanged(static_cast<int>(i));
+          ui->ros_distro->setCurrentText(QString::fromStdString(supported_distro));
+          i = ros_dist.size();  // break outer loop
+          break;
+        }
+      }
+    }
+  }
 }
 
 MainWindow::~MainWindow()
