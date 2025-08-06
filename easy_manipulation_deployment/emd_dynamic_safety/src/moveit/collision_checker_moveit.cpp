@@ -16,6 +16,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include "emd/dynamic_safety/collision_checker_moveit.hpp"
 #include "moveit/collision_detection_fcl/collision_detector_allocator_fcl.h"
@@ -41,11 +42,11 @@ MoveitCollisionCheckerContext::MoveitCollisionCheckerContext(
   if (umodel->initString(robot_urdf)) {
     if (!smodel->initString(*umodel, robot_srdf)) {
       RCLCPP_ERROR(LOGGER, "Unable to parse SRDF");
-      // TODO(anyone): exception handling
+      throw std::runtime_error("Unable to parse SRDF");
     }
   } else {
     RCLCPP_ERROR(LOGGER, "Unable to parse URDF");
-    // TODO(anyone): exception handling
+    throw std::runtime_error("Unable to parse URDF");
   }
   // Construct planning scene
   scene_ = std::make_shared<planning_scene::PlanningScene>(umodel, smodel);

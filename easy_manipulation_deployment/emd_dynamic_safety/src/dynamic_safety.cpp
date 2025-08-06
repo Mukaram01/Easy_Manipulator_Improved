@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <stdexcept>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
@@ -62,10 +63,10 @@ const Option & Option::load(const rclcpp::Node::SharedPtr & node)
         RCLCPP_ERROR(
           LOGGER, "Interrupted while waiting for %s service. Exiting.",
           description_server.c_str());
-        // TODO(anyone): exception handling.
-        break;
+        throw std::runtime_error(
+                "Failed to connect to description service " + description_server);
       }
-      RCLCPP_ERROR(
+      RCLCPP_WARN(
         LOGGER, "%s service not available, waiting again...",
         description_server.c_str());
     }
@@ -260,10 +261,11 @@ const Option & Option::load(const rclcpp::Node::SharedPtr & node)
           RCLCPP_ERROR(
             LOGGER, "Interrupted while waiting for %s service. Exiting.",
             joint_limits_parameter_server.c_str());
-          // TODO(anyone): exception handling.
-          break;
+          throw std::runtime_error(
+                  "Failed to connect to joint limits service " +
+                  joint_limits_parameter_server);
         }
-        RCLCPP_ERROR(
+        RCLCPP_WARN(
           LOGGER, "%s service not available, waiting again...",
           joint_limits_parameter_server.c_str());
       }

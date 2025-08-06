@@ -18,6 +18,7 @@
 #include <utility>
 #include <unordered_map>
 #include <vector>
+#include <stdexcept>
 
 #include "emd/dynamic_safety/replanner_tesseract.hpp"
 #include "tesseract_kinematics/kdl/kdl_fwd_kin_chain.h"
@@ -232,10 +233,11 @@ TesseractReplannerContext::TesseractReplannerContext(
       RCLCPP_ERROR(
         LOGGER, "Interrupted while waiting for %s service. Exiting.",
         option.joint_limits_parameter_server.c_str());
-      // TODO(anyone): exception handling.
-      break;
+      throw std::runtime_error(
+              "Failed to connect to joint limits service " +
+              option.joint_limits_parameter_server);
     }
-    RCLCPP_ERROR(
+    RCLCPP_WARN(
       LOGGER, "%s service not available, waiting again...",
       option.joint_limits_parameter_server.c_str());
   }

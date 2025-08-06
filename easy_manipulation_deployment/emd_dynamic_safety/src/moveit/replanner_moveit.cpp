@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <stdexcept>
 
 #include "emd/dynamic_safety/replanner_moveit.hpp"
 #include "moveit/robot_state/conversions.h"
@@ -39,11 +40,11 @@ MoveitReplannerContext::MoveitReplannerContext(
   if (umodel->initString(robot_urdf)) {
     if (!smodel->initString(*umodel, robot_srdf)) {
       RCLCPP_ERROR(LOGGER, "Unable to parse SRDF");
-      // TODO(anyone): exception handling
+      throw std::runtime_error("Unable to parse SRDF");
     }
   } else {
     RCLCPP_ERROR(LOGGER, "Unable to parse URDF");
-    // TODO(anyone): exception handling
+    throw std::runtime_error("Unable to parse URDF");
   }
 
   // Construct robot model
@@ -63,10 +64,11 @@ MoveitReplannerContext::MoveitReplannerContext(
       RCLCPP_ERROR(
         LOGGER, "Interrupted while waiting for %s service. Exiting.",
         option.joint_limits_parameter_server.c_str());
-      // TODO(anyone): exception handling.
-      break;
+      throw std::runtime_error(
+              "Failed to connect to joint limits service " +
+              option.joint_limits_parameter_server);
     }
-    RCLCPP_ERROR(
+    RCLCPP_WARN(
       LOGGER, "%s service not available, waiting again...",
       option.joint_limits_parameter_server.c_str());
   }
@@ -153,10 +155,11 @@ MoveitReplannerContext::MoveitReplannerContext(
         RCLCPP_ERROR(
           LOGGER, "Interrupted while waiting for %s service. Exiting.",
           option.planner_parameter_server.c_str());
-        // TODO(anyone): exception handling.
-        break;
+        throw std::runtime_error(
+                "Failed to connect to planner parameter service " +
+                option.planner_parameter_server);
       }
-      RCLCPP_ERROR(
+      RCLCPP_WARN(
         LOGGER, "%s service not available, waiting again...",
         option.planner_parameter_server.c_str());
     }

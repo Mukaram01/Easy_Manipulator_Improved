@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <stdexcept>
 
 #include "emd/dynamic_safety/collision_checker.hpp"
 #include "emd/interpolate.hpp"
@@ -135,8 +136,7 @@ void CollisionChecker::Impl::configure(
         robot_urdf, robot_srdf, option.collision_checking_plugin);
 #else
       RCLCPP_ERROR(LOGGER, "Framework %s not defined", option.framework.c_str());
-      // TODO(anyone): exception handling
-      return;
+      throw std::runtime_error("MoveIt framework requested but not available");
 #endif
     } else if (option.framework == "tesseract") {
 #ifdef EMD_DYNAMIC_SAFETY_TESSERACT
@@ -144,8 +144,7 @@ void CollisionChecker::Impl::configure(
         robot_urdf, robot_srdf, option.collision_checking_plugin);
 #else
       RCLCPP_ERROR(LOGGER, "Framework %s not defined", option.framework.c_str());
-      // TODO(anyone): exception handling
-      return;
+      throw std::runtime_error("Tesseract framework requested but not available");
 #endif
     }
     context->configure(option);
@@ -171,8 +170,7 @@ void CollisionChecker::Impl::add_trajectory(
 {
   if (rt->points.empty()) {
     RCLCPP_ERROR(LOGGER, "Trajectory Empty");
-    // TODO(Briancbn): Proper exception handling.
-    return;
+    throw std::invalid_argument("Provided trajectory has no points");
   }
 
   trajectory_.joint_names = rt->joint_names;
@@ -295,9 +293,11 @@ void CollisionChecker::Impl::run_once(
   double look_ahead_time,
   double & collision_time)
 {
-  if (!started_ || trajectory_.points.empty()) {
-    // TODO(Briancbn): proper exception handling
-    return;
+  if (!started_) {
+    throw std::runtime_error("Collision checker has not been started");
+  }
+  if (trajectory_.points.empty()) {
+    throw std::runtime_error("Collision checker has no trajectory to evaluate");
   }
 
   int start_index = static_cast<int>((current_time - start_offset_) / step_);
