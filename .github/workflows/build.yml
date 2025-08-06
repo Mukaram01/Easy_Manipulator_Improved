@@ -29,6 +29,10 @@ jobs:
       # Run industrial_ci
       - uses: 'ros-industrial/industrial_ci@master'
         env: ${{matrix.env}}
+      - name: Run Python unit tests
+        run: |
+          pip install pytest xacro pyyaml
+          pytest easy_manipulation_deployment/workcell_builder/examples/ros2/test_to_urdf.py
       # Upload Coverage report if configured
       - name: Install dependency for Codecov
         run: sudo apt install curl git -y

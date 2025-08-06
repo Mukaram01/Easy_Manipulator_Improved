@@ -42,3 +42,14 @@ def test_to_urdf_creates_urdf_file(tmp_path):
         content = f.read()
     assert '<robot' in content
     os.remove(urdf_path)
+
+
+def test_to_urdf_respects_output_path(tmp_path):
+    xacro_file = tmp_path / 'robot.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    custom_path = tmp_path / 'custom.urdf'
+    result = demo.to_urdf(str(xacro_file), str(custom_path))
+    assert result == str(custom_path)
+    assert custom_path.exists()
+    with open(custom_path) as f:
+        assert '<robot' in f.read()
