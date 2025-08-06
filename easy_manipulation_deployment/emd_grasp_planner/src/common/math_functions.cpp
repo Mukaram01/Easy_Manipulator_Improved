@@ -17,6 +17,7 @@
 #include "emd/common/math_functions.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include <algorithm>
+#include <cmath>
 
 static const rclcpp::Logger &LOGGER = rclcpp::get_logger("EMD::MathFunctions");
 
@@ -99,20 +100,20 @@ MathFunctions::get_rotated_vector(const Eigen::Vector3f &target_vector,
   if (axis == 'x') {
     result_vector(0) = target_vector(0);
     result_vector(1) =
-        target_vector(1) * cos(angle) - target_vector(2) * sin(angle);
+        target_vector(1) * std::cos(angle) - target_vector(2) * std::sin(angle);
     result_vector(2) =
-        target_vector(1) * sin(angle) + target_vector(2) * cos(angle);
+        target_vector(1) * std::sin(angle) + target_vector(2) * std::cos(angle);
   } else if (axis == 'y') {
     result_vector(0) =
-        target_vector(0) * cos(angle) + target_vector(2) * sin(angle);
+        target_vector(0) * std::cos(angle) + target_vector(2) * std::sin(angle);
     result_vector(1) = target_vector(1);
     result_vector(2) =
-        -target_vector(0) * sin(angle) + target_vector(2) * cos(angle);
+        -target_vector(0) * std::sin(angle) + target_vector(2) * std::cos(angle);
   } else if (axis == 'z') {
     result_vector(0) =
-        target_vector(0) * cos(angle) - target_vector(1) * sin(angle);
+        target_vector(0) * std::cos(angle) - target_vector(1) * std::sin(angle);
     result_vector(1) =
-        target_vector(0) * sin(angle) + target_vector(1) * cos(angle);
+        target_vector(0) * std::sin(angle) + target_vector(1) * std::cos(angle);
     result_vector(2) = target_vector(2);
   } else {
     RCLCPP_ERROR(LOGGER, "Invalid axis of rotation.");
