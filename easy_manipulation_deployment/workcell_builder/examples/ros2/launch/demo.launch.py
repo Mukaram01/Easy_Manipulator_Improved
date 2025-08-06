@@ -29,9 +29,16 @@ def to_urdf(xacro_path, urdf_path=None):
     * xacro_path -- the path to the xacro file
     * urdf_path -- the path to the urdf file
     """
-    # If no URDF path is given, use a temporary file
+    # If no URDF path is given, create a named temporary file securely.
+    # ``tempfile.mktemp`` is deprecated and insecure as it can lead to race
+    # conditions where another process creates the file before we do.  Using
+    # ``mkstemp`` provides us with an already created file and returns a file
+    # descriptor which we can safely close before reusing the path.
     if urdf_path is None:
-        urdf_path = tempfile.mktemp(prefix="%s_" % os.path.basename(xacro_path))
+        handle, urdf_path = tempfile.mkstemp(
+            prefix=f"{os.path.basename(xacro_path)}_"
+        )
+        os.close(handle)
 
     # open and process file
     doc = xacro.process_file(xacro_path)
@@ -58,7 +65,10 @@ def load_yaml(package_name, file_path):
     absolute_file_path = os.path.join(package_path, file_path)
     try:
         with open(absolute_file_path, 'r') as file:
-            return yaml.load(file)
+            # ``yaml.load`` without an explicit loader is unsafe and can lead
+            # to arbitrary code execution. ``safe_load`` uses ``SafeLoader``
+            # internally which only constructs simple Python objects.
+            return yaml.safe_load(file)
     except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
         print(package_path)
         print(absolute_file_path)
