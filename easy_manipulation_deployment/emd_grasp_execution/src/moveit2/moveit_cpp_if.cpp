@@ -36,7 +36,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2/impl/utils.h"
-#include "tf2_eigen/tf2_eigen.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "shape_msgs/msg/mesh.hpp"

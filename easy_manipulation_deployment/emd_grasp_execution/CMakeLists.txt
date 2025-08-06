@@ -22,6 +22,7 @@ find_package(emd_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_eigen REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 
@@ -44,6 +45,7 @@ ament_target_dependencies(grasp_execution_interface
   tf2
   tf2_ros
   tf2_geometry_msgs
+  tf2_eigen
   trajectory_msgs
   pluginlib
   yaml-cpp
@@ -61,6 +63,7 @@ target_link_libraries(moveit_cpp_grasp_execution_interface
 ament_target_dependencies(moveit_cpp_grasp_execution_interface
   moveit_ros_planning_interface
   trajectory_msgs
+  tf2_eigen
   #  yaml-cpp
 )
 
@@ -94,6 +97,7 @@ ament_export_dependencies(
   emd_msgs
   tf2
   tf2_ros
+  tf2_eigen
   trajectory_msgs
   yaml-cpp
   tinyxml2_vendor
