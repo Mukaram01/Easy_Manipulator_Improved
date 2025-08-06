@@ -572,9 +572,11 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   option_.safety_zone_options.collision_checking_deadline = 1.0 / option_.rate;
 
   if (option_.allow_replan) {
+    auto replanner_node = std::make_shared<rclcpp::Node>(
+      node->get_name() + std::string("_replanner"));
     replanner_.configure(
       option_.replanner_options,
-      node,
+      replanner_node,
       option_.robot_description,
       option_.robot_description_semantic);
     option_.safety_zone_options.replan_deadline = option_.replanner_options.deadline;
@@ -588,8 +590,10 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   }
 
   if (option_.visualize) {
+    auto visualizer_node = std::make_shared<rclcpp::Node>(
+      node->get_name() + std::string("_visualizer"));
     visualizer_.configure(
-      node, option_.visualizer_options,
+      visualizer_node, option_.visualizer_options,
       option_.safety_zone_options,
       option_.robot_description,
       option_.robot_description_semantic);
