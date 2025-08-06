@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "yaml-cpp/yaml.h"
+#include <yaml-cpp/yaml.h>
 
 namespace grasp_execution
 {
