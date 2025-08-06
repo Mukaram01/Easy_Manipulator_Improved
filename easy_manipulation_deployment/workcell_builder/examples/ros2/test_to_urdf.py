@@ -3,6 +3,7 @@ import types
 import sys
 from pathlib import Path
 import os
+import pytest
 
 # Stub out ROS-specific modules to allow importing demo.launch without ROS installed
 launch_mod = types.ModuleType('launch')
@@ -20,6 +21,11 @@ packages_mod.get_package_share_directory = lambda pkg: str(Path(pkg))
 aip_mod.packages = packages_mod
 sys.modules.setdefault('ament_index_python', aip_mod)
 sys.modules.setdefault('ament_index_python.packages', packages_mod)
+
+# Skip this test if PyYAML is not available. The demo.launch.py module
+# imports ``yaml`` when it is executed below, and without PyYAML installed
+# the import would raise ``ModuleNotFoundError`` during test collection.
+pytest.importorskip("yaml")
 
 module_path = Path(__file__).resolve().parent / 'launch' / 'demo.launch.py'
 spec = importlib.util.spec_from_file_location('demo_launch', module_path)
