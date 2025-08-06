@@ -86,7 +86,7 @@ DynamicSafetyTrajectoryController::on_configure(const rclcpp_lifecycle::State & 
   {
     auto node = this->get_node();
     // Load safety officer configuration
-    safety_officer_ = std::make_unique<DynamicSafety>(node->shared_from_this());
+    safety_officer_ = std::make_unique<DynamicSafety>(node);
 
     // Remove existing subscriber and action monitor setup
     this->joint_command_subscriber_.reset();
@@ -259,7 +259,7 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
     joint_trajectory_controller::TrajectoryPointConstIter start_segment_itr, end_segment_itr;
     const bool valid_point =
       this->traj_external_point_ptr_->sample(
-      traj_time, state_desired, start_segment_itr,
+      traj_time, this->interpolation_method_, state_desired, start_segment_itr,
       end_segment_itr);
 
     if (valid_point) {
