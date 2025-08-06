@@ -73,7 +73,8 @@ struct Option
 
   Visualizer::Option visualizer_options;
 
-  const Option & load(const rclcpp::Node::SharedPtr & node);
+    template<typename NodeT>
+    const Option & load(const std::shared_ptr<NodeT> & node);
 };
 
 class DynamicSafety
@@ -128,6 +129,10 @@ public:
    */
   explicit DynamicSafety(
     rclcpp::Node::SharedPtr node);
+
+  /// Constructor for lifecycle nodes
+  explicit DynamicSafety(
+    rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node);
 
   /// Constructor
   /** loading options

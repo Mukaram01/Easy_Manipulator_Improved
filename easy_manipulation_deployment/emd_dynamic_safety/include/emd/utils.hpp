@@ -20,12 +20,12 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 namespace emd
 {
 
-template<typename T>
+template<typename T, typename NodeT>
 /// Get parameter (declare if doesn't allow overload)
 /**
  * Referenced from moveit servo.
@@ -33,7 +33,7 @@ template<typename T>
 inline void declare_or_get_param(
   T & output_value,
   const std::string & param_name,
-  const rclcpp::Node::SharedPtr & node,
+  const std::shared_ptr<NodeT> & node,
   const rclcpp::Logger & logger,
   const T & default_value = T{})
 {

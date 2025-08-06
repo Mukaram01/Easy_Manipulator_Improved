@@ -33,7 +33,8 @@ namespace dynamic_safety
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("dynamic_safety");
 static const double LOG_RATE = 1;  // This is duration
 
-const Option & Option::load(const rclcpp::Node::SharedPtr & node)
+template<typename NodeT>
+const Option & Option::load(const std::shared_ptr<NodeT> & node)
 {
   // Load dyanmic safety parameters
   emd::declare_or_get_param<bool>(
@@ -1057,6 +1058,12 @@ double DynamicSafety::Impl::_back_track_last_collision()
 DynamicSafety::DynamicSafety(
   rclcpp::Node::SharedPtr node)
 : DynamicSafety(Option().load(node))
+{
+}
+
+DynamicSafety::DynamicSafety(
+  rclcpp_lifecycle::LifecycleNode::SharedPtr lifecycle_node)
+: DynamicSafety(Option().load(lifecycle_node))
 {
 }
 
