@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(run_grasp_execution)
 
-# Default to C++11
+# Use C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()

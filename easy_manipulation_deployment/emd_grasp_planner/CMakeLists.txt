@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(emd_grasp_planner)
 
-# Default to C++11
+# Use C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
@@ -10,8 +10,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# add_definitions(-DEIGEN_MAX_ALIGN_BYTES=16)
-# add_definitions(-DEIGEN_UNALIGNED_VECTORIZE=0)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -39,7 +37,7 @@ find_package(shape_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(tf2 REQUIRED)
-find_package(cv_bridge REQUIRED) # Delete later
+find_package(cv_bridge REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
@@ -94,7 +92,7 @@ if(epd_msgs_FOUND)
         tf2_ros
         tf2_geometry_msgs
         message_filters
-        cv_bridge #temp
+        cv_bridge
         visualization_msgs)
   target_compile_definitions(grasp_planning_interface
     PUBLIC
@@ -111,7 +109,7 @@ else()
         tf2_ros
         tf2_geometry_msgs
         message_filters
-        cv_bridge #temp
+        cv_bridge
         visualization_msgs)
   target_compile_definitions(grasp_planning_interface
     PUBLIC
@@ -155,7 +153,6 @@ if(BUILD_TESTING)
   # the following line skips the linter which checks for copyrights
   # uncomment the line when a copyright and license is not present in all source files
   set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 
   ament_add_gtest(grasptest test/init_tests.cpp)
