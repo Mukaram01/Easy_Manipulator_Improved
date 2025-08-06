@@ -17,6 +17,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(joint_trajectory_controller REQUIRED)
+find_package(angles REQUIRED)
 
 find_package(moveit_core QUIET)
 
@@ -175,6 +176,7 @@ ament_target_dependencies(${PROJECT_NAME}_controller
   joint_trajectory_controller
   realtime_tools
   pluginlib
+  angles
 )
 
 # prevent pluginlib from using boost
@@ -221,5 +223,7 @@ ament_export_libraries(
   ${PROJECT_NAME}
   ${PROJECT_NAME}_controller
 )
+
+ament_export_dependencies(angles)
 
 ament_package()
