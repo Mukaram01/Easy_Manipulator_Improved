@@ -17,6 +17,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
@@ -57,21 +58,20 @@ private:
 
   bool get_file_content(const std::string & filename, std::string & content)
   {
-    std::string content_temp;
-    std::fstream file(filename.c_str(), std::fstream::in);
-    if (file.is_open()) {
-      while (file.good()) {
-        std::string line;
-        std::getline(file, line);
-        content_temp += (line + '\n');
-      }
-      file.close();
-      content = content_temp;
-      return true;
-    } else {
+    std::ifstream file(filename.c_str(), std::ios::in);
+    if (!file.is_open()) {
       fprintf(stderr, "Could not open file [%s] for parsing.\n", filename.c_str());
       return false;
     }
+
+    std::ostringstream ss;
+    std::string line;
+    while (std::getline(file, line)) {
+      ss << line << '\n';
+    }
+
+    content = ss.str();
+    return true;
   }
 };
 
