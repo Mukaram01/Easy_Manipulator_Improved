@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cstdio>
+#include <algorithm>
+#include <string>
 
 #include "gui/ui_scene_select.h"
 #include "gui/scene_select.h"
@@ -464,9 +466,6 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
       " Please Generate it again </font>");
     return false;
   }
-
-  // TODO(Glenn): add error catch if trying to create directory with same name,
-  // or maybe add a number to it, eg table1, table2.
   YAML::Node objects;
   YAML::Node ext_joints;
   bool has_objects;
@@ -502,8 +501,19 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     for (YAML::iterator objects_it = objects.begin(); objects_it != objects.end(); ++objects_it) {
       Object temp_object;
       temp_object.name = objects_it->first.as<std::string>();
+      // Ensure unique object names to prevent directory conflicts
+      std::string base_name = temp_object.name;
+      int suffix = 1;
+      auto name_exists = [&](const std::string & name) {
+        return std::any_of(
+          input_scene->object_vector.begin(), input_scene->object_vector.end(),
+          [&](const Object & o) {return o.name == name;});
+      };
+      while (name_exists(temp_object.name)) {
+        temp_object.name = base_name + "_" + std::to_string(suffix++);
+      }
       YAML::Node ext_joint;
-      temp_object.ext_joint.child_object = objects_it->first.as<std::string>();
+      temp_object.ext_joint.child_object = temp_object.name;
       for (YAML::iterator in_object_it = objects_it->second.begin();
         in_object_it != objects_it->second.end(); ++in_object_it)
       {
