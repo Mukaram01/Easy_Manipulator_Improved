@@ -23,8 +23,11 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "emd/waypoint_execution/waypoint.hpp"
+
+#ifndef EMD_WAYPOINT_PARSER_DISABLE_EXECUTION
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 #include "emd/end_effector/ee_execution_interface.hpp"
+#endif
 
 #ifndef WAYPOINT_PARSER__HPP_
 #define WAYPOINT_PARSER__HPP_
@@ -50,6 +53,7 @@ bool load_waypoints(
   std::vector<emd::WayPoint> & waypoints,
   const std::string waypoint_filepath);
 
+#ifndef EMD_WAYPOINT_PARSER_DISABLE_EXECUTION
 template<typename V, typename T, typename U>
 bool process_waypoint(
   V execution_interface,
@@ -200,6 +204,7 @@ bool process_waypoints(
   }
   return true;
 }
+#endif
 
 }
 }
