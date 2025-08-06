@@ -41,6 +41,9 @@ public:
   bool run(
     const robot_trajectory::RobotTrajectory & robot_trajectory) override;
 
+  /// Cancel any ongoing trajectory execution.
+  void cancel() override;
+
 private:
   const rclcpp::Logger logger_;
   trajectory_execution_manager::TrajectoryExecutionManagerPtr trajectory_execution_manager_;

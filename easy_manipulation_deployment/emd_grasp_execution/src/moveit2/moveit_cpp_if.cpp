@@ -1148,6 +1148,36 @@ bool MoveitCppGraspExecution::execute(
   }
 }
 
+void MoveitCppGraspExecution::cancel_execution(
+  const std::string & group,
+  const std::string & method)
+{
+  if (method == "default" || method.empty()) {
+    if (default_executor_) {
+      default_executor_->cancel();
+    }
+  } else {
+    auto arm_it = arms_.find(group);
+    if (arm_it != arms_.end()) {
+      auto & arm = arm_it->second;
+      auto exe_it = arm.executors.find(method);
+      if (exe_it != arm.executors.end()) {
+        exe_it->second->cancel();
+      } else {
+        RCLCPP_WARN(
+          LOGGER,
+          "Method [%s] not found for group [%s], cannot cancel execution",
+          method.c_str(), group.c_str());
+      }
+    } else {
+      RCLCPP_WARN(
+        LOGGER,
+        "Group [%s] not initialized, cannot cancel execution",
+        group.c_str());
+    }
+  }
+}
+
 bool MoveitCppGraspExecution::squash_and_execute(
   const std::string & group,
   const std::string & method,

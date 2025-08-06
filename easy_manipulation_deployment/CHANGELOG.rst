@@ -1,3 +1,7 @@
+Forthcoming
+-----------
+* Add preemption handling to executor.
+
 0.1.1 (2021-07-28)
 ------------------
 * Fixed bug that triggers Grasp Execution when no grasp plans found.
