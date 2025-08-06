@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include <rclcpp/node.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
@@ -39,29 +40,18 @@ inline void declare_or_get_param(
 {
   try {
     if (node->has_parameter(param_name)) {
-      node->get_parameter_or<T>(param_name, output_value, default_value);
+      node->template get_parameter_or<T>(param_name, output_value, default_value);
     } else {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-      output_value = node->declare_parameter<T>(param_name, default_value);
-#pragma GCC diagnostic pop
+      output_value = node->template declare_parameter<T>(param_name, default_value);
     }
   } catch (const rclcpp::exceptions::InvalidParameterTypeException & e) {
-    // Catch a <double> parameter written in the yaml as "1" being considered an <int>
-    if (std::is_same<T, double>::value) {
-      node->undeclare_parameter(param_name);
-      output_value = static_cast<double>(node->declare_parameter<int>(param_name, 0));
-    } else {
-      RCLCPP_ERROR(
-        logger,
-        "Error getting parameter \'%s\', check parameter type in YAML file.",
-        param_name.c_str());
-      throw e;
-    }
+    RCLCPP_ERROR(
+      logger,
+      "Error getting parameter '%s', check parameter type in YAML file.",
+      param_name.c_str());
+    throw;
   }
-  RCLCPP_INFO_STREAM(
-    logger,
-    "Found parameter - " << param_name << ": " << output_value);
+  RCLCPP_DEBUG_STREAM(logger, "param " << param_name << " := " << output_value);
 }
 
 }  // namespace emd

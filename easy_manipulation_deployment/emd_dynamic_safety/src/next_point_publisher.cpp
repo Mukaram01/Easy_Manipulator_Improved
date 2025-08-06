@@ -18,6 +18,7 @@
 
 #include "emd/dynamic_safety/next_point_publisher.hpp"
 #include "moveit/robot_state/robot_state.h"
+#include <rclcpp/node.hpp>
 
 namespace dynamic_safety
 {
@@ -93,12 +94,12 @@ void NextPointPublisher::start(double scale)
   switch (command_out_type_) {
     case Command::ARRAY:
       command_out_array_pub_ =
-        node_->create_publisher<std_msgs::msg::Float64MultiArray>(
+        node_->template create_publisher<std_msgs::msg::Float64MultiArray>(
         command_out_topic_, qos, command_out_option);
       break;
     case Command::TRAJECTORY:
       command_out_traj_pub_ =
-        node_->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+        node_->template create_publisher<trajectory_msgs::msg::JointTrajectory>(
         command_out_topic_, qos, command_out_option);
       break;
   }
