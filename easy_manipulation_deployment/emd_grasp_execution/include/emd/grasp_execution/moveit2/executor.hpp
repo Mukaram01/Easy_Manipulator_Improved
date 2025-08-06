@@ -48,6 +48,14 @@ public:
   virtual bool run(
     const robot_trajectory::RobotTrajectory &) = 0;
 
+  /// Cancel any ongoing execution.
+  /**
+   * Default implementation does nothing. Executors that support
+   * preemption should override this method and stop any active
+   * trajectory execution.
+   */
+  virtual void cancel() {}
+
 private:
   // cppcheck-suppress unknownMacro
   RCLCPP_DISABLE_COPY(Executor)

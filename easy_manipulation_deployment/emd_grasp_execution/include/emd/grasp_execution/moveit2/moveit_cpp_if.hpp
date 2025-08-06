@@ -216,6 +216,11 @@ public:
     const robot_trajectory::RobotTrajectoryPtr & traj,
     const std::string & method = "default");
 
+  /// Cancel an active execution for a given group and method.
+  void cancel_execution(
+    const std::string & group,
+    const std::string & method = "default");
+
   bool squash_and_execute(
     const std::string & group,
     const std::string & method = "default",

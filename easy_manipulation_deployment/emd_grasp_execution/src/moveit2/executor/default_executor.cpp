@@ -63,6 +63,13 @@ bool DefaultExecutor::run(
          (status == moveit_controller_manager::ExecutionStatus::TIMED_OUT);
 }
 
+void DefaultExecutor::cancel()
+{
+  if (trajectory_execution_manager_) {
+    trajectory_execution_manager_->stopExecution();
+  }
+}
+
 }  // namespace moveit2
 
 }  // namespace grasp_execution
