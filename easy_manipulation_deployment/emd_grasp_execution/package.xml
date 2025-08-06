@@ -18,7 +18,6 @@
   <build_depend>pluginlib</build_depend>
   <build_depend>tf2</build_depend>
   <build_depend>tf2_ros</build_depend>
-  <build_depend>tf2_eigen</build_depend>
   <depend>tf2_eigen</depend>
   <depend>yaml-cpp</depend>
 
