@@ -29,15 +29,22 @@ def to_urdf(xacro_path, urdf_path=None):
     * xacro_path -- the path to the xacro file
     * urdf_path -- the path to the urdf file
     """
-    # If no URDF path is given, use a temporary file
+    # If no URDF path is given, generate a temporary filename with a proper
+    # ``.urdf`` extension.  ``tempfile.mktemp`` is avoided as it is vulnerable
+    # to race conditions.  ``mkstemp`` provides a securely created file which we
+    # immediately close before re-opening it for writing via xacro.
     if urdf_path is None:
-        urdf_path = tempfile.mktemp(prefix="%s_" % os.path.basename(xacro_path))
+        fd, urdf_path = tempfile.mkstemp(
+            prefix=f"{os.path.basename(xacro_path)}_", suffix=".urdf"
+        )
+        os.close(fd)
 
     # open and process file
     doc = xacro.process_file(xacro_path)
-    # open the output file
-    out = xacro.open_output(urdf_path)
-    out.write(doc.toprettyxml(indent='  '))
+    # open the output file using a context manager to ensure it is properly
+    # closed and flushed to disk on all platforms
+    with xacro.open_output(urdf_path) as out:
+        out.write(doc.toprettyxml(indent='  '))
 
     return urdf_path  # Return path to the urdf file
 
