@@ -523,7 +523,6 @@ TEST_F(SuctionGripperTest, getGripperCenterTest)
     sliced_cloud_normal, 'z');
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr projected_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
   gripper->project_cloud_to_plane_public(sliced_cloud, plane, projected_cloud);
-  int centroid_index = gripper->get_centroid_index_public(projected_cloud);
 
   //Need to update test to reflect new implementation
   // pcl::PointXYZ sample_gripper_center_x = gripper->get_gripper_center_public(
