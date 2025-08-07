@@ -13,7 +13,7 @@
   <build_depend>pkg-config</build_depend>
   <build_depend>qtbase5-dev</build_depend>
   <build_depend>qt5-qmake</build_depend>
-  <exec_depend>libqt5-core</exec_depend>
+  <exec_depend>qtbase5-dev</exec_depend>
   <!--test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend-->
 
