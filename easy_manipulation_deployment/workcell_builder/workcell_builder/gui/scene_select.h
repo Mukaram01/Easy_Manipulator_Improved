@@ -36,7 +36,7 @@ class SceneSelect: public QDialog
 
 public:
   boost::filesystem::path scenes_path;
-  boost::filesystem::path example_path;
+  boost::filesystem::path templates_path;
   boost::filesystem::path workcell_path;
   boost::filesystem::path assets_path;
 
