@@ -331,7 +331,10 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
     object.grasp_target.target_pose = object.get_object_pose(camera_frame);
     this->grasp_objects.push_back(object);
   }
-  RCLCPP_INFO(LOGGER, "EPD detected " + std::to_string(this->grasp_objects.size()) + " objects.");
+  RCLCPP_INFO(
+    LOGGER,
+    "EPD detected %zu objects.",
+    this->grasp_objects.size());
 }
 #endif
 
@@ -547,7 +550,10 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
     this->node->get_parameter("easy_perception_deployment.epd_service").as_string());
   //this->node->get_parameter("epd_service").as_string());
 
-  RCLCPP_INFO(LOGGER, "Listening to: " + topic_name + "...");
+  RCLCPP_INFO(
+    LOGGER,
+    "Listening to: %s...",
+    topic_name.c_str());
   this->perception_sub = std::make_shared<
     message_filters::Subscriber<T>>(
     node, topic_name);
