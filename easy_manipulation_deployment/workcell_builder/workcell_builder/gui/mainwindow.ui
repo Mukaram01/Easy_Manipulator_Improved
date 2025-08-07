@@ -49,31 +49,11 @@
            </size>
           </property>
           <property name="text">
-           <string>ROS Version</string>
+           <string>ROS Distro</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
           </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="ros_version">
-          <property name="maximumSize">
-           <size>
-            <width>50</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <item>
-           <property name="text">
-            <string>1</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>2</string>
-           </property>
-          </item>
          </widget>
         </item>
         <item>

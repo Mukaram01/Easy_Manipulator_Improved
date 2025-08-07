@@ -15,8 +15,8 @@
 
 This package was tested with the [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment) ROS2 package, but any other perception system that provides the same ROS2 message in the right topic can work with this package as well. 
 
-It is recommended to run this package on **ROS 2 Humble** (Ubuntu 22.04).
-For installation guidance, see the [ROS 2 Humble documentation](https://docs.ros.org/en/humble/Installation.html).
+It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS 2 Humble** (Ubuntu 22.04).
+For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
 
 ---
 ## Full Documentation/Wiki

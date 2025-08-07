@@ -36,21 +36,17 @@ MainWindow::MainWindow(QWidget * parent)
   success = false;
   ui->error_label->setWordWrap(true);
   ui->error_label->setText("<font color='red'>Workcell not available</font>");
-  // Default to ROS1 / Melodic until a supported ROS distro is detected
-  on_ros_version_currentIndexChanged(0);
+  for (const auto & supported_distro : ros_dist) {
+    ui->ros_distro->addItem(QString::fromStdString(supported_distro));
+  }
 
   const char * distro = std::getenv("ROS_DISTRO");
   if (distro != nullptr) {
     std::string current_distro(distro);
-    for (size_t i = 0; i < ros_dist.size(); ++i) {
-      for (const auto & supported_distro : ros_dist[i]) {
-        if (supported_distro == current_distro) {
-          ui->ros_version->setCurrentIndex(static_cast<int>(i));
-          on_ros_version_currentIndexChanged(static_cast<int>(i));
-          ui->ros_distro->setCurrentText(QString::fromStdString(supported_distro));
-          i = ros_dist.size();  // break outer loop
-          break;
-        }
+    for (const auto & supported_distro : ros_dist) {
+      if (supported_distro == current_distro) {
+        ui->ros_distro->setCurrentText(QString::fromStdString(supported_distro));
+        break;
       }
     }
   }
@@ -131,7 +127,7 @@ void MainWindow::on_load_workcell_clicked()
 void MainWindow::on_next_clicked()
 {
   boost::filesystem::path before_scene_select(boost::filesystem::current_path());
-  workcell.ros_ver = ui->ros_version->currentIndex() + 1;
+  workcell.ros_ver = 2;
   workcell.ros_distro = ui->ros_distro->currentText().toStdString();
   SceneSelect scene_window;
   scene_window.load_workcell(workcell);
@@ -147,16 +143,6 @@ void MainWindow::on_change_workcell_clicked()
   ui->load_workcell->setDisabled(false);
   ui->change_workcell->setDisabled(true);
   ui->filepath->clear();
-}
-
-void MainWindow::on_ros_version_currentIndexChanged(int index)
-{
-  bool oldState = ui->ros_distro->blockSignals(true);
-  ui->ros_distro->clear();
-  for (int i = 0; i < static_cast<int>(ros_dist[index].size()); i++) {
-    ui->ros_distro->addItem(QString::fromStdString(ros_dist[index][i]));
-  }
-  ui->ros_distro->blockSignals(oldState);
 }
 bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::string scene_name)
 {
