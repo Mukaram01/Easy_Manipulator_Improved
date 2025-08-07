@@ -18,11 +18,39 @@
 #define FILE_FUNCTIONS_H_
 
 #include <boost/filesystem.hpp>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <string>
+#include <cstdio>
 
+#include "rclcpp/rclcpp.hpp"
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "attributes/workcell.h"
+
+namespace fs = boost::filesystem;
+
+inline void safe_chdir(const fs::path & p)
+{
+  try {
+    if (fs::exists(p)) {
+      fs::current_path(p);
+    } else {
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Path %s does not exist", p.string().c_str());
+    }
+  } catch (fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+}
+
+inline void ensure_parent(const fs::path & p)
+{
+  try {
+    fs::create_directories(p.parent_path());
+  } catch (fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+}
 
 void find_replace(
   std::string example_text, std::string target_text, std::string current_text,
@@ -55,99 +83,145 @@ void find_replace(
 // boost::filesystem::path package_filepath,
 // std::string package_name,int ros_ver)
 void generate_cmakelists(
-  boost::filesystem::path workcell_filepath, std::string package_name,
+  fs::path workcell_filepath, std::string package_name,
   int ros_ver)
 {
-  boost::filesystem::path package_filepath(workcell_filepath.string() + "/scenes/" + package_name);
-  std::string example_path = workcell_filepath.string() +
-    "/easy_manipulation_deployment/workcell_builder/examples";
-  boost::filesystem::path example_file(
-    example_path + "/ros" + std::to_string(ros_ver) + "/CMakeLists_example.txt");
-  boost::filesystem::path target_location(package_filepath.string() + "/CMakeLists_example.txt");
+  fs::path package_filepath(workcell_filepath / "scenes" / package_name);
+  fs::path example_file;
   try {
-    // std::cout << example_file.string() <<std::endl;
-    // std::cout << target_location.string() <<std::endl;
-    boost::filesystem::copy_file(
-      example_file, target_location,
-      boost::filesystem::copy_option::overwrite_if_exists);
-  } catch(boost::filesystem::filesystem_error const & e) {
-    std::cerr << e.what() << '\n';
+    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
+    example_file = fs::path(share) / "templates" /
+      ("ros" + std::to_string(ros_ver)) / "CMakeLists_example.txt";
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
-  boost::filesystem::current_path(package_filepath);
-  find_replace("CMakeLists_example.txt", "CMakeLists.txt", "workcellexample", package_name);
+  fs::path target_location(package_filepath / "CMakeLists_example.txt");
+  ensure_parent(target_location);
+  bool copied = false;
+  try {
+    if (!example_file.empty() && fs::exists(example_file)) {
+      fs::copy_file(example_file, target_location, fs::copy_option::overwrite_if_exists);
+      copied = true;
+    } else {
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Template %s missing", example_file.string().c_str());
+    }
+  } catch(fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  safe_chdir(package_filepath);
+  if (copied) {
+    find_replace("CMakeLists_example.txt", "CMakeLists.txt",
+      "workcellexample", package_name);
+  } else {
+    std::ofstream out((package_filepath / "CMakeLists.txt").string());
+    if (out.is_open()) {
+      out << "cmake_minimum_required(VERSION 3.5)\n";
+      out << "project(" << package_name << ")\n";
+      out << "find_package(ament_cmake REQUIRED)\n";
+      out << "install(DIRECTORY launch urdf DESTINATION share/${PROJECT_NAME})\n";
+      out << "ament_package()\n";
+    }
+  }
 }
 
-void delete_folder(boost::filesystem::path scene_filepath, std::string scene_name)
+void delete_folder(fs::path scene_filepath, std::string scene_name)
 {
-  boost::filesystem::current_path(scene_filepath);
-  if (boost::filesystem::exists(scene_name)) {
-    boost::filesystem::remove_all(scene_name);
+  safe_chdir(scene_filepath);
+  try {
+    if (fs::exists(scene_name)) {
+      fs::remove_all(scene_name);
+    }
+  } catch(fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
 }
 
 void generate_package_xml(
-  boost::filesystem::path workcell_filepath, std::string package_name,
+  fs::path workcell_filepath, std::string package_name,
   int ros_ver)
 {
-  boost::filesystem::path package_filepath(workcell_filepath.string() + "/scenes/" + package_name);
-  std::string example_path = workcell_filepath.string() +
-    "/easy_manipulation_deployment/workcell_builder/examples";
-  boost::filesystem::path example_file(
-    example_path + "/ros" + std::to_string(ros_ver) + "/package_example.xml");
-  boost::filesystem::path target_location(package_filepath.string() + "/package_example.xml");
+  fs::path package_filepath(workcell_filepath / "scenes" / package_name);
+  fs::path example_file;
   try {
-    // std::cout << example_file.string() <<std::endl;
-    // std::cout << target_location.string() <<std::endl;
-    boost::filesystem::copy_file(
-      example_file, target_location,
-      boost::filesystem::copy_option::overwrite_if_exists);
-  } catch(boost::filesystem::filesystem_error const & e) {
-    std::cerr << e.what() << '\n';
+    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
+    example_file = fs::path(share) / "templates" /
+      ("ros" + std::to_string(ros_ver)) / "package_example.xml";
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
-  boost::filesystem::current_path(package_filepath);
-  find_replace("package_example.xml", "package.xml", "workcellexample", package_name);
-}
-bool copyDir(boost::filesystem::path const & source, boost::filesystem::path const & destination)
-{
-  namespace fs = boost::filesystem;
+  fs::path target_location(package_filepath / "package_example.xml");
+  ensure_parent(target_location);
+  bool copied = false;
   try {
-    // Check whether the function call is valid
+    if (!example_file.empty() && fs::exists(example_file)) {
+      fs::copy_file(example_file, target_location, fs::copy_option::overwrite_if_exists);
+      copied = true;
+    } else {
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Template %s missing", example_file.string().c_str());
+    }
+  } catch(fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  safe_chdir(package_filepath);
+  if (copied) {
+    find_replace("package_example.xml", "package.xml", "workcellexample", package_name);
+  } else {
+    std::ofstream out((package_filepath / "package.xml").string());
+    if (out.is_open()) {
+      const char * pkgxml =
+        "<?xml version=\"1.0\"?>\n<package format=\"3\">\n  <name>%s</name>\n"
+        "  <version>0.0.0</version>\n  <description>Auto-generated scene</description>\n"
+        "  <maintainer email=\"user@example.com\">user</maintainer>\n"
+        "  <license>Apache-2.0</license>\n</package>\n";
+      char buffer[1024];
+      std::snprintf(buffer, sizeof(buffer), pkgxml, package_name.c_str());
+      out << buffer;
+    }
+  }
+}
+bool copyDir(fs::path const & source, fs::path const & destination)
+{
+  try {
     if (!fs::exists(source) || !fs::is_directory(source)) {
-      std::cerr << "Source directory " << source.string() <<
-        " does not exist or is not a directory." << '\n';
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Source directory %s does not exist or is not a directory.",
+        source.string().c_str());
       return false;
     }
     if (fs::exists(destination)) {
-      std::cerr << "Destination directory " << destination.string() << " already exists." << '\n';
-      // return false;
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Destination directory %s already exists.", destination.string().c_str());
     }
-    // Create the destination directory
     if (!fs::create_directory(destination)) {
-      std::cerr << "Unable to create destination directory" << destination.string() << '\n';
-      // return false;
+      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+        "Unable to create destination directory %s", destination.string().c_str());
     }
   } catch(fs::filesystem_error const & e) {
-    std::cerr << e.what() << '\n';
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
     return false;
   }
-  // Iterate through the source directory
-  for (fs::directory_iterator file(source); file != fs::directory_iterator(); ++file) {
-    try {
+  try {
+    for (fs::directory_iterator file(source); file != fs::directory_iterator(); ++file) {
       fs::path current(file->path());
       if (fs::is_directory(current)) {
-        // Found directory: Recursion
         if (!copyDir(current, destination / current.filename())) {
           return false;
         }
       } else {
-        // Found file: Copy
-        fs::copy_file(
-          current,
-          destination / current.filename(), fs::copy_option::overwrite_if_exists);
+        fs::path dst = destination / current.filename();
+        ensure_parent(dst);
+        try {
+          fs::copy_file(current, dst, fs::copy_option::overwrite_if_exists);
+        } catch(fs::filesystem_error const & e) {
+          RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+        }
       }
-    } catch(fs::filesystem_error const & e) {
-      std::cerr << e.what() << '\n';
     }
+  } catch(fs::filesystem_error const & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+    return false;
   }
   return true;
 }

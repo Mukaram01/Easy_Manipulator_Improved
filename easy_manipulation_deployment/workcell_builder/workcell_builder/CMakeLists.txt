@@ -26,6 +26,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 set(BOOST_ROOT "/usr/include/boost")
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
@@ -102,6 +104,7 @@ add_executable(workcell_builder
     gui/loadobjects.h
     gui/loadobjects.ui)
 
+ament_target_dependencies(workcell_builder rclcpp ament_index_cpp)
 target_link_libraries(workcell_builder PRIVATE Qt5::Widgets ${Boost_LIBRARIES} yaml-cpp)
 target_include_directories(workcell_builder PUBLIC ${Boost_INCLUDE_DIRS})
 
@@ -119,5 +122,8 @@ install(TARGETS workcell_builder
   DESTINATION lib/${PROJECT_NAME}
   RUNTIME DESTINATION bin
 )
+
+install(DIRECTORY templates
+  DESTINATION share/${PROJECT_NAME})
 
 ament_package()
