@@ -16,6 +16,7 @@ import os
 import yaml
 import xacro
 import tempfile
+from pathlib import Path
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -25,19 +26,26 @@ robot_base_link = 'base_link_name'
 robot_moveit_pkg = 'moveit_config_name'
 
 def to_urdf(xacro_path, urdf_path=None):
-    """Convert the given xacro file to URDF file.
+    """Convert the given xacro file to a URDF file.
+
     * xacro_path -- the path to the xacro file
-    * urdf_path -- the path to the urdf file
+    * urdf_path -- the desired path to the URDF file
     """
+    xacro_path = str(xacro_path)
     # If no URDF path is given, generate a temporary filename with a proper
     # ``.urdf`` extension.  ``tempfile.mktemp`` is avoided as it is vulnerable
     # to race conditions.  ``mkstemp`` provides a securely created file which we
     # immediately close before re-opening it for writing via xacro.
     if urdf_path is None:
         fd, urdf_path = tempfile.mkstemp(
-            prefix=f"{os.path.basename(xacro_path)}_", suffix=".urdf"
+            prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
         )
         os.close(fd)
+    else:
+        # Ensure the output file has a ``.urdf`` extension and the directory
+        # exists before writing.
+        urdf_path = str(Path(urdf_path).with_suffix(".urdf"))
+        os.makedirs(os.path.dirname(urdf_path), exist_ok=True)
 
     # open and process file
     doc = xacro.process_file(xacro_path)
