@@ -15,6 +15,7 @@
 
 #include "emd/common/math_functions.hpp"
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 TEST(MathFunctionTest, NormalizeTest) {
   float result = MathFunctions::normalize(10.0, 0.0, 100.0);
@@ -81,6 +82,14 @@ TEST(MathFunctionTest, getPointInDirectionTestNegDir) {
   EXPECT_NEAR(-0.7, point_2(0), 0.0001);
   EXPECT_NEAR(0, point_2(1), 0.0001);
   EXPECT_NEAR(0, point_2(2), 0.0001);
+}
+
+TEST(MathFunctionTest, getPointInDirectionZeroVector) {
+  Eigen::Vector3f direction{0, 0, 0};
+  Eigen::Vector3f point_1{0, 0, 0};
+  EXPECT_THROW(
+      MathFunctions::get_point_in_direction(point_1, direction, 1.0),
+      std::invalid_argument);
 }
 
 TEST(MathFunctionTest, getRotatedVectorTestXRot) {
