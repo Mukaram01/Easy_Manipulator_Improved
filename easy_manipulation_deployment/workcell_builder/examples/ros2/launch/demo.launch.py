@@ -13,10 +13,9 @@
 ## limitations under the License.
 
 import os
-import yaml
-import xacro
 import tempfile
 from pathlib import Path
+import xacro
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -68,18 +67,6 @@ def load_file(package_name, file_path):
     except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
         return None
 
-def load_yaml(package_name, file_path):
-    package_path = get_package_share_directory(package_name)
-    absolute_file_path = os.path.join(package_path, file_path)
-    try:
-        with open(absolute_file_path, 'r') as file:
-            return yaml.safe_load(file)
-    except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
-        print(package_path)
-        print(absolute_file_path)
-        return None
-
-
 def generate_launch_description():
 
     # Component yaml files are grouped in separate namespaces
@@ -89,16 +76,24 @@ def generate_launch_description():
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic' : robot_description_semantic_config}
 
-    kinematics_yaml = load_yaml(robot_moveit_pkg , 'config/kinematics.yaml')
-    robot_description_kinematics = { 'robot_description_kinematics' : kinematics_yaml }
+    kinematics_yaml = xacro.load_yaml(
+        os.path.join(
+            get_package_share_directory(robot_moveit_pkg), "config", "kinematics.yaml"
+        )
+    )
+    robot_description_kinematics = {"robot_description_kinematics": kinematics_yaml}
 
     ompl_planning_pipeline_config = { 'ompl' : {
         'planning_plugin' : 'ompl_interface/OMPLPlanner',
         'request_adapters' : """default_planner_request_adapters/AddTimeOptimalParameterization default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision default_planner_request_adapters/FixStartStatePathConstraints""" ,
         'start_state_max_bounds_error' : 0.1 } }
 
-    ompl_planning_yaml = load_yaml(robot_moveit_pkg, 'config/ompl_planning.yaml')
-    ompl_planning_pipeline_config['ompl'].update(ompl_planning_yaml)
+    ompl_planning_yaml = xacro.load_yaml(
+        os.path.join(
+            get_package_share_directory(robot_moveit_pkg), "config", "ompl_planning.yaml"
+        )
+    )
+    ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
     # RViz
     rviz_config_file = get_package_share_directory(scene_pkg) + "/launch/demo.rviz"
