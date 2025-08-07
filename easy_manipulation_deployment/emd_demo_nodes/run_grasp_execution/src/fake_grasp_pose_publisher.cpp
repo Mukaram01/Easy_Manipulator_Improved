@@ -39,42 +39,36 @@ public:
     geometry_msgs::msg::PoseStamped grasp_pose, object_pose;
     grasp_pose.header.stamp = this->now();
 
-    declare_parameter("interface");
-    declare_parameter("frame_id");
-    declare_parameter("grasp_pose");
-    declare_parameter("object_pose");
-    declare_parameter("object_dimensions");
-    declare_parameter("delay");
-
-    std::string frame_id;
-    std::string ee_id;
+    std::string interface = "topic";
+    std::string frame_id = "base_link";
+    std::string ee_id = "robotiq_2f";
 
     std::vector<double> grasp_pose_vector{-0.1, 0.4, 0.07, M_PI, 0, 0};
     std::vector<double> object_pose_vector{-0.1, 0.4, 0.05, 0, 0, 0};
     std::vector<double> object_dimensions{0.02, 0.02, 0.1};
 
-    double delay;
+    double delay = 2.0;
 
-    get_parameter_or<std::string>("interface", interface, "topic");
-    get_parameter_or<std::string>("frame_id", frame_id, "base_link");
-    get_parameter_or<std::vector<double>>(
-      "grasp_pose", grasp_pose_vector, grasp_pose_vector);
+    declare_parameter("interface", interface);
+    declare_parameter("frame_id", frame_id);
+    declare_parameter("grasp_pose", grasp_pose_vector);
+    declare_parameter("object_pose", object_pose_vector);
+    declare_parameter("object_dimensions", object_dimensions);
+    declare_parameter("delay", delay);
+    declare_parameter("ee_id", ee_id);
 
-    get_parameter_or<std::vector<double>>(
-      "object_pose", object_pose_vector, object_pose_vector);
-
-    get_parameter_or<std::vector<double>>(
-      "object_dimensions", object_dimensions, object_dimensions);
-
-    get_parameter_or<std::string>("ee_id", ee_id, "robotiq_2f");
-
-    get_parameter_or<double>(
-      "delay", delay, 2.0);
+    get_parameter("interface", interface);
+    get_parameter("frame_id", frame_id);
+    get_parameter("grasp_pose", grasp_pose_vector);
+    get_parameter("object_pose", object_pose_vector);
+    get_parameter("object_dimensions", object_dimensions);
+    get_parameter("ee_id", ee_id);
+    get_parameter("delay", delay);
 
     if (!parse_pose_vector(grasp_pose_vector, grasp_pose.pose)) {
       RCLCPP_ERROR(
         this->get_logger(),
-        "Grasp pose should have 6 or 7 arguments, instead %u is found.",
+        "Grasp pose should have 6 or 7 arguments, instead %zu is found.",
         grasp_pose_vector.size());
       return;
     }
@@ -83,7 +77,7 @@ public:
     if (!parse_pose_vector(object_pose_vector, object_pose.pose)) {
       RCLCPP_ERROR(
         this->get_logger(),
-        "Object pose should have 6 or 7 arguments, instead %u is found.",
+        "Object pose should have 6 or 7 arguments, instead %zu is found.",
         object_pose_vector.size());
       return;
     }
@@ -91,7 +85,7 @@ public:
     if (object_dimensions.size() != 3) {
       RCLCPP_ERROR(
         this->get_logger(),
-        "Object dimension shoudl have 3 arguments, instead %u is found.",
+        "Object dimension should have 3 arguments, instead %zu is found.",
         object_dimensions.size());
       return;
     }
