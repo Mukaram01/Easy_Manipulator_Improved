@@ -7,7 +7,6 @@ Changelog for package realsense2_description
 * Merge remote-tracking branch 'origin/development' into development
 * Merge pull request `#1126 <https://github.com/intel-ros/realsense/issues/1126>`_ from mcamurri/add-d435i-xacro
   add D435i modules, urdf and launchfile
-* comply to ROS Noetic xacro rules (backcompatible with ROS Melodic)
 * Merge branch 'development' into add-d435i-xacro
 * Merge branch 'development' of https://github.com/IntelRealSense/realsense-ros into development
   realsense2_description/urdf/test_d435_multiple_cameras.urdf.xacro
@@ -20,9 +19,6 @@ Changelog for package realsense2_description
 2.2.14 (2020-06-18)
 -------------------
 * fix urdf issues (arg use_nominal_extrinsics).
-* Add noetic support: 
-  - urdf files.
-  - change state_publisher into robot_state_publisher
 * correct offset between camera_link and base_link
 * Contributors: Brice, Marco Camurri, doronhi
 

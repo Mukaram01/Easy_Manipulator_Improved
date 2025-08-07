@@ -125,20 +125,13 @@ void SceneSelect::generate_scene_files(Scene scene)
   copyDir(launch_path, target_path);
   boost::filesystem::current_path(target_path);
 
-  if (workcell.ros_ver == 1) {  // ROS1
-    find_replace("scene.launch", "scene_interim.launch", "scene_name", scene.name);
-    find_replace("scene_interim.launch", "scene.launch", "robot_name", scene.robot_vector[0].name);
-    find_replace("demo.launch", "demo_interim.launch", "scene_name", scene.name);
-    find_replace("demo_interim.launch", "demo.launch", "robot_name", scene.robot_vector[0].name);
-  } else if (workcell.ros_ver == 2) {  // ROS2
-    find_replace("demo.launch.py", "demo_interim.launch.py", "scene_name", scene.name);
-    find_replace(
-      "demo_interim.launch.py", "demo_interim2.launch.py", "base_link_name",
-      scene.robot_vector[0].base_link);
-    find_replace(
-      "demo_interim2.launch.py", "demo.launch.py", "moveit_config_name",
-      scene.robot_vector[0].name + "_moveit_config");
-  }
+  find_replace("demo.launch.py", "demo_interim.launch.py", "scene_name", scene.name);
+  find_replace(
+    "demo_interim.launch.py", "demo_interim2.launch.py", "base_link_name",
+    scene.robot_vector[0].base_link);
+  find_replace(
+    "demo_interim2.launch.py", "demo.launch.py", "moveit_config_name",
+    scene.robot_vector[0].name + "_moveit_config");
 }
 void SceneSelect::refresh_scenes(int latest_scene)
 {

@@ -31,8 +31,7 @@ Changelog for package ur_description
 ------------------
 * Merge pull request `#329 <https://github.com//ros-industrial/universal_robot/issues/329>`_ from tecnalia-medical-robotics/joint_limits
   Homogenize xacro macro arguments.
-* Merge pull request `#332 <https://github.com//ros-industrial/universal_robot/issues/332>`_ from davetcoleman/kinetic_hw_iface_warning
-  Remove UR3 ROS Control Hardware Interface warning
+* Remove UR3 ROS Control Hardware Interface warning
 * Remove UR3 ROS Control Hardware Interface warning
 * Extend changes to '_robot.urdf.xacro' variants as well.
 * Homogenize xacro macro arguments.

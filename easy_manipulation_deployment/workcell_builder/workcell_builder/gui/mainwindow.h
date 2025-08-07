@@ -36,8 +36,8 @@ public:
   boost::filesystem::path workcell_path;
   Workcell workcell;
   bool success;
-  // Supported ROS distributions for ROS 1 and ROS 2 respectively. Jazzy and Humble listed first for ROS 2.
-  std::vector<std::vector<std::string>> ros_dist{{"melodic"}, {"jazzy", "humble", "foxy", "eloquent"}};
+  // Supported ROS 2 distributions.
+  std::vector<std::string> ros_dist{"jazzy", "humble"};
   bool is_good_scene(boost::filesystem::path original_path, std::string scene_name);
 
   explicit MainWindow(QWidget * parent = nullptr);
@@ -49,8 +49,6 @@ private slots:
   void on_next_clicked();
 
   void on_change_workcell_clicked();
-
-  void on_ros_version_currentIndexChanged(int index);
 
 private:
   Ui::MainWindow * ui;
