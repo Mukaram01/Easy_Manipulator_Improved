@@ -55,11 +55,17 @@ def run_xacro_in_file(filename: str) -> None:
         raise
 
 
-# Collect all xacro files once for parametrisation below
-XACRO_FILES = [
+# Collect all xacro files once for parametrisation below.  ``glob.glob``
+# does not guarantee ordering which can lead to non-deterministic test
+# parametrisation.  Sorting ensures stable test order across platforms and
+# Python versions.  Additionally, fail early if no files are discovered to
+# avoid a false-positive test run where zero tests execute silently.
+XACRO_FILES = sorted(
     os.path.basename(f)
     for f in glob.glob(os.path.join(PATH, "tests", "*.xacro"))
-]
+)
+if not XACRO_FILES:  # pragma: no cover - defensive programming
+    raise AssertionError("No xacro files found for validation")
 
 
 @pytest.mark.parametrize("file", XACRO_FILES)
