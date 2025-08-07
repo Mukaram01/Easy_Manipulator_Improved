@@ -49,7 +49,7 @@ ament_target_dependencies(grasp_execution_interface
   pluginlib
 )
 target_link_libraries(grasp_execution_interface
-  yaml-cpp::yaml-cpp
+  yaml-cpp
 )
 target_include_directories(grasp_execution_interface
   SYSTEM PRIVATE ${YAML_CPP_INCLUDE_DIRS}
