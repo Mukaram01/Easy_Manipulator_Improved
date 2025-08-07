@@ -27,7 +27,6 @@ find_package(trajectory_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 include_directories(
-  PUBLIC
   include
 )
 
@@ -50,13 +49,13 @@ ament_target_dependencies(grasp_execution_interface
   pluginlib
 )
 target_link_libraries(grasp_execution_interface
-  PUBLIC yaml-cpp::yaml-cpp
+  yaml-cpp::yaml-cpp
 )
 target_include_directories(grasp_execution_interface
-  PUBLIC ${YAML_CPP_INCLUDE_DIRS}
+  SYSTEM ${YAML_CPP_INCLUDE_DIRS}
 )
 target_compile_features(grasp_execution_interface
-  PUBLIC cxx_std_17
+  cxx_std_17
 )
 
 add_library(moveit_cpp_grasp_execution_interface
@@ -74,7 +73,7 @@ ament_target_dependencies(moveit_cpp_grasp_execution_interface
   tf2_eigen
 )
 target_compile_features(moveit_cpp_grasp_execution_interface
-  PUBLIC cxx_std_17
+  cxx_std_17
 )
 
 # Default Executor, Gripper plugin
@@ -88,7 +87,7 @@ ament_target_dependencies(grasp_execution_default_plugins
   rclcpp
 )
 target_compile_features(grasp_execution_default_plugins
-  PUBLIC cxx_std_17
+  cxx_std_17
 )
 
 install(
