@@ -18,6 +18,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 static const rclcpp::Logger &LOGGER = rclcpp::get_logger("EMD::MathFunctions");
 
@@ -76,8 +77,12 @@ Eigen::Vector3f
 MathFunctions::get_point_in_direction(const Eigen::Vector3f &base_point,
                                       const Eigen::Vector3f &vector_direction,
                                       const float &distance) {
-  Eigen::Vector3f direction_normalized =
-      vector_direction / vector_direction.norm();
+  float norm = vector_direction.norm();
+  if (norm == 0.0f) {
+    RCLCPP_ERROR(LOGGER, "Error: Zero-length direction vector supplied.");
+    throw std::invalid_argument("Zero-length direction vector supplied");
+  }
+  Eigen::Vector3f direction_normalized = vector_direction / norm;
   return base_point + distance * direction_normalized;
 }
 
