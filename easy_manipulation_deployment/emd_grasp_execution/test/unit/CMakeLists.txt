@@ -8,8 +8,8 @@ target_link_libraries(test_scheduler
   yaml-cpp::yaml-cpp
 )
 target_include_directories(test_scheduler
-  PUBLIC ${YAML_CPP_INCLUDE_DIRS}
+  ${YAML_CPP_INCLUDE_DIRS}
 )
 target_compile_features(test_scheduler
-  PUBLIC cxx_std_17
+  cxx_std_17
 )
