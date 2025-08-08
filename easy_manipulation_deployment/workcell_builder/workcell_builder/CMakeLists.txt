@@ -105,7 +105,7 @@ add_executable(workcell_builder
     gui/loadobjects.ui)
 
 ament_target_dependencies(workcell_builder rclcpp ament_index_cpp)
-target_link_libraries(workcell_builder PRIVATE Qt5::Widgets ${Boost_LIBRARIES} yaml-cpp)
+target_link_libraries(workcell_builder Qt5::Widgets ${Boost_LIBRARIES} yaml-cpp)
 target_include_directories(workcell_builder PUBLIC ${Boost_INCLUDE_DIRS})
 
 
