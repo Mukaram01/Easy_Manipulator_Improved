@@ -5,6 +5,7 @@ from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from ament_index_python.packages import get_package_share_directory
 import xacro
+import yaml
 
 
 def load_file(package_name, file_path):
@@ -21,9 +22,9 @@ def load_file(package_name, file_path):
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
-
     try:
-        return xacro.load_yaml(absolute_file_path)
+        with open(absolute_file_path, 'r') as file:
+            return yaml.safe_load(file)
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
