@@ -18,7 +18,7 @@ find_package(ur5_moveit_config REQUIRED)
 find_package(robotiq_3f_gripper_description REQUIRED)
 find_package(robotiq_3f_moveit_config REQUIRED)
 find_package(realsense2_description REQUIRED)
-find_package(table_description REQUIRED)
+find_package(workbench_description REQUIRED)
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
@@ -32,5 +32,5 @@ ament_export_dependencies(
   robotiq_3f_gripper_description
   robotiq_3f_moveit_config
   realsense2_description
-  table_description)
+  workbench_description)
 ament_package()

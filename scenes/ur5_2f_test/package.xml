@@ -14,7 +14,7 @@
   <exec_depend>robotiq_85_description</exec_depend>
   <exec_depend>robotiq_85_moveit_config</exec_depend>
   <exec_depend>realsense2_description</exec_depend>
-  <exec_depend>table_description</exec_depend>
+  <exec_depend>workbench_description</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
