@@ -28,7 +28,7 @@
 	<origin xyz="0 0 0.0" rpy="1.5707 0 0"/>
  </xacro:robotiq-3f-gripper_articulated>
 
- <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
+ <xacro:include filename="$(find table_description)/urdf/table.urdf.xacro"/>
  <xacro:table prefix="" parent="world">
 	<origin xyz="0 0 0" rpy="0 0 0"/>
  </xacro:table>
