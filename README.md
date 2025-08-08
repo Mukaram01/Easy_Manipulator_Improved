@@ -58,6 +58,25 @@ A Moveit2 Based Grasp Execution package that incorporates real time dynamic safe
 A GUI based solution for ease of generation of robotic workcell simulations
 
 ---
+## Running demo scenes
+
+After building the workspace with `colcon build`, source the generated setup file and
+launch one of the included demo scenes.  For example, to launch the UR5 with the
+three finger gripper:
+
+```
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch ur5_3f_test demo.launch.py
+```
+
+The grasp execution example can be started in a similar manner:
+
+```
+ros2 launch run_grasp_execution grasp_execution.launch.py
+```
+
+---
 ## Acknowledgements
 
 We would like to acknowledge the Singapore government for their vision and support to start this ambitious research and development project, "Accelerating Open Source Technologies for Cross Domain Adoption through the Robot Operating System". The project is supported by Singapore National Robotics Programme (NRP).

@@ -13,8 +13,9 @@
 ## limitations under the License.
 
 import os
-import xacro
 import tempfile
+import xacro
+import yaml
 from pathlib import Path
 from launch import LaunchDescription
 from launch_ros.actions import Node
@@ -71,7 +72,8 @@ def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
     try:
-        return xacro.load_yaml(absolute_file_path)
+        with open(absolute_file_path, 'r') as file:
+            return yaml.safe_load(file)
     except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
         print(package_path)
         print(absolute_file_path)

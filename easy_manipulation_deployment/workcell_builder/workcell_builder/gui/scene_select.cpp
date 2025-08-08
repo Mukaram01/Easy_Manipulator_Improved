@@ -15,6 +15,7 @@
 
 #include <QKeyEvent>
 #include <boost/filesystem.hpp>
+#include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include <stdio.h>
@@ -42,18 +43,17 @@
 namespace fs = boost::filesystem;
 
 namespace {
-void safe_chdir(const fs::path & p)
+bool change_directory(const fs::path & p)
 {
-  try {
-    if (fs::exists(p)) {
-      fs::current_path(p);
-    } else {
-      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
-        "Path %s does not exist", p.string().c_str());
-    }
-  } catch (fs::filesystem_error const & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  boost::system::error_code ec;
+  fs::current_path(p, ec);
+  if (ec) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("workcell_builder"),
+      "Failed to change directory to %s: %s", p.string().c_str(), ec.message().c_str());
+    return false;
   }
+  return true;
 }
 }  // namespace
 
@@ -63,7 +63,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui(new Ui::SceneSelect)
 {
   scenes_path = fs::current_path();
-  safe_chdir(fs::current_path().branch_path());
+  change_directory(fs::current_path().branch_path());
   workcell_path = fs::current_path();
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
@@ -71,10 +71,10 @@ SceneSelect::SceneSelect(QWidget * parent)
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
-  safe_chdir(workcell_path);
-  safe_chdir(workcell_path / "assets");
+  change_directory(workcell_path);
+  change_directory(workcell_path / "assets");
   assets_path = fs::current_path();
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
   ui->setupUi(this);
 }
 
@@ -89,7 +89,7 @@ void SceneSelect::load_workcell(Workcell workcell_input)
 }
 void SceneSelect::on_add_scene_clicked()
 {
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
 
   AddScene scene_window;
   scene_window.setWindowTitle("Create New Scene");
@@ -97,36 +97,36 @@ void SceneSelect::on_add_scene_clicked()
   scene_window.workcell_path = workcell_path;
   scene_window.exec();
   if (scene_window.success) {
-    safe_chdir(scenes_path);
+    change_directory(scenes_path);
     workcell.scene_vector.push_back(scene_window.scene);
     generate_scene_package(scenes_path, scene_window.scene.name, workcell.ros_ver);
     refresh_scenes(workcell.scene_vector.size() - 1);
   }
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
 }
 
 void SceneSelect::generate_scene_package(
   fs::path scene_filepath,
   std::string scene_name, int ros_ver)
 {
-  safe_chdir(scene_filepath);
+  change_directory(scene_filepath);
   if (!boost::filesystem::exists(scene_name)) {
     boost::filesystem::create_directory(scene_name);
   }
-  safe_chdir(scene_name);
+  change_directory(scene_name);
   if (!boost::filesystem::exists("urdf")) {
     boost::filesystem::create_directory("urdf");
   }
   fs::path workcell_path(scene_filepath.branch_path());
   generate_cmakelists(workcell_path, scene_name, ros_ver);
   generate_package_xml(workcell_path, scene_name, ros_ver);
-  safe_chdir(scene_filepath);
+  change_directory(scene_filepath);
 }
 
 void SceneSelect::generate_scene_files(Scene scene)
 {
   // generate environment.urdf.xacro
-  safe_chdir(workcell_path / "scenes" / scene.name / "urdf");
+  change_directory(workcell_path / "scenes" / scene.name / "urdf");
   generate_scene_xacro(scene);
   if (scene.robot_loaded && scene.ee_loaded) {
     generate_armhand_xacro(scene.robot_vector[0], scene.ee_vector[0], scene.name);
@@ -140,7 +140,7 @@ void SceneSelect::generate_scene_files(Scene scene)
   fs::path launch_path = templates_path / ("ros" + std::to_string(workcell.ros_ver)) / "launch";
   fs::path target_path = workcell_path / "scenes" / scene.name / "launch";
   copyDir(launch_path, target_path);
-  safe_chdir(target_path);
+  change_directory(target_path);
 
   find_replace("demo.launch.py", "demo_interim.launch.py", "scene_name", scene.name);
   find_replace(
@@ -205,7 +205,7 @@ void SceneSelect::on_delete_scene_clicked()
 void SceneSelect::on_edit_scene_clicked()
 {
   ui->error_workcell->clear();
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
@@ -222,11 +222,11 @@ void SceneSelect::on_edit_scene_clicked()
     scene_window.setModal(true);
     scene_window.exec();
     if (scene_window.success) {
-      safe_chdir(scenes_path);
+      change_directory(scenes_path);
       if (CheckSceneEqual(scene_window.scene, curr_scene)) {
         refresh_scenes(ui->scene_list->currentIndex());
       } else {  // Scene was edited
-        safe_chdir(scenes_path);
+        change_directory(scenes_path);
         boost::filesystem::path scene_yaml_path(
           scenes_path.string() + "/" + scene_window.scene.name);
         if (boost::filesystem::exists(scene_window.scene.name)) {     // Scene name nvr change
@@ -258,12 +258,12 @@ void SceneSelect::on_edit_scene_clicked()
   } else {
     ui->error_workcell->append("<font color='red'> No scene to edit! </font>");
   }
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
 }
 void SceneSelect::on_generate_yaml_clicked()
 {
   ui->error_workcell->clear();
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     boost::filesystem::path scene_yaml_path(
       scenes_path.string() + "/" + workcell.scene_vector[ui->scene_list->currentIndex()].name);
@@ -312,8 +312,8 @@ void SceneSelect::on_generate_yaml_clicked()
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
 {
-  safe_chdir(scenes_path);  // in scenes folder
-  safe_chdir((ui->scene_list->currentText()).toStdString());
+  change_directory(scenes_path);  // in scenes folder
+  change_directory((ui->scene_list->currentText()).toStdString());
   if (!boost::filesystem::exists("environment.yaml")) {
     return false;
   } else {
@@ -352,13 +352,13 @@ bool SceneSelect::check_scene()
       " but without environment yaml you cannot edit this scene after exit. </font>");
   }
   ui->exit->setDisabled(false);
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
   return true;
 }
 bool SceneSelect::check_files()
 {
-  safe_chdir(scenes_path);  // in scenes folder
-  safe_chdir((ui->scene_list->currentText()).toStdString());
+  change_directory(scenes_path);  // in scenes folder
+  change_directory((ui->scene_list->currentText()).toStdString());
   if (!boost::filesystem::exists("launch") || !boost::filesystem::exists("urdf") ||
     !boost::filesystem::exists("CMakeLists.txt") || !boost::filesystem::exists("package.xml"))
   {
@@ -381,10 +381,10 @@ bool SceneSelect::check_files()
       ui->error_workcell->append(
         "<font color='red'>[Scene Status] ERROR: Package.xml missing </font>");
     }
-    safe_chdir(scenes_path);
+    change_directory(scenes_path);
     return false;
   } else {
-    safe_chdir("launch");
+    change_directory("launch");
     if (!boost::filesystem::exists("demo.rviz") || !boost::filesystem::exists("demo.launch.py")) {
       ui->error_workcell->append(
         "<font color='red'>[Scene Status] ERROR: Files not generated properly </font>");
@@ -396,12 +396,12 @@ bool SceneSelect::check_files()
         ui->error_workcell->append(
           "<font color='red'>[Scene Status] ERROR: demo.launch.py missing </font>");
       }
-      safe_chdir(scenes_path);
+      change_directory(scenes_path);
       return false;
     }
 
-    safe_chdir(fs::current_path().branch_path());
-    safe_chdir("urdf");
+    change_directory(fs::current_path().branch_path());
+    change_directory("urdf");
     if (!boost::filesystem::exists("arm_hand.srdf.xacro") ||
       !boost::filesystem::exists("scene.urdf.xacro"))
     {
@@ -415,7 +415,7 @@ bool SceneSelect::check_files()
         ui->error_workcell->append(
           "<font color='red'>[Scene Status] ERROR: scene.urdf.xacro missing </font>");
       }
-      safe_chdir(scenes_path);
+      change_directory(scenes_path);
       return false;
     }
   }
@@ -429,7 +429,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
 void SceneSelect::on_generate_files_clicked()
 {
   ui->error_workcell->clear();
-  safe_chdir(scenes_path);   // Scene folder
+  change_directory(scenes_path);   // Scene folder
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
@@ -443,10 +443,10 @@ void SceneSelect::on_generate_files_clicked()
       // Generate the folders and CMakeLists + Package xmls
       generate_object_package(workcell_path, object, workcell.ros_ver);
       // Generate urdf xacro for object
-      safe_chdir(workcell_path / "assets" / "environment" /
+      change_directory(workcell_path / "assets" / "environment" /
         (object.name + std::string("_description")) / "urdf");
       make_object_xacro(object);
-      safe_chdir(scenes_path);
+      change_directory(scenes_path);
     }
     generate_scene_files(curr_scene);
   } else {
@@ -456,9 +456,9 @@ void SceneSelect::on_generate_files_clicked()
 }
 bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 {
-  safe_chdir(scenes_path);  // Go back to scene
+  change_directory(scenes_path);  // Go back to scene
   try {
-    safe_chdir(input_scene->name);
+    change_directory(input_scene->name);
   } catch (boost::filesystem::filesystem_error const & e) {
     std::cerr << e.what() << '\n';
     return false;
@@ -627,7 +627,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   }
 
   input_scene->loaded = true;
-  safe_chdir(scenes_path);
+  change_directory(scenes_path);
   return true;
 }
 void SceneSelect::on_back_clicked()

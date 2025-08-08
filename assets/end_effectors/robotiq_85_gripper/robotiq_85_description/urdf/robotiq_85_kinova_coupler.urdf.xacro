@@ -5,11 +5,15 @@
     
     <xacro:macro name="robotiq_85_kinova_coupler" params="prefix parent *origin">
 
+        <!-- The original model referenced a joint that is not available in some robot
+             descriptions.  The fixed joint is commented out to avoid runtime warnings. -->
+        <!--
         <joint name="${prefix}kinova_robotiq_coupler_joint" type="fixed">
             <parent link="${parent}"/>
             <child link="${prefix}robotiq_coupler_link"/>
             <xacro:insert_block name="origin"/>
         </joint>
+        -->
         
         <link name="${prefix}robotiq_coupler_link">
             <visual>

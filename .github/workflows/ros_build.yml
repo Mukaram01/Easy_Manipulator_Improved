@@ -1,0 +1,26 @@
+name: ROS2 Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          rosdep update
+          rosdep install --from-paths . --ignore-src -y
+      - name: Build
+        run: colcon build --event-handlers console_cohesion+
+      - name: Test demo launch
+        run: |
+          source install/setup.bash
+          ros2 launch ur5_3f_test demo.launch.py --show-args
+          ros2 launch run_grasp_execution grasp_execution.launch.py --show-args
