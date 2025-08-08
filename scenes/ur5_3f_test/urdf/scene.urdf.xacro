@@ -28,14 +28,16 @@
 	<origin xyz="0 0 0.0" rpy="1.5707 0 0"/>
  </xacro:robotiq-3f-gripper_articulated>
 
- <xacro:include filename="$(find table_description)/urdf/table.urdf.xacro"/>
- <xacro:table prefix="" parent="world">
-	<origin xyz="0 0 0" rpy="0 0 0"/>
- </xacro:table>
+ <xacro:include filename="$(find-pkg-share workbench_description)/urdf/workbench.urdf.xacro"/>
+ <joint name="workbench_base_joint" type="fixed">
+        <parent link="world" />
+        <child link="workbench_link" />
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+ </joint>
  
  <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro"/>
 <xacro:arg name="use_nominal_extrinsics" default="true" />
-<xacro:sensor_d415 parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+<xacro:sensor_d415 parent="workbench_link" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
     <origin xyz="-0.58 0.225 0.65" rpy="3.14159 1.57079506 0"/>
 </xacro:sensor_d415>
 

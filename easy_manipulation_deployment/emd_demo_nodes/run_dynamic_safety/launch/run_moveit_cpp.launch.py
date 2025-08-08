@@ -1,5 +1,4 @@
 import os
-import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, DeclareLaunchArgument
@@ -24,8 +23,7 @@ def load_yaml(package_name, file_path):
     absolute_file_path = os.path.join(package_path, file_path)
 
     try:
-        with open(absolute_file_path, "r") as file:
-            return yaml.safe_load(file)
+        return xacro.load_yaml(absolute_file_path)
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
