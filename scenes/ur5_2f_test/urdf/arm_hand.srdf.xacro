@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_test">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_2f_test">
 
   <xacro:include filename="$(find ur5_moveit_config)/config/ur5.srdf.xacro" />
 

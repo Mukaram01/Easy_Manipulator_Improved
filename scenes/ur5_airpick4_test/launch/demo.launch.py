@@ -93,7 +93,8 @@ def generate_launch_description():
                      output='log',
                      arguments=['-d', rviz_config_file],
                      parameters=[robot_description,
-                                 robot_description_semantic])
+                                 robot_description_semantic,
+                                 robot_description_kinematics])
     # Publish base link TF
     static_tf = Node(package='tf2_ros',
                      executable='static_transform_publisher',
