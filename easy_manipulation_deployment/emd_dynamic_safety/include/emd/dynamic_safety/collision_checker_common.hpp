@@ -46,6 +46,9 @@ struct CollisionCheckerOption
   /// Enable realtime configuration (not fully implemented).
   bool realtime;
 
+  /// Additional padding distance applied during collision checking.
+  double padding{0.0};
+
   /// Steps (in the unit of time) between states taken from the trajectory (discrete only).
   double step;
   /// Thread count used for collision checking (discrete only).

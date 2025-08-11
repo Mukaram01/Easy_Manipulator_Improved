@@ -108,12 +108,15 @@ public:
    *         # distance: false
    *         # continuous: false
    *         step: 0.01
+   *         # padding: 0.0
 
    *       visualizer:
    *         publish_frequency: 10
    *         step: 0.1
    *         topic:  ur3e_dynamic_safety_markers
    *         tcp_link: ur3e_gripper_link
+   *         # publish_scene: false
+   *         # scene_topic: /planning_scene
 
    *       replanner:
    *         framework: moveit

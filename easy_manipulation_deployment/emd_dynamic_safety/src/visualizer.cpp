@@ -78,6 +78,10 @@ void Visualizer::configure(
   start_ = false;
   pub_ = node_->template create_publisher<visualization_msgs::msg::Marker>(
     option.topic, 2);
+  if (option.publish_scene && !option.scene_topic.empty()) {
+    scene_pub_ = node_->template create_publisher<moveit_msgs::msg::PlanningScene>(
+      option.scene_topic, 2);
+  }
   rate_ = option.publish_frequency;
   step_ = option.step;
   tcp_link_ = option.tcp_link;
@@ -190,6 +194,7 @@ void Visualizer::stop()
 void Visualizer::reset()
 {
   pub_.reset();
+  scene_pub_.reset();
 }
 
 void Visualizer::_timer_cb()
@@ -235,6 +240,11 @@ void Visualizer::_timer_cb()
   // Check if timer_ has been reset before publishing the viz markers
   if (pub_) {
     pub_->publish(*marker_msg_);
+  }
+  if (scene_pub_) {
+    moveit_msgs::msg::PlanningScene scene_msg;
+    scene_->getPlanningSceneMsg(scene_msg);
+    scene_pub_->publish(scene_msg);
   }
 }
 

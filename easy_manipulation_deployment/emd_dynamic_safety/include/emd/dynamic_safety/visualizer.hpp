@@ -21,6 +21,7 @@
 #include "emd/dynamic_safety/safety_zone.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "moveit/planning_scene/planning_scene.h"
+#include "moveit_msgs/msg/planning_scene.hpp"
 
 namespace dynamic_safety
 {
@@ -42,6 +43,12 @@ public:
     std::string topic;
 
     std::string tcp_link;
+
+    /// Whether to publish the planning scene for external synchronization.
+    bool publish_scene{false};
+
+    /// Topic used when publishing the planning scene.
+    std::string scene_topic;
   };
 
   /// Constructor.
@@ -125,6 +132,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_;
+  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr scene_pub_;
 
   visualization_msgs::msg::Marker::SharedPtr marker_msg_;
 
