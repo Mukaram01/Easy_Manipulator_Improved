@@ -15,7 +15,6 @@
 import os
 import tempfile
 import xacro
-import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -56,13 +55,7 @@ def load_file(package_name, file_path):
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
-    try:
-        with open(absolute_file_path, 'r') as file:
-            return yaml.safe_load(file)
-    except EnvironmentError:
-        print(package_path)
-        print(absolute_file_path)
-        return None
+    return xacro.load_yaml(absolute_file_path)
 
 
 def generate_launch_description():

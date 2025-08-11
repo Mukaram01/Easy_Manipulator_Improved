@@ -22,7 +22,6 @@ from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
 
 import xacro
-import yaml
 
 scene_pkg = 'ur5_2f_test'
 robot_base_link = 'base_link'
@@ -60,11 +59,7 @@ def load_file(package_name, file_path, mappings=None):
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
     absolute_file_path = os.path.join(package_path, file_path)
-    try:
-        with open(absolute_file_path, 'r') as file:
-            return yaml.safe_load(file)
-    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
-        return None
+    return xacro.load_yaml(absolute_file_path)
 
 
 def generate_launch_description():

@@ -19,6 +19,22 @@ It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS
 For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
 
 ---
+## Build on Humble
+
+```
+sudo apt update
+sudo apt install python3-vcstool python3-colcon-common-extensions
+rosdep update
+mkdir -p ~/workcell_ws/src && cd ~/workcell_ws
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved src/emd
+vcs import src < src/emd/tesseract.repos
+rosdep install --from-paths src --ignore-src -r -y
+colcon build
+source install/setup.bash
+ros2 launch run_grasp_execution grasp_execution.launch.py
+```
+
+---
 ## Full Documentation/Wiki
 
 [Check out the Full Documentation here](https://easy-manipulation-deployment-docs.readthedocs.io/)

@@ -8,12 +8,28 @@
   <license>Apache License 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <build_depend>yaml-cpp</build_depend>
-  <build_depend>boost</build_depend>
-  <build_depend>pkg-config</build_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>moveit_visual_tools</depend>
+  <depend>pluginlib</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>yaml-cpp</depend>
+  <depend>boost</depend>
+
   <build_depend>qtbase5-dev</build_depend>
   <build_depend>qt5-qmake</build_depend>
   <exec_depend>qtbase5-dev</exec_depend>
+  <exec_depend>qt5-qmake</exec_depend>
   <!--test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend-->
 
