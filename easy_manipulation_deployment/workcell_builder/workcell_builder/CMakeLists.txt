@@ -148,6 +148,9 @@ if(BUILD_TESTING)
   # uncomment the line when a copyright and license is not present in all source files
   #set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
 endif()
 
 install(TARGETS workcell_builder

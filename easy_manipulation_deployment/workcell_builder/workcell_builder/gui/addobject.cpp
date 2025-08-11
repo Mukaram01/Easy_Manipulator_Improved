@@ -72,41 +72,28 @@ void AddObject::on_AddLink_clicked()
 
 void AddObject::on_delete_link_clicked()
 {
-  // TODO(Glenn): Check joints and if there is any joints with the link dependant on it,
-  // then delete that joint
   auto list = ui->link_list->selectionModel()->selectedIndexes();
   if (list.size() != 0) {
     QListWidgetItem * item = ui->link_list->selectedItems().first();
     int pos = ui->link_list->row(item);
 
-    for (int joint = 0; joint < static_cast<int>(object.joint_vector.size()); joint++) {
-      if (object.joint_vector[joint].parent_link.name.compare(object.link_vector[pos].name) == 0 ||
-        object.joint_vector[joint].child_link.name.compare(object.link_vector[pos].name) == 0)
-      {
-        object.joint_vector.erase(object.joint_vector.begin() + joint);
-        delete ui->joint_list->takeItem(joint);
-        delete ui->parent_list->takeItem(joint);
-        delete ui->child_list->takeItem(joint);
-      }
+    // Remove link and gather indices of affected joints
+    std::vector<size_t> removed_joint_indices = object.remove_link_and_joints(pos);
+
+    // Remove corresponding joint entries from the UI in reverse order
+    for (int i = static_cast<int>(removed_joint_indices.size()) - 1; i >= 0; --i) {
+      size_t idx = removed_joint_indices[static_cast<size_t>(i)];
+      delete ui->joint_list->takeItem(static_cast<int>(idx));
+      delete ui->parent_list->takeItem(static_cast<int>(idx));
+      delete ui->child_list->takeItem(static_cast<int>(idx));
     }
 
     bool oldState = ui->available_links->blockSignals(true);
-    delete ui->link_list->takeItem(ui->link_list->row(item));
+    delete ui->link_list->takeItem(pos);
     ui->available_links->removeItem(pos);
-    // If child link position is more than deleted link
-    if (object.ext_joint.child_link_pos > pos) {
-      object.ext_joint.child_link_pos--;       // shift down position by 1
-    }
-    if (object.link_vector.size() > 1) {
-      object.link_vector.erase(object.link_vector.begin() + list[0].row());
-      // The child link was not deleted
-      if (pos != object.ext_joint.child_link_pos) {
-        ui->available_links->setCurrentIndex(object.ext_joint.child_link_pos);
-      } else {  // Child link deleted
-        ui->available_links->setCurrentIndex(0);
-      }
-    } else {
-      object.link_vector.clear();
+
+    if (!object.link_vector.empty()) {
+      ui->available_links->setCurrentIndex(object.ext_joint.child_link_pos);
     }
     ui->available_links->blockSignals(oldState);
   }
