@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot name="workbench" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <link name="workbench">
+    <visual>
+      <geometry>
+        <box size="1 1 0.1"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1 1 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
+

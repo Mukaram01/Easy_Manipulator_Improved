@@ -27,18 +27,26 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_eigen REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(moveit_core REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_visual_tools REQUIRED)
+find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-set(BOOST_ROOT "/usr/include/boost")
+find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
+
 include_directories(include)
 include_directories(include/attributes)
 include_directories(include/yaml_parser)
-
-set(PKG_CONFIG_EXECUTABLE "/usr/bin/pkg-config")
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(yaml-cpp REQUIRED yaml-cpp)
-
 include_directories(gui)
 
 
@@ -104,9 +112,34 @@ add_executable(workcell_builder
     gui/loadobjects.h
     gui/loadobjects.ui)
 
-ament_target_dependencies(workcell_builder rclcpp ament_index_cpp)
-target_link_libraries(workcell_builder Qt5::Widgets ${Boost_LIBRARIES} yaml-cpp)
-target_include_directories(workcell_builder PUBLIC ${Boost_INCLUDE_DIRS})
+ament_target_dependencies(workcell_builder
+  rclcpp
+  rclcpp_components
+  tf2
+  tf2_ros
+  tf2_eigen
+  tf2_geometry_msgs
+  geometry_msgs
+  sensor_msgs
+  std_msgs
+  moveit_core
+  moveit_ros_planning_interface
+  moveit_visual_tools
+  pluginlib
+  ament_index_cpp
+)
+
+target_link_libraries(workcell_builder
+  PRIVATE
+    Qt5::Widgets
+    yaml-cpp
+    ${Boost_LIBRARIES}
+)
+
+target_include_directories(workcell_builder
+  PRIVATE
+    ${Boost_INCLUDE_DIRS}
+)
 
 
 if(BUILD_TESTING)
