@@ -78,7 +78,7 @@ void TesseractCollisionCheckerContext::configure(
   collision_check_config_.contact_request.calculate_penetration = false;
   collision_check_config_.contact_request.calculate_distance = option.distance;
   collision_check_config_.type = tesseract_collision::CollisionEvaluatorType::DISCRETE;
-  tesseract_collision::CollisionMarginData margin_data(0.0);
+  tesseract_collision::CollisionMarginData margin_data(option.padding);
   collision_check_config_.collision_margin_data = margin_data;
   if (!option.continuous) {
     // Clone shared object

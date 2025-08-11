@@ -179,7 +179,10 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
     "dynamic_safety.collision_checker.group",
     node, LOGGER);  // needed for continuous collision checking
 
-  // TODO(anyone): padding
+  emd::declare_or_get_param<double>(
+    collision_checker_options.padding,
+    "dynamic_safety.collision_checker.padding",
+    node, LOGGER, 0.0);
 
   // -------------- Load overwritable parameters -------------------
   // If the following parameters are defined and greater than zero,
@@ -375,11 +378,10 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
   }
 
   if (visualize) {
-    // TODO(Briancbn): scene synchronization
-    // emd::declare_or_get_param<bool>(
-    //   visualizer_options.publish_scene,
-    //   "dynamic_safety.visualize.publish_scene",
-    //   node, LOGGER, false);
+    emd::declare_or_get_param<bool>(
+      visualizer_options.publish_scene,
+      "dynamic_safety.visualizer.publish_scene",
+      node, LOGGER, false);
 
     emd::declare_or_get_param<double>(
       visualizer_options.publish_frequency,
@@ -400,12 +402,10 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
       visualizer_options.tcp_link,
       "dynamic_safety.visualizer.tcp_link",
       node, LOGGER);
-
-    // TODO(Briancbn): scene synchronization
-    // emd::declare_or_get_param<std::string>(
-    //   visualizer_options.scene_topic,
-    //   "dynamic_safety.visualize.scene_topic",
-    //   node, LOGGER);
+    emd::declare_or_get_param<std::string>(
+      visualizer_options.scene_topic,
+      "dynamic_safety.visualizer.scene_topic",
+      node, LOGGER, std::string());
   }
 
   // Return idiom
