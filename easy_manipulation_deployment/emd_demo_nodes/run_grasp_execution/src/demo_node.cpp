@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
@@ -22,6 +23,7 @@
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 #include "emd/grasp_execution/utils.hpp"
+#include "emd/end_effector/ee_execution_interface.hpp"
 
 #include "emd_msgs/msg/grasp_task.hpp"
 #include "emd_msgs/srv/grasp_request.hpp"
@@ -48,6 +50,12 @@ public:
   : MoveitCppGraspExecution(node, 1, 1),
     node_(node)
   {
+    end_effector_interface_ = std::make_shared<emd::EndEffectorExecutioninterface>();
+    ee_context_.wait_for_completion = node_->declare_parameter<bool>(
+      "ee_wait_for_completion", false);
+    int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
+    ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
+
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
       [ = ](emd_msgs::msg::GraspTask::UniquePtr msg) {
@@ -225,7 +233,7 @@ public:
       node_->get_logger(), target_id,
       "Attaching to robot ee frame: [" + ee_link + "]");
 
-    attach_object_to_ee(target_id, ee_link);
+    end_effector_interface_->grasp_object(this, ee_link, target_id, ee_context_);
 
     prompt_job_end(node_->get_logger(), true);
 
@@ -249,7 +257,7 @@ public:
       node_->get_logger(), target_id,
       "Detaching from robot ee frame: [" + ee_link + "]");
 
-    detach_object_from_ee(target_id, ee_link);
+    end_effector_interface_->release_object(this, ee_link, target_id, ee_context_);
 
     prompt_job_end(node_->get_logger(), true);
 
@@ -284,6 +292,8 @@ public:
 
 private:
   rclcpp::Node::SharedPtr node_;
+  std::shared_ptr<emd::EndEffectorExecutioninterface> end_effector_interface_;
+  emd::EndEffectorExecutionContext ee_context_;
   rclcpp::Subscription<emd_msgs::msg::GraspTask>::SharedPtr grasp_task_sub_;
   rclcpp::Service<emd_msgs::srv::GraspRequest>::SharedPtr grasp_req_service_;
 };

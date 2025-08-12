@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
@@ -50,6 +51,11 @@ public:
     node_(node)
   {
     this->end_effector_interface = std::make_shared<emd::EndEffectorExecutioninterface>();
+    ee_context_.wait_for_completion = node_->declare_parameter<bool>(
+      "ee_wait_for_completion", false);
+    int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
+    ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
+
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
       [ = ](emd_msgs::msg::GraspTask::UniquePtr msg) {
@@ -274,7 +280,7 @@ public:
       node_->get_logger(), target_id,
       "Attaching to robot ee frame: [" + this->options.ee_link + "]");
 
-    attach_object_to_ee(target_id, this->options.ee_link);
+    end_effector_interface->grasp_object(this, this->options.ee_link, target_id, ee_context_);
     prompt_job_end(node_->get_logger(), true);
     return true;
   }
@@ -287,7 +293,7 @@ public:
       node_->get_logger(), target_id,
       "Detaching from robot ee frame: [" + this->options.ee_link + "]");
 
-    detach_object_from_ee(target_id, this->options.ee_link);
+    end_effector_interface->release_object(this, this->options.ee_link, target_id, ee_context_);
 
     prompt_job_end(node_->get_logger(), true);
     return true;
@@ -297,6 +303,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   grasp_execution::GraspExecutionContext options;
   std::shared_ptr<emd::EndEffectorExecutioninterface> end_effector_interface;
+  emd::EndEffectorExecutionContext ee_context_;
   rclcpp::Subscription<emd_msgs::msg::GraspTask>::SharedPtr grasp_task_sub_;
   rclcpp::Service<emd_msgs::srv::GraspRequest>::SharedPtr grasp_req_service_;
 };
