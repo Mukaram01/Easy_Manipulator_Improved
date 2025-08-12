@@ -13,8 +13,7 @@ file.  The test is skipped automatically when the ``xacro``/``roslaunch``
 dependencies are missing.
 """
 
-import glob
-import os
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -26,9 +25,9 @@ pytest.importorskip("roslaunch")
 # Determine the root of the realsense2_description package using the file
 # location instead of relying on ROS environment variables.  ``__file__`` may
 # be a relative path depending on how the test is invoked which would cause
-# the computed root to be incorrect.  ``os.path.abspath`` normalises the value
+# the computed root to be incorrect.  ``Path.resolve`` normalises the value
 # so the test works regardless of the current working directory.
-PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PATH = Path(__file__).resolve().parent.parent
 
 
 def run_xacro_in_file(filename: str) -> None:
@@ -39,7 +38,7 @@ def run_xacro_in_file(filename: str) -> None:
             [
                 "xacro",
                 "--inorder",
-                os.path.join("tests", filename),
+                str(PATH / "tests" / filename),
             ],
             cwd=PATH,
             stderr=subprocess.STDOUT,
@@ -55,15 +54,12 @@ def run_xacro_in_file(filename: str) -> None:
         raise
 
 
-# Collect all xacro files once for parametrisation below.  ``glob.glob``
+# Collect all xacro files once for parametrisation below.  ``Path.glob``
 # does not guarantee ordering which can lead to non-deterministic test
 # parametrisation.  Sorting ensures stable test order across platforms and
 # Python versions.  Additionally, fail early if no files are discovered to
 # avoid a false-positive test run where zero tests execute silently.
-XACRO_FILES = sorted(
-    os.path.basename(f)
-    for f in glob.glob(os.path.join(PATH, "tests", "*.xacro"))
-)
+XACRO_FILES = sorted(p.name for p in (PATH / "tests").glob("*.xacro"))
 if not XACRO_FILES:  # pragma: no cover - defensive programming
     raise AssertionError("No xacro files found for validation")
 
