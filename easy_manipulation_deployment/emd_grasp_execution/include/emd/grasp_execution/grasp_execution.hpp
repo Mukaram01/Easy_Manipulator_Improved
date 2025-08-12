@@ -55,19 +55,23 @@ struct GraspExecutionContext
   /// How far forward to plan for a trajectory during move unitl collide workflow
   double move_to_collide_step_size;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Cartesian interpolation resolution used during the first planning strategy.
+  /// Smaller values result in finer paths but require more computation.
   float cartesian_step_size;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Number of interpolated waypoints to retreat when cartesian planning fails
+  /// before switching to a hybrid planning strategy.
   float backtrack_steps;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Maximum number of attempts for the hybrid (cartesian + sampling) planner.
   int hybrid_max_attempts;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Maximum number of attempts for the pure sampling-based planner when all
+  /// previous strategies fail.
   int non_deterministic_max_attempts;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Additional distance to offset the end effector from the object to account
+  /// for gripper clearance during grasping motions.
   float clearance;
 };
 
