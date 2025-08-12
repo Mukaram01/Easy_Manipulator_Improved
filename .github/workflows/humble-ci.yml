@@ -19,7 +19,12 @@ jobs:
       - name: Install apt packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-vcstool python3-colcon-common-extensions ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro
+          sudo apt-get install -y \
+            python3-vcstool \
+            python3-colcon-common-extensions \
+            ros-humble-moveit \
+            ros-humble-moveit-visual-tools \
+            ros-humble-xacro
 
       - name: Create workspace
         run: |
