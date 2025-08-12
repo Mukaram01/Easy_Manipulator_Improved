@@ -82,7 +82,7 @@ void MoveitCollisionCheckerContext::configure(
   collision_request_.group_name = option.group;
   collision_request_.distance = option.distance;
   collision_request_.contacts = true;
-  scene_->getCollisionEnv()->setPadding(option.padding);
+  scene_->getCollisionEnvNonConst()->setPadding(option.padding);
 }
 
 void MoveitCollisionCheckerContext::run_discrete(
