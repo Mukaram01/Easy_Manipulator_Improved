@@ -2,7 +2,7 @@
 
 The following items are pending implementation:
 
-1. Dynamic Safety & Visualizer enhancements (distance-based checks).
+1. Dynamic Safety & Visualizer enhancements (distance-based checks — initial minimum-distance reporting added).
 2. MoveIt Collision Checker plugin loading and multi-axis joint support.
 3. Tesseract Collision Checker plugin mapping and self-collision checks.
 4. Replanner parameterization and joint-limit handling improvements.
