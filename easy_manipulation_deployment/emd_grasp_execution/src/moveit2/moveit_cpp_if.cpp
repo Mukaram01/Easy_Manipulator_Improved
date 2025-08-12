@@ -162,7 +162,11 @@ bool MoveitCppGraspExecution::init(const std::string & planning_group)
       // Initialize dummy gripper driver
       auto dummy_gripper_driver = std::unique_ptr<gripper::GripperDriver>(
         gripper_driver_loader_->createUnmanagedInstance("grasp_execution/DummyGripperDriver"));
-      dummy_gripper_driver->load("");
+      if (dummy_gripper_driver->load("") != gripper::GripperDriver::Result::SUCCESS) {
+        RCLCPP_ERROR(LOGGER, "Failed to load dummy gripper driver");
+        prompt_job_end(LOGGER, false);
+        return false;
+      }
       arms_[planning_group].grippers["dummy"] = std::move(dummy_gripper_driver);
 
       prompt_job_end(LOGGER, true);
@@ -271,8 +275,14 @@ bool MoveitCppGraspExecution::load_ee(
   // Initialize customized execution method
   auto gripper_driver = std::unique_ptr<gripper::GripperDriver>(
     gripper_driver_loader_->createUnmanagedInstance(ee_driver_plugin));
-  gripper_driver->load(ee_driver_controller);
-  gripper_driver->activate();
+  if (gripper_driver->load(ee_driver_controller) != gripper::GripperDriver::Result::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to load gripper driver for %s", ee_brand.c_str());
+    return false;
+  }
+  if (gripper_driver->activate() != gripper::GripperDriver::Result::SUCCESS) {
+    RCLCPP_ERROR(LOGGER, "Failed to activate gripper driver for %s", ee_brand.c_str());
+    return false;
+  }
   arms_[group_name].grippers[ee_brand] = std::move(gripper_driver);
   return true;
 }
