@@ -28,7 +28,7 @@
 	<origin xyz="0 0 0.0" rpy="1.5707 0 0"/>
  </xacro:robotiq-3f-gripper_articulated>
 
- <xacro:include filename="$(find-pkg-share workbench_description)/urdf/workbench.urdf.xacro"/>
+ <xacro:include filename="$(find-pkg-share workbench_description)/urdf/table.urdf.xacro"/>
  <joint name="workbench_base_joint" type="fixed">
         <parent link="world" />
         <child link="workbench_link" />
