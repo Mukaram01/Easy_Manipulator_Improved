@@ -8,6 +8,7 @@ The following items are pending implementation:
 4. Replanner parameterization and joint-limit handling improvements.
 5. Scheduler workflow prerequisites and queue robustness.
 6. Grasp Execution Interface documentation and options expansion.
+   - Added an execution context with optional delays for attach and detach operations.
 7. MoveIt-based execution improvements for multi-axis joints and path constraints.
 8. Context loading via `rcl_yaml_param_parser` with schema validation.
 9. Demo node lifecycle conversion and grasp method selection.
