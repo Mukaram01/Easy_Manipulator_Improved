@@ -18,6 +18,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -325,15 +326,14 @@ Workflow::Status Scheduler::cancel_workflow(
   }
 
   // Check if workflow_id is in queue
-  // TODO(anyone): better way to check queue
-  for (size_t i = 0; i < impl_->id_queue.size(); i++) {
-    // Remove workflow id
-    if (impl_->id_queue[i] == workflow_id) {
-      impl_->id_queue.erase(impl_->id_queue.begin() + i);
-      impl_->workflow_queue.erase(impl_->workflow_queue.begin() + i);
-      impl_->queued_task_map.erase(workflow_id);
-      return Workflow::Status::CANCELLED;
-    }
+  auto it = std::find(
+    impl_->id_queue.begin(), impl_->id_queue.end(), workflow_id);
+  if (it != impl_->id_queue.end()) {
+    auto idx = std::distance(impl_->id_queue.begin(), it);
+    impl_->id_queue.erase(it);
+    impl_->workflow_queue.erase(impl_->workflow_queue.begin() + idx);
+    impl_->queued_task_map.erase(workflow_id);
+    return Workflow::Status::CANCELLED;
   }
 
   // Cannot find workflow_id anywhere
