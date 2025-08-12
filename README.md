@@ -20,16 +20,18 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 ## Build on Humble
 
 ```
-sudo apt update
-sudo apt install python3-vcstool python3-colcon-common-extensions
-rosdep update
-mkdir -p ~/workcell_ws/src && cd ~/workcell_ws
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved src/emd
-vcs import src < src/emd/tesseract.repos
-rosdep install --from-paths src --ignore-src -r -y
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
+mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
+cd ~/workcell_ws
+source /opt/ros/humble/setup.bash
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
+source ~/ws_moveit2/install/setup.bash
 colcon build
 source install/setup.bash
-ros2 launch run_grasp_execution grasp_execution.launch.py
 ```
 
 ---
