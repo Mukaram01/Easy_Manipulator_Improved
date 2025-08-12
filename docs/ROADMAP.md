@@ -11,7 +11,7 @@ The following items are pending implementation:
    - Added an execution context with optional delays for attach and detach operations.
 7. MoveIt-based execution improvements for multi-axis joints and path constraints.
 8. Context loading via `rcl_yaml_param_parser` with schema validation.
-9. Demo node lifecycle conversion and grasp method selection.
+9. Demo node lifecycle conversion.
 10. Default executor watchdog and graceful shutdown.
 11. Finger-gripper sampling strategies for multi-finger configurations.
 12. Additional testing, CI workflows, documentation, and Docker support.
@@ -21,3 +21,4 @@ These tasks are outlined for future contributions.
 ## Completed
 
 - Gripper driver interface hardened with explicit result codes.
+- Demo node grasp method selection.
