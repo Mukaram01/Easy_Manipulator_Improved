@@ -34,18 +34,35 @@ public:
   // cppcheck-suppress unknownMacro
   RCLCPP_SMART_PTR_DEFINITIONS(GripperDriver)
 
+  /// Result codes for driver operations
+  enum class Result
+  {
+    SUCCESS = 0,
+    ERROR = 1
+  };
+
   GripperDriver() {}
 
-  // TODO(anyone): Harden gripper driver interface
-  virtual bool load(const std::string & name) = 0;
+  /// Load gripper driver resources
+  /**
+   * \param[in] name Resource identifier
+   * \return Result of loading procedure
+   */
+  virtual Result load(const std::string & name) = 0;
 
-  ~GripperDriver() {}
+  virtual ~GripperDriver() {}
 
-  // TODO(anyone): Harden gripper driver interface
-  virtual bool activate() = 0;
+  /// Activate the driver
+  /**
+   * \return Result of activation procedure
+   */
+  virtual Result activate() = 0;
 
-  // TODO(anyone): Harden gripper driver interface
-  virtual bool deactivate() = 0;
+  /// Deactivate the driver
+  /**
+   * \return Result of deactivation procedure
+   */
+  virtual Result deactivate() = 0;
 
 private:
   // cppcheck-suppress unknownMacro

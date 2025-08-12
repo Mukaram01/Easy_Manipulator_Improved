@@ -34,11 +34,11 @@ public:
 
   ~DummyGripperDriver() {}
 
-  bool load(const std::string & /*name*/) override;
+  GripperDriver::Result load(const std::string & /*name*/) override;
 
-  bool activate() override;
+  GripperDriver::Result activate() override;
 
-  bool deactivate() override;
+  GripperDriver::Result deactivate() override;
 
 private:
   const rclcpp::Logger logger_;

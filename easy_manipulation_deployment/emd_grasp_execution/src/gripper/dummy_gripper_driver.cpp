@@ -22,29 +22,29 @@ namespace grasp_execution
 namespace gripper
 {
 
-bool DummyGripperDriver::load(
+GripperDriver::Result DummyGripperDriver::load(
   const std::string & /*name*/)
 {
   RCLCPP_INFO(this->logger_, "Loading dummy gripper driver, sleep 1s.....");
   rclcpp::sleep_for(std::chrono::seconds(1));
   RCLCPP_INFO(this->logger_, "Dummy gripper driver loaded");
-  return true;
+  return GripperDriver::Result::SUCCESS;
 }
 
-bool DummyGripperDriver::activate()
+GripperDriver::Result DummyGripperDriver::activate()
 {
   RCLCPP_INFO(this->logger_, "Activate dummy gripper driver, sleep 2s.....");
   rclcpp::sleep_for(std::chrono::seconds(2));
   RCLCPP_INFO(this->logger_, "Dummy gripper driver activated");
-  return true;
+  return GripperDriver::Result::SUCCESS;
 }
 
-bool DummyGripperDriver::deactivate()
+GripperDriver::Result DummyGripperDriver::deactivate()
 {
   RCLCPP_INFO(this->logger_, "Deactivate dummy gripper driver, sleep 2s.....");
   rclcpp::sleep_for(std::chrono::seconds(2));
   RCLCPP_INFO(this->logger_, "Dummy gripper driver deactivated");
-  return true;
+  return GripperDriver::Result::SUCCESS;
 }
 
 }  // namespace gripper
