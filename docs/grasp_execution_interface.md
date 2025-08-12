@@ -5,11 +5,13 @@ and detaching objects from the robot's end effector. It now supports an
 optional execution context that allows callers to wait for hardware
 operations to complete before proceeding.
 
-The `EndEffectorExecutionContext` exposes two tuning options:
+The `EndEffectorExecutionContext` exposes several tuning options:
 
+* `pre_command_delay` – duration to wait before sending a command. A zero
+  duration (default) disables the delay.
 * `post_command_delay` – duration to wait after a command before returning.
   A zero duration (default) disables the delay.
-* `wait_for_completion` – whether to respect the delay. The default is
+* `wait_for_completion` – whether to respect the delays. The default is
   `false` to match previous behaviour.
 
 Passing a context instance to `grasp_object` or `release_object` applies the
@@ -27,11 +29,12 @@ ee.grasp_object(moveit_execution, "tool0", target_id);
 
 emd::EndEffectorExecutionContext ctx;
 ctx.wait_for_completion = true;
+ctx.pre_command_delay = std::chrono::milliseconds(200);
 ctx.post_command_delay = std::chrono::milliseconds(500);
 
-// Attach an object and wait half a second for the gripper to close
+// Wait 200 ms, attach an object and wait half a second for the gripper to close
 ee.grasp_object(moveit_execution, "tool0", target_id, ctx);
-// Release the object with the same delay
+// Wait 200 ms then release the object with the same post-command delay
 ee.release_object(moveit_execution, "tool0", target_id, ctx);
 ```
 
