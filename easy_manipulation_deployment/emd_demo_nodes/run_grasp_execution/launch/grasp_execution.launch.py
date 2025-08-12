@@ -14,6 +14,7 @@
 
 import os
 import tempfile
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -29,18 +30,21 @@ package_name = 'run_grasp_execution'
 
 
 def to_urdf(xacro_path, urdf_path=None, mappings=None):
-    # If no URDF path is given, use a temporary file
+    xacro_path = str(xacro_path)
     if urdf_path is None:
-        urdf_path = tempfile.mktemp(prefix='%s_' % os.path.basename(xacro_path))
+        fd, urdf_path = tempfile.mkstemp(
+            prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
+        )
+        os.close(fd)
+    else:
+        urdf_path = str(Path(urdf_path).with_suffix(".urdf"))
+        os.makedirs(os.path.dirname(urdf_path), exist_ok=True)
 
-    # open and process file
     doc = xacro.process_file(xacro_path, mappings=mappings)
-    # open the output file
-    print(urdf_path)
-    out = xacro.open_output(urdf_path)
-    out.write(doc.toprettyxml(indent='  '))
+    with xacro.open_output(urdf_path) as out:
+        out.write(doc.toprettyxml(indent='  '))
 
-    return urdf_path  # Return path to the urdf file
+    return urdf_path
 
 
 def load_file(package_name, file_path, mappings=None):
