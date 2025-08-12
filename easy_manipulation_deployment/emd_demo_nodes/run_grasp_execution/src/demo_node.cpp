@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -158,24 +159,39 @@ public:
     // Get home state
     moveit::core::RobotStatePtr home_state(get_curr_state());
 
-    // TODO(Briancbn): select grasp method based on end effector availability
-    double clearance;
+    // Select grasp method based on end effector availability
+    double clearance = 0.0;
     std::string ee_link = "";
     std::string planning_group = "";
-    auto & grasp_method = target->grasp_methods[0];
-    const std::string & ee_brand = grasp_method.ee_id;
 
-    // Select the group based on ee brand name
-    for (auto & group : get_workcell_context().groups) {
-      for (auto & ee : group.second.end_effectors) {
-        if (ee.second.brand == ee_brand) {
-          ee_link = ee.second.link;
-          clearance = ee.second.clearance;
-          planning_group = group.first;
+    const emd_msgs::msg::GraspMethod *selected_method = nullptr;
+    for (const auto & method : target->grasp_methods) {
+      for (auto & group : get_workcell_context().groups) {
+        for (auto & ee : group.second.end_effectors) {
+          if (ee.second.brand == method.ee_id) {
+            selected_method = &method;
+            ee_link = ee.second.link;
+            clearance = ee.second.clearance;
+            planning_group = group.first;
+            break;
+          }
+        }
+        if (selected_method) {
           break;
         }
       }
+      if (selected_method) {
+        break;
+      }
     }
+
+    if (!selected_method) {
+      RCLCPP_ERROR(node_->get_logger(), "No valid end effector found for target %s", target_id.c_str());
+      return false;
+    }
+
+    const auto & grasp_method = *selected_method;
+    const std::string & ee_brand = grasp_method.ee_id;
 
     grasp_execution::GraspExecutionContext options;
     options.world_frame = "world";
