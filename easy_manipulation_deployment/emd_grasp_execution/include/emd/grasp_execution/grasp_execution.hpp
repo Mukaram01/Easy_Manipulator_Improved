@@ -55,19 +55,19 @@ struct GraspExecutionContext
   /// How far forward to plan for a trajectory during move unitl collide workflow
   double move_to_collide_step_size;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Step size in meters for Cartesian path interpolation
   float cartesian_step_size;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Number of waypoints to retreat when switching from Cartesian to hybrid planning
   float backtrack_steps;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Maximum number of attempts for the hybrid planning strategy
   int hybrid_max_attempts;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Maximum number of attempts for the non-deterministic planner fallback
   int non_deterministic_max_attempts;
 
-  /// TODO(Anyone): Better explanation of option
+  /// Minimum distance in meters to keep from objects during planning
   float clearance;
 };
 

@@ -620,9 +620,8 @@ protected:
     emd_msgs::msg::GraspMethod & grasp_method);
 
   /**
-   * Now that we have generated the various FingerCloudSamples for each plane
-   * (2 per plane), we now choose the correct finger clouds that corresponds to
-   * the multifinger gripper. TODO:
+   * Select finger cloud clusters that compose the multi-finger gripper once
+   * all FingerCloudSamples for each plane have been generated.
    */
   void get_gripper_clusters();
 
