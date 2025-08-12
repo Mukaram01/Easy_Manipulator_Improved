@@ -16,6 +16,7 @@
 #define EMD__DYNAMIC_SAFETY__VISUALIZER_HPP_
 
 #include <string>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "emd/dynamic_safety/safety_zone.hpp"
@@ -145,9 +146,8 @@ private:
   std_msgs::msg::ColorRGBA GREEN;
 
   // Current time point and collision time point.
-  // TODO(anyone): Check if needed to be atomic.
-  double current_time_point_;
-  double collision_time_point_;
+  std::atomic<double> current_time_point_;
+  std::atomic<double> collision_time_point_;
 
   std::atomic_bool start_;
   rclcpp::CallbackGroup::SharedPtr visualizer_callback_group_;

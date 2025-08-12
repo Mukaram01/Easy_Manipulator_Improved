@@ -30,6 +30,7 @@ namespace dynamic_safety
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety.visualizer");
 
 Visualizer::Visualizer()
+: current_time_point_(0.0), collision_time_point_(-1.0)
 {
   // Dark Grey
   DARK_GREY.r = DARK_GREY.g = DARK_GREY.b = static_cast<float>(0.628);
@@ -156,8 +157,8 @@ void Visualizer::add_trajectory(
     time_from_start += step_;
   }
 
-  current_time_point_ = 0;
-  collision_time_point_ = -1;
+  current_time_point_.store(0);
+  collision_time_point_.store(-1);
 
   // Better handling of this.
   timer_ = node_->create_wall_timer(
@@ -170,8 +171,8 @@ void Visualizer::update(
   double current_time_point,
   double collision_time_point)
 {
-  current_time_point_ = current_time_point;
-  collision_time_point_ = collision_time_point;
+  current_time_point_.store(current_time_point);
+  collision_time_point_.store(collision_time_point);
 }
 
 void Visualizer::update(
@@ -202,16 +203,17 @@ void Visualizer::_timer_cb()
   if (!start_) {
     return;
   }
+  const double current_time_point = current_time_point_.load();
+  const double collision_time_point = collision_time_point_.load();
 
-  // Make the callback function atomic
   for (size_t i = 0; i < marker_msg_->colors.size(); i++) {
     double time_point = step_ * static_cast<int>(i);
-    if (time_point < current_time_point_ ||
-      time_point >= current_time_point_ + safety_zone_.get_zone_limit(safety_zone_.REPLAN))
+    if (time_point < current_time_point ||
+      time_point >= current_time_point + safety_zone_.get_zone_limit(safety_zone_.REPLAN))
     {
       marker_msg_->colors[i] = DARK_GREY;
     } else {
-      switch (safety_zone_.get_zone(time_point - current_time_point_)) {
+      switch (safety_zone_.get_zone(time_point - current_time_point)) {
         case SafetyZone::BLIND:
           marker_msg_->colors[i] = RED;
           break;
@@ -231,8 +233,8 @@ void Visualizer::_timer_cb()
     }
   }
 
-  if (collision_time_point_ > 0) {
-    size_t collision_idx = static_cast<size_t>(collision_time_point_ / step_);
+  if (collision_time_point > 0) {
+    size_t collision_idx = static_cast<size_t>(collision_time_point / step_);
     marker_msg_->colors[collision_idx] = RED;
   }
   marker_msg_->header.stamp = node_->now();
