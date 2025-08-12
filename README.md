@@ -3,10 +3,8 @@
 <img src="./images/emd_logo.png"  width="30%" height="30%">
 <br>
 
-[![Build Status](https://github.com/ros-industrial/easy_manipulation_deployment/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/ros-industrial/easy_manipulation_deployment/actions/workflows/build.yml)
 [![Documentation Status](https://readthedocs.org/projects/easy-manipulation-deployment-docs/badge/?version=latest)](https://easy-manipulation-deployment-docs.readthedocs.io/en/latest/?badge=latest)
 [![License](https://img.shields.io/github/license/ros-industrial/easy_manipulation_deployment.svg)](https://github.com/ros-industrial/easy_manipulation_deployment/blob/master/LICENSE)
-[![codecov](https://codecov.io/gh/tanjpg/easy_manipulation_deployment/branch/develop/graph/badge.svg)](https://codecov.io/gh/tanjpg/easy_manipulation_deployment)
 
 ### This ROS2 package provides a modular and easy to deploy manipulation pipeline that integrates perception elements to establish an end-to-end pick and place task
 <br>
