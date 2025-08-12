@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <atomic>
 #include <string>
+#include <thread>
 
+#include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_execution/moveit2/executor/default_executor.hpp"
 
 namespace grasp_execution
@@ -52,10 +55,27 @@ bool DefaultExecutor::run(
   robot_trajectory.getRobotTrajectoryMsg(robot_trajectory_msg);
 
   trajectory_execution_manager_->push(robot_trajectory_msg);
+
+  // Watchdog thread that stops execution when ROS is shutting down
+  std::atomic_bool finished(false);
+  std::thread watchdog([this, &finished]() {
+    rclcpp::Rate r(10);
+    while (rclcpp::ok() && !finished) {
+      r.sleep();
+    }
+    if (!rclcpp::ok()) {
+      RCLCPP_WARN(logger_, "Shutting down - stopping execution");
+      trajectory_execution_manager_->stopExecution();
+    }
+  });
+
   trajectory_execution_manager_->execute();
 
   // ALWAYS BLOCKING !!!
   auto status = trajectory_execution_manager_->waitForExecution();
+
+  finished = true;
+  watchdog.join();
 
   // Allow timeout
   // TODO(anyone): fix doesn't finish in time problem.
