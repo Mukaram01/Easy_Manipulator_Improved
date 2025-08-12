@@ -69,6 +69,8 @@ public:
 
   void reset();
 
+  double get_min_distance() const;
+
 protected:
   // Main function for running discrete collision checking
   void _runner_fn(int runner_id, bool continuous);
@@ -378,6 +380,14 @@ void CollisionChecker::Impl::reset()
   }
 }
 
+double CollisionChecker::Impl::get_min_distance() const
+{
+  if (distances_.empty()) {
+    return -1.0;
+  }
+  return *std::min_element(distances_.begin(), distances_.end());
+}
+
 CollisionChecker::CollisionChecker()
 : impl_ptr_(std::make_unique<Impl>())
 {
@@ -450,6 +460,11 @@ void CollisionChecker::add_trajectory(
   const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt)
 {
   impl_ptr_->add_trajectory(rt);
+}
+
+double CollisionChecker::get_min_distance() const
+{
+  return impl_ptr_->get_min_distance();
 }
 
 

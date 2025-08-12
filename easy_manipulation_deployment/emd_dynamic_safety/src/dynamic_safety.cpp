@@ -417,7 +417,7 @@ class DynamicSafety::Impl
 public:
   Impl();
   explicit Impl(const Option & option)
-  : option_(option), activated_(false)
+  : option_(option), activated_(false), min_distance_(-1.0)
   {
     // Reset Cache
     env_state_cache_.initRT(sensor_msgs::msg::JointState());
@@ -514,6 +514,8 @@ private:
 
   double collision_time_point_;
   // double replan_time_point_;
+
+  double min_distance_;
 
   // uint8_t zone;
 
@@ -810,6 +812,11 @@ void DynamicSafety::Impl::_main_loop()
     option_.safety_zone_options.look_ahead_time,
     collision_time_point_
   );
+
+  if (option_.collision_checker_options.distance) {
+    min_distance_ = collision_checker_.get_min_distance();
+    RCLCPP_DEBUG(LOGGER, "Minimum distance to obstacle: %f", min_distance_);
+  }
 
   double scale = *scale_cache_.readFromRT();
 

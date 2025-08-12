@@ -89,6 +89,16 @@ public:
     double look_ahead_time,
     int sample_size = 10);
 
+  /// Retrieve minimum distance between the robot and environment.
+  /**
+   * This value is populated after each run_once() call when distance
+   * computation is enabled in the collision checker options.
+   *
+   * \return Minimum distance found in the last collision checking cycle,
+   *   negative if distance information is unavailable.
+   */
+  double get_min_distance() const;
+
   /// Reset / stop collision checker.
   /**
    * After this is called, configure() has to be called again before running run_once().
