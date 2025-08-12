@@ -130,10 +130,9 @@ ament_target_dependencies(workcell_builder
 )
 
 target_link_libraries(workcell_builder
-  PRIVATE
-    Qt5::Widgets
-    yaml-cpp
-    ${Boost_LIBRARIES}
+  Qt5::Widgets
+  yaml-cpp
+  ${Boost_LIBRARIES}
 )
 
 target_include_directories(workcell_builder
