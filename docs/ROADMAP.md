@@ -7,13 +7,12 @@ The following items are pending implementation:
 3. Tesseract Collision Checker plugin mapping and self-collision checks.
 4. Replanner parameterization and joint-limit handling improvements.
 5. Scheduler workflow prerequisites and queue robustness.
-6. Grasp Execution Interface documentation and options expansion.
-7. MoveIt-based execution improvements for multi-axis joints and path constraints.
-8. Context loading via `rcl_yaml_param_parser` with schema validation.
-9. Demo node lifecycle conversion.
-10. Default executor watchdog and graceful shutdown.
-11. Finger-gripper sampling strategies for multi-finger configurations.
-12. Additional testing, CI workflows, documentation, and Docker support.
+6. MoveIt-based execution improvements for multi-axis joints and path constraints.
+7. Context loading via `rcl_yaml_param_parser` with schema validation.
+8. Demo node lifecycle conversion.
+9. Default executor watchdog and graceful shutdown.
+10. Finger-gripper sampling strategies for multi-finger configurations.
+11. Additional testing, CI workflows, documentation, and Docker support.
 
 These tasks are outlined for future contributions.
 
@@ -22,3 +21,4 @@ These tasks are outlined for future contributions.
 - Gripper driver interface hardened with explicit result codes
 - End effector execution context supports optional delays for attach and detach operations.
 - Demo node grasp method selection.
+- Grasp Execution Interface documentation expanded with configurable pre- and post-command delays.

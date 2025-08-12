@@ -28,12 +28,16 @@ namespace emd
 /// Options used by end effector operations.
 struct EndEffectorExecutionContext
 {
+  /// Amount of time to wait before sending a command. A zero duration
+  /// disables the delay.
+  std::chrono::nanoseconds pre_command_delay{std::chrono::nanoseconds{0}};
+
   /// Amount of time to wait after a command to allow the hardware state to
   /// settle. A zero duration disables the delay.
   std::chrono::nanoseconds post_command_delay{std::chrono::nanoseconds{0}};
 
-  /// Whether to wait after sending the command. When false, the delay is
-  /// ignored.
+  /// Whether to wait after sending the command. When false, the post command
+  /// delay is ignored.
   bool wait_for_completion{false};
 };
 
@@ -58,7 +62,9 @@ public:
       LOGGER_EE_INTERFACE,
       "Attaching to robot ee frame: [%s]",
       ee_link.c_str());
-
+    if (options.pre_command_delay.count() > 0) {
+      rclcpp::sleep_for(options.pre_command_delay);
+    }
     execution_interface->attach_object_to_ee(target_id, ee_link);
 
     if (options.wait_for_completion && options.post_command_delay.count() > 0) {
@@ -82,6 +88,9 @@ public:
       LOGGER_EE_INTERFACE,
       "Detaching from robot ee frame: [%s]",
       ee_link.c_str());
+    if (options.pre_command_delay.count() > 0) {
+      rclcpp::sleep_for(options.pre_command_delay);
+    }
     execution_interface->detach_object_from_ee(target_id, ee_link);
 
     if (options.wait_for_completion && options.post_command_delay.count() > 0) {

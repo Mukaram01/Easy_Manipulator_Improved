@@ -53,8 +53,10 @@ public:
     end_effector_interface_ = std::make_shared<emd::EndEffectorExecutioninterface>();
     ee_context_.wait_for_completion = node_->declare_parameter<bool>(
       "ee_wait_for_completion", false);
-    int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
-    ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
+    int pre_delay_ms = node_->declare_parameter<int>("ee_pre_command_delay_ms", 0);
+    int post_delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
+    ee_context_.pre_command_delay = std::chrono::milliseconds(pre_delay_ms);
+    ee_context_.post_command_delay = std::chrono::milliseconds(post_delay_ms);
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
