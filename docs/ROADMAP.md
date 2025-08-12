@@ -21,5 +21,6 @@ These tasks are outlined for future contributions.
 - Gripper driver interface hardened with explicit result codes
 - End effector execution context supports optional delays for attach and detach operations.
 - Demo node grasp method selection.
+- Demo node lifecycle conversion.
 - Default executor watchdog and graceful shutdown.
 - Grasp Execution Interface documented and supports pre- and post-command delays.

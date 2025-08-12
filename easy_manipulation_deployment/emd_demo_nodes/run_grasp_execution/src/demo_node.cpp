@@ -20,6 +20,8 @@
 #include <algorithm>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "lifecycle_msgs/msg/transition.hpp"
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 #include "emd/grasp_execution/utils.hpp"
@@ -300,27 +302,62 @@ private:
 
 }  // namespace grasp_execution
 
+class DemoLifecycleNode : public rclcpp_lifecycle::LifecycleNode
+{
+public:
+  explicit DemoLifecycleNode(const rclcpp::NodeOptions & options)
+  : rclcpp_lifecycle::LifecycleNode("grasp_execution_demo_node", "", options)
+  {
+    this->declare_parameter<std::string>("workcell_context", "");
+  }
+
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
+    const rclcpp_lifecycle::State &)
+  {
+    demo_ = std::make_shared<grasp_execution::Demo>(
+      shared_from_this(), grasp_execution::GRASP_EXECUTION_PACKAGE,
+      grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
+    const std::string workcell_context_filepath =
+      this->get_parameter("workcell_context").as_string();
+    demo_->init_from_yaml(workcell_context_filepath);
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  }
+
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate(
+    const rclcpp_lifecycle::State &)
+  {
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  }
+
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State &)
+  {
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  }
+
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_cleanup(
+    const rclcpp_lifecycle::State &)
+  {
+    demo_.reset();
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  }
+
+private:
+  std::shared_ptr<grasp_execution::Demo> demo_;
+};
+
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::NodeOptions node_options;
   node_options.automatically_declare_parameters_from_overrides(true);
-  rclcpp::Node::SharedPtr node =
-    rclcpp::Node::make_shared("grasp_execution_demo_node", "", node_options);
+  auto node = std::make_shared<DemoLifecycleNode>(node_options);
 
-  const std::string workcell_context_filepath =
-    node->get_parameter("workcell_context").as_string();
-
-  grasp_execution::Demo demo(
-    node, grasp_execution::GRASP_EXECUTION_PACKAGE,
-    grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
-
-  // const std::string planning_strategies_filepath =
-  //   node->get_parameter("planning_strategy").as_string();
-  demo.init_from_yaml(workcell_context_filepath);
+  node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
+  node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
 
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node);
+  executor.add_node(node->get_node_base_interface());
   executor.spin();
 
   rclcpp::shutdown();
