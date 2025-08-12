@@ -18,6 +18,7 @@
 #include <boost/filesystem.hpp>
 #include <QKeyEvent>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <string>
 
