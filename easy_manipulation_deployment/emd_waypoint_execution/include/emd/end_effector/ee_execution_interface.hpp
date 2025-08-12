@@ -16,13 +16,25 @@
 #ifndef EMD__EE_EXECUTION_INTERFACE_HPP_
 #define EMD__EE_EXECUTION_INTERFACE_HPP_
 
+#include <chrono>
+#include <string>
+
+#include "rclcpp/rclcpp.hpp"
 
 static const rclcpp::Logger & LOGGER_EE_INTERFACE = rclcpp::get_logger(
   "end_effector_execution_interface");
 namespace emd
 {
+/// Options used by end effector operations.
 struct EndEffectorExecutionContext
 {
+  /// Amount of time to wait after a command to allow the hardware state to
+  /// settle. A zero duration disables the delay.
+  std::chrono::nanoseconds post_command_delay{std::chrono::nanoseconds{0}};
+
+  /// Whether to wait after sending the command. When false, the delay is
+  /// ignored.
+  bool wait_for_completion{false};
 };
 
 class EndEffectorExecutioninterface
@@ -34,7 +46,8 @@ public:
   bool grasp_object(
     V execution_interface,
     const std::string ee_link,
-    const std::string target_id)
+    const std::string target_id,
+    const EndEffectorExecutionContext & options = EndEffectorExecutionContext())
   {
     using type = std::remove_pointer_t<V>;
     static_assert(
@@ -47,13 +60,18 @@ public:
       ee_link.c_str());
 
     execution_interface->attach_object_to_ee(target_id, ee_link);
+
+    if (options.wait_for_completion && options.post_command_delay.count() > 0) {
+      rclcpp::sleep_for(options.post_command_delay);
+    }
     return true;
   }
   template<typename V>
   bool release_object(
     V execution_interface,
     const std::string ee_link,
-    const std::string target_id)
+    const std::string target_id,
+    const EndEffectorExecutionContext & options = EndEffectorExecutionContext())
   {
     using type = std::remove_pointer_t<V>;
     static_assert(
@@ -65,6 +83,10 @@ public:
       "Detaching from robot ee frame: [%s]",
       ee_link.c_str());
     execution_interface->detach_object_from_ee(target_id, ee_link);
+
+    if (options.wait_for_completion && options.post_command_delay.count() > 0) {
+      rclcpp::sleep_for(options.post_command_delay);
+    }
 
     return true;
   }
