@@ -46,7 +46,7 @@ class Demo : public moveit2::MoveitCppGraspExecution
 public:
   explicit Demo(
     const rclcpp::Node::SharedPtr & node,
-    const std::string & package_name,
+    [[maybe_unused]] const std::string & package_name,
     const std::string & grasp_task_topic,
     const std::string & grasp_request_topic)
   : MoveitCppGraspExecution(node, 1, 1),
