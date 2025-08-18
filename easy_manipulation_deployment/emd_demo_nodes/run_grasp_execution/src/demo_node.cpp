@@ -18,10 +18,12 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <filesystem>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "lifecycle_msgs/msg/transition.hpp"
+#include "ament_index_cpp/get_package_share_directory.hpp"
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 #include "emd/grasp_execution/utils.hpp"
@@ -308,7 +310,9 @@ public:
   explicit DemoLifecycleNode(const rclcpp::NodeOptions & options)
   : rclcpp_lifecycle::LifecycleNode("grasp_execution_demo_node", "", options)
   {
-    this->declare_parameter<std::string>("workcell_context", "");
+    if (!this->has_parameter("workcell_context")) {
+      this->declare_parameter<std::string>("workcell_context", "");
+    }
   }
 
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
@@ -326,8 +330,15 @@ public:
     demo_ = std::make_shared<grasp_execution::Demo>(
       base_node, grasp_execution::GRASP_EXECUTION_PACKAGE,
       grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
-    const std::string workcell_context_filepath =
+    std::string workcell_context_filepath =
       this->get_parameter("workcell_context").as_string();
+    if (!std::filesystem::path(workcell_context_filepath).is_absolute()) {
+      workcell_context_filepath =
+        (std::filesystem::path(
+           ament_index_cpp::get_package_share_directory("run_grasp_execution")) /
+         workcell_context_filepath)
+          .string();
+    }
     demo_->init_from_yaml(workcell_context_filepath);
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
   }
