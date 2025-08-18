@@ -314,10 +314,15 @@ public:
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
     const rclcpp_lifecycle::State &)
   {
-    // shared_from_this() returns a pointer to DemoLifecycleNode (a LifecycleNode).
-    // Demo expects an rclcpp::Node pointer, so explicitly cast to the base type
-    // to avoid template deduction failure during construction.
-    auto base_node = std::static_pointer_cast<rclcpp::Node>(shared_from_this());
+    // Create a standard rclcpp::Node to interface with MoveIt and other ROS 2 APIs.
+    // The lifecycle node itself cannot be directly used where a rclcpp::Node is
+    // required, so we construct a new node that shares the same name and
+    // namespace. Parameters are automatically declared from overrides to mirror
+    // the lifecycle node behaviour.
+    rclcpp::NodeOptions base_options;
+    base_options.automatically_declare_parameters_from_overrides(true);
+    auto base_node = std::make_shared<rclcpp::Node>(
+      this->get_name(), this->get_namespace(), base_options);
     demo_ = std::make_shared<grasp_execution::Demo>(
       base_node, grasp_execution::GRASP_EXECUTION_PACKAGE,
       grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
