@@ -56,15 +56,15 @@ def to_urdf(xacro_path, urdf_path=None):
     return urdf_path  # Return path to the urdf file
 
 def load_file(package_name, file_path):
-    package_path = get_package_share_directory(package_name) #get package filepath
-    absolute_file_path = os.path.join(package_path, file_path)
-    temp_urdf_filepath = absolute_file_path.replace('.xacro','')
-    absolute_file_path = to_urdf(absolute_file_path,temp_urdf_filepath)
-    
+    package_path = Path(get_package_share_directory(package_name))  # get package filepath
+    absolute_file_path = package_path / file_path
+    temp_urdf_filepath = absolute_file_path.with_suffix('')
+    absolute_file_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_filepath)))
+
     try:
-        with open(absolute_file_path, 'r') as file:
+        with absolute_file_path.open('r') as file:
             return file.read()
-    except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
+    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
 def load_yaml(package_name, file_path):
