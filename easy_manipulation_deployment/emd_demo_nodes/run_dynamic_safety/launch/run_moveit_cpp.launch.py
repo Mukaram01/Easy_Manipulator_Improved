@@ -89,9 +89,9 @@ def generate_launch_description():
         package="run_dynamic_safety",
         prefix=PythonExpression(
             [
-                '"xterm -e gdb --args" if ',
+                "'xterm -e gdb --args' if '",
                 LaunchConfiguration('debug'),
-                ' == "true" else ""',
+                "' == 'true' else ''",
             ]
         ),
         executable="run_moveit_cpp",
