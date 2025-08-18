@@ -28,8 +28,8 @@
 
 #include "moveit/moveit_cpp/moveit_cpp.h"
 #include "moveit/moveit_cpp/planning_component.h"
-#include "moveit/trajectory_processing/iterative_time_parameterization.hpp"
-#include "moveit/trajectory_processing/time_optimal_trajectory_generation.hpp"
+#include "moveit/trajectory_processing/iterative_time_parameterization.h"
+#include "moveit/trajectory_processing/time_optimal_trajectory_generation.h"
 
 #include "pluginlib/class_loader.hpp"
 
