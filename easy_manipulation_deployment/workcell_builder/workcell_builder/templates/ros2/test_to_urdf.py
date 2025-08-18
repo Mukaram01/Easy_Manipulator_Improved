@@ -54,3 +54,16 @@ def test_to_urdf_respects_output_path(tmp_path):
     assert expected.exists()
     with open(expected) as f:
         assert '<robot' in f.read()
+
+
+def test_to_urdf_allows_filename_without_directory(tmp_path, monkeypatch):
+    """Ensure to_urdf works when the output path has no directory component."""
+    xacro_file = tmp_path / 'robot.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    # Change to the temporary directory so that a bare filename is valid
+    monkeypatch.chdir(tmp_path)
+    result = demo.to_urdf(str(xacro_file), 'out')
+    expected = Path('out.urdf')
+    assert result == str(expected)
+    assert expected.exists()
+    assert '<robot' in expected.read_text()
