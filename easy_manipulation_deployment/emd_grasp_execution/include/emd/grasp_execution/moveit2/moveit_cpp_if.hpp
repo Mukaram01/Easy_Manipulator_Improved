@@ -26,10 +26,10 @@
 #include "emd/grasp_execution/grasp_execution.hpp"
 #include "emd/grasp_execution/moveit2/executor.hpp"
 
-#include "moveit/moveit_cpp/moveit_cpp.h"
-#include "moveit/moveit_cpp/planning_component.h"
-#include "moveit/trajectory_processing/iterative_time_parameterization.h"
-#include "moveit/trajectory_processing/time_optimal_trajectory_generation.h"
+#include "moveit/moveit_cpp/moveit_cpp.hpp"
+#include "moveit/moveit_cpp/planning_component.hpp"
+#include "moveit/trajectory_processing/iterative_time_parameterization.hpp"
+#include "moveit/trajectory_processing/time_optimal_trajectory_generation.hpp"
 
 #include "pluginlib/class_loader.hpp"
 
