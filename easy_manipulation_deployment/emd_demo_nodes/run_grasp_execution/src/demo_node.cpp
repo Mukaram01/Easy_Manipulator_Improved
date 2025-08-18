@@ -314,8 +314,12 @@ public:
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
     const rclcpp_lifecycle::State &)
   {
+    // shared_from_this() returns a pointer to DemoLifecycleNode (a LifecycleNode).
+    // Demo expects an rclcpp::Node pointer, so explicitly cast to the base type
+    // to avoid template deduction failure during construction.
+    auto base_node = std::static_pointer_cast<rclcpp::Node>(shared_from_this());
     demo_ = std::make_shared<grasp_execution::Demo>(
-      shared_from_this(), grasp_execution::GRASP_EXECUTION_PACKAGE,
+      base_node, grasp_execution::GRASP_EXECUTION_PACKAGE,
       grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
     const std::string workcell_context_filepath =
       this->get_parameter("workcell_context").as_string();
