@@ -44,7 +44,7 @@ class Demo : public moveit2::MoveitCppGraspExecution
 public:
   explicit Demo(
     const rclcpp::Node::SharedPtr & node,
-    const std::string & package_name,
+    [[maybe_unused]] const std::string & package_name,
     const std::string & grasp_task_topic,
     const std::string & grasp_request_topic)
   : MoveitCppGraspExecution(node, 1, 1),
@@ -273,7 +273,7 @@ public:
 
   bool grasp_object(
     const std::string target_id,
-    float gripper_value)
+    [[maybe_unused]] float gripper_value)
   {
     // ------------------- Attach grasp object to robot --------------------------
     prompt_job_start(
@@ -287,7 +287,7 @@ public:
 
   bool release_object(
     const std::string target_id,
-    float gripper_value)
+    [[maybe_unused]] float gripper_value)
   {
     prompt_job_start(
       node_->get_logger(), target_id,
