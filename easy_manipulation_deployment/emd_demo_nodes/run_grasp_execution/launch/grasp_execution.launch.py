@@ -90,7 +90,8 @@ def generate_launch_description():
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic': robot_description_semantic_config}
 
-    kinematics_yaml = load_yaml('ur5_moveit_config', 'config/kinematics.yaml')
+    kinematics_yaml = {'robot_description_kinematics':
+                       load_yaml('ur5_moveit_config', 'config/kinematics.yaml')}
 
     ompl_planning_pipeline_config = {
         'ompl': {
@@ -121,10 +122,6 @@ def generate_launch_description():
     joint_limits_yaml = load_yaml('ur5_moveit_config', 'config/joint_limits.yaml')
     joint_limits = {'robot_description_planning': joint_limits_yaml}
 
-    workcell_context_yaml = os.path.join(
-        get_package_share_directory(package_name), 'config', 'workcell_context.yaml')
-    workcell_context = {'workcell_context': workcell_context_yaml}
-
     # MoveItCpp demo executable
     grasp_execution_demo_node = Node(
         name='grasp_execution_node',
@@ -146,7 +143,6 @@ def generate_launch_description():
             kinematics_yaml,
             ompl_planning_pipeline_config,
             trajectory_execution,
-            workcell_context,
             moveit_controller,
         ],
     )
@@ -194,7 +190,7 @@ def generate_launch_description():
     for controller in ["ur5_arm_controller", "joint_state_controller"]:
         load_controllers += [
             ExecuteProcess(
-                cmd=["ros2 run controller_manager spawner.py {}".format(controller)],
+                cmd=["ros2 run controller_manager spawner {}".format(controller)],
                 shell=True,
                 output="screen",
             )

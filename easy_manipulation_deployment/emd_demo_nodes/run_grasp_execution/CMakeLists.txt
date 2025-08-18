@@ -17,6 +17,7 @@ find_package(emd_waypoint_execution REQUIRED)
 find_package(emd_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 add_executable(demo_node src/demo_node.cpp)
 
@@ -26,6 +27,7 @@ ament_target_dependencies(demo_node
   emd_msgs
   rclcpp
   rclcpp_lifecycle
+  ament_index_cpp
 )
 
 add_executable(fake_grasp_pose_publisher src/fake_grasp_pose_publisher.cpp)
