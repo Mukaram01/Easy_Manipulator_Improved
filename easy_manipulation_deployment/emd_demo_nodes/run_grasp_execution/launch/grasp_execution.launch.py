@@ -131,9 +131,9 @@ def generate_launch_description():
         package=package_name,
         prefix=PythonExpression(
             [
-                '"xterm -e gdb --args" if ',
+                "'xterm -e gdb --args' if '",
                 LaunchConfiguration('debug'),
-                ' == "true" else ""',
+                "' == 'true' else ''",
             ]
         ),
         executable='demo_node',
