@@ -17,6 +17,7 @@
 
 #include <string>
 #include <vector>
+#include <mutex>
 
 #include "emd/dynamic_safety/replanner_common.hpp"
 #include "moveit/planning_scene/planning_scene.h"
