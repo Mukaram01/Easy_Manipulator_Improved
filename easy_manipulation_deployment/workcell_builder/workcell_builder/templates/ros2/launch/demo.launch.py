@@ -67,12 +67,15 @@ def to_urdf(xacro_path, urdf_path=None):
 def load_file(package_name, file_path):
     package_path = Path(get_package_share_directory(package_name))  # get package filepath
     absolute_file_path = package_path / file_path
-    temp_urdf_filepath = absolute_file_path.with_suffix('')
-    absolute_file_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_filepath)))
-
     try:
-        with absolute_file_path.open('r') as file:
-            return file.read()
+        # Use a temporary directory so the generated URDF does not pollute the
+        # package path and to avoid double ``.urdf`` extensions when the input
+        # file already contains one.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
+            temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
+            with temp_urdf_path.open('r') as file:
+                return file.read()
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
