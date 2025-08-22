@@ -67,3 +67,11 @@ def test_to_urdf_allows_filename_without_directory(tmp_path, monkeypatch):
     assert result == str(expected)
     assert expected.exists()
     assert '<robot' in expected.read_text()
+
+
+def test_to_urdf_rejects_empty_output_path(tmp_path):
+    """to_urdf should raise a clear error when given an empty output path."""
+    xacro_file = tmp_path / 'robot.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    with pytest.raises(ValueError, match="urdf_path must not be empty"):
+        demo.to_urdf(str(xacro_file), '')
