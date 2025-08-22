@@ -67,3 +67,16 @@ def test_to_urdf_allows_filename_without_directory(tmp_path, monkeypatch):
     assert result == str(expected)
     assert expected.exists()
     assert '<robot' in expected.read_text()
+
+
+def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
+    """``load_file`` should place generated URDFs in a temporary location."""
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    xacro_file = pkg_dir / 'robot.urdf.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+
+    content = demo.load_file(str(pkg_dir), xacro_file.name)
+    assert '<robot' in content
+    # ``load_file`` should not leave any URDF files in the package directory
+    assert list(pkg_dir.glob('*.urdf')) == []
