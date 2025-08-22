@@ -75,6 +75,14 @@ def test_to_urdf_rejects_empty_output_path(tmp_path):
     with pytest.raises(ValueError, match="urdf_path must not be empty"):
         demo.to_urdf(str(xacro_file), '')
 
+
+def test_to_urdf_rejects_directory_only_path(tmp_path):
+    """to_urdf should error when output path points to a directory."""
+    xacro_file = tmp_path / 'robot.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    with pytest.raises(ValueError, match="urdf_path must not be empty"):
+        demo.to_urdf(str(xacro_file), '.')
+
 def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
     """``load_file`` should place generated URDFs in a temporary location."""
     pkg_dir = tmp_path / 'pkg'

@@ -48,7 +48,12 @@ def to_urdf(xacro_path, urdf_path=None):
         # ``FileNotFoundError``.  Guard against this by only attempting to
         # create the directory when a directory path is provided.
         urdf_path = Path(urdf_path)
-        if not urdf_path.name:
+        # ``Path.name`` returns ``'.'`` for the current directory and ``'..'``
+        # for the parent directory.  Both of those indicate that the provided
+        # path refers to a directory rather than a file.  ``Path.with_suffix``
+        # would raise ``ValueError`` for such paths, so detect them explicitly
+        # and raise a clearer error message instead.
+        if not urdf_path.name or urdf_path.name in {".", ".."}:
             raise ValueError("urdf_path must not be empty")
         urdf_path = str(urdf_path.with_suffix(".urdf"))
         directory = os.path.dirname(urdf_path)
