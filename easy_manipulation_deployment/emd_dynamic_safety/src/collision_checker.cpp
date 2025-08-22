@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
+#include <mutex>
 
 #include "emd/dynamic_safety/collision_checker.hpp"
 #include "emd/interpolate.hpp"
