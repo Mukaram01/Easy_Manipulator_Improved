@@ -153,6 +153,7 @@ void SceneSelect::generate_scene_files(Scene scene)
 void SceneSelect::refresh_scenes(int latest_scene)
 {
   if (latest_scene < 0) {latest_scene = 0;}
+  ui->error_workcell->clear();
   bool oldState = ui->scene_list->blockSignals(true);
   ui->scene_list->clear();  // Clear the dropdown menu
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
@@ -172,7 +173,7 @@ void SceneSelect::refresh_scenes(int latest_scene)
     ui->generate_files->setDisabled(true);
     ui->edit_scene->setDisabled(true);
     ui->delete_scene->setDisabled(true);
-    ui->error_workcell->append("<font color='red'> No scenes available. </font>");
+    ui->error_workcell->setText("<font color='red'> No scenes available. </font>");
   }
   ui->scene_list->blockSignals(oldState);
 }

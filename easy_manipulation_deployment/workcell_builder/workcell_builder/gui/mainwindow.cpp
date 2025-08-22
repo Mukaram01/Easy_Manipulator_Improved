@@ -31,6 +31,7 @@ MainWindow::MainWindow(QWidget * parent)
   ui(new Ui::MainWindow)
 {
   ui->setupUi(this);
+  setWindowTitle("Workcell Builder");
   ui->next->setDisabled(true);
   ui->change_workcell->setDisabled(true);
   success = false;
