@@ -17,12 +17,20 @@ It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS
 For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
 
 ---
+## Prerequisites
+
+- [vcstool](https://github.com/dirk-thomas/vcstool) for fetching dependency repositories
+- `rosdep` for installing package dependencies
+- A ROS 2 environment sourced (Jazzy or Humble)
+
+---
 ## Build on Humble
 
 ```
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+vcs import < easy_manipulation_deployment/tesseract.repos
 mv easy_manipulation_deployment/assets/ .
 mv easy_manipulation_deployment/scenes/ .
 mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
@@ -30,7 +38,7 @@ cd ~/workcell_ws
 source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
 source ~/ws_moveit2/install/setup.bash
-colcon build
+colcon build --symlink-install
 source install/setup.bash
 ```
 
