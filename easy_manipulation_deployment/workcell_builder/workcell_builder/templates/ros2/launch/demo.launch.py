@@ -41,13 +41,16 @@ def to_urdf(xacro_path, urdf_path=None):
         )
         os.close(fd)
     else:
-        # Ensure the output file has a ``.urdf`` extension and the directory
+        # Ensure the output file has a valid name, a ``.urdf`` extension and the directory
         # exists before writing. ``os.path.dirname`` returns an empty string
         # when ``urdf_path`` does not include any directory components (e.g.
         # ``"output"``).  Calling ``os.makedirs('')`` raises a
         # ``FileNotFoundError``.  Guard against this by only attempting to
         # create the directory when a directory path is provided.
-        urdf_path = str(Path(urdf_path).with_suffix(".urdf"))
+        urdf_path = Path(urdf_path)
+        if not urdf_path.name:
+            raise ValueError("urdf_path must not be empty")
+        urdf_path = str(urdf_path.with_suffix(".urdf"))
         directory = os.path.dirname(urdf_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
