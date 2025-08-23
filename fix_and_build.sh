@@ -99,6 +99,23 @@ if [ -f "$PDH" ]; then
   fi
 fi
 
+# --- Patch trajopt_sco to depend on rclcpp ---
+TSC_CMAKE="$SRC/trajopt/trajopt_sco/CMakeLists.txt"
+TSC_PKGXML="$SRC/trajopt/trajopt_sco/package.xml"
+if [ -f "$TSC_CMAKE" ]; then
+  if ! grep -q "find_package(rclcpp" "$TSC_CMAKE"; then
+    say "Patching trajopt_sco CMakeLists.txt for rclcpp ..."
+    sed -i '/find_package(OpenMP REQUIRED)/a find_package(rclcpp REQUIRED)' "$TSC_CMAKE" || true
+    sed -i '/OpenMP::OpenMP_CXX)/i \\         rclcpp::rclcpp' "$TSC_CMAKE" || true
+  fi
+fi
+if [ -f "$TSC_PKGXML" ]; then
+  if ! grep -q '<depend>rclcpp</depend>' "$TSC_PKGXML"; then
+    say "Adding rclcpp dependency to trajopt_sco package.xml ..."
+    sed -i '/<depend>boost<\/depend>/a \  <depend>rclcpp<\/depend>' "$TSC_PKGXML" || true
+  fi
+fi
+
 # --- Try rosdep to install remaining system deps ---
 if have rosdep; then
   say "Running rosdep install ..."
