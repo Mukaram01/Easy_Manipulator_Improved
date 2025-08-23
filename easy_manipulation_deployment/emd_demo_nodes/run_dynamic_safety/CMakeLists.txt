@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
 project(run_dynamic_safety)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Common cmake code applied to all moveit packages
 find_package(moveit_common REQUIRED)
