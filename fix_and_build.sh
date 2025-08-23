@@ -102,18 +102,25 @@ fi
 # --- Patch trajopt_sco to depend on rclcpp ---
 TSC_CMAKE="$SRC/trajopt/trajopt_sco/CMakeLists.txt"
 TSC_PKGXML="$SRC/trajopt/trajopt_sco/package.xml"
-if [ -f "$TSC_CMAKE" ]; then
-  if ! grep -q "find_package(rclcpp" "$TSC_CMAKE"; then
-    say "Patching trajopt_sco CMakeLists.txt for rclcpp ..."
-    sed -i '/find_package(OpenMP REQUIRED)/a find_package(rclcpp REQUIRED)' "$TSC_CMAKE" || true
-    sed -i '/OpenMP::OpenMP_CXX)/i \\         rclcpp::rclcpp' "$TSC_CMAKE" || true
-  fi
+
+# Some versions of trajopt_sco do not declare a dependency on rclcpp even
+# though headers from rclcpp are included via ros_node_base.h.  When that
+# happens the include path to rclcpp is missing and compilation fails with
+# "fatal error: rclcpp/rclcpp.hpp: No such file or directory".  The block
+# below patches both the CMakeLists.txt and package.xml in-place to make the
+# dependency explicit.
+if [ -f "$TSC_CMAKE" ] && ! grep -q "find_package(rclcpp" "$TSC_CMAKE"; then
+  say "Patching trajopt_sco CMakeLists.txt for rclcpp ..."
+  # Insert the find_package call after the OpenMP find_package if present
+  perl -0 -i -pe 's/find_package\s*\(\s*OpenMP[^\n]*\)\n/&find_package(rclcpp REQUIRED)\n/' "$TSC_CMAKE" || true
+  # Ensure the target links against rclcpp so that its include directories
+  # are propagated to the build
+  perl -0 -i -pe 's/target_link_libraries\s*\(\s*\$\{PROJECT_NAME\}[^\n]*\n)/$&  rclcpp::rclcpp\n/' "$TSC_CMAKE" || true
 fi
-if [ -f "$TSC_PKGXML" ]; then
-  if ! grep -q '<depend>rclcpp</depend>' "$TSC_PKGXML"; then
-    say "Adding rclcpp dependency to trajopt_sco package.xml ..."
-    sed -i '/<depend>boost<\/depend>/a \  <depend>rclcpp<\/depend>' "$TSC_PKGXML" || true
-  fi
+
+if [ -f "$TSC_PKGXML" ] && ! grep -q '<depend>rclcpp</depend>' "$TSC_PKGXML"; then
+  say "Adding rclcpp dependency to trajopt_sco package.xml ..."
+  perl -0 -i -pe 's/(<depend>[^<]+<\/depend>)/\1\n  <depend>rclcpp<\/depend>/' "$TSC_PKGXML" || true
 fi
 
 # --- Try rosdep to install remaining system deps ---
