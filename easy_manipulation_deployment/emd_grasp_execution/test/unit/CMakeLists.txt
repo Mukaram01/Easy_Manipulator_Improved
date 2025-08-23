@@ -1,3 +1,9 @@
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Scheduler Unit Test
 find_package(yaml-cpp REQUIRED)
 ament_add_gtest(test_scheduler
