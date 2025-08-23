@@ -20,6 +20,9 @@ if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 || curl -I https://github.com >/dev/null
 
 say "Capabilities: sudo=$SUDO_OK apt=$APT_OK internet=$INET_OK"
 
+# Ensure we start from a clean ROS environment
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_CURRENT_PREFIX CFLAGS CXXFLAGS
+
 # --- Ensure ROS Humble environment ---
 if [ ! -f /opt/ros/humble/setup.bash ]; then
   say "ROS Humble not found at /opt/ros/humble."
@@ -42,6 +45,10 @@ fi
 source /opt/ros/humble/setup.bash
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 say "ROS_DISTRO=$ROS_DISTRO (expect 'humble')"
+
+# Force C++17 for all builds
+export AMENT_CMAKE_CXX_STANDARD=17
+export CXXFLAGS="-std=gnu++17"
 
 # --- Ensure rosdep/colcon available ---
 if ! have rosdep && [ "$SUDO_OK" = "1" ] && [ "$APT_OK" = "1" ] && [ "$INET_OK" = "1" ]; then
@@ -83,25 +90,6 @@ else
   say "No way to obtain boost_plugin_loader automatically (no apt, no internet)."
 fi
 
-# --- Enforce C++17 across all packages ---
-say "Enforcing C++17 in all packages ..."
-find "$SRC" -name CMakeLists.txt -print0 | while IFS= read -r -d '' f; do
-  # Bump any existing standard to 17
-  sed -i 's/\(CMAKE_CXX_STANDARD *\)\([0-9][0-9]*\)/\117/g' "$f" || true
-  # Insert standard block after project() if not present
-  if ! grep -q "CMAKE_CXX_STANDARD" "$f"; then
-    awk '
-      BEGIN{done=0}
-      /^project\(/ && !done {
-        print $0 RS "if(NOT CMAKE_CXX_STANDARD)\n  set(CMAKE_CXX_STANDARD 17)\nendif()\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\nset(CMAKE_CXX_EXTENSIONS OFF)\n"
-        done=1; next
-      }
-      {print}
-    ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-  fi
-
-done
-
 # --- Patch known missing <mutex> in tesseract_command_language ---
 PDH="$SRC/tesseract_planning/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h"
 if [ -f "$PDH" ]; then
@@ -126,18 +114,59 @@ cd "$WS"
 say "Building minimal set: tesseract_common tesseract_msgs ..."
 colcon build --symlink-install \
   --packages-select tesseract_common tesseract_msgs \
-  --cmake-args -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_CXX_STANDARD=17 || {
-    say "Minimal build failed — showing last 200 lines of log:"
-    tail -n 200 "$WS/log/latest_build/*/stdout_stderr.log" 2>/dev/null || true
+  --event-handlers console_direct+ \
+  --cmake-args \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DCMAKE_CXX_STANDARD=17 \
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+    -DCMAKE_CXX_EXTENSIONS=OFF \
+    -DAMENT_CMAKE_CXX_STANDARD=17 || {
+      say "Minimal build failed — showing last 200 lines of log:"
+      tail -n 200 "$WS/log/latest_build/*/stdout_stderr.log" 2>/dev/null || true
+      exit 2
+    }
+
+# --- Verify C++ standard used ---
+COMPILE_JSON="$WS/build/tesseract_msgs/compile_commands.json"
+if [ -f "$COMPILE_JSON" ] && grep -q -- "-std=gnu++11" "$COMPILE_JSON"; then
+  say "Detected gnu++11 compilation; attempting to fix ..."
+  grep -RIn -- "-std=gnu++11" "$WS/build" || true
+  grep -RIn --include=CMakeLists.txt "CMAKE_CXX_STANDARD" "$SRC" || true
+  grep -RIl --include=CMakeLists.txt "CMAKE_CXX_STANDARD *1[014]" "$SRC" | \
+    xargs -r sed -i 's/CMAKE_CXX_STANDARD *[0-9][0-9]*/CMAKE_CXX_STANDARD 17/g'
+  say "Rebuilding minimal set after fixes ..."
+  rm -rf "$WS/build" "$WS/install" "$WS/log" || true
+  colcon build --symlink-install \
+    --packages-select tesseract_common tesseract_msgs \
+    --event-handlers console_direct+ \
+    --cmake-args \
+      -DCMAKE_VERBOSE_MAKEFILE=ON \
+      -DCMAKE_CXX_STANDARD=17 \
+      -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+      -DCMAKE_CXX_EXTENSIONS=OFF \
+      -DAMENT_CMAKE_CXX_STANDARD=17 || {
+        say "Minimal rebuild failed — showing last 200 lines of log:"
+        tail -n 200 "$WS/log/latest_build/*/stdout_stderr.log" 2>/dev/null || true
+        exit 2
+      }
+  if [ -f "$COMPILE_JSON" ] && grep -q -- "-std=gnu++11" "$COMPILE_JSON"; then
+    say "ERROR: tesseract_msgs still compiling with -std=gnu++11"
+    grep -n -- "-std=gnu++11" "$COMPILE_JSON" | tee -a "$LOG"
     exit 2
-  }
+  fi
+fi
 
 # --- Full workspace build ---
 say "Minimal set built. Building full workspace ..."
-colcon build --symlink-install --cmake-args -DCMAKE_CXX_STANDARD=17 || {
-  say "Full build failed — showing last 200 lines of log:"
-  tail -n 200 "$WS/log/latest_build/*/stdout_stderr.log" 2>/dev/null || true
-  exit 3
-}
+colcon build --symlink-install \
+  --cmake-args \
+    -DCMAKE_CXX_STANDARD=17 \
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+    -DCMAKE_CXX_EXTENSIONS=OFF \
+    -DAMENT_CMAKE_CXX_STANDARD=17 || {
+      say "Full build failed — showing last 200 lines of log:"
+      tail -n 200 "$WS/log/latest_build/*/stdout_stderr.log" 2>/dev/null || true
+      exit 3
+    }
 
 say "✅ Build completed successfully."
