@@ -42,6 +42,16 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+A convenience script `fix_and_build_humble.sh` is provided in this repository. After cloning into
+`~/workcell_ws`, run:
+
+```
+cd easy_manipulation_deployment
+./fix_and_build_humble.sh
+```
+
+This script ensures required tools such as `ament_cmake` are installed via `rosdep` before building.
+
 ---
 ## Full Documentation/Wiki
 
