@@ -6,6 +6,21 @@ cd ~/workcell_ws
 source /opt/ros/humble/setup.bash
 if [ -f ~/ws_moveit2/install/setup.bash ]; then source ~/ws_moveit2/install/setup.bash; fi
 
+# 0.5) Install missing build tools and dependencies
+if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update -y
+    sudo apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
+  else
+    apt-get update -y
+    apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
+  fi
+fi
+
+rosdep update
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
+  --skip-keys "tesseract tesseract_process_planners"
+
 # 1) Ensure boost_plugin_loader exists
 if [ ! -d src/boost_plugin_loader ]; then
   git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
