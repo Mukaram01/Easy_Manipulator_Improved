@@ -38,6 +38,17 @@ rosdep update
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "tesseract tesseract_process_planners"
 
+# Remove any duplicate ROS packages to prevent colcon build failures.
+declare -A pkg_seen
+while read -r name path _; do
+  if [[ -n "${pkg_seen[$name]:-}" ]]; then
+    echo "Removing duplicate package '$name' from $path (keeping ${pkg_seen[$name]})"
+    rm -rf "$path"
+  else
+    pkg_seen[$name]="$path"
+  fi
+done < <(colcon list --base-paths src)
+
 # 1) Ensure boost_plugin_loader exists
 if [ ! -d src/boost_plugin_loader ]; then
   git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
