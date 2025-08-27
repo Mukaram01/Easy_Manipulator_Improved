@@ -88,6 +88,16 @@ def test_to_urdf_rejects_directory_only_path(tmp_path):
     with pytest.raises(ValueError, match="urdf_path must not be empty"):
         demo.to_urdf(str(xacro_file), '.')
 
+
+def test_to_urdf_rejects_path_with_trailing_separator(tmp_path):
+    """Ensure directories specified with a trailing slash are rejected."""
+    xacro_file = tmp_path / 'robot.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    dir_path = tmp_path / 'outdir'
+    dir_path.mkdir()
+    with pytest.raises(ValueError, match="urdf_path must not be empty"):
+        demo.to_urdf(str(xacro_file), str(dir_path) + os.path.sep)
+
 def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
     """``load_file`` should place generated URDFs in a temporary location."""
     pkg_dir = tmp_path / 'pkg'
