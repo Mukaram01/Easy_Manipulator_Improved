@@ -13,16 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# import os
+import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # ld = LaunchDescription()
-    config = get_package_share_directory('run_grasp_planner') + '/config/params_2f.yaml'
-    print(config)
+    config = os.path.join(
+        get_package_share_directory('run_grasp_planner'),
+        'config',
+        'params_2f.yaml',
+    )
+
     node = Node(
         package='run_grasp_planner',
         name='grasp_planning_node',
@@ -33,5 +37,4 @@ def generate_launch_description():
         # prefix=['valgrind'],
         parameters=[config]
     )
-    # ld.add_action(node)
     return LaunchDescription([node])
