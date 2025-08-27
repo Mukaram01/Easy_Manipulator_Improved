@@ -39,6 +39,18 @@ rosdep update
 rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "tesseract tesseract_process_planners"
 
+# Remove any duplicate ROS packages within the workspace to avoid colcon errors.
+# Keep the first occurrence of a package name and discard subsequent duplicates.
+declare -A pkg_seen
+while read -r name path _; do
+  if [[ -n "${pkg_seen[$name]:-}" ]]; then
+    echo "Removing duplicate package '$name' from $path (keeping ${pkg_seen[$name]})"
+    rm -rf "$path"
+  else
+    pkg_seen[$name]="$path"
+  fi
+done < <(colcon list --base-paths "$SRC")
+
 # C++17 everywhere
 export AMENT_CMAKE_CXX_STANDARD=17
 CMAKE_STD_ARGS=(-DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF)
