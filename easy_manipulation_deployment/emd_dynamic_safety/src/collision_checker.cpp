@@ -14,11 +14,11 @@
 
 #include <algorithm>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-#include <stdexcept>
-#include <mutex>
 
 #include "emd/dynamic_safety/collision_checker.hpp"
 #include "emd/interpolate.hpp"
@@ -26,45 +26,38 @@
 
 #ifdef EMD_DYNAMIC_SAFETY_TESSERACT
 #include "emd/dynamic_safety/collision_checker_tesseract.hpp"
-#endif  // EMD_DYNAMIC_SAFETY_TESSERACT
+#endif // EMD_DYNAMIC_SAFETY_TESSERACT
 
 #ifdef EMD_DYNAMIC_SAFETY_MOVEIT
 #include "emd/dynamic_safety/collision_checker_moveit.hpp"
-#endif  // EMD_DYNAMIC_SAFETY_MOVEIT
+#endif // EMD_DYNAMIC_SAFETY_MOVEIT
 
-namespace dynamic_safety
-{
+namespace dynamic_safety {
 
-static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety.collision_checker");
+static const rclcpp::Logger LOGGER =
+    rclcpp::get_logger("dynamic_safety.collision_checker");
 
-class CollisionChecker::Impl
-{
+class CollisionChecker::Impl {
 public:
   Impl() = default;
 
   virtual ~Impl() = default;
 
-  void configure(
-    const CollisionCheckerOption & option,
-    const std::string & robot_urdf,
-    const std::string & robot_srdf);
+  void configure(const CollisionCheckerOption &option,
+                 const std::string &robot_urdf, const std::string &robot_srdf);
 
-  void add_trajectory(
-    const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt);
+  void
+  add_trajectory(const trajectory_msgs::msg::JointTrajectory::SharedPtr &rt);
 
-  void update(const sensor_msgs::msg::JointState & state);
+  void update(const sensor_msgs::msg::JointState &state);
 
-  void update(const moveit_msgs::msg::PlanningScene & scene_msg);
+  void update(const moveit_msgs::msg::PlanningScene &scene_msg);
 
-  void run_once(
-    double current_time,
-    double look_ahead_time,
-    double & collision_time);
+  void run_once(double current_time, double look_ahead_time,
+                double &collision_time);
 
-  void sample_typical_time_point(
-    int sample_size,
-    double look_ahead_time,
-    std::vector<double> & time_point_samples);
+  void sample_typical_time_point(int sample_size, double look_ahead_time,
+                                 std::vector<double> &time_point_samples);
 
   void stop();
 
@@ -110,11 +103,9 @@ protected:
   std::atomic_bool started_;
 };
 
-void CollisionChecker::Impl::configure(
-  const CollisionCheckerOption & option,
-  const std::string & robot_urdf,
-  const std::string & robot_srdf)
-{
+void CollisionChecker::Impl::configure(const CollisionCheckerOption &option,
+                                       const std::string &robot_urdf,
+                                       const std::string &robot_srdf) {
   contexts_.clear();
 
   // Create the vector of states based on the resolution set when discrete.
@@ -135,29 +126,30 @@ void CollisionChecker::Impl::configure(
     std::unique_ptr<CollisionCheckerContext> context;
     if (option.framework == "moveit") {
 #ifdef EMD_DYNAMIC_SAFETY_MOVEIT
-      context = std::make_unique<dynamic_safety_moveit::MoveitCollisionCheckerContext>(
-        robot_urdf, robot_srdf, option.collision_checking_plugin);
+      context = std::make_unique<
+          dynamic_safety_moveit::MoveitCollisionCheckerContext>(
+          robot_urdf, robot_srdf, option.collision_checking_plugin);
 #else
-      RCLCPP_ERROR(LOGGER, "Framework %s not defined", option.framework.c_str());
+      RCLCPP_ERROR(LOGGER, "Framework %s not defined",
+                   option.framework.c_str());
       throw std::runtime_error("MoveIt framework requested but not available");
 #endif
     } else if (option.framework == "tesseract") {
 #ifdef EMD_DYNAMIC_SAFETY_TESSERACT
-      context = std::make_unique<dynamic_safety_tesseract::TesseractCollisionCheckerContext>(
-        robot_urdf, robot_srdf, option.collision_checking_plugin);
+      context = std::make_unique<
+          dynamic_safety_tesseract::TesseractCollisionCheckerContext>(
+          robot_urdf, robot_srdf, option.collision_checking_plugin);
 #else
-      RCLCPP_ERROR(LOGGER, "Framework %s not defined", option.framework.c_str());
-      throw std::runtime_error("Tesseract framework requested but not available");
+      RCLCPP_ERROR(LOGGER, "Framework %s not defined",
+                   option.framework.c_str());
+      throw std::runtime_error(
+          "Tesseract framework requested but not available");
 #endif
     }
     context->configure(option);
     contexts_.push_back(std::move(context));
-    runners_.emplace_back(
-      std::make_shared<std::thread>(
-        [ = ]() -> void
-        {
-          _runner_fn(static_cast<int>(i), continuous_);
-        }));
+    runners_.emplace_back(std::make_shared<std::thread>(
+        [=]() -> void { _runner_fn(static_cast<int>(i), continuous_); }));
 
     // Setup realtime sched
     if (option.realtime) {
@@ -169,8 +161,7 @@ void CollisionChecker::Impl::configure(
 }
 
 void CollisionChecker::Impl::add_trajectory(
-  const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt)
-{
+    const trajectory_msgs::msg::JointTrajectory::SharedPtr &rt) {
   if (rt->points.empty()) {
     RCLCPP_ERROR(LOGGER, "Trajectory Empty");
     throw std::invalid_argument("Provided trajectory has no points");
@@ -184,7 +175,8 @@ void CollisionChecker::Impl::add_trajectory(
   distances_.clear();
 
   // Re-time trajectory
-  double full_duration = rclcpp::Duration(rt->points.back().time_from_start).seconds();
+  double full_duration =
+      rclcpp::Duration(rt->points.back().time_from_start).seconds();
   int state_size = static_cast<int>(full_duration / step_);
   // record the starting offset
   start_offset_ = full_duration - static_cast<double>(state_size) * step_;
@@ -195,18 +187,20 @@ void CollisionChecker::Impl::add_trajectory(
   size_t i = 0;
   for (int idx = 0; idx <= state_size; idx++) {
     for (; i < rt->points.size(); i++) {
-      if (rclcpp::Duration(rt->points[i].time_from_start).seconds() >= time_from_start) {
+      if (rclcpp::Duration(rt->points[i].time_from_start).seconds() >=
+          time_from_start) {
         break;
       }
     }
-    before = std::max<size_t>((i == 0) ? 0 : (i - 1), 0);  // Avoid unsigned int 0 minus 1
+    before = std::max<size_t>((i == 0) ? 0 : (i - 1),
+                              0); // Avoid unsigned int 0 minus 1
     after = std::min<size_t>(i, num_points - 1);
     trajectory_msgs::msg::JointTrajectoryPoint point;
     point.time_from_start = rclcpp::Duration::from_seconds(time_from_start);
     emd::core::interpolate_between_points(
-      rt->points[before].time_from_start, rt->points[before],
-      rt->points[after].time_from_start, rt->points[after],
-      point.time_from_start, point);
+        rt->points[before].time_from_start, rt->points[before],
+        rt->points[after].time_from_start, rt->points[after],
+        point.time_from_start, point);
     trajectory_.points.push_back(point);
     time_from_start += step_;
   }
@@ -221,29 +215,27 @@ void CollisionChecker::Impl::add_trajectory(
   distances_.resize(trajectory_.points.size(), -1);
 }
 
-void CollisionChecker::Impl::update(const sensor_msgs::msg::JointState & state)
-{
-  for (auto & context : contexts_) {
+void CollisionChecker::Impl::update(const sensor_msgs::msg::JointState &state) {
+  for (auto &context : contexts_) {
     context->update(state);
   }
 }
 
-void CollisionChecker::Impl::update(const moveit_msgs::msg::PlanningScene & scene_msg)
-{
-  for (auto & context : contexts_) {
+void CollisionChecker::Impl::update(
+    const moveit_msgs::msg::PlanningScene &scene_msg) {
+  for (auto &context : contexts_) {
     context->update(scene_msg);
   }
 }
 
-void CollisionChecker::Impl::_runner_fn(int runner_id, bool continuous)
-{
+void CollisionChecker::Impl::_runner_fn(int runner_id, bool continuous) {
   int next_iteration = 1;
   while (true) {
     std::unique_lock<std::mutex> runner_lk(init_m_);
-    init_cv_.wait(
-      runner_lk,
-      [&next_iteration, & current_iteration_ = current_iteration_]
-      {return current_iteration_ == next_iteration;});
+    init_cv_.wait(runner_lk,
+                  [&next_iteration, &current_iteration_ = current_iteration_] {
+                    return current_iteration_ == next_iteration;
+                  });
     runner_lk.unlock();
 
     ++next_iteration;
@@ -275,11 +267,12 @@ void CollisionChecker::Impl::_runner_fn(int runner_id, bool continuous)
       size_t runner_id_u = static_cast<size_t>(runner_id);
       if (continuous) {
         contexts_[runner_id_u]->run_continuous(
-          trajectory_.joint_names, trajectory_.points[itr],
-          trajectory2_.points[itr2], results_[itr], distances_[itr]);
+            trajectory_.joint_names, trajectory_.points[itr],
+            trajectory2_.points[itr2], results_[itr], distances_[itr]);
       } else {
-        contexts_[runner_id_u]->run_discrete(
-          trajectory_.joint_names, trajectory_.points[itr], results_[itr], distances_[itr]);
+        contexts_[runner_id_u]->run_discrete(trajectory_.joint_names,
+                                             trajectory_.points[itr],
+                                             results_[itr], distances_[itr]);
       }
     }
 
@@ -291,11 +284,9 @@ void CollisionChecker::Impl::_runner_fn(int runner_id, bool continuous)
   }
 }
 
-void CollisionChecker::Impl::run_once(
-  double current_time,
-  double look_ahead_time,
-  double & collision_time)
-{
+void CollisionChecker::Impl::run_once(double current_time,
+                                      double look_ahead_time,
+                                      double &collision_time) {
   if (!started_) {
     throw std::runtime_error("Collision checker has not been started");
   }
@@ -304,14 +295,17 @@ void CollisionChecker::Impl::run_once(
   }
 
   int start_index = static_cast<int>((current_time - start_offset_) / step_);
-  int end_index = static_cast<int>((current_time + look_ahead_time - start_offset_) / step_);
+  int end_index = static_cast<int>(
+      (current_time + look_ahead_time - start_offset_) / step_);
   // end should not exceed trajectory max
   if (start_index < 0) {
     start_index = 0;
   }
 
-  start_index = std::min<int>(start_index, static_cast<int>(trajectory_.points.size()) - 1);
-  end_index = std::min<int>(end_index, static_cast<int>(trajectory_.points.size()) - 1);
+  start_index = std::min<int>(start_index,
+                              static_cast<int>(trajectory_.points.size()) - 1);
+  end_index =
+      std::min<int>(end_index, static_cast<int>(trajectory_.points.size()) - 1);
 
   itr_ = start_index;
   itr_end_ = end_index;
@@ -326,46 +320,37 @@ void CollisionChecker::Impl::run_once(
 
   {
     std::unique_lock<std::mutex> lk(init_m_);
-    init_cv_.wait(
-      lk, [ & n_active_workers_ = n_active_workers_]
-      {return n_active_workers_ == 0;});
+    init_cv_.wait(lk, [&n_active_workers_ = n_active_workers_] {
+      return n_active_workers_ == 0;
+    });
   }
 
-  // Ignore the first index, cuz ... cannot avoid..
-  // TODO(anyone): fix the first index
   collision_time = -1;
-  if (results_[static_cast<size_t>(start_index)]) {
-    collision_time = start_offset_ + step_ * start_index;
-  } else {
-    for (int idx = start_index + 1; idx <= end_index; idx++) {
-      if (results_[static_cast<size_t>(idx)]) {
-        collision_time = start_offset_ + (idx - 1) * step_;
-        break;
-      }
+  for (int idx = start_index; idx <= end_index; idx++) {
+    if (results_[static_cast<size_t>(idx)]) {
+      collision_time = start_offset_ + step_ * idx;
+      break;
     }
   }
 }
 
 void CollisionChecker::Impl::sample_typical_time_point(
-  int sample_size,
-  double look_ahead_time,
-  std::vector<double> & time_point_samples)
-{
+    int sample_size, double look_ahead_time,
+    std::vector<double> &time_point_samples) {
   double range =
-    rclcpp::Duration(trajectory_.points.back().time_from_start).seconds() - look_ahead_time;
+      rclcpp::Duration(trajectory_.points.back().time_from_start).seconds() -
+      look_ahead_time;
   std::srand(static_cast<unsigned int>(std::time(nullptr)));
   time_point_samples.clear();
   for (int i = 0; i < sample_size; i++) {
-    time_point_samples.push_back(static_cast<double>(std::rand()) / RAND_MAX * range);
+    time_point_samples.push_back(static_cast<double>(std::rand()) / RAND_MAX *
+                                 range);
   }
 }
 
-void CollisionChecker::Impl::stop()
-{
-}
+void CollisionChecker::Impl::stop() {}
 
-void CollisionChecker::Impl::reset()
-{
+void CollisionChecker::Impl::reset() {
   started_ = false;
   {
     std::lock_guard<std::mutex> lk(init_m_);
@@ -374,69 +359,52 @@ void CollisionChecker::Impl::reset()
   RCLCPP_INFO(LOGGER, "Send stopping signal");
   init_cv_.notify_all();
   RCLCPP_INFO(LOGGER, "Joining runners.");
-  for (auto & runner : runners_) {
+  for (auto &runner : runners_) {
     if (runner->joinable()) {
       runner->join();
     }
   }
 }
 
-double CollisionChecker::Impl::get_min_distance() const
-{
+double CollisionChecker::Impl::get_min_distance() const {
   if (distances_.empty()) {
     return -1.0;
   }
   return *std::min_element(distances_.begin(), distances_.end());
 }
 
-CollisionChecker::CollisionChecker()
-: impl_ptr_(std::make_unique<Impl>())
-{
-}
+CollisionChecker::CollisionChecker() : impl_ptr_(std::make_unique<Impl>()) {}
 
-CollisionChecker::~CollisionChecker()
-{
-  reset();
-}
+CollisionChecker::~CollisionChecker() { reset(); }
 
-void CollisionChecker::configure(
-  const CollisionCheckerOption & option,
-  const std::string & robot_urdf,
-  const std::string & robot_srdf)
-{
+void CollisionChecker::configure(const CollisionCheckerOption &option,
+                                 const std::string &robot_urdf,
+                                 const std::string &robot_srdf) {
   impl_ptr_->configure(option, robot_urdf, robot_srdf);
 }
 
-void CollisionChecker::update(
-  const sensor_msgs::msg::JointState & state)
-{
+void CollisionChecker::update(const sensor_msgs::msg::JointState &state) {
   impl_ptr_->update(state);
 }
 
 void CollisionChecker::update(
-  const moveit_msgs::msg::PlanningScene & scene_msg)
-{
+    const moveit_msgs::msg::PlanningScene &scene_msg) {
   impl_ptr_->update(scene_msg);
 }
 
-void CollisionChecker::run_once(
-  double current_time,
-  double look_ahead_time,
-  double & collision_time)
-{
+void CollisionChecker::run_once(double current_time, double look_ahead_time,
+                                double &collision_time) {
   impl_ptr_->run_once(current_time, look_ahead_time, collision_time);
 }
 
-double CollisionChecker::polling(
-  double look_ahead_time,
-  int sample_size)
-{
+double CollisionChecker::polling(double look_ahead_time, int sample_size) {
   std::vector<double> sample_time_points;
-  impl_ptr_->sample_typical_time_point(sample_size, look_ahead_time, sample_time_points);
+  impl_ptr_->sample_typical_time_point(sample_size, look_ahead_time,
+                                       sample_time_points);
   double collision_time;
   double collision_checking_duration = 0;
   emd::TimeProfiler<> poller(static_cast<size_t>(sample_size));
-  for (auto & start_time : sample_time_points) {
+  for (auto &start_time : sample_time_points) {
     poller.reset();
     run_once(start_time, look_ahead_time, collision_time);
     collision_checking_duration += poller.lapse_and_record();
@@ -448,26 +416,17 @@ double CollisionChecker::polling(
   return collision_checking_duration / sample_size;
 }
 
-void CollisionChecker::reset()
-{
-  impl_ptr_->reset();
-}
+void CollisionChecker::reset() { impl_ptr_->reset(); }
 
-void CollisionChecker::stop()
-{
-  impl_ptr_->stop();
-}
+void CollisionChecker::stop() { impl_ptr_->stop(); }
 
 void CollisionChecker::add_trajectory(
-  const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt)
-{
+    const trajectory_msgs::msg::JointTrajectory::SharedPtr &rt) {
   impl_ptr_->add_trajectory(rt);
 }
 
-double CollisionChecker::get_min_distance() const
-{
+double CollisionChecker::get_min_distance() const {
   return impl_ptr_->get_min_distance();
 }
 
-
-}  // namespace dynamic_safety
+} // namespace dynamic_safety

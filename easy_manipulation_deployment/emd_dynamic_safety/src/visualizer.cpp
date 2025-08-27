@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -21,17 +22,16 @@
 #include "emd/interpolate.hpp"
 #include <rclcpp/node.hpp>
 
-#include "urdf/model.h"
 #include "srdfdom/model.h"
+#include "urdf/model.h"
 
-namespace dynamic_safety
-{
+namespace dynamic_safety {
 
-static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety.visualizer");
+static const rclcpp::Logger LOGGER =
+    rclcpp::get_logger("dynamic_safety.visualizer");
 
 Visualizer::Visualizer()
-: current_time_point_(0.0), collision_time_point_(-1.0)
-{
+    : current_time_point_(0.0), collision_time_point_(-1.0) {
   // Dark Grey
   DARK_GREY.r = DARK_GREY.g = DARK_GREY.b = static_cast<float>(0.628);
   DARK_GREY.a = 1;
@@ -54,41 +54,39 @@ Visualizer::Visualizer()
   GREEN.g = GREEN.a = 1;
 }
 
-
-void Visualizer::configure(
-  const rclcpp::Node::SharedPtr & node,
-  const Option & option,
-  const SafetyZone::Option & zone_option,
-  const std::string & robot_urdf,
-  const std::string & robot_srdf)
-{
+void Visualizer::configure(const rclcpp::Node::SharedPtr &node,
+                           const Option &option,
+                           const SafetyZone::Option &zone_option,
+                           const std::string &robot_urdf,
+                           const std::string &robot_srdf) {
   urdf::ModelSharedPtr umodel = std::make_shared<urdf::Model>();
   srdf::ModelSharedPtr smodel = std::make_shared<srdf::Model>();
   if (umodel->initString(robot_urdf)) {
     if (!smodel->initString(*umodel, robot_srdf)) {
       RCLCPP_ERROR(LOGGER, "Unable to parse SRDF");
-      // TODO(anyone): exception handling
+      throw std::runtime_error("Unable to parse SRDF");
     }
   } else {
     RCLCPP_ERROR(LOGGER, "Unable to parse URDF");
-    // TODO(anyone): exception handling
+    throw std::runtime_error("Unable to parse URDF");
   }
   // Construct planning scene
   scene_ = std::make_shared<planning_scene::PlanningScene>(umodel, smodel);
   node_ = node;
   start_ = false;
   pub_ = node_->template create_publisher<visualization_msgs::msg::Marker>(
-    option.topic, 2);
+      option.topic, 2);
   if (option.publish_scene && !option.scene_topic.empty()) {
-    scene_pub_ = node_->template create_publisher<moveit_msgs::msg::PlanningScene>(
-      option.scene_topic, 2);
+    scene_pub_ =
+        node_->template create_publisher<moveit_msgs::msg::PlanningScene>(
+            option.scene_topic, 2);
   }
   rate_ = option.publish_frequency;
   step_ = option.step;
   tcp_link_ = option.tcp_link;
   safety_zone_.set(zone_option);
-  visualizer_callback_group_ = node->create_callback_group(
-    rclcpp::CallbackGroupType::MutuallyExclusive);
+  visualizer_callback_group_ =
+      node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   rclcpp::SubscriptionOptions env_state_sub_option;
   env_state_sub_option.callback_group = visualizer_callback_group_;
 
@@ -97,15 +95,15 @@ void Visualizer::configure(
 }
 
 void Visualizer::add_trajectory(
-  const trajectory_msgs::msg::JointTrajectory::SharedPtr & rt)
-{
+    const trajectory_msgs::msg::JointTrajectory::SharedPtr &rt) {
   if (rt->points.empty()) {
-    // TODO(anyone): exception handling
-    return;
+    RCLCPP_ERROR(LOGGER, "Received empty JointTrajectory");
+    throw std::invalid_argument("JointTrajectory contains no points");
   }
 
   // Re-time trajectory
-  double full_duration = rclcpp::Duration(rt->points.back().time_from_start).seconds();
+  double full_duration =
+      rclcpp::Duration(rt->points.back().time_from_start).seconds();
   int state_size = static_cast<int>(full_duration / step_);
 
   marker_msg_->ns = "";
@@ -118,35 +116,38 @@ void Visualizer::add_trajectory(
   marker_msg_->lifetime = rclcpp::Duration::from_seconds(1);
   marker_msg_->points.clear();
   marker_msg_->colors.clear();
-  auto & marker_points = marker_msg_->points;
+  auto &marker_points = marker_msg_->points;
 
   // record the starting offset
-  double time_from_start = full_duration - static_cast<double>(state_size) * step_;
+  double time_from_start =
+      full_duration - static_cast<double>(state_size) * step_;
 
   size_t num_points = rt->points.size();
   size_t before, after;
   size_t i = 0;
   moveit::core::RobotStatePtr rs =
-    std::make_shared<moveit::core::RobotState>(scene_->getRobotModel());
+      std::make_shared<moveit::core::RobotState>(scene_->getRobotModel());
   marker_msg_->header.frame_id = rs->getRobotModel()->getRootLinkName();
   for (int idx = 0; idx <= state_size; idx++) {
     for (; i < rt->points.size(); i++) {
-      if (rclcpp::Duration(rt->points[i].time_from_start).seconds() >= time_from_start) {
+      if (rclcpp::Duration(rt->points[i].time_from_start).seconds() >=
+          time_from_start) {
         break;
       }
     }
-    before = std::max<size_t>((i == 0) ? 0 : (i - 1), 0);  // Avoid unsigned int 0 minus 1
+    before = std::max<size_t>((i == 0) ? 0 : (i - 1),
+                              0); // Avoid unsigned int 0 minus 1
     after = std::min<size_t>(i, num_points - 1);
     trajectory_msgs::msg::JointTrajectoryPoint point;
     point.time_from_start = rclcpp::Duration::from_seconds(time_from_start);
     emd::core::interpolate_between_points(
-      rt->points[before].time_from_start, rt->points[before],
-      rt->points[after].time_from_start, rt->points[after],
-      point.time_from_start, point);
+        rt->points[before].time_from_start, rt->points[before],
+        rt->points[after].time_from_start, rt->points[after],
+        point.time_from_start, point);
     for (size_t j = 0; j < rt->joint_names.size(); j++) {
       rs->setJointPositions(rt->joint_names[j], &point.positions[j]);
     }
-    const auto & tf = rs->getGlobalLinkTransform(tcp_link_);
+    const auto &tf = rs->getGlobalLinkTransform(tcp_link_);
     // ASSERT_ISOMETRY(tf);  // unsanitized input, could contain a non-isometry
     geometry_msgs::msg::Point marker_point;
     marker_point.x = tf.translation().x();
@@ -162,44 +163,33 @@ void Visualizer::add_trajectory(
 
   // Better handling of this.
   timer_ = node_->create_wall_timer(
-    std::chrono::nanoseconds(static_cast<int>(1e9 / rate_)),
-    std::bind(&Visualizer::_timer_cb, this),
-    visualizer_callback_group_);
+      std::chrono::nanoseconds(static_cast<int>(1e9 / rate_)),
+      std::bind(&Visualizer::_timer_cb, this), visualizer_callback_group_);
 }
 
-void Visualizer::update(
-  double current_time_point,
-  double collision_time_point)
-{
+void Visualizer::update(double current_time_point,
+                        double collision_time_point) {
   current_time_point_.store(current_time_point);
   collision_time_point_.store(collision_time_point);
 }
 
-void Visualizer::update(
-  const SafetyZone::Option & zone_option)
-{
+void Visualizer::update(const SafetyZone::Option &zone_option) {
   safety_zone_.set(zone_option);
 }
 
-void Visualizer::start()
-{
-  start_ = true;
-}
+void Visualizer::start() { start_ = true; }
 
-void Visualizer::stop()
-{
+void Visualizer::stop() {
   timer_.reset();
   start_ = false;
 }
 
-void Visualizer::reset()
-{
+void Visualizer::reset() {
   pub_.reset();
   scene_pub_.reset();
 }
 
-void Visualizer::_timer_cb()
-{
+void Visualizer::_timer_cb() {
   if (!start_) {
     return;
   }
@@ -209,26 +199,26 @@ void Visualizer::_timer_cb()
   for (size_t i = 0; i < marker_msg_->colors.size(); i++) {
     double time_point = step_ * static_cast<int>(i);
     if (time_point < current_time_point ||
-      time_point >= current_time_point + safety_zone_.get_zone_limit(safety_zone_.REPLAN))
-    {
+        time_point >= current_time_point +
+                          safety_zone_.get_zone_limit(safety_zone_.REPLAN)) {
       marker_msg_->colors[i] = DARK_GREY;
     } else {
       switch (safety_zone_.get_zone(time_point - current_time_point)) {
-        case SafetyZone::BLIND:
-          marker_msg_->colors[i] = RED;
-          break;
-        case SafetyZone::EMERGENCY:
-          marker_msg_->colors[i] = ORANGE;
-          break;
-        case SafetyZone::SLOWDOWN:
-          marker_msg_->colors[i] = YELLOW;
-          break;
-        case SafetyZone::REPLAN:
-          marker_msg_->colors[i] = LIGHT_GREEN;
-          break;
-        case SafetyZone::SAFE:
-          marker_msg_->colors[i] = GREEN;
-          break;
+      case SafetyZone::BLIND:
+        marker_msg_->colors[i] = RED;
+        break;
+      case SafetyZone::EMERGENCY:
+        marker_msg_->colors[i] = ORANGE;
+        break;
+      case SafetyZone::SLOWDOWN:
+        marker_msg_->colors[i] = YELLOW;
+        break;
+      case SafetyZone::REPLAN:
+        marker_msg_->colors[i] = LIGHT_GREEN;
+        break;
+      case SafetyZone::SAFE:
+        marker_msg_->colors[i] = GREEN;
+        break;
       }
     }
   }
@@ -250,4 +240,4 @@ void Visualizer::_timer_cb()
   }
 }
 
-}  // namespace dynamic_safety
+} // namespace dynamic_safety
