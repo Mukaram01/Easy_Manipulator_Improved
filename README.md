@@ -81,12 +81,27 @@ Single Suction Cup
 
 2x2 Suction Array
 
-<img src="./images/2x2_array.png"  width="10%" height="10%"> 
+<img src="./images/2x2_array.png"  width="10%" height="10%">
 
+Quick start:
+
+```
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch run_grasp_planner grasp_planner_3f_launch.py
+```
 
 ### 2) Grasp Execution
 
 A Moveit2 Based Grasp Execution package that incorporates real time dynamic safety components
+
+Quick start:
+
+```
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch run_grasp_execution grasp_execution.launch.py
+```
 
 ### 3) Workcell Builder
 
@@ -109,6 +124,12 @@ The grasp execution example can be started in a similar manner:
 
 ```
 ros2 launch run_grasp_execution grasp_execution.launch.py
+```
+
+To launch both the grasp planner and execution together, use the provided demo script:
+
+```
+./scripts/grasp_demo.sh
 ```
 
 ---
