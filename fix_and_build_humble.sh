@@ -2,8 +2,16 @@
 set -euo pipefail
 cd ~/workcell_ws
 
-# 0) Source underlays
-source /opt/ros/humble/setup.bash
+# 0) Source underlays (support Humble or Jazzy)
+for d in jazzy humble; do
+  if [ -f "/opt/ros/${d}/setup.bash" ]; then
+    default_rosdistro=${d}
+    break
+  fi
+done
+ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
+[ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
 if [ -f ~/ws_moveit2/install/setup.bash ]; then source ~/ws_moveit2/install/setup.bash; fi
 
 # 0.5) Install missing build tools and dependencies
