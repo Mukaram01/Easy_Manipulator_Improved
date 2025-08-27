@@ -36,7 +36,12 @@ T _parse_optional_field(const std::string &field_name, const YAML::Node &node,
 void WorkcellContext::init_from_yaml(const std::string &path) {
   // TODO(anyone): use rcl_yaml_param_parser instead.
   // https://github.com/ros2/rcl/tree/master/rcl_yaml_param_parser
-  YAML::Node config_yaml = YAML::LoadFile(path);
+  YAML::Node config_yaml;
+  try {
+    config_yaml = YAML::LoadFile(path);
+  } catch (const YAML::Exception & e) {
+    throw ContextFileLoadingException(path, e.what());
+  }
 
   // Check whether yaml starts with workcell namespace.
   if (!config_yaml["workcell"]) {
