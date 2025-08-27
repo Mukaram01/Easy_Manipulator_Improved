@@ -100,7 +100,7 @@ def generate_launch_description():
             moveit_cpp_yaml_file_name,
             robot_description,
             robot_description_semantic,
-            kinematics_yaml,
+            robot_description_kinematics,
             ompl_planning_pipeline_config,
             moveit_controllers,
             joint_limits_yaml,
