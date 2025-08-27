@@ -44,8 +44,9 @@ export AMENT_CMAKE_CXX_STANDARD=17
 CMAKE_STD_ARGS=(-DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF)
 
 # 1) Ensure boost_plugin_loader and build it first
+# Ensure the boost_plugin_loader from tesseract-robotics is available
 if [ ! -d "$SRC/boost_plugin_loader" ]; then
-  git clone https://github.com/ros-industrial/boost_plugin_loader.git "$SRC/boost_plugin_loader"
+  git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
 fi
 cd "$WS"
 colcon build --symlink-install --packages-select boost_plugin_loader
