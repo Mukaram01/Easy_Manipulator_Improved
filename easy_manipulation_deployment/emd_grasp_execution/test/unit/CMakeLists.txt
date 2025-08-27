@@ -19,3 +19,18 @@ target_include_directories(test_scheduler
 target_compile_features(test_scheduler
   PRIVATE cxx_std_17
 )
+
+# Context Unit Test
+ament_add_gtest(test_context
+  test_context.cpp
+)
+target_link_libraries(test_context
+  grasp_execution_interface
+  yaml-cpp
+)
+target_include_directories(test_context
+  SYSTEM PRIVATE ${YAML_CPP_INCLUDE_DIRS}
+)
+target_compile_features(test_context
+  PRIVATE cxx_std_17
+)

@@ -57,6 +57,27 @@ struct ContextLoadingException : public std::runtime_error
   }
 };
 
+/// Context file loading exception.
+/**
+ * Thrown when a workcell context YAML file cannot be opened or parsed.
+ */
+struct ContextFileLoadingException : public std::runtime_error
+{
+  /// Constructor
+  /**
+   * \param[in] path path to the YAML file that failed to load.
+   * \param[in] error_message additional error information.
+   */
+  ContextFileLoadingException(
+    const std::string & path,
+    const std::string & error_message = "")
+  : std::runtime_error(
+      "failed to load workcell context file [" + path + "]" +
+      (error_message.empty() ? "" : ": " + error_message))
+  {
+  }
+};
+
 
 }  // namespace grasp_execution
 
