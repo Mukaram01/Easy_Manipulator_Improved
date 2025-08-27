@@ -30,15 +30,23 @@ package_name = 'run_waypoint_execution'
 
 
 def to_urdf(xacro_path, urdf_path=None, mappings=None):
+    """Convert the given xacro file to a URDF file."""
+
     xacro_path = str(xacro_path)
+
     if urdf_path is None:
         fd, urdf_path = tempfile.mkstemp(
             prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
         )
         os.close(fd)
     else:
-        urdf_path = str(Path(urdf_path).with_suffix(".urdf"))
-        os.makedirs(os.path.dirname(urdf_path), exist_ok=True)
+        urdf_path = Path(urdf_path)
+        if not urdf_path.name or urdf_path.name in {".", ".."}:
+            raise ValueError("urdf_path must not be empty")
+        urdf_path = str(urdf_path.with_suffix(".urdf"))
+        directory = os.path.dirname(urdf_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
 
     doc = xacro.process_file(xacro_path, mappings=mappings)
     with xacro.open_output(urdf_path) as out:
@@ -48,15 +56,20 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 
 
 def load_file(package_name, file_path, mappings=None):
-    package_path = get_package_share_directory(package_name)  # get package filepath
-    absolute_file_path = os.path.join(package_path, file_path)
-    temp_urdf_filepath = absolute_file_path.replace('.xacro', '')
-    absolute_file_path = to_urdf(absolute_file_path, temp_urdf_filepath, mappings)
+    """Load a xacro file from a package and return its processed XML."""
+
+    package_path = Path(get_package_share_directory(package_name))
+    absolute_file_path = package_path / file_path
 
     try:
-        with open(absolute_file_path, 'r') as file:
-            return file.read()
-    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
+            temp_urdf_path = Path(
+                to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings)
+            )
+            with temp_urdf_path.open('r') as file:
+                return file.read()
+    except EnvironmentError:
         return None
 
 
