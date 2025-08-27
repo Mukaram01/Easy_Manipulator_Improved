@@ -9,8 +9,8 @@ available and ``yield`` based tests are no longer supported by ``pytest``.
 
 To make the check robust we compute the package path relative to this
 file and generate individual parametrised tests for every ``.xacro``
-file.  The test is skipped automatically when the ``xacro``/``roslaunch``
-dependencies are missing.
+file.  The test is skipped automatically when required ROS utilities
+are missing.
 """
 
 from pathlib import Path
@@ -18,9 +18,11 @@ import subprocess
 
 import pytest
 
-# Skip the entire test module if required ROS tools are not available.
+# Skip the entire test module if ``xacro`` is not available.  Additional
+# ROS dependencies such as ``roslaunch`` are handled dynamically within
+# the individual test cases to avoid unnecessarily skipping the entire
+# suite when only some tools are missing.
 pytest.importorskip("xacro")
-pytest.importorskip("roslaunch")
 
 # Determine the root of the realsense2_description package using the file
 # location instead of relying on ROS environment variables.  ``__file__`` may
