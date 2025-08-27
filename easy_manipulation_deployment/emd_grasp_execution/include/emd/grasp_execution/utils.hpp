@@ -26,6 +26,7 @@
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
+#include "rclcpp/rclcpp.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2/impl/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -86,25 +87,25 @@ inline void print_pose(
 
 /// Use ROS to print PoseStamped message
 inline void print_pose_ros(
-  const rclcpp::Logger logger,
+  const rclcpp::Logger & logger,
   const geometry_msgs::msg::Pose & _pose,
   bool _euler = true)
 {
   std::ostringstream oss;
   print_pose(_pose, oss, _euler);
-  RCLCPP_INFO(logger, oss.str().c_str());
+  RCLCPP_INFO_STREAM(logger, oss.str());
 }
 
 /// Use ROS to print PoseStamped message
 inline void print_pose_ros(
-  const rclcpp::Logger logger,
+  const rclcpp::Logger & logger,
   const geometry_msgs::msg::PoseStamped & _pose,
   bool _euler = true)
 {
   std::ostringstream oss;
   oss << std::endl;
   print_pose(_pose, oss, _euler);
-  RCLCPP_INFO(logger, oss.str().c_str());
+  RCLCPP_INFO_STREAM(logger, oss.str());
 }
 
 /// Transform pose to target end reference frame
