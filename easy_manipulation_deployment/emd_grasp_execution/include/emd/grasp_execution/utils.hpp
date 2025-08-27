@@ -92,7 +92,8 @@ inline void print_pose_ros(
 {
   std::ostringstream oss;
   print_pose(_pose, oss, _euler);
-  RCLCPP_INFO(logger, oss.str().c_str());
+  auto msg = oss.str();
+  RCLCPP_INFO(logger, msg.c_str());
 }
 
 /// Use ROS to print PoseStamped message
@@ -104,7 +105,8 @@ inline void print_pose_ros(
   std::ostringstream oss;
   oss << std::endl;
   print_pose(_pose, oss, _euler);
-  RCLCPP_INFO(logger, oss.str().c_str());
+  auto msg = oss.str();
+  RCLCPP_INFO(logger, msg.c_str());
 }
 
 /// Transform pose to target end reference frame

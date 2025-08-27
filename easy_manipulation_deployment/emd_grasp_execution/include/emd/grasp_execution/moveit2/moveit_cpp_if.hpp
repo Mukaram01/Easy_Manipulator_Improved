@@ -240,7 +240,8 @@ protected:
     std::ostringstream oss;
     oss << std::endl;
     print_trajectory(traj, oss);
-    RCLCPP_INFO(logger, oss.str().c_str());
+    auto msg = oss.str();
+    RCLCPP_INFO(logger, msg.c_str());
   }
 
   void print_trajectory(

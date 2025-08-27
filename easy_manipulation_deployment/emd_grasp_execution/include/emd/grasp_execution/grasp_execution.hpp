@@ -302,7 +302,8 @@ public:
     std::ostringstream oss;
     oss << std::endl;
     prompt_job_start(job_id, message, separator, oss);
-    RCLCPP_INFO(logger, oss.str().c_str());
+    auto msg = oss.str();
+    RCLCPP_INFO(logger, msg.c_str());
   }
 
   virtual void prompt_job_end(
@@ -318,7 +319,8 @@ public:
     std::ostringstream oss;
     oss << std::endl;
     prompt_job_end(end_result, separator, oss);
-    RCLCPP_INFO(logger, oss.str().c_str());
+    auto msg = oss.str();
+    RCLCPP_INFO(logger, msg.c_str());
   }
 
 protected:

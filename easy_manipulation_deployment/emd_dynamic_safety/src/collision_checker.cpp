@@ -443,7 +443,8 @@ double CollisionChecker::polling(
   }
   std::ostringstream oss;
   poller.print(oss);
-  RCLCPP_INFO(LOGGER, oss.str().c_str());
+  auto msg = oss.str();
+  RCLCPP_INFO(LOGGER, msg.c_str());
   return collision_checking_duration / sample_size;
 }
 
