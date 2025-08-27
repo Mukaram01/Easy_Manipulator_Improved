@@ -34,6 +34,22 @@
 
 #include "moveit/macros/console_colors.h"
 
+namespace
+{
+template <class OptionsT>
+auto declare_parameters_from_overrides(OptionsT & options, int)
+    -> decltype(options.declare_parameters_from_overrides(true), void())
+{
+  options.declare_parameters_from_overrides(true);
+}
+
+template <class OptionsT>
+void declare_parameters_from_overrides(OptionsT & options, ...)
+{
+  options.automatically_declare_parameters_from_overrides(true);
+}
+}  // namespace
+
 namespace grasp_execution
 {
 
@@ -324,7 +340,7 @@ public:
     // namespace. Parameters are automatically declared from overrides to mirror
     // the lifecycle node behaviour.
     rclcpp::NodeOptions base_options;
-    base_options.automatically_declare_parameters_from_overrides(true);
+    declare_parameters_from_overrides(base_options, 0);
     auto base_node = std::make_shared<rclcpp::Node>(
       this->get_name(), this->get_namespace(), base_options);
     demo_ = std::make_shared<grasp_execution::Demo>(
@@ -370,7 +386,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::NodeOptions node_options;
-  node_options.automatically_declare_parameters_from_overrides(true);
+  declare_parameters_from_overrides(node_options, 0);
   auto node = std::make_shared<DemoLifecycleNode>(node_options);
 
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);

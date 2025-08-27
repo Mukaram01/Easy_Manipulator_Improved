@@ -16,6 +16,22 @@
 #include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_planner/grasp_scene.hpp"
 
+namespace
+{
+template <class OptionsT>
+auto declare_parameters_from_overrides(OptionsT & options, int)
+    -> decltype(options.declare_parameters_from_overrides(true), void())
+{
+  options.declare_parameters_from_overrides(true);
+}
+
+template <class OptionsT>
+void declare_parameters_from_overrides(OptionsT & options, ...)
+{
+  options.automatically_declare_parameters_from_overrides(true);
+}
+}  // namespace
+
 static const rclcpp::Logger & LOGGER_DEMO = rclcpp::get_logger("DemoNode");
 int main(int argc, char * argv[])
 {
@@ -23,7 +39,7 @@ int main(int argc, char * argv[])
 
   rclcpp::NodeOptions node_options;
   node_options.allow_undeclared_parameters(true);
-  node_options.automatically_declare_parameters_from_overrides(true);
+  declare_parameters_from_overrides(node_options, 0);
 
   rclcpp::Node::SharedPtr node =
     rclcpp::Node::make_shared("grasp_planner_demo_node", "", node_options);

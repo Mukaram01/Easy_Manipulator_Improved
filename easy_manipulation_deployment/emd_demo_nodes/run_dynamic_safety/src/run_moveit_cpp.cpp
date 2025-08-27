@@ -44,6 +44,22 @@
 #include <moveit_msgs/msg/display_robot_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 
+namespace
+{
+template <class OptionsT>
+auto declare_parameters_from_overrides(OptionsT & options, int)
+    -> decltype(options.declare_parameters_from_overrides(true), void())
+{
+  options.declare_parameters_from_overrides(true);
+}
+
+template <class OptionsT>
+void declare_parameters_from_overrides(OptionsT & options, ...)
+{
+  options.automatically_declare_parameters_from_overrides(true);
+}
+}  // namespace
+
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("moveit_cpp_demo");
 
 class MoveItCppDemo
@@ -139,7 +155,7 @@ int main(int argc, char** argv)
   // This enables loading undeclared parameters
   // best practice would be to declare parameters in the corresponding classes
   // and provide descriptions about expected use
-  node_options.automatically_declare_parameters_from_overrides(true);
+  declare_parameters_from_overrides(node_options, 0);
   rclcpp::Node::SharedPtr node = rclcpp::Node::make_shared("run_moveit_cpp", "", node_options);
 
   MoveItCppDemo demo(node);
