@@ -6,7 +6,7 @@
 [![Documentation Status](https://readthedocs.org/projects/easy-manipulation-deployment-docs/badge/?version=latest)](https://easy-manipulation-deployment-docs.readthedocs.io/en/latest/?badge=latest)
 [![License](https://img.shields.io/github/license/ros-industrial/easy_manipulation_deployment.svg)](https://github.com/ros-industrial/easy_manipulation_deployment/blob/master/LICENSE)
 
-### This ROS 2 package provides a modular, easy-to-deploy manipulation pipeline that integrates perception elements to enable an end-to-end pick-and-place task
+This ROS 2 package provides a modular, easy-to-deploy manipulation pipeline that integrates perception elements to enable an end-to-end pick-and-place task.
 <br>
 
 <img src="./images/grasp_planner.gif"  width="20%" height="20%"> <img src="./images/grasp_execution.gif"  width="20%" height="20%">
@@ -66,7 +66,7 @@ This script ensures required tools such as `ament_cmake` are installed via `rosd
 
 ### 1) Grasp Planner
 
-An algorithmic based grasp planner that plans grasps in 3D space. Highly configurable and currently supports multifinger parallel grippers and suction cup arrays.
+An algorithm-based grasp planner that plans grasps in 3D space. It is highly configurable and currently supports multifinger parallel grippers and suction cup arrays.
 
 Two Finger Gripper
 
