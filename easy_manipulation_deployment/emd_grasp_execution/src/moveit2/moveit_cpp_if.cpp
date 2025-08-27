@@ -811,11 +811,11 @@ bool MoveitCppGraspExecution::move_to(
     // Execute immediately
     if (execute) {
       RCLCPP_INFO(LOGGER, "Sending the trajectory for execution");
-      arm.planner->execute(true);  // blocked execution
+      return arm.planner->execute(true);  // blocked execution
     } else {
       arm.traj.push_back(plan_solution.trajectory);
+      return true;
     }
-    return true;
   } else {
     return false;
   }
