@@ -105,7 +105,7 @@ public:
   void start_worker(
     size_t worker_id,
     const WorkflowT & workflow,
-    const std::string && task_id);
+    std::string workflow_id);
 
   void add_queue(
     const WorkflowT & workflow,
@@ -176,7 +176,7 @@ void Scheduler::Impl::stop_finished_worker()
 }
 
 void Scheduler::Impl::start_worker(
-  size_t worker_id, const WorkflowT & workflow, const std::string && workflow_id)
+  size_t worker_id, const WorkflowT & workflow, std::string workflow_id)
 {
   // Create signal for workcell result
   auto sig = std::promise<void>();
@@ -192,14 +192,14 @@ void Scheduler::Impl::start_worker(
   workers[worker_id].execution_thread = std::make_shared<std::thread>(
     [this, wf = std::move(workflow_impl)](
       std::promise<void> && _sig,
-      const std::string && _workflow_id) mutable
+      std::string workflow_id) mutable
     {
-      result_t result = wf.workflow(_workflow_id);
+      result_t result = wf.workflow(workflow_id);
 
       // Start execution ending callback
       // This will check if there are additional queue item in task
       // TODO(Briancbn): setting workflow prerequisite, (DAG)?
-      execution_ending_cb(_workflow_id, wf.sig, _sig, result);
+      execution_ending_cb(workflow_id, wf.sig, _sig, result);
     }, std::move(sig), std::move(workflow_id));
 }
 
