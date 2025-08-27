@@ -37,6 +37,12 @@ spec = importlib.util.spec_from_file_location('demo_launch', module_path)
 demo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(demo)
 
+def test_to_urdf_requires_existing_file(tmp_path):
+    """to_urdf should raise ``FileNotFoundError`` if the xacro file is missing."""
+    missing = tmp_path / "missing.xacro"
+    with pytest.raises(FileNotFoundError):
+        demo.to_urdf(missing)
+
 def test_to_urdf_creates_urdf_file(tmp_path):
     xacro_file = tmp_path / 'robot.xacro'
     xacro_file.write_text("<robot name='test'></robot>")

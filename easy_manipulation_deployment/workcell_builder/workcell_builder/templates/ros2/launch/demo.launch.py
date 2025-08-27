@@ -30,6 +30,14 @@ def to_urdf(xacro_path, urdf_path=None):
     * xacro_path -- the path to the xacro file
     * urdf_path -- the desired path to the URDF file
     """
+    # Validate that the source xacro file exists before attempting to convert
+    # it. ``xacro`` will eventually raise a somewhat cryptic error if the file
+    # is missing; performing an explicit check here gives a clearer
+    # ``FileNotFoundError`` to callers.
+    xacro_path = Path(xacro_path)
+    if not xacro_path.is_file():
+        raise FileNotFoundError(f"xacro file '{xacro_path}' does not exist")
+
     xacro_path = str(xacro_path)
     # If no URDF path is given, generate a temporary filename with a proper
     # ``.urdf`` extension.  ``tempfile.mktemp`` is avoided as it is vulnerable
