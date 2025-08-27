@@ -24,7 +24,7 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 - A ROS 2 environment sourced (Jazzy or Humble)
 
 ---
-## Build on Humble
+## Build on Jazzy or Humble
 
 ```
 mkdir -p ~/workcell_ws/src
@@ -35,19 +35,20 @@ mv easy_manipulation_deployment/assets/ .
 mv easy_manipulation_deployment/scenes/ .
 mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
 cd ~/workcell_ws
-source /opt/ros/humble/setup.bash
+export ROS_DISTRO=humble  # or jazzy
+source /opt/ros/${ROS_DISTRO}/setup.bash
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
 source ~/ws_moveit2/install/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-A convenience script `fix_and_build_humble.sh` is provided in this repository. After cloning into
-`~/workcell_ws`, run:
+A convenience script `fix_and_build.sh` is provided in this repository. It automatically
+detects whether Humble or Jazzy is installed. After cloning into `~/workcell_ws`, run:
 
 ```
 cd easy_manipulation_deployment
-./fix_and_build_humble.sh
+./fix_and_build.sh
 ```
 
 This script ensures required tools such as `ament_cmake` are installed via `rosdep` before building.

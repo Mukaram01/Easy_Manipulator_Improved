@@ -7,10 +7,23 @@ SRC=$WS/src
 mkdir -p "$SRC"
 
 # 0) Environment bootstrap
-[ -f /opt/ros/humble/setup.bash ] || { echo "ROS Humble not found"; exit 1; }
-set +u; : "${AMENT_TRACE_SETUP_FILES:=}"; source /opt/ros/humble/setup.bash; set -u
+# Support either Humble or Jazzy depending on what is available or requested
+for d in jazzy humble; do
+  if [ -f "/opt/ros/${d}/setup.bash" ]; then
+    default_rosdistro=${d}
+    break
+  fi
+done
+
+ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
+[ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
+[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ] || { echo "ROS ${ROS_DISTRO} not found"; exit 1; }
+set +u; : "${AMENT_TRACE_SETUP_FILES:=}"; source "/opt/ros/${ROS_DISTRO}/setup.bash"; set -u
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
-[ "${ROS_DISTRO:-}" = "humble" ] || { echo "Wrong ROS distro: ${ROS_DISTRO:-unset}"; exit 1; }
+case "${ROS_DISTRO}" in
+  humble|jazzy) ;;
+  *) echo "Wrong ROS distro: ${ROS_DISTRO}"; exit 1 ;;
+esac
 
 # C++17 everywhere
 export AMENT_CMAKE_CXX_STANDARD=17
