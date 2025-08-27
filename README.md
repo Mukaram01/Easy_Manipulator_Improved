@@ -6,12 +6,12 @@
 [![Documentation Status](https://readthedocs.org/projects/easy-manipulation-deployment-docs/badge/?version=latest)](https://easy-manipulation-deployment-docs.readthedocs.io/en/latest/?badge=latest)
 [![License](https://img.shields.io/github/license/ros-industrial/easy_manipulation_deployment.svg)](https://github.com/ros-industrial/easy_manipulation_deployment/blob/master/LICENSE)
 
-### This ROS2 package provides a modular and easy to deploy manipulation pipeline that integrates perception elements to establish an end-to-end pick and place task
+### This ROS 2 package provides a modular, easy-to-deploy manipulation pipeline that integrates perception elements to enable an end-to-end pick-and-place task
 <br>
 
 <img src="./images/grasp_planner.gif"  width="20%" height="20%"> <img src="./images/grasp_execution.gif"  width="20%" height="20%">
 
-This package was tested with the [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment) ROS2 package, but any other perception system that provides the same ROS2 message in the right topic can work with this package as well. 
+This package was tested with the [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment) ROS 2 package, but any perception system publishing the same ROS 2 message on the expected topic can work with this package as well.
 
 It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS 2 Humble** (Ubuntu 22.04).
 For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
