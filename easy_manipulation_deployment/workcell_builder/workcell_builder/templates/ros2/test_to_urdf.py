@@ -104,6 +104,19 @@ def test_to_urdf_rejects_path_with_trailing_separator(tmp_path):
     with pytest.raises(ValueError, match="urdf_path must not be empty"):
         demo.to_urdf(str(xacro_file), str(dir_path) + os.path.sep)
 
+
+def test_to_urdf_expands_user_paths(tmp_path, monkeypatch):
+    """Paths containing ``~`` should resolve to the user's home directory."""
+    # Use a temporary directory as the fake home so that ``~/`` points to a
+    # location we control.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    xacro_file = tmp_path / "robot.xacro"
+    xacro_file.write_text("<robot name='test'></robot>")
+    result = demo.to_urdf("~/robot.xacro", "~/out")
+    expected = tmp_path / "out.urdf"
+    assert result == str(expected)
+    assert expected.exists()
+
 def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
     """``load_file`` should place generated URDFs in a temporary location."""
     pkg_dir = tmp_path / 'pkg'
