@@ -124,13 +124,18 @@ def generate_launch_description():
 
     # RViz
     rviz_config_file = get_package_share_directory(scene_pkg) + "/launch/demo.rviz"
-    rviz_node = Node(package='rviz2',
-                     executable='rviz2',
-                     name='rviz2',
-                     output='log',
-                     arguments=['-d', rviz_config_file],
-                     parameters=[robot_description,
-                                 robot_description_semantic])
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='log',
+        arguments=['-d', rviz_config_file],
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            robot_description_kinematics,
+        ],
+    )
     # Publish base link TF
     static_tf = Node(package='tf2_ros',
                      executable='static_transform_publisher',
