@@ -30,6 +30,7 @@ endif()
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(Boost REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(rclcpp REQUIRED)
 
 # qpOASES
 option(TRAJOPT_BUILD_qpOASES "Build qpOASES components" ON)
@@ -120,6 +121,7 @@ target_link_libraries(
   PUBLIC trajopt::trajopt_common
          Boost::boost
          Eigen3::Eigen
+         rclcpp::rclcpp
          ${CMAKE_DL_LIBS}
          jsoncpp_lib
          OpenMP::OpenMP_CXX)
