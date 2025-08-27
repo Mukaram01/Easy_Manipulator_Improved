@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>Workcell Builder</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -22,7 +22,7 @@
         <item>
          <widget class="QLabel" name="filepath_label">
           <property name="text">
-           <string>Filepath</string>
+           <string>Workspace Directory</string>
           </property>
          </widget>
         </item>
@@ -64,17 +64,17 @@
       <item>
        <widget class="QPushButton" name="load_workcell">
         <property name="toolTip">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Loads a current workcell package and workcell_description folders. Select this ONLY if you have previously created a project with this GUI&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Loads an existing workcell package and its workcell_description folder. Use this only if you previously created a project with this GUI.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
         <property name="text">
-         <string>Choose workspace location</string>
+         <string>Select workspace directory</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="change_workcell">
         <property name="text">
-         <string>Change workspace destination</string>
+         <string>Change workspace directory</string>
         </property>
        </widget>
       </item>
