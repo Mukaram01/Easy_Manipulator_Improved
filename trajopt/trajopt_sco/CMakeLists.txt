@@ -172,7 +172,8 @@ if(TRAJOPT_PACKAGE)
       "${TRAJOPT_PACKAGE_PREFIX}trajopt-common")
 
   if(GUROBI_FOUND)
-    # TODO
+    list(APPEND LINUX_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}gurobi")
+    list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}gurobi")
   endif()
 
   if(osqp_FOUND)
@@ -181,7 +182,8 @@ if(TRAJOPT_PACKAGE)
   endif()
 
   if(qpOASES_FOUND AND TRAJOPT_BUILD_qpOASES)
-    # TODO
+    list(APPEND LINUX_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}qpoases")
+    list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}qpoases")
   endif()
 
   cpack(

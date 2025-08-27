@@ -41,7 +41,7 @@ inline std::string gen_uuid()
   return boost::uuids::to_string(uuid);
 }
 
-/// Print Pose Message TODO(Briancbn): default std::cout doesn't seems to work here.
+/// Print a pose message to the provided stream.
 inline void print_pose(
   const geometry_msgs::msg::Pose & _pose,
   std::ostream & _out = std::cout,
@@ -71,6 +71,9 @@ inline void print_pose(
     _out << "Z: " << _pose.orientation.z << std::endl;
     _out << "W: " << _pose.orientation.w << std::endl << std::endl;
   }
+
+  // Ensure output is flushed when using the default stream (std::cout)
+  _out.flush();
 }
 
 /// Print PoseStamped Message
