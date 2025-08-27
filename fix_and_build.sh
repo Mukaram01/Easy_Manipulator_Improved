@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e -o pipefail
+set -euo pipefail
 
 # Workspace setup
 WS=~/workcell_ws
@@ -8,6 +8,7 @@ mkdir -p "$SRC"
 
 # 0) Environment bootstrap
 # Support either Humble or Jazzy depending on what is available or requested
+default_rosdistro=""
 for d in jazzy humble; do
   if [ -f "/opt/ros/${d}/setup.bash" ]; then
     default_rosdistro=${d}
