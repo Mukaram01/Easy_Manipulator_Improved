@@ -26,6 +26,19 @@ case "${ROS_DISTRO}" in
   *) echo "Wrong ROS distro: ${ROS_DISTRO}"; exit 1 ;;
 esac
 
+# Ensure required tools are available
+for cmd in git colcon rosdep; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Required tool '$cmd' is not installed." >&2
+    exit 1
+  fi
+done
+
+# Install missing dependencies
+rosdep update
+rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
+  --skip-keys "tesseract tesseract_process_planners"
+
 # C++17 everywhere
 export AMENT_CMAKE_CXX_STANDARD=17
 CMAKE_STD_ARGS=(-DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF)

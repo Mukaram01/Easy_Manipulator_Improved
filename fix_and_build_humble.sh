@@ -14,6 +14,14 @@ ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 if [ -f ~/ws_moveit2/install/setup.bash ]; then source ~/ws_moveit2/install/setup.bash; fi
 
+# Ensure required tools are available
+for cmd in git colcon rosdep; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Required tool '$cmd' is not installed." >&2
+    exit 1
+  fi
+done
+
 # 0.5) Install missing build tools and dependencies
 if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
   if command -v sudo >/dev/null 2>&1; then
@@ -36,7 +44,7 @@ fi
 
 # 2) Clean fully (start from scratch)
 rm -rf build install log
-find src -name build -o -name install -o -name log | xargs -r rm -rf
+find src \( -name build -o -name install -o -name log \) -print0 | xargs -0 -r rm -rf
 
 # 3) Stage 1: infrastructure vendors first
 colcon build --symlink-install --packages-select \
