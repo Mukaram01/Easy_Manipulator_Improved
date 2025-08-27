@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+
+cleanup() {
+  kill "${planner_pid:-}" "${execution_pid:-}" 2>/dev/null || true
+}
+trap cleanup SIGINT SIGTERM ERR EXIT
 
 # Build the workspace and source it
 colcon build --symlink-install
@@ -14,5 +19,4 @@ execution_pid=$!
 
 # Wait for user to terminate
 echo "Demo running. Press Ctrl+C to stop."
-trap "kill $planner_pid $execution_pid" EXIT
 wait
