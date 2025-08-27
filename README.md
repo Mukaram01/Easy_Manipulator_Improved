@@ -21,6 +21,7 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 
 - [vcstool](https://github.com/dirk-thomas/vcstool) for fetching dependency repositories
 - `rosdep` for installing package dependencies
+- `colcon` build tool
 - A ROS 2 environment sourced (Jazzy or Humble)
 
 ---
