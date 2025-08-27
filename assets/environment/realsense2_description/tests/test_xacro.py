@@ -43,10 +43,11 @@ def run_xacro_in_file(filename: str) -> None:
             cwd=PATH,
             stderr=subprocess.STDOUT,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:  # pragma: no cover - error path
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        # pragma: no cover - error path
         # ``xacro`` relies on ROS tools such as ``roslaunch`` and ``rosgraph``.
         # When those tools are missing, the subprocess fails which would
-        # otherwise mark the test as an error.  Instead, skip the test so that
+        # otherwise mark the test as an error. Instead, skip the test so that
         # environments without the ROS stack don't report a failure.
         output = getattr(exc, "output", b"").decode("utf-8", errors="ignore")
         if "No module named" in output or isinstance(exc, FileNotFoundError):
@@ -66,4 +67,5 @@ if not XACRO_FILES:  # pragma: no cover - defensive programming
 
 @pytest.mark.parametrize("file", XACRO_FILES)
 def test_files(file: str) -> None:
+    """Check that each discovered xacro file parses correctly."""
     run_xacro_in_file(file)
