@@ -70,7 +70,7 @@ CMAKEL="$SRC/trajopt/trajopt_sco/CMakeLists.txt"
 PKGXML="$SRC/trajopt/trajopt_sco/package.xml"
 
 if [ -f "$CMAKEL" ]; then
-  grep -q 'find_package( *rclcpp' "$CMAKEL" || sed -i '1,/project(/{/project(/a find_package(rclcpp REQUIRED)}' "$CMAKEL"
+  grep -q 'find_package( *rclcpp' "$CMAKEL" || sed -i '/project(/a find_package(rclcpp REQUIRED)' "$CMAKEL"
 
   if grep -q 'ament_target_dependencies( *trajopt_sco' "$CMAKEL"; then
     sed -i '0,/ament_target_dependencies( *trajopt_sco/s//ament_target_dependencies(trajopt_sco\n  rclcpp\n/' "$CMAKEL"
