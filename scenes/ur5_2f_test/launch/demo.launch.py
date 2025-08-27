@@ -26,32 +26,57 @@ robot_moveit_pkg = 'ur5_moveit_config'
 
 def to_urdf(xacro_path, urdf_path=None):
     """Convert the given xacro file to a URDF file."""
+
     xacro_path = str(xacro_path)
+
+    # If no URDF path is given, create a secure temporary file with the proper
+    # ``.urdf`` extension. ``mkstemp`` is used instead of the deprecated and
+    # insecure ``mktemp`` to avoid race conditions.  The returned file descriptor
+    # is immediately closed so that ``xacro`` can write to the path later on.
     if urdf_path is None:
         fd, urdf_path = tempfile.mkstemp(
             prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
         )
         os.close(fd)
     else:
-        urdf_path = str(Path(urdf_path).with_suffix(".urdf"))
-        os.makedirs(os.path.dirname(urdf_path), exist_ok=True)
+        urdf_path = Path(urdf_path)
+        # ``Path.name`` returns ``'.'`` for the current directory and ``'..'``
+        # for the parent directory.  Both cases indicate that ``urdf_path``
+        # refers to a directory instead of a file which would later cause
+        # confusing errors.  Raise a clearer message for such inputs.
+        if not urdf_path.name or urdf_path.name in {".", ".."}:
+            raise ValueError("urdf_path must not be empty")
+        urdf_path = str(urdf_path.with_suffix(".urdf"))
+        directory = os.path.dirname(urdf_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
 
+    # Process the xacro file and write the resulting URDF to disk using a
+    # context manager to guarantee that the file handle is properly closed.
     doc = xacro.process_file(xacro_path)
     with xacro.open_output(urdf_path) as out:
         out.write(doc.toprettyxml(indent='  '))
 
     return urdf_path
 
+
 def load_file(package_name, file_path):
-    package_path = get_package_share_directory(package_name) #get package filepath
-    absolute_file_path = os.path.join(package_path, file_path)
-    temp_urdf_filepath = absolute_file_path.replace('.xacro','')
-    absolute_file_path = to_urdf(absolute_file_path,temp_urdf_filepath)
-    
+    """Load a xacro file from *package_name*/*file_path* and return its XML."""
+
+    package_path = Path(get_package_share_directory(package_name))
+    absolute_file_path = package_path / file_path
+
     try:
-        with open(absolute_file_path, 'r') as file:
-            return file.read()
-    except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
+        # Use a temporary directory so the generated URDF does not pollute the
+        # package directory and to avoid double ``.urdf`` extensions when the
+        # input already contains one.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
+            temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
+            with temp_urdf_path.open('r') as file:
+                return file.read()
+    except EnvironmentError:
+        # parent of IOError, OSError *and* WindowsError where available
         return None
 
 def load_yaml(package_name, file_path):
