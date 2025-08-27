@@ -22,9 +22,14 @@ aip_mod.packages = packages_mod
 sys.modules.setdefault('ament_index_python', aip_mod)
 sys.modules.setdefault('ament_index_python.packages', packages_mod)
 
-# Skip this test if PyYAML is not available. The demo.launch.py module
-# imports ``yaml`` when it is executed below, and without PyYAML installed
-# the import would raise ``ModuleNotFoundError`` during test collection.
+# Skip this test if required dependencies are not available.  The
+# ``demo.launch.py`` module imports ``xacro`` and ``yaml`` during its
+# initialisation.  When those packages are missing the import would raise
+# ``ModuleNotFoundError`` at collection time which results in a hard
+# failure instead of the test being reported as skipped.  ``importorskip``
+# gracefully skips the entire test module when either dependency is not
+# installed.
+pytest.importorskip("xacro")
 pytest.importorskip("yaml")
 
 module_path = Path(__file__).resolve().parent / 'launch' / 'demo.launch.py'
