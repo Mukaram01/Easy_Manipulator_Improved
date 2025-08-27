@@ -34,7 +34,11 @@ def to_urdf(xacro_path, urdf_path=None):
     # it. ``xacro`` will eventually raise a somewhat cryptic error if the file
     # is missing; performing an explicit check here gives a clearer
     # ``FileNotFoundError`` to callers.
-    xacro_path = Path(xacro_path)
+    # Expand the user home directory (``~``) in the supplied path so that
+    # callers can rely on standard shell semantics.  Without this a path such
+    # as ``~/file.xacro`` would be interpreted literally and the subsequent
+    # ``is_file`` check would fail even though the file exists.
+    xacro_path = Path(xacro_path).expanduser()
     if not xacro_path.is_file():
         raise FileNotFoundError(f"xacro file '{xacro_path}' does not exist")
 
@@ -56,7 +60,11 @@ def to_urdf(xacro_path, urdf_path=None):
         # ``FileNotFoundError``.  Guard against this by only attempting to
         # create the directory when a directory path is provided.
         orig_urdf_path = str(urdf_path)
-        urdf_path = Path(urdf_path)
+        # Allow ``~`` in the output path in the same way as the xacro path
+        # above.  ``Path`` would otherwise treat the tilde as a literal
+        # character which leads to confusing paths like ``~/out.urdf`` being
+        # created in the current working directory.
+        urdf_path = Path(urdf_path).expanduser()
         # ``Path.name`` returns ``'.'`` for the current directory and ``'..'``
         # for the parent directory.  Both of those indicate that the provided
         # path refers to a directory rather than a file.  Trailing path
