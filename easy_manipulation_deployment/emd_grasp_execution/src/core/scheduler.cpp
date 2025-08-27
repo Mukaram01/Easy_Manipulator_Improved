@@ -44,10 +44,8 @@ public:
   }
 
   explicit WorkflowImplT(Scheduler::WorkflowT _workflow)
-  : workflow(_workflow)
+  : workflow(std::move(_workflow)), sig(), future(sig.get_future())
   {
-    sig = std::promise<result_t>();
-    future = sig.get_future();
   }
 
   WorkflowImplT & operator=(const WorkflowImplT &) = delete;
@@ -63,10 +61,10 @@ public:
   WorkflowImplT(const WorkflowImplT &) = delete;
 
   WorkflowImplT(WorkflowImplT && rhs) noexcept
+  : workflow(std::move(rhs.workflow)),
+    sig(std::move(rhs.sig)),
+    future(std::move(rhs.future))
   {
-    sig = std::move(rhs.sig);
-    future = std::move(rhs.future);
-    workflow = std::move(rhs.workflow);
   }
 
   Scheduler::WorkflowT workflow;
