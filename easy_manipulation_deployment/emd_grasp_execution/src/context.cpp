@@ -47,7 +47,7 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
 
   // Iterate through to load all the groups.
   for (YAML::const_iterator itr = context_yaml.begin();
-       itr != context_yaml.end(); itr++) {
+       itr != context_yaml.end(); ++itr) {
     const YAML::Node &group_yaml = *itr;
 
     // Parse group name, compulsory.
@@ -71,7 +71,7 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
     } else {
       const YAML::Node &executors_yaml = group_yaml["executors"];
       for (YAML::const_iterator exe_itr = executors_yaml.begin();
-           exe_itr != executors_yaml.end(); exe_itr++) {
+           exe_itr != executors_yaml.end(); ++exe_itr) {
         std::string execution_method = exe_itr->first.as<std::string>();
 
         // Parse plugin name, compulsory.
@@ -94,7 +94,7 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
     if (group_yaml["end_effectors"]) {
       const YAML::Node &ees_yaml = group_yaml["end_effectors"];
       for (YAML::const_iterator ee_itr = ees_yaml.begin();
-           ee_itr != ees_yaml.end(); ee_itr++) {
+           ee_itr != ees_yaml.end(); ++ee_itr) {
         std::string ee_name = ee_itr->first.as<std::string>();
         const YAML::Node &ee_yaml = ee_itr->second;
 

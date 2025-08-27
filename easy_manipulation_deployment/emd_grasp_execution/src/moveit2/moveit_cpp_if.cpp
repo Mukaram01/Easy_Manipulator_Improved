@@ -827,7 +827,7 @@ bool MoveitCppGraspExecution::cartesian_to(
   const std::string & _link, double step, double jump_threshold,
   bool execute)
 {
-  const auto & arm = arms_[planning_group];
+  auto & arm = arms_[planning_group];
   robot_trajectory::RobotTrajectoryPtr rt;
 
   // Get start state
@@ -861,7 +861,6 @@ bool MoveitCppGraspExecution::cartesian_to(
       RCLCPP_INFO(LOGGER, "Sending the trajectory for execution");
       moveit_cpp_->execute(planning_group, rt);
     } else {
-      auto & arm = arms_[planning_group];
       arm.traj.push_back(rt);
     }
     return true;
@@ -1265,7 +1264,7 @@ void MoveitCppGraspExecution::print_trajectory(
   _out << "Total waypoints: " << traj->getWayPointCount() << std::endl;
 
   _out << "Joints: ";
-  for (auto & joint : traj->getGroup()->getVariableNames()) {
+  for (const auto & joint : traj->getGroup()->getVariableNames()) {
     _out << joint << '\t';
   }
 
