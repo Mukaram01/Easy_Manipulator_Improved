@@ -77,7 +77,12 @@ def load_file(package_name, file_path):
         # package path and to avoid double ``.urdf`` extensions when the input
         # file already contains one.
         with tempfile.TemporaryDirectory() as tmpdir:
-            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
+            filename = Path(file_path)
+            if filename.suffix == ".xacro":
+                filename = filename.with_suffix("")
+            if filename.suffix != ".urdf":
+                filename = filename.with_suffix(".urdf")
+            temp_urdf_path = Path(tmpdir) / filename.name
             temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
             with temp_urdf_path.open('r') as file:
                 return file.read()
