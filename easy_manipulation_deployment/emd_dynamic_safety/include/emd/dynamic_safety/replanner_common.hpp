@@ -53,6 +53,15 @@ struct ReplannerOption
 
   /// deadline
   double deadline;
+
+  /// Collision checking safety margin
+  double collision_safety_margin{0.005};
+
+  /// Coefficient for collision safety margin penalty
+  double collision_safety_margin_coeff{50.0};
+
+  /// Additional buffer applied to collision checking margin
+  double collision_margin_buffer{0.001};
 };
 
 /// Flags for status

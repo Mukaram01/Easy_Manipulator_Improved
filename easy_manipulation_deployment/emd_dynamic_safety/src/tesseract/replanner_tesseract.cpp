@@ -163,8 +163,10 @@ TesseractReplannerContext::TesseractReplannerContext(
     composite_profile->avoid_singularity = true;
 
     composite_profile->collision_constraint_config.enabled = false;
-    composite_profile->collision_cost_config.safety_margin = 0.005;
-    composite_profile->collision_cost_config.coeff = 50;
+    composite_profile->collision_cost_config.safety_margin =
+      option.collision_safety_margin;
+    composite_profile->collision_cost_config.coeff =
+      option.collision_safety_margin_coeff;
 
     solver_profile->opt_info.max_time = option.deadline;
     if (planner_ != "trajopt") {
@@ -188,16 +190,15 @@ TesseractReplannerContext::TesseractReplannerContext(
       std::make_shared<tesseract_planning::TrajOptIfoptDefaultCompositeProfile>();
 
     // Add in trajopt collision evaluator, not added by default
-    // TODO(Briancbn): parameterize margin here with moveit padding.
-    double margin_coeff = 50;
-    double margin = 0.005;
+    double margin = option.collision_safety_margin;
+    double margin_coeff = option.collision_safety_margin_coeff;
     auto collision_config =
       std::make_shared<trajopt_ifopt::TrajOptCollisionConfig>(margin, margin_coeff);
     collision_config->contact_request.type = tesseract_collision::ContactTestType::ALL;
     collision_config->type = tesseract_collision::CollisionEvaluatorType::DISCRETE;
 
     // additional margin buffer for the collision check
-    collision_config->collision_margin_buffer = 0.001;
+    collision_config->collision_margin_buffer = option.collision_margin_buffer;
     composite_profile->longest_valid_segment_fraction = 0.001;
     composite_profile->longest_valid_segment_length = 0.001;
     composite_profile->collision_constraint_config = collision_config;
