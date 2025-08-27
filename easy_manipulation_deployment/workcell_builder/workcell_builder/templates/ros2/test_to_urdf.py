@@ -94,3 +94,25 @@ def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
     assert '<robot' in content
     # ``load_file`` should not leave any URDF files in the package directory
     assert list(pkg_dir.glob('*.urdf')) == []
+
+
+def test_load_file_avoids_double_extension(tmp_path, monkeypatch):
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    xacro_file = pkg_dir / 'robot.urdf.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+
+    captured = {}
+    orig_to_urdf = demo.to_urdf
+
+    def capture(xacro_path, urdf_path=None):
+        path = orig_to_urdf(xacro_path, urdf_path)
+        captured['path'] = path
+        return path
+
+    monkeypatch.setattr(demo, 'to_urdf', capture)
+
+    content = demo.load_file(str(pkg_dir), xacro_file.name)
+    assert '<robot' in content
+    assert captured['path'].endswith('.urdf')
+    assert not captured['path'].endswith('.urdf.urdf')
