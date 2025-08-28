@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "emd/grasp_execution/core/scheduler.hpp"
 
@@ -245,10 +246,10 @@ void Scheduler::Impl::execution_ending_cb(
 
   if (queue) {
     // Start the next workflow
-    workflow.workflow(new_workflow_id);
+    result_t next_result = workflow.workflow(new_workflow_id);
 
-    // Start recursive callback
-    execution_ending_cb(new_workflow_id, workflow.sig, _sig, true);
+    // Start recursive callback with the actual result
+    execution_ending_cb(new_workflow_id, workflow.sig, _sig, next_result);
   }
 }
 
