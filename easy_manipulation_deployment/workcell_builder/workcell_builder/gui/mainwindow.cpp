@@ -17,6 +17,7 @@
 #include <QFileDialog>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -37,6 +38,18 @@ MainWindow::MainWindow(QWidget * parent)
   success = false;
   ui->error_label->setWordWrap(true);
   ui->error_label->setText("<font color='red'>Workcell not available</font>");
+
+  // Detect available ROS 2 distributions (currently supports Jazzy and Humble)
+  const std::array<std::string, 2> candidates{"jazzy", "humble"};
+  for (const auto & candidate : candidates) {
+    if (boost::filesystem::exists("/opt/ros/" + candidate)) {
+      ros_dist.push_back(candidate);
+    }
+  }
+  if (ros_dist.empty()) {
+    ros_dist.assign(candidates.begin(), candidates.end());
+  }
+
   for (const auto & supported_distro : ros_dist) {
     ui->ros_distro->addItem(QString::fromStdString(supported_distro));
   }
