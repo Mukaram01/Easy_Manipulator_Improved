@@ -41,6 +41,13 @@ def to_urdf(xacro_path, urdf_path=None):
     xacro_path = Path(xacro_path).expanduser()
     if not xacro_path.is_file():
         raise FileNotFoundError(f"xacro file '{xacro_path}' does not exist")
+    # ``xacro`` is designed to process files ending with the ``.xacro``
+    # extension.  Accepting other extensions would result in confusing error
+    # messages downstream when ``xacro`` attempts to parse non-xacro input.
+    # Validate the extension early to provide a clear and actionable error to
+    # callers.
+    if xacro_path.suffix != ".xacro":
+        raise ValueError("xacro_path must point to a .xacro file")
 
     xacro_path = str(xacro_path)
     # If no URDF path is given, generate a temporary filename with a proper
