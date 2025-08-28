@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <string>
+#include <stdexcept>
 
 #include "emd/grasp_execution/context.hpp"
 #include "emd/grasp_execution/exception.hpp"
@@ -28,8 +29,18 @@ namespace grasp_execution {
  */
 template <typename T>
 T _parse_optional_field(const std::string &field_name, const YAML::Node &node,
-                        const T &default_value) {
-  return node[field_name] ? node[field_name].as<T>() : default_value;
+                        const T &default_value)
+{
+  const YAML::Node field = node[field_name];
+  if (!field || field.IsNull()) {
+    return default_value;
+  }
+  try {
+    return field.as<T>();
+  } catch (const YAML::Exception & e) {
+    throw std::runtime_error(
+      "failed to parse optional field '" + field_name + "': " + e.what());
+  }
 }
 
 /////////////////////////////////////////////////
