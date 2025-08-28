@@ -168,3 +168,12 @@ def test_load_file_handles_missing_package(monkeypatch):
         lambda pkg: (_ for _ in ()).throw(EnvironmentError('missing package')),
     )
     assert demo.load_file('does_not_exist', 'file.urdf.xacro') is None
+
+
+def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
+    """``load_yaml`` should raise ``FileNotFoundError`` for missing files."""
+    monkeypatch.setattr(
+        demo, 'get_package_share_directory', lambda pkg: str(tmp_path)
+    )
+    with pytest.raises(FileNotFoundError):
+        demo.load_yaml('pkg', 'missing.yaml')
