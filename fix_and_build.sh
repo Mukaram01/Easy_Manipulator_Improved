@@ -34,6 +34,17 @@ for cmd in git colcon rosdep; do
   fi
 done
 
+# Install missing build tools like ament_cmake if absent
+if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update -y
+    sudo apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
+  else
+    apt-get update -y
+    apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
+  fi
+fi
+
 # Install missing dependencies
 rosdep update
 rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \

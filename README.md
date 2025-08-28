@@ -52,7 +52,7 @@ cd easy_manipulation_deployment
 ./fix_and_build.sh
 ```
 
-This script ensures required tools such as `ament_cmake` are installed via `rosdep` before building.
+This script checks for required tools and automatically installs base packages like `ament_cmake` if they are missing before running `rosdep`.
 
 ---
 ## Full Documentation/Wiki
