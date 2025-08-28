@@ -14,8 +14,10 @@
 
 import os
 import tempfile
-import xacro
 from pathlib import Path
+from typing import Any, Optional, Union
+
+import xacro
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -24,7 +26,10 @@ scene_pkg = 'scene_name'
 robot_base_link = 'base_link_name'
 robot_moveit_pkg = 'moveit_config_name'
 
-def to_urdf(xacro_path, urdf_path=None):
+def to_urdf(
+    xacro_path: Union[str, os.PathLike[str]],
+    urdf_path: Optional[Union[str, os.PathLike[str]]] = None,
+) -> str:
     """Convert the given xacro file to a URDF file.
 
     * xacro_path -- the path to the xacro file
@@ -92,9 +97,16 @@ def to_urdf(xacro_path, urdf_path=None):
 
     return urdf_path  # Return path to the urdf file
 
-def load_file(package_name, file_path):
+
+def load_file(package_name: str, file_path: str) -> Optional[str]:
+    """Load a file from a package, converting xacro files to URDF as needed.
+
+    Returns the file contents as a string or ``None`` if the package could not
+    be located or the conversion fails.
+    """
+
     try:
-        package_path = Path(get_package_share_directory(package_name))  # get package filepath
+        package_path = Path(get_package_share_directory(package_name))
         absolute_file_path = package_path / file_path
 
         # Use a temporary directory so the generated URDF does not pollute the
@@ -107,19 +119,29 @@ def load_file(package_name, file_path):
             if filename.suffix != ".urdf":
                 filename = filename.with_suffix(".urdf")
             temp_urdf_path = Path(tmpdir) / filename.name
-            temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
-            with temp_urdf_path.open('r') as file:
+            temp_urdf_path = Path(
+                to_urdf(str(absolute_file_path), str(temp_urdf_path))
+            )
+            with temp_urdf_path.open("r") as file:
                 return file.read()
     except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
         return None
 
-def load_yaml(package_name, file_path):
-    package_path = get_package_share_directory(package_name)
-    absolute_file_path = os.path.join(package_path, file_path)
-    return xacro.load_yaml(absolute_file_path)
+
+def load_yaml(package_name: str, file_path: str) -> Any:
+    """Load a YAML file from the given package.
+
+    Raises ``FileNotFoundError`` when the requested YAML file does not exist.
+    """
+
+    package_path = Path(get_package_share_directory(package_name))
+    yaml_file = package_path / file_path
+    if not yaml_file.is_file():
+        raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
+    return xacro.load_yaml(str(yaml_file))
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
 
     # Component yaml files are grouped in separate namespaces
     robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro')
