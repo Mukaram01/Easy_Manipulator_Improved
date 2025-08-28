@@ -51,9 +51,9 @@ set(SCO_SOURCE_FILES
     src/modeling_utils.cpp
     src/num_diff.cpp)
 
-if(NOT APPLE AND NOT WIN32)
-  set(HAVE_BPMPD TRUE)
-endif()
+# BPMPD requires proprietary libraries which are not bundled with this
+# repository. Disable by default unless explicitly enabled.
+option(HAVE_BPMPD "Enable BPMPD components" OFF)
 
 if(HAVE_BPMPD)
   add_executable(bpmpd_caller src/bpmpd_caller.cpp)

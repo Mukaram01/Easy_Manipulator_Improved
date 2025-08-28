@@ -1,7 +1,8 @@
-#include <osqp/osqp.h>
+#include <osqp.h>
 #include <trajopt_common/macros.h>
 #include "trajopt_sco/sco_common.hpp"
 TRAJOPT_IGNORE_WARNINGS_PUSH
+#include <constants.h>
 #include <cmath>
 #include <Eigen/SparseCore>
 #include <fstream>
