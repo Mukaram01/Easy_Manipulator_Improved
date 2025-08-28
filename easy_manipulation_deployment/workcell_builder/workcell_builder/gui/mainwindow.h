@@ -36,8 +36,8 @@ public:
   boost::filesystem::path workcell_path;
   Workcell workcell;
   bool success;
-  // Supported ROS 2 distributions.
-  std::vector<std::string> ros_dist{"jazzy", "humble"};
+  // Supported ROS 2 distributions detected at runtime.
+  std::vector<std::string> ros_dist;
   bool is_good_scene(boost::filesystem::path original_path, std::string scene_name);
 
   explicit MainWindow(QWidget * parent = nullptr);
