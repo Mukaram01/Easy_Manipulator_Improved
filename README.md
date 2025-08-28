@@ -14,6 +14,7 @@ This ROS 2 package provides a modular, easy-to-deploy manipulation pipeline that
 This package was tested with the [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment) ROS 2 package, but any perception system publishing the same ROS 2 message on the expected topic can work with this package as well.
 
 It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS 2 Humble** (Ubuntu 22.04).
+The provided build scripts and Workcell Builder GUI automatically detect whichever of these distributions is installed.
 For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
 
 ---

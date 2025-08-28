@@ -37,8 +37,15 @@ MainWindow::MainWindow(QWidget * parent)
   success = false;
   ui->error_label->setWordWrap(true);
   ui->error_label->setText("<font color='red'>Workcell not available</font>");
-  for (const auto & supported_distro : ros_dist) {
-    ui->ros_distro->addItem(QString::fromStdString(supported_distro));
+  const std::vector<std::string> supported{"jazzy", "humble"};
+  for (const auto & d : supported) {
+    if (boost::filesystem::exists("/opt/ros/" + d)) {
+      ros_dist.push_back(d);
+      ui->ros_distro->addItem(QString::fromStdString(d));
+    }
+  }
+  if (ros_dist.empty()) {
+    ui->error_label->setText("<font color='red'>No supported ROS 2 distro found</font>");
   }
 
   const char * distro = std::getenv("ROS_DISTRO");
