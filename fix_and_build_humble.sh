@@ -35,10 +35,10 @@ if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
 fi
 
 rosdep update
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract tesseract_process_planners"
 
-# Remove any duplicate ROS packages to prevent colcon build failures.
+# Remove any duplicate ROS packages before resolving dependencies to prevent
+# rosdep and colcon build failures. Keep the first occurrence of a package
+# name and discard subsequent duplicates.
 declare -A pkg_seen
 while read -r name path _; do
   if [[ -n "${pkg_seen[$name]:-}" ]]; then
@@ -48,6 +48,9 @@ while read -r name path _; do
     pkg_seen[$name]="$path"
   fi
 done < <(colcon list --base-paths src)
+
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
+  --skip-keys "tesseract tesseract_process_planners"
 
 # 1) Ensure boost_plugin_loader exists
 if [ ! -d src/boost_plugin_loader ]; then

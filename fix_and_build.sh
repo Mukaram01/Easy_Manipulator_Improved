@@ -36,11 +36,10 @@ done
 
 # Install missing dependencies
 rosdep update
-rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract tesseract_process_planners"
 
-# Remove any duplicate ROS packages within the workspace to avoid colcon errors.
-# Keep the first occurrence of a package name and discard subsequent duplicates.
+# Remove any duplicate ROS packages within the workspace before resolving
+# dependencies to avoid rosdep and colcon errors. Keep the first occurrence of
+# a package name and discard subsequent duplicates.
 declare -A pkg_seen
 while read -r name path _; do
   if [[ -n "${pkg_seen[$name]:-}" ]]; then
@@ -50,6 +49,9 @@ while read -r name path _; do
     pkg_seen[$name]="$path"
   fi
 done < <(colcon list --base-paths "$SRC")
+
+rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
+  --skip-keys "tesseract tesseract_process_planners"
 
 # C++17 everywhere
 export AMENT_CMAKE_CXX_STANDARD=17
