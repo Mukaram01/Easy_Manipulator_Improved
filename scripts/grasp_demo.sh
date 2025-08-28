@@ -2,12 +2,19 @@
 set -euo pipefail
 
 cleanup() {
-  kill "${planner_pid:-}" "${execution_pid:-}" 2>/dev/null || true
+  # Terminate background processes if they were started
+  if [ -n "${planner_pid:-}" ]; then
+    kill "$planner_pid" 2>/dev/null || true
+  fi
+  if [ -n "${execution_pid:-}" ]; then
+    kill "$execution_pid" 2>/dev/null || true
+  fi
 }
 trap cleanup SIGINT SIGTERM ERR EXIT
 
 # Build the workspace and source it
 colcon build --symlink-install
+# shellcheck disable=SC1091
 source install/setup.bash
 
 # Launch grasp planner and execution demos
