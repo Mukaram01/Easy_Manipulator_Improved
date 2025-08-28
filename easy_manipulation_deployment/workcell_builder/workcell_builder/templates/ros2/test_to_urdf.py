@@ -43,6 +43,14 @@ def test_to_urdf_requires_existing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         demo.to_urdf(missing)
 
+
+def test_to_urdf_rejects_non_xacro_file(tmp_path):
+    """to_urdf should reject source files that do not end with ``.xacro``."""
+    non_xacro = tmp_path / "robot.urdf"
+    non_xacro.write_text("<robot name='test'></robot>")
+    with pytest.raises(ValueError, match="xacro_path must point to a .xacro file"):
+        demo.to_urdf(non_xacro)
+
 def test_to_urdf_creates_urdf_file(tmp_path):
     xacro_file = tmp_path / 'robot.xacro'
     xacro_file.write_text("<robot name='test'></robot>")
