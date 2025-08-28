@@ -94,6 +94,11 @@ public:
     double start_state_time, double end_state_time)
   {
     trajectory_msgs::msg::JointTrajectoryPoint start_state, end_state;
+    // Always store the requested start state time to ensure deterministic
+    // behaviour regardless of the end state option.  Previously the start
+    // state time remained uninitialized when `end_state_time` was negative,
+    // which could result in undefined behaviour during interpolation.
+    start_state_time_ = start_state_time;
     if (end_state_time < 0) {
       end_state = reference_trajectory_.points.back();
       end_state_time_ = rclcpp::Duration(end_state.time_from_start).seconds();
@@ -101,7 +106,6 @@ public:
       if (start_state_time >= end_state_time) {
         return;
       }
-      start_state_time_ = start_state_time;
       end_state_time_ = end_state_time;
     }
 
