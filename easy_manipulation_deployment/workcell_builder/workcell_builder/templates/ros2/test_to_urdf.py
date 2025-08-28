@@ -43,6 +43,12 @@ def test_to_urdf_requires_existing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         demo.to_urdf(missing)
 
+
+def test_to_urdf_rejects_empty_xacro_path():
+    """to_urdf should raise ``ValueError`` when given an empty source path."""
+    with pytest.raises(ValueError, match="xacro_path must not be empty"):
+        demo.to_urdf("")
+
 def test_to_urdf_creates_urdf_file(tmp_path):
     xacro_file = tmp_path / 'robot.xacro'
     xacro_file.write_text("<robot name='test'></robot>")

@@ -34,6 +34,10 @@ def to_urdf(xacro_path, urdf_path=None):
     # it. ``xacro`` will eventually raise a somewhat cryptic error if the file
     # is missing; performing an explicit check here gives a clearer
     # ``FileNotFoundError`` to callers.
+    # Ensure a meaningful error is raised when an empty path is supplied.
+    if xacro_path is None or (isinstance(xacro_path, str) and not xacro_path.strip()):
+        raise ValueError("xacro_path must not be empty")
+
     # Expand the user home directory (``~``) in the supplied path so that
     # callers can rely on standard shell semantics.  Without this a path such
     # as ``~/file.xacro`` would be interpreted literally and the subsequent
