@@ -150,3 +150,13 @@ def test_load_file_avoids_double_extension(tmp_path, monkeypatch):
     assert '<robot' in content
     assert captured['path'].endswith('.urdf')
     assert not captured['path'].endswith('.urdf.urdf')
+
+
+def test_load_file_handles_missing_package(monkeypatch):
+    """``load_file`` should return ``None`` when the package is not found."""
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: (_ for _ in ()).throw(EnvironmentError('missing package')),
+    )
+    assert demo.load_file('does_not_exist', 'file.urdf.xacro') is None
