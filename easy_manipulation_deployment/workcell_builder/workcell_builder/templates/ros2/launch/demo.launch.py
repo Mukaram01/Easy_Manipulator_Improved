@@ -93,9 +93,10 @@ def to_urdf(xacro_path, urdf_path=None):
     return urdf_path  # Return path to the urdf file
 
 def load_file(package_name, file_path):
-    package_path = Path(get_package_share_directory(package_name))  # get package filepath
-    absolute_file_path = package_path / file_path
     try:
+        package_path = Path(get_package_share_directory(package_name))  # get package filepath
+        absolute_file_path = package_path / file_path
+
         # Use a temporary directory so the generated URDF does not pollute the
         # package path and to avoid double ``.urdf`` extensions when the input
         # file already contains one.
