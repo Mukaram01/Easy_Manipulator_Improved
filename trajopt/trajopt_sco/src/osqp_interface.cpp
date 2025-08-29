@@ -2,7 +2,6 @@
 #include <trajopt_common/macros.h>
 #include "trajopt_sco/sco_common.hpp"
 TRAJOPT_IGNORE_WARNINGS_PUSH
-#include <constants.h>
 #include <cmath>
 #include <Eigen/SparseCore>
 #include <fstream>
@@ -29,7 +28,7 @@ void OSQPModelConfig::setDefaultOSQPSettings(OSQPSettings& settings)
   settings.eps_abs = 1e-4;
   settings.eps_rel = 1e-6;
   settings.max_iter = 8192;
-  settings.polish = 1;
+  settings.polishing = 1;
   settings.adaptive_rho = 1;
   settings.verbose = 0;
 }
@@ -39,7 +38,7 @@ Model::Ptr createOSQPModel(const ModelConfig::ConstPtr& config = nullptr)
   return std::make_shared<OSQPModel>(config);
 }
 
-OSQPModel::OSQPModel(const ModelConfig::ConstPtr& config) : P_(nullptr, free), A_(nullptr, free)
+OSQPModel::OSQPModel(const ModelConfig::ConstPtr& config)
 {
   // tuning parameters to be less accurate, but add a polishing step
   if (config != nullptr)
@@ -52,9 +51,9 @@ OSQPModel::OSQPModel(const ModelConfig::ConstPtr& config) : P_(nullptr, free), A
 
 OSQPModel::~OSQPModel()
 {
-  // The osqp_workspace_ is managed by osqp but its members are not so must clean up.
-  if (osqp_workspace_ != nullptr)
-    osqp_cleanup(osqp_workspace_);
+  // The solver instance is managed by OSQP but its members are not so must clean up.
+  if (osqp_solver_ != nullptr)
+    osqp_cleanup(osqp_solver_);
 
   // Clean up memory
   for (const Var& var : vars_)
@@ -136,12 +135,12 @@ bool OSQPModel::updateObjective(bool check_sparsity)
                      (memcmp(osqp_data_.P->i, P_row_indices_.data(), static_cast<size_t>(osqp_data_.P->nzmax)) == 0);
   }
 
-  P_.reset(csc_matrix(osqp_data_.n,
-                      osqp_data_.n,
-                      static_cast<c_int>(P_csc_data_.size()),
-                      P_csc_data_.data(),
-                      P_row_indices_.data(),
-                      P_column_pointers_.data()));
+  P_.reset(OSQPCscMatrix_new(osqp_data_.n,
+                             osqp_data_.n,
+                             static_cast<c_int>(P_csc_data_.size()),
+                             P_csc_data_.data(),
+                             P_row_indices_.data(),
+                             P_column_pointers_.data()));
 
   osqp_data_.P = P_.get();
   osqp_data_.q = q_.data();
@@ -200,12 +199,12 @@ bool OSQPModel::updateConstraints(bool check_sparsity)
                      (memcmp(osqp_data_.A->i, A_row_indices_.data(), static_cast<size_t>(osqp_data_.A->nzmax)) == 0);
   }
 
-  A_.reset(csc_matrix(osqp_data_.m,
-                      osqp_data_.n,
-                      static_cast<c_int>(A_csc_data_.size()),
-                      A_csc_data_.data(),
-                      A_row_indices_.data(),
-                      A_column_pointers_.data()));
+  A_.reset(OSQPCscMatrix_new(osqp_data_.m,
+                             osqp_data_.n,
+                             static_cast<c_int>(A_csc_data_.size()),
+                             A_csc_data_.data(),
+                             A_row_indices_.data(),
+                             A_column_pointers_.data()));
 
   osqp_data_.A = A_.get();
 
@@ -219,18 +218,18 @@ void OSQPModel::createOrUpdateSolver()
 {
   bool allow_update = false;
   bool allow_explicit_warm_start = false;
-  if (osqp_workspace_ != nullptr)
+  if (osqp_solver_ != nullptr)
   {
-    const auto status_val = static_cast<int>(osqp_workspace_->info->status_val);
+    const auto status_val = static_cast<int>(osqp_solver_->info->status_val);
     // Only warm start or update if the last optimzation was (almost) solved
     if ((status_val == OSQP_SOLVED) || (status_val == OSQP_SOLVED_INACCURATE))
     {
       if (config_.update_workspace)
       {
-        // When updating, warm start is implicit (depending on the warm_start setting)
+        // When updating, warm start is implicit (depending on the warm_starting setting)
         allow_update = true;
       }
-      else if (config_.settings.warm_start != 0)
+      else if (config_.settings.warm_starting != 0)
       {
         // Only allow explicit warm start if not updating
         allow_explicit_warm_start = true;
@@ -251,26 +250,21 @@ void OSQPModel::createOrUpdateSolver()
   bool need_setup = true;
   if (allow_update)
   {
-    LOG_DEBUG("OSQP update (warm start = %lli).", config_.settings.warm_start);
+    LOG_DEBUG("OSQP update (warm start = %lli).", config_.settings.warm_starting);
     need_setup = false;
 
-    if (osqp_update_bounds(osqp_workspace_, osqp_data_.l, osqp_data_.u) != 0)
+    if (osqp_update_data_vec(osqp_solver_, osqp_data_.q, osqp_data_.l, osqp_data_.u) != 0)
     {
       need_setup = true;
-      LOG_WARN("OSQP updating bounds failed.");
+      LOG_WARN("OSQP updating data vectors failed.");
     }
-    if (!need_setup && (osqp_update_lin_cost(osqp_workspace_, osqp_data_.q) != 0))
-    {
-      need_setup = true;
-      LOG_WARN("OSQP updating linear costs failed.");
-    }
-    if (!need_setup && (osqp_update_P_A(osqp_workspace_,
-                                        osqp_data_.P->x,
-                                        OSQP_NULL,
-                                        osqp_data_.P->nzmax,
-                                        osqp_data_.A->x,
-                                        OSQP_NULL,
-                                        osqp_data_.A->nzmax) != 0))
+    if (!need_setup && (osqp_update_data_mat(osqp_solver_,
+                                             osqp_data_.P->x,
+                                             OSQP_NULL,
+                                             osqp_data_.P->nzmax,
+                                             osqp_data_.A->x,
+                                             OSQP_NULL,
+                                             osqp_data_.A->nzmax) != 0))
     {
       need_setup = true;
       LOG_WARN("OSQP updating P and A matrices failed.");
@@ -284,36 +278,44 @@ void OSQPModel::createOrUpdateSolver()
   DblVec prev_x;
   DblVec prev_y;
   double prev_rho = 0.0;
-  if (osqp_workspace_ != nullptr)
+  if (osqp_solver_ != nullptr)
   {
     if (allow_explicit_warm_start)
     {
-      LOG_DEBUG("OSQP explicit warm start (warm_start = %lli).", config_.settings.warm_start);
+      LOG_DEBUG("OSQP explicit warm start (warm_start = %lli).", config_.settings.warm_starting);
       // Store previous solution
-      prev_x = DblVec(osqp_workspace_->solution->x, osqp_workspace_->solution->x + osqp_data_.n);
-      prev_y = DblVec(osqp_workspace_->solution->y, osqp_workspace_->solution->y + osqp_data_.m);
-      prev_rho = osqp_workspace_->settings->rho;
+      prev_x = DblVec(osqp_solver_->solution->x, osqp_solver_->solution->x + osqp_data_.n);
+      prev_y = DblVec(osqp_solver_->solution->y, osqp_solver_->solution->y + osqp_data_.m);
+      prev_rho = osqp_solver_->settings->rho;
     }
-    osqp_cleanup(osqp_workspace_);
+    osqp_cleanup(osqp_solver_);
   }
 
   // Setup workspace - this should be called only once
-  auto ret = osqp_setup(&osqp_workspace_, &osqp_data_, &config_.settings);
+  auto ret = osqp_setup(&osqp_solver_,
+                        osqp_data_.P,
+                        osqp_data_.q,
+                        osqp_data_.A,
+                        osqp_data_.l,
+                        osqp_data_.u,
+                        osqp_data_.m,
+                        osqp_data_.n,
+                        &config_.settings);
   if (ret != 0)
   {
     // In this case, no data got allocated, so don't try to free it.
     if (ret == OSQP_DATA_VALIDATION_ERROR || ret == OSQP_SETTINGS_VALIDATION_ERROR)
-      osqp_workspace_ = nullptr;
+      osqp_solver_ = nullptr;
     throw std::runtime_error("Could not initialize OSQP: error " + std::to_string(ret));
   }
   if (!prev_x.empty() && !prev_y.empty())
   {
     // Warm start recreated workspace with previous solution
-    if (osqp_warm_start(osqp_workspace_, prev_x.data(), prev_y.data()) != 0)
+    if (osqp_warm_start(osqp_solver_, prev_x.data(), prev_y.data()) != 0)
     {
       LOG_WARN("OSQP warm start failed.");
     }
-    if (osqp_update_rho(osqp_workspace_, prev_rho) != 0)
+    if (osqp_update_rho(osqp_solver_, prev_rho) != 0)
     {
       LOG_WARN("OSQP rho update failed.");
     }
@@ -449,13 +451,13 @@ CvxOptStatus OSQPModel::optimize()
   }
 
   // Solve Problem
-  const c_int retcode = osqp_solve(osqp_workspace_);
+  const c_int retcode = osqp_solve(osqp_solver_);
 
   if (retcode == 0)
   {
     // opt += m_objective.affexpr.constant;
-    solution_ = DblVec(osqp_workspace_->solution->x, osqp_workspace_->solution->x + vars_.size());
-    auto status = static_cast<int>(osqp_workspace_->info->status_val);
+    solution_ = DblVec(osqp_solver_->solution->x, osqp_solver_->solution->x + vars_.size());
+    auto status = static_cast<int>(osqp_solver_->info->status_val);
 
     if (OSQP_COMPARE_DEBUG_MODE)
     {
