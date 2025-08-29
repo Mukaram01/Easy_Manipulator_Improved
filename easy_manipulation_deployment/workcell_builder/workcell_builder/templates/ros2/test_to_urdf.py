@@ -34,6 +34,15 @@ pytest.importorskip("yaml")
 
 module_path = Path(__file__).resolve().parent / 'launch' / 'demo.launch.py'
 spec = importlib.util.spec_from_file_location('demo_launch', module_path)
+# ``spec_from_file_location`` may return ``None`` if the module cannot be
+# loaded (e.g. the file is missing).  Guard against this and provide a clear
+# error instead of raising ``AttributeError`` when accessing ``spec.loader``
+# below.  Likewise, ``spec.loader`` itself can legitimately be ``None``
+# depending on the import system.  In both cases we raise ``ImportError`` with
+# context so failures are easier to diagnose.
+if spec is None or spec.loader is None:
+    raise ImportError(f"Cannot load module from {module_path}")
+
 demo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(demo)
 
