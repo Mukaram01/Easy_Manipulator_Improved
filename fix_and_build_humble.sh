@@ -12,8 +12,15 @@ for d in jazzy humble; do
 done
 ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
 [ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
-set +u; : "${AMENT_TRACE_SETUP_FILES:=}"; source "/opt/ros/${ROS_DISTRO}/setup.bash"; set -u
-if [ -f ~/ws_moveit2/install/setup.bash ]; then source ~/ws_moveit2/install/setup.bash; fi
+set +u
+: "${AMENT_TRACE_SETUP_FILES:=}"
+# shellcheck source=/dev/null
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
+set -u
+if [ -f ~/ws_moveit2/install/setup.bash ]; then
+  # shellcheck source=/dev/null
+  source ~/ws_moveit2/install/setup.bash
+fi
 
 # Ensure required tools are available (install common ones if missing)
 for cmd in git colcon rosdep; do

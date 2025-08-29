@@ -19,7 +19,11 @@ done
 ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
 [ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
 [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ] || { echo "ROS ${ROS_DISTRO} not found"; exit 1; }
-set +u; : "${AMENT_TRACE_SETUP_FILES:=}"; source "/opt/ros/${ROS_DISTRO}/setup.bash"; set -u
+set +u
+: "${AMENT_TRACE_SETUP_FILES:=}"
+# shellcheck source=/dev/null
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
+set -u
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 case "${ROS_DISTRO}" in
   humble|jazzy) ;;
