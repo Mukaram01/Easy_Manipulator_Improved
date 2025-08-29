@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import xacro
+import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -145,7 +146,8 @@ def load_yaml(package_name: str, file_path: str) -> Any:
     yaml_file = package_path / file_path
     if not yaml_file.is_file():
         raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
-    return xacro.load_yaml(str(yaml_file))
+    with yaml_file.open("r") as f:
+        return yaml.safe_load(f)
 
 
 def generate_launch_description() -> LaunchDescription:
