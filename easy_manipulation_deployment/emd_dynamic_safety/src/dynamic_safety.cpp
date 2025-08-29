@@ -39,7 +39,7 @@ static const double LOG_RATE = 1;  // This is duration
 template<typename NodeT>
 const Option & Option::load(const std::shared_ptr<NodeT> & node)
 {
-  // Load dyanmic safety parameters
+  // Load dynamic safety parameters
   emd::declare_or_get_param<bool>(
     dynamic_parameterization,
     "dynamic_safety.dynamic_parameterization",
@@ -103,7 +103,7 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
       usleep(100000);
     }
     RCLCPP_INFO(
-      LOGGER, "Recieved urdf & srdf from param server, parsing...");
+      LOGGER, "Received urdf & srdf from param server, parsing...");
   } else {
     emd::declare_or_get_param<std::string>(
       robot_description,
@@ -115,19 +115,19 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
       node, LOGGER);  // default: "second"
   }
 
-  // Load dyanmic safety parameters
+  // Load dynamic safety parameters
   emd::declare_or_get_param<bool>(
     allow_replan,
     "dynamic_safety.allow_replan",
     node, LOGGER, false);
 
-  // Load dyanmic safety parameters
+  // Load dynamic safety parameters
   emd::declare_or_get_param<bool>(
     benchmark,
     "dynamic_safety.benchmark",
     node, LOGGER, false);
 
-  // Load dyanmic safety parameters
+  // Load dynamic safety parameters
   emd::declare_or_get_param<bool>(
     visualize,
     "dynamic_safety.visualize",
