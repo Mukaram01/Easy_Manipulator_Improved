@@ -1,21 +1,18 @@
 cmake_minimum_required(VERSION 3.5)
 project(realsense2_description)
 
-# Default to C++17
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+# This package only installs description resources.  Attempt to find
+# ament_cmake so that it behaves as a normal ROS package when the dependency is
+# available, but fall back to a plain CMake package when it is not.
+find_package(ament_cmake QUIET)
+
+if(ament_cmake_FOUND)
+  ament_package()
+else()
+  message(WARNING "ament_cmake not found. Installing realsense2_description as a
+  generic CMake package")
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_runtime REQUIRED)
-# Install files
+# Install resources regardless of build system.
 install(DIRECTORY launch meshes rviz urdf
   DESTINATION share/${PROJECT_NAME})
-
-
-
-ament_package()

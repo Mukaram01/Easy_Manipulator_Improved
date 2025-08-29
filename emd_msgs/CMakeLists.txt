@@ -1,24 +1,16 @@
 cmake_minimum_required(VERSION 3.5)
 project(emd_msgs)
 
-# Default to C99
-if(NOT CMAKE_C_STANDARD)
-  set(CMAKE_C_STANDARD 99)
+# This package defines ROS interfaces.  When the necessary ROS tooling is not
+# available (such as in the execution environment for these exercises) we skip
+# building the interfaces so that the rest of the workspace can still be
+# configured.
+find_package(ament_cmake QUIET)
+if(NOT ament_cmake_FOUND)
+  message(WARNING "ament_cmake not found. Skipping build of emd_msgs")
+  return()
 endif()
 
-# Default to C++17
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-# find dependencies
-find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -26,7 +18,7 @@ find_package(shape_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-rosidl_generate_interfaces( ${PROJECT_NAME}
+rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GraspMethod.msg"
   "msg/GraspTarget.msg"
   "msg/GraspTask.msg"
