@@ -52,7 +52,7 @@ struct GraspExecutionContext
   /// Name of end effector link
   std::string ee_link;
 
-  /// How far forward to plan for a trajectory during move unitl collide workflow
+  /// How far forward to plan for a trajectory during move until collide workflow
   double move_to_collide_step_size;
 
   /// Cartesian interpolation resolution used during the first planning strategy.
@@ -90,7 +90,7 @@ public:
   /**
    * Create an empty planning group.
    * \param[in] planning_group group name.
-   * \return true if initialized succesfully, otherwise false.
+   * \return true if initialized successfully, otherwise false.
    */
   virtual bool init(const std::string & planning_group)
   {
@@ -156,7 +156,7 @@ public:
    * \param[in] execution_method execution method name.
    * \param[in] execution_plugin execution method plugin name.
    * \param[in] execution_controller execution method controller.
-   * \return true if loaded succesfully, otherwise false
+   * \return true if loaded successfully, otherwise false
    */
   virtual bool load_execution_method(
     const std::string & group_name,
@@ -178,7 +178,7 @@ public:
    * \param[in] ee_link end effector link for planning.
    * \param[in] ee_driver_plugin end effector driver plugin.
    * \param[in] ee_driver_controller end effector driver controller.
-   * \return true if loaded succesfully, otherwise false
+   * \return true if loaded successfully, otherwise false
    */
   virtual bool load_ee(
     const std::string & group_name,

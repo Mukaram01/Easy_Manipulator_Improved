@@ -901,7 +901,7 @@ double MoveitCppGraspExecution::cartesian_to(
 
     if (step < std::numeric_limits<double>::epsilon()) {
       RCLCPP_ERROR(
-        LOGGER, "Maximum step to take between consecutive configrations along Cartesian path"
+        LOGGER, "Maximum step to take between consecutive configurations along Cartesian path"
         "was not specified (this value needs to be > 0)");
       return fraction;
     } else {
