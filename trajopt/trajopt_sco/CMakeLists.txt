@@ -88,27 +88,8 @@ if(GUROBI_FOUND)
 endif(GUROBI_FOUND)
 
 if(osqp_FOUND)
-  include(CheckCXXSourceCompiles)
-
-  # make headers visible to the test
-  set(_SAVE_REQ_INCS "${CMAKE_REQUIRED_INCLUDES}")
-  set(CMAKE_REQUIRED_INCLUDES "${osqp_INCLUDE_DIRS}")
-
-  # Legacy OSQP (<=0.6) exposes OSQPData in headers; v1 no longer does.
-  check_cxx_source_compiles(
-    "#include <osqp/osqp.h>\nint main() { OSQPData d; (void)d; return 0; }"
-    OSQP_HAS_LEGACY_API)
-
-  set(CMAKE_REQUIRED_INCLUDES "${_SAVE_REQ_INCS}")
-
-  if(OSQP_HAS_LEGACY_API)
-    message(STATUS "trajopt_sco: legacy OSQP API detected; enabling OSQP interface")
-    list(APPEND SCO_SOURCE_FILES src/osqp_interface.cpp)
-  else()
-    message(WARNING "trajopt_sco: OSQP v1 detected; disabling OSQP interface (incompatible). Use qpOASES/GUROBI instead.")
-  endif()
+  list(APPEND SCO_SOURCE_FILES src/osqp_interface.cpp)
 endif()
-
 if(qpOASES_FOUND AND TRAJOPT_BUILD_qpOASES)
   list(APPEND SCO_SOURCE_FILES src/qpoases_interface.cpp)
 endif()
@@ -126,7 +107,7 @@ if(HAVE_BPMPD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE BPMPD_CALLER="${CMAKE_INSTALL_PREFIX}/bin/bpmpd_caller"
                                                      HAVE_BPMPD=ON)
 endif()
-if(osqp_FOUND AND OSQP_HAS_LEGACY_API)
+if(osqp_FOUND)
   target_link_libraries(${PROJECT_NAME} PRIVATE osqp::osqp)
   target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_OSQP=ON)
 endif()
@@ -198,7 +179,7 @@ if(TRAJOPT_PACKAGE)
     list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}gurobi")
   endif()
 
-  if(osqp_FOUND AND OSQP_HAS_LEGACY_API)
+  if(osqp_FOUND)
     list(APPEND LINUX_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}osqp")
     list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}osqp")
   endif()
