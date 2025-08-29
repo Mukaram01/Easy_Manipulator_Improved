@@ -1,4 +1,4 @@
-#include <osqp.h>
+#include <osqp/osqp.h>
 #include <trajopt_common/macros.h>
 #include "trajopt_sco/sco_common.hpp"
 TRAJOPT_IGNORE_WARNINGS_PUSH

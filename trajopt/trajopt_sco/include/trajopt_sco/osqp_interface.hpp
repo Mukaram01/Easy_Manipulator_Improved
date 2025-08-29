@@ -2,7 +2,7 @@
 #include <trajopt_common/macros.h>
 TRAJOPT_IGNORE_WARNINGS_PUSH
 #include <Eigen/Core>
-#include <osqp.h>
+#include <osqp/osqp.h>
 #include <mutex>
 TRAJOPT_IGNORE_WARNINGS_POP
 
