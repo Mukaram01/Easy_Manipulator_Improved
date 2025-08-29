@@ -20,6 +20,15 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 find_package(GUROBI QUIET)
 find_package(osqp QUIET)
+# Detect OSQP major version
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_INCLUDES "")
+check_cxx_source_compiles(
+  "#include <osqp.h>\nint main(){ OSQPSolver* s = nullptr; (void)s; return 0; }"
+  OSQP_IS_V1)
+if(OSQP_IS_V1)
+  add_compile_definitions(TRAJOPT_OSQP_V1=1)
+endif()
 find_package(Eigen3 REQUIRED)
 find_package(trajopt_common REQUIRED)
 if(NOT TARGET JsonCpp::JsonCpp)
@@ -53,10 +62,11 @@ set(SCO_SOURCE_FILES
 
 # BPMPD requires proprietary libraries which are not bundled with this
 # repository. Disable by default unless explicitly enabled.
-option(HAVE_BPMPD "Enable BPMPD components" OFF)
+option(HAVE_BPMPD "Build bpmpd caller" OFF)
 
 if(HAVE_BPMPD)
   add_executable(bpmpd_caller src/bpmpd_caller.cpp)
+  set_target_properties(bpmpd_caller PROPERTIES LINK_OPTIONS "")
 
   if(CMAKE_SIZEOF_VOID_P EQUAL 8) # 64 bits
     set(BPMPD_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/3rdpartylib/bpmpd_linux64.a")

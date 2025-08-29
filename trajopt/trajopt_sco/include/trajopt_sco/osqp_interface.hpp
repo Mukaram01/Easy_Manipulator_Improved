@@ -2,33 +2,27 @@
 #include <trajopt_common/macros.h>
 TRAJOPT_IGNORE_WARNINGS_PUSH
 #include <Eigen/Core>
-#include <osqp/osqp.h>
+#include <osqp.h>
 #include <mutex>
 TRAJOPT_IGNORE_WARNINGS_POP
 
-// Convenience aliases to map the updated OSQP API types to the legacy
-// naming used throughout trajopt_sco.  The upstream OSQP project renamed a
-// number of types (for example ``c_int`` -> ``OSQPInt``) and removed the
-// ``OSQPData`` structure.  Defining these aliases keeps the majority of the
-// existing implementation unchanged while allowing it to compile against the
-// modern API.
+#ifdef TRAJOPT_OSQP_V1
 using c_int = OSQPInt;
 using c_float = OSQPFloat;
 using csc = OSQPCscMatrix;
-
-// Minimal replacement for the old OSQPData structure.  The new API passes the
-// individual pieces directly to ``osqp_setup`` so we simply store them here to
-// mirror the previous interface.
 struct OSQPData
 {
-  c_int n{ 0 };
-  c_int m{ 0 };
-  csc* P{ nullptr };
-  csc* A{ nullptr };
-  c_float* q{ nullptr };
-  c_float* l{ nullptr };
-  c_float* u{ nullptr };
+  c_int n{0}, m{0};
+  csc* P{nullptr};
+  csc* A{nullptr};
+  c_float* q{nullptr};
+  c_float* l{nullptr};
+  c_float* u{nullptr};
 };
+using OSQPSolverHandle = OSQPSolver*;
+#else
+using OSQPSolverHandle = OSQPWorkspace*;
+#endif
 
 #include <trajopt_sco/solver_interface.hpp>
 
@@ -69,55 +63,49 @@ struct OSQPModelConfig : public ModelConfig
  */
 class OSQPModel : public Model
 {
-  /** OSQPData. Some fields here (`osp_data_.A` and `osp_data_.P`) are *  automatically allocated by OSQP, but
-   * deallocated by us. */
   OSQPData osqp_data_{};
+  OSQPSolverHandle osqp_handle_{ nullptr };
 
-  /** OSQP solver handle. Memory here is managed by OSQP */
-  OSQPSolver* osqp_solver_{ nullptr };
-
-  /** Updates OSQP quadratic cost matrix from QuadExpr expression.
-   *  Transforms QuadExpr objective_ into the OSQP CSC matrix P_
-   * @param check_sparsity Check if the sparsity of the P matrix has changed
-   * @return True if check_sparsity = true and the sparsity of the P matrix has not changed
-   */
   bool updateObjective(bool check_sparsity);
-
-  /** Updates qpOASES constraints from AffExpr expression.
-   *  Transforms AffExpr cntr_exprs_ and box bounds lbs_ and ubs_ into the
-   *  OSQP CSC matrix A_, and vectors lbA_ and ubA_
-   * @param check_sparsity Checks if the sparsity of the A matrix has changed
-   * @return True if check_sparsity = true and the sparsity of the A matrix has not changed
-   */
   bool updateConstraints(bool check_sparsity);
-
-  /** Creates or updates the solver and its workspace */
   void createOrUpdateSolver();
 
-  VarVector vars_;                 /**< model variables */
-  CntVector cnts_;                 /**< model's constraints sizes */
-  DblVec lbs_, ubs_;               /**< variables bounds */
-  AffExprVector cnt_exprs_;        /**< constraints expressions */
-  ConstraintTypeVector cnt_types_; /**< constraints types */
-  DblVec solution_;                /**< optimizizer's solution for current model */
+  VarVector vars_;
+  CntVector cnts_;
+  DblVec lbs_, ubs_;
+  AffExprVector cnt_exprs_;
+  ConstraintTypeVector cnt_types_;
+  DblVec solution_;
 
-  std::unique_ptr<csc, decltype(&OSQPCscMatrix_free)> P_{ nullptr, &OSQPCscMatrix_free }; /**< Takes ownership of OSQPData.P to avoid having to deallocate manually */
-  std::unique_ptr<csc, decltype(&OSQPCscMatrix_free)> A_{ nullptr, &OSQPCscMatrix_free }; /**< Takes ownership of OSQPData.A to avoid having to deallocate manually */
-  std::vector<c_int> P_row_indices_;        /**< row indices for P, CSC format */
-  std::vector<c_int> P_column_pointers_;    /**< column pointers for P, CSC format */
-  DblVec P_csc_data_;                       /**< P values in CSC format */
-  Eigen::VectorXd q_;                       /**< linear part of the objective */
+  std::unique_ptr<csc, void (*)(csc*)> P_{ nullptr,
+#ifdef TRAJOPT_OSQP_V1
+                                            &OSQPCscMatrix_free
+#else
+                                            &free
+#endif
+  };
+  std::unique_ptr<csc, void (*)(csc*)> A_{ nullptr,
+#ifdef TRAJOPT_OSQP_V1
+                                            &OSQPCscMatrix_free
+#else
+                                            &free
+#endif
+  };
+  std::vector<c_int> P_row_indices_;
+  std::vector<c_int> P_column_pointers_;
+  DblVec P_csc_data_;
+  Eigen::VectorXd q_;
 
-  std::vector<c_int> A_row_indices_;     /**< row indices for constraint matrix, CSC format */
-  std::vector<c_int> A_column_pointers_; /**< column pointers for constraint matrix, CSC format */
-  DblVec A_csc_data_;                    /**< constraint matrix values in CSC format */
-  DblVec l_, u_;                         /**< linear constraints upper and lower limits */
+  std::vector<c_int> A_row_indices_;
+  std::vector<c_int> A_column_pointers_;
+  DblVec A_csc_data_;
+  DblVec l_, u_;
 
-  QuadExpr objective_; /**< objective QuadExpr expression */
+  QuadExpr objective_;
 
-  OSQPModelConfig config_; /**< The configuration settings */
+  OSQPModelConfig config_;
 
-  std::mutex mutex_; /**< The mutex */
+  std::mutex mutex_;
 
 public:
   OSQPModel(const ModelConfig::ConstPtr& config = nullptr);
@@ -127,7 +115,6 @@ public:
   OSQPModel(OSQPModel&&) = delete;
   OSQPModel& operator=(OSQPModel&&) = delete;
 
-  // Must be threadsafe
   Var addVar(const std::string& name) override;
   Cnt addEqCnt(const AffExpr&, const std::string& name) override;
   Cnt addIneqCnt(const AffExpr&, const std::string& name) override;
@@ -135,7 +122,6 @@ public:
   void removeVars(const VarVector& vars) override;
   void removeCnts(const CntVector& cnts) override;
 
-  // These do not need to be threadsafe
   void update() override;
   CvxOptStatus optimize() override;
   void setObjective(const AffExpr&) override;
