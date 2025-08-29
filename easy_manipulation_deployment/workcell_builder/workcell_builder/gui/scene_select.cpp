@@ -479,7 +479,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   }
   YAML::Node objects;
   YAML::Node ext_joints;
-  bool has_objects;
+  bool has_objects = false;
 
 
   for (YAML::iterator it = yaml.begin(); it != yaml.end(); ++it) {
