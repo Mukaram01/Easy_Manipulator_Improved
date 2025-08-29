@@ -57,6 +57,7 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <future>
 
 #include "rclcpp/rclcpp.hpp"
 

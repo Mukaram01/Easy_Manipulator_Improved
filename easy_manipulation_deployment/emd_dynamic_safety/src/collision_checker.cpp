@@ -19,6 +19,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <condition_variable>
+#include <atomic>
+#include <thread>
 
 #include "emd/dynamic_safety/collision_checker.hpp"
 #include "emd/interpolate.hpp"
