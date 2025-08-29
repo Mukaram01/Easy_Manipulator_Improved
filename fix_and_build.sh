@@ -26,11 +26,29 @@ case "${ROS_DISTRO}" in
   *) echo "Wrong ROS distro: ${ROS_DISTRO}"; exit 1 ;;
 esac
 
-# Ensure required tools are available
+# Ensure required tools are available (install common ones if missing)
 for cmd in git colcon rosdep; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Required tool '$cmd' is not installed." >&2
-    exit 1
+    case "$cmd" in
+      colcon)
+        python3 -m pip install -U colcon-common-extensions >/dev/null 2>&1 || {
+          echo "Failed to install colcon" >&2
+          exit 1
+        }
+        ;;
+      rosdep)
+        if command -v sudo >/dev/null 2>&1; then
+          sudo apt-get update -y && sudo apt-get install -y python3-rosdep >/dev/null 2>&1
+        else
+          apt-get update -y && apt-get install -y python3-rosdep >/dev/null 2>&1
+        fi
+        rosdep init >/dev/null 2>&1 || true
+        ;;
+      *)
+        echo "Required tool '$cmd' is not installed." >&2
+        exit 1
+        ;;
+    esac
   fi
 done
 
