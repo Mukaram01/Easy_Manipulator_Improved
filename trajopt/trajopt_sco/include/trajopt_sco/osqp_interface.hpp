@@ -6,6 +6,30 @@ TRAJOPT_IGNORE_WARNINGS_PUSH
 #include <mutex>
 TRAJOPT_IGNORE_WARNINGS_POP
 
+// Convenience aliases to map the updated OSQP API types to the legacy
+// naming used throughout trajopt_sco.  The upstream OSQP project renamed a
+// number of types (for example ``c_int`` -> ``OSQPInt``) and removed the
+// ``OSQPData`` structure.  Defining these aliases keeps the majority of the
+// existing implementation unchanged while allowing it to compile against the
+// modern API.
+using c_int = OSQPInt;
+using c_float = OSQPFloat;
+using csc = OSQPCscMatrix;
+
+// Minimal replacement for the old OSQPData structure.  The new API passes the
+// individual pieces directly to ``osqp_setup`` so we simply store them here to
+// mirror the previous interface.
+struct OSQPData
+{
+  c_int n{ 0 };
+  c_int m{ 0 };
+  csc* P{ nullptr };
+  csc* A{ nullptr };
+  c_float* q{ nullptr };
+  c_float* l{ nullptr };
+  c_float* u{ nullptr };
+};
+
 #include <trajopt_sco/solver_interface.hpp>
 
 namespace sco
@@ -49,8 +73,8 @@ class OSQPModel : public Model
    * deallocated by us. */
   OSQPData osqp_data_{};
 
-  /** OSQP Workspace. Memory here is managed by OSQP */
-  OSQPWorkspace* osqp_workspace_{ nullptr };
+  /** OSQP solver handle. Memory here is managed by OSQP */
+  OSQPSolver* osqp_solver_{ nullptr };
 
   /** Updates OSQP quadratic cost matrix from QuadExpr expression.
    *  Transforms QuadExpr objective_ into the OSQP CSC matrix P_
@@ -77,8 +101,8 @@ class OSQPModel : public Model
   ConstraintTypeVector cnt_types_; /**< constraints types */
   DblVec solution_;                /**< optimizizer's solution for current model */
 
-  std::unique_ptr<csc, decltype(&free)> P_; /**< Takes ownership of OSQPData.P to avoid having to deallocate manually */
-  std::unique_ptr<csc, decltype(&free)> A_; /**< Takes ownership of OSQPData.A to avoid having to deallocate manually */
+  std::unique_ptr<csc, decltype(&OSQPCscMatrix_free)> P_{ nullptr, &OSQPCscMatrix_free }; /**< Takes ownership of OSQPData.P to avoid having to deallocate manually */
+  std::unique_ptr<csc, decltype(&OSQPCscMatrix_free)> A_{ nullptr, &OSQPCscMatrix_free }; /**< Takes ownership of OSQPData.A to avoid having to deallocate manually */
   std::vector<c_int> P_row_indices_;        /**< row indices for P, CSC format */
   std::vector<c_int> P_column_pointers_;    /**< column pointers for P, CSC format */
   DblVec P_csc_data_;                       /**< P values in CSC format */
