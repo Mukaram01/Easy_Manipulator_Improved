@@ -5,6 +5,8 @@ find_package(ros_industrial_cmake_boilerplate REQUIRED)
 extract_package_metadata(pkg)
 project(${pkg_extracted_name} VERSION ${pkg_extracted_version} LANGUAGES CXX)
 
+include(CheckCXXSourceCompiles)
+
 if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
@@ -65,7 +67,6 @@ if(HAVE_BPMPD)
   endif()
 
   target_link_libraries(bpmpd_caller PRIVATE ${BPMPD_LIBRARY})
-  target_link_options(bpmpd_caller PRIVATE -static)
   target_compile_definitions(bpmpd_caller PUBLIC BPMPD_WORKING_DIR="${CMAKE_CURRENT_BINARY_DIR}")
   target_cxx_version(bpmpd_caller PUBLIC VERSION ${TRAJOPT_CXX_VERSION})
   target_include_directories(bpmpd_caller PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -87,7 +88,18 @@ if(GUROBI_FOUND)
 endif(GUROBI_FOUND)
 
 if(osqp_FOUND)
-  list(APPEND SCO_SOURCE_FILES src/osqp_interface.cpp)
+  # Detect legacy OSQP (v0.6) by checking if OSQPData exists
+  set(CMAKE_REQUIRED_INCLUDES "${osqp_INCLUDE_DIRS}")
+  check_cxx_source_compiles(
+    "#include <osqp/osqp.h>\nint main() { OSQPData d; (void)d; return 0; }"
+    OSQP_HAS_LEGACY_API)
+
+  if(OSQP_HAS_LEGACY_API)
+    message(STATUS "trajopt_sco: Detected legacy OSQP API (v0.6 style); enabling OSQP interface")
+    list(APPEND SCO_SOURCE_FILES src/osqp_interface.cpp)
+  else()
+    message(WARNING "trajopt_sco: Detected OSQP v1 API; disabling OSQP interface (incompatible). Use qpOASES or GUROBI instead.")
+  endif()
 endif()
 
 if(qpOASES_FOUND AND TRAJOPT_BUILD_qpOASES)
@@ -107,7 +119,7 @@ if(HAVE_BPMPD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE BPMPD_CALLER="${CMAKE_INSTALL_PREFIX}/bin/bpmpd_caller"
                                                      HAVE_BPMPD=ON)
 endif()
-if(osqp_FOUND)
+if(osqp_FOUND AND OSQP_HAS_LEGACY_API)
   target_link_libraries(${PROJECT_NAME} PRIVATE osqp::osqp)
   target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_OSQP=ON)
 endif()
@@ -179,7 +191,7 @@ if(TRAJOPT_PACKAGE)
     list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}gurobi")
   endif()
 
-  if(osqp_FOUND)
+  if(osqp_FOUND AND OSQP_HAS_LEGACY_API)
     list(APPEND LINUX_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}osqp")
     list(APPEND WINDOWS_DEPENDS "${TRAJOPT_PACKAGE_PREFIX}osqp")
   endif()
