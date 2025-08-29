@@ -170,6 +170,24 @@ def test_load_file_handles_missing_package(monkeypatch):
     assert demo.load_file('does_not_exist', 'file.urdf.xacro') is None
 
 
+def test_load_file_returns_none_for_missing_file(tmp_path, monkeypatch):
+    """``load_file`` should return ``None`` when the target file is missing."""
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    assert demo.load_file('pkg', 'missing.urdf.xacro') is None
+
+
+def test_load_file_returns_none_on_xacro_error(tmp_path, monkeypatch):
+    """Invalid xacro files should cause ``load_file`` to return ``None``."""
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    bad_xacro = pkg_dir / 'bad.urdf.xacro'
+    bad_xacro.write_text('<robot name="test">')  # malformed XML (no closing tag)
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    assert demo.load_file('pkg', bad_xacro.name) is None
+
+
 def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
     """``load_yaml`` should raise ``FileNotFoundError`` for missing files."""
     monkeypatch.setattr(
