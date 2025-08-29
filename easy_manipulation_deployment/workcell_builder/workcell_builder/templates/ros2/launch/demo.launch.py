@@ -132,7 +132,11 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
             )
             with temp_urdf_path.open("r") as file:
                 return file.read()
-    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
+    except Exception:
+        # ``to_urdf`` may raise a variety of exceptions when the conversion
+        # fails (e.g. malformed xacro, missing files or packages).  Swallow
+        # any such error and indicate the failure by returning ``None`` to the
+        # caller.
         return None
 
 
