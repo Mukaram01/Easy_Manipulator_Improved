@@ -14,7 +14,8 @@ def load_file(package_name, file_path):
     try:
         with open(absolute_file_path, "r") as file:
             return file.read()
-    except EnvironmentError:  # parent of IOError, OSError *and* WindowsError where available
+    except EnvironmentError:
+        # parent of IOError, OSError *and* WindowsError where available
         return None
 
 
@@ -27,7 +28,8 @@ def load_yaml(package_name, file_path):
 def generate_launch_description():
     # moveit_cpp.yaml is passed by filename for now since it's node specific
     moveit_cpp_yaml_file_name = (
-        get_package_share_directory("run_dynamic_safety") + "/config/moveit_cpp.yaml"
+        get_package_share_directory("run_dynamic_safety")
+        + "/config/moveit_cpp.yaml"
     )
 
     debug_arg = DeclareLaunchArgument(
@@ -37,7 +39,9 @@ def generate_launch_description():
     # Component yaml files are grouped in separate namespaces
     robot_description_config = xacro.process_file(
         os.path.join(
-            get_package_share_directory("moveit_resources_panda_moveit_config"),
+            get_package_share_directory(
+                "moveit_resources_panda_moveit_config"
+            ),
             "config",
             "panda.urdf.xacro",
         )
@@ -54,21 +58,32 @@ def generate_launch_description():
     kinematics_yaml = load_yaml(
         "moveit_resources_panda_moveit_config", "config/kinematics.yaml"
     )
-    robot_description_kinematics = {"robot_description_kinematics": kinematics_yaml}
+    robot_description_kinematics = {
+        "robot_description_kinematics": kinematics_yaml
+    }
 
     moveit_simple_controllers_yaml = load_yaml(
         "moveit_resources_panda_moveit_config", "config/panda_controllers.yaml"
     )
     moveit_controllers = {
         "moveit_simple_controller_manager": moveit_simple_controllers_yaml,
-        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+        "moveit_controller_manager": (
+            "moveit_simple_controller_manager/MoveItSimpleControllerManager"
+        ),
     }
 
     ompl_planning_pipeline_config = {
         "planning_pipelines": ["ompl"],
         "ompl": {
             "planning_plugin": "ompl_interface/OMPLPlanner",
-            "request_adapters": """default_planner_request_adapters/AddTimeOptimalParameterization default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision default_planner_request_adapters/FixStartStatePathConstraints""",
+            "request_adapters": (
+                "default_planner_request_adapters/"
+                "AddTimeOptimalParameterization "
+                "default_planner_request_adapters/FixWorkspaceBounds "
+                "default_planner_request_adapters/FixStartStateBounds "
+                "default_planner_request_adapters/FixStartStateCollision "
+                "default_planner_request_adapters/FixStartStatePathConstraints"
+            ),
             "start_state_max_bounds_error": 0.1,
         },
     }
@@ -109,7 +124,8 @@ def generate_launch_description():
 
     # RViz
     rviz_config_file = (
-        get_package_share_directory("run_dynamic_safety") + "/launch/run_moveit_cpp.rviz"
+        get_package_share_directory("run_dynamic_safety")
+        + "/launch/run_moveit_cpp.rviz"
     )
     rviz_node = Node(
         package="rviz2",
@@ -126,7 +142,16 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="static_transform_publisher",
         output="log",
-        arguments=["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "world", "panda_link0"],
+        arguments=[
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "0.0",
+            "world",
+            "panda_link0",
+        ],
     )
 
     # Publish TF
@@ -163,7 +188,10 @@ def generate_launch_description():
     ]:
         load_controllers += [
             ExecuteProcess(
-                cmd=["ros2 run controller_manager spawner.py {}".format(controller)],
+                cmd=[
+                    "ros2 run controller_manager "
+                    "spawner.py {}".format(controller)
+                ],
                 shell=True,
                 output="screen",
             )
