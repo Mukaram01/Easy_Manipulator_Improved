@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 #include <chrono>
+#include <future>
+#include <thread>
 
 #include "emd/grasp_execution/core/scheduler.hpp"
 

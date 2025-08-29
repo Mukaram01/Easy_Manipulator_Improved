@@ -18,6 +18,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <future>
+#include <chrono>
 
 #include "emd/dynamic_safety/replanner.hpp"
 #include "emd/interpolate.hpp"
