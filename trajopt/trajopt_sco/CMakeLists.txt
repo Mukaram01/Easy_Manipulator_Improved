@@ -64,7 +64,7 @@ if(HAVE_BPMPD)
     set(BPMPD_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/3rdpartylib/bpmpd_linux32.a")
   endif()
 
-  target_link_libraries(bpmpd_caller ${BPMPD_LIBRARY} -static)
+  target_link_libraries(bpmpd_caller PRIVATE ${BPMPD_LIBRARY} -static)
   target_compile_definitions(bpmpd_caller PUBLIC BPMPD_WORKING_DIR="${CMAKE_CURRENT_BINARY_DIR}")
   target_cxx_version(bpmpd_caller PUBLIC VERSION ${TRAJOPT_CXX_VERSION})
   target_include_directories(bpmpd_caller PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
