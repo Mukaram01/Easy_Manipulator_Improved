@@ -16,6 +16,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+option(HAVE_BPMPD "Build the bundled BPMPD caller and enable BPMPD support" OFF)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 find_package(GUROBI QUIET)
@@ -69,7 +71,6 @@ if(NOT DEFINED HAVE_BPMPD)
     set(HAVE_BPMPD FALSE)
   endif()
 endif()
-option(HAVE_BPMPD "Build the bundled BPMPD caller and enable BPMPD support" ${HAVE_BPMPD})
 message(STATUS "trajopt_sco: HAVE_BPMPD = ${HAVE_BPMPD}")
 
 if(HAVE_BPMPD)
