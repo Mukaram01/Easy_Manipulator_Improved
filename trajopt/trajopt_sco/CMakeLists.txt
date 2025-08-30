@@ -62,11 +62,18 @@ set(SCO_SOURCE_FILES
 
 # BPMPD requires proprietary libraries which are not bundled with this
 # repository. Disable by default unless explicitly enabled.
-option(HAVE_BPMPD "Build bpmpd caller tool" OFF)
+if(NOT DEFINED HAVE_BPMPD)
+  if(NOT APPLE AND NOT WIN32)
+    set(HAVE_BPMPD TRUE)
+  else()
+    set(HAVE_BPMPD FALSE)
+  endif()
+endif()
+option(HAVE_BPMPD "Build the bundled BPMPD caller and enable BPMPD support" ${HAVE_BPMPD})
+message(STATUS "trajopt_sco: HAVE_BPMPD = ${HAVE_BPMPD}")
 
 if(HAVE_BPMPD)
   add_executable(bpmpd_caller src/bpmpd_caller.cpp)
-  set_target_properties(bpmpd_caller PROPERTIES LINK_OPTIONS "")
 
   if(CMAKE_SIZEOF_VOID_P EQUAL 8) # 64 bits
     set(BPMPD_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/3rdpartylib/bpmpd_linux64.a")
@@ -89,18 +96,7 @@ if(HAVE_BPMPD)
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib)
-endif()
-
-if (TARGET bpmpd_caller)
-  set_target_properties(bpmpd_caller PROPERTIES
-    EXCLUDE_FROM_ALL TRUE
-    EXCLUDE_FROM_DEFAULT_BUILD TRUE)
-  # Remove any accidental -static
-  get_target_property(_bp_opts bpmpd_caller LINK_OPTIONS)
-  if (_bp_opts)
-    list(FILTER _bp_opts EXCLUDE REGEX "^-static$")
-    set_target_properties(bpmpd_caller PROPERTIES LINK_OPTIONS "${_bp_opts}")
-  endif()
+  install(FILES src/bpmpd.par DESTINATION bin)
 endif()
 
 if(GUROBI_FOUND)
@@ -122,11 +118,12 @@ if(GUROBI_FOUND)
   target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_GUROBI=ON)
 endif()
 if(HAVE_BPMPD)
-  install(FILES src/bpmpd.par DESTINATION bin)
-
   target_link_libraries(${PROJECT_NAME} PRIVATE ${BPMPD_LIBRARY})
-  target_compile_definitions(${PROJECT_NAME} PRIVATE BPMPD_CALLER="${CMAKE_INSTALL_PREFIX}/bin/bpmpd_caller"
-                                                     HAVE_BPMPD=ON)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    HAVE_BPMPD=ON
+    BPMPD_CALLER="${CMAKE_INSTALL_PREFIX}/bin/bpmpd_caller")
+else()
+  target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_BPMPD=OFF)
 endif()
 if(osqp_FOUND)
   target_link_libraries(${PROJECT_NAME} PRIVATE osqp::osqp)
