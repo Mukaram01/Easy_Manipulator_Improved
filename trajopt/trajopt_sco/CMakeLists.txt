@@ -22,11 +22,11 @@ find_package(GUROBI QUIET)
 find_package(osqp QUIET)
 # Detect OSQP major version
 include(CheckCXXSourceCompiles)
-set(CMAKE_REQUIRED_INCLUDES "")
+set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
 check_cxx_source_compiles(
-  "#include <osqp.h>\nint main(){ OSQPSolver* s = nullptr; (void)s; return 0; }"
+  "\n    #if __has_include(<osqp/osqp.h>)\n    #  include <osqp/osqp.h>\n    #elif __has_include(<osqp.h>)\n    #  include <osqp.h>\n    #else\n    #  error \"no osqp headers\"\n    #endif\n    #ifdef OSQP_VERSION_MAJOR\n    int main(){ return (OSQP_VERSION_MAJOR>=1) ? 0 : 1; }\n    #else\n    int main(){ return 1; } // OSQP 0.6 has no MAJOR macro\n    #endif\n  "
   OSQP_IS_V1)
-if(OSQP_IS_V1)
+if (OSQP_IS_V1)
   add_compile_definitions(TRAJOPT_OSQP_V1=1)
 endif()
 find_package(Eigen3 REQUIRED)
@@ -62,7 +62,7 @@ set(SCO_SOURCE_FILES
 
 # BPMPD requires proprietary libraries which are not bundled with this
 # repository. Disable by default unless explicitly enabled.
-option(HAVE_BPMPD "Build bpmpd caller" OFF)
+option(HAVE_BPMPD "Build bpmpd caller tool" OFF)
 
 if(HAVE_BPMPD)
   add_executable(bpmpd_caller src/bpmpd_caller.cpp)
@@ -89,6 +89,18 @@ if(HAVE_BPMPD)
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib)
+endif()
+
+if (TARGET bpmpd_caller)
+  set_target_properties(bpmpd_caller PROPERTIES
+    EXCLUDE_FROM_ALL TRUE
+    EXCLUDE_FROM_DEFAULT_BUILD TRUE)
+  # Remove any accidental -static
+  get_target_property(_bp_opts bpmpd_caller LINK_OPTIONS)
+  if (_bp_opts)
+    list(FILTER _bp_opts EXCLUDE REGEX "^-static$")
+    set_target_properties(bpmpd_caller PROPERTIES LINK_OPTIONS "${_bp_opts}")
+  endif()
 endif()
 
 if(GUROBI_FOUND)
