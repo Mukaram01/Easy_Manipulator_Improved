@@ -10,6 +10,9 @@ TRAJOPT_IGNORE_WARNINGS_PUSH
 #else
 #  error "OSQP headers not found"
 #endif
+#if __has_include(<osqp/version.h>)
+#  include <osqp/version.h>
+#endif
 TRAJOPT_IGNORE_WARNINGS_POP
 
 #ifdef OSQP_VERSION_MAJOR
