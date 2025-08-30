@@ -54,6 +54,8 @@ cd easy_manipulation_deployment
 
 This script checks for required tools and automatically installs base packages like `ament_cmake` if they are missing before running `rosdep`.
 
+Run `scripts/fix_workspace_layout.sh` once to disable the unused trajopt copy and set up symlinks. BPMPD support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.
+
 ---
 ## Full Documentation/Wiki
 

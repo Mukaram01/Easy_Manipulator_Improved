@@ -1,8 +1,4 @@
-#if __has_include(<osqp/osqp.h>)
-#  include <osqp/osqp.h>
-#else
-#  include <osqp.h>
-#endif
+#include <osqp/osqp.h>
 #include <trajopt_common/macros.h>
 #include "trajopt_sco/sco_common.hpp"
 TRAJOPT_IGNORE_WARNINGS_PUSH
@@ -244,16 +240,9 @@ void OSQPModel::createOrUpdateSolver()
   }
   if (need_setup)
   {
-#ifdef TRAJOPT_OSQP_V1
-    OSQPInt ret = osqp_setup(&osqp_workspace_,
-                             osqp_data_.P, osqp_data_.q,
-                             osqp_data_.A, osqp_data_.l, osqp_data_.u,
-                             osqp_data_.m, osqp_data_.n,
-                             &config_.settings);
-#else
-    c_int ret = osqp_setup(&osqp_workspace_, reinterpret_cast<OSQPData*>(&osqp_data_), &config_.settings);
-#endif
-    if (ret != 0) throw std::runtime_error("osqp_setup failed");
+    auto ret = osqp_setup(&osqp_workspace_, &osqp_data_, &config_.settings);
+    if (ret != 0)
+      throw std::runtime_error("osqp_setup failed");
   }
 }
 
