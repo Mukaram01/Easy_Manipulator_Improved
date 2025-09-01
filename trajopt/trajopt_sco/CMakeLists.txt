@@ -164,7 +164,7 @@ install(
   PATTERN "*.hpp"
   PATTERN ".svn" EXCLUDE)
 
-install(FILES cmake/FindGUROBI.cmake cmake/FindqpOASES.cmake DESTINATION lib/cmake/${PROJECT_NAME})
+# install(FILES cmake/FindGUROBI.cmake cmake/FindqpOASES.cmake DESTINATION lib/cmake/${PROJECT_NAME})
 
 if(TRAJOPT_ENABLE_TESTING)
   enable_testing()
