@@ -29,7 +29,7 @@ void OSQPModelConfig::setDefaultOSQPSettings(OSQPSettings& settings)
   settings.eps_rel = 1e-6;
   settings.max_iter = 8192;
   settings.verbose = 0;
-#ifdef TRAJOPT_OSQP_V1
+#if defined(OSQP_API_TYPES_H)
   settings.polishing = 1;
   settings.warm_starting = 1;
 #else
@@ -225,7 +225,7 @@ void OSQPModel::createOrUpdateSolver()
   const bool need_setup = (osqp_workspace_ == nullptr);
   if (!need_setup)
   {
-#ifdef TRAJOPT_OSQP_V1
+#if defined(OSQP_API_TYPES_H)
     osqp_update_data_vec(osqp_workspace_, osqp_data_.q, osqp_data_.l, osqp_data_.u);
     osqp_update_data_mat(osqp_workspace_,
                          osqp_data_.P->x, OSQP_NULL, osqp_data_.P->nzmax,
@@ -375,11 +375,11 @@ CvxOptStatus OSQPModel::optimize()
   }
 
   // Solve Problem
-  #ifdef TRAJOPT_OSQP_V1
-    OSQPInt retcode = osqp_solve(osqp_workspace_);
-  #else
-    c_int   retcode = osqp_solve(osqp_workspace_);
-  #endif
+#if defined(OSQP_API_TYPES_H)
+  OSQPInt retcode = osqp_solve(osqp_workspace_);
+#else
+  c_int   retcode = osqp_solve(osqp_workspace_);
+#endif
 
   if (retcode == 0)
   {
