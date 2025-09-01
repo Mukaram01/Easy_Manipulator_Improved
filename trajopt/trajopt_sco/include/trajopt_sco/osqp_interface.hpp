@@ -12,7 +12,7 @@ TRAJOPT_IGNORE_WARNINGS_POP
 namespace sco
 {
 
-#ifdef TRAJOPT_OSQP_V1
+#if defined(OSQP_API_TYPES_H)
 using c_int = OSQPInt;
 using c_float = OSQPFloat;
 using csc = OSQPCscMatrix;
