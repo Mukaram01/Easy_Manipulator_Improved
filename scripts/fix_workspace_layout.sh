@@ -24,3 +24,8 @@ fi
 if [ -d "${BACKUP_DIR}/trajopt_common" ] && [ ! -e "${SRC_DIR}/trajopt_common" ]; then
   ln -s "${BACKUP_DIR}/trajopt_common" "${SRC_DIR}/trajopt_common"
 fi
+
+# Link trajopt package from backup if available
+if [ -d "${BACKUP_DIR}/trajopt" ] && [ ! -e "${SRC_DIR}/trajopt" ]; then
+  ln -s "${BACKUP_DIR}/trajopt" "${SRC_DIR}/trajopt"
+fi
