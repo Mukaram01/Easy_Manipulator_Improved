@@ -25,11 +25,6 @@ index into the vector x
 this function extracts (from x) the values of the variables in vars
  */
 Eigen::VectorXd getVec(const DblVec& x, const VarVector& vars);
-/**
-Same idea as above, but different output type
- */
-DblVec getDblVec(const DblVec& x, const VarVector& vars);
-
 AffExpr affFromValGrad(double y, const Eigen::VectorXd& x, const Eigen::VectorXd& dydx, const VarVector& vars);
 
 class CostFromFunc : public Cost
@@ -112,5 +107,4 @@ protected:
   Eigen::VectorXd scaling_;
 };
 
-std::string AffExprToString(const AffExpr& aff);
 }  // namespace sco

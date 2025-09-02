@@ -145,43 +145,5 @@ void exprToEigen(const AffExprVector& expr_vec,
   sparse_matrix.setFromTriplets(triplets.begin(), triplets.end());  // NOLINT
 }
 
-void tripletsToEigen(const IntVec& rows_i,
-                     const IntVec& cols_j,
-                     const DblVec& values_ij,
-                     Eigen::SparseMatrix<double>& sparse_matrix)
-{
-  assert((rows_i.size() == cols_j.size()) && (rows_i.size() == values_ij.size()));  // NOLINT
-  sparse_matrix.reserve(static_cast<Eigen::Index>(values_ij.size()));
-
-  using T = Eigen::Triplet<double>;
-  thread_local std::vector<T, Eigen::aligned_allocator<T>> triplets;
-  triplets.clear();
-  triplets.reserve(values_ij.size());
-
-  // NOLINTNEXTLINE
-  for (unsigned int i = 0; i < values_ij.size(); ++i)
-    triplets.emplace_back(rows_i[i], cols_j[i], values_ij[i]);
-
-  sparse_matrix.setFromTriplets(triplets.begin(), triplets.end());
-}
-
-void eigenToTriplets(const Eigen::SparseMatrix<double>& sparse_matrix,
-                     IntVec& rows_i,
-                     IntVec& cols_j,
-                     DblVec& values_ij)
-{
-  const auto& sm = sparse_matrix;
-  rows_i.reserve(rows_i.size() + static_cast<std::size_t>(sm.nonZeros()));
-  cols_j.reserve(cols_j.size() + static_cast<std::size_t>(sm.nonZeros()));
-  values_ij.reserve(values_ij.size() + static_cast<std::size_t>(sm.nonZeros()));
-  for (int k = 0; k < sm.outerSize(); ++k)
-  {
-    for (Eigen::SparseMatrix<double>::InnerIterator it(sm, k); it; ++it)
-    {
-      rows_i.push_back(static_cast<int>(it.row()));
-      cols_j.push_back(static_cast<int>(it.col()));
-      values_ij.push_back(it.value());
-    }
-  }
-}
+// tripletsToEigen and eigenToTriplets were unused and have been removed.
 }  // namespace sco

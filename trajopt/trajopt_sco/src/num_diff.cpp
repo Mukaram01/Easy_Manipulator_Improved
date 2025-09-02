@@ -112,20 +112,8 @@ struct ForwardNumGrad : public VectorOfVector
   Eigen::VectorXd operator()(const Eigen::VectorXd& x) const override { return calcForwardNumGrad(*f_, x, epsilon_); }
 };
 
-struct ForwardNumJac : public MatrixOfVector
-{
-  VectorOfVector::Ptr f_;
-  double epsilon_;
-  ForwardNumJac(VectorOfVector::Ptr f, double epsilon) : f_(std::move(f)), epsilon_(epsilon) {}
-  Eigen::MatrixXd operator()(const Eigen::VectorXd& x) const override { return calcForwardNumJac(*f_, x, epsilon_); }
-};
-
 VectorOfVector::Ptr forwardNumGrad(ScalarOfVector::Ptr f, double epsilon)
 {
   return std::make_shared<ForwardNumGrad>(std::move(f), epsilon);
-}
-MatrixOfVector::Ptr forwardNumJac(VectorOfVector::Ptr f, double epsilon)
-{
-  return std::make_shared<ForwardNumJac>(std::move(f), epsilon);
 }
 }  // namespace sco

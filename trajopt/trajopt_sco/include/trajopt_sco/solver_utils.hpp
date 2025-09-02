@@ -64,37 +64,9 @@ void exprToEigen(const AffExprVector& expr_vec,
                  Eigen::SparseMatrix<double>& sparse_matrix,
                  Eigen::VectorXd& vector,
                  Eigen::Index n_vars = -1);
-/**
- * @brief Converts triplets to an `Eigen::SparseMatrix`.
- * @param [in] rows_i a vector of row indices
- * @param [in] cols_j a vector of columns indices
- * @param [in] values_ij a vector of values, so that:
- *                       `M[rows_i[k], cols_j[k]] = values_ij[k]`
- * @param [in,out] sparse_matrix must be of the right size, as we should not
- *                               be guessing the right size of sparse_matrix from
- *                               a sparse triplet representation.
- */
-void tripletsToEigen(const IntVec& rows_i,
-                     const IntVec& cols_j,
-                     const DblVec& values_ij,
-                     Eigen::SparseMatrix<double>& sparse_matrix);
-
-/**
- * @brief Converts an `Eigen::SparseMatrix` into triplets format
- * @param [in] sparse_matrix an `Eigen::SparseMatrix`
- * @param [out] rows_i a vector of row indices
- * @param [out] cols_j a vector of columns indices
- * @param [out] values_ij a vector of values, so that:
- *                       `M[rows_i[k], cols_j[k]] = values_ij[k]`
- */
-void eigenToTriplets(const Eigen::SparseMatrix<double>& sparse_matrix,
-                     IntVec& rows_i,
-                     IntVec& cols_j,
-                     DblVec& values_ij);
-
-/**
- * @brief converts a sparse matrix into compressed
- *        sparse column representation (CSC).
+  /**
+   * @brief converts a sparse matrix into compressed
+   *        sparse column representation (CSC).
  *
  * @param [out] row_indices row indices for a CSC matrix
  * @param [out] column_pointers column pointer for a CSC matrix
