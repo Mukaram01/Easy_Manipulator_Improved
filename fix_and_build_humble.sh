@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd ~/workcell_ws
 
 # 0) Source underlays (support Humble or Jazzy)
@@ -23,7 +24,7 @@ if [ -f ~/ws_moveit2/install/setup.bash ]; then
 fi
 
 # Ensure required tools are available (install common ones if missing)
-for cmd in git colcon rosdep; do
+for cmd in git colcon rosdep vcs; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     case "$cmd" in
       colcon)
@@ -39,6 +40,13 @@ for cmd in git colcon rosdep; do
           apt-get update -y && apt-get install -y python3-rosdep >/dev/null 2>&1
         fi
         rosdep init >/dev/null 2>&1 || true
+        ;;
+      vcs)
+        if command -v sudo >/dev/null 2>&1; then
+          sudo apt-get update -y && sudo apt-get install -y python3-vcstool >/dev/null 2>&1
+        else
+          apt-get update -y && apt-get install -y python3-vcstool >/dev/null 2>&1
+        fi
         ;;
       *)
         echo "Required tool '$cmd' is not installed." >&2
@@ -57,6 +65,19 @@ if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
     apt-get update -y
     apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
   fi
+fi
+
+REPO_FILE="$SCRIPT_DIR/tesseract.repos"
+if [ -f "$REPO_FILE" ]; then
+  if [ ! -d src/tesseract ]; then
+    vcs import --recursive src < "$REPO_FILE"
+  fi
+  for overlay in tesseract trajopt; do
+    if [ -d "$SCRIPT_DIR/$overlay" ]; then
+      mkdir -p "src/$overlay"
+      cp -a "$SCRIPT_DIR/$overlay/." "src/$overlay/"
+    fi
+  done
 fi
 
 rosdep update
