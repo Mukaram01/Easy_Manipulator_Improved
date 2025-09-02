@@ -52,7 +52,7 @@ void simplify2(IntVec& inds, DblVec& vals)
   }
   inds.resize(ind2val.size());
   vals.resize(ind2val.size());
-  long unsigned int i_new = 0;
+  std::size_t i_new = 0;
   for (const Int2Double::value_type& iv : ind2val)
   {
     inds[i_new] = iv.first;

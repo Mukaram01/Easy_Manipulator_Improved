@@ -15,16 +15,16 @@ const double DEFAULT_EPSILON = 1e-5;
 Eigen::VectorXd getVec(const DblVec& x, const VarVector& vars)
 {
   Eigen::VectorXd out(vars.size());
-  for (unsigned i = 0; i < vars.size(); ++i)
-    out[i] = x[static_cast<long unsigned int>(vars[i].var_rep->index)];
+  for (std::size_t i = 0; i < vars.size(); ++i)
+    out[i] = x[static_cast<std::size_t>(vars[i].var_rep->index)];
   return out;
 }
 
 DblVec getDblVec(const DblVec& x, const VarVector& vars)
 {
   DblVec out(vars.size());
-  for (unsigned i = 0; i < vars.size(); ++i)
-    out[i] = x[static_cast<long unsigned int>(vars[i].var_rep->index)];
+  for (std::size_t i = 0; i < vars.size(); ++i)
+    out[i] = x[static_cast<std::size_t>(vars[i].var_rep->index)];
   return out;
 }
 
