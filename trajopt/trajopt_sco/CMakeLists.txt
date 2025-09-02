@@ -50,7 +50,6 @@ set(SCO_SOURCE_FILES
     src/solver_utils.cpp
     src/modeling.cpp
     src/expr_ops.cpp
-    src/expr_vec_ops.cpp
     src/optimizers.cpp
     src/modeling_utils.cpp
     src/num_diff.cpp)

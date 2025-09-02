@@ -20,14 +20,6 @@ Eigen::VectorXd getVec(const DblVec& x, const VarVector& vars)
   return out;
 }
 
-DblVec getDblVec(const DblVec& x, const VarVector& vars)
-{
-  DblVec out(vars.size());
-  for (unsigned i = 0; i < vars.size(); ++i)
-    out[i] = x[static_cast<long unsigned int>(vars[i].var_rep->index)];
-  return out;
-}
-
 AffExpr affFromValGrad(double y, const Eigen::VectorXd& x, const Eigen::VectorXd& dydx, const VarVector& vars)
 {
   AffExpr aff;
@@ -268,17 +260,4 @@ ConvexConstraints::Ptr ConstraintFromErrFunc::convex(const DblVec& x, Model* mod
   return out;
 }
 
-std::string AffExprToString(const AffExpr& aff)
-{
-  std::string out;
-  for (std::size_t i = 0; i < aff.vars.size(); i++)
-  {
-    if (i != 0)
-      out.append(" + ");
-    const std::string term = std::to_string(aff.coeffs[i]) + "*" + aff.vars[i].var_rep->name;
-    out.append(term);
-  }
-  out.append(" + " + std::to_string(aff.constant));
-  return out;
-}
 }  // namespace sco
