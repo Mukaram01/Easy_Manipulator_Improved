@@ -134,7 +134,7 @@ DblVec ConvexConstraints::violations(const DblVec& x)
   DblVec out;
   out.reserve(eqs_.size() + ineqs_.size());
   for (const AffExpr& aff : eqs_)
-    out.push_back(fabs(aff.value(x.data())));
+    out.push_back(std::abs(aff.value(x.data())));
   for (const AffExpr& aff : ineqs_)
     out.push_back(pospart(aff.value(x.data())));
   return out;
@@ -155,7 +155,7 @@ DblVec Constraint::violations(const DblVec& x)
   if (type() == EQ)
   {
     for (std::size_t i = 0; i < val.size(); ++i)
-      out[i] = fabs(val[i]);
+      out[i] = std::abs(val[i]);
   }
   else
   {  // type() == INEQ
@@ -264,8 +264,8 @@ DblVec OptProb::getClosestFeasiblePoint(const DblVec& x, const double& delta)
   for (std::size_t i = 0; i < x.size(); i++)
   {
     // Force it a tiny bit inside the bounds
-    y[i] = fmax(lower_bounds_[i] + delta, x[i]);
-    y[i] = fmin(upper_bounds_[i] - delta, x[i]);
+    y[i] = std::max(lower_bounds_[i] + delta, x[i]);
+    y[i] = std::min(upper_bounds_[i] - delta, x[i]);
   }
   return y;
 }

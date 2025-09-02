@@ -36,7 +36,7 @@ inline double vecAbsSum(const DblVec& v)
 {
   double out = 0;
   for (const double i : v)
-    out += fabs(i);
+    out += std::abs(i);
   return out;
 }
 
