@@ -197,6 +197,20 @@ def test_load_file_returns_none_on_xacro_error(tmp_path, monkeypatch):
     assert demo.load_file('pkg', bad_xacro.name) is None
 
 
+def test_load_file_reads_plain_urdf(tmp_path, monkeypatch):
+    """``load_file`` should read existing URDF files without invoking ``to_urdf``."""
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    urdf_file = pkg_dir / 'robot.urdf'
+    urdf_file.write_text('<robot name="test"/>')
+
+    # ``to_urdf`` should not be called when the input is already a URDF file.
+    monkeypatch.setattr(demo, 'to_urdf', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('to_urdf called')))
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+
+    assert demo.load_file('pkg', urdf_file.name) == '<robot name="test"/>'
+
+
 def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
     """``load_yaml`` should raise ``FileNotFoundError`` for missing files."""
     monkeypatch.setattr(

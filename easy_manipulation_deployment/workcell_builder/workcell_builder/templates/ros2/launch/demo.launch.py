@@ -122,15 +122,24 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
         # file already contains one.
         with tempfile.TemporaryDirectory() as tmpdir:
             filename = Path(file_path)
+
+            # Only invoke ``to_urdf`` when the source file is a xacro file.
+            # ``to_urdf`` raises a ``ValueError`` for non-xacro input which
+            # previously caused ``load_file`` to return ``None`` even for valid
+            # URDF files.  By checking the extension up-front we can simply
+            # read URDF files directly.
             if filename.suffix == ".xacro":
                 filename = filename.with_suffix("")
-            if filename.suffix != ".urdf":
-                filename = filename.with_suffix(".urdf")
-            temp_urdf_path = Path(tmpdir) / filename.name
-            temp_urdf_path = Path(
-                to_urdf(str(absolute_file_path), str(temp_urdf_path))
-            )
-            with temp_urdf_path.open("r") as file:
+                if filename.suffix != ".urdf":
+                    filename = filename.with_suffix(".urdf")
+                temp_urdf_path = Path(tmpdir) / filename.name
+                temp_urdf_path = Path(
+                    to_urdf(str(absolute_file_path), str(temp_urdf_path))
+                )
+            else:
+                temp_urdf_path = absolute_file_path
+
+            with Path(temp_urdf_path).open("r") as file:
                 return file.read()
     except Exception:
         # ``to_urdf`` may raise a variety of exceptions when the conversion
