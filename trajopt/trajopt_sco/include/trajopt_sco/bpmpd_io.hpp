@@ -48,16 +48,16 @@ void ser(int fp, std::vector<T>& x, SerMode mode)
   {
     case SER:
     {
-      const long n = write(fp, x.data(), sizeof(T) * size);
-      assert(static_cast<unsigned long>(n) == sizeof(T) * size);
+      const ssize_t n = write(fp, x.data(), sizeof(T) * size);
+      assert(static_cast<std::size_t>(n) == sizeof(T) * size);
       UNUSED(n);
       break;
     }
     case DESER:
     {
       x.resize(size);
-      const long n = read(fp, x.data(), sizeof(T) * size);
-      assert(static_cast<unsigned long>(n) == sizeof(T) * size);
+      const ssize_t n = read(fp, x.data(), sizeof(T) * size);
+      assert(static_cast<std::size_t>(n) == sizeof(T) * size);
       UNUSED(n);
       break;
     }
