@@ -211,7 +211,7 @@ static int gPipeOut = 0;  // NOLINT
 void fexit()
 {
   std::array<char, 1> text{ bpmpd_io::EXIT_CHAR };
-  long const n = write(gPipeIn, text.data(), 1);
+  ssize_t const n = write(gPipeIn, text.data(), 1);
   ALWAYS_ASSERT(n == 1);
 }
 
