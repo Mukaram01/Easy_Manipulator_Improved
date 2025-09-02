@@ -3,6 +3,7 @@ TRAJOPT_IGNORE_WARNINGS_PUSH
 #include <cmath>
 #include <csignal>
 #include <array>
+#include <algorithm>
 #include <mutex>
 #include <trajopt_sco/bpmpd_io.hpp>
 TRAJOPT_IGNORE_WARNINGS_POP
@@ -385,8 +386,8 @@ CvxOptStatus BPMPDModel::optimize()
   DBG(m_ubs);
   for (std::size_t iVar = 0; iVar < n; ++iVar)
   {
-    lbound[iVar] = fmax(m_lbs[iVar], -BPMPD_BIG);
-    ubound[iVar] = fmin(m_ubs[iVar], BPMPD_BIG);
+    lbound[iVar] = std::max(m_lbs[iVar], -BPMPD_BIG);
+    ubound[iVar] = std::min(m_ubs[iVar], BPMPD_BIG);
   }
 
   std::vector<IntVec> var2cntinds(n);

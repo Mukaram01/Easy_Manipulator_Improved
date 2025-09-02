@@ -88,7 +88,7 @@ AffExpr cleanupAff(const AffExpr& a)
   AffExpr out;
   for (std::size_t i = 0; i < a.size(); ++i)
   {
-    if (fabs(a.coeffs[i]) > 1e-7)
+    if (std::abs(a.coeffs[i]) > 1e-7)
     {
       out.coeffs.push_back(a.coeffs[i]);
       out.vars.push_back(a.vars[i]);

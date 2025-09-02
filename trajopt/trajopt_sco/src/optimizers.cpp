@@ -101,8 +101,8 @@ void BasicTrustRegionSQP::setTrustBoxConstraints(const DblVec& x)
   for (std::size_t i = 0; i < x.size(); ++i)
   {
     // Calculate box constraints, while limiting to variable bounds and maintaining the trust region size
-    lbtrust[i] = fmax(fmin(x[i], ub[i] - param_.trust_box_size) - param_.trust_box_size, lb[i]);
-    ubtrust[i] = fmin(fmax(x[i], lb[i] + param_.trust_box_size) + param_.trust_box_size, ub[i]);
+    lbtrust[i] = std::max(std::min(x[i], ub[i] - param_.trust_box_size) - param_.trust_box_size, lb[i]);
+    ubtrust[i] = std::min(std::max(x[i], lb[i] + param_.trust_box_size) + param_.trust_box_size, ub[i]);
   }
   model_->setVarBounds(vars, lbtrust, ubtrust);
 }
@@ -289,7 +289,7 @@ struct MultiCritFilter {
     for (const DblVec& olderrvec : errvecs) {
       double improvement=0;
       for (int i=0; i < errvec.size(); ++i) improvement += pospart(olderrvec[i] - errvec[i]);
-      leastImprovement = fmin(leastImprovement, improvement);
+      leastImprovement = std::min(leastImprovement, improvement);
     }
     return leastImprovement;
   }
@@ -385,7 +385,7 @@ void BasicTrustRegionSQPResults::print() const
   {
     const double approx_improve = old_cost_vals[i] - model_cost_vals[i];
     const double exact_improve = old_cost_vals[i] - new_cost_vals[i];
-    if (fabs(approx_improve) > 1e-8)
+    if (std::abs(approx_improve) > 1e-8)
       std::printf("| %10s | %10.3e | %10.3e | %10.3e | %10.3e | %10.3e | %10.3e | %-15s \n",
                   "----------",
                   old_cost_vals[i],
@@ -424,7 +424,7 @@ void BasicTrustRegionSQPResults::print() const
     {
       const double approx_improve = old_cnt_viols[i] - model_cnt_viols[i];
       const double exact_improve = old_cnt_viols[i] - new_cnt_viols[i];
-      if (fabs(approx_improve) > 1e-8)
+      if (std::abs(approx_improve) > 1e-8)
         std::printf("| %10.3e | %10.3e | %10.3e | %10.3e | %10.3e | %10.3e | %10.3e | %-15s \n",
                     merit_error_coeffs[i],
                     merit_error_coeffs[i] * old_cnt_viols[i],
@@ -525,7 +525,7 @@ void BasicTrustRegionSQPResults::writeCosts(std::FILE* stream, bool header) cons
   {
     const double approx_improve = old_cost_vals[i] - model_cost_vals[i];
     const double exact_improve = old_cost_vals[i] - new_cost_vals[i];
-    if (fabs(approx_improve) > 1e-8)
+    if (std::abs(approx_improve) > 1e-8)
     {
       std::fprintf(
           stream, ",%e,%e,%e,%e", old_cost_vals[i], approx_improve, exact_improve, exact_improve / approx_improve);
@@ -561,7 +561,7 @@ void BasicTrustRegionSQPResults::writeConstraints(std::FILE* stream, bool header
   {
     const double approx_improve = old_cnt_viols[i] - model_cnt_viols[i];
     const double exact_improve = old_cnt_viols[i] - new_cnt_viols[i];
-    if (fabs(approx_improve) > 1e-8)
+    if (std::abs(approx_improve) > 1e-8)
     {
       std::fprintf(stream,
                    ",%e,%e,%e,%e",
@@ -903,7 +903,7 @@ OptStatus BasicTrustRegionSQP::optimize()
           merit_error_coeff *= param_.merit_coeff_increase_ratio;
       }
       LOG_INFO("New merit_error_coeffs: %s", CSTR(merit_error_coeffs));
-      param_.trust_box_size = fmax(param_.trust_box_size, param_.min_trust_box_size / param_.trust_shrink_ratio * 1.5);
+      param_.trust_box_size = std::max(param_.trust_box_size, param_.min_trust_box_size / param_.trust_shrink_ratio * 1.5);
     }
   } /* merit adjustment loop */
   retval = OPT_PENALTY_ITERATION_LIMIT;

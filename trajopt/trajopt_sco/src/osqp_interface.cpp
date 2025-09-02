@@ -185,8 +185,8 @@ bool OSQPModel::updateConstraints(bool check_sparsity)
   sm.reserve(new_inner_sizes);
   for (std::size_t i_bnd = 0; i_bnd < n; ++i_bnd)
   {
-    l_[i_bnd + m] = fmax(lbs_[i_bnd], -OSQP_INFINITY);
-    u_[i_bnd + m] = fmin(ubs_[i_bnd], OSQP_INFINITY);
+    l_[i_bnd + m] = std::max(lbs_[i_bnd], -OSQP_INFINITY);
+    u_[i_bnd + m] = std::min(ubs_[i_bnd], OSQP_INFINITY);
     sm.insert(static_cast<Eigen::Index>(i_bnd + m), static_cast<Eigen::Index>(i_bnd)) = 1.;
   }
 
