@@ -51,10 +51,16 @@ detects whether Humble or Jazzy is installed. After cloning into `~/workcell_ws`
 cd easy_manipulation_deployment
 ./fix_and_build.sh
 ```
+This script fixes a common issue where a `COLCON_IGNORE` file in the bundled
+Tesseract sources hid packages such as `tesseract_common`, causing
+`colcon build --packages-up-to tesseract_common` to fail.  The script renames
+any ignore markers under `src/tesseract*`, ensures `boost_plugin_loader` is
+present, installs dependencies with `rosdep`, and builds the workspace in a
+safe order.  It is idempotent and can be re-run at any time.
 
-This script checks for required tools and automatically installs base packages like `ament_cmake` if they are missing before running `rosdep`.
-
-Run `scripts/fix_workspace_layout.sh` once to disable the unused trajopt copy and set up symlinks. BPMPD support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.
+Run `scripts/fix_workspace_layout.sh` once to disable the unused trajopt copy
+and set up symlinks. BPMPD support is optional and can be toggled with
+`-DHAVE_BPMPD=ON/OFF` when building.
 
 ---
 ## Full Documentation/Wiki
