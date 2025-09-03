@@ -1,187 +1,133 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Workspace setup
-WS=~/workcell_ws
-SRC=$WS/src
+WS=${WS:-$HOME/workcell_ws}
+SRC="$WS/src"
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 mkdir -p "$SRC"
 
-# 0) Environment bootstrap
-# Support either Humble or Jazzy depending on what is available or requested
-default_rosdistro=""
-for d in jazzy humble; do
-  if [ -f "/opt/ros/${d}/setup.bash" ]; then
-    default_rosdistro=${d}
+# Ensure we are being run from the repository inside the workspace
+if [[ "$REPO_DIR" != "$SRC/easy_manipulation_deployment" ]]; then
+  echo "Please run this script from ~/workcell_ws/src/easy_manipulation_deployment" >&2
+  exit 1
+fi
+
+# Select ROS distribution: prefer Humble then Jazzy
+for d in humble jazzy; do
+  if [[ -f "/opt/ros/$d/setup.bash" ]]; then
+    ROS_DISTRO=${ROS_DISTRO:-$d}
     break
   fi
 done
 
-ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
-[ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
-[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ] || { echo "ROS ${ROS_DISTRO} not found"; exit 1; }
-set +u
-: "${AMENT_TRACE_SETUP_FILES:=}"
-# shellcheck source=/dev/null
-source "/opt/ros/${ROS_DISTRO}/setup.bash"
-set -u
-export LANG=C.UTF-8 LC_ALL=C.UTF-8
-case "${ROS_DISTRO}" in
-  humble|jazzy) ;;
-  *) echo "Wrong ROS distro: ${ROS_DISTRO}"; exit 1 ;;
-esac
+if [[ -z ${ROS_DISTRO:-} ]]; then
+  echo "No supported ROS distro found (need humble or jazzy)" >&2
+  exit 1
+fi
 
-# Ensure required tools are available (install common ones if missing)
+# shellcheck source=/dev/null
+source "/opt/ros/$ROS_DISTRO/setup.bash"
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# Ensure required tools
+APT_GET="sudo apt-get"
+command -v sudo >/dev/null 2>&1 || APT_GET="apt-get"
+
 for cmd in git colcon rosdep vcs; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Installing missing tool: $cmd"
+    $APT_GET update -y
     case "$cmd" in
-      colcon)
-        python3 -m pip install -U colcon-common-extensions >/dev/null 2>&1 || {
-          echo "Failed to install colcon" >&2
-          exit 1
-        }
-        ;;
-      rosdep)
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update -y && sudo apt-get install -y python3-rosdep >/dev/null 2>&1
-        else
-          apt-get update -y && apt-get install -y python3-rosdep >/dev/null 2>&1
-        fi
-        rosdep init >/dev/null 2>&1 || true
-        ;;
-      vcs)
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update -y && sudo apt-get install -y python3-vcstool >/dev/null 2>&1
-        else
-          apt-get update -y && apt-get install -y python3-vcstool >/dev/null 2>&1
-        fi
-        ;;
-      *)
-        echo "Required tool '$cmd' is not installed." >&2
-        exit 1
-        ;;
+      git) $APT_GET install -y git;;
+      colcon) python3 -m pip install -U colcon-common-extensions;;
+      rosdep) $APT_GET install -y python3-rosdep && rosdep init || true;;
+      vcs) $APT_GET install -y python3-vcstool;;
     esac
   fi
 done
 
-# Install missing build tools like ament_cmake if absent
-if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    sudo apt-get update -y
-    sudo apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
-  else
-    apt-get update -y
-    apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
-  fi
+# Import external repositories if tesseract not yet present
+if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
+  vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"
 fi
 
-# Pull in external repositories if missing
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_FILE="$SCRIPT_DIR/tesseract.repos"
-if [ -f "$REPO_FILE" ]; then
-  # Import repositories if tesseract_common package is missing or repo not fetched
-  if [ ! -f "$SRC/tesseract/tesseract_common/package.xml" ]; then
-    vcs import --recursive "$SRC" < "$REPO_FILE"
+# Copy overlays from repo checkout if they exist
+for overlay in tesseract trajopt; do
+  if [[ -d "$REPO_DIR/$overlay" ]]; then
+    mkdir -p "$SRC/$overlay"
+    cp -a "$REPO_DIR/$overlay/." "$SRC/$overlay/"
   fi
-  for overlay in tesseract trajopt; do
-    if [ -d "$SCRIPT_DIR/$overlay" ]; then
-      mkdir -p "$SRC/$overlay"
-      cp -a "$SCRIPT_DIR/$overlay/." "$SRC/$overlay/"
-    fi
-  done
+done
+
+# Ensure boost_plugin_loader exists
+if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
+  git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
 fi
 
-# Install missing dependencies
-rosdep update
+# Reveal any hidden Tesseract packages
+find "$SRC" -path "$SRC/tesseract*" \( -name COLCON_IGNORE -o -name AMENT_IGNORE \) -print | while read -r f; do
+  echo "Renaming ignore marker $f"
+  mv "$f" "$f.bak"
+done
 
-# Remove any duplicate ROS packages within the workspace before resolving
-# dependencies to avoid rosdep and colcon errors. Keep the first occurrence of
-# a package name and discard subsequent duplicates.
-declare -A pkg_seen
+# Remove duplicate package names
+declare -A seen
 while read -r name path _; do
-  if [[ -n "${pkg_seen[$name]:-}" ]]; then
-    echo "Removing duplicate package '$name' from $path (keeping ${pkg_seen[$name]})"
+  if [[ -n ${seen[$name]:-} && ${seen[$name]} != "$path" ]]; then
+    echo "Removing duplicate package $name from $path (keeping ${seen[$name]})"
     rm -rf "$path"
   else
-    pkg_seen[$name]="$path"
+    seen[$name]="$path"
   fi
 done < <(colcon list --base-paths "$SRC")
 
-rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract tesseract_process_planners"
+# Verify required packages are visible
+if ! colcon list --base-paths "$SRC" | grep -E '^(tesseract_common|tesseract_msgs)\b' >/dev/null; then
+  echo "tesseract_common or tesseract_msgs not visible to colcon" >&2
+  exit 1
+fi
 
-# C++17 everywhere
+# Install dependencies
+rosdep update
+rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
+  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp"
+
+# Enforce C++17
 export AMENT_CMAKE_CXX_STANDARD=17
-CMAKE_STD_ARGS=(-DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF)
+CMAKE_ARGS=( -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF )
 
-# 1) Ensure boost_plugin_loader and build it first
-# Ensure the boost_plugin_loader from tesseract-robotics is available
-if [ ! -d "$SRC/boost_plugin_loader" ]; then
-  git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
+# Minimal include fix for profile_dictionary
+PDH=$(find "$SRC" -path "*/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h" | head -n1 || true)
+if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$PDH"; then
+  echo "Patching missing <mutex> include in $PDH"
+  sed -i '/<shared_mutex>/a #include <mutex>' "$PDH"
 fi
+
 cd "$WS"
-colcon build --symlink-install --packages-select boost_plugin_loader
 
-# 2) Patch Tesseract's missing <mutex> include
-PDH="$SRC/tesseract_planning/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h"
-if [ -f "$PDH" ] && ! grep -qE '^\s*#\s*include\s*<mutex>' "$PDH"; then
-  sed -i '/#include <shared_mutex>/a #include <mutex>' "$PDH"
-fi
+# Build boost_plugin_loader first
+colcon build --symlink-install --packages-select boost_plugin_loader --cmake-args "${CMAKE_ARGS[@]}"
+source install/setup.bash
+find install -name 'tesseract_commonConfig.cmake' || true
 
-# 3) Enforce C++17 blocks in any CMakeLists that lack one
-find "$SRC" -name CMakeLists.txt -print0 | while IFS= read -r -d '' f; do
-  sed -i 's/\(CMAKE_CXX_STANDARD *\)[0-9][0-9]*/\117/g' "$f" || true
-  if ! grep -q 'CMAKE_CXX_STANDARD' "$f"; then
-    awk 'BEGIN{done=0}/^project\(/ && !done {print $0 RS "if(NOT CMAKE_CXX_STANDARD)\n  set(CMAKE_CXX_STANDARD 17)\nendif()\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\nset(CMAKE_CXX_EXTENSIONS OFF)\n"; done=1; next} {print}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-  fi
- done
+# Build up to tesseract_common and tesseract_msgs
+colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs --cmake-args "${CMAKE_ARGS[@]}"
+source install/setup.bash
+find install -name 'tesseract_commonConfig.cmake'
 
-# 4) Fix trajopt_sco to depend on rclcpp
-CMAKEL="$SRC/trajopt/trajopt_sco/CMakeLists.txt"
-PKGXML="$SRC/trajopt/trajopt_sco/package.xml"
+# Build up to trajopt_sco
+colcon build --symlink-install --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
+source install/setup.bash
+find install -name 'tesseract_commonConfig.cmake'
 
-if [ -f "$CMAKEL" ]; then
-  grep -q 'find_package( *rclcpp' "$CMAKEL" || sed -i '/project(/a find_package(rclcpp REQUIRED)' "$CMAKEL"
+# Build the whole workspace
+colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
+source install/setup.bash
+find install -name 'tesseract_commonConfig.cmake'
 
-  if grep -q 'ament_target_dependencies( *trajopt_sco' "$CMAKEL"; then
-    sed -i '0,/ament_target_dependencies( *trajopt_sco/s//ament_target_dependencies(trajopt_sco\n  rclcpp\n/' "$CMAKEL"
-  fi
+# Print overlay information
+colcon list --paths-only | sort
+printf '%s\n' ${CMAKE_PREFIX_PATH//:/\n} | head -n 20
 
-  if ! grep -q 'rclcpp::rclcpp' "$CMAKEL"; then
-    cat >> "$CMAKEL" <<'EOC'
-
-# Ensure rclcpp include/link for trajopt_sco targets (if not already added)
-get_property(_targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
-foreach(t IN LISTS _targets)
-  if(NOT t MATCHES "^gtest_|^gmock_")
-    get_target_property(_type ${t} TYPE)
-    if(_type STREQUAL "EXECUTABLE" OR _type STREQUAL "SHARED_LIBRARY" OR _type STREQUAL "STATIC_LIBRARY")
-      target_link_libraries(${t} PUBLIC rclcpp::rclcpp)
-    endif()
-  endif()
-endforeach()
-EOC
-  fi
-fi
-
-if [ -f "$PKGXML" ] && ! grep -q '<depend>rclcpp</depend>' "$PKGXML"; then
-  sed -i 's@</package>@  <depend>rclcpp</depend>\n</package>@' "$PKGXML"
-fi
-
-# 5) Satisfy jsoncpp system dependency (optional)
-if command -v sudo >/dev/null 2>&1; then
-  sudo apt-get update -y || true
-  sudo apt-get install -y libjsoncpp-dev || true
-fi
-
-# 6) Build in sequence
-cd "$WS"
-colcon build --symlink-install --packages-select \
-  ros_industrial_cmake_boilerplate eigen boost_plugin_loader
-
-colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
-  --cmake-args "${CMAKE_STD_ARGS[@]}"
-
-colcon build --symlink-install --packages-up-to trajopt_sco \
-  --cmake-args "${CMAKE_STD_ARGS[@]}"
-
-colcon build --symlink-install --cmake-args "${CMAKE_STD_ARGS[@]}"
+echo "Build completed successfully"
