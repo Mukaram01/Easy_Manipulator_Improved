@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+#include <cmath>
 #include "suction_gripper_test.hpp"
 
 SuctionGripperTest::SuctionGripperTest()

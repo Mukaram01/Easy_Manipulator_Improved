@@ -14,6 +14,8 @@
 
 #include <memory>
 #include <string>
+#include <thread>
+#include <cmath>
 
 #include "test_hardware.hpp"
 #include "emd/dynamic_safety/collision_checker.hpp"
