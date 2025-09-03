@@ -78,7 +78,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_FILE="$SCRIPT_DIR/tesseract.repos"
 if [ -f "$REPO_FILE" ]; then
-  if [ ! -d "$SRC/tesseract" ]; then
+  # Import repositories if tesseract_common package is missing or repo not fetched
+  if [ ! -f "$SRC/tesseract/tesseract_common/package.xml" ]; then
     vcs import --recursive "$SRC" < "$REPO_FILE"
   fi
   for overlay in tesseract trajopt; do
