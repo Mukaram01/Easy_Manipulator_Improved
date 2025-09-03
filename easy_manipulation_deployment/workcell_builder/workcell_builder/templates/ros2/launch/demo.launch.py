@@ -149,9 +149,10 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
         return None
 
 
-def load_yaml(package_name: str, file_path: str) -> Any:
+def load_yaml(package_name: str, file_path: str) -> Any | None:
     """Load a YAML file from the given package.
 
+    Returns the parsed YAML content or ``None`` if parsing fails.
     Raises ``FileNotFoundError`` when the requested YAML file does not exist.
     """
 
@@ -159,8 +160,11 @@ def load_yaml(package_name: str, file_path: str) -> Any:
     yaml_file = package_path / file_path
     if not yaml_file.is_file():
         raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
-    with yaml_file.open("r") as f:
-        return yaml.safe_load(f)
+    try:
+        with yaml_file.open("r") as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError:
+        return None
 
 
 def generate_launch_description() -> LaunchDescription:

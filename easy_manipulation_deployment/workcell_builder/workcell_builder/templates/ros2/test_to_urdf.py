@@ -218,3 +218,13 @@ def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
     )
     with pytest.raises(FileNotFoundError):
         demo.load_yaml('pkg', 'missing.yaml')
+
+
+def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
+    """Invalid YAML should cause ``load_yaml`` to return ``None``."""
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    bad_yaml = pkg_dir / 'bad.yaml'
+    bad_yaml.write_text(": - invalid")
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    assert demo.load_yaml('pkg', bad_yaml.name) is None
