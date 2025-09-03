@@ -115,7 +115,11 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
 
     try:
         package_path = Path(get_package_share_directory(package_name))
-        absolute_file_path = package_path / file_path
+        file_path = Path(file_path).expanduser()
+        if not file_path.is_absolute():
+            absolute_file_path = package_path / file_path
+        else:
+            absolute_file_path = file_path
 
         # Use a temporary directory so the generated URDF does not pollute the
         # package path and to avoid double ``.urdf`` extensions when the input
@@ -157,7 +161,11 @@ def load_yaml(package_name: str, file_path: str) -> Any | None:
     """
 
     package_path = Path(get_package_share_directory(package_name))
-    yaml_file = package_path / file_path
+    file_path = Path(file_path).expanduser()
+    if not file_path.is_absolute():
+        yaml_file = package_path / file_path
+    else:
+        yaml_file = file_path
     if not yaml_file.is_file():
         raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
     try:

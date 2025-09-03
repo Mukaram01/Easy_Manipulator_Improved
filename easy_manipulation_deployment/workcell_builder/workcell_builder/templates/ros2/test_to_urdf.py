@@ -211,6 +211,17 @@ def test_load_file_reads_plain_urdf(tmp_path, monkeypatch):
     assert demo.load_file('pkg', urdf_file.name) == '<robot name="test"/>'
 
 
+def test_load_file_expands_user_paths(tmp_path, monkeypatch):
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    xacro_file = pkg_dir / 'robot.urdf.xacro'
+    xacro_file.write_text("<robot name='test'></robot>")
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(tmp_path))
+    content = demo.load_file('pkg', '~/pkg/robot.urdf.xacro')
+    assert '<robot' in content
+
+
 def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
     """``load_yaml`` should raise ``FileNotFoundError`` for missing files."""
     monkeypatch.setattr(
@@ -228,3 +239,14 @@ def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
     bad_yaml.write_text(": - invalid")
     monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
     assert demo.load_yaml('pkg', bad_yaml.name) is None
+
+
+def test_load_yaml_expands_user_paths(tmp_path, monkeypatch):
+    pkg_dir = tmp_path / 'pkg'
+    pkg_dir.mkdir()
+    yaml_file = pkg_dir / 'data.yaml'
+    yaml_file.write_text('value: 42')
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(tmp_path))
+    data = demo.load_yaml('pkg', '~/pkg/data.yaml')
+    assert data['value'] == 42
