@@ -156,11 +156,20 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
 def load_yaml(package_name: str, file_path: str) -> Any | None:
     """Load a YAML file from the given package.
 
-    Returns the parsed YAML content or ``None`` if parsing fails.
-    Raises ``FileNotFoundError`` when the requested YAML file does not exist.
+    Returns the parsed YAML content or ``None`` if parsing fails or the package
+    cannot be located.  Raises ``FileNotFoundError`` when the requested YAML
+    file does not exist.
     """
 
-    package_path = Path(get_package_share_directory(package_name))
+    try:
+        package_path = Path(get_package_share_directory(package_name))
+    except EnvironmentError:
+        # ``get_package_share_directory`` raises ``EnvironmentError`` when the
+        # package is not found.  For parity with :func:`load_file` return ``None``
+        # instead of propagating the exception so callers can handle the missing
+        # package gracefully.
+        return None
+
     file_path = Path(file_path).expanduser()
     if not file_path.is_absolute():
         yaml_file = package_path / file_path
