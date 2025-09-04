@@ -4,6 +4,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -15,10 +16,9 @@ def generate_launch_description():
     """Generate a launch description for the robot_state_publisher."""
     # Load the URDF into a parameter
     bringup_dir = get_package_share_directory("onrobot_airpick4_description")
-    urdf_path = os.path.join(
-        bringup_dir, "urdf", "onrobot_airpick4_gripper.urdf.xacro"
-    )
-    urdf = open(urdf_path).read()
+    urdf_path = Path(bringup_dir) / "urdf" / "onrobot_airpick4_gripper.urdf.xacro"
+    with urdf_path.open() as urdf_file:
+        urdf = urdf_file.read()
 
     return launch.LaunchDescription(
         [
