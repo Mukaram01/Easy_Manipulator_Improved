@@ -16,6 +16,7 @@ import os
 import tempfile
 from pathlib import Path
 import xacro
+import yaml
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -66,9 +67,25 @@ def load_file(package_name, file_path):
         return None
 
 def load_yaml(package_name, file_path):
-    package_path = get_package_share_directory(package_name)
-    absolute_file_path = os.path.join(package_path, file_path)
-    return xacro.load_yaml(absolute_file_path)
+    """Load a YAML file from *package_name* and return its parsed content."""
+
+    try:
+        package_path = Path(get_package_share_directory(package_name))
+    except EnvironmentError:
+        return None
+
+    file_path = Path(file_path).expanduser()
+    if not file_path.is_absolute():
+        yaml_file = package_path / file_path
+    else:
+        yaml_file = file_path
+    if not yaml_file.is_file():
+        raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
+    try:
+        with yaml_file.open('r') as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError:
+        return None
 
 
 def generate_launch_description():
