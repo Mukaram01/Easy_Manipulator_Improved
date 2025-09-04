@@ -241,6 +241,16 @@ def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
     assert demo.load_yaml('pkg', bad_yaml.name) is None
 
 
+def test_load_yaml_handles_missing_package(monkeypatch):
+    """``load_yaml`` should return ``None`` when the package cannot be located."""
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: (_ for _ in ()).throw(EnvironmentError('missing package')),
+    )
+    assert demo.load_yaml('missing_pkg', 'config.yaml') is None
+
+
 def test_load_yaml_expands_user_paths(tmp_path, monkeypatch):
     pkg_dir = tmp_path / 'pkg'
     pkg_dir.mkdir()
