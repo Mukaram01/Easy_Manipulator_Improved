@@ -98,7 +98,8 @@ export AMENT_CMAKE_CXX_STANDARD=17
 CMAKE_ARGS=( -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF )
 
 # Minimal include fix for profile_dictionary
-PDH=$(find "$SRC" -path "*/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h" | head -n1 || true)
+# Use find's -print -quit to grab the first match and avoid non-zero exit when not found
+PDH=$(find "$SRC" -path "*/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h" -print -quit 2>/dev/null)
 if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$PDH"; then
   echo "Patching missing <mutex> include in $PDH"
   sed -i '/<shared_mutex>/a #include <mutex>' "$PDH"
