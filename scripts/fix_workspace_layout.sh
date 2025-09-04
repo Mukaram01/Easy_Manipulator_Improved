@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC_DIR="$HOME/workcell_ws/src"
-BACKUP_DIR="$HOME/trajopt_DISABLED_BACKUP"
+WS=${WS:-$HOME/workcell_ws}
+SRC_DIR="$WS/src"
+BACKUP_DIR="$WS/trajopt_DISABLED_BACKUP"
 
 if [ ! -d "$SRC_DIR" ]; then
   exit 0

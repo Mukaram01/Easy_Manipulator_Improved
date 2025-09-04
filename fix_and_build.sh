@@ -60,6 +60,9 @@ for overlay in tesseract trajopt; do
   fi
 done
 
+# Ensure workspace layout is sanitized (handles stray trajopt sources)
+WS="$WS" "$REPO_DIR/scripts/fix_workspace_layout.sh"
+
 # Ensure boost_plugin_loader exists
 if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
   git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
