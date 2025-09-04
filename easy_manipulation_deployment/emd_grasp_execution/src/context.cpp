@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <string>
 #include <stdexcept>
+#include <string>
 
 #include "emd/grasp_execution/context.hpp"
 #include "emd/grasp_execution/exception.hpp"
@@ -29,17 +29,16 @@ namespace grasp_execution {
  */
 template <typename T>
 T _parse_optional_field(const std::string &field_name, const YAML::Node &node,
-                        const T &default_value)
-{
+                        const T &default_value) {
   const YAML::Node field = node[field_name];
   if (!field || field.IsNull()) {
     return default_value;
   }
   try {
     return field.as<T>();
-  } catch (const YAML::Exception & e) {
-    throw std::runtime_error(
-      "failed to parse optional field '" + field_name + "': " + e.what());
+  } catch (const YAML::Exception &e) {
+    throw std::runtime_error("failed to parse optional field '" + field_name +
+                             "': " + e.what());
   }
 }
 
@@ -50,7 +49,7 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
   YAML::Node config_yaml;
   try {
     config_yaml = YAML::LoadFile(path);
-  } catch (const YAML::Exception & e) {
+  } catch (const YAML::Exception &e) {
     throw ContextFileLoadingException(path, e.what());
   }
 
@@ -62,9 +61,7 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
   const YAML::Node &context_yaml = config_yaml["workcell"];
 
   // Iterate through to load all the groups.
-  for (YAML::const_iterator itr = context_yaml.begin();
-       itr != context_yaml.end(); ++itr) {
-    const YAML::Node &group_yaml = *itr;
+  for (const auto &group_yaml : context_yaml) {
 
     // Parse group name, compulsory.
     if (!group_yaml["group_name"]) {
@@ -75,10 +72,13 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
 
     this->init_group(group_name);
 
-    // Parse prefix, optional.
-    // TODO(anyone): Implement this properly.
-    this->groups[group_name].prefix =
+    // Parse prefix, optional. Ensure it ends with an underscore for consistency
+    std::string prefix =
         _parse_optional_field<std::string>("prefix", group_yaml, "");
+    if (!prefix.empty() && prefix.back() != '_' && prefix.back() != '/') {
+      prefix.push_back('_');
+    }
+    this->groups[group_name].prefix = prefix;
 
     // Parse executors, use default executor if none is found.
     if (!group_yaml["executors"]) {
@@ -86,20 +86,19 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
                                   "grasp_execution/DefaultExecutor", "");
     } else {
       const YAML::Node &executors_yaml = group_yaml["executors"];
-      for (YAML::const_iterator exe_itr = executors_yaml.begin();
-           exe_itr != executors_yaml.end(); ++exe_itr) {
-        std::string execution_method = exe_itr->first.as<std::string>();
+      for (const auto &exe_pair : executors_yaml) {
+        std::string execution_method = exe_pair.first.as<std::string>();
 
         // Parse plugin name, compulsory.
-        if (!exe_itr->second["plugin"]) {
+        if (!exe_pair.second["plugin"]) {
           throw ContextLoadingException("plugin", group_name + ".executors");
         }
         std::string execution_plugin =
-            exe_itr->second["plugin"].as<std::string>();
+            exe_pair.second["plugin"].as<std::string>();
 
         // Parse controller name, optional, default: "",
         std::string execution_controller = _parse_optional_field<std::string>(
-            "controller", exe_itr->second, "");
+            "controller", exe_pair.second, "");
 
         this->load_execution_method(group_name, execution_method,
                                     execution_plugin, execution_controller);
@@ -109,10 +108,9 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
     // Parse end effector if field exists.
     if (group_yaml["end_effectors"]) {
       const YAML::Node &ees_yaml = group_yaml["end_effectors"];
-      for (YAML::const_iterator ee_itr = ees_yaml.begin();
-           ee_itr != ees_yaml.end(); ++ee_itr) {
-        std::string ee_name = ee_itr->first.as<std::string>();
-        const YAML::Node &ee_yaml = ee_itr->second;
+      for (const auto &ee_pair : ees_yaml) {
+        std::string ee_name = ee_pair.first.as<std::string>();
+        const YAML::Node &ee_yaml = ee_pair.second;
 
         // Parse brand, compulsory field.
         if (!ee_yaml["brand"]) {
