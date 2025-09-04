@@ -143,7 +143,9 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
             else:
                 temp_urdf_path = absolute_file_path
 
-            with Path(temp_urdf_path).open("r") as file:
+            # Explicitly specify UTF-8 encoding to avoid platform-dependent
+            # defaults which may not handle non-ASCII characters correctly.
+            with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
                 return file.read()
     except Exception:
         # ``to_urdf`` may raise a variety of exceptions when the conversion
@@ -179,7 +181,8 @@ def load_yaml(package_name: str, file_path: str) -> Any | None:
     if not yaml_file.is_file():
         raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
     try:
-        with yaml_file.open("r") as f:
+        # Use UTF-8 to ensure consistent behaviour across locales.
+        with yaml_file.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     except yaml.YAMLError:
         return None
