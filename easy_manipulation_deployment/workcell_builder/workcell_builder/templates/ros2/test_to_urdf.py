@@ -5,7 +5,8 @@ from pathlib import Path
 import os
 import pytest
 
-# Stub out ROS-specific modules to allow importing demo.launch without ROS installed
+# Stub out ROS-specific modules to allow importing demo.launch
+# without ROS installed
 launch_mod = types.ModuleType('launch')
 launch_mod.LaunchDescription = object
 sys.modules.setdefault('launch', launch_mod)
@@ -46,8 +47,10 @@ if spec is None or spec.loader is None:
 demo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(demo)
 
+
 def test_to_urdf_requires_existing_file(tmp_path):
-    """to_urdf should raise ``FileNotFoundError`` if the xacro file is missing."""
+    """to_urdf should raise ``FileNotFoundError`` if the xacro file
+    is missing."""
     missing = tmp_path / "missing.xacro"
     with pytest.raises(FileNotFoundError):
         demo.to_urdf(missing)
@@ -57,8 +60,11 @@ def test_to_urdf_rejects_non_xacro_file(tmp_path):
     """to_urdf should reject source files that do not end with ``.xacro``."""
     non_xacro = tmp_path / "robot.urdf"
     non_xacro.write_text("<robot name='test'></robot>")
-    with pytest.raises(ValueError, match="xacro_path must point to a .xacro file"):
+    with pytest.raises(
+        ValueError, match="xacro_path must point to a .xacro file"
+    ):
         demo.to_urdf(non_xacro)
+
 
 def test_to_urdf_creates_urdf_file(tmp_path):
     xacro_file = tmp_path / 'robot.xacro'
@@ -95,6 +101,7 @@ def test_to_urdf_allows_filename_without_directory(tmp_path, monkeypatch):
     assert result == str(expected)
     assert expected.exists()
     assert '<robot' in expected.read_text()
+
 
 def test_to_urdf_rejects_empty_output_path(tmp_path):
     """to_urdf should raise a clear error when given an empty output path."""
@@ -133,6 +140,7 @@ def test_to_urdf_expands_user_paths(tmp_path, monkeypatch):
     expected = tmp_path / "out.urdf"
     assert result == str(expected)
     assert expected.exists()
+
 
 def test_load_file_does_not_write_urdf_next_to_xacro(tmp_path):
     """``load_file`` should place generated URDFs in a temporary location."""
@@ -183,7 +191,11 @@ def test_load_file_returns_none_for_missing_file(tmp_path, monkeypatch):
     """``load_file`` should return ``None`` when the target file is missing."""
     pkg_dir = tmp_path / 'pkg'
     pkg_dir.mkdir()
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(pkg_dir),
+    )
     assert demo.load_file('pkg', 'missing.urdf.xacro') is None
 
 
@@ -192,21 +204,37 @@ def test_load_file_returns_none_on_xacro_error(tmp_path, monkeypatch):
     pkg_dir = tmp_path / 'pkg'
     pkg_dir.mkdir()
     bad_xacro = pkg_dir / 'bad.urdf.xacro'
-    bad_xacro.write_text('<robot name="test">')  # malformed XML (no closing tag)
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    # malformed XML (no closing tag)
+    bad_xacro.write_text('<robot name="test">')
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(pkg_dir),
+    )
     assert demo.load_file('pkg', bad_xacro.name) is None
 
 
 def test_load_file_reads_plain_urdf(tmp_path, monkeypatch):
-    """``load_file`` should read existing URDF files without invoking ``to_urdf``."""
+    """``load_file`` should read existing URDF files without
+    invoking ``to_urdf``."""
     pkg_dir = tmp_path / 'pkg'
     pkg_dir.mkdir()
     urdf_file = pkg_dir / 'robot.urdf'
     urdf_file.write_text('<robot name="test"/>')
 
     # ``to_urdf`` should not be called when the input is already a URDF file.
-    monkeypatch.setattr(demo, 'to_urdf', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('to_urdf called')))
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    monkeypatch.setattr(
+        demo,
+        'to_urdf',
+        lambda *a, **kw: (
+            _ for _ in ()
+        ).throw(AssertionError('to_urdf called')),
+    )
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(pkg_dir),
+    )
 
     assert demo.load_file('pkg', urdf_file.name) == '<robot name="test"/>'
 
@@ -217,7 +245,11 @@ def test_load_file_expands_user_paths(tmp_path, monkeypatch):
     xacro_file = pkg_dir / 'robot.urdf.xacro'
     xacro_file.write_text("<robot name='test'></robot>")
     monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(tmp_path))
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(tmp_path),
+    )
     content = demo.load_file('pkg', '~/pkg/robot.urdf.xacro')
     assert '<robot' in content
 
@@ -225,7 +257,9 @@ def test_load_file_expands_user_paths(tmp_path, monkeypatch):
 def test_load_yaml_requires_existing_file(tmp_path, monkeypatch):
     """``load_yaml`` should raise ``FileNotFoundError`` for missing files."""
     monkeypatch.setattr(
-        demo, 'get_package_share_directory', lambda pkg: str(tmp_path)
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(tmp_path),
     )
     with pytest.raises(FileNotFoundError):
         demo.load_yaml('pkg', 'missing.yaml')
@@ -237,16 +271,23 @@ def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
     pkg_dir.mkdir()
     bad_yaml = pkg_dir / 'bad.yaml'
     bad_yaml.write_text(": - invalid")
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(pkg_dir),
+    )
     assert demo.load_yaml('pkg', bad_yaml.name) is None
 
 
 def test_load_yaml_handles_missing_package(monkeypatch):
-    """``load_yaml`` should return ``None`` when the package cannot be located."""
+    """``load_yaml`` should return ``None`` when the package
+    cannot be located."""
     monkeypatch.setattr(
         demo,
         'get_package_share_directory',
-        lambda pkg: (_ for _ in ()).throw(EnvironmentError('missing package')),
+        lambda pkg: (
+            _ for _ in ()
+        ).throw(EnvironmentError('missing package')),
     )
     assert demo.load_yaml('missing_pkg', 'config.yaml') is None
 
@@ -257,6 +298,10 @@ def test_load_yaml_expands_user_paths(tmp_path, monkeypatch):
     yaml_file = pkg_dir / 'data.yaml'
     yaml_file.write_text('value: 42')
     monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(tmp_path))
+    monkeypatch.setattr(
+        demo,
+        'get_package_share_directory',
+        lambda pkg: str(tmp_path),
+    )
     data = demo.load_yaml('pkg', '~/pkg/data.yaml')
     assert data['value'] == 42
