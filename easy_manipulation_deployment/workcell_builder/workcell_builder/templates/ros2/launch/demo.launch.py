@@ -163,11 +163,12 @@ def load_yaml(package_name: str, file_path: str) -> Any | None:
 
     try:
         package_path = Path(get_package_share_directory(package_name))
-    except EnvironmentError:
-        # ``get_package_share_directory`` raises ``EnvironmentError`` when the
-        # package is not found.  For parity with :func:`load_file` return ``None``
-        # instead of propagating the exception so callers can handle the missing
-        # package gracefully.
+    except Exception:
+        # ``get_package_share_directory`` raises a package specific
+        # exception when the package cannot be located.  For parity with
+        # :func:`load_file` catch any such error and return ``None`` so
+        # callers can handle the missing package gracefully instead of
+        # the exception bubbling up.
         return None
 
     file_path = Path(file_path).expanduser()
