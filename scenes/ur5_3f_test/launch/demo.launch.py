@@ -15,6 +15,8 @@
 import os
 import tempfile
 from pathlib import Path
+from typing import Optional
+
 import xacro
 import yaml
 from launch import LaunchDescription
@@ -51,18 +53,33 @@ def to_urdf(xacro_path, urdf_path=None):
     return urdf_path
 
 
-def load_file(package_name, file_path):
-    """Load a xacro file and return its processed XML."""
+def load_file(package_name: str, file_path: str) -> Optional[str]:
+    """Load a xacro file from *package_name* and return its processed XML.
 
-    package_path = Path(get_package_share_directory(package_name))
-    absolute_file_path = package_path / file_path
+    The *file_path* may be absolute or relative to the package share directory.
+    ``None`` is returned if the package is missing or the file cannot be
+    processed. A :class:`FileNotFoundError` is raised when the file does not
+    exist.
+    """
+    try:
+        package_path = Path(get_package_share_directory(package_name))
+    except EnvironmentError:
+        return None
+
+    file_path = Path(file_path).expanduser()
+    if not file_path.is_absolute():
+        absolute_file_path = package_path / file_path
+    else:
+        absolute_file_path = file_path
+
+    if not absolute_file_path.is_file():
+        raise FileNotFoundError(f"xacro file '{absolute_file_path}' does not exist")
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
+            temp_urdf_path = Path(tmpdir) / file_path.with_suffix(".urdf").name
             temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
-            with temp_urdf_path.open('r') as file:
-                return file.read()
+            return temp_urdf_path.read_text()
     except EnvironmentError:
         return None
 
