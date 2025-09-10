@@ -44,6 +44,11 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+The `tesseract.repos` file now also fetches the
+[`boost_plugin_loader`](https://github.com/tesseract-robotics/boost_plugin_loader)
+dependency, which provides headers such as `boost_plugin_loader/fwd.h`
+required by `tesseract_common`.
+
 A convenience script `fix_and_build.sh` is provided in this repository. It automatically
 detects whether Humble or Jazzy is installed. After cloning into `~/workcell_ws`, run:
 
