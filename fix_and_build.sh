@@ -27,7 +27,12 @@ if [[ -z ${ROS_DISTRO:-} ]]; then
 fi
 
 # shellcheck source=/dev/null
+# Disable nounset while sourcing ROS setup, as it references
+# environment variables that may not be defined.
+set +u
+: "${AMENT_TRACE_SETUP_FILES:=}"
 source "/opt/ros/$ROS_DISTRO/setup.bash"
+set -u
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Ensure required tools
