@@ -99,7 +99,7 @@ fi
 # Install dependencies
 rosdep update
 rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
-  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp"
+  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
 
 # Enforce C++17
 export AMENT_CMAKE_CXX_STANDARD=17
@@ -115,24 +115,33 @@ fi
 
 cd "$WS"
 
+source_install() {
+  if [[ -f install/setup.bash ]]; then
+    set +u
+    : "${COLCON_TRACE:=}"
+    source install/setup.bash
+    set -u
+  fi
+}
+
 # Build boost_plugin_loader first
 colcon build --symlink-install --packages-select boost_plugin_loader --cmake-args "${CMAKE_ARGS[@]}"
-source install/setup.bash
+source_install
 find install -name 'tesseract_commonConfig.cmake' || true
 
 # Build up to tesseract_common and tesseract_msgs
 colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs --cmake-args "${CMAKE_ARGS[@]}"
-source install/setup.bash
+source_install
 find install -name 'tesseract_commonConfig.cmake'
 
 # Build up to trajopt_sco
 colcon build --symlink-install --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
-source install/setup.bash
+source_install
 find install -name 'tesseract_commonConfig.cmake'
 
 # Build the whole workspace
 colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
-source install/setup.bash
+source_install
 find install -name 'tesseract_commonConfig.cmake'
 
 # Print overlay information
