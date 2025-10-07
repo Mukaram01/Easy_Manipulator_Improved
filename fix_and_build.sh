@@ -58,10 +58,16 @@ if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
 fi
 
 # Copy overlays from repo checkout if they exist
+# Copy overlays from repo checkout if they exist and immediately reveal packages
 for overlay in tesseract trajopt; do
   if [[ -d "$REPO_DIR/$overlay" ]]; then
     mkdir -p "$SRC/$overlay"
     cp -a "$REPO_DIR/$overlay/." "$SRC/$overlay/"
+    # Rename ignore markers that may ship with upstream overlays so colcon sees the packages
+    while IFS= read -r -d '' marker; do
+      echo "Renaming ignore marker $marker"
+      mv -f "$marker" "$marker.repo"
+    done < <(find "$SRC/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
   fi
 done
 
@@ -73,10 +79,10 @@ if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
   git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
 fi
 
-# Reveal any hidden Tesseract packages
+# Reveal any hidden Tesseract packages that may remain from upstream checkouts
 find "$SRC" -path "$SRC/tesseract*" \( -name COLCON_IGNORE -o -name AMENT_IGNORE \) -print | while read -r f; do
   echo "Renaming ignore marker $f"
-  mv "$f" "$f.bak"
+  mv -f "$f" "$f.repo"
 done
 
 # Remove duplicate package names

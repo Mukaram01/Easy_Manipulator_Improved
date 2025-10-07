@@ -76,6 +76,11 @@ if [ -f "$REPO_FILE" ]; then
     if [ -d "$SCRIPT_DIR/$overlay" ]; then
       mkdir -p "src/$overlay"
       cp -a "$SCRIPT_DIR/$overlay/." "src/$overlay/"
+      # Immediately rename ignore markers shipped with overlays so colcon can discover the packages
+      while IFS= read -r -d '' marker; do
+        echo "Renaming ignore marker $marker"
+        mv -f "$marker" "$marker.repo"
+      done < <(find "src/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
     fi
   done
 fi
