@@ -102,9 +102,18 @@ if ! colcon list --base-paths "$SRC" | grep -E '^(tesseract_common|tesseract_msg
   exit 1
 fi
 
-# Install dependencies
+# Install dependencies. Pass the explicit package paths reported by colcon to avoid
+# rosdep scanning duplicate overlays (e.g., both the repo checkout and the copied
+# overlay of trajopt_sco) which would otherwise trigger "Multiple packages found"
+# errors.
+mapfile -t ROSDEP_PATHS < <(colcon list --base-paths "$SRC" --paths-only)
+if [[ ${#ROSDEP_PATHS[@]} -eq 0 ]]; then
+  echo "No packages discovered for rosdep installation" >&2
+  exit 1
+fi
+
 rosdep update
-rosdep install --from-paths "$SRC" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
+rosdep install --from-paths "${ROSDEP_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
   --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
 
 # Enforce C++17
