@@ -56,20 +56,25 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 
 
 def load_file(package_name, file_path, mappings=None):
-    """Load a xacro file from a package and return its processed XML."""
+    """Load a robot description file, converting xacro sources to URDF."""
 
     package_path = Path(get_package_share_directory(package_name))
-    absolute_file_path = package_path / file_path
+    target = Path(file_path)
+    absolute_file_path = (package_path / target) if not target.is_absolute() else target
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            temp_urdf_path = Path(tmpdir) / Path(file_path).with_suffix(".urdf").name
-            temp_urdf_path = Path(
-                to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings)
-            )
-            with temp_urdf_path.open('r') as file:
+            if target.suffix == ".xacro":
+                temp_urdf_path = Path(tmpdir) / target.with_suffix(".urdf").name
+                temp_urdf_path = Path(
+                    to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings)
+                )
+            else:
+                temp_urdf_path = absolute_file_path
+
+            with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
                 return file.read()
-    except EnvironmentError:
+    except Exception:
         return None
 
 
