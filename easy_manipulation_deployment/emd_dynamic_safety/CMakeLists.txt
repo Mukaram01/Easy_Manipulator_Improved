@@ -15,11 +15,21 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(joint_trajectory_controller REQUIRED)
+find_package(controller_interface REQUIRED)
+find_package(hardware_interface REQUIRED)
 find_package(angles REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(moveit_msgs REQUIRED)
 
 find_package(moveit_core QUIET)
 
@@ -153,7 +163,17 @@ target_link_libraries(${PROJECT_NAME}
 
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
+  rclcpp_action
+  rclcpp_lifecycle
+  lifecycle_msgs
   realtime_tools
+  pluginlib
+  std_msgs
+  sensor_msgs
+  trajectory_msgs
+  geometry_msgs
+  visualization_msgs
+  moveit_msgs
 )
 
 add_library(${PROJECT_NAME}_controller
@@ -173,11 +193,18 @@ target_link_libraries(${PROJECT_NAME}_controller
 
 ament_target_dependencies(${PROJECT_NAME}_controller
   rclcpp
+  rclcpp_action
   rclcpp_lifecycle
+  lifecycle_msgs
   joint_trajectory_controller
+  controller_interface
+  hardware_interface
   realtime_tools
   pluginlib
   angles
+  std_msgs
+  sensor_msgs
+  trajectory_msgs
 )
 
 # prevent pluginlib from using boost
@@ -225,6 +252,22 @@ ament_export_libraries(
   ${PROJECT_NAME}_controller
 )
 
-ament_export_dependencies(angles)
+ament_export_dependencies(
+  angles
+  controller_interface
+  geometry_msgs
+  hardware_interface
+  lifecycle_msgs
+  moveit_msgs
+  pluginlib
+  rclcpp
+  rclcpp_action
+  rclcpp_lifecycle
+  realtime_tools
+  sensor_msgs
+  std_msgs
+  trajectory_msgs
+  visualization_msgs
+)
 
 ament_package()
