@@ -26,6 +26,7 @@
 #include <thread>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
+#include <rclcpp/parameter_client.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <moveit_msgs/msg/planning_scene.hpp>

@@ -22,6 +22,7 @@
 #include "emd/dynamic_safety/replanner_moveit.hpp"
 #include "moveit/robot_state/conversions.h"
 #include "pluginlib/class_loader.hpp"
+#include <rclcpp/parameter_client.hpp>
 
 namespace dynamic_safety_moveit
 {
