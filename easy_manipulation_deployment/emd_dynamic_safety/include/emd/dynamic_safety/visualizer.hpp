@@ -18,6 +18,8 @@
 #include <string>
 #include <atomic>
 
+#include <std_msgs/msg/color_rgba.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "emd/dynamic_safety/safety_zone.hpp"
 #include "visualization_msgs/msg/marker.hpp"

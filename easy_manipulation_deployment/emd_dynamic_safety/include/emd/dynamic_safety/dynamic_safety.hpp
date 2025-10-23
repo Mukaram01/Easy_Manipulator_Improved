@@ -22,6 +22,10 @@
 #include <utility>
 #include <vector>
 
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
+
 #include "emd/utils.hpp"
 #include "emd/dynamic_safety/safety_zone.hpp"
 #include "emd/dynamic_safety/collision_checker.hpp"

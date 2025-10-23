@@ -26,6 +26,7 @@
 #include "tesseract_environment/ofkt/ofkt_state_solver.h"
 #include "tesseract_motion_planners/core/utils.h"
 #include "tesseract_motion_planners/interface_utils.h"
+#include <rclcpp/parameter_client.hpp>
 
 // OMPL
 #include "tesseract_motion_planners/ompl/ompl_motion_planner.h"
