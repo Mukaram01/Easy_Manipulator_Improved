@@ -47,3 +47,29 @@ fi
 # Link trajopt-related packages from the backup if available
 link_from_backup trajopt_common
 link_from_backup trajopt
+
+# Remove duplicate packages that collide with the overlays bundled inside the
+# easy_manipulation_deployment repository. Keeping the patched overlays and
+# discarding the external checkouts prevents rosdep from aborting with runtime
+# errors about duplicate package names.
+if command -v colcon >/dev/null 2>&1; then
+  declare -A pkg_keep
+  while read -r name path _; do
+    [ -n "${name}" ] || continue
+    if [[ -v pkg_keep[$name] ]]; then
+      keep="${pkg_keep[$name]}"
+      drop="${path}"
+      if [[ "$path" == */easy_manipulation_deployment/* && "$keep" != */easy_manipulation_deployment/* ]]; then
+        drop="${keep}"
+        keep="${path}"
+      fi
+      if [ "${drop}" != "${keep}" ] && [ -e "${drop}" ]; then
+        echo "Removing duplicate package '$name' from ${drop} (keeping ${keep})"
+        rm -rf "${drop}"
+      fi
+      pkg_keep[$name]="${keep}"
+    else
+      pkg_keep[$name]="${path}"
+    fi
+  done < <(colcon list --base-paths "${SRC_DIR}")
+fi
