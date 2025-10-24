@@ -24,6 +24,19 @@ if [ -d "${SRC_DIR}/trajopt" ] && [ ! -L "${SRC_DIR}/trajopt" ]; then
   fi
 fi
 
+# Ensure the backup tree is ignored by colcon so cached packages are not
+# rediscovered during future builds. colcon stops traversing a directory tree
+# as soon as it encounters a COLCON_IGNORE (and, for compatibility with older
+# tools, AMENT_IGNORE) marker, which keeps the archived packages hidden while
+# still retaining them for manual inspection if needed.
+if [ -d "${BACKUP_DIR}" ]; then
+  for marker in COLCON_IGNORE AMENT_IGNORE; do
+    if [ ! -e "${BACKUP_DIR}/${marker}" ]; then
+      touch "${BACKUP_DIR}/${marker}"
+    fi
+  done
+fi
+
 link_from_backup() {
   local pkg="$1"
   local target=""
