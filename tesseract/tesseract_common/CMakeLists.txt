@@ -150,12 +150,24 @@ install(
   PATTERN "*.hpp"
   PATTERN ".svn" EXCLUDE)
 
-install(
-  FILES "${CMAKE_CURRENT_LIST_DIR}/cmake/tesseract_macros.cmake"
-        "${CMAKE_CURRENT_LIST_DIR}/cmake/FindTinyXML2.cmake"
-        "${CMAKE_CURRENT_LIST_DIR}/cmake/Findtcmalloc.cmake"
-        "${CMAKE_CURRENT_LIST_DIR}/cmake/Findtcmalloc_minimal.cmake"
-  DESTINATION lib/cmake/${PROJECT_NAME})
+set(_tesseract_common_cmake_files
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/tesseract_macros.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/FindTinyXML2.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/Findtcmalloc.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/Findtcmalloc_minimal.cmake")
+
+set(_tesseract_common_existing_cmake_files)
+foreach(_file IN LISTS _tesseract_common_cmake_files)
+  if(EXISTS "${_file}")
+    list(APPEND _tesseract_common_existing_cmake_files "${_file}")
+  endif()
+endforeach()
+
+if(_tesseract_common_existing_cmake_files)
+  install(
+    FILES ${_tesseract_common_existing_cmake_files}
+    DESTINATION lib/cmake/${PROJECT_NAME})
+endif()
 
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
