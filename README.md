@@ -44,6 +44,13 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+> **Tip:** Run `./easy_manipulation_deployment/scripts/fix_workspace_layout.sh`
+> after importing the repositories and before calling `rosdep install`. The
+> script relocates the bundled Tesseract and TrajOpt overlays so only one copy of
+> each package is visible. This prevents `rosdep` from aborting with duplicate
+> package errors such as `tesseract_common` or `trajopt_sco` while still keeping
+> the patched overlays in use.
+
 The `tesseract.repos` file now also fetches the
 [`boost_plugin_loader`](https://github.com/tesseract-robotics/boost_plugin_loader)
 dependency, which provides headers such as `boost_plugin_loader/fwd.h`
@@ -63,9 +70,9 @@ any ignore markers under `src/tesseract*`, ensures `boost_plugin_loader` is
 present, installs dependencies with `rosdep`, and builds the workspace in a
 safe order.  It is idempotent and can be re-run at any time.
 
-Run `scripts/fix_workspace_layout.sh` once to disable the unused trajopt copy
-and set up symlinks. BPMPD support is optional and can be toggled with
-`-DHAVE_BPMPD=ON/OFF` when building.
+Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
+packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
+support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.
 
 ---
 ## Full Documentation/Wiki
