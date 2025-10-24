@@ -179,7 +179,7 @@ ament_export_dependencies(
   Boost
   console_bridge)
 
-ament_package()
+ament_package(CONFIG_EXTRAS "cmake/tesseract_common_module_path.cmake")
 
 if(TESSERACT_ENABLE_TESTING OR TESSERACT_COMMON_ENABLE_TESTING)
   enable_testing()
