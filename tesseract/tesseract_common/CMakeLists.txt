@@ -40,6 +40,13 @@ endif()
 find_package(Eigen3 REQUIRED)
 find_package(tinyxml2_vendor REQUIRED)
 find_package(TinyXML2 REQUIRED)
+if(TARGET tinyxml2::tinyxml2)
+  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
+elseif(TARGET TinyXML2::TinyXML2)
+  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
+else()
+  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+endif()
 find_package(yaml-cpp REQUIRED)
 find_package(boost_plugin_loader REQUIRED)
 
@@ -113,7 +120,7 @@ add_library(
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
-         TinyXML2::TinyXML2
+         ${TESSERACT_TINYXML2_TARGET}
          boost_plugin_loader::boost_plugin_loader
          ${CMAKE_DL_LIBS}
          Boost::boost
