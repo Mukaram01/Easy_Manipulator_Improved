@@ -79,6 +79,37 @@ foreach(_tesseract_common_target ${_tesseract_common_candidate_targets})
     break()
   endif()
 endforeach()
+
+if(NOT TESSERACT_COMMON_TARGET)
+  set(_tesseract_common_imported_target tesseract_common::tesseract_common)
+  if(TARGET ${_tesseract_common_imported_target})
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_imported_target})
+  else()
+    add_library(${_tesseract_common_imported_target} INTERFACE IMPORTED)
+    if(tesseract_common_INCLUDE_DIRS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${tesseract_common_INCLUDE_DIRS}")
+    endif()
+    if(tesseract_common_LIBRARIES)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_LINK_LIBRARIES "${tesseract_common_LIBRARIES}")
+    endif()
+    if(tesseract_common_DEFINITIONS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${tesseract_common_DEFINITIONS}")
+    endif()
+    if(tesseract_common_COMPILE_OPTIONS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_COMPILE_OPTIONS "${tesseract_common_COMPILE_OPTIONS}")
+    endif()
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_imported_target})
+  endif()
+endif()
+
 if(NOT TESSERACT_COMMON_TARGET)
   message(
     FATAL_ERROR
