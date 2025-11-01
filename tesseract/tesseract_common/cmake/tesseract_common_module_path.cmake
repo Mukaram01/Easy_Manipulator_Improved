@@ -34,5 +34,17 @@ if(NOT TARGET tesseract::tesseract_common)
       INTERFACE_LINK_LIBRARIES tesseract_common)
   endif()
 endif()
+
+if(NOT TARGET tesseract_common::tesseract_common)
+  if(TARGET tesseract::tesseract_common)
+    add_library(tesseract_common::tesseract_common INTERFACE IMPORTED)
+    set_target_properties(tesseract_common::tesseract_common PROPERTIES
+      INTERFACE_LINK_LIBRARIES tesseract::tesseract_common)
+  elseif(TARGET tesseract_common)
+    add_library(tesseract_common::tesseract_common INTERFACE IMPORTED)
+    set_target_properties(tesseract_common::tesseract_common PROPERTIES
+      INTERFACE_LINK_LIBRARIES tesseract_common)
+  endif()
+endif()
 unset(_tesseract_common_prefix)
 unset(_tesseract_common_module_dir)
