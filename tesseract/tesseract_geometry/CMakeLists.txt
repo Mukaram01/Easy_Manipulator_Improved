@@ -217,4 +217,7 @@ endif()
 
 
 
+ament_export_libraries(${PROJECT_NAME})
+ament_export_include_directories(include)
 ament_export_dependencies(tesseract_common)
+ament_package()
