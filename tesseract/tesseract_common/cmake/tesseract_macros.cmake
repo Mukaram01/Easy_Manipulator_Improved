@@ -78,7 +78,7 @@ endfunction()
 function(configure_package)
   cmake_parse_arguments(_TCP "" "NAMESPACE" "TARGETS" ${ARGN})
   if(NOT _TCP_TARGETS)
-    message(FATAL_ERROR "configure_package requires TARGETS to be specified")
+    return()
   endif()
 
   foreach(target ${_TCP_TARGETS})
