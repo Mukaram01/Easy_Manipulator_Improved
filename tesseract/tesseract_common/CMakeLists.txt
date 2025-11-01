@@ -117,6 +117,7 @@ add_library(
   src/stopwatch.cpp
   src/timer.cpp
   src/yaml_utils.cpp)
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
