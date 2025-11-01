@@ -69,6 +69,22 @@ add_code_coverage_all_targets(EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENA
 
 find_package(tesseract_common REQUIRED)
 
+set(_tesseract_common_candidate_targets
+    tesseract_common::tesseract_common
+    tesseract::tesseract_common
+    tesseract_common)
+foreach(_tesseract_common_target ${_tesseract_common_candidate_targets})
+  if(TARGET ${_tesseract_common_target})
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_target})
+    break()
+  endif()
+endforeach()
+if(NOT TESSERACT_COMMON_TARGET)
+  message(
+    FATAL_ERROR
+      "Unable to locate a tesseract_common target. Expected one of: tesseract_common::tesseract_common, tesseract::tesseract_common, tesseract_common.")
+endif()
+
 add_library(
   ${PROJECT_NAME} SHARED
   src/conversions.cpp
@@ -90,7 +106,7 @@ add_library(
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
-         tesseract_common::tesseract_common
+         ${TESSERACT_COMMON_TARGET}
          console_bridge::console_bridge
          octomap
          octomath
