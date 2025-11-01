@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.15.0)
 
+find_package(ament_cmake REQUIRED)
+
 # Extract package name and version
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 extract_package_metadata(pkg)
