@@ -38,6 +38,7 @@ else()
                stacktrace_noop)
 endif()
 find_package(Eigen3 REQUIRED)
+find_package(tinyxml2_vendor REQUIRED)
 find_package(TinyXML2 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(boost_plugin_loader REQUIRED)
@@ -112,7 +113,7 @@ add_library(
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
-         tinyxml2::tinyxml2
+         TinyXML2::TinyXML2
          boost_plugin_loader::boost_plugin_loader
          ${CMAKE_DL_LIBS}
          Boost::boost
@@ -173,6 +174,7 @@ ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(
   Eigen3
+  tinyxml2_vendor
   TinyXML2
   yaml-cpp
   boost_plugin_loader
