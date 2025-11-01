@@ -83,10 +83,27 @@ function(configure_package)
 
   foreach(target ${_TCP_TARGETS})
     if(TARGET ${target})
+      if(_TCP_NAMESPACE)
+        set(_tcp_namespaced_target "${_TCP_NAMESPACE}::${target}")
+        if(NOT TARGET ${_tcp_namespaced_target})
+          get_target_property(_tcp_target_type ${target} TYPE)
+          if(_tcp_target_type STREQUAL "EXECUTABLE")
+            add_executable(${_tcp_namespaced_target} ALIAS ${target})
+          else()
+            add_library(${_tcp_namespaced_target} ALIAS ${target})
+          endif()
+        endif()
+      endif()
+
       install(TARGETS ${target} EXPORT ${target}_export)
-      install(EXPORT ${target}_export
-              NAMESPACE ${_TCP_NAMESPACE}::
-              DESTINATION lib/cmake/${target})
+      install(
+        EXPORT ${target}_export
+        NAMESPACE ${_TCP_NAMESPACE}::
+        DESTINATION lib/cmake/${target})
+      export(
+        EXPORT ${target}_export
+        NAMESPACE ${_TCP_NAMESPACE}::
+        FILE ${target}-export.cmake)
       if(COMMAND ament_export_targets)
         ament_export_targets(${target}_export)
       endif()
