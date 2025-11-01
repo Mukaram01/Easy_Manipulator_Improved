@@ -12,6 +12,8 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
 
+include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
+
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(octomap REQUIRED)
