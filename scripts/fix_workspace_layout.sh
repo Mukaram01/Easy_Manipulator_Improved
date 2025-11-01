@@ -67,6 +67,7 @@ link_from_backup trajopt
 # errors about duplicate package names.
 if command -v colcon >/dev/null 2>&1; then
   declare -A pkg_keep
+  declare -A pkg_removed
   while read -r name path _; do
     [ -n "${name}" ] || continue
     if [[ -v pkg_keep[$name] ]]; then
@@ -79,10 +80,22 @@ if command -v colcon >/dev/null 2>&1; then
       if [ "${drop}" != "${keep}" ] && [ -e "${drop}" ]; then
         echo "Removing duplicate package '$name' from ${drop} (keeping ${keep})"
         rm -rf "${drop}"
+        pkg_removed[$name]=1
       fi
       pkg_keep[$name]="${keep}"
     else
       pkg_keep[$name]="${path}"
     fi
   done < <(colcon list --base-paths "${SRC_DIR}")
+
+  if [ ${#pkg_removed[@]} -gt 0 ]; then
+    for pkg in "${!pkg_removed[@]}"; do
+      for artifact in "${WS}/build/${pkg}" "${WS}/log/${pkg}" "${WS}/log/latest_build/${pkg}"; do
+        if [ -e "${artifact}" ]; then
+          echo "Removing stale build artifact ${artifact}"
+          rm -rf "${artifact}"
+        fi
+      done
+    done
+  fi
 fi
