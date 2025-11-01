@@ -144,7 +144,7 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                   "$<INSTALL_INTERFACE:include>")
 
-configure_package(NAMESPACE tesseract TARGETS ${PROJECT_NAME})
+configure_package(NAMESPACE tesseract_common TARGETS ${PROJECT_NAME})
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} PUBLIC Bcrypt)
 endif()
