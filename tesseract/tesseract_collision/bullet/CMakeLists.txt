@@ -4,6 +4,9 @@
 # is copied into the workspace before colcon builds the upstream
 # package, so this file augments the upstream version.
 
+cmake_minimum_required(VERSION 3.10)
+project(tesseract_collision_bullet)
+
 find_package(tesseract_common REQUIRED CONFIG)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 
