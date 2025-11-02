@@ -16,6 +16,100 @@ find_package(orocos_kdl REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 
+set(_tesseract_geometry_candidate_targets
+    tesseract_geometry::tesseract_geometry
+    tesseract::tesseract_geometry
+    tesseract_geometry)
+foreach(_tesseract_geometry_target ${_tesseract_geometry_candidate_targets})
+  if(TARGET ${_tesseract_geometry_target})
+    set(TESSERACT_GEOMETRY_TARGET ${_tesseract_geometry_target})
+    break()
+  endif()
+endforeach()
+
+if(NOT TESSERACT_GEOMETRY_TARGET)
+  set(_tesseract_geometry_imported_target tesseract_geometry::tesseract_geometry)
+  if(TARGET ${_tesseract_geometry_imported_target})
+    set(TESSERACT_GEOMETRY_TARGET ${_tesseract_geometry_imported_target})
+  else()
+    add_library(${_tesseract_geometry_imported_target} INTERFACE IMPORTED)
+    if(tesseract_geometry_INCLUDE_DIRS)
+      set_target_properties(
+        ${_tesseract_geometry_imported_target}
+        PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${tesseract_geometry_INCLUDE_DIRS}")
+    endif()
+    if(tesseract_geometry_LIBRARIES)
+      set_target_properties(
+        ${_tesseract_geometry_imported_target}
+        PROPERTIES INTERFACE_LINK_LIBRARIES "${tesseract_geometry_LIBRARIES}")
+    endif()
+    if(tesseract_geometry_DEFINITIONS)
+      set_target_properties(
+        ${_tesseract_geometry_imported_target}
+        PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${tesseract_geometry_DEFINITIONS}")
+    endif()
+    if(tesseract_geometry_COMPILE_OPTIONS)
+      set_target_properties(
+        ${_tesseract_geometry_imported_target}
+        PROPERTIES INTERFACE_COMPILE_OPTIONS "${tesseract_geometry_COMPILE_OPTIONS}")
+    endif()
+    set(TESSERACT_GEOMETRY_TARGET ${_tesseract_geometry_imported_target})
+  endif()
+endif()
+
+if(NOT TESSERACT_GEOMETRY_TARGET)
+  message(
+    FATAL_ERROR
+      "Unable to locate a tesseract_geometry target. Expected one of: tesseract_geometry::tesseract_geometry, tesseract::tesseract_geometry, tesseract_geometry.")
+endif()
+
+set(_tesseract_common_candidate_targets
+    tesseract_common::tesseract_common
+    tesseract::tesseract_common
+    tesseract_common)
+foreach(_tesseract_common_target ${_tesseract_common_candidate_targets})
+  if(TARGET ${_tesseract_common_target})
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_target})
+    break()
+  endif()
+endforeach()
+
+if(NOT TESSERACT_COMMON_TARGET)
+  set(_tesseract_common_imported_target tesseract_common::tesseract_common)
+  if(TARGET ${_tesseract_common_imported_target})
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_imported_target})
+  else()
+    add_library(${_tesseract_common_imported_target} INTERFACE IMPORTED)
+    if(tesseract_common_INCLUDE_DIRS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${tesseract_common_INCLUDE_DIRS}")
+    endif()
+    if(tesseract_common_LIBRARIES)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_LINK_LIBRARIES "${tesseract_common_LIBRARIES}")
+    endif()
+    if(tesseract_common_DEFINITIONS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${tesseract_common_DEFINITIONS}")
+    endif()
+    if(tesseract_common_COMPILE_OPTIONS)
+      set_target_properties(
+        ${_tesseract_common_imported_target}
+        PROPERTIES INTERFACE_COMPILE_OPTIONS "${tesseract_common_COMPILE_OPTIONS}")
+    endif()
+    set(TESSERACT_COMMON_TARGET ${_tesseract_common_imported_target})
+  endif()
+endif()
+
+if(NOT TESSERACT_COMMON_TARGET)
+  message(
+    FATAL_ERROR
+      "Unable to locate a tesseract_common target. Expected one of: tesseract_common::tesseract_common, tesseract::tesseract_common, tesseract_common.")
+endif()
+
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
   set_target_properties(console_bridge::console_bridge PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
@@ -54,8 +148,8 @@ target_link_libraries(
   PUBLIC Boost::boost
          Boost::graph
          Eigen3::Eigen
-         tesseract::tesseract_geometry
-         tesseract::tesseract_common
+         ${TESSERACT_GEOMETRY_TARGET}
+         ${TESSERACT_COMMON_TARGET}
          orocos-kdl
          console_bridge::console_bridge)
 target_compile_options(${PROJECT_NAME} PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
