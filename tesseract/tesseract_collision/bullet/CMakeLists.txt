@@ -4,6 +4,9 @@
 # is copied into the workspace before colcon builds the upstream
 # package, so this file augments the upstream version.
 
+find_package(tesseract_common REQUIRED CONFIG)
+find_package(ros_industrial_cmake_boilerplate REQUIRED)
+
 if(NOT COMMAND find_bullet)
   function(find_bullet)
     set(HACD_LIBRARY "")
