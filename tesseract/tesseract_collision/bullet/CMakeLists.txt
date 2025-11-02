@@ -148,7 +148,7 @@ target_include_directories(
                                           "$<INSTALL_INTERFACE:include>")
 
 # Convex decomposition libraries
-if(${HACD_LIBRARY})
+if(HACD_LIBRARY)
   add_library(${PROJECT_NAME}_hacd_convex_decomposition src/convex_decomposition_hacd.cpp)
   target_link_libraries(
     ${PROJECT_NAME}_hacd_convex_decomposition
