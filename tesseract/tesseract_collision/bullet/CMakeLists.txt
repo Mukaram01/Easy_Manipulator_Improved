@@ -8,7 +8,25 @@ cmake_minimum_required(VERSION 3.10)
 project(tesseract_collision_bullet)
 
 find_package(tesseract_common REQUIRED CONFIG)
+find_package(tesseract_geometry REQUIRED CONFIG)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
+
+if(NOT TARGET tesseract::tesseract_common AND TARGET tesseract_common::tesseract_common)
+  add_library(tesseract::tesseract_common ALIAS tesseract_common::tesseract_common)
+endif()
+if(NOT TARGET tesseract::tesseract_geometry AND TARGET tesseract_geometry::tesseract_geometry)
+  add_library(tesseract::tesseract_geometry ALIAS tesseract_geometry::tesseract_geometry)
+endif()
+
+set(TESSERACT_COMMON_TARGET tesseract::tesseract_common)
+if(NOT TARGET ${TESSERACT_COMMON_TARGET} AND TARGET tesseract_common::tesseract_common)
+  set(TESSERACT_COMMON_TARGET tesseract_common::tesseract_common)
+endif()
+
+set(TESSERACT_GEOM_TARGET tesseract::tesseract_geometry)
+if(NOT TARGET ${TESSERACT_GEOM_TARGET} AND TARGET tesseract_geometry::tesseract_geometry)
+  set(TESSERACT_GEOM_TARGET tesseract_geometry::tesseract_geometry)
+endif()
 
 if(NOT COMMAND find_bullet)
   function(_tesseract_bullet_get_target_install_prefix target out_var)
@@ -220,7 +238,7 @@ target_link_libraries(
   PUBLIC ${PROJECT_NAME}_core
          Eigen3::Eigen
          Bullet3::Bullet
-         tesseract::tesseract_geometry
+         ${TESSERACT_GEOM_TARGET}
          console_bridge::console_bridge
          octomap
          octomath)
@@ -264,7 +282,7 @@ if(HACD_LIBRARY)
     PUBLIC ${PROJECT_NAME}_bullet
            Eigen3::Eigen
            Bullet3::Bullet
-           tesseract::tesseract_geometry
+           ${TESSERACT_GEOM_TARGET}
            console_bridge::console_bridge
            ${HACD_LIBRARY})
   target_compile_options(${PROJECT_NAME}_hacd_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
@@ -295,8 +313,8 @@ if(NOT MSVC)
            Boost::boost
            Boost::program_options
            Eigen3::Eigen
-           tesseract::tesseract_common
-           tesseract::tesseract_geometry
+           ${TESSERACT_COMMON_TARGET}
+           ${TESSERACT_GEOM_TARGET}
            console_bridge::console_bridge
            octomap
            octomath)
