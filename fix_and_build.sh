@@ -1,166 +1,159 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WS=${WS:-$HOME/workcell_ws}
+# Workspace repair and build pipeline for easy_manipulation_deployment.
+# 1. Verifies the repository is checked out at $WS/src/easy_manipulation_deployment and
+#    removes stray external Tesseract clones, warning if conflicting packages persist.
+# 2. Scrubs every build/install/log directory so diagnostics always reflect the latest run.
+# 3. Installs dependencies, performs a single colcon build with override flags, and then
+#    inspects exported CMake namespaces so configuration regressions fail fast.
+
+WS=${WS:-"$HOME/workcell_ws"}
 SRC="$WS/src"
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 mkdir -p "$SRC"
 
-# Ensure we are being run from the repository inside the workspace
-if [[ "$REPO_DIR" != "$SRC/easy_manipulation_deployment" ]]; then
-  echo "Please run this script from ~/workcell_ws/src/easy_manipulation_deployment" >&2
+if [[ "$SCRIPT_DIR" != "$SRC/easy_manipulation_deployment" ]]; then
+  echo "Expected repository at $SRC/easy_manipulation_deployment" >&2
   exit 1
 fi
 
-# Select ROS distribution: prefer Humble then Jazzy
-for d in humble jazzy; do
-  if [[ -f "/opt/ros/$d/setup.bash" ]]; then
-    ROS_DISTRO=${ROS_DISTRO:-$d}
+if [[ -d "$SRC/tesseract" && -d "$SRC/easy_manipulation_deployment/tesseract" ]]; then
+  rm -rf "$SRC/tesseract"
+fi
+
+mapfile -t COLCON_LINES < <(colcon list --base-paths "$SRC" || true)
+declare -A KEPT_PATH
+removed_duplicate=false
+if [[ ${#COLCON_LINES[@]} -gt 0 ]]; then
+  for entry in "${COLCON_LINES[@]}"; do
+    name=${entry%% *}
+    path=${entry#* }
+    path=${path%% *}
+    [[ -z "$name" || -z "$path" ]] && continue
+
+    existing=${KEPT_PATH[$name]:-}
+    if [[ -z "$existing" ]]; then
+      KEPT_PATH[$name]="$path"
+      continue
+    fi
+
+    if [[ "$existing" == "$path" ]]; then
+      continue
+    fi
+
+    choose_keep="$existing"
+    candidate_remove="$path"
+    if [[ "$path" == "$SRC/easy_manipulation_deployment"* ]]; then
+      choose_keep="$path"
+      candidate_remove="$existing"
+    fi
+
+    rel_remove=${candidate_remove#"$SRC/"}
+    top_dir=${rel_remove%%/*}
+    if [[ -n "$top_dir" && "$top_dir" != "easy_manipulation_deployment" ]]; then
+      rm -rf "$SRC/$top_dir"
+      removed_duplicate=true
+    fi
+    KEPT_PATH[$name]="$choose_keep"
+  done
+fi
+
+if [[ "$removed_duplicate" == true ]]; then
+  echo "⚠️ Duplicate detected — removed external clone"
+else
+  echo "✅ Single Tesseract source detected"
+fi
+
+mapfile -t COLCON_LINES < <(colcon list --base-paths "$SRC")
+declare -A PACKAGE_COUNTS=( [tesseract_common]=0 [tesseract_geometry]=0 [tesseract_scene_graph]=0 )
+for entry in "${COLCON_LINES[@]}"; do
+  name=${entry%% *}
+  if [[ -n ${PACKAGE_COUNTS[$name]+set} ]]; then
+    ((PACKAGE_COUNTS[$name]++))
+  fi
+done
+
+for pkg in "${!PACKAGE_COUNTS[@]}"; do
+  if (( PACKAGE_COUNTS[$pkg] > 1 )); then
+    echo "Warning: multiple visible copies of $pkg after cleanup" >&2
+    exit 1
+  fi
+done
+
+rm -rf "$WS/build" "$WS/install" "$WS/log"
+find "$SRC" -type d \( -name build -o -name install -o -name log \) -prune -exec rm -rf {} +
+echo "🧹 Cleaned build/install/log"
+
+candidate_distros=()
+if [[ -n ${ROS_DISTRO:-} ]]; then
+  candidate_distros+=("$ROS_DISTRO")
+fi
+candidate_distros+=(humble jazzy)
+for distro in "${candidate_distros[@]}"; do
+  if [[ -f "/opt/ros/$distro/setup.bash" ]]; then
+    ROS_DISTRO="$distro"
     break
   fi
 done
 
 if [[ -z ${ROS_DISTRO:-} ]]; then
-  echo "No supported ROS distro found (need humble or jazzy)" >&2
+  echo "Unable to locate a ROS distribution (expected humble or jazzy)" >&2
   exit 1
 fi
 
-# shellcheck source=/dev/null
-# Disable nounset while sourcing ROS setup, as it references
-# environment variables that may not be defined.
 set +u
-: "${AMENT_TRACE_SETUP_FILES:=}"
+# shellcheck source=/dev/null
 source "/opt/ros/$ROS_DISTRO/setup.bash"
 set -u
-export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Ensure required tools
-APT_GET="sudo apt-get"
-command -v sudo >/dev/null 2>&1 || APT_GET="apt-get"
-
-for cmd in git colcon rosdep vcs; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Installing missing tool: $cmd"
-    $APT_GET update -y
-    case "$cmd" in
-      git) $APT_GET install -y git;;
-      colcon) python3 -m pip install -U colcon-common-extensions;;
-      rosdep) $APT_GET install -y python3-rosdep && rosdep init || true;;
-      vcs) $APT_GET install -y python3-vcstool;;
-    esac
-  fi
-done
-
-# Import external repositories if tesseract not yet present
-if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
-  vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"
-fi
-
-# Copy overlays from repo checkout if they exist
-# Copy overlays from repo checkout if they exist and immediately reveal packages
-for overlay in tesseract trajopt; do
-  if [[ -d "$REPO_DIR/$overlay" ]]; then
-    mkdir -p "$SRC/$overlay"
-    cp -a "$REPO_DIR/$overlay/." "$SRC/$overlay/"
-    # Rename ignore markers that may ship with upstream overlays so colcon sees the packages
-    while IFS= read -r -d '' marker; do
-      echo "Renaming ignore marker $marker"
-      mv -f "$marker" "$marker.repo"
-    done < <(find "$SRC/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
-  fi
-done
-
-# Ensure workspace layout is sanitized (handles stray trajopt sources)
-WS="$WS" "$REPO_DIR/scripts/fix_workspace_layout.sh"
-
-# Ensure boost_plugin_loader exists
-if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
-  git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
-fi
-
-# Reveal any hidden Tesseract packages that may remain from upstream checkouts
-find "$SRC" -path "$SRC/tesseract*" \( -name COLCON_IGNORE -o -name AMENT_IGNORE \) -print | while read -r f; do
-  echo "Renaming ignore marker $f"
-  mv -f "$f" "$f.repo"
-done
-
-# Remove duplicate package names
-declare -A seen
-while read -r name path _; do
-  if [[ -n ${seen[$name]:-} && ${seen[$name]} != "$path" ]]; then
-    echo "Removing duplicate package $name from $path (keeping ${seen[$name]})"
-    rm -rf "$path"
-  else
-    seen[$name]="$path"
-  fi
-done < <(colcon list --base-paths "$SRC")
-
-# Verify required packages are visible
-if ! colcon list --base-paths "$SRC" | grep -E '^(tesseract_common|tesseract_msgs)\b' >/dev/null; then
-  echo "tesseract_common or tesseract_msgs not visible to colcon" >&2
-  exit 1
-fi
-
-# Install dependencies. Pass the explicit package paths reported by colcon to avoid
-# rosdep scanning duplicate overlays (e.g., both the repo checkout and the copied
-# overlay of trajopt_sco) which would otherwise trigger "Multiple packages found"
-# errors.
-mapfile -t ROSDEP_PATHS < <(colcon list --base-paths "$SRC" --paths-only)
-if [[ ${#ROSDEP_PATHS[@]} -eq 0 ]]; then
+mapfile -t PACKAGE_PATHS < <(colcon list --base-paths "$SRC" --paths-only)
+if [[ ${#PACKAGE_PATHS[@]} -eq 0 ]]; then
   echo "No packages discovered for rosdep installation" >&2
   exit 1
 fi
 
-rosdep update
-rosdep install --from-paths "${ROSDEP_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
-  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
+rosdep install --from-paths "${PACKAGE_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
+  --skip-keys "tesseract_rviz tesseract_ros_examples"
 
-# Enforce C++17
-export AMENT_CMAKE_CXX_STANDARD=17
-CMAKE_ARGS=( -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF )
+echo "🚀 Building with --allow-overriding eigen tesseract_common boost_plugin_loader"
+colcon build --merge-install --event-handlers console_direct+ --allow-overriding eigen tesseract_common boost_plugin_loader \
+  --cmake-args -DBUILD_SHARED_LIBS=ON -DTESSERACT_ENABLE_TESTING=OFF
 
-# Minimal include fix for profile_dictionary
-# Use find's -print -quit to grab the first match and avoid non-zero exit when not found
-PDH=$(find "$SRC" -path "*/tesseract_command_language/include/tesseract_command_language/profile_dictionary.h" -print -quit 2>/dev/null)
-if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$PDH"; then
-  echo "Patching missing <mutex> include in $PDH"
-  sed -i '/<shared_mutex>/a #include <mutex>' "$PDH"
+if [[ ! -f "$WS/install/setup.bash" ]]; then
+  echo "Expected merged install at $WS/install/setup.bash" >&2
+  exit 1
 fi
 
-cd "$WS"
+set +u
+# shellcheck source=/dev/null
+source "$WS/install/setup.bash"
+set -u
 
-source_install() {
-  if [[ -f install/setup.bash ]]; then
-    set +u
-    : "${COLCON_TRACE:=}"
-    source install/setup.bash
-    set -u
+COMMON_CONFIG="$WS/install/share/tesseract_common/cmake/tesseract_commonConfig.cmake"
+GEOMETRY_CONFIG="$WS/install/share/tesseract_geometry/cmake/tesseract_geometryConfig.cmake"
+
+for config in "$COMMON_CONFIG" "$GEOMETRY_CONFIG"; do
+  if [[ ! -f "$config" ]]; then
+    echo "Missing expected config file: $config" >&2
+    exit 1
+  fi
+done
+
+check_namespace() {
+  local file="$1"
+  local pkg_label="$2"
+  local alt_namespace="$3"
+  if grep -q "tesseract::" "$file"; then
+    echo "$pkg_label exports tesseract:: namespace"
+  elif grep -q "$alt_namespace::" "$file"; then
+    echo "$pkg_label exports $alt_namespace:: namespace"
+  else
+    echo "$pkg_label missing expected namespace" >&2
+    return 1
   fi
 }
 
-# Build boost_plugin_loader first
-colcon build --symlink-install --packages-select boost_plugin_loader --cmake-args "${CMAKE_ARGS[@]}"
-source_install
-find install -name 'tesseract_commonConfig.cmake' || true
-
-# Build up to tesseract_common and tesseract_msgs
-colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs --cmake-args "${CMAKE_ARGS[@]}"
-source_install
-find install -name 'tesseract_commonConfig.cmake'
-
-# Build up to trajopt_sco
-colcon build --symlink-install --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
-source_install
-find install -name 'tesseract_commonConfig.cmake'
-
-# Build the whole workspace
-colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
-source_install
-find install -name 'tesseract_commonConfig.cmake'
-
-# Print overlay information
-colcon list --paths-only | sort
-printf '%s\n' ${CMAKE_PREFIX_PATH//:/\n} | head -n 20
-
-echo "Build completed successfully"
+check_namespace "$COMMON_CONFIG" "tesseract_commonConfig.cmake" "tesseract_common"
+check_namespace "$GEOMETRY_CONFIG" "tesseract_geometryConfig.cmake" "tesseract_geometry"
