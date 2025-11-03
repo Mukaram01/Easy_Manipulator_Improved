@@ -108,6 +108,27 @@ set +u
 source "/opt/ros/$ROS_DISTRO/setup.bash"
 set -u
 
+REPO_FILE="$SCRIPT_DIR/tesseract.repos"
+if [[ -f "$REPO_FILE" ]]; then
+  if [[ ! -d "$SRC/tesseract" ]]; then
+    vcs import --recursive "$SRC" < "$REPO_FILE"
+  fi
+  for overlay in tesseract trajopt; do
+    if [[ -d "$SCRIPT_DIR/$overlay" ]]; then
+      mkdir -p "$SRC/$overlay"
+      cp -a "$SCRIPT_DIR/$overlay/." "$SRC/$overlay/"
+      while IFS= read -r -d '' marker; do
+        echo "Renaming ignore marker $marker"
+        mv -f "$marker" "$marker.repo"
+      done < <(find "$SRC/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
+    fi
+  done
+fi
+
+if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
+  git -C "$SRC" clone https://github.com/tesseract-robotics/boost_plugin_loader.git
+fi
+
 mapfile -t PACKAGE_PATHS < <(colcon list --base-paths "$SRC" --paths-only)
 if [[ ${#PACKAGE_PATHS[@]} -eq 0 ]]; then
   echo "No packages discovered for rosdep installation" >&2
