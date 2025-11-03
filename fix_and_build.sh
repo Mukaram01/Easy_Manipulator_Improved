@@ -110,9 +110,44 @@ set -u
 
 REPO_FILE="$SCRIPT_DIR/tesseract.repos"
 if [[ -f "$REPO_FILE" ]]; then
-  if [[ ! -d "$SRC/tesseract" ]]; then
+  mapfile -t IMPORT_TARGETS < <(python3 - <<'PY' "$REPO_FILE"
+import re
+import sys
+
+repo_file = sys.argv[1]
+targets = []
+with open(repo_file, encoding="utf-8") as fh:
+    for line in fh:
+        if line.lstrip().startswith('#'):
+            continue
+        match = re.match(r"\s{2}([\w.-]+):\s*$", line)
+        if match:
+            targets.append(match.group(1))
+print("\n".join(targets))
+PY
+  )
+
+  missing_targets=()
+  for repo_name in "${IMPORT_TARGETS[@]}"; do
+    target_dir="$SRC/$repo_name"
+    if [[ -d "$target_dir" ]]; then
+      if [[ ! -e "$target_dir/.git" ]]; then
+        echo "Removing leftover non-repository directory $target_dir"
+        rm -rf "$target_dir"
+        missing_targets+=("$repo_name")
+      fi
+    else
+      missing_targets+=("$repo_name")
+    fi
+  done
+
+  if (( ${#missing_targets[@]} )); then
+    echo "Fetching missing repositories from $REPO_FILE: ${missing_targets[*]}"
     vcs import --recursive "$SRC" < "$REPO_FILE"
+  else
+    echo "All repositories from $REPO_FILE already present"
   fi
+
   for overlay in tesseract trajopt; do
     if [[ -d "$SCRIPT_DIR/$overlay" ]]; then
       mkdir -p "$SRC/$overlay"
