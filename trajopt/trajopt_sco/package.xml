@@ -10,7 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>boost</depend>
-  <depend>jsoncpp</depend>
+  <depend>libjsoncpp-dev</depend>
   <depend>rclcpp</depend>
   <depend>trajopt_common</depend>
   <depend>eigen</depend>
