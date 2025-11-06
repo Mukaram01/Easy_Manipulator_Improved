@@ -265,8 +265,11 @@ target_code_coverage(
   ALL
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
-target_include_directories(${PROJECT_NAME}_bullet PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                         "$<INSTALL_INTERFACE:include>")
+target_include_directories(
+  ${PROJECT_NAME}_bullet
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>"
+         "$<INSTALL_INTERFACE:include>")
 
 # Create target for Bullet implementation
 add_library(${PROJECT_NAME}_bullet_factories src/bullet_factories.cpp)
@@ -283,8 +286,10 @@ target_code_coverage(
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(
-  ${PROJECT_NAME}_bullet_factories PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                          "$<INSTALL_INTERFACE:include>")
+  ${PROJECT_NAME}_bullet_factories
+  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>"
+         "$<INSTALL_INTERFACE:include>")
 
 # Convex decomposition libraries
 if(HACD_LIBRARY)
@@ -335,7 +340,10 @@ if(NOT MSVC)
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(create_convex_hull PRIVATE VERSION ${TESSERACT_CXX_VERSION})
   target_clang_tidy(create_convex_hull ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
-  target_include_directories(create_convex_hull PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
+  target_include_directories(
+    create_convex_hull
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+           "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>")
 
   list(APPEND PACKAGE_LIBRARIES create_convex_hull)
 
