@@ -255,9 +255,13 @@ add_subdirectory(bullet)
 # Test Suite
 option(TESSERACT_BUILD_TEST_SUITE "Build Test Suite components" ON)
 if(TESSERACT_BUILD_TEST_SUITE)
-  message("Building Test Suite components")
-  list(APPEND SUPPORTED_COMPONENTS test_suite)
-  add_subdirectory(test_suite)
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_suite/CMakeLists.txt")
+    message("Building Test Suite components")
+    list(APPEND SUPPORTED_COMPONENTS test_suite)
+    add_subdirectory(test_suite)
+  else()
+    message(WARNING "Test Suite components requested but test_suite directory is missing; skipping build")
+  endif()
 endif()
 
 # FCL
