@@ -268,7 +268,7 @@ target_code_coverage(
 target_include_directories(
   ${PROJECT_NAME}_bullet
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>"
+         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
          "$<INSTALL_INTERFACE:include>")
 
 # Create target for Bullet implementation
@@ -288,7 +288,7 @@ target_code_coverage(
 target_include_directories(
   ${PROJECT_NAME}_bullet_factories
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>"
+         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
          "$<INSTALL_INTERFACE:include>")
 
 # Convex decomposition libraries
@@ -343,7 +343,7 @@ if(NOT MSVC)
   target_include_directories(
     create_convex_hull
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-           "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/include>")
+           "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>")
 
   list(APPEND PACKAGE_LIBRARIES create_convex_hull)
 
