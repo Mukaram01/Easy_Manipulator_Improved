@@ -48,7 +48,6 @@ else()
   message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
 endif()
 find_package(yaml-cpp REQUIRED)
-find_package(boost_plugin_loader REQUIRED)
 
 if(TARGET Boost::stacktrace_backtrace)
   find_file(BACKTRACE_INCLUDE_FILE backtrace.h PATHS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
@@ -116,13 +115,13 @@ add_library(
   src/types.cpp
   src/stopwatch.cpp
   src/timer.cpp
-  src/yaml_utils.cpp)
+  src/yaml_utils.cpp
+  src/ply_io.cpp)
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
          ${TESSERACT_TINYXML2_TARGET}
-         boost_plugin_loader::boost_plugin_loader
          ${CMAKE_DL_LIBS}
          Boost::boost
          Boost::system
@@ -131,7 +130,8 @@ target_link_libraries(
          ${TESSERACT_BACKTRACE_LIB}
          console_bridge::console_bridge
          yaml-cpp)
-ament_target_dependencies(${PROJECT_NAME} boost_plugin_loader)
+# The bundled ply io implementation is header-only and does not require
+# additional dependencies beyond the core Boost components already linked.
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_BACKTRACE_DEFINITION})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
@@ -185,7 +185,6 @@ ament_export_dependencies(
   tinyxml2_vendor
   TinyXML2
   yaml-cpp
-  boost_plugin_loader
   Boost
   console_bridge)
 

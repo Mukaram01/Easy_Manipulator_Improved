@@ -43,9 +43,9 @@ target_link_libraries(
   PUBLIC Eigen3::Eigen
          ${TESSERACT_COMMON_TARGET}
          ${TESSERACT_GEOM_TARGET}
-         boost_plugin_loader::boost_plugin_loader
          Boost::boost
          Boost::system
+         Boost::filesystem
          Boost::serialization
          yaml-cpp
          octomap)
@@ -87,8 +87,7 @@ configure_component(
     tesseract_common
     yaml-cpp
     octomap
-    boost_plugin_loader
-    "Boost COMPONENTS system program_options serialization"
+    "Boost COMPONENTS filesystem system program_options serialization"
   CFG_EXTRAS cmake/core-extras.cmake)
 
 if(TESSERACT_PACKAGE)
@@ -101,10 +100,10 @@ if(TESSERACT_PACKAGE)
       "libeigen3-dev"
       "libyaml-cpp-dev"
       "liboctomap-dev"
+      "libboost-filesystem-dev"
       "libboost-system-dev"
       "libboost-program-options-dev"
       "libboost-serialization-dev"
-      "boost-plugin-loader"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-scene-graph"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-state-solver"
@@ -113,10 +112,10 @@ if(TESSERACT_PACKAGE)
       "Eigen3"
       "yaml-cpp"
       "liboctomap-dev"
+      "libboost-filesystem-dev"
       "libboost-system-dev"
       "libboost-program-options-dev"
       "libboost-serialization-dev"
-      "boost-plugin-loader"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-scene-graph"
       "${TESSERACT_PACKAGE_PREFIX}tesseract-state-solver")
