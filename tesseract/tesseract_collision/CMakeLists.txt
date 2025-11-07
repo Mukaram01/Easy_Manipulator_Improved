@@ -11,12 +11,11 @@ endif()
 
 # All of these are used by all components so to avoid having them in each they are include here
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system program_options serialization)
+find_package(Boost REQUIRED COMPONENTS filesystem system program_options serialization)
 find_package(octomap REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
-find_package(boost_plugin_loader REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 set(_tesseract_common_have_exports FALSE)
