@@ -152,6 +152,16 @@ source_install() {
     set +u
     : "${COLCON_TRACE:=}"
     source install/setup.bash
+    # Ensure plain CMake packages that ship Colcon environment hooks properly
+    # extend CMAKE_PREFIX_PATH even when sourced multiple times.  Some of the
+    # vendored Tesseract packages only provide a hook script and do not rely on
+    # ament to evaluate it, so manually source any available hooks here.
+    if compgen -G "install/*/share/*/hook/cmake_prefix_path.sh" >/dev/null; then
+      # shellcheck disable=SC1090
+      for hook in install/*/share/*/hook/cmake_prefix_path.sh; do
+        source "$hook"
+      done
+    fi
     set -u
   fi
 }
