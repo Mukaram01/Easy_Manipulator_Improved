@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <experimental/filesystem>
-#include <string>
+#include <filesystem>
 #include <stdexcept>
+#include <string>
 
 #include "test_hardware.hpp"
 
@@ -35,7 +35,7 @@ void TestHardware::load_urdf(
   const std::string & path_to_urdf)
 {
   try {
-    std::experimental::filesystem::path res_path(
+    std::filesystem::path res_path(
       ament_index_cpp::get_package_share_directory(package_name));
     load_urdf((res_path / path_to_urdf).string());
   } catch (const std::exception & e) {
@@ -57,7 +57,7 @@ void TestHardware::load_srdf(
   const std::string & path_to_srdf)
 {
   try {
-    std::experimental::filesystem::path res_path(
+    std::filesystem::path res_path(
       ament_index_cpp::get_package_share_directory(package_name));
     load_srdf((res_path / path_to_srdf).string());
   } catch (const std::exception & e) {
