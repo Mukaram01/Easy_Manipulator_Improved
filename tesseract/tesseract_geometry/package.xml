@@ -20,6 +20,8 @@
   <depend>liboctomap-dev</depend>
   <build_depend>libboost-serialization-dev</build_depend>
   <build_export_depend>libboost-serialization-dev</build_export_depend>
+  <build_depend>tinyxml2_vendor</build_depend>
+  <build_export_depend>tinyxml2_vendor</build_export_depend>
   <exec_depend>libboost-serialization</exec_depend>
   <exec_depend>tinyxml2_vendor</exec_depend>
 
