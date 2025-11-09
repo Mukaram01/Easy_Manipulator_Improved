@@ -20,65 +20,9 @@ find_package(console_bridge REQUIRED)
 find_package(octomap REQUIRED)
 find_package(assimp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS serialization)
-find_package(tinyxml2_vendor REQUIRED)
-find_package(TinyXML2 REQUIRED)
-
-set(TESSERACT_TINYXML2_LIBRARIES "")
-unset(TESSERACT_TINYXML2_TARGET)
-
-if(TARGET tinyxml2::tinyxml2)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-elseif(TARGET TinyXML2::TinyXML2)
-  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
-endif()
-
-if(NOT TESSERACT_TINYXML2_TARGET)
-  # Last-resort: resolve raw library name
-  find_library(TINYXML2_LIB tinyxml2 REQUIRED)
-  set(TESSERACT_TINYXML2_TARGET "${TINYXML2_LIB}")
-endif()
-
-if(TESSERACT_TINYXML2_TARGET)
-  if(COMMAND _tesseract_collect_tinyxml2_libraries)
-    _tesseract_collect_tinyxml2_libraries("${TESSERACT_TINYXML2_TARGET}" TESSERACT_TINYXML2_LIBRARIES)
-  endif()
-
-  if(NOT TESSERACT_TINYXML2_LIBRARIES)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES "${TESSERACT_TINYXML2_TARGET}")
-  endif()
-endif()
-
-if(TinyXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
-endif()
-
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
-endif()
-
-set(TESSERACT_TINYXML2_LINK_LIBRARIES "")
-foreach(_candidate tinyxml2::tinyxml2 TinyXML2::TinyXML2 tinyxml2_vendor::tinyxml2_vendor)
-  if(TARGET ${_candidate})
-    list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${_candidate})
-  endif()
-endforeach()
-
-if(TESSERACT_TINYXML2_TARGET)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_TARGET})
-endif()
-
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_LIBRARIES})
-endif()
-
-if(TinyXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TinyXML2_LIBRARIES})
-endif()
-
-if(TESSERACT_TINYXML2_LINK_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LINK_LIBRARIES)
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_geometry")
 endif()
 
 if(NOT TARGET console_bridge::console_bridge)
@@ -200,6 +144,7 @@ target_link_libraries(
     octomath
     assimp::assimp
     Boost::serialization
+    ${TESSERACT_TINYXML2_TARGET}
     ${TESSERACT_TINYXML2_LINK_LIBRARIES})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_ASSIMP_USE_PBRMATERIAL})
