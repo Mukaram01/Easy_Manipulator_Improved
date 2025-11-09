@@ -38,14 +38,9 @@ else()
                stacktrace_noop)
 endif()
 find_package(Eigen3 REQUIRED)
-find_package(tinyxml2_vendor REQUIRED)
-find_package(TinyXML2 REQUIRED)
-if(TARGET tinyxml2::tinyxml2)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-elseif(TARGET TinyXML2::TinyXML2)
-  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-else()
-  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library to satisfy tesseract_common")
 endif()
 find_package(yaml-cpp REQUIRED)
 
@@ -122,6 +117,7 @@ target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
          ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          ${CMAKE_DL_LIBS}
          Boost::boost
          Boost::system

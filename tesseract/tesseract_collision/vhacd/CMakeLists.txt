@@ -1,15 +1,8 @@
-find_package(tinyxml2_vendor REQUIRED)
-find_package(TinyXML2 REQUIRED)
-if(TARGET tinyxml2::tinyxml2)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-elseif(TARGET TinyXML2::TinyXML2)
-  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
-elseif(TinyXML2_LIBRARIES)
-  set(TESSERACT_TINYXML2_TARGET ${TinyXML2_LIBRARIES})
-else()
-  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
+
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision vhacd components")
 endif()
 
 if(NOT TARGET tesseract::tesseract_common)
@@ -50,6 +43,7 @@ target_link_libraries(
          Eigen3::Eigen
          ${TESSERACT_GEOM_TARGET}
          ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          console_bridge::console_bridge)
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
@@ -81,6 +75,7 @@ if(NOT MSVC)
             ${TESSERACT_COMMON_TARGET}
             ${TESSERACT_GEOM_TARGET}
             ${TESSERACT_TINYXML2_TARGET}
+            ${TESSERACT_TINYXML2_LINK_LIBRARIES}
             console_bridge::console_bridge
             Threads::Threads)
   target_compile_options(create_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE}

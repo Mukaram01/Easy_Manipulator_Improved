@@ -9,119 +9,11 @@ cmake_minimum_required(VERSION 3.10)
 find_package(tesseract_common REQUIRED CONFIG)
 find_package(tesseract_geometry REQUIRED CONFIG)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
-find_package(tinyxml2_vendor REQUIRED)
-find_package(TinyXML2 REQUIRED)
+include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
 
-if(NOT COMMAND _tesseract_collect_tinyxml2_libraries)
-  function(_tesseract_collect_tinyxml2_libraries target out_var)
-    if(NOT TARGET "${target}")
-      set(${out_var} "" PARENT_SCOPE)
-      return()
-    endif()
-
-    set(_visited "${ARGN}")
-    if(_visited)
-      list(FIND _visited "${target}" _already)
-      if(NOT _already EQUAL -1)
-        set(${out_var} "" PARENT_SCOPE)
-        return()
-      endif()
-    endif()
-
-    list(APPEND _visited "${target}")
-
-    set(_paths "")
-    get_target_property(_location "${target}" IMPORTED_LOCATION)
-    if(_location)
-      list(APPEND _paths "${_location}")
-    endif()
-
-    get_target_property(_imported_configs "${target}" IMPORTED_CONFIGURATIONS)
-    foreach(_config IN LISTS _imported_configs)
-      string(TOUPPER "${_config}" _config_upper)
-      foreach(_prop IMPORTED_LOCATION_${_config_upper} IMPORTED_IMPLIB_${_config_upper})
-        get_target_property(_candidate "${target}" "${_prop}")
-        if(_candidate)
-          list(APPEND _paths "${_candidate}")
-        endif()
-      endforeach()
-    endforeach()
-
-    get_target_property(_interface_libs "${target}" INTERFACE_LINK_LIBRARIES)
-    foreach(_lib IN LISTS _interface_libs)
-      if(TARGET "${_lib}")
-        _tesseract_collect_tinyxml2_libraries("${_lib}" _nested_paths ${_visited})
-        if(_nested_paths)
-          list(APPEND _paths ${_nested_paths})
-        endif()
-      elseif(_lib)
-        list(APPEND _paths "${_lib}")
-      endif()
-    endforeach()
-
-    if(_paths)
-      list(REMOVE_DUPLICATES _paths)
-    endif()
-
-    set(${out_var} "${_paths}" PARENT_SCOPE)
-  endfunction()
-endif()
-
-set(TESSERACT_TINYXML2_LIBRARIES "")
-unset(TESSERACT_TINYXML2_TARGET)
-
-if(TARGET tinyxml2::tinyxml2)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-elseif(TARGET TinyXML2::TinyXML2)
-  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
-  set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
-endif()
-
-if(NOT TESSERACT_TINYXML2_TARGET)
-  find_library(TINYXML2_LIB tinyxml2 REQUIRED)
-  set(TESSERACT_TINYXML2_TARGET "${TINYXML2_LIB}")
-endif()
-
-if(TESSERACT_TINYXML2_TARGET)
-  if(COMMAND _tesseract_collect_tinyxml2_libraries)
-    _tesseract_collect_tinyxml2_libraries("${TESSERACT_TINYXML2_TARGET}" TESSERACT_TINYXML2_LIBRARIES)
-  endif()
-
-  if(NOT TESSERACT_TINYXML2_LIBRARIES)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES "${TESSERACT_TINYXML2_TARGET}")
-  endif()
-endif()
-
-if(TinyXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
-endif()
-
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
-endif()
-
-set(TESSERACT_TINYXML2_LINK_LIBRARIES "")
-foreach(_candidate tinyxml2::tinyxml2 TinyXML2::TinyXML2 tinyxml2_vendor::tinyxml2_vendor)
-  if(TARGET ${_candidate})
-    list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${_candidate})
-  endif()
-endforeach()
-
-if(TESSERACT_TINYXML2_TARGET)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_TARGET})
-endif()
-
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_LIBRARIES})
-endif()
-
-if(TinyXML2_LIBRARIES)
-  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TinyXML2_LIBRARIES})
-endif()
-
-if(TESSERACT_TINYXML2_LINK_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LINK_LIBRARIES)
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision bullet components")
 endif()
 
 if(NOT TARGET tesseract::tesseract_common)
@@ -362,6 +254,7 @@ target_link_libraries(
     console_bridge::console_bridge
     octomap
     octomath
+    ${TESSERACT_TINYXML2_TARGET}
     ${TESSERACT_TINYXML2_LINK_LIBRARIES})
 target_compile_options(${PROJECT_NAME}_bullet PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
@@ -434,6 +327,7 @@ if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
       console_bridge::console_bridge
       octomap
       octomath
+      ${TESSERACT_TINYXML2_TARGET}
       ${TESSERACT_TINYXML2_LINK_LIBRARIES})
   target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE} ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
