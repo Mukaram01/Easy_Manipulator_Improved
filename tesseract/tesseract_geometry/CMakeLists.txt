@@ -50,6 +50,14 @@ if(TESSERACT_TINYXML2_TARGET)
   endif()
 endif()
 
+if(TinyXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
+endif()
+
+if(TESSERACT_TINYXML2_LIBRARIES)
+  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
+endif()
+
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
   set_target_properties(console_bridge::console_bridge PROPERTIES

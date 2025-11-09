@@ -93,6 +93,14 @@ if(TESSERACT_TINYXML2_TARGET)
   endif()
 endif()
 
+if(TinyXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
+endif()
+
+if(TESSERACT_TINYXML2_LIBRARIES)
+  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
+endif()
+
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
     add_library(tesseract::tesseract_common ALIAS tesseract_common::tesseract_common)
