@@ -16,6 +16,7 @@
 #define EMD__GRASP_EXECUTION__GRASP_EXECUTION_HPP_
 
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>

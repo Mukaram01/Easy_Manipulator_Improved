@@ -16,6 +16,7 @@
 #define EMD__GRASP_EXECUTION__UTILS_HPP_
 
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
