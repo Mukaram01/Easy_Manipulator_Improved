@@ -100,8 +100,9 @@ while read -r name path _; do
   fi
 done < <(colcon list --base-paths src)
 
+# Skip keys for packages supplied by unreleased overlays shipped with this repo
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract tesseract_process_planners"
+  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
 
 # 1) Ensure boost_plugin_loader exists
 if [ ! -d src/boost_plugin_loader ]; then
