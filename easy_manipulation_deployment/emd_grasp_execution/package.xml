@@ -13,7 +13,9 @@
   <depend>moveit_ros_planning_interface</depend>
   <depend>emd_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <depend>trajectory_msgs</depend>
+  <depend>control_msgs</depend>
 
   <depend>pluginlib</depend>
   <depend>tf2</depend>
