@@ -1,3 +1,5 @@
+#define ENABLE_VHACD_IMPLEMENTATION 1
+
 #include <tesseract_common/macros.h>
 TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <console_bridge/console.h>
