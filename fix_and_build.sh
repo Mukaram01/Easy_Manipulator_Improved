@@ -59,12 +59,26 @@ fi
 
 # Copy overlays from repo checkout if they exist
 # Copy overlays from repo checkout if they exist and immediately reveal packages
+HIDDEN_OVERLAY_PREFIXES=("$SRC/tesseract_ros2")
+should_skip_marker() {
+  local marker=$1
+  for prefix in "${HIDDEN_OVERLAY_PREFIXES[@]}"; do
+    if [[ $marker == "$prefix"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 for overlay in tesseract trajopt; do
   if [[ -d "$REPO_DIR/$overlay" ]]; then
     mkdir -p "$SRC/$overlay"
     cp -a "$REPO_DIR/$overlay/." "$SRC/$overlay/"
     # Rename ignore markers that may ship with upstream overlays so colcon sees the packages
     while IFS= read -r -d '' marker; do
+      if should_skip_marker "$marker"; then
+        continue
+      fi
       echo "Renaming ignore marker $marker"
       mv -f "$marker" "$marker.repo"
     done < <(find "$SRC/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
@@ -81,6 +95,9 @@ fi
 
 # Reveal any hidden Tesseract packages that may remain from upstream checkouts
 find "$SRC" -path "$SRC/tesseract*" \( -name COLCON_IGNORE -o -name AMENT_IGNORE \) -print | while read -r f; do
+  if should_skip_marker "$f"; then
+    continue
+  fi
   echo "Renaming ignore marker $f"
   mv -f "$f" "$f.repo"
 done
