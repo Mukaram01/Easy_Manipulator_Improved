@@ -11,7 +11,6 @@ if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
 
 include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
@@ -20,104 +19,38 @@ find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(octomap REQUIRED)
 find_package(assimp REQUIRED)
-find_package(
-  Boost REQUIRED
-  COMPONENTS serialization)
+find_package(Boost REQUIRED COMPONENTS serialization)
 find_package(tinyxml2_vendor REQUIRED)
 find_package(TinyXML2 REQUIRED)
-function(_tesseract_collect_tinyxml2_libraries target out_var)
-  if(NOT TARGET "${target}")
-    set(${out_var} "" PARENT_SCOPE)
-    return()
-  endif()
-
-  set(_visited "${ARGN}")
-  if(_visited)
-    list(FIND _visited "${target}" _already)
-    if(NOT _already EQUAL -1)
-      set(${out_var} "" PARENT_SCOPE)
-      return()
-    endif()
-  endif()
-
-  list(APPEND _visited "${target}")
-
-  set(_paths "")
-  get_target_property(_location "${target}" IMPORTED_LOCATION)
-  if(_location)
-    list(APPEND _paths "${_location}")
-  endif()
-
-  get_target_property(_imported_configs "${target}" IMPORTED_CONFIGURATIONS)
-  foreach(_config IN LISTS _imported_configs)
-    string(TOUPPER "${_config}" _config_upper)
-    foreach(_prop IMPORTED_LOCATION_${_config_upper} IMPORTED_IMPLIB_${_config_upper})
-      get_target_property(_candidate "${target}" "${_prop}")
-      if(_candidate)
-        list(APPEND _paths "${_candidate}")
-      endif()
-    endforeach()
-  endforeach()
-
-  get_target_property(_interface_libs "${target}" INTERFACE_LINK_LIBRARIES)
-  foreach(_lib IN LISTS _interface_libs)
-    if(TARGET "${_lib}")
-      _tesseract_collect_tinyxml2_libraries("${_lib}" _nested_paths ${_visited})
-      if(_nested_paths)
-        list(APPEND _paths ${_nested_paths})
-      endif()
-    elseif(_lib)
-      list(APPEND _paths "${_lib}")
-    endif()
-  endforeach()
-
-  if(_paths)
-    list(REMOVE_DUPLICATES _paths)
-  endif()
-
-  set(${out_var} "${_paths}" PARENT_SCOPE)
-endfunction()
 
 set(TESSERACT_TINYXML2_LIBRARIES "")
+unset(TESSERACT_TINYXML2_TARGET)
+
 if(TARGET tinyxml2::tinyxml2)
   set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-  _tesseract_collect_tinyxml2_libraries(tinyxml2::tinyxml2 _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
 elseif(TARGET TinyXML2::TinyXML2)
   set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-  _tesseract_collect_tinyxml2_libraries(TinyXML2::TinyXML2 _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
 elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
   set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
-  _tesseract_collect_tinyxml2_libraries(tinyxml2_vendor::tinyxml2_vendor _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
-elseif(TinyXML2_LIBRARIES)
-  set(TESSERACT_TINYXML2_TARGET ${TinyXML2_LIBRARIES})
-  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
-else()
-  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
 endif()
 
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET)
+  # Last-resort: resolve raw library name
+  find_library(TINYXML2_LIB tinyxml2 REQUIRED)
+  set(TESSERACT_TINYXML2_TARGET "${TINYXML2_LIB}")
 endif()
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
-  set_target_properties(console_bridge::console_bridge PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                                                                  ${console_bridge_INCLUDE_DIRS})
-  set_target_properties(console_bridge::console_bridge PROPERTIES INTERFACE_LINK_LIBRARIES ${console_bridge_LIBRARIES})
+  set_target_properties(console_bridge::console_bridge PROPERTIES
+                        INTERFACE_INCLUDE_DIRECTORIES ${console_bridge_INCLUDE_DIRS})
+  set_target_properties(console_bridge::console_bridge PROPERTIES INTERFACE_LINK_LIBRARIES
+                        ${console_bridge_LIBRARIES})
 else()
   get_target_property(CHECK_INCLUDE_DIRECTORIES console_bridge::console_bridge INTERFACE_INCLUDE_DIRECTORIES)
   if(NOT ${CHECK_INCLUDE_DIRECTORIES})
-    set_target_properties(console_bridge::console_bridge PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                                                                    ${console_bridge_INCLUDE_DIRS})
+    set_target_properties(console_bridge::console_bridge PROPERTIES
+                          INTERFACE_INCLUDE_DIRECTORIES ${console_bridge_INCLUDE_DIRS})
   endif()
 endif()
 
@@ -174,33 +107,28 @@ if(NOT TESSERACT_COMMON_TARGET)
   else()
     add_library(${_tesseract_common_imported_target} INTERFACE IMPORTED)
     if(tesseract_common_INCLUDE_DIRS)
-      set_target_properties(
-        ${_tesseract_common_imported_target}
-        PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${tesseract_common_INCLUDE_DIRS}")
+      set_target_properties(${_tesseract_common_imported_target} PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                            "${tesseract_common_INCLUDE_DIRS}")
     endif()
     if(tesseract_common_LIBRARIES)
-      set_target_properties(
-        ${_tesseract_common_imported_target}
-        PROPERTIES INTERFACE_LINK_LIBRARIES "${tesseract_common_LIBRARIES}")
+      set_target_properties(${_tesseract_common_imported_target} PROPERTIES INTERFACE_LINK_LIBRARIES
+                            "${tesseract_common_LIBRARIES}")
     endif()
     if(tesseract_common_DEFINITIONS)
-      set_target_properties(
-        ${_tesseract_common_imported_target}
-        PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${tesseract_common_DEFINITIONS}")
+      set_target_properties(${_tesseract_common_imported_target} PROPERTIES INTERFACE_COMPILE_DEFINITIONS
+                            "${tesseract_common_DEFINITIONS}")
     endif()
     if(tesseract_common_COMPILE_OPTIONS)
-      set_target_properties(
-        ${_tesseract_common_imported_target}
-        PROPERTIES INTERFACE_COMPILE_OPTIONS "${tesseract_common_COMPILE_OPTIONS}")
+      set_target_properties(${_tesseract_common_imported_target} PROPERTIES INTERFACE_COMPILE_OPTIONS
+                            "${tesseract_common_COMPILE_OPTIONS}")
     endif()
     set(TESSERACT_COMMON_TARGET ${_tesseract_common_imported_target})
   endif()
 endif()
 
 if(NOT TESSERACT_COMMON_TARGET)
-  message(
-    FATAL_ERROR
-      "Unable to locate a tesseract_common target. Expected one of: tesseract_common::tesseract_common, tesseract::tesseract_common, tesseract_common.")
+  message(FATAL_ERROR
+          "Unable to locate a tesseract_common target. Expected one of: tesseract_common::tesseract_common, tesseract::tesseract_common, tesseract_common.")
 endif()
 
 add_library(
@@ -223,43 +151,38 @@ add_library(
   src/geometries/sphere.cpp)
 target_link_libraries(
   ${PROJECT_NAME}
-  PUBLIC Eigen3::Eigen
-         ${TESSERACT_COMMON_TARGET}
-         console_bridge::console_bridge
-         octomap
-         octomath
-         assimp::assimp
-         Boost::serialization
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LIBRARIES})
+  PUBLIC
+    Eigen3::Eigen
+    ${TESSERACT_COMMON_TARGET}
+    console_bridge::console_bridge
+    octomap
+    octomath
+    assimp::assimp
+    Boost::serialization
+    ${TESSERACT_TINYXML2_TARGET})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_ASSIMP_USE_PBRMATERIAL})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
 target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TESSERACT_CXX_VERSION})
-target_code_coverage(
-  ${PROJECT_NAME}
-  PRIVATE
-  ALL
-  EXCLUDE ${COVERAGE_EXCLUDE}
-  ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
-target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                  "$<INSTALL_INTERFACE:include>")
+target_code_coverage(${PROJECT_NAME} PRIVATE ALL EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
+target_include_directories(${PROJECT_NAME}
+                           PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                  "$<INSTALL_INTERFACE:include>")
 
 configure_package(NAMESPACE tesseract TARGETS ${PROJECT_NAME})
 
 if(NOT TARGET tesseract::tesseract_common AND TARGET tesseract_common::tesseract_common)
   add_library(tesseract::tesseract_common INTERFACE IMPORTED)
-  set_target_properties(tesseract::tesseract_common PROPERTIES
-                        INTERFACE_LINK_LIBRARIES tesseract_common::tesseract_common)
+  set_target_properties(tesseract::tesseract_common PROPERTIES INTERFACE_LINK_LIBRARIES
+                        tesseract_common::tesseract_common)
 endif()
 
 # Mark cpp header files for installation
-install(
-  DIRECTORY include/${PROJECT_NAME}
-  DESTINATION include
-  FILES_MATCHING
-  PATTERN "*.h"
-  PATTERN ".svn" EXCLUDE)
+install(DIRECTORY include/${PROJECT_NAME}
+        DESTINATION include
+        FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN ".svn" EXCLUDE)
 
 install(FILES "${CMAKE_CURRENT_LIST_DIR}/cmake/Findassimp.cmake" DESTINATION lib/cmake/${PROJECT_NAME})
 
@@ -275,46 +198,33 @@ if(TESSERACT_ENABLE_TESTING OR TESSERACT_GEOMETRY_ENABLE_TESTING)
 endif()
 
 if(TESSERACT_PACKAGE)
-  cpack(
-    VERSION ${pkg_extracted_version}
-    MAINTAINER_NAME ${pkg_extracted_maintainer_name}
-    MAINTAINER_EMAIL ${pkg_extracted_maintainer_email}
-    DESCRIPTION ${pkg_extracted_description}
-    LICENSE_FILE ${CMAKE_CURRENT_LIST_DIR}/../LICENSE
-    README_FILE ${CMAKE_CURRENT_LIST_DIR}/../README.md
-    LINUX_DEPENDS
-      "libassimp-dev"
-      "libconsole-bridge-dev"
-      "liboctomap-dev (>= 1.9.3) | ${TESSERACT_PACKAGE_PREFIX}octomap"
-      "libeigen3-dev"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
-    WINDOWS_DEPENDS
-      "Assimp"
-      "console_bridge"
-      "octomap | ${TESSERACT_PACKAGE_PREFIX}octomap"
-      "Eigen3"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-common")
+  cpack(VERSION ${pkg_extracted_version}
+        MAINTAINER_NAME ${pkg_extracted_maintainer_name}
+        MAINTAINER_EMAIL ${pkg_extracted_maintainer_email}
+        DESCRIPTION ${pkg_extracted_description}
+        LICENSE_FILE ${CMAKE_CURRENT_LIST_DIR}/../LICENSE
+        README_FILE ${CMAKE_CURRENT_LIST_DIR}/../README.md
+        LINUX_DEPENDS "libassimp-dev"
+                      "libconsole-bridge-dev"
+                      "liboctomap-dev (>= 1.9.3) | ${TESSERACT_PACKAGE_PREFIX}octomap"
+                      "libeigen3-dev"
+                      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
+        WINDOWS_DEPENDS "Assimp"
+                        "console_bridge"
+                        "octomap | ${TESSERACT_PACKAGE_PREFIX}octomap"
+                        "Eigen3"
+                        "${TESSERACT_PACKAGE_PREFIX}tesseract-common")
 
   if(UNIX AND TESSERACT_PACKAGE_SOURCE)
-    cpack_debian_source_package(
-      CHANGLELOG ${CMAKE_CURRENT_LIST_DIR}/CHANGELOG.rst
-      UPLOAD ${TESSERACT_PACKAGE_SOURCE_UPLOAD}
-      DPUT_HOST ${TESSERACT_PACKAGE_SOURCE_DPUT_HOST}
-      DEBIAN_INCREMENT ${TESSERACT_PACKAGE_SOURCE_DEBIAN_INCREMENT}
-      DISTRIBUTIONS ${TESSERACT_PACKAGE_SOURCE_DISTRIBUTIONS})
+    cpack_debian_source_package(CHANGLELOG ${CMAKE_CURRENT_LIST_DIR}/CHANGELOG.rst
+                                UPLOAD ${TESSERACT_PACKAGE_SOURCE_UPLOAD}
+                                DPUT_HOST ${TESSERACT_PACKAGE_SOURCE_DPUT_HOST}
+                                DEBIAN_INCREMENT ${TESSERACT_PACKAGE_SOURCE_DEBIAN_INCREMENT}
+                                DISTRIBUTIONS ${TESSERACT_PACKAGE_SOURCE_DISTRIBUTIONS})
   endif()
 endif()
 
-
-
 ament_export_libraries(${PROJECT_NAME})
 ament_export_include_directories(include)
-ament_export_dependencies(
-  tesseract_common
-  Eigen3
-  console_bridge
-  octomap
-  assimp
-  tinyxml2_vendor
-  TinyXML2)
+ament_export_dependencies(tesseract_common Eigen3 console_bridge octomap assimp tinyxml2_vendor TinyXML2)
 ament_package()

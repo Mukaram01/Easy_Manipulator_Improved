@@ -11,6 +11,7 @@ find_package(tesseract_geometry REQUIRED CONFIG)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tinyxml2_vendor REQUIRED)
 find_package(TinyXML2 REQUIRED)
+
 function(_tesseract_collect_tinyxml2_libraries target out_var)
   if(NOT TARGET "${target}")
     set(${out_var} "" PARENT_SCOPE)
@@ -65,33 +66,19 @@ function(_tesseract_collect_tinyxml2_libraries target out_var)
 endfunction()
 
 set(TESSERACT_TINYXML2_LIBRARIES "")
+unset(TESSERACT_TINYXML2_TARGET)
+
 if(TARGET tinyxml2::tinyxml2)
   set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
-  _tesseract_collect_tinyxml2_libraries(tinyxml2::tinyxml2 _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
 elseif(TARGET TinyXML2::TinyXML2)
   set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
-  _tesseract_collect_tinyxml2_libraries(TinyXML2::TinyXML2 _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
 elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
   set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
-  _tesseract_collect_tinyxml2_libraries(tinyxml2_vendor::tinyxml2_vendor _tinyxml2_paths)
-  if(_tinyxml2_paths)
-    list(APPEND TESSERACT_TINYXML2_LIBRARIES ${_tinyxml2_paths})
-  endif()
-elseif(TinyXML2_LIBRARIES)
-  set(TESSERACT_TINYXML2_TARGET ${TinyXML2_LIBRARIES})
-  list(APPEND TESSERACT_TINYXML2_LIBRARIES ${TinyXML2_LIBRARIES})
-else()
-  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
 endif()
 
-if(TESSERACT_TINYXML2_LIBRARIES)
-  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET)
+  find_library(TINYXML2_LIB tinyxml2 REQUIRED)
+  set(TESSERACT_TINYXML2_TARGET "${TINYXML2_LIB}")
 endif()
 
 if(NOT TARGET tesseract::tesseract_common)
@@ -199,7 +186,7 @@ if(NOT COMMAND find_bullet)
     set(_base_dir "${base_dir}")
     set(_normalized)
     foreach(_entry IN LISTS ARGN)
-      if(_entry MATCHES "^\\$<")
+      if(_entry MATCHES "^\$<")
         list(APPEND _normalized "${_entry}")
       elseif(IS_ABSOLUTE "${_entry}")
         list(APPEND _normalized "${_entry}")
@@ -228,9 +215,7 @@ if(NOT COMMAND find_bullet)
       if(NOT TARGET Bullet3::Bullet)
         if(TARGET Bullet::Bullet)
           add_library(Bullet3::Bullet INTERFACE IMPORTED)
-          set_target_properties(
-            Bullet3::Bullet PROPERTIES
-            INTERFACE_LINK_LIBRARIES Bullet::Bullet)
+          set_target_properties(Bullet3::Bullet PROPERTIES INTERFACE_LINK_LIBRARIES Bullet::Bullet)
 
           get_target_property(_bullet_inc Bullet::Bullet INTERFACE_INCLUDE_DIRECTORIES)
           if(_bullet_inc)
@@ -254,9 +239,7 @@ if(NOT COMMAND find_bullet)
 
           if(_bullet_targets)
             add_library(Bullet3::Bullet INTERFACE IMPORTED)
-            set_target_properties(
-              Bullet3::Bullet PROPERTIES
-              INTERFACE_LINK_LIBRARIES "${_bullet_targets}")
+            set_target_properties(Bullet3::Bullet PROPERTIES INTERFACE_LINK_LIBRARIES "${_bullet_targets}")
 
             set(_include_dirs)
             foreach(tgt IN LISTS _bullet_targets)
@@ -272,8 +255,7 @@ if(NOT COMMAND find_bullet)
 
             if(_include_dirs)
               list(REMOVE_DUPLICATES _include_dirs)
-              set_target_properties(
-                Bullet3::Bullet PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_include_dirs}")
+              set_target_properties(Bullet3::Bullet PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_include_dirs}")
             endif()
           endif()
         endif()
@@ -291,10 +273,9 @@ if(NOT COMMAND find_bullet)
         add_library(Bullet3::Bullet INTERFACE IMPORTED)
         _tesseract_bullet_find_prefix_from_libraries(_bullet_prefix ${BULLET_LIBRARIES})
         _tesseract_bullet_normalize_includes(_bullet_includes "${_bullet_prefix}" ${BULLET_INCLUDE_DIRS})
-        set_target_properties(
-          Bullet3::Bullet PROPERTIES
-          INTERFACE_INCLUDE_DIRECTORIES "${_bullet_includes}"
-          INTERFACE_LINK_LIBRARIES "${BULLET_LIBRARIES}")
+        set_target_properties(Bullet3::Bullet PROPERTIES
+                              INTERFACE_INCLUDE_DIRECTORIES "${_bullet_includes}"
+                              INTERFACE_LINK_LIBRARIES "${BULLET_LIBRARIES}")
       else()
         message(FATAL_ERROR "Failed to locate Bullet libraries while configuring tesseract_collision")
       endif()
@@ -330,24 +311,21 @@ add_library(
   src/tesseract_gjk_pair_detector.cpp)
 target_link_libraries(
   ${PROJECT_NAME}_bullet
-  PUBLIC ${PROJECT_NAME}_core
-         Eigen3::Eigen
-         Bullet3::Bullet
-         ${TESSERACT_GEOM_TARGET}
-         console_bridge::console_bridge
-         octomap
-         octomath)
+  PUBLIC
+    ${PROJECT_NAME}_core
+    Eigen3::Eigen
+    Bullet3::Bullet
+    ${TESSERACT_GEOM_TARGET}
+    console_bridge::console_bridge
+    octomap
+    octomath
+    ${TESSERACT_TINYXML2_TARGET})
 target_compile_options(${PROJECT_NAME}_bullet PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
 target_cxx_version(${PROJECT_NAME}_bullet PUBLIC VERSION ${TESSERACT_CXX_VERSION})
 target_clang_tidy(${PROJECT_NAME}_bullet ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
-target_code_coverage(
-  ${PROJECT_NAME}_bullet
-  PRIVATE
-  ALL
-  EXCLUDE ${COVERAGE_EXCLUDE}
-  ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
+target_code_coverage(${PROJECT_NAME}_bullet PRIVATE ALL EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(
   ${PROJECT_NAME}_bullet
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -362,12 +340,7 @@ target_compile_options(${PROJECT_NAME}_bullet_factories PUBLIC ${TESSERACT_COMPI
 target_compile_definitions(${PROJECT_NAME}_bullet_factories PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
 target_cxx_version(${PROJECT_NAME}_bullet_factories PUBLIC VERSION ${TESSERACT_CXX_VERSION})
 target_clang_tidy(${PROJECT_NAME}_bullet_factories ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
-target_code_coverage(
-  ${PROJECT_NAME}_bullet_factories
-  PRIVATE
-  ALL
-  EXCLUDE ${COVERAGE_EXCLUDE}
-  ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
+target_code_coverage(${PROJECT_NAME}_bullet_factories PRIVATE ALL EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(
   ${PROJECT_NAME}_bullet_factories
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -379,49 +352,47 @@ if(HACD_LIBRARY)
   add_library(${PROJECT_NAME}_hacd_convex_decomposition src/convex_decomposition_hacd.cpp)
   target_link_libraries(
     ${PROJECT_NAME}_hacd_convex_decomposition
-    PUBLIC ${PROJECT_NAME}_bullet
-           Eigen3::Eigen
-           Bullet3::Bullet
-           ${TESSERACT_GEOM_TARGET}
-           console_bridge::console_bridge
-           ${HACD_LIBRARY})
+    PUBLIC
+      ${PROJECT_NAME}_bullet
+      Eigen3::Eigen
+      Bullet3::Bullet
+      ${TESSERACT_GEOM_TARGET}
+      console_bridge::console_bridge
+      ${HACD_LIBRARY})
   target_compile_options(${PROJECT_NAME}_hacd_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
   target_compile_options(${PROJECT_NAME}_hacd_convex_decomposition PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(${PROJECT_NAME}_hacd_convex_decomposition PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(${PROJECT_NAME}_hacd_convex_decomposition PUBLIC VERSION ${TESSERACT_CXX_VERSION})
   target_clang_tidy(${PROJECT_NAME}_hacd_convex_decomposition ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
-  target_code_coverage(
-    ${PROJECT_NAME}_hacd_convex_decomposition
-    PRIVATE
-    ALL
-    EXCLUDE ${COVERAGE_EXCLUDE}
-    ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
+  target_code_coverage(${PROJECT_NAME}_hacd_convex_decomposition PRIVATE ALL EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
   target_include_directories(
-    ${PROJECT_NAME}_hacd_convex_decomposition PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                     "$<INSTALL_INTERFACE:include>")
+    ${PROJECT_NAME}_hacd_convex_decomposition
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+           "$<INSTALL_INTERFACE:include>")
   install_targets(TARGETS ${PROJECT_NAME}_hacd_convex_decomposition COMPONENT bullet)
 endif()
 
-if(NOT MSVC)
+option(TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL "Build the create_convex_hull utility" ON)
+
+if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
   # Create target for creating convex hulls from meshes
   add_executable(create_convex_hull src/create_convex_hull.cpp)
   target_link_libraries(
     create_convex_hull
-    PUBLIC ${PROJECT_NAME}_core
-           ${PROJECT_NAME}_bullet
-           Bullet3::Bullet
-           Boost::boost
-           Boost::program_options
-           Eigen3::Eigen
-           ${TESSERACT_COMMON_TARGET}
-           ${TESSERACT_GEOM_TARGET}
-           console_bridge::console_bridge
-           octomap
-           octomath
-           ${TESSERACT_TINYXML2_TARGET}
-           ${TESSERACT_TINYXML2_LIBRARIES})
-  target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE}
-                                                    ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
+    PUBLIC
+      ${PROJECT_NAME}_core
+      ${PROJECT_NAME}_bullet
+      Bullet3::Bullet
+      Boost::boost
+      Boost::program_options
+      Eigen3::Eigen
+      ${TESSERACT_COMMON_TARGET}
+      ${TESSERACT_GEOM_TARGET}
+      console_bridge::console_bridge
+      octomap
+      octomath
+      ${TESSERACT_TINYXML2_TARGET})
+  target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE} ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(create_convex_hull PRIVATE VERSION ${TESSERACT_CXX_VERSION})
   target_clang_tidy(create_convex_hull ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
@@ -439,37 +410,33 @@ endif()
 set(CONTACT_MANAGERS_PLUGINS ${CONTACT_MANAGERS_PLUGINS} "${PROJECT_NAME}_bullet_factories" PARENT_SCOPE)
 
 # Mark cpp header files for installation
-install(
-  DIRECTORY include/${PROJECT_NAME}
-  DESTINATION include
-  COMPONENT bullet
-  FILES_MATCHING
-  PATTERN "*.h"
-  PATTERN "*.hpp"
-  PATTERN "*.inl"
-  PATTERN ".svn" EXCLUDE)
+install(DIRECTORY include/${PROJECT_NAME}
+        DESTINATION include
+        COMPONENT bullet
+        FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN "*.hpp"
+        PATTERN "*.inl"
+        PATTERN ".svn" EXCLUDE)
 
 # Plugin should not be export only installed
-install(
-  TARGETS ${PROJECT_NAME}_bullet_factories
-  COMPONENT bullet
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib)
+install(TARGETS ${PROJECT_NAME}_bullet_factories
+        COMPONENT bullet
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
 
-configure_component(
-  COMPONENT bullet
-  NAMESPACE tesseract
-  TARGETS ${PROJECT_NAME}_bullet
-  DEPENDENCIES "tesseract_collision COMPONENTS core"
-  CFG_EXTRAS cmake/bullet-extras.cmake)
+configure_component(COMPONENT bullet
+                    NAMESPACE tesseract
+                    TARGETS ${PROJECT_NAME}_bullet
+                    DEPENDENCIES "tesseract_collision COMPONENTS core"
+                    CFG_EXTRAS cmake/bullet-extras.cmake)
 
 if(TESSERACT_PACKAGE)
-  cpack_component(
-    COMPONENT bullet
-    VERSION ${pkg_extracted_version}
-    DESCRIPTION "Tesseract Collision bullet components"
-    COMPONENT_DEPENDS core
-    LINUX_DEPENDS "libbullet-dev" "libbullet-extras-dev"
-    WINDOWS_DEPENDS "libbullet-dev" "libbullet-extras-dev")
+  cpack_component(COMPONENT bullet
+                  VERSION ${pkg_extracted_version}
+                  DESCRIPTION "Tesseract Collision bullet components"
+                  COMPONENT_DEPENDS core
+                  LINUX_DEPENDS "libbullet-dev" "libbullet-extras-dev"
+                  WINDOWS_DEPENDS "libbullet-dev" "libbullet-extras-dev")
 endif()
