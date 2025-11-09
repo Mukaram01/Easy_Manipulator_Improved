@@ -15,6 +15,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 
 find_package(moveit_core REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
@@ -26,6 +27,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(trajectory_msgs REQUIRED)
+find_package(control_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 include_directories(
@@ -82,11 +84,14 @@ target_compile_features(moveit_cpp_grasp_execution_interface
 add_library(grasp_execution_default_plugins
   SHARED
   src/moveit2/executor/default_executor.cpp
+  src/moveit2/executor/dynamic_safety_async_executor.cpp
   src/gripper/dummy_gripper_driver.cpp
 )
 ament_target_dependencies(grasp_execution_default_plugins
   moveit_ros_planning_interface
   rclcpp
+  rclcpp_action
+  control_msgs
 )
 target_compile_features(grasp_execution_default_plugins
   PUBLIC cxx_std_17
