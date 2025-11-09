@@ -31,6 +31,9 @@
 #include "moveit/trajectory_processing/iterative_time_parameterization.h"
 #include "moveit/trajectory_processing/time_optimal_trajectory_generation.h"
 
+#include "moveit_msgs/msg/attached_collision_object.hpp"
+#include "moveit_msgs/msg/collision_object.hpp"
+
 #include "pluginlib/class_loader.hpp"
 
 namespace grasp_execution

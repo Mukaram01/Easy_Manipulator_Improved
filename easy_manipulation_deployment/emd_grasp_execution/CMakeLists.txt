@@ -44,6 +44,7 @@ add_library(grasp_execution_interface
 
 ament_target_dependencies(grasp_execution_interface
   emd_msgs
+  moveit_msgs
   rclcpp
   tf2
   tf2_ros
@@ -73,6 +74,7 @@ target_link_libraries(moveit_cpp_grasp_execution_interface
 
 ament_target_dependencies(moveit_cpp_grasp_execution_interface
   moveit_ros_planning_interface
+  moveit_msgs
   trajectory_msgs
   tf2_eigen
 )
