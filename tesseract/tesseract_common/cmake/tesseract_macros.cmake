@@ -191,10 +191,17 @@ function(tesseract_resolve_tinyxml2 out_target out_libraries)
 endfunction()
 
 function(configure_package)
-  cmake_parse_arguments(_TCP "" "NAMESPACE" "TARGETS" ${ARGN})
+  cmake_parse_arguments(
+    _TCP
+    ""
+    "NAMESPACE"
+    "TARGETS;DEPENDENCIES;CFG_EXTRAS"
+    ${ARGN})
   if(NOT _TCP_TARGETS)
     return()
   endif()
+
+  include(CMakePackageConfigHelpers)
 
   foreach(target ${_TCP_TARGETS})
     if(TARGET ${target})
@@ -202,6 +209,11 @@ function(configure_package)
       set(_tcp_has_library_target FALSE)
       if(_tcp_target_type AND NOT _tcp_target_type STREQUAL "EXECUTABLE")
         set(_tcp_has_library_target TRUE)
+      endif()
+
+      get_target_property(_tcp_target_source_dir ${target} SOURCE_DIR)
+      if(NOT _tcp_target_source_dir)
+        set(_tcp_target_source_dir ${CMAKE_CURRENT_SOURCE_DIR})
       endif()
 
       if(_TCP_NAMESPACE)
@@ -224,6 +236,64 @@ function(configure_package)
         EXPORT ${target}_export
         NAMESPACE ${_TCP_NAMESPACE}::
         FILE ${target}-export.cmake)
+
+      set(_tcp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_cmake")
+      file(MAKE_DIRECTORY "${_tcp_config_dir}")
+
+      set(_tcp_config_file "${_tcp_config_dir}/${target}Config.cmake")
+      file(WRITE "${_tcp_config_file}" "include(CMakeFindDependencyMacro)\n")
+      foreach(_tcp_dependency IN LISTS _TCP_DEPENDENCIES)
+        if(_tcp_dependency)
+          file(APPEND "${_tcp_config_file}" "find_dependency(${_tcp_dependency})\n")
+        endif()
+      endforeach()
+      file(APPEND
+        "${_tcp_config_file}"
+        "include(\"\${CMAKE_CURRENT_LIST_DIR}/${target}-export.cmake\")\n")
+
+      set(_tcp_extra_files "")
+      foreach(_tcp_extra IN LISTS _TCP_CFG_EXTRAS)
+        if(NOT _tcp_extra)
+          continue()
+        endif()
+        if(NOT IS_ABSOLUTE "${_tcp_extra}")
+          set(_tcp_extra_source "${_tcp_target_source_dir}/${_tcp_extra}")
+        else()
+          set(_tcp_extra_source "${_tcp_extra}")
+        endif()
+        if(NOT EXISTS "${_tcp_extra_source}")
+          message(FATAL_ERROR "configure_package could not locate extra file ${_tcp_extra_source}")
+        endif()
+        get_filename_component(_tcp_extra_filename "${_tcp_extra_source}" NAME)
+        set(_tcp_extra_destination "${_tcp_config_dir}/${_tcp_extra_filename}")
+        configure_file("${_tcp_extra_source}" "${_tcp_extra_destination}" COPYONLY)
+        list(APPEND _tcp_extra_files "${_tcp_extra_destination}")
+        file(APPEND
+          "${_tcp_config_file}"
+          "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_tcp_extra_filename}\")\n")
+      endforeach()
+
+      set(_tcp_target_version "")
+      get_target_property(_tcp_target_version ${target} VERSION)
+      if(NOT _tcp_target_version OR _tcp_target_version STREQUAL "NOTFOUND")
+        set(_tcp_target_version "${PROJECT_VERSION}")
+      endif()
+      if(NOT _tcp_target_version)
+        set(_tcp_target_version "0.0.0")
+      endif()
+
+      set(_tcp_config_version_file "${_tcp_config_dir}/${target}ConfigVersion.cmake")
+      write_basic_package_version_file(
+        "${_tcp_config_version_file}"
+        VERSION "${_tcp_target_version}"
+        COMPATIBILITY SameMajorVersion)
+
+      set(_tcp_install_files "${_tcp_config_file}" "${_tcp_config_version_file}")
+      if(_tcp_extra_files)
+        list(APPEND _tcp_install_files ${_tcp_extra_files})
+      endif()
+      install(FILES ${_tcp_install_files} DESTINATION lib/cmake/${target})
+
       if(COMMAND ament_export_targets)
         if(_TCP_NAMESPACE)
           if(_tcp_has_library_target)
