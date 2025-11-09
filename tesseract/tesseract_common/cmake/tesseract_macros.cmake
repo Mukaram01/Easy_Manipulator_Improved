@@ -230,6 +230,7 @@ function(configure_package)
       install(TARGETS ${target} EXPORT ${target}_export)
       install(
         EXPORT ${target}_export
+        FILE ${target}-export.cmake
         NAMESPACE ${_TCP_NAMESPACE}::
         DESTINATION lib/cmake/${target})
       export(
