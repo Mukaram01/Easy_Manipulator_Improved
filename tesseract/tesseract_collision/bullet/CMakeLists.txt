@@ -81,6 +81,16 @@ if(NOT TESSERACT_TINYXML2_TARGET)
   set(TESSERACT_TINYXML2_TARGET "${TINYXML2_LIB}")
 endif()
 
+if(TESSERACT_TINYXML2_TARGET)
+  if(COMMAND _tesseract_collect_tinyxml2_libraries)
+    _tesseract_collect_tinyxml2_libraries("${TESSERACT_TINYXML2_TARGET}" TESSERACT_TINYXML2_LIBRARIES)
+  endif()
+
+  if(NOT TESSERACT_TINYXML2_LIBRARIES)
+    list(APPEND TESSERACT_TINYXML2_LIBRARIES "${TESSERACT_TINYXML2_TARGET}")
+  endif()
+endif()
+
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
     add_library(tesseract::tesseract_common ALIAS tesseract_common::tesseract_common)
@@ -391,7 +401,8 @@ if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
       console_bridge::console_bridge
       octomap
       octomath
-      ${TESSERACT_TINYXML2_TARGET})
+      ${TESSERACT_TINYXML2_TARGET}
+      ${TESSERACT_TINYXML2_LIBRARIES})
   target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE} ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(create_convex_hull PRIVATE VERSION ${TESSERACT_CXX_VERSION})
