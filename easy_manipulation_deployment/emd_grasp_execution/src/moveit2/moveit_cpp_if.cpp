@@ -294,7 +294,10 @@ bool MoveitCppGraspExecution::init(
   const std::string & execution_type,
   const std::string & controller_name)
 {
-  bool result = this->init(planning_group);
+  if (!this->init(planning_group)) {
+    return false;
+  }
+
   // Reset the default ee link
   std::string & default_ee_link = arms_[planning_group].default_ee.link;
   if (ee_link != default_ee_link) {
@@ -306,8 +309,15 @@ bool MoveitCppGraspExecution::init(
     default_ee_link = ee_link;
   }
 
-  this->load_execution_method(execution_method, execution_type, controller_name);
-  return result;
+  bool execution_loaded = this->load_execution_method(
+    planning_group, execution_method, execution_type, controller_name);
+  if (!execution_loaded) {
+    RCLCPP_ERROR(
+      LOGGER,
+      "Failed to load execution method '%s' for group '%s'",
+      execution_method.c_str(), planning_group.c_str());
+  }
+  return execution_loaded;
 }
 
 
