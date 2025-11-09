@@ -20,6 +20,18 @@ find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(octomap REQUIRED)
 find_package(assimp REQUIRED)
+find_package(
+  Boost REQUIRED
+  COMPONENTS serialization)
+find_package(tinyxml2_vendor REQUIRED)
+find_package(TinyXML2 REQUIRED)
+if(TARGET tinyxml2::tinyxml2)
+  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
+elseif(TARGET TinyXML2::TinyXML2)
+  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
+else()
+  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+endif()
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
@@ -141,7 +153,9 @@ target_link_libraries(
          console_bridge::console_bridge
          octomap
          octomath
-         assimp::assimp)
+         assimp::assimp
+         Boost::serialization
+         ${TESSERACT_TINYXML2_TARGET})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_ASSIMP_USE_PBRMATERIAL})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
