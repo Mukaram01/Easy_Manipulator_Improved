@@ -1,3 +1,17 @@
+find_package(tinyxml2_vendor REQUIRED)
+find_package(TinyXML2 REQUIRED)
+if(TARGET tinyxml2::tinyxml2)
+  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
+elseif(TARGET TinyXML2::TinyXML2)
+  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
+elseif(TARGET tinyxml2_vendor::tinyxml2_vendor)
+  set(TESSERACT_TINYXML2_TARGET tinyxml2_vendor::tinyxml2_vendor)
+elseif(TinyXML2_LIBRARIES)
+  set(TESSERACT_TINYXML2_TARGET ${TinyXML2_LIBRARIES})
+else()
+  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+endif()
+
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
     add_library(tesseract::tesseract_common ALIAS tesseract_common::tesseract_common)
@@ -35,6 +49,7 @@ target_link_libraries(
          ${PROJECT_NAME}_bullet
          Eigen3::Eigen
          ${TESSERACT_GEOM_TARGET}
+         ${TESSERACT_TINYXML2_TARGET}
          console_bridge::console_bridge)
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
@@ -65,6 +80,7 @@ if(NOT MSVC)
             Eigen3::Eigen
             ${TESSERACT_COMMON_TARGET}
             ${TESSERACT_GEOM_TARGET}
+            ${TESSERACT_TINYXML2_TARGET}
             console_bridge::console_bridge
             Threads::Threads)
   target_compile_options(create_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE}
