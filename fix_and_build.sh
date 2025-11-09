@@ -156,6 +156,24 @@ source_install() {
     # extend CMAKE_PREFIX_PATH even when sourced multiple times.  Some of the
     # vendored Tesseract packages only provide a hook script and do not rely on
     # ament to evaluate it, so manually source any available hooks here.
+    if ! declare -F _colcon_prepend_unique_value >/dev/null; then
+      _colcon_prepend_unique_value() {
+        local listname="$1"
+        local value="$2"
+        local existing
+        existing="$(eval "printf '%s' \"\${$listname:-}\"")"
+        if [[ -n "$existing" ]]; then
+          case ":$existing:" in
+            *":$value:"*) return 0 ;;
+          esac
+        fi
+        if [[ -n "$existing" ]]; then
+          eval "export ${listname}=\"$value:$existing\""
+        else
+          eval "export ${listname}=\"$value\""
+        fi
+      }
+    fi
     if compgen -G "install/*/share/*/hook/cmake_prefix_path.sh" >/dev/null; then
       # shellcheck disable=SC1090
       for hook in install/*/share/*/hook/cmake_prefix_path.sh; do
