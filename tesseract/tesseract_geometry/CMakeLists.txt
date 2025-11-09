@@ -58,6 +58,29 @@ if(TESSERACT_TINYXML2_LIBRARIES)
   list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
 endif()
 
+set(TESSERACT_TINYXML2_LINK_LIBRARIES "")
+foreach(_candidate tinyxml2::tinyxml2 TinyXML2::TinyXML2 tinyxml2_vendor::tinyxml2_vendor)
+  if(TARGET ${_candidate})
+    list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${_candidate})
+  endif()
+endforeach()
+
+if(TESSERACT_TINYXML2_TARGET)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_TARGET})
+endif()
+
+if(TESSERACT_TINYXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_LIBRARIES})
+endif()
+
+if(TinyXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TinyXML2_LIBRARIES})
+endif()
+
+if(TESSERACT_TINYXML2_LINK_LIBRARIES)
+  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LINK_LIBRARIES)
+endif()
+
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
   set_target_properties(console_bridge::console_bridge PROPERTIES
@@ -177,8 +200,7 @@ target_link_libraries(
     octomath
     assimp::assimp
     Boost::serialization
-    ${TESSERACT_TINYXML2_TARGET}
-    ${TESSERACT_TINYXML2_LIBRARIES})
+    ${TESSERACT_TINYXML2_LINK_LIBRARIES})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_ASSIMP_USE_PBRMATERIAL})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
