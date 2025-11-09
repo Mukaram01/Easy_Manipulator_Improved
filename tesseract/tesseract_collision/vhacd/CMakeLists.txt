@@ -50,7 +50,8 @@ target_code_coverage(
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(
   ${PROJECT_NAME}_vhacd_convex_decomposition PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                    "$<INSTALL_INTERFACE:include>")
+                                                   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../bullet/include>"
+                                                   "$<INSTALL_INTERFACE:include>")
 
 if(NOT MSVC)
   find_package(Threads REQUIRED)
