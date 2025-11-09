@@ -9,6 +9,15 @@ cmake_minimum_required(VERSION 3.10)
 find_package(tesseract_common REQUIRED CONFIG)
 find_package(tesseract_geometry REQUIRED CONFIG)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
+find_package(tinyxml2_vendor REQUIRED)
+find_package(TinyXML2 REQUIRED)
+if(TARGET tinyxml2::tinyxml2)
+  set(TESSERACT_TINYXML2_TARGET tinyxml2::tinyxml2)
+elseif(TARGET TinyXML2::TinyXML2)
+  set(TESSERACT_TINYXML2_TARGET TinyXML2::TinyXML2)
+else()
+  message(FATAL_ERROR "tinyxml2 target not found after find_package(TinyXML2)")
+endif()
 
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
@@ -333,7 +342,8 @@ if(NOT MSVC)
            ${TESSERACT_GEOM_TARGET}
            console_bridge::console_bridge
            octomap
-           octomath)
+           octomath
+           ${TESSERACT_TINYXML2_TARGET})
   target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE}
                                                     ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
