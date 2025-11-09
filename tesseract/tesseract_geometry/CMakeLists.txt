@@ -238,5 +238,7 @@ ament_export_dependencies(
   Eigen3
   console_bridge
   octomap
-  assimp)
+  assimp
+  tinyxml2_vendor
+  TinyXML2)
 ament_package()
