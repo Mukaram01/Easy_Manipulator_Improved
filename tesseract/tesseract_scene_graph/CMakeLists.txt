@@ -183,6 +183,29 @@ configure_package(
     tesseract_common
   CFG_EXTRAS cmake/tesseract_scene_graph-extras.cmake)
 
+# Colcon does not automatically extend the CMAKE_PREFIX_PATH for plain CMake
+# packages.  Install the standard environment hook so downstream packages such
+# as tesseract_urdf can locate the exported package configuration files without
+# additional manual configuration.
+set(_hook_directory share/${PROJECT_NAME}/hook)
+configure_file(
+  ${CMAKE_CURRENT_LIST_DIR}/cmake/cmake_prefix_path.sh.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.sh
+  @ONLY)
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.sh
+  DESTINATION ${_hook_directory}
+  RENAME cmake_prefix_path.sh)
+
+configure_file(
+  ${CMAKE_CURRENT_LIST_DIR}/cmake/cmake_prefix_path.dsv.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.dsv
+  @ONLY)
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.dsv
+  DESTINATION ${_hook_directory}
+  RENAME cmake_prefix_path.dsv)
+
 # Mark cpp header files for installation
 install(
   DIRECTORY include/${PROJECT_NAME}
