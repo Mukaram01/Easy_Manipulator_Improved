@@ -45,6 +45,11 @@
 #include "geometric_shapes/mesh_operations.h"
 #include "geometric_shapes/shape_operations.h"
 
+#include "moveit_msgs/msg/attached_collision_object.hpp"
+#include "moveit_msgs/msg/collision_object.hpp"
+#include "moveit_msgs/msg/constraints.hpp"
+#include "moveit_msgs/msg/robot_trajectory.hpp"
+
 namespace grasp_execution
 {
 

@@ -18,6 +18,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_execution/moveit2/executor/default_executor.hpp"
+#include "moveit_msgs/msg/robot_trajectory.hpp"
 
 namespace grasp_execution
 {
