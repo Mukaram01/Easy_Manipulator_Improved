@@ -101,6 +101,29 @@ if(TESSERACT_TINYXML2_LIBRARIES)
   list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LIBRARIES)
 endif()
 
+set(TESSERACT_TINYXML2_LINK_LIBRARIES "")
+foreach(_candidate tinyxml2::tinyxml2 TinyXML2::TinyXML2 tinyxml2_vendor::tinyxml2_vendor)
+  if(TARGET ${_candidate})
+    list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${_candidate})
+  endif()
+endforeach()
+
+if(TESSERACT_TINYXML2_TARGET)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_TARGET})
+endif()
+
+if(TESSERACT_TINYXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TESSERACT_TINYXML2_LIBRARIES})
+endif()
+
+if(TinyXML2_LIBRARIES)
+  list(APPEND TESSERACT_TINYXML2_LINK_LIBRARIES ${TinyXML2_LIBRARIES})
+endif()
+
+if(TESSERACT_TINYXML2_LINK_LIBRARIES)
+  list(REMOVE_DUPLICATES TESSERACT_TINYXML2_LINK_LIBRARIES)
+endif()
+
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
     add_library(tesseract::tesseract_common ALIAS tesseract_common::tesseract_common)
@@ -339,7 +362,7 @@ target_link_libraries(
     console_bridge::console_bridge
     octomap
     octomath
-    ${TESSERACT_TINYXML2_TARGET})
+    ${TESSERACT_TINYXML2_LINK_LIBRARIES})
 target_compile_options(${PROJECT_NAME}_bullet PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
@@ -411,8 +434,7 @@ if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
       console_bridge::console_bridge
       octomap
       octomath
-      ${TESSERACT_TINYXML2_TARGET}
-      ${TESSERACT_TINYXML2_LIBRARIES})
+      ${TESSERACT_TINYXML2_LINK_LIBRARIES})
   target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE} ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(create_convex_hull PRIVATE VERSION ${TESSERACT_CXX_VERSION})
