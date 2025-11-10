@@ -15,6 +15,7 @@ if(WIN32)
 endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake")
 
 find_package(
   Boost REQUIRED
