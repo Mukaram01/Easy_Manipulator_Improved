@@ -9,6 +9,8 @@ if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
+include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
+
 find_package(Boost REQUIRED COMPONENTS graph)
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
