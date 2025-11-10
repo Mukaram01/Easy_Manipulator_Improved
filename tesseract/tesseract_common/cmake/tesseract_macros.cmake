@@ -129,7 +129,7 @@ function(_tesseract_collect_tinyxml2_libraries target out_var)
 endfunction()
 
 function(tesseract_resolve_tinyxml2 out_target out_libraries)
-  find_package(tinyxml2_vendor REQUIRED)
+  find_package(tinyxml2_vendor QUIET)
   find_package(TinyXML2 REQUIRED)
 
   set(_resolved_target "")

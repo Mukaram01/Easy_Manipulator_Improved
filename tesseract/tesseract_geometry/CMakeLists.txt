@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.15.0)
 
-find_package(ament_cmake REQUIRED)
+include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_cmake_boilerplate.cmake")
+tesseract_initialize_boilerplate_support()
+if(NOT COMMAND extract_package_metadata)
+  message(FATAL_ERROR "Failed to load tesseract_cmake_boilerplate.cmake; extract_package_metadata is unavailable")
+endif()
 
 # Extract package name and version
-find_package(ros_industrial_cmake_boilerplate REQUIRED)
-extract_package_metadata(pkg)
+extract_package_metadata(pkg PACKAGE_XML "${CMAKE_CURRENT_LIST_DIR}/package.xml")
 project(${pkg_extracted_name} VERSION ${pkg_extracted_version} LANGUAGES CXX)
 
 if(WIN32)
@@ -13,7 +16,7 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
 
-include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
+include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake")
 
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)

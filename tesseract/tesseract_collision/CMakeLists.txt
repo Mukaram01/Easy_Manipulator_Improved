@@ -1,8 +1,15 @@
 cmake_minimum_required(VERSION 3.15.0)
 
+include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_cmake_boilerplate.cmake")
+tesseract_initialize_boilerplate_support()
+if(NOT COMMAND extract_package_metadata)
+  message(FATAL_ERROR "Failed to load tesseract_cmake_boilerplate.cmake; extract_package_metadata is unavailable")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake")
+
 # Extract package name and version
-find_package(ros_industrial_cmake_boilerplate REQUIRED)
-extract_package_metadata(pkg)
+extract_package_metadata(pkg PACKAGE_XML "${CMAKE_CURRENT_LIST_DIR}/package.xml")
 project(${pkg_extracted_name} VERSION ${pkg_extracted_version} LANGUAGES CXX)
 
 if(WIN32)
@@ -11,9 +18,13 @@ endif()
 
 # All of these are used by all components so to avoid having them in each they are include here
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem system program_options serialization)
+find_package(
+  Boost REQUIRED
+  COMPONENTS filesystem system program_options serialization stacktrace_backtrace stacktrace_noop)
 find_package(octomap REQUIRED)
 find_package(console_bridge REQUIRED)
+find_package(assimp REQUIRED)
+find_package(TinyXML2 REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(yaml-cpp REQUIRED)
