@@ -19,7 +19,22 @@ find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(octomap REQUIRED)
 find_package(assimp REQUIRED)
-find_package(Boost REQUIRED COMPONENTS serialization)
+if(NOT APPLE)
+  find_package(
+    Boost REQUIRED
+    COMPONENTS system
+               filesystem
+               serialization
+               stacktrace_noop
+    OPTIONAL_COMPONENTS stacktrace_backtrace stacktrace_basic)
+else()
+  find_package(
+    Boost REQUIRED
+    COMPONENTS system
+               filesystem
+               serialization
+               stacktrace_noop)
+endif()
 tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
 if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
   message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_geometry")
