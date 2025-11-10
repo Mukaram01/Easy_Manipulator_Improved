@@ -47,6 +47,8 @@ target_link_libraries(
          Boost::system
          Boost::filesystem
          Boost::serialization
+         ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          yaml-cpp
          octomap)
 target_compile_options(${PROJECT_NAME}_core PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})

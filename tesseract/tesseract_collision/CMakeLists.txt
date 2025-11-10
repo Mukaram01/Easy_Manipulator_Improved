@@ -16,6 +16,9 @@ if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
+# Ensure bundled CMake modules are available ahead of dependency discovery
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake")
+
 # All of these are used by all components so to avoid having them in each they are include here
 find_package(Eigen3 REQUIRED)
 find_package(
@@ -24,7 +27,10 @@ find_package(
 find_package(octomap REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(assimp REQUIRED)
-find_package(TinyXML2 REQUIRED)
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision")
+endif()
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(yaml-cpp REQUIRED)
