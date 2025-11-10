@@ -27,6 +27,11 @@ find_package(assimp REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library to satisfy tesseract_scene_graph")
+endif()
+
 set(_tesseract_geometry_candidate_targets
     tesseract_geometry::tesseract_geometry
     tesseract::tesseract_geometry
@@ -159,6 +164,8 @@ target_link_libraries(
   PUBLIC Boost::boost
          Boost::graph
          Eigen3::Eigen
+         ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          ${TESSERACT_GEOMETRY_TARGET}
          ${TESSERACT_COMMON_TARGET}
          orocos-kdl
@@ -188,6 +195,7 @@ configure_package(
   DEPENDENCIES
     "Boost COMPONENTS graph"
     Eigen3
+    tinyxml2_vendor
     console_bridge
     orocos_kdl
     tesseract_geometry
