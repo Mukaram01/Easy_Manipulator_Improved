@@ -24,7 +24,6 @@ find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(assimp REQUIRED)
-find_package(TinyXML2 REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 
