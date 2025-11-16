@@ -103,55 +103,24 @@ set(_tesseract_core_config "${_tesseract_core_config_dir}/${PROJECT_NAME}_coreCo
 if(NOT EXISTS "${_tesseract_core_config}")
   message(WARNING "configure_component() did not generate ${PROJECT_NAME}_coreConfig.cmake; synthesizing fallback config")
 
-  include(CMakePackageConfigHelpers)
-  file(MAKE_DIRECTORY "${_tesseract_core_config_dir}")
-
-  # configure_package() installs the export file as
-  # "${PROJECT_NAME}_core-export.cmake" in the same directory as the
-  # generated config.  Point the fallback config at that file instead of
-  # the legacy core-targets.cmake helper so the include statement matches
-  # the actual export produced during the build.
-  set(CORE_TARGETS_FILENAME "${PROJECT_NAME}_core-export.cmake")
-  set(CORE_FIND_DEPENDENCIES
-      "include(CMakeFindDependencyMacro)\n"
-      "find_dependency(Eigen3)\n"
-      "find_dependency(console_bridge)\n"
-      "find_dependency(tesseract_geometry)\n"
-      "find_dependency(tesseract_common)\n"
-      "find_dependency(yaml-cpp)\n"
-      "find_dependency(octomap)\n"
-      "find_dependency(Boost COMPONENTS filesystem system program_options serialization)\n")
-  string(CONCAT CORE_FIND_DEPENDENCIES ${CORE_FIND_DEPENDENCIES})
-  configure_file(
-    ${CMAKE_CURRENT_LIST_DIR}/cmake/core-config-fallback.cmake.in
-    ${_tesseract_core_config}
-    @ONLY)
-
-  set(_tesseract_core_version_file "${_tesseract_core_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake")
-  set(_tesseract_core_version "${pkg_extracted_version}")
-  if(NOT _tesseract_core_version)
-    set(_tesseract_core_version "${PROJECT_VERSION}")
-  endif()
-  if(NOT _tesseract_core_version)
-    set(_tesseract_core_version "0.0.0")
-  endif()
-  write_basic_package_version_file(
-    "${_tesseract_core_version_file}"
-    VERSION "${_tesseract_core_version}"
-    COMPATIBILITY SameMajorVersion)
-
-  install(
-    FILES
-      "${_tesseract_core_config}"
-      "${_tesseract_core_version_file}"
-    DESTINATION
-      lib/cmake/${PROJECT_NAME}_core
-    COMPONENT
-      core)
+  # configure_component() from older ros_industrial_cmake_boilerplate
+  # releases occasionally fails to export component libraries.  Fall
+  # back to the local configure_package() helper so the generated config
+  # and export files are always installed.
+  configure_package(
+    NAMESPACE tesseract
+    TARGETS ${PROJECT_NAME}_core
+    DEPENDENCIES
+      Eigen3
+      console_bridge
+      tesseract_geometry
+      tesseract_common
+      yaml-cpp
+      octomap
+      "Boost COMPONENTS filesystem system program_options serialization"
+    CFG_EXTRAS cmake/core-extras.cmake)
 endif()
 
-unset(CORE_FIND_DEPENDENCIES)
-unset(CORE_TARGETS_FILENAME)
 unset(_tesseract_core_config)
 unset(_tesseract_core_config_dir)
 
