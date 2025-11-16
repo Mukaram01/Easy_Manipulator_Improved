@@ -190,14 +190,133 @@ function(tesseract_resolve_tinyxml2 out_target out_libraries)
   set(${out_libraries} "${_resolved_libraries}" PARENT_SCOPE)
 endfunction()
 
+function(_tesseract_configure_meta_package)
+  cmake_parse_arguments(
+    _TCMP
+    ""
+    "COMPONENT"
+    "SUPPORTED_COMPONENTS;DEPENDENCIES;CFG_EXTRAS"
+    ${ARGN})
+
+  if(NOT _TCMP_COMPONENT)
+    return()
+  endif()
+
+  if(NOT PROJECT_NAME)
+    message(FATAL_ERROR "configure_package COMPONENT requires PROJECT_NAME to be set")
+  endif()
+
+  set(_tcmp_package "${PROJECT_NAME}")
+  set(_tcmp_supported_components)
+  foreach(_tcmp_component IN LISTS _TCMP_SUPPORTED_COMPONENTS)
+    if(_tcmp_component)
+      list(APPEND _tcmp_supported_components "${_tcmp_component}")
+    endif()
+  endforeach()
+  if(NOT _tcmp_supported_components)
+    list(APPEND _tcmp_supported_components "${_TCMP_COMPONENT}")
+  endif()
+  list(REMOVE_DUPLICATES _tcmp_supported_components)
+
+  set(_tcmp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${_tcmp_package}_cmake")
+  file(MAKE_DIRECTORY "${_tcmp_config_dir}")
+  set(_tcmp_config_file "${_tcmp_config_dir}/${_tcmp_package}Config.cmake")
+  file(WRITE "${_tcmp_config_file}" "include(CMakeFindDependencyMacro)\n")
+
+  foreach(_tcmp_dependency IN LISTS _TCMP_DEPENDENCIES)
+    if(_tcmp_dependency)
+      file(APPEND "${_tcmp_config_file}" "find_dependency(${_tcmp_dependency})\n")
+    endif()
+  endforeach()
+
+  file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_supported_components")
+  foreach(_tcmp_component IN LISTS _tcmp_supported_components)
+    file(APPEND "${_tcmp_config_file}" " \"${_tcmp_component}\"")
+  endforeach()
+  file(APPEND "${_tcmp_config_file}" ")\n")
+  file(APPEND "${_tcmp_config_file}" "if(NOT ${_tcmp_package}_FIND_COMPONENTS)\n")
+  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FIND_COMPONENTS \"${_TCMP_COMPONENT}\")\n")
+  file(APPEND "${_tcmp_config_file}" "endif()\n")
+  file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_missing_components)\n")
+  file(APPEND "${_tcmp_config_file}" "foreach(_component IN LISTS ${_tcmp_package}_FIND_COMPONENTS)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "  list(FIND _${_tcmp_package}_supported_components \"\${_component}\" _component_index)\n")
+  file(APPEND "${_tcmp_config_file}" "  if(_component_index EQUAL -1)\n")
+  file(APPEND "${_tcmp_config_file}" "    list(APPEND _${_tcmp_package}_missing_components \"\${_component}\")\n")
+  file(APPEND "${_tcmp_config_file}" "    continue()\n")
+  file(APPEND "${_tcmp_config_file}" "  endif()\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "  find_dependency(${_tcmp_package}_\${_component})\n")
+  file(APPEND "${_tcmp_config_file}" "endforeach()\n")
+  file(APPEND "${_tcmp_config_file}" "if(_${_tcmp_package}_missing_components)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "  list(JOIN _${_tcmp_package}_missing_components \", \" _${_tcmp_package}_missing_components_str)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "  set(${_tcmp_package}_NOT_FOUND_MESSAGE \"Unsupported components requested: \${_${_tcmp_package}_missing_components_str}\")\n")
+  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FOUND FALSE)\n")
+  file(APPEND "${_tcmp_config_file}" "  return()\n")
+  file(APPEND "${_tcmp_config_file}" "endif()\n")
+  file(APPEND "${_tcmp_config_file}" "set(${_tcmp_package}_FOUND TRUE)\n")
+
+  set(_tcmp_extra_files "")
+  foreach(_tcmp_extra IN LISTS _TCMP_CFG_EXTRAS)
+    if(NOT _tcmp_extra)
+      continue()
+    endif()
+    if(NOT IS_ABSOLUTE "${_tcmp_extra}")
+      set(_tcmp_extra_source "${CMAKE_CURRENT_SOURCE_DIR}/${_tcmp_extra}")
+    else()
+      set(_tcmp_extra_source "${_tcmp_extra}")
+    endif()
+    if(NOT EXISTS "${_tcmp_extra_source}")
+      message(FATAL_ERROR "configure_package could not locate extra file ${_tcmp_extra_source}")
+    endif()
+    get_filename_component(_tcmp_extra_filename "${_tcmp_extra_source}" NAME)
+    set(_tcmp_extra_destination "${_tcmp_config_dir}/${_tcmp_extra_filename}")
+    configure_file("${_tcmp_extra_source}" "${_tcmp_extra_destination}" COPYONLY)
+    list(APPEND _tcmp_extra_files "${_tcmp_extra_destination}")
+    file(APPEND
+      "${_tcmp_config_file}"
+      "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_tcmp_extra_filename}\")\n")
+  endforeach()
+
+  set(_tcmp_version "${PROJECT_VERSION}")
+  if(NOT _tcmp_version)
+    set(_tcmp_version "0.0.0")
+  endif()
+  set(_tcmp_version_file "${_tcmp_config_dir}/${_tcmp_package}ConfigVersion.cmake")
+  write_basic_package_version_file(
+    "${_tcmp_version_file}"
+    VERSION "${_tcmp_version}"
+    COMPATIBILITY SameMajorVersion)
+
+  set(_tcmp_install_files "${_tcmp_config_file}" "${_tcmp_version_file}")
+  if(_tcmp_extra_files)
+    list(APPEND _tcmp_install_files ${_tcmp_extra_files})
+  endif()
+
+  install(FILES ${_tcmp_install_files} DESTINATION lib/cmake/${_tcmp_package})
+endfunction()
+
 function(configure_package)
   cmake_parse_arguments(
     _TCP
     ""
-    "NAMESPACE"
-    "TARGETS;DEPENDENCIES;CFG_EXTRAS"
+    "NAMESPACE;COMPONENT"
+    "TARGETS;DEPENDENCIES;CFG_EXTRAS;SUPPORTED_COMPONENTS"
     ${ARGN})
   if(NOT _TCP_TARGETS)
+    if(_TCP_COMPONENT)
+      _tesseract_configure_meta_package(
+        COMPONENT ${_TCP_COMPONENT}
+        SUPPORTED_COMPONENTS ${_TCP_SUPPORTED_COMPONENTS}
+        DEPENDENCIES ${_TCP_DEPENDENCIES}
+        CFG_EXTRAS ${_TCP_CFG_EXTRAS})
+    endif()
     return()
   endif()
 
