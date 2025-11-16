@@ -462,13 +462,39 @@ set(_tesseract_bullet_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_bu
 set(_tesseract_bullet_config "${_tesseract_bullet_config_dir}/${PROJECT_NAME}_bulletConfig.cmake")
 if(NOT EXISTS "${_tesseract_bullet_config}")
   message(WARNING "configure_component() did not generate ${PROJECT_NAME}_bulletConfig.cmake; synthesizing fallback config")
-  configure_package(
-    NAMESPACE tesseract
-    TARGETS ${PROJECT_NAME}_bullet
-    DEPENDENCIES "tesseract_collision COMPONENTS core"
-    CFG_EXTRAS cmake/bullet-extras.cmake)
+
+  include(CMakePackageConfigHelpers)
+  file(MAKE_DIRECTORY "${_tesseract_bullet_config_dir}")
+
+  set(BULLET_TARGETS_FILENAME "bullet-targets.cmake")
+  set(BULLET_FIND_DEPENDENCIES
+      "include(CMakeFindDependencyMacro)\nfind_dependency(tesseract_collision COMPONENTS core)\n")
+  configure_file(
+    ${CMAKE_CURRENT_LIST_DIR}/cmake/bullet-config-fallback.cmake.in
+    ${_tesseract_bullet_config}
+    @ONLY)
+
+  set(_tesseract_bullet_version_file "${_tesseract_bullet_config_dir}/${PROJECT_NAME}_bulletConfigVersion.cmake")
+  set(_tesseract_bullet_version "${pkg_extracted_version}")
+  if(NOT _tesseract_bullet_version)
+    set(_tesseract_bullet_version "${PROJECT_VERSION}")
+  endif()
+  if(NOT _tesseract_bullet_version)
+    set(_tesseract_bullet_version "0.0.0")
+  endif()
+  write_basic_package_version_file(
+    "${_tesseract_bullet_version_file}"
+    VERSION "${_tesseract_bullet_version}"
+    COMPATIBILITY SameMajorVersion)
+
+  install(
+    FILES "${_tesseract_bullet_config}" "${_tesseract_bullet_version_file}"
+    DESTINATION lib/cmake/${PROJECT_NAME}
+    COMPONENT bullet)
 endif()
 
+unset(BULLET_FIND_DEPENDENCIES)
+unset(BULLET_TARGETS_FILENAME)
 unset(_tesseract_bullet_config)
 unset(_tesseract_bullet_config_dir)
 
