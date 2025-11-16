@@ -106,7 +106,12 @@ if(NOT EXISTS "${_tesseract_core_config}")
   include(CMakePackageConfigHelpers)
   file(MAKE_DIRECTORY "${_tesseract_core_config_dir}")
 
-  set(CORE_TARGETS_FILENAME "core-targets.cmake")
+  # configure_package() installs the export file as
+  # "${PROJECT_NAME}_core-export.cmake" in the same directory as the
+  # generated config.  Point the fallback config at that file instead of
+  # the legacy core-targets.cmake helper so the include statement matches
+  # the actual export produced during the build.
+  set(CORE_TARGETS_FILENAME "${PROJECT_NAME}_core-export.cmake")
   set(CORE_FIND_DEPENDENCIES
       "include(CMakeFindDependencyMacro)\n"
       "find_dependency(Eigen3)\n"
