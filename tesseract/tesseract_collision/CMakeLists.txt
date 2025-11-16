@@ -327,6 +327,28 @@ endif()
 
 configure_package(COMPONENT core SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS})
 
+# Colcon does not automatically extend CMAKE_PREFIX_PATH for plain CMake
+# packages, so install the standard hook so downstream packages can locate the
+# exported *Config.cmake files.
+set(_hook_directory share/${PROJECT_NAME}/hook)
+configure_file(
+  ${CMAKE_CURRENT_LIST_DIR}/cmake/cmake_prefix_path.sh.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.sh
+  @ONLY)
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.sh
+  DESTINATION ${_hook_directory}
+  RENAME cmake_prefix_path.sh)
+
+configure_file(
+  ${CMAKE_CURRENT_LIST_DIR}/cmake/cmake_prefix_path.dsv.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.dsv
+  @ONLY)
+install(
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_cmake_prefix_path.dsv
+  DESTINATION ${_hook_directory}
+  RENAME cmake_prefix_path.dsv)
+
 if(TESSERACT_PACKAGE)
   cpack_component_package(
     VERSION ${pkg_extracted_version}
