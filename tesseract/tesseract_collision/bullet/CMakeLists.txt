@@ -452,6 +452,25 @@ configure_component(COMPONENT bullet
                     DEPENDENCIES "tesseract_collision COMPONENTS core"
                     CFG_EXTRAS cmake/bullet-extras.cmake)
 
+# Some releases of ros_industrial_cmake_boilerplate provide a configure_component
+# implementation that does not emit a ${PROJECT_NAME}_bulletConfig.cmake file.
+# When that happens downstream packages such as tesseract_urdf fail to locate
+# the Bullet collision plugin.  Detect the missing config at configure time and
+# fall back to the local configure_package helper so the exported target is
+# always installed.
+set(_tesseract_bullet_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_bullet_cmake")
+set(_tesseract_bullet_config "${_tesseract_bullet_config_dir}/${PROJECT_NAME}_bulletConfig.cmake")
+if(NOT EXISTS "${_tesseract_bullet_config}")
+  message(WARNING "configure_component() did not generate ${PROJECT_NAME}_bulletConfig.cmake; synthesizing fallback config")
+  configure_package(NAMESPACE tesseract
+                    TARGETS ${PROJECT_NAME}_bullet
+                    DEPENDENCIES "tesseract_collision COMPONENTS core"
+                    CFG_EXTRAS cmake/bullet-extras.cmake)
+endif()
+
+unset(_tesseract_bullet_config)
+unset(_tesseract_bullet_config_dir)
+
 if(TESSERACT_PACKAGE)
   cpack_component(COMPONENT bullet
                   VERSION ${pkg_extracted_version}
