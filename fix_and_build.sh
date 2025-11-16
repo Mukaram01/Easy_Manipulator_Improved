@@ -384,8 +384,16 @@ ensure_tesseract_collision_core_config
 ensure_tesseract_collision_bullet_config
 find install -name 'tesseract_commonConfig.cmake'
 
-# Build the whole workspace
-colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
+# Build the whole workspace.  Rebuilding tesseract_collision wipes the
+# synthesized tesseract_collision_core/tesseract_collision_bullet config files
+# that downstream packages need, so skip reprocessing that package here after it
+# has already been built in the trajopt_sco pass above.
+COLCON_BUILD_ARGS=(--symlink-install --cmake-args "${CMAKE_ARGS[@]}")
+if colcon list --base-paths "$SRC" | grep -q '^tesseract_collision\\b'; then
+  echo "Skipping tesseract_collision during final rebuild to preserve synthesized configs"
+  COLCON_BUILD_ARGS+=(--packages-skip tesseract_collision)
+fi
+colcon build "${COLCON_BUILD_ARGS[@]}"
 source_install
 ensure_tesseract_collision_core_config
 ensure_tesseract_collision_bullet_config
