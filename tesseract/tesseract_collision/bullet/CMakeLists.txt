@@ -462,10 +462,22 @@ set(_tesseract_bullet_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_bu
 set(_tesseract_bullet_config "${_tesseract_bullet_config_dir}/${PROJECT_NAME}_bulletConfig.cmake")
 if(NOT EXISTS "${_tesseract_bullet_config}")
   message(WARNING "configure_component() did not generate ${PROJECT_NAME}_bulletConfig.cmake; synthesizing fallback config")
-  configure_package(NAMESPACE tesseract
-                    TARGETS ${PROJECT_NAME}_bullet
-                    DEPENDENCIES "tesseract_collision COMPONENTS core"
-                    CFG_EXTRAS cmake/bullet-extras.cmake)
+  set(_tesseract_bullet_targets_filename "${PROJECT_NAME}_bullet-targets.cmake")
+  set(_tesseract_bullet_targets "${_tesseract_bullet_config_dir}/${_tesseract_bullet_targets_filename}")
+  if(NOT EXISTS "${_tesseract_bullet_targets}")
+    message(FATAL_ERROR "${_tesseract_bullet_targets} does not exist; cannot create fallback config")
+  endif()
+
+  set(_tesseract_bullet_fallback_template "${CMAKE_CURRENT_LIST_DIR}/cmake/bullet-config-fallback.cmake.in")
+  set(BULLET_TARGETS_FILENAME "${_tesseract_bullet_targets_filename}")
+  configure_file(
+    "${_tesseract_bullet_fallback_template}"
+    "${_tesseract_bullet_config}"
+    @ONLY)
+  install(
+    FILES "${_tesseract_bullet_config}"
+    DESTINATION lib/cmake/${PROJECT_NAME}_bullet
+    COMPONENT bullet)
 endif()
 
 unset(_tesseract_bullet_config)
