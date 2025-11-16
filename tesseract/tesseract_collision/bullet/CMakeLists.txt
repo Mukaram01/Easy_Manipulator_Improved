@@ -487,10 +487,17 @@ if(NOT EXISTS "${_tesseract_bullet_config}")
     VERSION "${_tesseract_bullet_version}"
     COMPATIBILITY SameMajorVersion)
 
+  # Install the fallback config in the same location where downstream
+  # packages expect to find the tesseract_collision_bullet package
+  # configuration (lib/cmake/tesseract_collision_bullet).
   install(
-    FILES "${_tesseract_bullet_config}" "${_tesseract_bullet_version_file}"
-    DESTINATION lib/cmake/${PROJECT_NAME}
-    COMPONENT bullet)
+    FILES
+      "${_tesseract_bullet_config}"
+      "${_tesseract_bullet_version_file}"
+    DESTINATION
+      lib/cmake/${PROJECT_NAME}_bullet
+    COMPONENT
+      bullet)
 endif()
 
 unset(BULLET_FIND_DEPENDENCIES)
