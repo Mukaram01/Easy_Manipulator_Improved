@@ -466,7 +466,11 @@ if(NOT EXISTS "${_tesseract_bullet_config}")
   include(CMakePackageConfigHelpers)
   file(MAKE_DIRECTORY "${_tesseract_bullet_config_dir}")
 
-  set(BULLET_TARGETS_FILENAME "bullet-targets.cmake")
+  # configure_package() installs the export file as
+  # "${PROJECT_NAME}_bullet-export.cmake" next to the generated config
+  # file.  Reference that export directly so the fallback config can always
+  # include the file that actually exists in the install tree.
+  set(BULLET_TARGETS_FILENAME "${PROJECT_NAME}_bullet-export.cmake")
   set(BULLET_FIND_DEPENDENCIES
       "include(CMakeFindDependencyMacro)\nfind_dependency(tesseract_collision COMPONENTS core)\n")
   configure_file(
