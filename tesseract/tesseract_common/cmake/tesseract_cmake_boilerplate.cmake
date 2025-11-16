@@ -104,7 +104,23 @@ if(NOT COMMAND cpack_component)
 endif()
 
 function(install_targets)
-  message(STATUS "install_targets() stub invoked; installation steps are skipped in this environment")
+  cmake_parse_arguments(_IT "" "COMPONENT" "TARGETS" ${ARGN})
+
+  if(NOT _IT_TARGETS)
+    message(WARNING "install_targets() called without TARGETS; nothing will be installed")
+    return()
+  endif()
+
+  set(_install_component)
+  if(_IT_COMPONENT)
+    set(_install_component COMPONENT ${_IT_COMPONENT})
+  endif()
+
+  install(TARGETS ${_IT_TARGETS}
+          ${_install_component}
+          RUNTIME DESTINATION bin
+          LIBRARY DESTINATION lib
+          ARCHIVE DESTINATION lib)
 endfunction()
 
 if(NOT COMMAND configure_component)
