@@ -188,7 +188,7 @@ install(TARGETS ${PROJECT_NAME}_bullet_factories
 configure_package(NAMESPACE tesseract
                   TARGETS ${PROJECT_NAME}_bullet
                   DEPENDENCIES "tesseract_collision COMPONENTS core"
-                  CFG_EXTRAS cmake/bullet-find-bullet.cmake cmake/bullet-extras.cmake)
+                  CFG_EXTRAS cmake/bullet-extras.cmake)
 
 if(TESSERACT_PACKAGE)
   cpack_component(COMPONENT bullet
