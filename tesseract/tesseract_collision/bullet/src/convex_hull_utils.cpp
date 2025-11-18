@@ -52,20 +52,11 @@ int createConvexHull(tesseract_common::VectorVector3d& vertices,
     points.push_back(v[2]);
   }
 
-#if BT_BULLET_VERSION >= 325
-  btScalar val = conv.compute(points.data(),
-                              true,
-                              static_cast<int>(3 * sizeof(double)),
-                              static_cast<int>(input.size()),
-                              static_cast<btScalar>(shrink),
-                              static_cast<btScalar>(shrinkClamp));
-#else
   btScalar val = conv.compute(points.data(),
                               static_cast<int>(3 * sizeof(double)),
                               static_cast<int>(input.size()),
                               static_cast<btScalar>(shrink),
                               static_cast<btScalar>(shrinkClamp));
-#endif
   if (val < 0)
   {
     CONSOLE_BRIDGE_logError("Failed to create convex hull");
