@@ -296,6 +296,25 @@ if(TESSERACT_BUILD_VHACD)
   add_subdirectory(vhacd)
 endif()
 
+# Track the dependency list exported by the top-level tesseract_collision
+# package so downstream packages automatically discover the required
+# third-party CMake packages when including the exported
+# tesseract_collisionConfig.cmake file.  This mirrors the dependencies used
+# throughout the build (Eigen3, Boost, TinyXML2, etc.) and prevents
+# downstream configure errors caused by missing imported targets such as
+# tinyxml2::tinyxml2.
+set(
+  _tesseract_collision_dependencies
+  Eigen3
+  console_bridge
+  tesseract_geometry
+  tesseract_common
+  yaml-cpp
+  octomap
+  assimp
+  TinyXML2
+  "Boost COMPONENTS filesystem system program_options serialization stacktrace_backtrace stacktrace_noop")
+
 # Add compiler definition to core so it can find all plugins produced
 string(
   REPLACE ";"
@@ -325,7 +344,10 @@ if((TESSERACT_ENABLE_EXAMPLES OR TESSERACT_COLLISION_ENABLE_EXAMPLES) AND TESSER
   add_subdirectory(examples)
 endif()
 
-configure_package(COMPONENT core SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS})
+configure_package(
+  COMPONENT core
+  SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS}
+  DEPENDENCIES ${_tesseract_collision_dependencies})
 
 # Colcon does not automatically extend CMAKE_PREFIX_PATH for plain CMake
 # packages, so install the standard hook so downstream packages can locate the

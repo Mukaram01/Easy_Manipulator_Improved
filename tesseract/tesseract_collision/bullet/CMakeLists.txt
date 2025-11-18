@@ -185,10 +185,21 @@ install(TARGETS ${PROJECT_NAME}_bullet_factories
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
 
-configure_package(NAMESPACE tesseract
-                  TARGETS ${PROJECT_NAME}_bullet
-                  DEPENDENCIES "tesseract_collision COMPONENTS core"
-                  CFG_EXTRAS cmake/bullet-extras.cmake)
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}_bullet
+  DEPENDENCIES
+    "tesseract_collision COMPONENTS core"
+    Eigen3
+    console_bridge
+    tesseract_geometry
+    tesseract_common
+    TinyXML2
+    octomap
+  CFG_EXTRAS cmake/bullet-extras.cmake)
+
+install(FILES cmake/bullet-find-bullet.cmake
+        DESTINATION lib/cmake/tesseract_collision_bullet)
 
 if(TESSERACT_PACKAGE)
   cpack_component(COMPONENT bullet

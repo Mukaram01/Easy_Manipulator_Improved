@@ -17,12 +17,49 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake")
 
-find_package(
-  Boost REQUIRED
-  COMPONENTS graph serialization system filesystem stacktrace_backtrace stacktrace_noop)
+set(_tesseract_scene_graph_boost_components serialization system filesystem stacktrace_backtrace stacktrace_noop)
+find_package(Boost REQUIRED COMPONENTS ${_tesseract_scene_graph_boost_components})
+
+# Boost 1.83 packages on Debian/Ubuntu split each component into its own
+# optional package.  The "graph" component is not always installed in ROS-free
+# environments, even though the headers ship with the base Boost development
+# package.  The upstream Tesseract sources rely only on the header-only pieces
+# of Boost.Graph, so fall back to a lightweight imported interface when the
+# compiled component is unavailable.  This avoids hard build failures while
+# still allowing downstream users to provide the full Boost::graph target when
+# desired.
+set(_tesseract_scene_graph_have_boost_graph FALSE)
+if(TARGET Boost::graph)
+  set(_tesseract_scene_graph_have_boost_graph TRUE)
+else()
+  find_package(Boost QUIET COMPONENTS graph)
+  if(TARGET Boost::graph)
+    set(_tesseract_scene_graph_have_boost_graph TRUE)
+  endif()
+endif()
+
+if(NOT _tesseract_scene_graph_have_boost_graph)
+  message(
+    STATUS
+      "Boost::graph component not found; providing a header-only interface target")
+  if(NOT TARGET Boost::graph)
+    add_library(Boost::graph INTERFACE IMPORTED)
+  endif()
+  if(TARGET Boost::headers)
+    target_link_libraries(Boost::graph INTERFACE Boost::headers)
+  elseif(TARGET Boost::boost)
+    target_link_libraries(Boost::graph INTERFACE Boost::boost)
+  elseif(Boost_INCLUDE_DIRS)
+    target_include_directories(Boost::graph INTERFACE ${Boost_INCLUDE_DIRS})
+  endif()
+endif()
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
-find_package(orocos_kdl REQUIRED)
+find_package(orocos_kdl QUIET)
+set(TESSERACT_SCENE_GRAPH_HAS_KDL ${orocos_kdl_FOUND})
+if(NOT TESSERACT_SCENE_GRAPH_HAS_KDL)
+  message(STATUS "orocos_kdl not found; disabling KDL parser helpers")
+endif()
 find_package(assimp REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
@@ -152,13 +189,18 @@ set(COVERAGE_EXCLUDE
     /*/gtest/*)
 add_code_coverage_all_targets(EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 
-add_library(
-  ${PROJECT_NAME}
+set(
+  _tesseract_scene_graph_sources
   src/graph.cpp
   src/joint.cpp
-  src/kdl_parser.cpp
   src/link.cpp
   src/scene_state.cpp)
+
+if(TESSERACT_SCENE_GRAPH_HAS_KDL)
+  list(APPEND _tesseract_scene_graph_sources src/kdl_parser.cpp)
+endif()
+
+add_library(${PROJECT_NAME} ${_tesseract_scene_graph_sources})
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Boost::boost
@@ -168,8 +210,10 @@ target_link_libraries(
          ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          ${TESSERACT_GEOMETRY_TARGET}
          ${TESSERACT_COMMON_TARGET}
-         orocos-kdl
          console_bridge::console_bridge)
+if(TESSERACT_SCENE_GRAPH_HAS_KDL)
+  target_link_libraries(${PROJECT_NAME} PUBLIC orocos-kdl)
+endif()
 target_compile_options(${PROJECT_NAME} PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(
@@ -178,6 +222,11 @@ target_compile_definitions(
          Boost_USE_STATIC_LIBS=OFF
          Boost_USE_MULTITHREADED=ON
          Boost_USE_STATIC_RUNTIME=OFF)
+if(TESSERACT_SCENE_GRAPH_HAS_KDL)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC TESSERACT_SCENE_GRAPH_HAS_KDL=1)
+else()
+  target_compile_definitions(${PROJECT_NAME} PUBLIC TESSERACT_SCENE_GRAPH_HAS_KDL=0)
+endif()
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
 target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TESSERACT_CXX_VERSION})
 target_code_coverage(
@@ -189,17 +238,22 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                   "$<INSTALL_INTERFACE:include>")
 
+set(_tesseract_scene_graph_dependencies
+    Boost
+    Eigen3
+    console_bridge
+    TinyXML2
+    assimp
+    tesseract_geometry
+    tesseract_common)
+if(TESSERACT_SCENE_GRAPH_HAS_KDL)
+  list(APPEND _tesseract_scene_graph_dependencies orocos_kdl)
+endif()
+
 configure_package(
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}
-  DEPENDENCIES
-    "Boost COMPONENTS graph"
-    Eigen3
-    tinyxml2_vendor
-    console_bridge
-    orocos_kdl
-    tesseract_geometry
-    tesseract_common
+  DEPENDENCIES ${_tesseract_scene_graph_dependencies}
   CFG_EXTRAS cmake/tesseract_scene_graph-extras.cmake)
 
 # Colcon does not automatically extend the CMAKE_PREFIX_PATH for plain CMake
@@ -226,12 +280,16 @@ install(
   RENAME cmake_prefix_path.dsv)
 
 # Mark cpp header files for installation
+set(_tesseract_scene_graph_install_patterns PATTERN "*.h" PATTERN ".svn" EXCLUDE)
+if(NOT TESSERACT_SCENE_GRAPH_HAS_KDL)
+  list(APPEND _tesseract_scene_graph_install_patterns PATTERN "kdl_parser.h" EXCLUDE)
+endif()
+
 install(
   DIRECTORY include/${PROJECT_NAME}
   DESTINATION include
   FILES_MATCHING
-  PATTERN "*.h"
-  PATTERN ".svn" EXCLUDE)
+  ${_tesseract_scene_graph_install_patterns})
 
 # ADD Examples
 if(TESSERACT_ENABLE_EXAMPLES OR TESSERACT_SCENE_GRAPH_ENABLE_EXAMPLES)
@@ -245,6 +303,23 @@ if(TESSERACT_ENABLE_TESTING OR TESSERACT_SCENE_GRAPH_ENABLE_TESTING)
 endif()
 
 if(TESSERACT_PACKAGE)
+  set(_tesseract_scene_graph_linux_deps
+      "libboost-all-dev"
+      "libeigen3-dev"
+      "libconsole-bridge-dev"
+      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
+      "${TESSERACT_PACKAGE_PREFIX}tesseract-geometry")
+  set(_tesseract_scene_graph_windows_deps
+      "boost-all"
+      "Eigen3"
+      "console-bridge"
+      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
+      "${TESSERACT_PACKAGE_PREFIX}tesseract-geometry")
+  if(TESSERACT_SCENE_GRAPH_HAS_KDL)
+    list(APPEND _tesseract_scene_graph_linux_deps "liborocos-kdl-dev")
+    list(APPEND _tesseract_scene_graph_windows_deps "orocos-kdl")
+  endif()
+
   cpack(
     VERSION ${pkg_extracted_version}
     MAINTAINER_NAME ${pkg_extracted_maintainer_name}
@@ -252,20 +327,8 @@ if(TESSERACT_PACKAGE)
     DESCRIPTION ${pkg_extracted_description}
     LICENSE_FILE ${CMAKE_CURRENT_LIST_DIR}/../LICENSE
     README_FILE ${CMAKE_CURRENT_LIST_DIR}/../README.md
-    LINUX_DEPENDS
-      "libboost-all-dev"
-      "liborocos-kdl-dev"
-      "libeigen3-dev"
-      "libconsole-bridge-dev"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-geometry"
-    WINDOWS_DEPENDS
-      "boost-all"
-      "orocos-kdl"
-      "Eigen3"
-      "console-bridge"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-common"
-      "${TESSERACT_PACKAGE_PREFIX}tesseract-geometry")
+    LINUX_DEPENDS ${_tesseract_scene_graph_linux_deps}
+    WINDOWS_DEPENDS ${_tesseract_scene_graph_windows_deps})
 
   if(UNIX AND TESSERACT_PACKAGE_SOURCE)
     cpack_debian_source_package(
