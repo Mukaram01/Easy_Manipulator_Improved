@@ -47,6 +47,11 @@ if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
 endif()
 find_package(yaml-cpp REQUIRED)
 
+set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
+if(TESSERACT_BACKTRACE_COMPONENT)
+  list(APPEND TESSERACT_BOOST_COMPONENTS ${TESSERACT_BACKTRACE_COMPONENT})
+endif()
+
 if(TARGET Boost::stacktrace_backtrace)
   find_file(BACKTRACE_INCLUDE_FILE backtrace.h PATHS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
   if(BACKTRACE_INCLUDE_FILE)
@@ -144,7 +149,15 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                   "$<INSTALL_INTERFACE:include>")
 
-configure_package(NAMESPACE tesseract TARGETS ${PROJECT_NAME})
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}
+  DEPENDENCIES
+    Eigen3
+    console_bridge
+    "Boost COMPONENTS ${TESSERACT_BOOST_COMPONENTS}"
+    TinyXML2
+    yaml-cpp)
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} PUBLIC Bcrypt)
 endif()
