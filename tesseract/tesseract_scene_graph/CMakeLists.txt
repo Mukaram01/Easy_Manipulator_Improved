@@ -242,7 +242,6 @@ set(_tesseract_scene_graph_dependencies
     Boost
     Eigen3
     console_bridge
-    TinyXML2
     assimp
     tesseract_geometry
     tesseract_common)

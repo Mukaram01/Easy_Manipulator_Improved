@@ -230,5 +230,5 @@ endif()
 
 ament_export_libraries(${PROJECT_NAME})
 ament_export_include_directories(include)
-ament_export_dependencies(tesseract_common Eigen3 console_bridge octomap assimp tinyxml2_vendor TinyXML2)
+ament_export_dependencies(tesseract_common Eigen3 console_bridge octomap assimp tinyxml2_vendor)
 ament_package()
