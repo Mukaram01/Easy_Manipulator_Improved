@@ -312,7 +312,6 @@ set(
   yaml-cpp
   octomap
   assimp
-  TinyXML2
   "Boost COMPONENTS filesystem system program_options serialization stacktrace_backtrace stacktrace_noop")
 
 # Add compiler definition to core so it can find all plugins produced

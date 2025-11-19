@@ -195,7 +195,6 @@ configure_package(
     console_bridge
     tesseract_geometry
     tesseract_common
-    TinyXML2
     octomap
   CFG_EXTRAS cmake/bullet-extras.cmake)
 

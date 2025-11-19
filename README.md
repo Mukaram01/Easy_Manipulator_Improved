@@ -23,6 +23,9 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 - `rosdep` for installing package dependencies
 - `colcon` build tool
 - A ROS 2 environment sourced (Jazzy or Humble)
+- The bundled Tesseract overlays now export TinyXML2 via the `tinyxml2_vendor`
+  package, so no extra system packages are required to satisfy
+  `find_package(TinyXML2)` calls during the build.
 
 ---
 ## Build on Jazzy or Humble

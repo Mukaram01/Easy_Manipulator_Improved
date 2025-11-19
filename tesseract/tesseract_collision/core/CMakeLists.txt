@@ -88,7 +88,6 @@ configure_package(
     tesseract_common
     yaml-cpp
     octomap
-    TinyXML2
     "Boost COMPONENTS filesystem system program_options serialization"
   CFG_EXTRAS cmake/core-extras.cmake)
 

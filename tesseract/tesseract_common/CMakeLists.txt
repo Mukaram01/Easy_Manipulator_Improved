@@ -182,7 +182,6 @@ ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(
   Eigen3
   tinyxml2_vendor
-  TinyXML2
   yaml-cpp
   Boost
   console_bridge)
