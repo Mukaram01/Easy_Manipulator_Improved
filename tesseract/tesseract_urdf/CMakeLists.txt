@@ -16,6 +16,29 @@ if(WIN32)
 endif()
 
 find_package(Boost REQUIRED)
+set(_tesseract_urdf_have_boost_graph FALSE)
+if(TARGET Boost::graph)
+  set(_tesseract_urdf_have_boost_graph TRUE)
+else()
+  find_package(Boost QUIET COMPONENTS graph)
+  if(TARGET Boost::graph)
+    set(_tesseract_urdf_have_boost_graph TRUE)
+  endif()
+endif()
+
+if(NOT _tesseract_urdf_have_boost_graph)
+  message(STATUS "Boost::graph component not found; providing a header-only interface target")
+  if(NOT TARGET Boost::graph)
+    add_library(Boost::graph INTERFACE IMPORTED)
+  endif()
+  if(TARGET Boost::headers)
+    target_link_libraries(Boost::graph INTERFACE Boost::headers)
+  elseif(TARGET Boost::boost)
+    target_link_libraries(Boost::graph INTERFACE Boost::boost)
+  elseif(Boost_INCLUDE_DIRS)
+    target_include_directories(Boost::graph INTERFACE ${Boost_INCLUDE_DIRS})
+  endif()
+endif()
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(PCL QUIET COMPONENTS io)
@@ -27,6 +50,11 @@ find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_scene_graph REQUIRED)
 find_package(tesseract_collision REQUIRED COMPONENTS bullet)
+
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_urdf")
+endif()
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
@@ -90,7 +118,10 @@ add_library(${PROJECT_NAME} ${_tesseract_urdf_sources})
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Boost::boost
+         Boost::graph
          Eigen3::Eigen
+         ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
          tesseract::tesseract_common
          tesseract::tesseract_geometry
          tesseract::tesseract_scene_graph
@@ -149,6 +180,7 @@ set(_tesseract_urdf_dependencies
     Boost
     Eigen3
     console_bridge
+    tinyxml2_vendor
     "tesseract_collision COMPONENTS bullet"
     tesseract_geometry
     tesseract_common
