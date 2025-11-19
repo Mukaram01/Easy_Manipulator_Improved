@@ -4,6 +4,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws
 
+APT_GET_CMD="apt-get"
+if command -v sudo >/dev/null 2>&1; then
+  APT_GET_CMD="sudo apt-get"
+fi
+
 # 0) Source underlays (support Humble or Jazzy)
 default_rosdistro=""
 for d in jazzy humble; do
@@ -56,6 +61,18 @@ for cmd in git colcon rosdep vcs; do
     esac
   fi
 done
+
+# Ensure TinyXML2 development headers/libs are present.  The upstream
+# tesseract_* packages call find_package(TinyXML2) directly (both at configure
+# time and inside their exported CMake configs).  When TinyXML2 only arrives via
+# the tinyxml2_vendor overlay, those find_package() calls fail because no
+# system-level libtinyxml2-dev is installed.  Installing it explicitly avoids
+# the missing TinyXML2Config.cmake errors seen during the tesseract_urdf build.
+if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
+  echo "Installing libtinyxml2-dev to satisfy TinyXML2 find_package() calls"
+  ${APT_GET_CMD} update -y
+  ${APT_GET_CMD} install -y libtinyxml2-dev
+fi
 
 # 0.5) Install missing build tools and dependencies
 if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then

@@ -52,6 +52,19 @@ for cmd in git colcon rosdep vcs; do
   fi
 done
 
+# Ensure TinyXML2 headers/libs are available system-wide.  The upstream
+# Tesseract packages rely on CMake's TinyXML2 package during both the
+# configure and find_dependency() phases, but rosdep does not always pull in
+# libtinyxml2-dev because many ROS distributions satisfy the runtime portion
+# via the tinyxml2_vendor package.  Installing the development package up
+# front guarantees the FindTinyXML2.cmake lookups succeed even when the
+# vendor overlay is absent.
+if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
+  echo "Installing libtinyxml2-dev to satisfy TinyXML2 find_package() calls"
+  $APT_GET update -y
+  $APT_GET install -y libtinyxml2-dev
+fi
+
 # Import external repositories if tesseract not yet present
 if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
   vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"
