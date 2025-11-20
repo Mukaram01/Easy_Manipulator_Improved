@@ -279,10 +279,14 @@ PY
   fi
 
   local version_file="$config_dir/tesseract_collision_coreConfigVersion.cmake"
-  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P - <<'EOF'
+  local version_script
+  version_script=$(mktemp)
+  cat >"$version_script" <<'EOF'
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${OUTPUT_FILE}" VERSION "${PACKAGE_VERSION}" COMPATIBILITY SameMajorVersion)
 EOF
+  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P "$version_script"
+  rm -f "$version_script"
 
   echo "Synthesized missing tesseract_collision_core package configuration at $config_dir"
 }
@@ -372,10 +376,14 @@ PY
   fi
 
   local version_file="$config_dir/tesseract_collision_bulletConfigVersion.cmake"
-  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P - <<'EOF'
+  local version_script
+  version_script=$(mktemp)
+  cat >"$version_script" <<'EOF'
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${OUTPUT_FILE}" VERSION "${PACKAGE_VERSION}" COMPATIBILITY SameMajorVersion)
 EOF
+  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P "$version_script"
+  rm -f "$version_script"
 
   echo "Synthesized missing tesseract_collision_bullet package configuration at $config_dir"
 }
@@ -495,10 +503,14 @@ PY
   fi
 
   local version_file="$config_dir/tesseract_state_solverConfigVersion.cmake"
-  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P - <<'EOF'
+  local version_script
+  version_script=$(mktemp)
+  cat >"$version_script" <<'EOF'
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${OUTPUT_FILE}" VERSION "${PACKAGE_VERSION}" COMPATIBILITY SameMajorVersion)
 EOF
+  cmake -DPACKAGE_VERSION="$version" -DOUTPUT_FILE="$version_file" -P "$version_script"
+  rm -f "$version_script"
 
   echo "Synthesized missing tesseract_state_solver package configuration at $config_dir"
 }
