@@ -130,7 +130,7 @@ endfunction()
 
 function(tesseract_resolve_tinyxml2 out_target out_libraries)
   find_package(tinyxml2_vendor QUIET)
-  find_package(TinyXML2 REQUIRED)
+  find_package(TinyXML2 QUIET)
 
   set(_resolved_target "")
   set(_resolved_libraries)
