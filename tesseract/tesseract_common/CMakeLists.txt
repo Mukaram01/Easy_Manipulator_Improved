@@ -157,7 +157,7 @@ configure_package(
     Eigen3
     console_bridge
     "Boost COMPONENTS ${TESSERACT_BOOST_COMPONENTS_STRING}"
-    TinyXML2
+    tinyxml2_vendor
     yaml-cpp)
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} PUBLIC Bcrypt)
