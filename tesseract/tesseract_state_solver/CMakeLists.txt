@@ -14,7 +14,10 @@ if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
+# Also search the shared CMake helpers from tesseract_common so bundled
+# Find modules like FindTinyXML2.cmake are available when building from source.
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/"
+                             "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/")
 
 include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake")
 
