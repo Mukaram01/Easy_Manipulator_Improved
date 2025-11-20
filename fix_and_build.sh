@@ -397,7 +397,31 @@ ensure_tesseract_state_solver_config() {
   local config_dir="$package_prefix/lib/cmake/tesseract_state_solver"
   local config_file="$config_dir/tesseract_state_solverConfig.cmake"
 
-  if [[ -f "$config_file" ]] || [[ ! -d "$package_prefix" ]]; then
+  if [[ -f "$config_file" ]]; then
+    local needs_regeneration=false
+
+    # Some upstream builds generate a config that tries to create alias targets
+    # without first declaring the underlying imported libraries. Detect the
+    # missing definitions so we can replace the broken config with a synthesized
+    # one that defines the core, KDL, and OFKT targets before aliasing them.
+    if ! grep -Eq "add_library\\(tesseract_state_solver_core" "$config_file"; then
+      needs_regeneration=true
+    fi
+    if ! grep -Eq "add_library\\(tesseract_state_solver_kdl" "$config_file"; then
+      needs_regeneration=true
+    fi
+    if ! grep -Eq "add_library\\(tesseract_state_solver_ofkt" "$config_file"; then
+      needs_regeneration=true
+    fi
+
+    if [[ "$needs_regeneration" == false ]]; then
+      return
+    fi
+
+    echo "Replacing invalid tesseract_state_solverConfig.cmake at $config_file"
+  fi
+
+  if [[ ! -d "$package_prefix" ]]; then
     return
   fi
 
