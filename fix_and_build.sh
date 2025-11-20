@@ -513,6 +513,12 @@ colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs 
 source_install
 find install -name 'tesseract_commonConfig.cmake'
 
+# Build and expose tesseract_state_solver early so downstream packages like
+# tesseract_kinematics can reliably locate its exported CMake package
+colcon build --symlink-install --packages-select tesseract_state_solver --cmake-args "${CMAKE_ARGS[@]}"
+source_install
+ensure_tesseract_state_solver_config
+
 # Build up to trajopt_sco
 colcon build --symlink-install --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
 source_install
