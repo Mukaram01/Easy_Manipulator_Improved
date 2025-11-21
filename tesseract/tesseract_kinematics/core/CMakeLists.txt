@@ -64,9 +64,8 @@ install(
   PATTERN "*.hpp")
 
 configure_package(
-  COMPONENT core
   NAMESPACE tesseract
-  TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_core_factories
+  TARGETS ${PROJECT_NAME}_core
   DEPENDENCIES
     Eigen3
     console_bridge
@@ -75,6 +74,14 @@ configure_package(
     tesseract_common
     boost_plugin_loader
     yaml-cpp
+  CFG_EXTRAS cmake/core-extras.cmake)
+
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}_core_factories
+  DEPENDENCIES
+    ${PROJECT_NAME}_core
+    console_bridge
   CFG_EXTRAS cmake/core-extras.cmake)
 
 if(TESSERACT_PACKAGE)
