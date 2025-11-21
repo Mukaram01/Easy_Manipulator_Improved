@@ -65,6 +65,25 @@ if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
   $APT_GET install -y libtinyxml2-dev
 fi
 
+# Ensure Boost headers/libs are available for graph/program_options/serialization
+# components required by trajopt_common. Some base container images omit the
+# Boost development packages, leading to CMake errors such as "Could NOT find
+# Boost (missing: Boost_INCLUDE_DIR graph)". Installing the specific -dev
+# packages avoids the configure failure even when rosdep skips them.
+BOOST_DEV_PACKAGES=(libboost-graph-dev libboost-program-options-dev libboost-serialization-dev)
+missing_boost=()
+for pkg in "${BOOST_DEV_PACKAGES[@]}"; do
+  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+    missing_boost+=("$pkg")
+  fi
+done
+
+if [[ ${#missing_boost[@]} -gt 0 ]]; then
+  echo "Installing missing Boost development packages: ${missing_boost[*]}"
+  $APT_GET update -y
+  $APT_GET install -y "${missing_boost[@]}"
+fi
+
 # Import external repositories if tesseract not yet present
 if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
   vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"

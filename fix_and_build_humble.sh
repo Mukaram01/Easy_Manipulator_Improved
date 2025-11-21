@@ -74,6 +74,25 @@ if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
   ${APT_GET_CMD} install -y libtinyxml2-dev
 fi
 
+# Ensure Boost headers/libs for graph/program_options/serialization are available
+# before configuring trajopt_common. When the underlying OS image lacks the
+# Boost -dev packages, CMake may report "Could NOT find Boost (missing:
+# Boost_INCLUDE_DIR graph)" even though rosdep is invoked later. Installing the
+# specific development packages up front prevents the configure failure.
+BOOST_DEV_PACKAGES=(libboost-graph-dev libboost-program-options-dev libboost-serialization-dev)
+missing_boost=()
+for pkg in "${BOOST_DEV_PACKAGES[@]}"; do
+  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+    missing_boost+=("$pkg")
+  fi
+done
+
+if [[ ${#missing_boost[@]} -gt 0 ]]; then
+  echo "Installing missing Boost development packages: ${missing_boost[*]}"
+  ${APT_GET_CMD} update -y
+  ${APT_GET_CMD} install -y "${missing_boost[@]}"
+fi
+
 # 0.5) Install missing build tools and dependencies
 if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
   if command -v sudo >/dev/null 2>&1; then
