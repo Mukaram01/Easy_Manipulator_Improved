@@ -15,7 +15,7 @@ if(WIN32)
 endif()
 
 # All of these are used by all components so to avoid having them in each they are include here
-set(_tesseract_kinematics_boost_components graph stacktrace_backtrace)
+set(_tesseract_kinematics_boost_components graph)
 find_package(Boost REQUIRED COMPONENTS ${_tesseract_kinematics_boost_components})
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
