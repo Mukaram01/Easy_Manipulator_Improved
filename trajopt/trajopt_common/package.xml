@@ -18,6 +18,8 @@
   <exec_depend>libboost-program-options</exec_depend>
   <build_depend>libboost-graph-dev</build_depend>
   <exec_depend>libboost-graph</exec_depend>
+  <build_depend>libboost-serialization-dev</build_depend>
+  <exec_depend>libboost-serialization</exec_depend>
 
   <build_depend>tinyxml2</build_depend>
   <build_export_depend>tinyxml2</build_export_depend>
