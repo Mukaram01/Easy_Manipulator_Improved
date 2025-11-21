@@ -69,8 +69,10 @@ fi
 # components required by trajopt_common. Some base container images omit the
 # Boost development packages, leading to CMake errors such as "Could NOT find
 # Boost (missing: Boost_INCLUDE_DIR graph)". Installing the specific -dev
-# packages avoids the configure failure even when rosdep skips them.
-BOOST_DEV_PACKAGES=(libboost-graph-dev libboost-program-options-dev libboost-serialization-dev)
+# packages avoids the configure failure even when rosdep skips them. The
+# umbrella libboost-dev is also installed to guarantee BoostConfig.cmake and
+# the core headers resolve consistently across distros.
+BOOST_DEV_PACKAGES=(libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev)
 missing_boost=()
 for pkg in "${BOOST_DEV_PACKAGES[@]}"; do
   if ! dpkg -s "$pkg" >/dev/null 2>&1; then

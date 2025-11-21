@@ -73,6 +73,29 @@ any ignore markers under `src/tesseract*`, ensures `boost_plugin_loader` is
 present, installs dependencies with `rosdep`, and builds the workspace in a
 safe order.  It is idempotent and can be re-run at any time.
 
+### Troubleshooting Boost-related configure errors
+
+If `colcon build` fails in `trajopt_common` with an error such as:
+
+```
+Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)
+```
+
+install the missing Boost development packages before re-running the build:
+
+```
+sudo apt-get update && sudo apt-get install -y \
+  libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev
+```
+
+Alternatively, re-run `./fix_and_build.sh`, which automatically installs these
+packages when they are absent. If you previously attempted a build without
+them, clean any cached configuration before retrying:
+
+```
+rm -rf build/trajopt_common install/trajopt_common log/trajopt_common
+```
+
 Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
 packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
 support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.
