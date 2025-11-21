@@ -1,8 +1,13 @@
 cmake_minimum_required(VERSION 3.15.0)
 
+include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_cmake_boilerplate.cmake")
+tesseract_initialize_boilerplate_support()
+if(NOT COMMAND extract_package_metadata)
+  message(FATAL_ERROR "Failed to load tesseract_cmake_boilerplate.cmake; extract_package_metadata is unavailable")
+endif()
+
 # Extract package name and version
-find_package(ros_industrial_cmake_boilerplate REQUIRED)
-extract_package_metadata(pkg)
+extract_package_metadata(pkg PACKAGE_XML "${CMAKE_CURRENT_LIST_DIR}/package.xml")
 project(${pkg_extracted_name} VERSION ${pkg_extracted_version} LANGUAGES C CXX)
 
 if(WIN32)
@@ -17,6 +22,9 @@ find_package(tesseract_state_solver REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(boost_plugin_loader REQUIRED)
 find_package(yaml-cpp REQUIRED)
+
+include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake")
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
