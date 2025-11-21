@@ -17,6 +17,7 @@
   <depend>libconsole-bridge-dev</depend>
   <depend>tesseract_scene_graph</depend>
   <depend>tesseract_common</depend>
+  <depend>assimp-dev</depend>
   <depend>liborocos-kdl-dev</depend>
   <depend>boost</depend>
   <build_depend>tinyxml2_vendor</build_depend>
