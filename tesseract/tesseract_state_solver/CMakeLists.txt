@@ -134,6 +134,18 @@ configure_package(
     tesseract_common
   CFG_EXTRAS cmake/tesseract_state_solver-extras.cmake)
 
+# Provide a package-level config so downstream projects can simply invoke
+# `find_package(tesseract_state_solver)` to locate the installed components.
+configure_package(
+  COMPONENT core
+  SUPPORTED_COMPONENTS core kdl ofkt
+  DEPENDENCIES
+    Eigen3
+    orocos_kdl
+    console_bridge
+    tesseract_scene_graph
+    tesseract_common)
+
 # Mark cpp header files for installation
 install(
   DIRECTORY include/${PROJECT_NAME}
