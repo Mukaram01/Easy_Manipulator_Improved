@@ -63,6 +63,20 @@ install(
   PATTERN "*.h"
   PATTERN "*.hpp")
 
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  ${CMAKE_CURRENT_LIST_DIR}/cmake/tesseract_kinematics_core-config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfig.cmake
+  INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}_core)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfig.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfigVersion.cmake
+        DESTINATION lib/cmake/${PROJECT_NAME}_core)
+
 configure_component(
   COMPONENT core
   NAMESPACE tesseract
