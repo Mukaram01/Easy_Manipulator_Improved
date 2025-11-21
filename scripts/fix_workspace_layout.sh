@@ -58,7 +58,7 @@ if [ ! -e "${SRC_DIR}/trajopt_sco" ]; then
 fi
 
 # Ensure trajopt_common declares all dependencies it links against. Some
-# upstream snapshots omit find_package() calls for TinyXML2, Boost graph, and
+# upstream snapshots omit find_package() calls for tinyxml2, Boost graph, and
 # the KDL state solver, which results in CMake configure errors such as missing
 # tinyxml2::tinyxml2 or tesseract::tesseract_state_solver_kdl targets.
 TRAJOPT_COMMON_CMAKE=$(find "${SRC_DIR}" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
@@ -85,7 +85,7 @@ def ensure_find_package(statement: str) -> None:
     lines.insert(insert_at, statement)
 
 
-ensure_find_package("find_package(TinyXML2 REQUIRED)")
+ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
 ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
 ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
 
