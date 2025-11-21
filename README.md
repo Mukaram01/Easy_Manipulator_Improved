@@ -85,11 +85,16 @@ install the missing Boost development packages before re-running the build:
 
 ```
 sudo apt-get update && sudo apt-get install -y \
-  libboost-graph-dev libboost-program-options-dev libboost-serialization-dev
+  libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev
 ```
 
 Alternatively, re-run `./fix_and_build.sh`, which automatically installs these
-packages when they are absent.
+packages when they are absent. If you previously attempted a build without
+them, clean any cached configuration before retrying:
+
+```
+rm -rf build/trajopt_common install/trajopt_common log/trajopt_common
+```
 
 Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
 packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
