@@ -56,19 +56,6 @@ target_include_directories(
 set(KINEMATICS_PLUGINS ${KINEMATICS_PLUGINS} "${PROJECT_NAME}_core_factories" PARENT_SCOPE)
 
 install(
-  TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_core_factories
-  EXPORT ${PROJECT_NAME}_core_export
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib)
-
-install(
-  EXPORT ${PROJECT_NAME}_core_export
-  FILE ${PROJECT_NAME}_core-export.cmake
-  NAMESPACE tesseract::
-  DESTINATION lib/cmake/${PROJECT_NAME}_core)
-
-install(
   DIRECTORY include/${PROJECT_NAME}
   DESTINATION include
   COMPONENT core
@@ -76,21 +63,7 @@ install(
   PATTERN "*.h"
   PATTERN "*.hpp")
 
-include(CMakePackageConfigHelpers)
-configure_package_config_file(
-  ${CMAKE_CURRENT_LIST_DIR}/cmake/tesseract_kinematics_core-config.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfig.cmake
-  INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}_core)
-write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfigVersion.cmake
-  VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion)
-
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfig.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_coreConfigVersion.cmake
-        DESTINATION lib/cmake/${PROJECT_NAME}_core)
-
-configure_component(
+configure_package(
   COMPONENT core
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_core_factories
