@@ -11,11 +11,13 @@
   <buildtool_depend>cmake</buildtool_depend>
   <build_depend>ros_industrial_cmake_boilerplate</build_depend>
 
+  <depend>boost</depend>
   <depend>tesseract_common</depend>
   <depend>tesseract_scene_graph</depend>
   <depend>tesseract_state_solver</depend>
   <depend>boost_plugin_loader</depend>
   <depend>yaml-cpp</depend>
+  <depend>tinyxml2_vendor</depend>
 
   <build_depend>eigen</build_depend>
   <build_export_depend>eigen</build_export_depend>
