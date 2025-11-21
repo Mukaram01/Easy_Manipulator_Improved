@@ -346,21 +346,34 @@ function(configure_package)
         endif()
       endif()
 
+      # If a component is provided, consolidate all targets for that component
+      # into a single export set named "<component>-targets" to avoid exporting
+      # the same dependency multiple times across different export sets.
+      if(_TCP_COMPONENT)
+        set(_tcp_export_name "${_TCP_COMPONENT}-targets")
+        set(_tcp_export_file "${_TCP_COMPONENT}-targets.cmake")
+        set(_tcp_export_dest "lib/cmake/${PROJECT_NAME}")
+      else()
+        set(_tcp_export_name "${target}_export")
+        set(_tcp_export_file "${target}-export.cmake")
+        set(_tcp_export_dest "lib/cmake/${target}")
+      endif()
+
       install(
         TARGETS ${target}
-        EXPORT ${target}_export
+        EXPORT ${_tcp_export_name}
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
       install(
-        EXPORT ${target}_export
-        FILE ${target}-export.cmake
+        EXPORT ${_tcp_export_name}
+        FILE ${_tcp_export_file}
         NAMESPACE ${_TCP_NAMESPACE}::
-        DESTINATION lib/cmake/${target})
+        DESTINATION ${_tcp_export_dest})
       export(
-        EXPORT ${target}_export
+        EXPORT ${_tcp_export_name}
         NAMESPACE ${_TCP_NAMESPACE}::
-        FILE ${target}-export.cmake)
+        FILE ${_tcp_export_file})
 
       set(_tcp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_cmake")
       file(MAKE_DIRECTORY "${_tcp_config_dir}")
@@ -417,20 +430,20 @@ function(configure_package)
       if(_tcp_extra_files)
         list(APPEND _tcp_install_files ${_tcp_extra_files})
       endif()
-      install(FILES ${_tcp_install_files} DESTINATION lib/cmake/${target})
+      install(FILES ${_tcp_install_files} DESTINATION ${_tcp_export_dest})
 
       if(COMMAND ament_export_targets)
         if(_TCP_NAMESPACE)
           if(_tcp_has_library_target)
             ament_export_targets(
-              ${target}_export
+              ${_tcp_export_name}
               HAS_LIBRARY_TARGET
               NAMESPACE ${_TCP_NAMESPACE}::)
           else()
-            ament_export_targets(${target}_export NAMESPACE ${_TCP_NAMESPACE}::)
+            ament_export_targets(${_tcp_export_name} NAMESPACE ${_TCP_NAMESPACE}::)
           endif()
         else()
-          ament_export_targets(${target}_export)
+          ament_export_targets(${_tcp_export_name})
         endif()
       endif()
     endif()
