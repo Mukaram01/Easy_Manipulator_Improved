@@ -484,7 +484,7 @@ if("${kdl_lib}" AND NOT TARGET tesseract_state_solver_kdl)
     INTERFACE_INCLUDE_DIRECTORIES "${include_dir}"
     INTERFACE_LINK_LIBRARIES "tesseract::tesseract_state_solver_core;orocos-kdl")
 endif()
-if(NOT TARGET tesseract::tesseract_state_solver_kdl)
+if(TARGET tesseract_state_solver_kdl AND NOT TARGET tesseract::tesseract_state_solver_kdl)
   add_library(tesseract::tesseract_state_solver_kdl ALIAS tesseract_state_solver_kdl)
 endif()
 
@@ -495,7 +495,7 @@ if("${ofkt_lib}" AND NOT TARGET tesseract_state_solver_ofkt)
     INTERFACE_INCLUDE_DIRECTORIES "${include_dir}"
     INTERFACE_LINK_LIBRARIES "tesseract::tesseract_state_solver_core")
 endif()
-if(NOT TARGET tesseract::tesseract_state_solver_ofkt)
+if(TARGET tesseract_state_solver_ofkt AND NOT TARGET tesseract::tesseract_state_solver_ofkt)
   add_library(tesseract::tesseract_state_solver_ofkt ALIAS tesseract_state_solver_ofkt)
 endif()
 
