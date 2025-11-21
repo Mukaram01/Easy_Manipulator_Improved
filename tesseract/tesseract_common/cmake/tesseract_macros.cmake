@@ -346,7 +346,12 @@ function(configure_package)
         endif()
       endif()
 
-      install(TARGETS ${target} EXPORT ${target}_export)
+      install(
+        TARGETS ${target}
+        EXPORT ${target}_export
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
       install(
         EXPORT ${target}_export
         FILE ${target}-export.cmake
