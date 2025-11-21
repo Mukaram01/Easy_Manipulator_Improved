@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>trajopt_common</name>
+  <version>0.31.0</version>
+  <description>The trajopt_common package</description>
+  <maintainer email="levi.armstrong@swri.org">Levi Armstrong</maintainer>
+  <license>BSD</license>
+
+  <!-- Following recommendations of REP 136 -->
+  <exec_depend condition="$ROS_VERSION == 1">catkin</exec_depend>
+  <buildtool_depend>cmake</buildtool_depend>
+
+  <build_depend>ros_industrial_cmake_boilerplate</build_depend>
+  <build_depend>eigen</build_depend>
+  <build_export_depend>eigen</build_export_depend>
+
+  <build_depend>libboost-program-options-dev</build_depend>
+  <exec_depend>libboost-program-options</exec_depend>
+  <build_depend>libboost-graph-dev</build_depend>
+  <exec_depend>libboost-graph</exec_depend>
+
+  <build_depend>tinyxml2</build_depend>
+  <build_export_depend>tinyxml2</build_export_depend>
+  <depend>tesseract_state_solver</depend>
+
+  <depend>tesseract_common</depend>
+  <depend>tesseract_collision</depend>
+  <depend>tesseract_kinematics</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>
