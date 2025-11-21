@@ -56,6 +56,19 @@ target_include_directories(
 set(KINEMATICS_PLUGINS ${KINEMATICS_PLUGINS} "${PROJECT_NAME}_core_factories" PARENT_SCOPE)
 
 install(
+  TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_core_factories
+  EXPORT ${PROJECT_NAME}_core_export
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib)
+
+install(
+  EXPORT ${PROJECT_NAME}_core_export
+  FILE ${PROJECT_NAME}_core-export.cmake
+  NAMESPACE tesseract::
+  DESTINATION lib/cmake/${PROJECT_NAME}_core)
+
+install(
   DIRECTORY include/${PROJECT_NAME}
   DESTINATION include
   COMPONENT core
