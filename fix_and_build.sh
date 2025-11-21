@@ -159,7 +159,7 @@ if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$P
 fi
 
 # Ensure trajopt_common declares all dependencies it links against. Some upstream
-# snapshots omit find_package() calls for TinyXML2, Boost graph, and the KDL
+# snapshots omit find_package() calls for tinyxml2, Boost graph, and the KDL
 # state solver, which results in CMake configure errors such as:
 #   Target "trajopt_common" links to target "tinyxml2::tinyxml2" but the
 #   target was not found.
@@ -185,7 +185,7 @@ def ensure_find_package(statement: str) -> None:
             insert_at = 0
     lines.insert(insert_at, statement)
 
-ensure_find_package("find_package(TinyXML2 REQUIRED)")
+ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
 ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
 ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
 
