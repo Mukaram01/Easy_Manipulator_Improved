@@ -105,6 +105,42 @@ fi
 
 rosdep update
 
+# Ensure trajopt_common declares all dependencies it links against. Some upstream
+# snapshots omit find_package() calls for TinyXML2, Boost graph, and the KDL
+# state solver, which results in CMake configure errors such as missing
+# tinyxml2::tinyxml2 or tesseract::tesseract_state_solver_kdl targets.
+TRAJOPT_COMMON_CMAKE=$(find "$PWD/src" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
+if [[ -n "$TRAJOPT_COMMON_CMAKE" && -f "$TRAJOPT_COMMON_CMAKE" ]]; then
+  echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
+  TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TRAJOPT_COMMON_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+
+def ensure_find_package(statement: str) -> None:
+    if any(statement in line for line in lines):
+        return
+    try:
+        insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("find_package"))
+    except StopIteration:
+        try:
+            insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("project")) + 1
+        except StopIteration:
+            insert_at = 0
+    lines.insert(insert_at, statement)
+
+
+ensure_find_package("find_package(TinyXML2 REQUIRED)")
+ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
+ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
+
+cmake.write_text("\n".join(lines) + "\n")
+PY
+fi
+
 # Remove any duplicate ROS packages before resolving dependencies to prevent
 # rosdep and colcon build failures. Keep the first occurrence of a package
 # name and discard subsequent duplicates.
