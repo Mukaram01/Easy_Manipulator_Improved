@@ -15,13 +15,16 @@ if(WIN32)
 endif()
 
 # All of these are used by all components so to avoid having them in each they are include here
+set(_tesseract_kinematics_boost_components graph stacktrace_backtrace)
+find_package(Boost REQUIRED COMPONENTS ${_tesseract_kinematics_boost_components})
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(tesseract_scene_graph REQUIRED)
-find_package(tesseract_state_solver REQUIRED)
+find_package(tesseract_state_solver REQUIRED COMPONENTS kdl)
 find_package(tesseract_common REQUIRED)
 find_package(boost_plugin_loader REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(TinyXML2 REQUIRED)
 
 include(${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake")
