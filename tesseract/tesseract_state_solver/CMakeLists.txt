@@ -123,15 +123,34 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_ofkt PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                        "$<INSTALL_INTERFACE:include>")
 
+set(
+  TESSERACT_STATE_SOLVER_COMMON_DEPENDENCIES
+  Eigen3
+  console_bridge
+  tesseract_scene_graph
+  tesseract_common)
+
 configure_package(
   NAMESPACE tesseract
-  TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_kdl ${PROJECT_NAME}_ofkt
+  TARGETS ${PROJECT_NAME}_core
+  DEPENDENCIES ${TESSERACT_STATE_SOLVER_COMMON_DEPENDENCIES}
+  CFG_EXTRAS cmake/tesseract_state_solver-extras.cmake)
+
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}_kdl
   DEPENDENCIES
-    Eigen3
+    ${TESSERACT_STATE_SOLVER_COMMON_DEPENDENCIES}
     orocos_kdl
-    console_bridge
-    tesseract_scene_graph
-    tesseract_common
+    ${PROJECT_NAME}_core
+  CFG_EXTRAS cmake/tesseract_state_solver-extras.cmake)
+
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}_ofkt
+  DEPENDENCIES
+    ${TESSERACT_STATE_SOLVER_COMMON_DEPENDENCIES}
+    ${PROJECT_NAME}_core
   CFG_EXTRAS cmake/tesseract_state_solver-extras.cmake)
 
 # Provide a package-level config so downstream projects can simply invoke
