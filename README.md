@@ -64,7 +64,8 @@ dependency, which provides headers such as `boost_plugin_loader/fwd.h`
 required by `tesseract_common`.
 
 A convenience script `fix_and_build.sh` is provided in this repository. It automatically
-detects whether Humble or Jazzy is installed. After cloning into `~/workcell_ws`, run:
+detects whether Humble or Jazzy is installed and installs the Boost/TinyXML2 development
+packages via `scripts/install_system_deps.sh`. After cloning into `~/workcell_ws`, run:
 
 ```
 cd easy_manipulation_deployment
