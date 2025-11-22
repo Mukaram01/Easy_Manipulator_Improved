@@ -52,38 +52,19 @@ for cmd in git colcon rosdep vcs; do
   fi
 done
 
-# Ensure TinyXML2 headers/libs are available system-wide.  The upstream
-# Tesseract packages rely on CMake's TinyXML2 package during both the
-# configure and find_dependency() phases, but rosdep does not always pull in
-# libtinyxml2-dev because many ROS distributions satisfy the runtime portion
-# via the tinyxml2_vendor package.  Installing the development package up
-# front guarantees the FindTinyXML2.cmake lookups succeed even when the
-# vendor overlay is absent.
-if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
-  echo "Installing libtinyxml2-dev to satisfy TinyXML2 find_package() calls"
-  $APT_GET update -y
-  $APT_GET install -y libtinyxml2-dev
-fi
+# Ensure core system dependencies (Boost + TinyXML2) are present.  Calling the
+# shared helper keeps the dependency list in one place so it stays in sync with
+# the README instructions and avoids repeated Boost discovery failures in
+# trajopt_common.
+"$REPO_DIR/scripts/install_system_deps.sh"
 
-# Ensure Boost headers/libs are available for graph/program_options/serialization
-# components required by trajopt_common. Some base container images omit the
-# Boost development packages, leading to CMake errors such as "Could NOT find
-# Boost (missing: Boost_INCLUDE_DIR graph)". Installing the specific -dev
-# packages avoids the configure failure even when rosdep skips them. The
-# umbrella libboost-dev is also installed to guarantee BoostConfig.cmake and
-# the core headers resolve consistently across distros.
-BOOST_DEV_PACKAGES=(libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev)
-missing_boost=()
-for pkg in "${BOOST_DEV_PACKAGES[@]}"; do
-  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-    missing_boost+=("$pkg")
-  fi
-done
-
-if [[ ${#missing_boost[@]} -gt 0 ]]; then
-  echo "Installing missing Boost development packages: ${missing_boost[*]}"
-  $APT_GET update -y
-  $APT_GET install -y "${missing_boost[@]}"
+# Double-check the Boost headers are discoverable before running CMake.  The
+# installation helper above should have pulled them in, but explicitly failing
+# fast here provides a clearer error than a later "Could NOT find Boost"
+# message from CMake when libboost-graph-dev is missing.
+if [[ ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
+  echo "Boost graph headers are missing even after installation helper ran" >&2
+  exit 1
 fi
 
 # Import external repositories if tesseract not yet present
