@@ -26,6 +26,10 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 - The bundled Tesseract overlays now export TinyXML2 via the `tinyxml2_vendor`
   package, so no extra system packages are required to satisfy
   `find_package(TinyXML2)` calls during the build.
+- If you plan to build manually (without the helper scripts below), run
+  `./easy_manipulation_deployment/scripts/install_system_deps.sh` after cloning
+  to install the TinyXML2 and Boost development packages that
+  `trajopt_common` requires.
 
 ---
 ## Build on Jazzy or Humble
