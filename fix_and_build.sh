@@ -7,10 +7,19 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p "$SRC"
 
-# Ensure we are being run from the repository inside the workspace
+# Ensure we are being run from the repository inside the workspace. If the
+# repository already lives inside a non-default workspace (e.g., after cloning
+# into ~/custom_ws/src), infer WS/SRC from its location instead of forcing the
+# hard-coded ~/workcell_ws layout.
 if [[ "$REPO_DIR" != "$SRC/easy_manipulation_deployment" ]]; then
-  echo "Please run this script from ~/workcell_ws/src/easy_manipulation_deployment" >&2
-  exit 1
+  if [[ "$REPO_DIR" =~ ^(.+)/src/easy_manipulation_deployment$ ]]; then
+    WS="${BASH_REMATCH[1]}"
+    SRC="$WS/src"
+    echo "Detected workspace at $WS based on repository location" >&2
+  else
+    echo "Please run this script from ~/workcell_ws/src/easy_manipulation_deployment or set WS to your workspace root" >&2
+    exit 1
+  fi
 fi
 
 # Select ROS distribution: prefer Humble then Jazzy
