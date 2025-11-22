@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>tesseract_support</name>
+  <version>0.1.0</version>
+  <description>
+    Lightweight overlay package providing resource locations for Tesseract
+    examples and tests. This snapshot ships only minimal placeholder
+    directories so that dependent packages can resolve package:// URLs
+    without pulling in the full upstream dataset.
+  </description>
+
+  <maintainer email="maintainers@easy-manipulation.local">Easy Manipulation Deployment</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>ament_cmake</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
