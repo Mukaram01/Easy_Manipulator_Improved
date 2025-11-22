@@ -16,6 +16,20 @@ if(EXISTS "${_tesseract_common_module_dir}")
   endif()
 endif()
 
+# When the package configuration is consumed from the build tree (before an
+# install has produced lib/cmake/tesseract_common), the module directory above
+# will not exist. Fall back to the source-tree cmake folder so downstream
+# packages (for example, tesseract_support) can still load the custom macros.
+if(NOT COMMAND tesseract_variables)
+  get_filename_component(_tesseract_common_src_dir "${CMAKE_CURRENT_LIST_DIR}/../../../../tesseract_common" ABSOLUTE)
+  if(EXISTS "${_tesseract_common_src_dir}/cmake/tesseract_macros.cmake")
+    if(NOT "${_tesseract_common_src_dir}/cmake" IN_LIST CMAKE_MODULE_PATH)
+      list(APPEND CMAKE_MODULE_PATH "${_tesseract_common_src_dir}/cmake")
+    endif()
+    include("${_tesseract_common_src_dir}/cmake/tesseract_macros.cmake")
+  endif()
+endif()
+
 # Older exports of tesseract_common only provide the plain target name or the
 # ament-generated "tesseract_common::tesseract_common" target.  Downstream
 # packages in this workspace expect to link against the upstream-style
