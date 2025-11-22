@@ -58,15 +58,6 @@ done
 # trajopt_common.
 "$REPO_DIR/scripts/install_system_deps.sh"
 
-# Double-check the Boost headers are discoverable before running CMake.  The
-# installation helper above should have pulled them in, but explicitly failing
-# fast here provides a clearer error than a later "Could NOT find Boost"
-# message from CMake when libboost-graph-dev is missing.
-if [[ ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
-  echo "Boost graph headers are missing even after installation helper ran" >&2
-  exit 1
-fi
-
 # Import external repositories if tesseract not yet present
 if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
   vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"
@@ -150,7 +141,6 @@ rosdep update
 # ones we still need manually so rosdep can proceed without hard errors.
 SKIP_KEYS=(
   catkin
-  libboost-graph-dev
   rviz
   roslib
 )
@@ -177,6 +167,15 @@ if $MISSING_BOOST; then
   echo "Installing Boost development packages because rosdep skipped or failed to resolve them" >&2
   $APT_GET update -y
   $APT_GET install -y "${BOOST_DEPS[@]}"
+fi
+
+# Double-check the Boost headers are discoverable before running CMake.  Both
+# rosdep and the manual fallback above should have pulled them in, but
+# explicitly failing fast here provides a clearer error than a later "Could NOT
+# find Boost" message from CMake when libboost-graph-dev is missing.
+if [[ ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
+  echo "Boost graph headers are missing even after dependency installation attempts" >&2
+  exit 1
 fi
 
 # Enforce C++17
