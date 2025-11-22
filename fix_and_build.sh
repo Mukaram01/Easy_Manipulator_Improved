@@ -149,6 +149,8 @@ rosdep update
 # workspace (for example, "rviz" under ROS 2).  Skip those keys and install the
 # ones we still need manually so rosdep can proceed without hard errors.
 SKIP_KEYS=(
+  catkin
+  libboost-graph-dev
   rviz
   roslib
 )
