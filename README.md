@@ -45,6 +45,11 @@ mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./
 cd ~/workcell_ws
 export ROS_DISTRO=humble  # or jazzy
 source /opt/ros/${ROS_DISTRO}/setup.bash
+# Install the Boost graph/program_options/serialization headers that
+# `trajopt_common` expects before configuring the workspace. This avoids
+# "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)" errors during
+# `colcon build` on minimal environments.
+~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
 source ~/ws_moveit2/install/setup.bash
 colcon build --symlink-install
