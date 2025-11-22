@@ -44,9 +44,16 @@ source "/opt/ros/$ROS_DISTRO/setup.bash"
 set -u
 export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Ensure required tools
-APT_GET="sudo apt-get"
-command -v sudo >/dev/null 2>&1 || APT_GET="apt-get"
+# Ensure required tools. Prefer password-less sudo when available, otherwise fall
+# back to raw apt-get (useful in containerized environments running as root).
+APT_GET="apt-get"
+if command -v sudo >/dev/null 2>&1; then
+  if sudo -n true 2>/dev/null; then
+    APT_GET="sudo apt-get"
+  elif [[ $EUID -ne 0 ]]; then
+    echo "sudo is present but requires a password; falling back to apt-get" >&2
+  fi
+fi
 
 for cmd in git colcon rosdep vcs; do
   if ! command -v "$cmd" >/dev/null 2>&1; then

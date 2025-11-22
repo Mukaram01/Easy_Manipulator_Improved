@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APT_GET="sudo apt-get"
-command -v sudo >/dev/null 2>&1 || APT_GET="apt-get"
+APT_GET="apt-get"
+if command -v sudo >/dev/null 2>&1; then
+  if sudo -n true 2>/dev/null; then
+    APT_GET="sudo apt-get"
+  elif [[ $EUID -ne 0 ]]; then
+    echo "sudo is present but requires a password; falling back to apt-get" >&2
+  fi
+fi
 
 REQUIRED_PACKAGES=(
   libtinyxml2-dev
