@@ -156,15 +156,25 @@ SKIP_KEYS=(
 rosdep install --from-paths "${ROSDEP_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
   --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation ${SKIP_KEYS[*]}"
 
-MISSING_BOOST_GRAPH=false
-if ! dpkg -s libboost-graph-dev >/dev/null 2>&1; then
-  MISSING_BOOST_GRAPH=true
-fi
+BOOST_DEPS=(
+  libboost-dev
+  libboost-graph-dev
+  libboost-program-options-dev
+  libboost-serialization-dev
+)
 
-if $MISSING_BOOST_GRAPH; then
-  echo "Installing libboost-graph-dev because rosdep skipped or failed to resolve it" >&2
+MISSING_BOOST=false
+for pkg in "${BOOST_DEPS[@]}"; do
+  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+    MISSING_BOOST=true
+    break
+  fi
+done
+
+if $MISSING_BOOST; then
+  echo "Installing Boost development packages because rosdep skipped or failed to resolve them" >&2
   $APT_GET update -y
-  $APT_GET install -y libboost-graph-dev
+  $APT_GET install -y "${BOOST_DEPS[@]}"
 fi
 
 # Enforce C++17
