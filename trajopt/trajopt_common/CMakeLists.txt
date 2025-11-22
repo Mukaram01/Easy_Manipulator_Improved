@@ -12,7 +12,7 @@ if(WIN32)
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(Boost CONFIG REQUIRED COMPONENTS program_options serialization graph)
+find_package(Boost REQUIRED COMPONENTS program_options serialization graph)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_collision COMPONENTS core REQUIRED)
