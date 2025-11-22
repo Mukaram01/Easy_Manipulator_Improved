@@ -146,11 +146,9 @@ fi
 
 rosdep update
 # Some snapshots reference rosdep keys that are missing or incorrect for this
-# workspace (for example, "libboost-graph-dev" and "rviz" under ROS 2).  Skip
-# those keys and install the ones we still need manually so rosdep can proceed
-# without hard errors.
+# workspace (for example, "rviz" under ROS 2).  Skip those keys and install the
+# ones we still need manually so rosdep can proceed without hard errors.
 SKIP_KEYS=(
-  libboost-graph-dev
   rviz
   roslib
 )
