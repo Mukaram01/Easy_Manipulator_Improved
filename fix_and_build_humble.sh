@@ -194,8 +194,10 @@ colcon build --symlink-install --packages-select \
 colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
   --cmake-args -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF
 
-# 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages
-colcon build --symlink-install --packages-select tesseract_state_solver \
+# 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
+# Build its dependency chain as well so the workspace has the expected environment
+# hooks available when colcon sources it during later stages.
+colcon build --symlink-install --packages-up-to tesseract_state_solver \
   --cmake-args -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF
 
 # 5) Stage 3: full workspace
