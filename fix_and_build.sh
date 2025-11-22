@@ -155,26 +155,21 @@ BOOST_DEPS=(
   libboost-serialization-dev
 )
 
-MISSING_BOOST=false
-for pkg in "${BOOST_DEPS[@]}"; do
-  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-    MISSING_BOOST=true
-    break
-  fi
-done
-
-if $MISSING_BOOST; then
-  echo "Installing Boost development packages because rosdep skipped or failed to resolve them" >&2
-  $APT_GET update -y
-  $APT_GET install -y "${BOOST_DEPS[@]}"
-fi
+# Install Boost development packages explicitly because rosdep may skip or fail
+# to resolve them in some environments.  Using apt-get directly ensures the
+# headers are present before CMake runs instead of relying on a potentially
+# stale dpkg check.
+echo "Ensuring Boost development packages (including graph headers) are installed" >&2
+$APT_GET update -y
+$APT_GET install -y "${BOOST_DEPS[@]}"
 
 # Double-check the Boost headers are discoverable before running CMake.  Both
-# rosdep and the manual fallback above should have pulled them in, but
+# rosdep and the manual install above should have pulled them in, but
 # explicitly failing fast here provides a clearer error than a later "Could NOT
 # find Boost" message from CMake when libboost-graph-dev is missing.
 if [[ ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
-  echo "Boost graph headers are missing even after dependency installation attempts" >&2
+  echo "Boost graph headers are missing even after installing ${BOOST_DEPS[*]}." >&2
+  echo "Please ensure libboost-graph-dev is available and rerun this script." >&2
   exit 1
 fi
 
