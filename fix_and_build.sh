@@ -145,8 +145,29 @@ if [[ ${#ROSDEP_PATHS[@]} -eq 0 ]]; then
 fi
 
 rosdep update
+# Some snapshots reference rosdep keys that are missing or incorrect for this
+# workspace (for example, "libboost-graph-dev" and "rviz" under ROS 2).  Skip
+# those keys and install the ones we still need manually so rosdep can proceed
+# without hard errors.
+SKIP_KEYS=(
+  libboost-graph-dev
+  rviz
+  roslib
+)
+
 rosdep install --from-paths "${ROSDEP_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
-  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
+  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation ${SKIP_KEYS[*]}"
+
+MISSING_BOOST_GRAPH=false
+if ! dpkg -s libboost-graph-dev >/dev/null 2>&1; then
+  MISSING_BOOST_GRAPH=true
+fi
+
+if $MISSING_BOOST_GRAPH; then
+  echo "Installing libboost-graph-dev because rosdep skipped or failed to resolve it" >&2
+  $APT_GET update -y
+  $APT_GET install -y libboost-graph-dev
+fi
 
 # Enforce C++17
 export AMENT_CMAKE_CXX_STANDARD=17
