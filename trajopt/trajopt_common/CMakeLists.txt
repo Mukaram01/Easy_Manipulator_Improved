@@ -12,6 +12,10 @@ if(WIN32)
 endif()
 
 find_package(Eigen3 REQUIRED)
+# Force use of CMake's built-in Boost finder to avoid picking up any
+# BoostConfig.cmake files from overlay workspaces that may not provide the
+# required components (e.g., graph).
+set(Boost_NO_BOOST_CMAKE ON)
 find_package(Boost REQUIRED COMPONENTS program_options serialization graph)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
