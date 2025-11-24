@@ -16,7 +16,7 @@ find_package(Eigen3 REQUIRED)
 # BoostConfig.cmake files from overlay workspaces that may not provide the
 # required components (e.g., graph).
 set(Boost_NO_BOOST_CMAKE ON)
-find_package(Boost REQUIRED COMPONENTS program_options serialization)
+find_package(Boost REQUIRED COMPONENTS graph program_options serialization)
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_collision COMPONENTS core REQUIRED)
@@ -39,6 +39,7 @@ add_library(${PROJECT_NAME} ${UTILS_SOURCE_FILES})
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
+         Boost::graph
          Boost::program_options
          Boost::serialization
          tinyxml2::tinyxml2
