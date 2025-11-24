@@ -22,6 +22,15 @@ if(DEFINED Boost_DIR)
   message(WARNING "Ignoring Boost_DIR='${Boost_DIR}' to ensure system Boost packages with graph/program_options/serialization are used")
   unset(Boost_DIR CACHE)
 endif()
+# BOOST_ROOT can also point CMake at a non-system Boost installation (for
+# example, in a container overlay) that lacks the graph/program_options/
+# serialization components required by trajopt_common. Clear it so the
+# system headers installed by scripts/install_system_deps.sh are always
+# preferred.
+if(DEFINED ENV{BOOST_ROOT})
+  message(WARNING "Ignoring BOOST_ROOT='${BOOST_ROOT}' to ensure system Boost packages with graph/program_options/serialization are used")
+  unset(ENV{BOOST_ROOT})
+endif()
 # Force module-mode discovery to dodge any stray BoostConfig.cmake files that may
 # be present in overlay workspaces and lack the required components.
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "Prefer FindBoost.cmake over BoostConfig.cmake" FORCE)
