@@ -12,46 +12,27 @@ if(WIN32)
 endif()
 
 find_package(Eigen3 REQUIRED)
-# Fail fast with a helpful message if the common graph header is missing before
-# invoking CMake's Boost discovery logic. This provides clearer instructions
-# than the default "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
-# error, and it points users at the helper script that installs the necessary
-# development packages.
-find_path(BOOST_GRAPH_INCLUDE_DIR boost/graph/adjacency_list.hpp)
+# Prefer module-mode Boost discovery but respect custom Boost_DIR/BOOST_ROOT
+# settings when provided so users with non-system Boost installations can
+# satisfy the dependency without patching the build. If Boost is missing, fail
+# with a clear message that references the helper script.
+set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "Prefer FindBoost.cmake over BoostConfig.cmake" FORCE)
+find_package(Boost MODULE REQUIRED COMPONENTS graph program_options serialization)
+find_path(BOOST_GRAPH_INCLUDE_DIR
+          NAMES boost/graph/adjacency_list.hpp
+          PATHS ${Boost_INCLUDE_DIRS}
+          NO_DEFAULT_PATH)
+if(NOT BOOST_GRAPH_INCLUDE_DIR)
+  # Fall back to a broader search so that typical system include locations are
+  # still considered when Boost did not report its include dirs explicitly.
+  find_path(BOOST_GRAPH_INCLUDE_DIR boost/graph/adjacency_list.hpp)
+endif()
+
 if(NOT BOOST_GRAPH_INCLUDE_DIR)
   message(FATAL_ERROR "Boost graph headers not found. Install libboost-dev libboost-graph-dev libboost-program-options-dev "
                       "libboost-serialization-dev (or run scripts/install_system_deps.sh) and then delete any cached build/"
-                      "trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring.")
-endif()
-
-# Force use of CMake's built-in Boost finder to avoid picking up any
-# BoostConfig.cmake files from overlay workspaces that may not provide the
-# required components (e.g., graph). Fall back to a clear, actionable error
-# that points users at the helper script when Boost headers are missing,
-# matching the common "Could NOT find Boost (missing: Boost_INCLUDE_DIR
-# graph)" failure seen on minimal environments.
-if(DEFINED Boost_DIR)
-  message(WARNING "Ignoring Boost_DIR='${Boost_DIR}' to ensure system Boost packages with graph/program_options/serialization are used")
-  unset(Boost_DIR CACHE)
-endif()
-# BOOST_ROOT can also point CMake at a non-system Boost installation (for
-# example, in a container overlay) that lacks the graph/program_options/
-# serialization components required by trajopt_common. Clear it so the
-# system headers installed by scripts/install_system_deps.sh are always
-# preferred.
-if(DEFINED ENV{BOOST_ROOT})
-  message(WARNING "Ignoring BOOST_ROOT='${BOOST_ROOT}' to ensure system Boost packages with graph/program_options/serialization are used")
-  unset(ENV{BOOST_ROOT})
-endif()
-# Force module-mode discovery to dodge any stray BoostConfig.cmake files that may
-# be present in overlay workspaces and lack the required components.
-set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "Prefer FindBoost.cmake over BoostConfig.cmake" FORCE)
-find_package(Boost MODULE QUIET COMPONENTS graph program_options serialization)
-if(NOT Boost_FOUND)
-  message(FATAL_ERROR "Boost graph/program_options/serialization headers not found. "
-                      "Install libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev "
-                      "or run scripts/install_system_deps.sh, then remove any cached build/trajopt_common install/trajopt_common "
-                      "log/trajopt_common directories before reconfiguring.")
+                      "trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring."
+                      " If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before re-running CMake.")
 endif()
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
