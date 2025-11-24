@@ -20,7 +20,8 @@ find_package(Eigen3 REQUIRED)
 find_path(BOOST_GRAPH_INCLUDE_DIR boost/graph/adjacency_list.hpp)
 if(NOT BOOST_GRAPH_INCLUDE_DIR)
   message(FATAL_ERROR "Boost graph headers not found. Install libboost-dev libboost-graph-dev libboost-program-options-dev "
-                      "libboost-serialization-dev or run scripts/install_system_deps.sh before configuring this workspace.")
+                      "libboost-serialization-dev (or run scripts/install_system_deps.sh) and then delete any cached build/"
+                      "trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring.")
 endif()
 
 # Force use of CMake's built-in Boost finder to avoid picking up any
@@ -49,7 +50,8 @@ find_package(Boost MODULE QUIET COMPONENTS graph program_options serialization)
 if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost graph/program_options/serialization headers not found. "
                       "Install libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev "
-                      "or run scripts/install_system_deps.sh before configuring this workspace.")
+                      "or run scripts/install_system_deps.sh, then remove any cached build/trajopt_common install/trajopt_common "
+                      "log/trajopt_common directories before reconfiguring.")
 endif()
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
