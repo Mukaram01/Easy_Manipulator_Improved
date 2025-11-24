@@ -12,6 +12,17 @@ if(WIN32)
 endif()
 
 find_package(Eigen3 REQUIRED)
+# Fail fast with a helpful message if the common graph header is missing before
+# invoking CMake's Boost discovery logic. This provides clearer instructions
+# than the default "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
+# error, and it points users at the helper script that installs the necessary
+# development packages.
+find_path(BOOST_GRAPH_INCLUDE_DIR boost/graph/adjacency_list.hpp)
+if(NOT BOOST_GRAPH_INCLUDE_DIR)
+  message(FATAL_ERROR "Boost graph headers not found. Install libboost-dev libboost-graph-dev libboost-program-options-dev "
+                      "libboost-serialization-dev or run scripts/install_system_deps.sh before configuring this workspace.")
+endif()
+
 # Force use of CMake's built-in Boost finder to avoid picking up any
 # BoostConfig.cmake files from overlay workspaces that may not provide the
 # required components (e.g., graph). Fall back to a clear, actionable error
