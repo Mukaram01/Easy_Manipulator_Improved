@@ -18,6 +18,21 @@
   <build_export_depend>boost</build_export_depend>
   <exec_depend>boost</exec_depend>
 
+  <!-- Explicitly request the Boost components trajopt_common links against so rosdep
+       installs the graph/program_options/serialization headers instead of only the
+       base Boost development package. -->
+  <build_depend>libboost-graph-dev</build_depend>
+  <build_export_depend>libboost-graph-dev</build_export_depend>
+  <exec_depend>libboost-graph-dev</exec_depend>
+
+  <build_depend>libboost-program-options-dev</build_depend>
+  <build_export_depend>libboost-program-options-dev</build_export_depend>
+  <exec_depend>libboost-program-options-dev</exec_depend>
+
+  <build_depend>libboost-serialization-dev</build_depend>
+  <build_export_depend>libboost-serialization-dev</build_export_depend>
+  <exec_depend>libboost-serialization-dev</exec_depend>
+
   <build_depend>tinyxml2</build_depend>
   <build_export_depend>tinyxml2</build_export_depend>
   <depend>tesseract_state_solver</depend>
