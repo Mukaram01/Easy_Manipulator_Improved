@@ -22,8 +22,10 @@ if(DEFINED Boost_DIR)
   message(WARNING "Ignoring Boost_DIR='${Boost_DIR}' to ensure system Boost packages with graph/program_options/serialization are used")
   unset(Boost_DIR CACHE)
 endif()
-set(Boost_NO_BOOST_CMAKE ON)
-find_package(Boost QUIET COMPONENTS graph program_options serialization)
+# Force module-mode discovery to dodge any stray BoostConfig.cmake files that may
+# be present in overlay workspaces and lack the required components.
+set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "Prefer FindBoost.cmake over BoostConfig.cmake" FORCE)
+find_package(Boost MODULE QUIET COMPONENTS graph program_options serialization)
 if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost graph/program_options/serialization headers not found. "
                       "Install libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev "
