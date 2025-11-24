@@ -62,42 +62,12 @@ for cmd in git colcon rosdep vcs; do
   fi
 done
 
-# Ensure TinyXML2 development headers/libs are present.  The upstream
-# tesseract_* packages call find_package(TinyXML2) directly (both at configure
-# time and inside their exported CMake configs).  When TinyXML2 only arrives via
-# the tinyxml2_vendor overlay, those find_package() calls fail because no
-# system-level libtinyxml2-dev is installed.  Installing it explicitly avoids
-# the missing TinyXML2Config.cmake errors seen during the tesseract_urdf build.
-if ! dpkg -s libtinyxml2-dev >/dev/null 2>&1; then
-  echo "Installing libtinyxml2-dev to satisfy TinyXML2 find_package() calls"
-  ${APT_GET_CMD} update -y
-  ${APT_GET_CMD} install -y libtinyxml2-dev
-fi
-
-# Ensure Boost headers/libs for graph/program_options/serialization are available
-# before configuring trajopt_common. When the underlying OS image lacks the
-# Boost -dev packages, CMake may report "Could NOT find Boost (missing:
-# Boost_INCLUDE_DIR graph)" even though rosdep is invoked later. Installing the
-# specific development packages up front (including the umbrella libboost-dev for
-# core headers) prevents the configure failure.
-BOOST_DEV_PACKAGES=(
-  libboost-dev
-  libboost-graph-dev
-  libboost-program-options-dev
-  libboost-serialization-dev
-)
-missing_boost=()
-for pkg in "${BOOST_DEV_PACKAGES[@]}"; do
-  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-    missing_boost+=("$pkg")
-  fi
-done
-
-if [[ ${#missing_boost[@]} -gt 0 ]]; then
-  echo "Installing missing Boost development packages: ${missing_boost[*]}"
-  ${APT_GET_CMD} update -y
-  ${APT_GET_CMD} install -y "${missing_boost[@]}"
-fi
+# Install core system dependencies (Boost + TinyXML2) using the shared helper so
+# all setup paths stay in sync. The helper also reinstalls Boost headers when
+# container images omit them even though dpkg claims the packages are present,
+# preventing the "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
+# failure in trajopt_common.
+"${SCRIPT_DIR}/scripts/install_system_deps.sh"
 
 # 0.5) Install missing build tools and dependencies
 if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
