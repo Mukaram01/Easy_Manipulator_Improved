@@ -17,7 +17,14 @@ find_package(Eigen3 REQUIRED)
 # satisfy the dependency without patching the build. If Boost is missing, fail
 # with a clear message that references the helper script.
 set(Boost_NO_BOOST_CMAKE ON CACHE BOOL "Prefer FindBoost.cmake over BoostConfig.cmake" FORCE)
-find_package(Boost MODULE REQUIRED COMPONENTS graph program_options serialization)
+find_package(Boost MODULE COMPONENTS graph program_options serialization QUIET)
+if(NOT Boost_FOUND)
+  message(FATAL_ERROR "Boost (graph/program_options/serialization) not found. Install libboost-dev libboost-graph-dev "
+                      "libboost-program-options-dev libboost-serialization-dev (or run scripts/install_system_deps.sh) and "
+                      "then delete any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before "
+                      "reconfiguring. If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before "
+                      "re-running CMake.")
+endif()
 find_path(BOOST_GRAPH_INCLUDE_DIR
           NAMES boost/graph/adjacency_list.hpp
           PATHS ${Boost_INCLUDE_DIRS}
