@@ -14,9 +14,17 @@ endif()
 find_package(Eigen3 REQUIRED)
 # Force use of CMake's built-in Boost finder to avoid picking up any
 # BoostConfig.cmake files from overlay workspaces that may not provide the
-# required components (e.g., graph).
+# required components (e.g., graph). Fall back to a clear, actionable error
+# that points users at the helper script when Boost headers are missing,
+# matching the common "Could NOT find Boost (missing: Boost_INCLUDE_DIR
+# graph)" failure seen on minimal environments.
 set(Boost_NO_BOOST_CMAKE ON)
-find_package(Boost REQUIRED COMPONENTS graph program_options serialization)
+find_package(Boost QUIET COMPONENTS graph program_options serialization)
+if(NOT Boost_FOUND)
+  message(FATAL_ERROR "Boost graph/program_options/serialization headers not found. "
+                      "Install libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev "
+                      "or run scripts/install_system_deps.sh before configuring this workspace.")
+endif()
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_collision COMPONENTS core REQUIRED)
