@@ -51,8 +51,12 @@ if command -v sudo >/dev/null 2>&1; then
   if sudo -n true 2>/dev/null; then
     APT_GET="sudo apt-get"
   elif [[ $EUID -ne 0 ]]; then
-    echo "sudo is present but requires a password; falling back to apt-get" >&2
+    echo "sudo is present but requires a password; prompting for credentials" >&2
+    APT_GET="sudo apt-get"
   fi
+elif [[ $EUID -ne 0 ]]; then
+  echo "This script needs root privileges to install dependencies; please run with sudo" >&2
+  exit 1
 fi
 
 for cmd in git colcon rosdep vcs; do
