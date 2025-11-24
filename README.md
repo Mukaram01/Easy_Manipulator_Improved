@@ -16,6 +16,13 @@ This package was tested with the [easy_perception_deployment](https://github.com
 It is recommended to run this package on **ROS 2 Jazzy** (Ubuntu 24.04) or **ROS 2 Humble** (Ubuntu 22.04).
 For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/Installation.html) or [Humble](https://docs.ros.org/en/humble/Installation.html) documentation.
 
+> **Important:** Run `./easy_manipulation_deployment/scripts/install_system_deps.sh`
+> immediately after cloning (before your first `colcon build`). This installs the
+> Boost graph/program_options/serialization headers that `trajopt_common`
+> requires so you do not hit the
+> `Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)` configure error seen
+> on minimal environments.
+
 ---
 ## Prerequisites
 
