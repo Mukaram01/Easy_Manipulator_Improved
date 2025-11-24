@@ -18,6 +18,10 @@ find_package(Eigen3 REQUIRED)
 # that points users at the helper script when Boost headers are missing,
 # matching the common "Could NOT find Boost (missing: Boost_INCLUDE_DIR
 # graph)" failure seen on minimal environments.
+if(DEFINED Boost_DIR)
+  message(WARNING "Ignoring Boost_DIR='${Boost_DIR}' to ensure system Boost packages with graph/program_options/serialization are used")
+  unset(Boost_DIR CACHE)
+endif()
 set(Boost_NO_BOOST_CMAKE ON)
 find_package(Boost QUIET COMPONENTS graph program_options serialization)
 if(NOT Boost_FOUND)
