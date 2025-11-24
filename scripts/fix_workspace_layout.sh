@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS=${WS:-$HOME/workcell_ws}
 SRC_DIR="$WS/src"
 BACKUP_DIR="$WS/trajopt_DISABLED_BACKUP"
@@ -9,6 +10,12 @@ ORIG_DIR="$BACKUP_DIR/original"
 if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
+
+# Install core system dependencies (Boost graph/program_options/serialization and
+# TinyXML2) up front so users who only run this script still avoid
+# trajopt_common configure errors such as "Could NOT find Boost (missing:
+# Boost_INCLUDE_DIR graph)" during subsequent colcon builds.
+"${SCRIPT_DIR}/install_system_deps.sh"
 
 # Move old trajopt directory to backup if it exists. The previous implementation
 # only moved non-hidden files which left behind the .git directory and prevented
