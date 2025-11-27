@@ -20,27 +20,11 @@ find_package(Boost REQUIRED COMPONENTS system filesystem serialization program_o
 include_directories(${Boost_INCLUDE_DIRS})
 if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization) not found. Install libboost-dev "
-                      "libboost-graph-dev libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev "
+                      "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev "
                       "(or run scripts/install_system_deps.sh) and "
                       "then delete any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before"
                       " reconfiguring. If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before "
                       "re-running CMake.")
-endif()
-find_path(BOOST_GRAPH_INCLUDE_DIR
-          NAMES boost/graph/adjacency_list.hpp
-          PATHS ${Boost_INCLUDE_DIRS}
-          NO_DEFAULT_PATH)
-if(NOT BOOST_GRAPH_INCLUDE_DIR)
-  # Fall back to a broader search so that typical system include locations are
-  # still considered when Boost did not report its include dirs explicitly.
-  find_path(BOOST_GRAPH_INCLUDE_DIR boost/graph/adjacency_list.hpp)
-endif()
-
-if(NOT BOOST_GRAPH_INCLUDE_DIR)
-  message(FATAL_ERROR "Boost graph headers not found. Install libboost-dev libboost-graph-dev libboost-system-dev "
-                      "libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev (or run scripts/install_system_deps.sh) and then delete any cached build/"
-                      "trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring."
-                      " If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before re-running CMake.")
 endif()
 
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
