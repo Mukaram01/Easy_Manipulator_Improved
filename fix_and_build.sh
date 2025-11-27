@@ -205,40 +205,44 @@ if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$P
   sed -i '/<shared_mutex>/a #include <mutex>' "$PDH"
 fi
 
-# Ensure trajopt_common declares all dependencies it links against. Some upstream
-# snapshots omit find_package() calls for tinyxml2, Boost graph, and the KDL
-# state solver, which results in CMake configure errors such as:
-#   Target "trajopt_common" links to target "tinyxml2::tinyxml2" but the
-#   target was not found.
-TRAJOPT_COMMON_CMAKE=$(find "$SRC" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
-if [[ -n "$TRAJOPT_COMMON_CMAKE" && -f "$TRAJOPT_COMMON_CMAKE" ]]; then
-  echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
-  TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
+  # Ensure trajopt_common declares all dependencies it links against. Some upstream
+  # snapshots omit the KDL state solver find_package() call, which results in
+  # CMake configure errors when the solver target is unavailable. TinyXML2 and
+  # Boost are now handled by system dependency setup earlier in the script.
+  TRAJOPT_COMMON_CMAKE=$(find "$SRC" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
+  if [[ -n "$TRAJOPT_COMMON_CMAKE" && -f "$TRAJOPT_COMMON_CMAKE" ]]; then
+    echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
+    TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
 import os
 from pathlib import Path
 
 cmake = Path(os.environ["TRAJOPT_COMMON_CMAKE"])
 lines = cmake.read_text().splitlines()
 
+
 def ensure_find_package(statement: str) -> None:
     if any(statement in line for line in lines):
         return
     try:
-        insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("find_package"))
+        insert_at = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("find_package")
+        )
     except StopIteration:
         try:
-            insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("project")) + 1
+            insert_at = (
+                next(i for i, line in enumerate(lines) if line.strip().startswith("project"))
+                + 1
+            )
         except StopIteration:
             insert_at = 0
     lines.insert(insert_at, statement)
 
-ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
-ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
+
 ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
 
 cmake.write_text("\n".join(lines) + "\n")
 PY
-fi
+  fi
 
 cd "$WS"
 
