@@ -47,7 +47,46 @@ find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_collision COMPONENTS core REQUIRED)
 find_package(tesseract_kinematics COMPONENTS core REQUIRED)
-find_package(tinyxml2 CONFIG REQUIRED)
+find_package(PkgConfig QUIET)
+find_package(tinyxml2 CONFIG QUIET)
+
+set(TINYXML2_TARGET tinyxml2::tinyxml2)
+set(TINYXML2_FOUND FALSE)
+
+if(TARGET ${TINYXML2_TARGET})
+  set(TINYXML2_FOUND TRUE)
+elseif(PkgConfig_FOUND)
+  pkg_check_modules(TINYXML2 QUIET tinyxml2)
+
+  if(TINYXML2_FOUND)
+    add_library(${TINYXML2_TARGET} INTERFACE IMPORTED)
+    set_target_properties(
+      ${TINYXML2_TARGET}
+      PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${TINYXML2_INCLUDE_DIRS}"
+                 INTERFACE_LINK_LIBRARIES "${TINYXML2_LINK_LIBRARIES}")
+  endif()
+endif()
+
+if(NOT TINYXML2_FOUND)
+  find_library(TINYXML2_LIBRARY NAMES tinyxml2)
+  find_path(TINYXML2_INCLUDE_DIR NAMES tinyxml2.h)
+
+  if(TINYXML2_LIBRARY AND TINYXML2_INCLUDE_DIR)
+    add_library(${TINYXML2_TARGET} UNKNOWN IMPORTED)
+    set_target_properties(
+      ${TINYXML2_TARGET}
+      PROPERTIES IMPORTED_LOCATION "${TINYXML2_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${TINYXML2_INCLUDE_DIR}")
+    set(TINYXML2_FOUND TRUE)
+  endif()
+endif()
+
+if(NOT TINYXML2_FOUND)
+  message(FATAL_ERROR "tinyxml2 not found. Install it via your package manager, ensure pkg-config can locate it, or "
+                      "provide tinyxml2 headers and libraries to CMake via TINYXML2_LIBRARY/TINYXML2_INCLUDE_DIR.\n"
+                      "If you have a custom installation, set PKG_CONFIG_PATH or CMAKE_PREFIX_PATH accordingly before re-running "
+                      "CMake.")
+endif()
 find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)
 
 # Load variable for clang tidy args, compiler options and cxx version
@@ -67,7 +106,7 @@ target_link_libraries(
   PUBLIC Eigen3::Eigen
          Boost::serialization
          ${Boost_LIBRARIES}
-         tinyxml2::tinyxml2
+         ${TINYXML2_TARGET}
          tesseract::tesseract_common
          tesseract::tesseract_collision_core
          tesseract::tesseract_kinematics_core
