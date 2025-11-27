@@ -210,8 +210,11 @@ fi
   # Boost are now handled by system dependency setup earlier in the script.
   TRAJOPT_COMMON_CMAKE=$(find "$SRC" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
   if [[ -n "$TRAJOPT_COMMON_CMAKE" && -f "$TRAJOPT_COMMON_CMAKE" ]]; then
-    echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
-    TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
+    if [[ "$TRAJOPT_COMMON_CMAKE" == "$REPO_DIR"/* ]]; then
+      echo "Skipping modification of tracked file $TRAJOPT_COMMON_CMAKE"
+    else
+      echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
+      TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
 import os
 from pathlib import Path
 
@@ -241,6 +244,7 @@ ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED
 
 cmake.write_text("\n".join(lines) + "\n")
 PY
+    fi
   fi
 
 cd "$WS"
