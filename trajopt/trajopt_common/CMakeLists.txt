@@ -16,11 +16,11 @@ find_package(Eigen3 REQUIRED)
 # settings when provided so users with non-system Boost installations can
 # satisfy the dependency without patching the build. If Boost is missing, fail
 # with a clear message that references the helper script.
-find_package(Boost REQUIRED COMPONENTS system filesystem serialization program_options)
+find_package(Boost REQUIRED COMPONENTS system filesystem serialization program_options graph)
 include_directories(${Boost_INCLUDE_DIRS})
 if(NOT Boost_FOUND)
-  message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization) not found. Install libboost-dev "
-                      "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev "
+  message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization/graph) not found. Install libboost-dev "
+                      "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev libboost-graph-dev "
                       "(or run scripts/install_system_deps.sh) and "
                       "then delete any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before"
                       " reconfiguring. If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before "
@@ -89,6 +89,7 @@ target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
          Boost::serialization
+         Boost::graph
          ${Boost_LIBRARIES}
          ${TINYXML2_TARGET}
          tesseract::tesseract_common
