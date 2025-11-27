@@ -14,18 +14,19 @@ endif()
 find_package(Eigen3 REQUIRED)
 # Prefer module-mode Boost discovery but respect custom Boost_DIR/BOOST_ROOT
 # settings when provided so users with non-system Boost installations can
-# satisfy the dependency without patching the build. If Boost is missing, fail
-# with a clear message that references the helper script.
-find_package(Boost REQUIRED COMPONENTS system filesystem serialization program_options graph)
-include_directories(${Boost_INCLUDE_DIRS})
+# satisfy the dependency without patching the build. Defer the fatal error so
+# we can emit an actionable message that points builders to the helper script
+# that installs the graph/program_options/serialization headers `trajopt_common`
+# requires.
+find_package(Boost QUIET COMPONENTS system filesystem serialization program_options graph)
 if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization/graph) not found. Install libboost-dev "
                       "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev libboost-graph-dev "
-                      "(or run scripts/install_system_deps.sh) and "
-                      "then delete any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before"
-                      " reconfiguring. If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before "
-                      "re-running CMake.")
+                      "or run easy_manipulation_deployment/scripts/install_system_deps.sh from the repository root, then delete "
+                      "any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring. "
+                      "If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before re-running CMake.")
 endif()
+include_directories(${Boost_INCLUDE_DIRS})
 
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
