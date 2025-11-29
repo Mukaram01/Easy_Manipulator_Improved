@@ -163,6 +163,11 @@ source install/setup.bash
 ros2 launch run_grasp_planner grasp_planner_3f_launch.py
 ```
 
+Before running your first `colcon build` (here or in any other section), make
+sure `./easy_manipulation_deployment/scripts/install_system_deps.sh` has been
+executed after cloning. It installs the Boost graph/program_options/
+serialization headers that `trajopt_common` checks for during configure.
+
 ### 2) Grasp Execution
 
 A Moveit2 Based Grasp Execution package that incorporates real time dynamic safety components
