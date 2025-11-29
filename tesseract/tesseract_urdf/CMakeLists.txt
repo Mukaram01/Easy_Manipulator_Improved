@@ -16,29 +16,6 @@ if(WIN32)
 endif()
 
 find_package(Boost REQUIRED)
-set(_tesseract_urdf_have_boost_graph FALSE)
-if(TARGET Boost::graph)
-  set(_tesseract_urdf_have_boost_graph TRUE)
-else()
-  find_package(Boost QUIET COMPONENTS graph)
-  if(TARGET Boost::graph)
-    set(_tesseract_urdf_have_boost_graph TRUE)
-  endif()
-endif()
-
-if(NOT _tesseract_urdf_have_boost_graph)
-  message(STATUS "Boost::graph component not found; providing a header-only interface target")
-  if(NOT TARGET Boost::graph)
-    add_library(Boost::graph INTERFACE IMPORTED)
-  endif()
-  if(TARGET Boost::headers)
-    target_link_libraries(Boost::graph INTERFACE Boost::headers)
-  elseif(TARGET Boost::boost)
-    target_link_libraries(Boost::graph INTERFACE Boost::boost)
-  elseif(Boost_INCLUDE_DIRS)
-    target_include_directories(Boost::graph INTERFACE ${Boost_INCLUDE_DIRS})
-  endif()
-endif()
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(PCL QUIET COMPONENTS io)
@@ -118,7 +95,6 @@ add_library(${PROJECT_NAME} ${_tesseract_urdf_sources})
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Boost::boost
-         Boost::graph
          Eigen3::Eigen
          ${TESSERACT_TINYXML2_TARGET}
          ${TESSERACT_TINYXML2_LINK_LIBRARIES}
@@ -164,7 +140,7 @@ if(TESSERACT_URDF_HAS_PCL)
   endif()
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS} "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                   "$<INSTALL_INTERFACE:include>")
 
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})

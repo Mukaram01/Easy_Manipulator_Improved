@@ -20,39 +20,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cma
 set(_tesseract_scene_graph_boost_components serialization system filesystem stacktrace_backtrace stacktrace_noop)
 find_package(Boost REQUIRED COMPONENTS ${_tesseract_scene_graph_boost_components})
 
-# Boost 1.83 packages on Debian/Ubuntu split each component into its own
-# optional package.  The "graph" component is not always installed in ROS-free
-# environments, even though the headers ship with the base Boost development
-# package.  The upstream Tesseract sources rely only on the header-only pieces
-# of Boost.Graph, so fall back to a lightweight imported interface when the
-# compiled component is unavailable.  This avoids hard build failures while
-# still allowing downstream users to provide the full Boost::graph target when
-# desired.
-set(_tesseract_scene_graph_have_boost_graph FALSE)
-if(TARGET Boost::graph)
-  set(_tesseract_scene_graph_have_boost_graph TRUE)
-else()
-  find_package(Boost QUIET COMPONENTS graph)
-  if(TARGET Boost::graph)
-    set(_tesseract_scene_graph_have_boost_graph TRUE)
-  endif()
-endif()
-
-if(NOT _tesseract_scene_graph_have_boost_graph)
-  message(
-    STATUS
-      "Boost::graph component not found; providing a header-only interface target")
-  if(NOT TARGET Boost::graph)
-    add_library(Boost::graph INTERFACE IMPORTED)
-  endif()
-  if(TARGET Boost::headers)
-    target_link_libraries(Boost::graph INTERFACE Boost::headers)
-  elseif(TARGET Boost::boost)
-    target_link_libraries(Boost::graph INTERFACE Boost::boost)
-  elseif(Boost_INCLUDE_DIRS)
-    target_include_directories(Boost::graph INTERFACE ${Boost_INCLUDE_DIRS})
-  endif()
-endif()
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(orocos_kdl QUIET)
@@ -204,7 +171,6 @@ add_library(${PROJECT_NAME} ${_tesseract_scene_graph_sources})
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Boost::boost
-         Boost::graph
          Eigen3::Eigen
          ${TESSERACT_TINYXML2_TARGET}
          ${TESSERACT_TINYXML2_LINK_LIBRARIES}
@@ -228,6 +194,8 @@ else()
   target_compile_definitions(${PROJECT_NAME} PUBLIC TESSERACT_SCENE_GRAPH_HAS_KDL=0)
 endif()
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
+target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS} "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                  "$<INSTALL_INTERFACE:include>")
 target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TESSERACT_CXX_VERSION})
 target_code_coverage(
   ${PROJECT_NAME}
@@ -235,8 +203,6 @@ target_code_coverage(
   ALL
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
-target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                  "$<INSTALL_INTERFACE:include>")
 
 set(_tesseract_scene_graph_dependencies
     Boost

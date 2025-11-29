@@ -18,15 +18,14 @@ find_package(Eigen3 REQUIRED)
 # we can emit an actionable message that points builders to the helper script
 # that installs the graph/program_options/serialization headers `trajopt_common`
 # requires.
-find_package(Boost QUIET COMPONENTS system filesystem serialization program_options graph)
+find_package(Boost QUIET COMPONENTS system filesystem serialization program_options)
 if(NOT Boost_FOUND)
-  message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization/graph) not found. Install libboost-dev "
-                      "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev libboost-graph-dev "
+  message(FATAL_ERROR "Boost (system/filesystem/program_options/serialization) not found. Install libboost-dev "
+                      "libboost-system-dev libboost-filesystem-dev libboost-program-options-dev libboost-serialization-dev "
                       "or run easy_manipulation_deployment/scripts/install_system_deps.sh from the repository root, then delete "
                       "any cached build/trajopt_common install/trajopt_common log/trajopt_common directories before reconfiguring. "
                       "If you have a custom Boost installation, set BOOST_ROOT or Boost_DIR accordingly before re-running CMake.")
 endif()
-include_directories(${Boost_INCLUDE_DIRS})
 
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 find_package(tesseract_common REQUIRED)
@@ -90,7 +89,6 @@ target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
          Boost::serialization
-         Boost::graph
          ${Boost_LIBRARIES}
          ${TINYXML2_TARGET}
          tesseract::tesseract_common
@@ -103,7 +101,8 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC ${TRAJOPT_COMPILE_DEFINITIONS}
                                                   TRAJOPT_DATA_DIR="${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/data")
 target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TRAJOPT_CXX_VERSION})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TRAJOPT_ENABLE_CLANG_TIDY})
-target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS}
+                                                  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                   "$<INSTALL_INTERFACE:include>")
 
 configure_package(NAMESPACE trajopt TARGETS ${PROJECT_NAME})
