@@ -95,7 +95,8 @@ public:
    * @brief Get all collision coefficient pair data
    * @return A reference to the lookup table containing all pair-specific coefficients
    */
-  const std::unordered_map<tesseract_common::LinkNamesPair, double>& getCollisionCoeffPairData() const;
+  const std::unordered_map<tesseract_common::LinkNamesPair, double, tesseract_common::PairHash>&
+      getCollisionCoeffPairData() const;
 
   /**
    * @brief Get the pairs with zero coeff
@@ -111,7 +112,7 @@ private:
   double default_collision_coeff_{ 1 };
 
   /// A map of link pair names to contact distance
-  std::unordered_map<tesseract_common::LinkNamesPair, double> lookup_table_;
+  std::unordered_map<tesseract_common::LinkNamesPair, double, tesseract_common::PairHash> lookup_table_;
 
   /// Pairs containing zero coeff
   std::set<tesseract_common::LinkNamesPair> zero_coeff_;
