@@ -47,8 +47,7 @@ target_link_libraries(
          Boost::system
          Boost::filesystem
          Boost::serialization
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+         ${tinyxml2_LIBRARIES}
          yaml-cpp
          octomap)
 target_compile_options(${PROJECT_NAME}_core PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
@@ -65,7 +64,8 @@ target_code_coverage(
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(${PROJECT_NAME}_core PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                       "$<INSTALL_INTERFACE:include>")
+                                                       "$<INSTALL_INTERFACE:include>"
+                                                       ${tinyxml2_INCLUDE_DIRS})
 
 # Mark cpp header files for installation
 install(
@@ -83,6 +83,8 @@ configure_package(
   TARGETS ${PROJECT_NAME}_core
   DEPENDENCIES
     Eigen3
+    PkgConfig
+    tinyxml2
     console_bridge
     tesseract_geometry
     tesseract_common

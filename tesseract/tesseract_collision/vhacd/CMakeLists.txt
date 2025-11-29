@@ -1,9 +1,7 @@
 include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
 
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision vhacd components")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
@@ -42,8 +40,7 @@ target_link_libraries(
          ${PROJECT_NAME}_bullet
          Eigen3::Eigen
          ${TESSERACT_GEOM_TARGET}
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+         ${tinyxml2_LIBRARIES}
          console_bridge::console_bridge)
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_vhacd_convex_decomposition PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
@@ -60,7 +57,8 @@ target_code_coverage(
 target_include_directories(
   ${PROJECT_NAME}_vhacd_convex_decomposition PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../bullet/include>"
-                                                   "$<INSTALL_INTERFACE:include>")
+                                                   "$<INSTALL_INTERFACE:include>"
+                                                   ${tinyxml2_INCLUDE_DIRS})
 
 if(NOT MSVC)
   find_package(Threads REQUIRED)
@@ -74,8 +72,7 @@ if(NOT MSVC)
             Eigen3::Eigen
             ${TESSERACT_COMMON_TARGET}
             ${TESSERACT_GEOM_TARGET}
-            ${TESSERACT_TINYXML2_TARGET}
-            ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+            ${tinyxml2_LIBRARIES}
             console_bridge::console_bridge
             Threads::Threads)
   target_compile_options(create_convex_decomposition PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE}

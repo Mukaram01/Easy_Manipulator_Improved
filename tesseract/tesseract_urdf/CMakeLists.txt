@@ -50,11 +50,8 @@ find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_scene_graph REQUIRED)
 find_package(tesseract_collision REQUIRED COMPONENTS bullet)
-
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_urdf")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
@@ -120,8 +117,7 @@ target_link_libraries(
   PUBLIC Boost::boost
          Boost::graph
          Eigen3::Eigen
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+         ${tinyxml2_LIBRARIES}
          tesseract::tesseract_common
          tesseract::tesseract_geometry
          tesseract::tesseract_scene_graph
@@ -165,7 +161,8 @@ if(TESSERACT_URDF_HAS_PCL)
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                  "$<INSTALL_INTERFACE:include>")
+                                                  "$<INSTALL_INTERFACE:include>"
+                                                  ${tinyxml2_INCLUDE_DIRS})
 
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
 target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TESSERACT_CXX_VERSION})
@@ -180,7 +177,8 @@ set(_tesseract_urdf_dependencies
     Boost
     Eigen3
     console_bridge
-    tinyxml2_vendor
+    PkgConfig
+    tinyxml2
     "tesseract_collision COMPONENTS bullet"
     tesseract_geometry
     tesseract_common

@@ -38,10 +38,8 @@ else()
                serialization
                stacktrace_noop)
 endif()
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_geometry")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
@@ -162,8 +160,7 @@ target_link_libraries(
     octomath
     assimp::assimp
     Boost::serialization
-    ${TESSERACT_TINYXML2_TARGET}
-    ${TESSERACT_TINYXML2_LINK_LIBRARIES})
+    ${tinyxml2_LIBRARIES})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_ASSIMP_USE_PBRMATERIAL})
 target_clang_tidy(${PROJECT_NAME} ENABLE ${TESSERACT_ENABLE_CLANG_TIDY})
@@ -171,9 +168,13 @@ target_cxx_version(${PROJECT_NAME} PUBLIC VERSION ${TESSERACT_CXX_VERSION})
 target_code_coverage(${PROJECT_NAME} PRIVATE ALL EXCLUDE ${COVERAGE_EXCLUDE} ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(${PROJECT_NAME}
                            PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                  "$<INSTALL_INTERFACE:include>")
+                                  "$<INSTALL_INTERFACE:include>"
+                                  ${tinyxml2_INCLUDE_DIRS})
 
-configure_package(NAMESPACE tesseract TARGETS ${PROJECT_NAME})
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}
+  DEPENDENCIES PkgConfig tinyxml2)
 
 if(NOT TARGET tesseract::tesseract_common AND TARGET tesseract_common::tesseract_common)
   add_library(tesseract::tesseract_common INTERFACE IMPORTED)
@@ -230,5 +231,5 @@ endif()
 
 ament_export_libraries(${PROJECT_NAME})
 ament_export_include_directories(include)
-ament_export_dependencies(tesseract_common Eigen3 console_bridge octomap assimp tinyxml2_vendor)
+ament_export_dependencies(tesseract_common Eigen3 console_bridge octomap assimp PkgConfig tinyxml2)
 ament_package()

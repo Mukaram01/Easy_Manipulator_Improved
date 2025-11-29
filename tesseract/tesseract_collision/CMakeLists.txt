@@ -27,10 +27,8 @@ find_package(
 find_package(octomap REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(assimp REQUIRED)
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -306,6 +304,8 @@ endif()
 set(
   _tesseract_collision_dependencies
   Eigen3
+  PkgConfig
+  tinyxml2
   console_bridge
   tesseract_geometry
   tesseract_common

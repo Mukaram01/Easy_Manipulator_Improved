@@ -41,10 +41,8 @@ else()
                stacktrace_noop)
 endif()
 find_package(Eigen3 REQUIRED)
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library to satisfy tesseract_common")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 find_package(yaml-cpp REQUIRED)
 
 set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
@@ -125,8 +123,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+         ${tinyxml2_LIBRARIES}
          ${CMAKE_DL_LIBS}
          Boost::boost
          Boost::system
@@ -148,7 +145,8 @@ target_code_coverage(
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                  "$<INSTALL_INTERFACE:include>")
+                                                  "$<INSTALL_INTERFACE:include>"
+                                                  ${tinyxml2_INCLUDE_DIRS})
 
 configure_package(
   NAMESPACE tesseract
@@ -157,7 +155,8 @@ configure_package(
     Eigen3
     console_bridge
     "Boost COMPONENTS ${TESSERACT_BOOST_COMPONENTS_STRING}"
-    tinyxml2_vendor
+    PkgConfig
+    tinyxml2
     yaml-cpp)
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} PUBLIC Bcrypt)
@@ -195,7 +194,8 @@ ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})
 ament_export_dependencies(
   Eigen3
-  tinyxml2_vendor
+  PkgConfig
+  tinyxml2
   yaml-cpp
   Boost
   console_bridge)

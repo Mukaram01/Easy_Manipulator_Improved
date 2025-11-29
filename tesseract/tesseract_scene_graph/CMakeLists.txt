@@ -63,11 +63,8 @@ endif()
 find_package(assimp REQUIRED)
 find_package(tesseract_geometry REQUIRED)
 find_package(tesseract_common REQUIRED)
-
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library to satisfy tesseract_scene_graph")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 
 set(_tesseract_geometry_candidate_targets
     tesseract_geometry::tesseract_geometry
@@ -206,8 +203,7 @@ target_link_libraries(
   PUBLIC Boost::boost
          Boost::graph
          Eigen3::Eigen
-         ${TESSERACT_TINYXML2_TARGET}
-         ${TESSERACT_TINYXML2_LINK_LIBRARIES}
+         ${tinyxml2_LIBRARIES}
          ${TESSERACT_GEOMETRY_TARGET}
          ${TESSERACT_COMMON_TARGET}
          console_bridge::console_bridge)
@@ -236,11 +232,14 @@ target_code_coverage(
   EXCLUDE ${COVERAGE_EXCLUDE}
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(${PROJECT_NAME} PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                  "$<INSTALL_INTERFACE:include>")
+                                                  "$<INSTALL_INTERFACE:include>"
+                                                  ${tinyxml2_INCLUDE_DIRS})
 
 set(_tesseract_scene_graph_dependencies
     Boost
     Eigen3
+    PkgConfig
+    tinyxml2
     console_bridge
     assimp
     tesseract_geometry

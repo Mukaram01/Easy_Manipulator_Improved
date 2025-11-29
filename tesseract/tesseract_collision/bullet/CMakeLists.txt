@@ -12,11 +12,8 @@ tesseract_initialize_boilerplate_support()
 find_package(tesseract_common REQUIRED CONFIG)
 find_package(tesseract_geometry REQUIRED CONFIG)
 include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
-
-tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
-  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision bullet components")
-endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(tinyxml2 REQUIRED tinyxml2)
 
 if(NOT TARGET tesseract::tesseract_common)
   if(TARGET tesseract_common::tesseract_common)
@@ -77,8 +74,7 @@ target_link_libraries(
     console_bridge::console_bridge
     octomap
     octomath
-    ${TESSERACT_TINYXML2_TARGET}
-    ${TESSERACT_TINYXML2_LINK_LIBRARIES})
+    ${tinyxml2_LIBRARIES})
 target_compile_options(${PROJECT_NAME}_bullet PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
@@ -89,7 +85,8 @@ target_include_directories(
   ${PROJECT_NAME}_bullet
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
          "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
-         "$<INSTALL_INTERFACE:include>")
+         "$<INSTALL_INTERFACE:include>"
+         ${tinyxml2_INCLUDE_DIRS})
 
 # Create target for Bullet implementation
 add_library(${PROJECT_NAME}_bullet_factories src/bullet_factories.cpp)
@@ -104,7 +101,8 @@ target_include_directories(
   ${PROJECT_NAME}_bullet_factories
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
          "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
-         "$<INSTALL_INTERFACE:include>")
+         "$<INSTALL_INTERFACE:include>"
+         ${tinyxml2_INCLUDE_DIRS})
 
 # Convex decomposition libraries
 if(HACD_LIBRARY)
@@ -150,8 +148,7 @@ if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
       console_bridge::console_bridge
       octomap
       octomath
-      ${TESSERACT_TINYXML2_TARGET}
-      ${TESSERACT_TINYXML2_LINK_LIBRARIES})
+      ${tinyxml2_LIBRARIES})
   target_compile_options(create_convex_hull PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE} ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
   target_compile_definitions(create_convex_hull PRIVATE ${TESSERACT_COMPILE_DEFINITIONS})
   target_cxx_version(create_convex_hull PRIVATE VERSION ${TESSERACT_CXX_VERSION})
@@ -159,7 +156,8 @@ if(NOT MSVC AND TESSERACT_COLLISION_BUILD_CREATE_CONVEX_HULL)
   target_include_directories(
     create_convex_hull
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-           "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>")
+           "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
+           ${tinyxml2_INCLUDE_DIRS})
 
   list(APPEND PACKAGE_LIBRARIES create_convex_hull)
 
