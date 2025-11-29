@@ -132,6 +132,9 @@ target_link_libraries(
          ${TESSERACT_BACKTRACE_LIB}
          console_bridge::console_bridge
          yaml-cpp)
+if(tinyxml2_LIBRARY_DIRS)
+  target_link_directories(${PROJECT_NAME} PRIVATE ${tinyxml2_LIBRARY_DIRS})
+endif()
 # The bundled ply io implementation is header-only and does not require
 # additional dependencies beyond the core Boost components already linked.
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
