@@ -247,6 +247,49 @@ PY
     fi
   fi
 
+  # Ensure the collision coefficient maps use a stable hash implementation for
+  # LinkNamesPair. Older snapshots relied on std::hash<std::pair<>> which is
+  # undefined and fails to compile on libstdc++11.
+  TRAJOPT_COLLISION_TYPES=$(find "$SRC" -path "*/trajopt_common/include/trajopt_common/collision_types.h" -print -quit 2>/dev/null || true)
+  TRAJOPT_COLLISION_TYPES_SRC=$(find "$SRC" -path "*/trajopt_common/src/collision_types.cpp" -print -quit 2>/dev/null || true)
+  if [[ -n "$TRAJOPT_COLLISION_TYPES" && -f "$TRAJOPT_COLLISION_TYPES" && -n "$TRAJOPT_COLLISION_TYPES_SRC" && -f "$TRAJOPT_COLLISION_TYPES_SRC" ]]; then
+    echo "Enforcing PairHash usage in trajopt_common collision coefficient maps"
+    TRAJOPT_COLLISION_TYPES="$TRAJOPT_COLLISION_TYPES" TRAJOPT_COLLISION_TYPES_SRC="$TRAJOPT_COLLISION_TYPES_SRC" python3 - <<'PY'
+import os
+from pathlib import Path
+
+header = Path(os.environ["TRAJOPT_COLLISION_TYPES"])
+source = Path(os.environ["TRAJOPT_COLLISION_TYPES_SRC"])
+
+header_replacements = {
+    "std::unordered_map<tesseract_common::LinkNamesPair, double>":
+        "std::unordered_map<tesseract_common::LinkNamesPair, double, tesseract_common::PairHash>",
+}
+
+source_replacements = {
+    "const std::unordered_map<tesseract_common::LinkNamesPair, double>& CollisionCoeffData::getCollisionCoeffPairData() const":
+        "const std::unordered_map<tesseract_common::LinkNamesPair, double, tesseract_common::PairHash>& CollisionCoeffData::getCollisionCoeffPairData() const",
+}
+
+
+def apply(text: str, mapping: dict) -> str:
+    for old, new in mapping.items():
+        text = text.replace(old, new)
+    return text
+
+
+header_text = header.read_text()
+updated_header = apply(header_text, header_replacements)
+if updated_header != header_text:
+    header.write_text(updated_header)
+
+source_text = source.read_text()
+updated_source = apply(source_text, source_replacements)
+if updated_source != source_text:
+    source.write_text(updated_source)
+PY
+  fi
+
 cd "$WS"
 
 source_install() {
