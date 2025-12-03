@@ -25,6 +25,8 @@
 #include <trajopt_common/collision_types.h>
 #include <tesseract_common/utils.h>
 
+#include <functional>
+
 namespace trajopt_common
 {
 CollisionCoeffData::CollisionCoeffData(double default_collision_coeff)
@@ -76,9 +78,10 @@ bool CollisionCoeffData::operator==(const CollisionCoeffData& rhs) const
 {
   static auto max_diff = static_cast<double>(std::numeric_limits<float>::epsilon());
 
-  auto value_eq = [](const double& v1, const double& v2) {
-    return tesseract_common::almostEqualRelativeAndAbs(v1, v2, max_diff);
-  };
+  std::function<bool(const double&, const double&)> value_eq =
+      [](const double& v1, const double& v2) {
+        return tesseract_common::almostEqualRelativeAndAbs(v1, v2, max_diff);
+      };
 
   bool equal = true;
   equal &=
