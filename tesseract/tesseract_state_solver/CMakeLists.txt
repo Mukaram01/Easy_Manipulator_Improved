@@ -80,6 +80,7 @@ target_include_directories(${PROJECT_NAME}_core INTERFACE "$<BUILD_INTERFACE:${C
                                                           "$<INSTALL_INTERFACE:include>")
 
 add_library(${PROJECT_NAME}_kdl src/kdl_state_solver.cpp)
+set_target_properties(${PROJECT_NAME}_kdl PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(
   ${PROJECT_NAME}_kdl
   PUBLIC ${PROJECT_NAME}_core
@@ -103,6 +104,7 @@ target_include_directories(${PROJECT_NAME}_kdl PUBLIC "$<BUILD_INTERFACE:${CMAKE
                                                       "$<INSTALL_INTERFACE:include>")
 
 add_library(${PROJECT_NAME}_ofkt src/ofkt_state_solver.cpp src/ofkt_nodes.cpp)
+set_target_properties(${PROJECT_NAME}_ofkt PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(
   ${PROJECT_NAME}_ofkt
   PUBLIC ${PROJECT_NAME}_core
