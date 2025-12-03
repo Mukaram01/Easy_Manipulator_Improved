@@ -40,7 +40,6 @@ find_package(tesseract_common REQUIRED)
 find_package(tesseract_collision COMPONENTS core REQUIRED)
 find_package(tesseract_kinematics COMPONENTS core REQUIRED)
 find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)
-find_package(tinyxml2 CONFIG REQUIRED)
 
 # qpOASES
 option(TRAJOPT_BUILD_qpOASES "Build qpOASES components" ON)
