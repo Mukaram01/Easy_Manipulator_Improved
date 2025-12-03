@@ -153,6 +153,15 @@ done < <(colcon list --base-paths src)
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
 
+# Consolidate CMake arguments to enforce C++17 and position independent code so
+# static libraries can link cleanly into shared objects.
+CMAKE_ARGS=(
+  -DCMAKE_CXX_STANDARD=17
+  -DCMAKE_CXX_STANDARD_REQUIRED=ON
+  -DCMAKE_CXX_EXTENSIONS=OFF
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+)
+
 # 1) Ensure boost_plugin_loader exists
 if [ ! -d src/boost_plugin_loader ]; then
   git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
@@ -168,14 +177,14 @@ colcon build --symlink-install --packages-select \
 
 # 4) Stage 2: up to tesseract_common/tesseract_msgs with C++17
 colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
-  --cmake-args -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF
+  --cmake-args "${CMAKE_ARGS[@]}"
 
 # 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
 # Build its dependency chain as well so the workspace has the expected environment
 # hooks available when colcon sources it during later stages.
 colcon build --symlink-install --packages-up-to tesseract_state_solver \
-  --cmake-args -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF
+  --cmake-args "${CMAKE_ARGS[@]}"
 
 # 5) Stage 3: full workspace
 colcon build --symlink-install \
-  --cmake-args -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF
+  --cmake-args "${CMAKE_ARGS[@]}"
