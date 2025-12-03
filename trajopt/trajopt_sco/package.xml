@@ -13,6 +13,7 @@
   <depend>jsoncpp</depend>
   <depend>rclcpp</depend>
   <depend>trajopt_common</depend>
+  <depend>tinyxml2</depend>
   <depend>tesseract_common</depend>
   <depend>tesseract_collision</depend>
   <depend>tesseract_kinematics</depend>
