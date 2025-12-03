@@ -17,7 +17,6 @@
   <depend>tesseract_collision</depend>
   <depend>tesseract_kinematics</depend>
   <depend>tesseract_state_solver</depend>
-  <depend>tinyxml2</depend>
   <depend>eigen</depend>
   <build_depend>eigen3_cmake_module</build_depend>
   <exec_depend>eigen3_cmake_module</exec_depend>
