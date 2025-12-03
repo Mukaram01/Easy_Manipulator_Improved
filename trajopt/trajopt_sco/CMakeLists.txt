@@ -37,10 +37,14 @@ find_package(Boost REQUIRED COMPONENTS system filesystem serialization program_o
 find_package(OpenMP REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(tesseract_common REQUIRED)
+include(${tesseract_common_DIR}/tesseract_macros.cmake)
+tesseract_resolve_tinyxml2(TRAJOPT_TINYXML2_TARGET TRAJOPT_TINYXML2_LINK_LIBRARIES)
+if(NOT TRAJOPT_TINYXML2_TARGET AND NOT TRAJOPT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library to satisfy trajopt_sco")
+endif()
 find_package(tesseract_collision COMPONENTS core REQUIRED)
 find_package(tesseract_kinematics COMPONENTS core REQUIRED)
 find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)
-find_package(tinyxml2 REQUIRED)
 
 # qpOASES
 option(TRAJOPT_BUILD_qpOASES "Build qpOASES components" ON)
@@ -148,6 +152,8 @@ target_link_libraries(
          Eigen3::Eigen
          rclcpp::rclcpp
          ${CMAKE_DL_LIBS}
+         ${TRAJOPT_TINYXML2_TARGET}
+         ${TRAJOPT_TINYXML2_LINK_LIBRARIES}
          jsoncpp_lib
          OpenMP::OpenMP_CXX)
 target_compile_options(${PROJECT_NAME} PRIVATE ${TRAJOPT_COMPILE_OPTIONS_PRIVATE})
