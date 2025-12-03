@@ -173,6 +173,9 @@ BOOST_DEPS=(
   libboost-program-options-dev
   libboost-serialization-dev
 )
+TINYXML2_DEPS=(
+  libtinyxml2-dev
+)
 
 # Install Boost development packages explicitly because rosdep may skip or fail
 # to resolve them in some environments.  Using apt-get directly ensures the
@@ -180,7 +183,7 @@ BOOST_DEPS=(
 # stale dpkg check.
 echo "Ensuring required Boost development packages are installed" >&2
 $APT_GET update -y
-$APT_GET install -y "${BOOST_DEPS[@]}"
+$APT_GET install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}"
 
 # Double-check the Boost headers are discoverable before running CMake.  Both
 # rosdep and the manual install above should have pulled them in, but explicitly
@@ -189,6 +192,14 @@ $APT_GET install -y "${BOOST_DEPS[@]}"
 if [[ ! -f /usr/include/boost/program_options/options_description.hpp || ! -f /usr/include/boost/serialization/serialization.hpp ]]; then
   echo "Boost headers for required components are missing even after installing ${BOOST_DEPS[*]}." >&2
   echo "Please ensure the listed Boost dev packages are available and rerun this script." >&2
+  exit 1
+fi
+
+# Ensure tinyxml2 provides a CMake package configuration for trajopt_sco to
+# consume.  Some environments lack the development package even after rosdep
+# runs, so install it explicitly and fail early if the config is still missing.
+if [[ ! -f /usr/lib/x86_64-linux-gnu/cmake/tinyxml2/tinyxml2Config.cmake ]]; then
+  echo "tinyxml2Config.cmake not found; ensure ${TINYXML2_DEPS[*]} is available." >&2
   exit 1
 fi
 
