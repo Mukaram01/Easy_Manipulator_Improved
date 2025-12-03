@@ -196,10 +196,20 @@ if [[ ! -f /usr/include/boost/program_options/options_description.hpp || ! -f /u
 fi
 
 # Ensure tinyxml2 provides a CMake package configuration for trajopt_sco to
-# consume.  Some environments lack the development package even after rosdep
-# runs, so install it explicitly and fail early if the config is still missing.
-if [[ ! -f /usr/lib/x86_64-linux-gnu/cmake/tinyxml2/tinyxml2Config.cmake ]]; then
-  echo "tinyxml2Config.cmake not found; ensure ${TINYXML2_DEPS[*]} is available." >&2
+# consume.  Ubuntu Noble's package switched to a lower-case filename
+# (tinyxml2-config.cmake), while Jammy shipped tinyxml2Config.cmake.  Accept
+# either to keep the check working across both releases instead of forcing the
+# older path and failing even when the dev package is installed.
+TINYXML2_CONFIG_DIR=/usr/lib/x86_64-linux-gnu/cmake/tinyxml2
+shopt -s nullglob
+TINYXML2_CONFIGS=(
+  "$TINYXML2_CONFIG_DIR"/tinyxml2Config.cmake
+  "$TINYXML2_CONFIG_DIR"/tinyxml2-config.cmake
+)
+shopt -u nullglob
+
+if [[ ${#TINYXML2_CONFIGS[@]} -eq 0 ]]; then
+  echo "tinyxml2 CMake package config not found; ensure ${TINYXML2_DEPS[*]} is available." >&2
   exit 1
 fi
 
