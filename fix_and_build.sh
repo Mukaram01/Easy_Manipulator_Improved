@@ -192,9 +192,15 @@ if [[ ! -f /usr/include/boost/program_options/options_description.hpp || ! -f /u
   exit 1
 fi
 
-# Enforce C++17
+# Enforce C++17 and position independent code so static libraries can be linked
+# into shared objects without -fPIC relocation errors.
 export AMENT_CMAKE_CXX_STANDARD=17
-CMAKE_ARGS=( -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF )
+CMAKE_ARGS=(
+  -DCMAKE_CXX_STANDARD=17
+  -DCMAKE_CXX_STANDARD_REQUIRED=ON
+  -DCMAKE_CXX_EXTENSIONS=OFF
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+)
 
 # Minimal include fix for profile_dictionary
 # Use find's -print -quit to grab the first match and avoid non-zero exit when not found
