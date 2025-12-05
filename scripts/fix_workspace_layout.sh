@@ -105,6 +105,50 @@ PY
   fi
 fi
 
+# Ensure tesseract_command_language can locate the helper macros exported by
+# tesseract_common. Some environments fail to load the CONFIG_EXTRAS provided by
+# tesseract_common automatically, which leaves tesseract_variables() undefined
+# and causes CMake to abort early. Inject a small fallback before the first call
+# to tesseract_variables() so the build can continue.
+TCL_CMAKE=$(find "${SRC_DIR}" -path "*/tesseract_command_language/CMakeLists.txt" -print -quit 2>/dev/null || true)
+if [[ -n "${TCL_CMAKE}" && -f "${TCL_CMAKE}" ]]; then
+  if [[ "${TCL_CMAKE}" == "${REPO_DIR}"/* ]]; then
+    echo "Skipping modification of tracked file ${TCL_CMAKE}"
+  else
+    echo "Adding tesseract_common fallback include to ${TCL_CMAKE}"
+    TCL_CMAKE="${TCL_CMAKE}" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TCL_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+def find_index(predicate):
+    for idx, line in enumerate(lines):
+        if predicate(line):
+            return idx
+    return None
+
+if not any("tesseract_variables() is unavailable" in line for line in lines):
+    insert_at = find_index(lambda l: "tesseract_variables()" in l)
+    if insert_at is not None:
+        guard = [
+            "if(NOT COMMAND tesseract_variables)",
+            "  if(DEFINED tesseract_common_DIR AND EXISTS \"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+            "    include(\"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+            "  endif()",
+            "endif()",
+            "if(NOT COMMAND tesseract_variables)",
+            "  message(FATAL_ERROR \"tesseract_variables() is unavailable; ensure tesseract_common is discoverable\")",
+            "endif()",
+            "",
+        ]
+        lines[insert_at:insert_at] = guard
+        cmake.write_text("\n".join(lines) + "\n")
+PY
+  fi
+fi
+
 # Link trajopt-related packages from the backup if available
 link_from_backup trajopt_common
 link_from_backup trajopt
