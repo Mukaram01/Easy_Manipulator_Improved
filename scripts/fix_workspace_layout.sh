@@ -181,6 +181,8 @@ guard = [
     "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common\"",
     "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract/tesseract_common\"",
     "      \"${CMAKE_CURRENT_LIST_DIR}/../../../tesseract/tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../easy_manipulation_deployment/tesseract/tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../../easy_manipulation_deployment/tesseract/tesseract_common\"",
     "    PATH_SUFFIXES share/tesseract_common",
     "  )",
     "  if(NOT _tesseract_common_src STREQUAL \"_tesseract_common_src-NOTFOUND\")",
