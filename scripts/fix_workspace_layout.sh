@@ -133,6 +133,9 @@ if not any("tesseract_variables() is unavailable" in line for line in lines):
     insert_at = find_index(lambda l: "tesseract_variables()" in l)
     if insert_at is not None:
         guard = [
+            "if(NOT DEFINED tesseract_common_DIR)",
+            "  find_package(tesseract_common QUIET CONFIG)",
+            "endif()",
             "if(NOT COMMAND tesseract_variables)",
             "  if(DEFINED tesseract_common_DIR AND EXISTS \"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
             "    include(\"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
