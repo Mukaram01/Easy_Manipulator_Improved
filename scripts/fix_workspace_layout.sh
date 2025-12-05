@@ -123,6 +123,8 @@ from pathlib import Path
 cmake = Path(os.environ["TCL_CMAKE"])
 lines = cmake.read_text().splitlines()
 
+begin_marker = "# BEGIN tesseract_common fallback"
+end_marker = "# END tesseract_common fallback"
 sentinel = "  message(FATAL_ERROR \"tesseract_variables() is unavailable; ensure tesseract_common is discoverable\")"
 
 
@@ -133,11 +135,37 @@ def find_index(predicate):
     return None
 
 
-def replace_guard(start_idx: int, end_idx: int, block: list[str]):
-    lines[start_idx:end_idx] = block
+def remove_existing_block():
+    """Strip any previously injected guard to avoid malformed nesting."""
+
+    if begin_marker in lines:
+        start = lines.index(begin_marker)
+        try:
+            end = lines.index(end_marker, start) + 1
+        except ValueError:
+            end = start
+            while end < len(lines) and lines[end].strip():
+                end += 1
+            if end < len(lines):
+                end += 1
+        del lines[start:end]
+        return
+
+    sentinel_idx = find_index(lambda l: "tesseract_variables() is unavailable" in l)
+    if sentinel_idx is not None:
+        start = sentinel_idx
+        while start > 0 and lines[start - 1].strip():
+            start -= 1
+        end = sentinel_idx + 1
+        while end < len(lines) and lines[end].strip():
+            end += 1
+        if end < len(lines):
+            end += 1
+        del lines[start:end]
 
 
 guard = [
+    begin_marker,
     "if(NOT DEFINED tesseract_common_DIR)",
     "  find_package(tesseract_common QUIET CONFIG)",
     "endif()",
@@ -165,23 +193,16 @@ guard = [
     "if(NOT COMMAND tesseract_variables)",
     sentinel,
     "endif()",
+    end_marker,
     "",
 ]
 
 
-sentinel_idx = find_index(lambda l: "tesseract_variables() is unavailable" in l)
-if sentinel_idx is not None:
-    start = next((i for i in range(sentinel_idx, -1, -1) if lines[i].startswith("if(NOT DEFINED tesseract_common_DIR)")), sentinel_idx)
-    end = sentinel_idx + 1
-    while end < len(lines) and lines[end].strip():
-        end += 1
-    if end < len(lines):
-        end += 1
-    replace_guard(start, end, guard)
-else:
-    insert_at = find_index(lambda l: "tesseract_variables()" in l)
-    if insert_at is not None:
-        lines[insert_at:insert_at] = guard
+remove_existing_block()
+
+insert_at = find_index(lambda l: "tesseract_variables()" in l)
+if insert_at is not None:
+    lines[insert_at:insert_at] = guard
 
 
 cmake.write_text("\n".join(lines) + "\n")
