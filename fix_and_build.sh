@@ -231,6 +231,107 @@ if [[ -f "$PDH" ]] && grep -q '<shared_mutex>' "$PDH" && ! grep -q '<mutex>' "$P
   sed -i '/<shared_mutex>/a #include <mutex>' "$PDH"
 fi
 
+# Ensure tesseract_command_language can locate the helper macros exported by
+# tesseract_common. Some environments fail to load the CONFIG_EXTRAS provided by
+# tesseract_common automatically, which leaves tesseract_variables() undefined
+# and causes CMake to abort early. Inject a small fallback before the first call
+# to tesseract_variables() so the build can continue.
+TCL_CMAKE=$(find "$SRC" -path "*/tesseract_command_language/CMakeLists.txt" -print -quit 2>/dev/null || true)
+if [[ -n "$TCL_CMAKE" && -f "$TCL_CMAKE" ]]; then
+  echo "Adding tesseract_common fallback include to $TCL_CMAKE"
+  TCL_CMAKE="$TCL_CMAKE" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TCL_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+begin_marker = "# BEGIN tesseract_common fallback"
+end_marker = "# END tesseract_common fallback"
+sentinel = "  message(FATAL_ERROR \"tesseract_variables() is unavailable; ensure tesseract_common is discoverable\")"
+
+
+def find_index(predicate):
+    for idx, line in enumerate(lines):
+        if predicate(line):
+            return idx
+    return None
+
+
+def remove_existing_block():
+    """Strip any previously injected guard to avoid malformed nesting."""
+
+    if begin_marker in lines:
+        start = lines.index(begin_marker)
+        try:
+            end = lines.index(end_marker, start) + 1
+        except ValueError:
+            end = start
+            while end < len(lines) and lines[end].strip():
+                end += 1
+            if end < len(lines):
+                end += 1
+        del lines[start:end]
+        return
+
+    sentinel_idx = find_index(lambda l: "tesseract_variables() is unavailable" in l)
+    if sentinel_idx is not None:
+        start = sentinel_idx
+        while start > 0 and lines[start - 1].strip():
+            start -= 1
+        end = sentinel_idx + 1
+        while end < len(lines) and lines[end].strip():
+            end += 1
+        if end < len(lines):
+            end += 1
+        del lines[start:end]
+
+
+guard = [
+    begin_marker,
+    "if(NOT DEFINED tesseract_common_DIR)",
+    "  find_package(tesseract_common QUIET CONFIG)",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    "  if(DEFINED tesseract_common_DIR AND EXISTS \"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+    "    include(\"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+    "  endif()",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    "  find_path(_tesseract_common_src cmake/tesseract_macros.cmake",
+    "    HINTS",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract/tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../../tesseract/tesseract_common\"",
+    "    PATH_SUFFIXES share/tesseract_common",
+    "  )",
+    "  if(NOT _tesseract_common_src STREQUAL \"_tesseract_common_src-NOTFOUND\")",
+    "    list(APPEND CMAKE_MODULE_PATH \"${_tesseract_common_src}/cmake\")",
+    "    if(EXISTS \"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
+    "      include(\"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
+    "    endif()",
+    "  endif()",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    sentinel,
+    "endif()",
+    end_marker,
+    "",
+]
+
+
+remove_existing_block()
+
+insert_at = find_index(lambda l: "tesseract_variables()" in l)
+if insert_at is not None:
+    lines[insert_at:insert_at] = guard
+
+
+cmake.write_text("\n".join(lines) + "\n")
+PY
+fi
+
   # Ensure trajopt_common declares all dependencies it links against. Some upstream
   # snapshots omit the KDL state solver find_package() call, which results in
   # CMake configure errors when the solver target is unavailable. TinyXML2 and
