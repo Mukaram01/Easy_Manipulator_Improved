@@ -123,44 +123,68 @@ from pathlib import Path
 cmake = Path(os.environ["TCL_CMAKE"])
 lines = cmake.read_text().splitlines()
 
+sentinel = "  message(FATAL_ERROR \"tesseract_variables() is unavailable; ensure tesseract_common is discoverable\")"
+
+
 def find_index(predicate):
     for idx, line in enumerate(lines):
         if predicate(line):
             return idx
     return None
 
-if not any("tesseract_variables() is unavailable" in line for line in lines):
+
+def replace_guard(start_idx: int, end_idx: int, block: list[str]):
+    lines[start_idx:end_idx] = block
+
+
+guard = [
+    "if(NOT DEFINED tesseract_common_DIR)",
+    "  find_package(tesseract_common QUIET CONFIG)",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    "  if(DEFINED tesseract_common_DIR AND EXISTS \"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+    "    include(\"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
+    "  endif()",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    "  find_path(_tesseract_common_src cmake/tesseract_macros.cmake",
+    "    HINTS",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract/tesseract_common\"",
+    "      \"${CMAKE_CURRENT_LIST_DIR}/../../../tesseract/tesseract_common\"",
+    "    PATH_SUFFIXES share/tesseract_common",
+    "  )",
+    "  if(NOT _tesseract_common_src STREQUAL \"_tesseract_common_src-NOTFOUND\")",
+    "    list(APPEND CMAKE_MODULE_PATH \"${_tesseract_common_src}/cmake\")",
+    "    if(EXISTS \"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
+    "      include(\"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
+    "    endif()",
+    "  endif()",
+    "endif()",
+    "if(NOT COMMAND tesseract_variables)",
+    sentinel,
+    "endif()",
+    "",
+]
+
+
+sentinel_idx = find_index(lambda l: "tesseract_variables() is unavailable" in l)
+if sentinel_idx is not None:
+    start = next((i for i in range(sentinel_idx, -1, -1) if lines[i].startswith("if(NOT DEFINED tesseract_common_DIR)")), sentinel_idx)
+    end = sentinel_idx + 1
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    if end < len(lines):
+        end += 1
+    replace_guard(start, end, guard)
+else:
     insert_at = find_index(lambda l: "tesseract_variables()" in l)
     if insert_at is not None:
-        guard = [
-            "if(NOT DEFINED tesseract_common_DIR)",
-            "  find_package(tesseract_common QUIET CONFIG)",
-            "endif()",
-            "if(NOT COMMAND tesseract_variables)",
-            "  if(DEFINED tesseract_common_DIR AND EXISTS \"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
-            "    include(\"${tesseract_common_DIR}/tesseract_common_module_path.cmake\")",
-            "  endif()",
-            "endif()",
-            "if(NOT COMMAND tesseract_variables)",
-            "  find_path(_tesseract_common_src cmake/tesseract_macros.cmake",
-            "    HINTS",
-            "      \"${CMAKE_CURRENT_LIST_DIR}/../tesseract_common\"",
-            "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common\"",
-            "      \"${CMAKE_CURRENT_LIST_DIR}/../../tesseract/tesseract_common\"",
-            "      \"${CMAKE_CURRENT_LIST_DIR}/../../../tesseract/tesseract_common\"",
-            "    NO_DEFAULT_PATH)",
-            "  if(NOT _tesseract_common_src STREQUAL \"_tesseract_common_src-NOTFOUND\" AND EXISTS \"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
-            "    list(APPEND CMAKE_MODULE_PATH \"${_tesseract_common_src}/cmake\")",
-            "    include(\"${_tesseract_common_src}/cmake/tesseract_macros.cmake\")",
-            "  endif()",
-            "endif()",
-            "if(NOT COMMAND tesseract_variables)",
-            "  message(FATAL_ERROR \"tesseract_variables() is unavailable; ensure tesseract_common is discoverable\")",
-            "endif()",
-            "",
-        ]
         lines[insert_at:insert_at] = guard
-        cmake.write_text("\n".join(lines) + "\n")
+
+
+cmake.write_text("\n".join(lines) + "\n")
 PY
   fi
 fi
