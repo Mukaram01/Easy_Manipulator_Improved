@@ -332,6 +332,42 @@ if insert_at is not None:
 
 cmake.write_text("\n".join(lines) + "\n")
 PY
+
+  echo "Ensuring tesseract_command_language declares tinyxml2 and Boost stacktrace dependencies"
+  TCL_CMAKE="$TCL_CMAKE" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TCL_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+
+def ensure_find_package(statement: str) -> None:
+    """Insert a find_package() statement if it is missing."""
+
+    if any(statement in line for line in lines):
+        return
+
+    try:
+        insert_at = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("find_package")
+        )
+    except StopIteration:
+        try:
+            insert_at = next(
+                i for i, line in enumerate(lines) if line.strip().startswith("project")
+            ) + 1
+        except StopIteration:
+            insert_at = 0
+
+    lines.insert(insert_at, statement)
+
+
+ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
+ensure_find_package("find_package(Boost COMPONENTS stacktrace_backtrace REQUIRED)")
+
+cmake.write_text("\n".join(lines) + "\n")
+PY
 fi
 
   # Ensure trajopt_common declares all dependencies it links against. Some upstream
