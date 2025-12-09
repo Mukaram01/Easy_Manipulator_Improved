@@ -18,7 +18,10 @@
   <build_export_depend>eigen</build_export_depend>
 
   <build_depend>libboost-serialization-dev</build_depend>
+  <build_depend>libboost-stacktrace-dev</build_depend>
+  <build_export_depend>libboost-stacktrace-dev</build_export_depend>
   <exec_depend>libboost-serialization</exec_depend>
+  <exec_depend>libboost-stacktrace-dev</exec_depend>
 
   <test_depend>gtest</test_depend>
 
