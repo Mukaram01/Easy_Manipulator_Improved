@@ -24,6 +24,14 @@ if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
 endif()
 find_package(Eigen3 REQUIRED)
 set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
+
+# Force CMake to use the classic FindBoost module instead of Boost's CMake
+# config files. The shipped Boost 1.74 stacktrace config packages have a bug
+# that triggers a "string sub-command REGEX, mode MATCHALL needs at least 5
+# arguments" error on this platform. Enabling Boost_NO_BOOST_CMAKE avoids the
+# faulty config files while keeping the same components.
+set(Boost_NO_BOOST_CMAKE ON)
+
 if(NOT APPLE)
   find_package(
     Boost REQUIRED
