@@ -135,7 +135,14 @@ sudo apt-get update && sudo apt-get install -y libboost-stacktrace-dev
 ```
 
 Running `./fix_and_build.sh` or `scripts/install_system_deps.sh` also installs
-this dependency automatically.
+this dependency automatically. If the error persists after installing the
+package, clear any cached build artifacts for `tesseract_command_language`
+before retrying so CMake re-detects the newly available stacktrace component:
+
+```
+rm -rf build/tesseract_command_language install/tesseract_command_language \
+  log/tesseract_command_language
+```
 
 Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
 packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
