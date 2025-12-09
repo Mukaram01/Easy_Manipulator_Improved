@@ -12,23 +12,22 @@ endif()
 find_package(console_bridge REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(Eigen3 REQUIRED)
+set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
 if(NOT APPLE)
   find_package(
     Boost REQUIRED
-    COMPONENTS system
-               filesystem
-               serialization
-               stacktrace_noop
-    OPTIONAL_COMPONENTS stacktrace_backtrace stacktrace_basic)
+    COMPONENTS ${TESSERACT_BOOST_COMPONENTS}
+    OPTIONAL_COMPONENTS stacktrace_backtrace stacktrace_basic stacktrace_noop)
 else()
   find_package(
     Boost REQUIRED
-    COMPONENTS system
-               filesystem
-               serialization
-               stacktrace_noop)
+    COMPONENTS ${TESSERACT_BOOST_COMPONENTS}
+    OPTIONAL_COMPONENTS stacktrace_noop)
 endif()
 
+set(TESSERACT_BACKTRACE_DEFINITION "")
+set(TESSERACT_BACKTRACE_COMPONENT "")
+set(TESSERACT_BACKTRACE_LIB "")
 if(TARGET Boost::stacktrace_backtrace)
   find_file(BACKTRACE_INCLUDE_FILE backtrace.h PATHS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
   if(BACKTRACE_INCLUDE_FILE)
@@ -47,9 +46,10 @@ elseif(TARGET Boost::stacktrace_noop)
   set(TESSERACT_BACKTRACE_DEFINITION BOOST_STACKTRACE_USE_NOOP)
   set(TESSERACT_BACKTRACE_COMPONENT "stacktrace_noop")
   set(TESSERACT_BACKTRACE_LIB "Boost::stacktrace_noop")
+else()
+  message(WARNING "No Boost stacktrace component found; stacktrace support is disabled.")
 endif()
 
-set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
 if(TESSERACT_BACKTRACE_COMPONENT)
   list(APPEND TESSERACT_BOOST_COMPONENTS ${TESSERACT_BACKTRACE_COMPONENT})
 endif()
@@ -102,14 +102,16 @@ add_library(
   src/cartesian_waypoint.cpp
   src/joint_waypoint.cpp
   src/utils.cpp)
-target_link_libraries(
-  ${PROJECT_NAME}
-  PUBLIC Eigen3::Eigen
-         console_bridge::console_bridge
-         tesseract::tesseract_common
-         Boost::boost
-         Boost::serialization
-         ${TESSERACT_BACKTRACE_LIB})
+set(TESSERACT_COMMAND_LANGUAGE_LINK_LIBS
+    Eigen3::Eigen
+    console_bridge::console_bridge
+    tesseract::tesseract_common
+    Boost::boost
+    Boost::serialization)
+if(TESSERACT_BACKTRACE_LIB)
+  list(APPEND TESSERACT_COMMAND_LANGUAGE_LINK_LIBS ${TESSERACT_BACKTRACE_LIB})
+endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC ${TESSERACT_COMMAND_LANGUAGE_LINK_LIBS})
 target_compile_options(${PROJECT_NAME} PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS} ${TESSERACT_BACKTRACE_DEFINITION})
