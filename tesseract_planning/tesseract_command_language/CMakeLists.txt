@@ -12,8 +12,14 @@ endif()
 find_package(console_bridge REQUIRED)
 find_package(tesseract_common REQUIRED)
 include(${tesseract_common_DIR}/tesseract_macros.cmake)
+find_package(tinyxml2 CONFIG QUIET)
+if(TARGET tinyxml2::tinyxml2)
+  set(TESSERACT_COMMAND_LANGUAGE_TINYXML2_TARGET tinyxml2::tinyxml2)
+endif()
 tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
-if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET
+   AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES
+   AND NOT TESSERACT_COMMAND_LANGUAGE_TINYXML2_TARGET)
   message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_command_language")
 endif()
 find_package(Eigen3 REQUIRED)
@@ -111,10 +117,15 @@ set(TESSERACT_COMMAND_LANGUAGE_LINK_LIBS
     Eigen3::Eigen
     console_bridge::console_bridge
     tesseract::tesseract_common
-    ${TESSERACT_TINYXML2_TARGET}
-    ${TESSERACT_TINYXML2_LINK_LIBRARIES}
     Boost::boost
     Boost::serialization)
+if(TESSERACT_TINYXML2_TARGET)
+  list(APPEND TESSERACT_COMMAND_LANGUAGE_LINK_LIBS ${TESSERACT_TINYXML2_TARGET})
+endif()
+if(TESSERACT_COMMAND_LANGUAGE_TINYXML2_TARGET)
+  list(APPEND TESSERACT_COMMAND_LANGUAGE_LINK_LIBS ${TESSERACT_COMMAND_LANGUAGE_TINYXML2_TARGET})
+endif()
+list(APPEND TESSERACT_COMMAND_LANGUAGE_LINK_LIBS ${TESSERACT_TINYXML2_LINK_LIBRARIES})
 if(TESSERACT_BACKTRACE_LIB)
   list(APPEND TESSERACT_COMMAND_LANGUAGE_LINK_LIBS ${TESSERACT_BACKTRACE_LIB})
 endif()
@@ -142,6 +153,7 @@ configure_package(
     tesseract_common
     Eigen3
     tinyxml2_vendor
+    tinyxml2
     "Boost COMPONENTS ${TESSERACT_BOOST_COMPONENTS_STRING}"
   CFG_EXTRAS cmake/tesseract_command_language-extras.cmake)
 
