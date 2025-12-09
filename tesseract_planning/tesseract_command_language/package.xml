@@ -17,6 +17,10 @@
   <build_depend>eigen</build_depend>
   <build_export_depend>eigen</build_export_depend>
 
+  <build_depend>tinyxml2_vendor</build_depend>
+  <build_export_depend>tinyxml2_vendor</build_export_depend>
+  <exec_depend>tinyxml2_vendor</exec_depend>
+
   <build_depend>libboost-serialization-dev</build_depend>
   <build_depend>libboost-stacktrace-dev</build_depend>
   <build_export_depend>libboost-stacktrace-dev</build_export_depend>
