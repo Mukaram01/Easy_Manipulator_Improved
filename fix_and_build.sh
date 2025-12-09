@@ -366,7 +366,47 @@ def ensure_find_package(statement: str) -> None:
 
 
 ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
-ensure_find_package("find_package(Boost COMPONENTS stacktrace_backtrace REQUIRED)")
+
+
+def ensure_boost_stacktrace_guard() -> None:
+    """Prefer Boost stacktrace_backtrace but fall back to basic or noop."""
+
+    begin_marker = "# BEGIN boost stacktrace fallback"
+    end_marker = "# END boost stacktrace fallback"
+
+    if begin_marker in lines:
+        start = lines.index(begin_marker)
+        try:
+            end = lines.index(end_marker, start) + 1
+        except ValueError:
+            end = start + 1
+        del lines[start:end]
+
+    guard = [
+        begin_marker,
+        "if(NOT TARGET Boost::stacktrace_backtrace AND NOT TARGET Boost::stacktrace_basic AND NOT TARGET Boost::stacktrace_noop)",
+        "  find_package(Boost COMPONENTS stacktrace_backtrace stacktrace_basic stacktrace_noop QUIET)",
+        "endif()",
+        "if(NOT TARGET Boost::stacktrace_backtrace AND NOT TARGET Boost::stacktrace_basic AND NOT TARGET Boost::stacktrace_noop)",
+        "  message(FATAL_ERROR \"Boost stacktrace component not found; install libboost-stacktrace-dev\")",
+        "endif()",
+        end_marker,
+        "",
+    ]
+
+    try:
+        insert_at = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip().startswith("find_package")
+        )
+    except StopIteration:
+        insert_at = 0
+
+    lines[insert_at:insert_at] = guard
+
+
+ensure_boost_stacktrace_guard()
 
 cmake.write_text("\n".join(lines) + "\n")
 PY
