@@ -365,7 +365,7 @@ def ensure_find_package(statement: str) -> None:
     lines.insert(insert_at, statement)
 
 
-ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
+ensure_find_package("find_package(tinyxml2 CONFIG QUIET)")
 
 
 def ensure_boost_stacktrace_guard() -> None:
