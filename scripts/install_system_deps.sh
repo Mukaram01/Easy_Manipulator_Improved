@@ -14,6 +14,7 @@ REQUIRED_PACKAGES=(
   libtinyxml2-dev
   libboost-dev
   libboost-graph-dev
+  libboost-stacktrace-dev
   libboost-program-options-dev
   libboost-serialization-dev
 )
@@ -29,9 +30,10 @@ done
 # installed (for example, in stripped-down container images).  Fail fast by
 # forcing a reinstall if the canonical graph header cannot be located.
 BOOST_HEADER="/usr/include/boost/graph/adjacency_list.hpp"
-if [[ ! -f $BOOST_HEADER ]]; then
-  echo "Boost graph headers are missing; reinstalling Boost development packages" >&2
-  for pkg in libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev; do
+STACKTRACE_HEADER="/usr/include/boost/stacktrace.hpp"
+if [[ ! -f $BOOST_HEADER || ! -f $STACKTRACE_HEADER ]]; then
+  echo "Boost headers are missing; reinstalling Boost development packages" >&2
+  for pkg in libboost-dev libboost-graph-dev libboost-program-options-dev libboost-serialization-dev libboost-stacktrace-dev; do
     if [[ ! " ${missing[*]} " =~ \ $pkg\  ]]; then
       missing+=("$pkg")
     fi
