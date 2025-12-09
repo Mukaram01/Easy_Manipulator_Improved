@@ -144,6 +144,27 @@ rm -rf build/tesseract_command_language install/tesseract_command_language \
   log/tesseract_command_language
 ```
 
+Similarly, if a configure step fails with a TinyXML2 error such as:
+
+```
+Could not find a package configuration file provided by "tinyxml2" with any
+of the following names:
+
+  tinyxml2Config.cmake
+  tinyxml2-config.cmake
+```
+
+install the TinyXML2 development package (or rerun
+`./easy_manipulation_deployment/scripts/install_system_deps.sh`, which handles
+this automatically) and retry the build after clearing any cached artifacts for
+the affected package:
+
+```
+sudo apt-get update && sudo apt-get install -y libtinyxml2-dev
+rm -rf build/tesseract_command_language install/tesseract_command_language \
+  log/tesseract_command_language
+```
+
 Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
 packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
 support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.

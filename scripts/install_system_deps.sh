@@ -48,3 +48,21 @@ fi
 echo "Installing missing system dependencies: ${missing[*]}"
 $APT_GET update -y
 $APT_GET install -y "${missing[@]}"
+
+# Verify tinyxml2 installs its CMake package configuration so downstream
+# packages that call find_package(tinyxml2) succeed.  The upstream package
+# renamed the config file in Ubuntu Noble, so accept either variant to keep the
+# check working across distributions.
+TINYXML2_CONFIG_DIR=/usr/lib/x86_64-linux-gnu/cmake/tinyxml2
+shopt -s nullglob
+tinyxml2_configs=(
+  "$TINYXML2_CONFIG_DIR"/tinyxml2Config.cmake
+  "$TINYXML2_CONFIG_DIR"/tinyxml2-config.cmake
+)
+shopt -u nullglob
+
+if [[ ${#tinyxml2_configs[@]} -eq 0 ]]; then
+  echo "tinyxml2 CMake package config not found even after installation." >&2
+  echo "Ensure libtinyxml2-dev is available for your distribution and rerun this script." >&2
+  exit 1
+fi
