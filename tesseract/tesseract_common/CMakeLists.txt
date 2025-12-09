@@ -219,6 +219,7 @@ if(TESSERACT_PACKAGE)
     LINUX_DEPENDS
       "libboost-system-dev"
       "libboost-filesystem-dev"
+      "libboost-stacktrace-dev"
       "libboost-serialization-dev"
       "libconsole-bridge-dev"
       "libtinyxml2-dev"

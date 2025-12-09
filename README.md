@@ -121,6 +121,22 @@ required Boost graph/program_options/serialization headers are present before
 the configure step that otherwise emits the `Could NOT find Boost (missing:
 Boost_INCLUDE_DIR graph)` error.
 
+If CMake instead reports a missing `stacktrace_backtrace` component while
+configuring `tesseract_command_language`:
+
+```
+Could NOT find Boost (missing: Boost_INCLUDE_DIR stacktrace_backtrace)
+```
+
+install the Boost stacktrace development package and retry the build:
+
+```
+sudo apt-get update && sudo apt-get install -y libboost-stacktrace-dev
+```
+
+Running `./fix_and_build.sh` or `scripts/install_system_deps.sh` also installs
+this dependency automatically.
+
 Run `scripts/fix_workspace_layout.sh` once to disable duplicate third-party
 packages (Tesseract and TrajOpt) and set up the necessary symlinks. BPMPD
 support is optional and can be toggled with `-DHAVE_BPMPD=ON/OFF` when building.
