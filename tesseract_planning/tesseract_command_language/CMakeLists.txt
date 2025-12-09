@@ -153,7 +153,6 @@ configure_package(
     tesseract_common
     Eigen3
     tinyxml2_vendor
-    tinyxml2
     "Boost COMPONENTS ${TESSERACT_BOOST_COMPONENTS_STRING}"
   CFG_EXTRAS cmake/tesseract_command_language-extras.cmake)
 
