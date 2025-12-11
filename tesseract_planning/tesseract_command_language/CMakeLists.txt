@@ -1,6 +1,29 @@
 cmake_minimum_required(VERSION 3.15.0)
 
 # Extract package name and version
+# BEGIN boost stacktrace fallback
+option(TESSERACT_FORCE_BOOST_STACKTRACE "Force Boost stacktrace search even if headers are missing" OFF)
+if(NOT TARGET Boost::stacktrace_backtrace AND NOT TARGET Boost::stacktrace_basic AND NOT TARGET Boost::stacktrace_noop)
+  find_path(BOOST_STACKTRACE_HEADER boost/stacktrace.hpp)
+  if(BOOST_STACKTRACE_HEADER STREQUAL "BOOST_STACKTRACE_HEADER-NOTFOUND")
+    if(TESSERACT_FORCE_BOOST_STACKTRACE)
+      find_package(Boost COMPONENTS stacktrace_backtrace stacktrace_basic stacktrace_noop QUIET)
+    else()
+      message(WARNING "Boost stacktrace headers not found; using noop interface to avoid BoostDetectToolset")
+      add_library(Boost::stacktrace_noop INTERFACE IMPORTED)
+      target_compile_definitions(Boost::stacktrace_noop INTERFACE BOOST_STACKTRACE_USE_NOOP)
+    endif()
+  else()
+    find_package(Boost COMPONENTS stacktrace_backtrace stacktrace_basic stacktrace_noop QUIET)
+    if(NOT TARGET Boost::stacktrace_backtrace AND NOT TARGET Boost::stacktrace_basic AND NOT TARGET Boost::stacktrace_noop)
+      add_library(Boost::stacktrace_noop INTERFACE IMPORTED)
+      target_compile_definitions(Boost::stacktrace_noop INTERFACE BOOST_STACKTRACE_USE_NOOP)
+      target_include_directories(Boost::stacktrace_noop INTERFACE "${BOOST_STACKTRACE_HEADER}/..")
+    endif()
+  endif()
+endif()
+# END boost stacktrace fallback
+
 find_package(ros_industrial_cmake_boilerplate REQUIRED)
 extract_package_metadata(pkg)
 project(${pkg_extracted_name} VERSION ${pkg_extracted_version} LANGUAGES CXX)
