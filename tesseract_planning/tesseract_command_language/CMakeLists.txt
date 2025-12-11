@@ -28,19 +28,20 @@ set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
 # Force CMake to use the classic FindBoost module instead of Boost's CMake
 # config files. The shipped Boost 1.74 stacktrace config packages have a bug
 # that triggers a "string sub-command REGEX, mode MATCHALL needs at least 5
-# arguments" error on this platform. Enabling Boost_NO_BOOST_CMAKE avoids the
-# faulty config files while keeping the same components.
+# arguments" error on this platform. Enabling Boost_NO_BOOST_CMAKE and using
+# MODULE find_package calls avoids the faulty config files while keeping the
+# same components.
 set(Boost_NO_BOOST_CMAKE ON)
 set(Boost_USE_DEBUG_RUNTIME OFF)
 
 if(NOT APPLE)
   find_package(
-    Boost REQUIRED
+    Boost MODULE REQUIRED
     COMPONENTS ${TESSERACT_BOOST_COMPONENTS}
     OPTIONAL_COMPONENTS stacktrace_backtrace stacktrace_basic stacktrace_noop)
 else()
   find_package(
-    Boost REQUIRED
+    Boost MODULE REQUIRED
     COMPONENTS ${TESSERACT_BOOST_COMPONENTS}
     OPTIONAL_COMPONENTS stacktrace_noop)
 endif()
