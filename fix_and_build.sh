@@ -158,15 +158,28 @@ fi
 rosdep update
 # Some snapshots reference rosdep keys that are missing or incorrect for this
 # workspace (for example, "rviz" under ROS 2).  Skip those keys and install the
-# ones we still need manually so rosdep can proceed without hard errors.
+# ones we still need manually so rosdep can proceed without hard errors.  Also
+# skip packages provided by the repo's overlays so rosdep does not try to
+# resolve them from the system.
+OVERLAY_SKIP_KEYS=(
+  tesseract
+  tesseract_process_planners
+  trajopt_ifopt
+  trajopt_sqp
+  trajopt
+  jsoncpp
+  message_generation
+)
 SKIP_KEYS=(
   catkin
   rviz
   roslib
 )
+ALL_SKIP_KEYS=("${OVERLAY_SKIP_KEYS[@]}" "${SKIP_KEYS[@]}")
+SKIP_KEYS_ARG=$(IFS=","; echo "${ALL_SKIP_KEYS[*]}")
 
 rosdep install --from-paths "${ROSDEP_PATHS[@]}" --ignore-src -yr --rosdistro "$ROS_DISTRO" \
-  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation ${SKIP_KEYS[*]}"
+  --skip-keys "$SKIP_KEYS_ARG"
 
 BOOST_DEPS=(
   libboost-dev
