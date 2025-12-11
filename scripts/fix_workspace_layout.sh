@@ -30,7 +30,6 @@ if [ -d "${SRC_DIR}/trajopt" ] && [ ! -L "${SRC_DIR}/trajopt" ]; then
   else
     rm -rf "${SRC_DIR}/trajopt"
   fi
-fi
 
 # Ensure the backup tree is ignored by colcon so cached packages are not
 # rediscovered during future builds. colcon stops traversing a directory tree
