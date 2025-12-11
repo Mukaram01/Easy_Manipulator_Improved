@@ -79,6 +79,7 @@ target_link_libraries(
     octomath
     ${TESSERACT_TINYXML2_TARGET}
     ${TESSERACT_TINYXML2_LINK_LIBRARIES})
+add_library(tesseract::tesseract_collision_bullet ALIAS ${PROJECT_NAME}_bullet)
 target_compile_options(${PROJECT_NAME}_bullet PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_bullet PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
