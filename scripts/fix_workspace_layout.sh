@@ -109,14 +109,22 @@ fi
 # tesseract_common. Some environments fail to load the CONFIG_EXTRAS provided by
 # tesseract_common automatically, which leaves tesseract_variables() undefined
 # and causes CMake to abort early. Inject a small fallback before the first call
-# to tesseract_variables() so the build can continue.
-TCL_CMAKE=$(find "${SRC_DIR}" -path "*/tesseract_command_language/CMakeLists.txt" -print -quit 2>/dev/null || true)
+# to tesseract_variables() so the build can continue. Only apply this to copies
+# of the overlay within the workspace, not the repository checkout itself.
+TCL_CMAKE=""
+while IFS= read -r candidate; do
+  if [[ "${candidate}" == "${REPO_DIR}"/* ]]; then
+    echo "Skipping modification of tracked file ${candidate}"
+    continue
+  fi
+
+  TCL_CMAKE="${candidate}"
+  break
+done < <(find "${SRC_DIR}" -path "*/tesseract_command_language/CMakeLists.txt" -print 2>/dev/null || true)
+
 if [[ -n "${TCL_CMAKE}" && -f "${TCL_CMAKE}" ]]; then
-  if [[ "${TCL_CMAKE}" == "${REPO_DIR}"/* ]]; then
-    echo "Skipping modification of tracked file ${TCL_CMAKE}"
-  else
-    echo "Adding tesseract_common fallback include to ${TCL_CMAKE}"
-    TCL_CMAKE="${TCL_CMAKE}" python3 - <<'PY'
+  echo "Adding tesseract_common fallback include to ${TCL_CMAKE}"
+  TCL_CMAKE="${TCL_CMAKE}" python3 - <<'PY'
 import os
 from pathlib import Path
 
