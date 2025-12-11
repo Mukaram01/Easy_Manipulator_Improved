@@ -152,7 +152,11 @@ selected = {name: repos[name] for name in repos if name in missing}
 
 yaml.safe_dump({"repositories": selected}, sys.stdout)
 PY
-    vcs import --recursive "$SRC" < "$FILTERED_REPOS"
+    if ! GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0} vcs import --recursive "$SRC" < "$FILTERED_REPOS"; then
+      echo "Failed to import repositories non-interactively. If access requires authentication, rerun with GIT_TERMINAL_PROMPT=1." >&2
+      rm -f "$FILTERED_REPOS"
+      exit 1
+    fi
     rm -f "$FILTERED_REPOS"
   fi
 fi
