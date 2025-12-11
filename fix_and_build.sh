@@ -22,13 +22,21 @@ if [[ "$REPO_DIR" != "$SRC/easy_manipulation_deployment" ]]; then
   fi
 fi
 
-# Select ROS distribution: prefer Humble then Jazzy
-for d in humble jazzy; do
-  if [[ -f "/opt/ros/$d/setup.bash" ]]; then
-    ROS_DISTRO=${ROS_DISTRO:-$d}
-    break
+# Select ROS distribution: prefer Humble then Jazzy. If ROS_DISTRO is already
+# set, verify the corresponding setup script exists before continuing.
+if [[ -n ${ROS_DISTRO:-} ]]; then
+  if [[ ! -f "/opt/ros/$ROS_DISTRO/setup.bash" ]]; then
+    echo "ROS_DISTRO is set to '$ROS_DISTRO', but /opt/ros/$ROS_DISTRO/setup.bash is missing" >&2
+    exit 1
   fi
-done
+else
+  for d in humble jazzy; do
+    if [[ -f "/opt/ros/$d/setup.bash" ]]; then
+      ROS_DISTRO=$d
+      break
+    fi
+  done
+fi
 
 if [[ -z ${ROS_DISTRO:-} ]]; then
   echo "No supported ROS distro found (need humble or jazzy)" >&2
