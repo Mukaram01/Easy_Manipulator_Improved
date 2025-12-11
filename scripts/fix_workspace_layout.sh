@@ -218,7 +218,6 @@ if insert_at is not None:
 
 cmake.write_text("\n".join(lines) + "\n")
 PY
-  fi
 fi
 
 # Link trajopt-related packages from the backup if available
