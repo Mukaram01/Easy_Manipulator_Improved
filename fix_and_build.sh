@@ -325,15 +325,58 @@ guard = [
 ]
 
 
-remove_existing_block()
+  remove_existing_block()
 
 insert_at = find_index(lambda l: "tesseract_variables()" in l)
 if insert_at is not None:
     lines[insert_at:insert_at] = guard
 
 
+  cmake.write_text("\n".join(lines) + "\n")
+PY
+
+  # Ensure the tesseract_plugins package can locate the collision backends it
+  # links against.  Some snapshots omit the necessary find_package() calls,
+  # which leaves the tesseract::tesseract_collision_* targets undefined and
+  # causes CMake configuration to fail before colcon can build anything else.
+  if TESSERACT_PLUGINS_CMAKE=$(find "$SRC" -path "*/tesseract_plugins/CMakeLists.txt" -print -quit 2>/dev/null); then
+    echo "Ensuring tesseract_plugins declares collision backend dependencies"
+    TESSERACT_PLUGINS_CMAKE="$TESSERACT_PLUGINS_CMAKE" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TESSERACT_PLUGINS_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+
+def insert_find_package(statement: str) -> None:
+    """Add a find_package() statement if it is missing."""
+
+    if any(statement in line for line in lines):
+        return
+
+    try:
+        insert_at = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("find_package")
+        )
+    except StopIteration:
+        try:
+            insert_at = next(
+                i for i, line in enumerate(lines) if line.strip().startswith("project")
+            ) + 1
+        except StopIteration:
+            insert_at = 0
+
+    lines.insert(insert_at, statement)
+
+
+insert_find_package("find_package(tesseract_collision CONFIG REQUIRED)")
+insert_find_package("find_package(tesseract_collision_fcl CONFIG QUIET)")
+
 cmake.write_text("\n".join(lines) + "\n")
 PY
+  fi
+
 
   echo "Ensuring tesseract_command_language declares tinyxml2 and Boost stacktrace dependencies"
   TCL_CMAKE="$TCL_CMAKE" python3 - <<'PY'
