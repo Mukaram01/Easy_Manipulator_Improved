@@ -40,7 +40,7 @@ public:
     const moveit_cpp::MoveItCppPtr & moveit_cpp,
     const std::string & name) = 0;
 
-  ~Executor() {}
+  virtual ~Executor() = default;
 
   virtual void configure(
     const robot_trajectory::RobotTrajectory &) {}
