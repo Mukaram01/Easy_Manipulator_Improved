@@ -132,6 +132,74 @@ ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
 ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
 ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
 
+  cmake.write_text("\n".join(lines) + "\n")
+PY
+fi
+
+# Ensure the tesseract_plugins package can locate the collision backends it
+# links against.  Some snapshots omit the necessary find_package() calls,
+# which leaves the tesseract::tesseract_collision_* targets undefined and
+# causes CMake configuration to fail before colcon can build anything else.
+TESSERACT_PLUGINS_CMAKE=$(find "$PWD/src" -path "*/tesseract_plugins/CMakeLists.txt" -print -quit 2>/dev/null || true)
+if [[ -n "$TESSERACT_PLUGINS_CMAKE" && -f "$TESSERACT_PLUGINS_CMAKE" ]]; then
+  echo "Ensuring tesseract_plugins declares collision backend dependencies"
+  TESSERACT_PLUGINS_CMAKE="$TESSERACT_PLUGINS_CMAKE" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["TESSERACT_PLUGINS_CMAKE"])
+lines = cmake.read_text().splitlines()
+
+
+def insert_find_package(statement: str) -> None:
+    """Add a find_package() statement if it is missing."""
+
+    if any(statement in line for line in lines):
+        return
+
+    try:
+        insert_at = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("find_package")
+        )
+    except StopIteration:
+        try:
+            insert_at = next(
+                i for i, line in enumerate(lines) if line.strip().startswith("project")
+            ) + 1
+        except StopIteration:
+            insert_at = 0
+
+    lines.insert(insert_at, statement)
+
+
+def upsert_bullet_find_package(required: bool) -> None:
+    """Insert or upgrade the Bullet find_package() directive."""
+
+    required_stmt = "find_package(tesseract_collision_bullet CONFIG REQUIRED)"
+    quiet_stmt = "find_package(tesseract_collision_bullet CONFIG QUIET)"
+    desired_stmt = required_stmt if required else quiet_stmt
+
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("find_package(tesseract_collision_bullet"):
+            lines[idx] = desired_stmt
+            return
+
+    insert_find_package(desired_stmt)
+
+
+insert_find_package("find_package(tesseract_collision CONFIG REQUIRED)")
+insert_find_package("find_package(tesseract_collision_fcl CONFIG QUIET)")
+
+has_bullet_plugin = any("tesseract_collision_bullet" in line for line in lines)
+bullet_guarded = any(
+    "tesseract_collision_bullet_FOUND" in line
+    or "ENABLE_BULLET" in line.upper()
+    or ("if(" in line and "BULLET" in line.upper())
+    for line in lines
+)
+
+upsert_bullet_find_package(required=has_bullet_plugin and not bullet_guarded)
+
 cmake.write_text("\n".join(lines) + "\n")
 PY
 fi
