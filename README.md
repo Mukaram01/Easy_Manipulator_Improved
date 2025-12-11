@@ -75,6 +75,11 @@ The `tesseract.repos` file now also fetches the
 dependency, which provides headers such as `boost_plugin_loader/fwd.h`
 required by `tesseract_common`.
 
+The workspace overlay also includes the upstream
+[`tesseract_plugins`](https://github.com/tesseract-robotics/tesseract_plugins)
+repository, so ensure you re-run `vcs import < tesseract.repos` to pull the
+plugin definitions before building.
+
 A convenience script `fix_and_build.sh` is provided in this repository. It automatically
 detects whether Humble or Jazzy is installed and installs the Boost/TinyXML2 development
 packages via `scripts/install_system_deps.sh`. After cloning into `~/workcell_ws`, run:
