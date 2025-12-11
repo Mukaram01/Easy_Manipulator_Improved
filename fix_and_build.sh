@@ -173,6 +173,7 @@ BOOST_DEPS=(
   libboost-program-options-dev
   libboost-stacktrace-dev
   libboost-serialization-dev
+  libboost-graph-dev
 )
 TINYXML2_DEPS=(
   libtinyxml2-dev
@@ -191,9 +192,9 @@ $APT_GET install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}"
 # failing fast here provides a clearer error than a later "Could NOT find
 # Boost" message when the required components are missing.
 if [[ ! -f /usr/include/boost/program_options/options_description.hpp || ! -f /usr/include/boost/serialization/serialization.hpp || \
-      ! -f /usr/include/boost/stacktrace.hpp ]]; then
+      ! -f /usr/include/boost/stacktrace.hpp || ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
   echo "Boost headers for required components are missing even after installing ${BOOST_DEPS[*]}." >&2
-  echo "Please ensure the listed Boost dev packages are available and rerun this script." >&2
+  echo "Please ensure the listed Boost dev packages (including Boost.Graph) are available and rerun this script." >&2
   exit 1
 fi
 
