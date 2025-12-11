@@ -14,16 +14,38 @@ if(WIN32)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/"
+                             "${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/")
 
 include("${CMAKE_CURRENT_LIST_DIR}/../tesseract_common/cmake/tesseract_macros.cmake")
 
-find_package(Boost REQUIRED)
+set(_tesseract_srdf_boost_components serialization stacktrace_noop)
+if(NOT APPLE)
+  list(APPEND _tesseract_srdf_boost_components stacktrace_backtrace stacktrace_basic)
+endif()
+find_package(Boost REQUIRED COMPONENTS ${_tesseract_srdf_boost_components})
+find_package(TinyXML2 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(console_bridge REQUIRED)
 find_package(tesseract_common REQUIRED)
 find_package(tesseract_scene_graph REQUIRED)
 find_package(yaml-cpp REQUIRED)
+
+tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
+if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
+  message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_srdf")
+endif()
+
+if(TARGET Boost::stacktrace_backtrace)
+  set(TESSERACT_SRDF_BACKTRACE_COMPONENT stacktrace_backtrace)
+  set(TESSERACT_SRDF_BACKTRACE_LIB Boost::stacktrace_backtrace)
+elseif(TARGET Boost::stacktrace_basic)
+  set(TESSERACT_SRDF_BACKTRACE_COMPONENT stacktrace_basic)
+  set(TESSERACT_SRDF_BACKTRACE_LIB Boost::stacktrace_basic)
+else()
+  set(TESSERACT_SRDF_BACKTRACE_COMPONENT stacktrace_noop)
+  set(TESSERACT_SRDF_BACKTRACE_LIB Boost::stacktrace_noop)
+endif()
 
 if(NOT TARGET console_bridge::console_bridge)
   add_library(console_bridge::console_bridge INTERFACE IMPORTED)
@@ -68,8 +90,15 @@ target_link_libraries(
   PUBLIC Eigen3::Eigen
          tesseract::tesseract_common
          tesseract::tesseract_scene_graph
-         yaml-cpp)
-target_link_libraries(${PROJECT_NAME} PRIVATE Boost::boost console_bridge::console_bridge)
+         yaml-cpp
+         Boost::serialization
+         ${TESSERACT_TINYXML2_TARGET}
+         ${TESSERACT_TINYXML2_LINK_LIBRARIES})
+target_link_libraries(
+  ${PROJECT_NAME}
+  PRIVATE Boost::boost
+          ${TESSERACT_SRDF_BACKTRACE_LIB}
+          console_bridge::console_bridge)
 target_compile_options(${PROJECT_NAME} PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
@@ -89,7 +118,8 @@ configure_package(
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}
   DEPENDENCIES
-    Boost
+    TinyXML2
+    Boost COMPONENTS serialization ${TESSERACT_SRDF_BACKTRACE_COMPONENT}
     Eigen3
     console_bridge
     tesseract_common
