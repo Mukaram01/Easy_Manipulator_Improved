@@ -190,6 +190,68 @@ function(tesseract_resolve_tinyxml2 out_target out_libraries)
   set(${out_libraries} "${_resolved_libraries}" PARENT_SCOPE)
 endfunction()
 
+function(_tesseract_normalize_dependency_entries out_var)
+  # Group dependency arguments so multi-token entries such as
+  # "Boost COMPONENTS filesystem" are preserved when emitting find_dependency
+  # statements. The function treats each top-level list item as the start of a
+  # dependency and extends it when encountering well-known modifiers (e.g.,
+  # REQUIRED) or COMPONENTS clauses.
+  set(_normalized_dependencies "")
+  set(_current_dependency "")
+  set(_in_components FALSE)
+
+  foreach(_token IN LISTS ARGN)
+    if(NOT _token)
+      continue()
+    endif()
+
+    if(_token STREQUAL "COMPONENTS")
+      if(_current_dependency)
+        string(APPEND _current_dependency " COMPONENTS")
+        set(_in_components TRUE)
+      else()
+        # If COMPONENTS appears without a base package just preserve the token.
+        set(_current_dependency "COMPONENTS")
+      endif()
+      continue()
+    endif()
+
+    set(_start_new_dependency FALSE)
+    if(_current_dependency)
+      if(_in_components)
+        if(_token MATCHES "^.+::.+$" OR _token MATCHES "^[A-Z].*")
+          set(_start_new_dependency TRUE)
+          set(_in_components FALSE)
+        endif()
+      else()
+        if(_token MATCHES "^(REQUIRED|OPTIONAL|QUIET|MODULE|NO_MODULE|CONFIG|EXACT|GLOBAL)$"
+           OR _token MATCHES "^[0-9].*")
+          set(_start_new_dependency FALSE)
+        else()
+          set(_start_new_dependency TRUE)
+        endif()
+      endif()
+    endif()
+
+    if(_start_new_dependency)
+      list(APPEND _normalized_dependencies "${_current_dependency}")
+      set(_current_dependency "${_token}")
+    else()
+      if(_current_dependency)
+        string(APPEND _current_dependency " ${_token}")
+      else()
+        set(_current_dependency "${_token}")
+      endif()
+    endif()
+  endforeach()
+
+  if(_current_dependency)
+    list(APPEND _normalized_dependencies "${_current_dependency}")
+  endif()
+
+  set(${out_var} "${_normalized_dependencies}" PARENT_SCOPE)
+endfunction()
+
 function(_tesseract_configure_meta_package)
   cmake_parse_arguments(
     _TCMP
@@ -223,7 +285,8 @@ function(_tesseract_configure_meta_package)
   set(_tcmp_config_file "${_tcmp_config_dir}/${_tcmp_package}Config.cmake")
   file(WRITE "${_tcmp_config_file}" "include(CMakeFindDependencyMacro)\n")
 
-  foreach(_tcmp_dependency IN LISTS _TCMP_DEPENDENCIES)
+  _tesseract_normalize_dependency_entries(_tcmp_dependencies ${_TCMP_DEPENDENCIES})
+  foreach(_tcmp_dependency IN LISTS _tcmp_dependencies)
     if(_tcmp_dependency)
       file(APPEND "${_tcmp_config_file}" "find_dependency(${_tcmp_dependency})\n")
     endif()
@@ -380,7 +443,8 @@ function(configure_package)
 
       set(_tcp_config_file "${_tcp_config_dir}/${target}Config.cmake")
       file(WRITE "${_tcp_config_file}" "include(CMakeFindDependencyMacro)\n")
-      foreach(_tcp_dependency IN LISTS _TCP_DEPENDENCIES)
+      _tesseract_normalize_dependency_entries(_tcp_dependencies ${_TCP_DEPENDENCIES})
+      foreach(_tcp_dependency IN LISTS _tcp_dependencies)
         if(_tcp_dependency)
           file(APPEND "${_tcp_config_file}" "find_dependency(${_tcp_dependency})\n")
         endif()
