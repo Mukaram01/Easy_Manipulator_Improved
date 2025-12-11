@@ -31,6 +31,7 @@ set(TESSERACT_BOOST_COMPONENTS system filesystem serialization)
 # arguments" error on this platform. Enabling Boost_NO_BOOST_CMAKE avoids the
 # faulty config files while keeping the same components.
 set(Boost_NO_BOOST_CMAKE ON)
+set(Boost_USE_DEBUG_RUNTIME OFF)
 
 if(NOT APPLE)
   find_package(
