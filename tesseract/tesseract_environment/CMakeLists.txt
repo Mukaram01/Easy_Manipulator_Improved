@@ -22,7 +22,7 @@ find_package(console_bridge REQUIRED)
 find_package(tesseract_collision REQUIRED COMPONENTS core bullet)
 find_package(tesseract_kinematics REQUIRED COMPONENTS core)
 find_package(tesseract_scene_graph REQUIRED)
-find_package(tesseract_state_solver REQUIRED)
+find_package(tesseract_state_solver REQUIRED COMPONENTS ofkt kdl)
 find_package(tesseract_srdf REQUIRED)
 find_package(tesseract_urdf REQUIRED)
 find_package(tesseract_common REQUIRED)
@@ -149,7 +149,7 @@ configure_package(
     console_bridge
     "tesseract_collision COMPONENTS core"
     tesseract_scene_graph
-    tesseract_state_solver
+    "tesseract_state_solver COMPONENTS ofkt kdl"
     tesseract_srdf
     "tesseract_kinematics COMPONENTS core"
     tesseract_urdf
