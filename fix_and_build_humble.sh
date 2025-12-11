@@ -30,29 +30,24 @@ if [ -f ~/ws_moveit2/install/setup.bash ]; then
 fi
 
 # Ensure required tools are available (install common ones if missing)
+MISSING_APT_PACKAGES=()
+INSTALL_ROSDEP=0
+
 for cmd in git colcon rosdep vcs; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     case "$cmd" in
+      git)
+        MISSING_APT_PACKAGES+=(git)
+        ;;
       colcon)
-        python3 -m pip install -U colcon-common-extensions >/dev/null 2>&1 || {
-          echo "Failed to install colcon" >&2
-          exit 1
-        }
+        MISSING_COLCON=1
         ;;
       rosdep)
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update -y && sudo apt-get install -y python3-rosdep >/dev/null 2>&1
-        else
-          apt-get update -y && apt-get install -y python3-rosdep >/dev/null 2>&1
-        fi
-        rosdep init >/dev/null 2>&1 || true
+        MISSING_APT_PACKAGES+=(python3-rosdep)
+        INSTALL_ROSDEP=1
         ;;
       vcs)
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update -y && sudo apt-get install -y python3-vcstool >/dev/null 2>&1
-        else
-          apt-get update -y && apt-get install -y python3-vcstool >/dev/null 2>&1
-        fi
+        MISSING_APT_PACKAGES+=(python3-vcstool)
         ;;
       *)
         echo "Required tool '$cmd' is not installed." >&2
@@ -61,6 +56,22 @@ for cmd in git colcon rosdep vcs; do
     esac
   fi
 done
+
+if [[ ${#MISSING_APT_PACKAGES[@]} -gt 0 ]]; then
+  ${APT_GET_CMD} update -y
+  ${APT_GET_CMD} install -y "${MISSING_APT_PACKAGES[@]}" >/dev/null 2>&1
+fi
+
+if [[ ${MISSING_COLCON:-0} -eq 1 ]]; then
+  python3 -m pip install -U colcon-common-extensions >/dev/null 2>&1 || {
+    echo "Failed to install colcon" >&2
+    exit 1
+  }
+fi
+
+if [[ $INSTALL_ROSDEP -eq 1 ]]; then
+  rosdep init >/dev/null 2>&1 || true
+fi
 
 # Install core system dependencies (Boost + TinyXML2) using the shared helper so
 # all setup paths stay in sync. The helper also reinstalls Boost headers when
