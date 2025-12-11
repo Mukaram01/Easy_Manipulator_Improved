@@ -45,6 +45,7 @@ target_link_libraries(
          console_bridge::console_bridge
          octomap
          octomath)
+add_library(tesseract::tesseract_collision_fcl ALIAS ${PROJECT_NAME}_fcl)
 target_compile_options(${PROJECT_NAME}_fcl PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_fcl PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_fcl PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
