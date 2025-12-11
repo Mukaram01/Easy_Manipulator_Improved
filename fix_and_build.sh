@@ -59,18 +59,36 @@ elif [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+MISSING_APT_PACKAGES=()
+INSTALL_ROSDEP=0
+
 for cmd in git colcon rosdep vcs; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Installing missing tool: $cmd"
-    $APT_GET update -y
+    echo "Missing tool detected: $cmd"
     case "$cmd" in
-      git) $APT_GET install -y git;;
-      colcon) python3 -m pip install -U colcon-common-extensions;;
-      rosdep) $APT_GET install -y python3-rosdep && rosdep init || true;;
-      vcs) $APT_GET install -y python3-vcstool;;
+      git) MISSING_APT_PACKAGES+=(git);;
+      colcon) MISSING_COLCON=1;;
+      rosdep)
+        MISSING_APT_PACKAGES+=(python3-rosdep)
+        INSTALL_ROSDEP=1
+        ;;
+      vcs) MISSING_APT_PACKAGES+=(python3-vcstool);;
     esac
   fi
 done
+
+if [[ ${#MISSING_APT_PACKAGES[@]} -gt 0 ]]; then
+  $APT_GET update -y
+  $APT_GET install -y "${MISSING_APT_PACKAGES[@]}"
+fi
+
+if [[ ${MISSING_COLCON:-0} -eq 1 ]]; then
+  python3 -m pip install -U colcon-common-extensions
+fi
+
+if [[ $INSTALL_ROSDEP -eq 1 ]]; then
+  rosdep init || true
+fi
 
 # Ensure core system dependencies (Boost + TinyXML2) are present.  Calling the
 # shared helper keeps the dependency list in one place so it stays in sync with
