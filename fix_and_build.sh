@@ -78,9 +78,57 @@ done
 # trajopt_common.
 "$REPO_DIR/scripts/install_system_deps.sh"
 
-# Import external repositories if tesseract not yet present
-if [[ -f "$REPO_DIR/tesseract.repos" ]] && [[ ! -d "$SRC/tesseract" ]]; then
-  vcs import --recursive "$SRC" < "$REPO_DIR/tesseract.repos"
+# Import any missing repositories listed in tesseract.repos.  Relying solely on
+# the presence of $SRC/tesseract is insufficient when the workspace already
+# contains a partial overlay copy (e.g., tesseract without tesseract_plugins).
+if [[ -f "$REPO_DIR/tesseract.repos" ]]; then
+  mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_DIR/tesseract.repos" SRC="$SRC" python3 - <<'PY'
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("PyYAML is required to process tesseract.repos")
+
+repos_file = os.environ["REPOS_FILE"]
+src = os.environ["SRC"]
+
+with open(repos_file, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+for name in (data.get("repositories") or {}):
+    if not os.path.isdir(os.path.join(src, name)):
+        print(name)
+PY
+  )
+
+  if [[ ${#MISSING_REPOS[@]} -gt 0 ]]; then
+    echo "Importing missing repositories: ${MISSING_REPOS[*]}"
+    FILTERED_REPOS=$(mktemp)
+    REPOS_FILE="$REPO_DIR/tesseract.repos" MISSING="${MISSING_REPOS[*]}" python3 - <<'PY' >"$FILTERED_REPOS"
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("PyYAML is required to process the repos file")
+
+repos_file = os.environ["REPOS_FILE"]
+missing = {item for item in os.environ.get("MISSING", "").split() if item}
+
+with open(repos_file, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+repos = data.get("repositories") or {}
+selected = {name: repos[name] for name in repos if name in missing}
+
+yaml.safe_dump({"repositories": selected}, sys.stdout)
+PY
+    vcs import --recursive "$SRC" < "$FILTERED_REPOS"
+    rm -f "$FILTERED_REPOS"
+  fi
 fi
 
 # Copy overlays from repo checkout if they exist
