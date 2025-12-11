@@ -126,12 +126,7 @@ selected = {name: repos[name] for name in repos if name in missing}
 
 yaml.safe_dump({"repositories": selected}, sys.stdout)
 PY
-    if ! GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0} vcs import --recursive "$SRC" < "$FILTERED_REPOS"; then
-      echo "Failed to import one or more repositories from tesseract.repos." >&2
-      echo "Ensure network access and GitHub credentials if required; set GIT_TERMINAL_PROMPT=1 to re-enable interactive prompts." >&2
-      rm -f "$FILTERED_REPOS"
-      exit 1
-    fi
+    vcs import --recursive "$SRC" < "$FILTERED_REPOS"
     rm -f "$FILTERED_REPOS"
   fi
 fi
