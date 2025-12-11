@@ -32,7 +32,7 @@ public:
   : Executor(),
     logger_(rclcpp::get_logger("default_executor")) {}
 
-  ~DefaultExecutor() {}
+  ~DefaultExecutor() override = default;
 
   bool load(
     const moveit_cpp::MoveItCppPtr & moveit_cpp,
