@@ -149,9 +149,20 @@ while read -r name path _; do
   fi
 done < <(colcon list --base-paths src)
 
-# Skip keys for packages supplied by unreleased overlays shipped with this repo
+# Skip keys for packages supplied by unreleased overlays shipped with this repo.
+SKIP_KEYS=(
+  tesseract
+  tesseract_process_planners
+  trajopt_ifopt
+  trajopt_sqp
+  trajopt
+  jsoncpp
+  message_generation
+)
+SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
+
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract tesseract_process_planners trajopt_ifopt trajopt_sqp trajopt jsoncpp message_generation"
+  --skip-keys "$SKIP_KEYS_ARG"
 
 # Consolidate CMake arguments to enforce C++17 and position independent code so
 # static libraries can link cleanly into shared objects.
