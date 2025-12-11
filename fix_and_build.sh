@@ -325,14 +325,14 @@ guard = [
 ]
 
 
-  remove_existing_block()
+remove_existing_block()
 
 insert_at = find_index(lambda l: "tesseract_variables()" in l)
 if insert_at is not None:
     lines[insert_at:insert_at] = guard
 
 
-  cmake.write_text("\n".join(lines) + "\n")
+cmake.write_text("\n".join(lines) + "\n")
 PY
 
   # Ensure the tesseract_plugins package can locate the collision backends it
