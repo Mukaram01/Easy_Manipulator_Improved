@@ -164,7 +164,10 @@ WS="$WS" "$REPO_DIR/scripts/fix_workspace_layout.sh"
 
 # Ensure boost_plugin_loader exists
 if [[ ! -d "$SRC/boost_plugin_loader" ]]; then
-  git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"
+  if ! GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0} git clone https://github.com/tesseract-robotics/boost_plugin_loader.git "$SRC/boost_plugin_loader"; then
+    echo "Failed to clone boost_plugin_loader. Verify GitHub access or rerun with GIT_TERMINAL_PROMPT=1 to allow credentials prompts." >&2
+    exit 1
+  fi
 fi
 
 # Reveal any hidden Tesseract packages that may remain from upstream checkouts
