@@ -15,7 +15,6 @@ TRAJOPT_IGNORE_WARNINGS_POP
 #include <trajopt/collision_terms.hpp>
 #include <trajopt/utils.hpp>
 #include <trajopt_sco/expr_ops.hpp>
-#include <trajopt_sco/expr_vec_ops.hpp>
 #include <trajopt_sco/modeling_utils.hpp>
 #include <trajopt_sco/sco_common.hpp>
 #include <trajopt_common/eigen_conversions.hpp>
