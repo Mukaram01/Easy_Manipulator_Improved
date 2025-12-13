@@ -76,7 +76,7 @@ install(
 configure_component(
   COMPONENT kdl
   NAMESPACE tesseract
-  TARGETS ${PROJECT_NAME}_kdl
+  TARGETS ${PROJECT_NAME}_kdl ${PROJECT_NAME}_kdl_factories
   DEPENDENCIES orocos_kdl "tesseract_kinematics COMPONENTS core")
 
 if(TESSERACT_PACKAGE)
