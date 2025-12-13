@@ -367,8 +367,7 @@ void CollisionEvaluator::CollisionsToDistanceExpressions(sco::AffExprVector& exp
     {
       if (g.has_gradient)
       {
-        sco::exprInc(dist, sco::varDot(g.scale * g.gradient, vars));
-        sco::exprInc(dist, g.scale * -g.gradient.dot(dofvals));
+        sco::exprInc(dist, sco::affFromValGrad(0, dofvals, g.scale * g.gradient, vars));
       }
     }
 
@@ -437,7 +436,9 @@ ContactResultMapConstPtr CollisionEvaluator::GetContactResultMapCached(const Dbl
 std::pair<ContactResultMapConstPtr, ContactResultVectorConstPtr>
 CollisionEvaluator::GetContactResultCached(const DblVec& x)
 {
-  const std::size_t key = hash(sco::getDblVec(x, GetVars()));
+  const Eigen::VectorXd subset = sco::getVec(x, GetVars());
+  const sco::DblVec key_vec(subset.data(), subset.data() + subset.size());
+  const std::size_t key = hash(key_vec);
   auto* it = m_cache.get(key);
   if (it != nullptr)
   {
