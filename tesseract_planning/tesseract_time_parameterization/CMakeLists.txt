@@ -67,9 +67,14 @@ endif()
 option(TESSERACT_BUILD_KDL "Build the Constant TCP Speed Parameterization (KDL) time parameterization implementation"
        ON)
 if(TESSERACT_BUILD_KDL)
-  message("Building KDL")
-  list(APPEND SUPPORTED_COMPONENTS kdl)
-  add_subdirectory(kdl)
+  find_package(tesseract_kinematics_kdl QUIET)
+  if(tesseract_kinematics_kdl_FOUND)
+    message("Building KDL")
+    list(APPEND SUPPORTED_COMPONENTS kdl)
+    add_subdirectory(kdl)
+  else()
+    message(WARNING "tesseract_kinematics_kdl not found, skipping KDL time parameterization")
+  endif()
 endif()
 
 # TOTG
