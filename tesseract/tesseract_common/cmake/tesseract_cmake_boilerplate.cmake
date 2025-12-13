@@ -359,10 +359,19 @@ function(tesseract_initialize_boilerplate_support)
   # No additional work required; the stubs are initialised eagerly.
 endfunction()
 
-if(NOT COMMAND extract_package_metadata)
-  function(extract_package_metadata prefix)
-    _tesseract_extract_package_metadata_impl(${prefix} ${ARGN})
-  endfunction()
-elseif(DEFINED _TESSERACT_DEFINE_EXTRACT_METADATA_STUB)
-  unset(_TESSERACT_DEFINE_EXTRACT_METADATA_STUB)
-endif()
+  if(NOT COMMAND extract_package_metadata)
+    function(extract_package_metadata prefix)
+      _tesseract_extract_package_metadata_impl(${prefix} ${ARGN})
+
+      # Propagate parsed metadata to the caller's scope instead of keeping it
+      # local to the wrapper, matching the behavior of
+      # ros_industrial_cmake_boilerplate's implementation.
+      set(${prefix}_extracted_name "${${prefix}_extracted_name}" PARENT_SCOPE)
+      set(${prefix}_extracted_version "${${prefix}_extracted_version}" PARENT_SCOPE)
+      set(${prefix}_extracted_description "${${prefix}_extracted_description}" PARENT_SCOPE)
+      set(${prefix}_extracted_maintainer_name "${${prefix}_extracted_maintainer_name}" PARENT_SCOPE)
+      set(${prefix}_extracted_maintainer_email "${${prefix}_extracted_maintainer_email}" PARENT_SCOPE)
+    endfunction()
+  elseif(DEFINED _TESSERACT_DEFINE_EXTRACT_METADATA_STUB)
+    unset(_TESSERACT_DEFINE_EXTRACT_METADATA_STUB)
+  endif()
