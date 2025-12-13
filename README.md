@@ -19,9 +19,11 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 > **Important:** Run `./easy_manipulation_deployment/scripts/install_system_deps.sh`
 > immediately after cloning (before your first `colcon build`). This installs the
 > Boost graph/program_options/serialization headers that `trajopt_common`
-> requires so you do not hit the
-> `Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)` configure error seen
-> on minimal environments.
+> requires and the `cereal` headers needed by `tesseract_motion_planners`, so you
+> do not hit configure errors such as
+> `Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)` or
+> `Could not find a package configuration file provided by "cereal"` on minimal
+> environments.
 
 ---
 ## Prerequisites
@@ -33,6 +35,8 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
 - The bundled Tesseract overlays now export TinyXML2 via the `tinyxml2_vendor`
   package, so no extra system packages are required to satisfy
   `find_package(TinyXML2)` calls during the build.
+- The `cereal` headers are required by `tesseract_motion_planners`; the helper
+  script installs the `libcereal-dev` package to provide them.
 - If you plan to build manually (without the helper scripts below), run
   `./easy_manipulation_deployment/scripts/install_system_deps.sh` after cloning
   to install the TinyXML2 and Boost development packages that
@@ -53,9 +57,10 @@ cd ~/workcell_ws
 export ROS_DISTRO=humble  # or jazzy
 source /opt/ros/${ROS_DISTRO}/setup.bash
 # Install the Boost graph/program_options/serialization headers that
-# `trajopt_common` expects before configuring the workspace. This avoids
-# "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)" errors during
-# `colcon build` on minimal environments.
+# `trajopt_common` expects and the `cereal` headers required by
+# `tesseract_motion_planners` before configuring the workspace. This avoids
+# "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)" and
+# "Findcereal.cmake" errors during `colcon build` on minimal environments.
 ~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
 source ~/ws_moveit2/install/setup.bash
@@ -147,6 +152,19 @@ before retrying so CMake re-detects the newly available stacktrace component:
 ```
 rm -rf build/tesseract_command_language install/tesseract_command_language \
   log/tesseract_command_language
+```
+
+If the build fails in `tesseract_motion_planners` with an error like:
+
+```
+By not providing "Findcereal.cmake" in CMAKE_MODULE_PATH this project has asked CMake to find a package configuration file provided by "cereal", but CMake did not find one.
+```
+
+install the Cereal headers (or rerun `./easy_manipulation_deployment/scripts/install_system_deps.sh`, which installs them automatically) and clear any cached artifacts for the package before retrying:
+
+```
+sudo apt-get update && sudo apt-get install -y libcereal-dev
+rm -rf build/tesseract_motion_planners install/tesseract_motion_planners log/tesseract_motion_planners
 ```
 
 Similarly, if a configure step fails with a TinyXML2 error such as:
