@@ -26,7 +26,18 @@ include(CheckIncludeFileCXX)
 check_include_file_cxx(osqp/osqp_api_types.h OSQP_HAVE_V1_HEADERS)
 find_package(Eigen3 REQUIRED)
 find_package(trajopt_common REQUIRED)
-include(${trajopt_common_DIR}/trajopt_macros.cmake)
+
+find_file(TRAJOPT_MACROS_FILE trajopt_macros.cmake
+          PATHS "${trajopt_common_DIR}" "${trajopt_common_DIR}/cmake" "${trajopt_common_DIR}/../cmake"
+          PATH_SUFFIXES "" cmake
+          NO_DEFAULT_PATH)
+if(NOT TRAJOPT_MACROS_FILE)
+  find_file(TRAJOPT_MACROS_FILE trajopt_macros.cmake)
+endif()
+if(NOT TRAJOPT_MACROS_FILE)
+  message(FATAL_ERROR "Failed to locate trajopt_macros.cmake; ensure trajopt_common is properly built and installed.")
+endif()
+include(${TRAJOPT_MACROS_FILE})
 if(NOT TARGET JsonCpp::JsonCpp)
   find_package(jsoncpp REQUIRED)
 elseif(NOT TARGET jsoncpp_lib)
