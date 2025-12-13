@@ -17,6 +17,7 @@ REQUIRED_PACKAGES=(
   libboost-stacktrace-dev
   libboost-program-options-dev
   libboost-serialization-dev
+  libcereal-dev
 )
 
 missing=()
