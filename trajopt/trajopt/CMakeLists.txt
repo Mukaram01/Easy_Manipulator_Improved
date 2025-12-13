@@ -85,6 +85,8 @@ install(
   PATTERN "*.hxx"
   PATTERN ".svn" EXCLUDE)
 
+install(FILES "${CMAKE_CURRENT_LIST_DIR}/cmake/trajopt_macros.cmake" DESTINATION lib/cmake/${PROJECT_NAME})
+
 if(TRAJOPT_ENABLE_TESTING)
   enable_testing()
   # add_run_tests_target(ENABLE ${TRAJOPT_ENABLE_RUN_TESTING})
