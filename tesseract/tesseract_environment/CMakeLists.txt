@@ -143,7 +143,7 @@ target_include_directories(${PROJECT_NAME}_commands PUBLIC "$<BUILD_INTERFACE:${
 # Configure Package
 configure_package(
   NAMESPACE tesseract
-  TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_commands
+  TARGETS ${PROJECT_NAME}_commands
   DEPENDENCIES
     Eigen3
     console_bridge
@@ -154,6 +154,22 @@ configure_package(
     "tesseract_kinematics COMPONENTS core"
     tesseract_urdf
     tesseract_common
+  CFG_EXTRAS cmake/tesseract_environment-extras.cmake)
+
+configure_package(
+  NAMESPACE tesseract
+  TARGETS ${PROJECT_NAME}
+  DEPENDENCIES
+    Eigen3
+    console_bridge
+    "tesseract_collision COMPONENTS core"
+    tesseract_scene_graph
+    "tesseract_state_solver COMPONENTS ofkt kdl"
+    tesseract_srdf
+    "tesseract_kinematics COMPONENTS core"
+    tesseract_urdf
+    tesseract_common
+    tesseract_environment_commands
   CFG_EXTRAS cmake/tesseract_environment-extras.cmake)
 
 # Mark cpp header files for installation
