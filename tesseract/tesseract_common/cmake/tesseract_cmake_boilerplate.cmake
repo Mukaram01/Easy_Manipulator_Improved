@@ -143,7 +143,18 @@ if(NOT COMMAND configure_component)
       set(_cc_namespace_args)
     endif()
 
-    configure_package(${_cc_namespace_args} TARGETS ${_CC_TARGETS} DEPENDENCIES ${_CC_DEPENDENCIES} CFG_EXTRAS ${_CC_CFG_EXTRAS})
+    if(_CC_COMPONENT)
+      set(_cc_component_args COMPONENT ${_CC_COMPONENT})
+    else()
+      set(_cc_component_args)
+    endif()
+
+    configure_package(
+      ${_cc_namespace_args}
+      ${_cc_component_args}
+      TARGETS ${_CC_TARGETS}
+      DEPENDENCIES ${_CC_DEPENDENCIES}
+      CFG_EXTRAS ${_CC_CFG_EXTRAS})
   endfunction()
 endif()
 
