@@ -67,6 +67,28 @@ if(NOT cereal_FOUND)
   endif()
 endif()
 
+if(TARGET cereal::cereal)
+  get_target_property(_cereal_include_dirs cereal::cereal INTERFACE_INCLUDE_DIRECTORIES)
+  set(_cereal_normalized_include_dir "")
+
+  if(_cereal_include_dirs)
+    foreach(_dir IN LISTS _cereal_include_dirs)
+      if(_dir AND NOT _dir STREQUAL "/include")
+        set(_cereal_normalized_include_dir ${_dir})
+        break()
+      endif()
+    endforeach()
+  endif()
+
+  if(NOT _cereal_normalized_include_dir AND DEFINED cereal_SOURCE_DIR)
+    set(_cereal_normalized_include_dir ${cereal_SOURCE_DIR}/include)
+  endif()
+
+  if(_cereal_normalized_include_dir)
+    set_property(TARGET cereal::cereal PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_cereal_normalized_include_dir}")
+  endif()
+endif()
+
 include(${tesseract_common_DIR}/tesseract_macros.cmake)
 
 # Load variable for clang tidy args, compiler options and cxx version
