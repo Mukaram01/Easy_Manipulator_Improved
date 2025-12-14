@@ -2,11 +2,11 @@ find_package(trajopt REQUIRED)
 find_package(trajopt_sco REQUIRED)
 find_package(osqp REQUIRED)
 
-if(NOT rclcpp_FOUND)
+if(TESSERACT_BUILD_TRAJOPT AND NOT rclcpp_FOUND)
   message(FATAL_ERROR "Trajopt planner requires rclcpp, but it was not found. Please install rclcpp or disable TESSERACT_BUILD_TRAJOPT.")
 endif()
 
-if(NOT OpenMP_FOUND)
+if(TESSERACT_BUILD_TRAJOPT AND NOT OpenMP_FOUND)
   message(FATAL_ERROR "Trajopt planner requires OpenMP, but it was not found. Please install OpenMP or disable TESSERACT_BUILD_TRAJOPT.")
 endif()
 
