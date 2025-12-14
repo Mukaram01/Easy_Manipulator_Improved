@@ -73,6 +73,18 @@ if [[ $INSTALL_ROSDEP -eq 1 ]]; then
   rosdep init >/dev/null 2>&1 || true
 fi
 
+ensure_pyyaml() {
+  if python3 - <<'PY'
+import yaml  # noqa: F401
+PY
+  then
+    return
+  fi
+
+  echo "Installing python3-yaml for repos processing"
+  ${APT_GET_CMD} install -y python3-yaml >/dev/null 2>&1
+}
+
 # Install core system dependencies (Boost + TinyXML2) using the shared helper so
 # all setup paths stay in sync. The helper also reinstalls Boost headers when
 # container images omit them even though dpkg claims the packages are present,
@@ -93,6 +105,8 @@ fi
 
 REPO_FILE="$SCRIPT_DIR/tesseract.repos"
 if [ -f "$REPO_FILE" ]; then
+  ensure_pyyaml
+
   mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_FILE" SRC="$PWD/src" python3 - <<'PY'
 import os
 import sys
