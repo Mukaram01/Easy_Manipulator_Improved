@@ -67,6 +67,37 @@ elif [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+apt_get_retry() {
+  local attempts=5
+  local delay=5
+  local output
+  local status
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    set +e
+    output=$($APT_GET "$@" 2>&1)
+    status=$?
+    set -e
+
+    if [[ $status -eq 0 ]]; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+
+    printf '%s\n' "$output" >&2
+
+    if [[ $output == *"Could not get lock"* || $output == *"Unable to lock"* ]]; then
+      if (( attempt < attempts )); then
+        echo "Encountered apt lock; retrying in ${delay}s (attempt ${attempt}/${attempts})" >&2
+        sleep "$delay"
+        continue
+      fi
+    fi
+
+    return "$status"
+  done
+}
+
 MISSING_APT_PACKAGES=()
 INSTALL_ROSDEP=0
 
@@ -86,8 +117,8 @@ for cmd in git colcon rosdep vcs; do
 done
 
 if [[ ${#MISSING_APT_PACKAGES[@]} -gt 0 ]]; then
-  $APT_GET update -y
-  $APT_GET install -y "${MISSING_APT_PACKAGES[@]}"
+  apt_get_retry update -y
+  apt_get_retry install -y "${MISSING_APT_PACKAGES[@]}"
 fi
 
 if [[ ${MISSING_COLCON:-0} -eq 1 ]]; then
@@ -278,8 +309,8 @@ TINYXML2_DEPS=(
 # headers are present before CMake runs instead of relying on a potentially
 # stale dpkg check.
 echo "Ensuring required Boost development packages are installed" >&2
-$APT_GET update -y
-$APT_GET install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}"
+apt_get_retry update -y
+apt_get_retry install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}"
 
 # Double-check the Boost headers are discoverable before running CMake.  Both
 # rosdep and the manual install above should have pulled them in, but explicitly
