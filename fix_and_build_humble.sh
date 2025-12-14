@@ -93,9 +93,69 @@ fi
 
 REPO_FILE="$SCRIPT_DIR/tesseract.repos"
 if [ -f "$REPO_FILE" ]; then
-  if [ ! -d src/tesseract ]; then
-    vcs import --recursive src < "$REPO_FILE"
+  mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_FILE" SRC="$PWD/src" python3 - <<'PY'
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("PyYAML is required to process tesseract.repos")
+
+repos_file = os.environ["REPOS_FILE"]
+src = os.environ["SRC"]
+
+with open(repos_file, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+for name in (data.get("repositories") or {}):
+    if not os.path.isdir(os.path.join(src, name)):
+        print(name)
+PY
+  )
+
+  if [[ ${#MISSING_REPOS[@]} -gt 0 ]]; then
+    FILTERED_MISSING=()
+    for repo in "${MISSING_REPOS[@]}"; do
+      if [[ $repo == "trajopt_ifopt" ]]; then
+        if apt-cache show "ros-$ROS_DISTRO-trajopt-ifopt" >/dev/null 2>&1; then
+          echo "Installing ros-$ROS_DISTRO-trajopt-ifopt from apt instead of cloning"
+          ${APT_GET_CMD} install -y "ros-$ROS_DISTRO-trajopt-ifopt" >/dev/null 2>&1
+          continue
+        else
+          echo "ros-$ROS_DISTRO-trajopt-ifopt not available via apt; will attempt to clone" >&2
+        fi
+      fi
+      FILTERED_MISSING+=("$repo")
+    done
+
+    if [[ ${#FILTERED_MISSING[@]} -gt 0 ]]; then
+      FILTERED_REPOS=$(mktemp)
+      REPOS_FILE="$REPO_FILE" MISSING="${FILTERED_MISSING[*]}" python3 - <<'PY' >"$FILTERED_REPOS"
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("PyYAML is required to process the repos file")
+
+repos_file = os.environ["REPOS_FILE"]
+missing = {item for item in os.environ.get("MISSING", "").split() if item}
+
+with open(repos_file, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+repos = data.get("repositories") or {}
+selected = {name: repos[name] for name in repos if name in missing}
+
+yaml.safe_dump({"repositories": selected}, sys.stdout)
+PY
+      vcs import --recursive src < "$FILTERED_REPOS"
+      rm -f "$FILTERED_REPOS"
+    fi
   fi
+
   for overlay in tesseract trajopt; do
     if [ -d "$SCRIPT_DIR/$overlay" ]; then
       mkdir -p "src/$overlay"

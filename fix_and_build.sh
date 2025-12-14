@@ -161,6 +161,31 @@ PY
   )
 
   if [[ ${#MISSING_REPOS[@]} -gt 0 ]]; then
+    # Attempt to satisfy trajopt_ifopt from binary packages if the source
+    # repository is unavailable publicly. This avoids interactive GitHub
+    # authentication prompts when the upstream repository is private.
+    FILTERED_MISSING=()
+    for repo in "${MISSING_REPOS[@]}"; do
+      if [[ $repo == "trajopt_ifopt" ]]; then
+        if apt-cache show "ros-$ROS_DISTRO-trajopt-ifopt" >/dev/null 2>&1; then
+          echo "Installing ros-$ROS_DISTRO-trajopt-ifopt from apt instead of cloning"
+          apt_get_retry install -y "ros-$ROS_DISTRO-trajopt-ifopt"
+          continue
+        else
+          echo "ros-$ROS_DISTRO-trajopt-ifopt not available via apt; will attempt to clone" >&2
+        fi
+      fi
+      FILTERED_MISSING+=("$repo")
+    done
+
+    if [[ ${#FILTERED_MISSING[@]} -eq 0 ]]; then
+      MISSING_REPOS=()
+    else
+      MISSING_REPOS=("${FILTERED_MISSING[@]}")
+    fi
+  fi
+
+  if [[ ${#MISSING_REPOS[@]} -gt 0 ]]; then
     echo "Importing missing repositories: ${MISSING_REPOS[*]}"
     FILTERED_REPOS=$(mktemp)
     REPOS_FILE="$REPO_DIR/tesseract.repos" MISSING="${MISSING_REPOS[*]}" python3 - <<'PY' >"$FILTERED_REPOS"
