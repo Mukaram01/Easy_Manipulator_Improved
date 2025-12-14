@@ -273,7 +273,13 @@ rosdep update
 # ones we still need manually so rosdep can proceed without hard errors.  Also
 # skip packages provided by the repo's overlays so rosdep does not try to
 # resolve them from the system.
-OVERLAY_SKIP_KEYS=(
+mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths "$SRC" --names-only)
+declare -A WORKSPACE_PRESENT
+for pkg in "${WORKSPACE_PACKAGES[@]}"; do
+  WORKSPACE_PRESENT["$pkg"]=1
+done
+
+OVERLAY_SKIP_CANDIDATES=(
   tesseract
   tesseract_process_planners
   trajopt_ifopt
@@ -282,6 +288,12 @@ OVERLAY_SKIP_KEYS=(
   jsoncpp
   message_generation
 )
+OVERLAY_SKIP_KEYS=()
+for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
+  if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
+    OVERLAY_SKIP_KEYS+=("$key")
+  fi
+done
 SKIP_KEYS=(
   catkin
   rviz

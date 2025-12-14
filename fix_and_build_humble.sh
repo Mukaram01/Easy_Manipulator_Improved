@@ -229,7 +229,13 @@ while read -r name path _; do
 done < <(colcon list --base-paths src)
 
 # Skip keys for packages supplied by unreleased overlays shipped with this repo.
-SKIP_KEYS=(
+mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
+declare -A WORKSPACE_PRESENT
+for pkg in "${WORKSPACE_PACKAGES[@]}"; do
+  WORKSPACE_PRESENT["$pkg"]=1
+done
+
+OVERLAY_SKIP_CANDIDATES=(
   tesseract
   tesseract_process_planners
   trajopt_ifopt
@@ -238,6 +244,12 @@ SKIP_KEYS=(
   jsoncpp
   message_generation
 )
+SKIP_KEYS=()
+for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
+  if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
+    SKIP_KEYS+=("$key")
+  fi
+done
 SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
