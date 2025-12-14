@@ -98,6 +98,18 @@ apt_get_retry() {
   done
 }
 
+ensure_pyyaml() {
+  if python3 - <<'PY'
+import yaml  # noqa: F401
+PY
+  then
+    return
+  fi
+
+  echo "Installing python3-yaml for repos processing"
+  apt_get_retry install -y python3-yaml
+}
+
 MISSING_APT_PACKAGES=()
 INSTALL_ROSDEP=0
 
@@ -139,6 +151,8 @@ fi
 # the presence of $SRC/tesseract is insufficient when the workspace already
 # contains a partial overlay copy (e.g., tesseract without tesseract_plugins).
 if [[ -f "$REPO_DIR/tesseract.repos" ]]; then
+  ensure_pyyaml
+
   mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_DIR/tesseract.repos" SRC="$SRC" python3 - <<'PY'
 import os
 import sys
