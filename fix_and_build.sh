@@ -354,6 +354,9 @@ BOOST_DEPS=(
 TINYXML2_DEPS=(
   libtinyxml2-dev
 )
+CEREAL_DEPS=(
+  libcereal-dev
+)
 
 # Install Boost development packages explicitly because rosdep may skip or fail
 # to resolve them in some environments.  Using apt-get directly ensures the
@@ -361,7 +364,7 @@ TINYXML2_DEPS=(
 # stale dpkg check.
 echo "Ensuring required Boost development packages are installed" >&2
 apt_get_retry update -y
-apt_get_retry install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}"
+apt_get_retry install -y "${BOOST_DEPS[@]}" "${TINYXML2_DEPS[@]}" "${CEREAL_DEPS[@]}"
 
 # Double-check the Boost headers are discoverable before running CMake.  Both
 # rosdep and the manual install above should have pulled them in, but explicitly
@@ -371,6 +374,13 @@ if [[ ! -f /usr/include/boost/program_options/options_description.hpp || ! -f /u
       ! -f /usr/include/boost/stacktrace.hpp || ! -f /usr/include/boost/graph/adjacency_list.hpp ]]; then
   echo "Boost headers for required components are missing even after installing ${BOOST_DEPS[*]}." >&2
   echo "Please ensure the listed Boost dev packages (including Boost.Graph) are available and rerun this script." >&2
+  exit 1
+fi
+
+# Ensure cereal headers are available for the planners that serialize profiles.
+if [[ ! -f /usr/include/cereal/cereal.hpp ]]; then
+  echo "cereal headers are missing even after installing ${CEREAL_DEPS[*]}." >&2
+  echo "Please ensure libcereal-dev is available for your distribution and rerun this script." >&2
   exit 1
 fi
 
