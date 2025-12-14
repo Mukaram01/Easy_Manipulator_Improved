@@ -20,7 +20,23 @@ find_package(tesseract_environment REQUIRED)
 find_package(tesseract_command_language REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(OpenMP REQUIRED)
-find_package(cereal REQUIRED)
+find_package(cereal QUIET)
+
+if(NOT cereal_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(
+    cereal
+    GIT_REPOSITORY https://github.com/USCiLab/cereal.git
+    GIT_TAG v1.3.2)
+
+  FetchContent_MakeAvailable(cereal)
+
+  if(NOT TARGET cereal::cereal)
+    add_library(cereal INTERFACE)
+    add_library(cereal::cereal ALIAS cereal)
+    target_include_directories(cereal INTERFACE ${cereal_SOURCE_DIR}/include)
+  endif()
+endif()
 
 include(${tesseract_common_DIR}/tesseract_macros.cmake)
 
