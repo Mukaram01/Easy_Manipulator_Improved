@@ -2,6 +2,14 @@ find_package(trajopt REQUIRED)
 find_package(trajopt_sco REQUIRED)
 find_package(osqp REQUIRED)
 
+if(NOT rclcpp_FOUND)
+  message(FATAL_ERROR "Trajopt planner requires rclcpp, but it was not found. Please install rclcpp or disable TESSERACT_BUILD_TRAJOPT.")
+endif()
+
+if(NOT OpenMP_FOUND)
+  message(FATAL_ERROR "Trajopt planner requires OpenMP, but it was not found. Please install OpenMP or disable TESSERACT_BUILD_TRAJOPT.")
+endif()
+
 # Trajopt Planner
 add_library(
   ${PROJECT_NAME}_trajopt
@@ -24,8 +32,16 @@ target_link_libraries(
          tesseract::tesseract_environment
          Boost::boost
          cereal::cereal
-         Eigen3::Eigen
+          Eigen3::Eigen
          osqp::osqp)
+
+if(rclcpp_FOUND)
+  target_link_libraries(${PROJECT_NAME}_trajopt PUBLIC rclcpp::rclcpp)
+endif()
+
+if(OpenMP_FOUND)
+  target_link_libraries(${PROJECT_NAME}_trajopt PUBLIC OpenMP::OpenMP_CXX)
+endif()
 target_compile_options(${PROJECT_NAME}_trajopt PRIVATE ${TESSERACT_COMPILE_OPTIONS_PRIVATE})
 target_compile_options(${PROJECT_NAME}_trajopt PUBLIC ${TESSERACT_COMPILE_OPTIONS_PUBLIC})
 target_compile_definitions(${PROJECT_NAME}_trajopt PUBLIC ${TESSERACT_COMPILE_DEFINITIONS})
@@ -58,7 +74,9 @@ configure_component(
     trajopt
     trajopt_sco
     osqp
-    cereal)
+    cereal
+    rclcpp
+    OpenMP)
 
 if(TESSERACT_PACKAGE)
   cpack_component(
