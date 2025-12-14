@@ -20,6 +20,8 @@ find_package(tesseract_environment REQUIRED)
 find_package(tesseract_command_language REQUIRED)
 find_package(cereal REQUIRED)
 
+include(${tesseract_common_DIR}/tesseract_macros.cmake)
+
 # Load variable for clang tidy args, compiler options and cxx version
 tesseract_variables()
 
