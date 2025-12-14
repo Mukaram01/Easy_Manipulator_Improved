@@ -85,14 +85,17 @@ if(TARGET cereal::cereal)
   endif()
 
   if(_cereal_normalized_include_dir)
+    set(_cereal_target cereal::cereal)
     get_target_property(_cereal_alias_target cereal::cereal ALIASED_TARGET)
-    if(_cereal_alias_target)
-      set(_cereal_target ${_cereal_alias_target})
-    else()
-      set(_cereal_target cereal::cereal)
-    endif()
 
-    set_property(TARGET ${_cereal_target} PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_cereal_normalized_include_dir}")
+    while(_cereal_alias_target)
+      set(_cereal_target ${_cereal_alias_target})
+      get_target_property(_cereal_alias_target ${_cereal_target} ALIASED_TARGET)
+    endwhile()
+
+    if(TARGET ${_cereal_target})
+      set_property(TARGET ${_cereal_target} PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_cereal_normalized_include_dir}")
+    endif()
   endif()
 endif()
 
