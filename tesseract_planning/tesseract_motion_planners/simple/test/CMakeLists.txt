@@ -27,3 +27,4 @@ add_gtest(${PROJECT_NAME}_simple_planner_lvs_assign_no_ik_move_unit simple_plann
 add_gtest(${PROJECT_NAME}_simple_planner_lvs_move_unit simple_planner_lvs_move_unit.cpp)
 add_gtest(${PROJECT_NAME}_simple_planner_lvs_no_ik_move_unit simple_planner_lvs_no_ik_move_unit.cpp)
 add_gtest(${PROJECT_NAME}_simple_planner_yaml_conversions simple_planner_yaml_conversions_unit.cpp)
+add_gtest(${PROJECT_NAME}_simple_planner_interpolation_unit simple_planner_interpolation_unit.cpp)
