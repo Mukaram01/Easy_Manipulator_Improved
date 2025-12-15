@@ -55,6 +55,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 #include <tesseract_command_language/utils.h>
 
 // #include <tesseract_motion_planners/core/utils.h>
+#include <unordered_map>
 
 namespace tesseract_planning
 {
@@ -1044,14 +1045,50 @@ std::vector<WaypointPoly> interpolate_waypoint(const WaypointPoly& start, const 
     const auto& jwp1 = start.as<JointWaypointPoly>();
     const auto& jwp2 = stop.as<JointWaypointPoly>();
 
-    // TODO: Should check joint names are in the same order
-    Eigen::MatrixXd joint_poses = interpolate(jwp1.getPosition(), jwp2.getPosition(), steps);
+    const auto& names1 = jwp1.getNames();
+    const auto& names2 = jwp2.getNames();
+
+    if (names1.size() != names2.size())
+    {
+      CONSOLE_BRIDGE_logError("Joint waypoint interpolation failed: joint name counts differ (%lu vs %lu)",
+                              static_cast<unsigned long>(names1.size()),
+                              static_cast<unsigned long>(names2.size()));
+      throw std::runtime_error("Joint waypoint interpolation requires identical joint name sets");
+    }
+
+    Eigen::VectorXd jwp2_position = jwp2.getPosition();
+    if (names1 != names2)
+    {
+      std::unordered_map<std::string, Eigen::Index> name_to_index;
+      name_to_index.reserve(names2.size());
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(names2.size()); ++i)
+        name_to_index[names2[static_cast<std::size_t>(i)]] = i;
+
+      Eigen::VectorXd reordered(jwp2_position.size());
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(names1.size()); ++i)
+      {
+        auto it = name_to_index.find(names1[static_cast<std::size_t>(i)]);
+        if (it == name_to_index.end())
+        {
+          CONSOLE_BRIDGE_logError("Joint waypoint interpolation failed: joint '%s' missing in stop waypoint",
+                                  names1[static_cast<std::size_t>(i)].c_str());
+          throw std::runtime_error("Joint waypoint interpolation requires identical joint name sets");
+        }
+
+        reordered[i] = jwp2_position[it->second];
+      }
+
+      jwp2_position = reordered;
+    }
+
+    Eigen::MatrixXd joint_poses = interpolate(jwp1.getPosition(), jwp2_position, steps);
 
     std::vector<WaypointPoly> result;
     result.reserve(static_cast<std::size_t>(joint_poses.cols()));
     for (int i = 0; i < joint_poses.cols(); ++i)
     {
       JointWaypointPoly copy(jwp2);
+      copy.setNames(names1);
       copy.setPosition(joint_poses.col(i));
       result.emplace_back(copy);
     }
