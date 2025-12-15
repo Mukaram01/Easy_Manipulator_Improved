@@ -213,12 +213,30 @@ except ImportError:
 
 repos_file = os.environ["REPOS_FILE"]
 missing = {item for item in os.environ.get("MISSING", "").split() if item}
+token = os.environ.get("GITHUB_TOKEN_FOR_IMPORT") or os.environ.get("GITHUB_TOKEN")
+
+
+def with_token(url: str) -> str:
+    """Inject a GitHub token into the URL to allow non-interactive clones."""
+
+    if not token or "github.com" not in url or "@" in url:
+        return url
+
+    prefix = "https://"
+    if url.startswith(prefix):
+        return f"{prefix}{token}@{url[len(prefix):]}"
+    return url
 
 with open(repos_file, "r", encoding="utf-8") as handle:
     data = yaml.safe_load(handle) or {}
 
 repos = data.get("repositories") or {}
 selected = {name: repos[name] for name in repos if name in missing}
+
+if token:
+    for repo in selected.values():
+        if isinstance(repo, dict) and isinstance(repo.get("url"), str):
+            repo["url"] = with_token(repo["url"])
 
 yaml.safe_dump({"repositories": selected}, sys.stdout)
 PY
