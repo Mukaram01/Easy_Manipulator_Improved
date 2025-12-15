@@ -93,6 +93,10 @@ packages via `scripts/install_system_deps.sh`. After cloning into `~/workcell_ws
 cd easy_manipulation_deployment
 ./fix_and_build.sh
 ```
+Set `SKIP_TESTS=1` to disable building Tesseract tests and examples, or
+`LIGHTWEIGHT_PLANNERS=1` to skip heavyweight planners (OMPL, Descartes, Trajopt,
+Trajopt IFOPT). These toggles append the corresponding CMake flags to every
+`colcon build` invocation within the script.
 This script fixes a common issue where a `COLCON_IGNORE` file in the bundled
 Tesseract sources hid packages such as `tesseract_common`, causing
 `colcon build --packages-up-to tesseract_common` to fail.  The script renames
