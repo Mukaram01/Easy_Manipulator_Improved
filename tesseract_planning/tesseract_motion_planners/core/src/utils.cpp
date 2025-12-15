@@ -519,9 +519,10 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
         state_solver.getLinkTransforms(link_transforms, joint_names0, joint_positions0);
         state_solver.getLinkTransforms(link_transforms1, joint_names1, joint_positions1);
 
+        sub_state_results.clear();
         tesseract_environment::checkTrajectorySegment(
-            state_results, manager, link_transforms, link_transforms1, config.contact_request);
-        if (!state_results.empty())
+            sub_state_results, manager, link_transforms, link_transforms1, config.contact_request);
+        if (!sub_state_results.empty())
         {
           found = true;
           traj_contacts.addContact(static_cast<int>(iStep),
@@ -531,10 +532,13 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                                    joint_positions1,
                                    joint_positions0,
                                    joint_positions1,
-                                   state_results);
+                                   sub_state_results);
 
           if (debug_logging)
             printContinuousDebugInfo(joint_names, joint_positions0, joint_positions1, iStep, mi.size() - 1);
+
+          state_results.addInterpolatedCollisionResults(
+              sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, false);
         }
         contacts.push_back(state_results);
 
