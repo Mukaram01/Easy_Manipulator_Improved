@@ -42,6 +42,14 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
   to install the TinyXML2 and Boost development packages that
   `trajopt_common` requires.
 
+Tested platform: **Ubuntu 22.04 with ROS 2 Humble**. Install the system packages
+below before running `colcon build` to avoid repeated fetch/fallback loops in
+`tesseract_motion_planners` and related dependencies:
+
+```
+sudo apt update && sudo apt install -y libcereal-dev libjsoncpp-dev libomp-dev ros-humble-roslib
+```
+
 ---
 ## Build on Jazzy or Humble
 
@@ -68,6 +76,11 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+The helper scripts register `scripts/rosdep_overrides.yaml` automatically so
+rosdep can resolve the Humble-specific keys for `cereal`, `openmp`, `roslib`,
+and the various Tesseract packages without downloading sources during build
+configuration.
+
 > **Tip:** Run `./easy_manipulation_deployment/scripts/fix_workspace_layout.sh`
 > after importing the repositories and before calling `rosdep install`. The
 > script relocates the bundled Tesseract and TrajOpt overlays so only one copy of
@@ -84,6 +97,10 @@ The workspace overlay also includes the upstream
 [`tesseract_plugins`](https://github.com/tesseract-robotics/tesseract_plugins)
 repository, so ensure you re-run `vcs import < tesseract.repos` to pull the
 plugin definitions before building.
+
+The helper scripts check out the bundled `trajopt` repository on its `main`
+branch when a detached HEAD is detected, keeping repeated builds aligned to a
+stable upstream reference instead of a transient commit hash.
 
 A convenience script `fix_and_build.sh` is provided in this repository. It automatically
 detects whether Humble or Jazzy is installed and installs the Boost/TinyXML2 development
