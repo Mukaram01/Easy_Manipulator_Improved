@@ -307,6 +307,30 @@ struct convert<OSQPSettings>
   }
 };
 
+template <>
+struct convert<Eigen::Matrix<double, 6, 1>>
+{
+  static Node encode(const Eigen::Matrix<double, 6, 1>& rhs)
+  {
+    Node node(NodeType::Sequence);
+    for (Eigen::Index i = 0; i < rhs.size(); ++i)
+      node.push_back(rhs[i]);
+
+    return node;
+  }
+
+  static bool decode(const Node& node, Eigen::Matrix<double, 6, 1>& rhs)
+  {
+    if (!node.IsSequence() || node.size() != 6)
+      return false;
+
+    for (std::size_t i = 0; i < 6; ++i)
+      rhs[static_cast<Eigen::Index>(i)] = node[i].as<double>();
+
+    return true;
+  }
+};
+
 //==================== trajopt_sco::BasicTrustRegionSQPParameters ======================
 template <>
 struct convert<sco::BasicTrustRegionSQPParameters>
