@@ -856,6 +856,19 @@ PY
 
 cd "$WS"
 
+# If a previous build used the default isolated layout, colcon will refuse to
+# reuse the existing install directory when invoked with --merge-install.
+# Detect this mismatch early and remove the stale install tree so the merge
+# layout requested below can be honored without manual cleanup.
+LAYOUT_FILE="$WS/install/.colcon_install_layout"
+if [[ -f "$LAYOUT_FILE" ]]; then
+  layout=$(<"$LAYOUT_FILE")
+  if [[ "$layout" != "merged" ]]; then
+    echo "Removing install directory created with '$layout' layout to allow --merge-install" >&2
+    rm -rf "$WS/install"
+  fi
+fi
+
 source_install() {
   if [[ -f install/setup.bash ]]; then
     set +u
