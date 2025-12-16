@@ -41,6 +41,7 @@ if(NOT cereal_FOUND)
 endif()
 
 if(cereal_FOUND)
+  # Rewrite cereal include directories to guard against vendor packages exporting /include
   get_target_property(_cereal_include_dirs cereal::cereal INTERFACE_INCLUDE_DIRECTORIES)
   set(_cereal_valid_include_dirs "")
   foreach(_cereal_include_dir ${_cereal_include_dirs})
@@ -49,6 +50,15 @@ if(cereal_FOUND)
       list(APPEND _cereal_valid_include_dirs "${_cereal_include_dir_stripped}")
     endif()
   endforeach()
+
+  set(_cereal_pruned_include_dirs "${_cereal_include_dirs}")
+  foreach(_cereal_valid_include_dir ${_cereal_valid_include_dirs})
+    list(REMOVE_ITEM _cereal_pruned_include_dirs "${_cereal_valid_include_dir}")
+  endforeach()
+
+  if(_cereal_pruned_include_dirs)
+    message(STATUS "Pruning cereal include directories that do not exist: ${_cereal_pruned_include_dirs}")
+  endif()
 
   if(NOT _cereal_valid_include_dirs)
     find_path(_cereal_header_path
@@ -64,6 +74,10 @@ if(cereal_FOUND)
   if(NOT _cereal_valid_include_dirs)
     set(_cereal_hint "Install a proper cereal package (e.g., libcereal-dev or the ROS cereal_vendor) or toggle TESSERACT_DISABLE_CEREAL_FETCH accordingly.")
     message(FATAL_ERROR "cereal::cereal target exports no valid include directories or discoverable headers (found: ${_cereal_include_dirs}). ${_cereal_hint}")
+  endif()
+
+  if(_cereal_valid_include_dirs)
+    set_target_properties(cereal::cereal PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_cereal_valid_include_dirs}")
   endif()
 endif()
 
