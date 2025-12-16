@@ -40,6 +40,7 @@ bool operator==(const OSQPSettings& lhs, const OSQPSettings& rhs)
   static auto max_diff = static_cast<double>(std::numeric_limits<float>::epsilon());
 
   bool equal = true;
+#ifdef OSQP_API_TYPES_H
   equal &= (lhs.device == rhs.device);
   equal &= (lhs.linsys_solver == rhs.linsys_solver);
   equal &= (lhs.allocate_solution == rhs.allocate_solution);
@@ -71,6 +72,35 @@ bool operator==(const OSQPSettings& lhs, const OSQPSettings& rhs)
   equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.time_limit, rhs.time_limit, max_diff);
   equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.delta, rhs.delta, max_diff);
   equal &= (lhs.polish_refine_iter == rhs.polish_refine_iter);
+#else
+  equal &= (lhs.linsys_solver == rhs.linsys_solver);
+  equal &= (lhs.verbose == rhs.verbose);
+  equal &= (lhs.scaling == rhs.scaling);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.rho, rhs.rho, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.sigma, rhs.sigma, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.alpha, rhs.alpha, max_diff);
+  equal &= (lhs.adaptive_rho == rhs.adaptive_rho);
+  equal &= (lhs.adaptive_rho_interval == rhs.adaptive_rho_interval);
+  equal &=
+      tesseract_common::almostEqualRelativeAndAbs(lhs.adaptive_rho_tolerance, rhs.adaptive_rho_tolerance, max_diff);
+#  ifdef PROFILING
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.adaptive_rho_fraction, rhs.adaptive_rho_fraction, max_diff);
+#  endif
+  equal &= (lhs.max_iter == rhs.max_iter);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.eps_abs, rhs.eps_abs, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.eps_rel, rhs.eps_rel, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.eps_prim_inf, rhs.eps_prim_inf, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.eps_dual_inf, rhs.eps_dual_inf, max_diff);
+  equal &= (lhs.scaled_termination == rhs.scaled_termination);
+  equal &= (lhs.check_termination == rhs.check_termination);
+  equal &= (lhs.warm_start == rhs.warm_start);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.delta, rhs.delta, max_diff);
+  equal &= (lhs.polish_refine_iter == rhs.polish_refine_iter);
+  equal &= (lhs.polish == rhs.polish);
+#  ifdef PROFILING
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.time_limit, rhs.time_limit, max_diff);
+#  endif
+#endif
   return equal;
 }
 
@@ -112,6 +142,35 @@ std::unique_ptr<sco::ModelConfig> TrajOptOSQPSolverProfile::createSolverConfig()
   config->settings = settings;
   config->update_workspace = update_workspace;
   return config;
+}
+
+bool operator==(const sco::BasicTrustRegionSQPParameters& lhs, const sco::BasicTrustRegionSQPParameters& rhs)
+{
+  static auto max_diff = static_cast<double>(std::numeric_limits<float>::epsilon());
+
+  bool equal = true;
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.improve_ratio_threshold, rhs.improve_ratio_threshold, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.min_trust_box_size, rhs.min_trust_box_size, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.min_approx_improve, rhs.min_approx_improve, max_diff);
+  equal &=
+      tesseract_common::almostEqualRelativeAndAbs(lhs.min_approx_improve_frac, rhs.min_approx_improve_frac, max_diff);
+  equal &= (lhs.max_iter == rhs.max_iter);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.trust_shrink_ratio, rhs.trust_shrink_ratio, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.trust_expand_ratio, rhs.trust_expand_ratio, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.cnt_tolerance, rhs.cnt_tolerance, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.max_merit_coeff_increases, rhs.max_merit_coeff_increases, max_diff);
+  equal &= (lhs.max_qp_solver_failures == rhs.max_qp_solver_failures);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(
+      lhs.merit_coeff_increase_ratio, rhs.merit_coeff_increase_ratio, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.max_time, rhs.max_time, max_diff);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(
+      lhs.initial_merit_error_coeff, rhs.initial_merit_error_coeff, max_diff);
+  equal &= (lhs.inflate_constraints_individually == rhs.inflate_constraints_individually);
+  equal &= tesseract_common::almostEqualRelativeAndAbs(lhs.trust_box_size, rhs.trust_box_size, max_diff);
+  equal &= (lhs.log_results == rhs.log_results);
+  equal &= (lhs.log_dir == rhs.log_dir);
+  equal &= (lhs.num_threads == rhs.num_threads);
+  return equal;
 }
 
 bool TrajOptOSQPSolverProfile::operator==(const TrajOptOSQPSolverProfile& rhs) const
