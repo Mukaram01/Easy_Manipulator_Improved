@@ -25,7 +25,13 @@
 
 namespace tesseract_planning
 {
-SimplePlannerMoveProfile::SimplePlannerMoveProfile() : Profile(createKey<SimplePlannerMoveProfile>()) {}
+SimplePlannerMoveProfile::SimplePlannerMoveProfile()
+  : Profile(tesseract_common::createKey<SimplePlannerMoveProfile>())
+{
+}
 
-SimplePlannerCompositeProfile::SimplePlannerCompositeProfile() : Profile(createKey<SimplePlannerCompositeProfile>()) {}
+SimplePlannerCompositeProfile::SimplePlannerCompositeProfile()
+  : Profile(tesseract_common::createKey<SimplePlannerCompositeProfile>())
+{
+}
 }  // namespace tesseract_planning
