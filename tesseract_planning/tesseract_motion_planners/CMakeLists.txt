@@ -21,12 +21,18 @@ find_package(tesseract_command_language REQUIRED)
 find_package(rclcpp QUIET)
 find_package(OpenMP REQUIRED)
 find_package(cereal QUIET)
+if(NOT cereal_FOUND)
+  find_package(cereal_vendor QUIET)
+  if(cereal_vendor_FOUND)
+    find_package(cereal REQUIRED)
+  endif()
+endif()
 
 option(TESSERACT_DISABLE_CEREAL_FETCH "Disable fetching cereal with FetchContent fallback" ON)
 add_compile_definitions(TESSERACT_DISABLE_CEREAL_FETCH=$<BOOL:${TESSERACT_DISABLE_CEREAL_FETCH}>)
 
 if(NOT cereal_FOUND)
-  set(_cereal_hint "Install the libcereal-dev package and retry. FetchContent support was removed to avoid recursive downloads during configure.")
+  set(_cereal_hint "Install the libcereal-dev package or the ROS cereal_vendor package and retry. FetchContent support was removed to avoid recursive downloads during configure.")
   if(TESSERACT_DISABLE_CEREAL_FETCH)
     message(FATAL_ERROR "cereal not found and TESSERACT_DISABLE_CEREAL_FETCH is ON. ${_cereal_hint}")
   else()
@@ -45,8 +51,19 @@ if(cereal_FOUND)
   endforeach()
 
   if(NOT _cereal_valid_include_dirs)
+    find_path(_cereal_header_path
+              NAMES cereal/cereal.hpp
+              PATHS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}
+              NO_CACHE)
+    if(_cereal_header_path)
+      list(APPEND _cereal_valid_include_dirs "${_cereal_header_path}")
+      message(STATUS "cereal headers found in implicit include path: ${_cereal_header_path}")
+    endif()
+  endif()
+
+  if(NOT _cereal_valid_include_dirs)
     set(_cereal_hint "Install a proper cereal package (e.g., libcereal-dev or the ROS cereal_vendor) or toggle TESSERACT_DISABLE_CEREAL_FETCH accordingly.")
-    message(FATAL_ERROR "cereal::cereal target exports no valid include directories (found: ${_cereal_include_dirs}). ${_cereal_hint}")
+    message(FATAL_ERROR "cereal::cereal target exports no valid include directories or discoverable headers (found: ${_cereal_include_dirs}). ${_cereal_hint}")
   endif()
 endif()
 
