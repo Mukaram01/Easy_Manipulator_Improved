@@ -87,21 +87,9 @@ inline std::size_t createKey()
 namespace cereal
 {
 template <class Archive>
-void save(Archive& ar, const tesseract_common::Profile& profile)  // NOLINT
-{
-  ar(make_nvp("key", profile.key_));
-}
-
-template <class Archive>
-void load(Archive& ar, tesseract_common::Profile& profile)  // NOLINT
-{
-  ar(make_nvp("key", profile.key_));
-}
-
-template <class Archive>
 void serialize(Archive& ar, tesseract_common::Profile& profile)  // NOLINT
 {
-  cereal::split_member(ar, profile);
+  ar(make_nvp("key", profile.key_));
 }
 }  // namespace cereal
 
