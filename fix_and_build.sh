@@ -1274,16 +1274,11 @@ ensure_tesseract_collision_bullet_config
 ensure_tesseract_state_solver_config
 find install -name 'tesseract_commonConfig.cmake'
 
-# Build the whole workspace.  Rebuilding tesseract_collision wipes the
-# synthesized tesseract_collision_core/tesseract_collision_bullet config files
-# that downstream packages need, so skip reprocessing that package here after it
-# has already been built in the trajopt_sco pass above.
-COLCON_BUILD_ARGS=("${COLCON_BASE_ARGS[@]}" --packages-up-to tesseract_motion_planners --cmake-args "${CMAKE_ARGS[@]}")
-if colcon list --base-paths "$SRC" | grep -q '^tesseract_collision\\b'; then
-  echo "Skipping tesseract_collision during final rebuild to preserve synthesized configs"
-  COLCON_BUILD_ARGS+=(--packages-skip tesseract_collision)
-fi
-echo "Starting final colcon build (this can sit on tesseract_motion_planners for a while; that's normal)"
+# Build the whole workspace so every package is compiled at least once. Allow
+# tesseract_collision to rebuild and regenerate the synthesized configs
+# immediately afterwards to keep downstream packages satisfied.
+COLCON_BUILD_ARGS=("${COLCON_BASE_ARGS[@]}" --cmake-args "${CMAKE_ARGS[@]}")
+echo "Starting final full colcon build (this can sit on tesseract_motion_planners for a while; that's normal)"
 colcon build "${COLCON_BUILD_ARGS[@]}"
 source_install
 ensure_tesseract_collision_core_config
