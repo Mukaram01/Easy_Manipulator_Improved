@@ -24,6 +24,7 @@
 #ifndef TESSERACT_MOTION_PLANNERS_SIMPLE_FIXED_SIZE_MOVE_PROFILE_H
 #define TESSERACT_MOTION_PLANNERS_SIMPLE_FIXED_SIZE_MOVE_PROFILE_H
 
+#include <tesseract_common/profile_plugin_factory.h>
 #include <tesseract_motion_planners/simple/profile/simple_planner_profile.h>
 
 namespace YAML
