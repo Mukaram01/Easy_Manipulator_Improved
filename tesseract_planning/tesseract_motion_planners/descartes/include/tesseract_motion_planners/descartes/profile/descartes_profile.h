@@ -50,7 +50,7 @@ public:
   using Ptr = std::shared_ptr<DescartesSolverProfile<FloatType>>;
   using ConstPtr = std::shared_ptr<const DescartesSolverProfile<FloatType>>;
 
-  DescartesSolverProfile() : Profile(createKey<DescartesSolverProfile<FloatType>>()) {}
+  DescartesSolverProfile() : Profile(tesseract_common::createKey<DescartesSolverProfile<FloatType>>()) {}
 
   virtual std::unique_ptr<descartes_light::Solver<FloatType>> create() const = 0;
 };
@@ -62,7 +62,7 @@ public:
   using Ptr = std::shared_ptr<DescartesMoveProfile<FloatType>>;
   using ConstPtr = std::shared_ptr<const DescartesMoveProfile<FloatType>>;
 
-  DescartesMoveProfile() : Profile(createKey<DescartesMoveProfile<FloatType>>()) {}
+  DescartesMoveProfile() : Profile(tesseract_common::createKey<DescartesMoveProfile<FloatType>>()) {}
 
   std::shared_ptr<const tesseract_kinematics::KinematicGroup>
   createKinematicGroup(const tesseract_common::ManipulatorInfo& manip_info,
