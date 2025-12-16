@@ -7,9 +7,7 @@
 
 #include <tesseract_common/cereal_serialization.h>
 
-#if __has_include(<tesseract_collision/core/cereal_serialization.h>)
-#include <tesseract_collision/core/cereal_serialization.h>
-#elif __has_include(<tesseract_collision/core/serialization.h>)
+#if __has_include(<tesseract_collision/core/serialization.h>)
 #include <tesseract_collision/core/serialization.h>
 #endif
 
