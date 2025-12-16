@@ -6,7 +6,12 @@
 #include <tesseract_motion_planners/descartes/profile/descartes_ladder_graph_solver_profile.h>
 
 #include <tesseract_common/cereal_serialization.h>
+
+#if __has_include(<tesseract_collision/core/cereal_serialization.h>)
 #include <tesseract_collision/core/cereal_serialization.h>
+#elif __has_include(<tesseract_collision/core/serialization.h>)
+#include <tesseract_collision/core/serialization.h>
+#endif
 
 #include <cereal/cereal.hpp>
 #include <cereal/types/polymorphic.hpp>
