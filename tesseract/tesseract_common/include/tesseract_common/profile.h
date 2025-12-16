@@ -26,10 +26,15 @@
 #ifndef TESSERACT_COMMON_PROFILE_H
 #define TESSERACT_COMMON_PROFILE_H
 
+#include <tesseract_common/macros.h>
+TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <memory>
 #include <typeinfo>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/export.hpp>
+#include <cereal/cereal.hpp>
+#include <cereal/types/memory.hpp>
+TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
 namespace tesseract_common
 {
@@ -62,6 +67,7 @@ protected:
   std::size_t key_{ 0 };
 
 private:
+  friend class cereal::access;
   friend class boost::serialization::access;
   friend struct tesseract_common::Serialization;
   template <class Archive>
@@ -77,6 +83,27 @@ inline std::size_t createKey()
   return typeid(ProfileType).hash_code();
 }
 }  // namespace tesseract_common
+
+namespace cereal
+{
+template <class Archive>
+void save(Archive& ar, const tesseract_common::Profile& profile)  // NOLINT
+{
+  ar(make_nvp("key", profile.key_));
+}
+
+template <class Archive>
+void load(Archive& ar, tesseract_common::Profile& profile)  // NOLINT
+{
+  ar(make_nvp("key", profile.key_));
+}
+
+template <class Archive>
+void serialize(Archive& ar, tesseract_common::Profile& profile)  // NOLINT
+{
+  cereal::split_member(ar, profile);
+}
+}  // namespace cereal
 
 BOOST_CLASS_EXPORT_KEY(tesseract_common::Profile)
 
