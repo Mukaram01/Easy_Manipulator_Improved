@@ -28,5 +28,5 @@
 
 namespace tesseract_planning
 {
-OMPLMoveProfile::OMPLMoveProfile() : Profile(createKey<OMPLMoveProfile>()) {}
+OMPLMoveProfile::OMPLMoveProfile() : Profile(tesseract_common::createKey<OMPLMoveProfile>()) {}
 }  // namespace tesseract_planning
