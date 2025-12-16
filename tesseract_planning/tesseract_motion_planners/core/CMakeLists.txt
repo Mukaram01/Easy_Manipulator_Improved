@@ -1,4 +1,6 @@
 # Create interface for core
+include(CMakePackageConfigHelpers)
+
 add_library(${PROJECT_NAME}_core src/planner.cpp src/types.cpp src/utils.cpp)
 target_link_libraries(
   ${PROJECT_NAME}_core
@@ -20,6 +22,28 @@ target_code_coverage(
   ENABLE ${TESSERACT_ENABLE_CODE_COVERAGE})
 target_include_directories(${PROJECT_NAME}_core PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                        "$<INSTALL_INTERFACE:include>")
+
+# Install and export core targets so dependent packages can locate the component config
+install(
+  TARGETS ${PROJECT_NAME}_core
+  EXPORT ${PROJECT_NAME}_core-targets
+  DESTINATION lib
+  COMPONENT core)
+
+install(
+  EXPORT ${PROJECT_NAME}_core-targets
+  FILE tesseract_motion_planners_coreTargets.cmake
+  NAMESPACE tesseract::
+  DESTINATION lib/cmake/tesseract_motion_planners_core
+  COMPONENT core)
+
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/tesseract_motion_planners_coreConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/tesseract_motion_planners_coreConfig.cmake
+  INSTALL_DESTINATION lib/cmake/tesseract_motion_planners_core)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/tesseract_motion_planners_coreConfig.cmake
+        DESTINATION lib/cmake/tesseract_motion_planners_core COMPONENT core)
 
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
