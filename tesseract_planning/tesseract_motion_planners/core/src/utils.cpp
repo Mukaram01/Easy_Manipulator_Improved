@@ -24,6 +24,7 @@
 #include <tesseract_common/macros.h>
 TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <console_bridge/console.h>
@@ -329,6 +330,33 @@ void printDiscreteDebugInfo(const std::vector<std::string>& joint_names,
   CONSOLE_BRIDGE_logDebug(ss.str().c_str());
 }
 
+void addContactResult(tesseract_collision::ContactTrajectoryResults& traj_contacts,
+                      int step_index,
+                      int substep_index,
+                      int total_substeps,
+                      const Eigen::VectorXd& step_state0,
+                      const Eigen::VectorXd& step_state1,
+                      const Eigen::VectorXd& substep_state0,
+                      const Eigen::VectorXd& substep_state1,
+                      const tesseract_collision::ContactResultMap& contacts)
+{
+  auto& step = traj_contacts.steps.at(static_cast<std::size_t>(step_index));
+  step.step = step_index;
+  step.state0 = step_state0;
+  step.state1 = step_state1;
+  step.total_substeps = std::max(step.total_substeps, total_substeps);
+
+  const std::size_t required_size = static_cast<std::size_t>(std::max(step.total_substeps, 1));
+  if (step.substeps.size() < required_size)
+    step.substeps.resize(required_size);
+
+  auto& substep = step.substeps.at(static_cast<std::size_t>(substep_index));
+  substep.substep = substep_index;
+  substep.state0 = substep_state0;
+  substep.state1 = substep_state1;
+  substep.contacts = contacts;
+}
+
 tesseract_collision::ContactTrajectoryResults
 contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts,
                     tesseract_collision::ContinuousContactManager& manager,
@@ -349,6 +377,8 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                              "one state.");
 
   bool debug_logging = console_bridge::getLogLevel() < console_bridge::LogLevel::CONSOLE_BRIDGE_LOG_INFO;
+  const bool exit_after_first_contact =
+      (config.contact_request.type == tesseract_collision::ContactTestType::FIRST);
 
   // Grab the first waypoint to get the joint names
   const auto& joint_names = getJointNames(mi.front().get().as<MoveInstructionPoly>().getWaypoint());
@@ -373,8 +403,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
 
     if (!sub_state_results.empty())
     {
-      traj_contacts.addContact(
-          0, 0, 1, joint_positions, joint_positions, joint_positions, joint_positions, sub_state_results);
+      addContactResult(traj_contacts,
+                       0,
+                       0,
+                       1,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       sub_state_results);
       // Always use addInterpolatedCollisionResults so cc_type is defined correctly
       state_results.addInterpolatedCollisionResults(
           sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, false);
@@ -394,14 +431,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
 
     if (!sub_state_results.empty())
     {
-      traj_contacts.addContact(static_cast<int>(mi.size() - 1),
-                               0,
-                               1,
-                               joint_positions,
-                               joint_positions,
-                               joint_positions,
-                               joint_positions,
-                               sub_state_results);
+      addContactResult(traj_contacts,
+                       static_cast<int>(mi.size() - 1),
+                       0,
+                       1,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       sub_state_results);
       // Always use addInterpolatedCollisionResults so cc_type is defined correctly
       state_results.addInterpolatedCollisionResults(
           sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, false);
@@ -461,14 +499,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
           if (!sub_state_results.empty())
           {
             found = true;
-            traj_contacts.addContact(static_cast<int>(iStep),
-                                     static_cast<int>(iSubStep),
-                                     static_cast<int>(subtraj.rows()),
-                                     joint_positions0,
-                                     joint_positions1,
-                                     subtraj.row(iSubStep),
-                                     subtraj.row(iSubStep + 1),
-                                     sub_state_results);
+            addContactResult(traj_contacts,
+                             static_cast<int>(iStep),
+                             static_cast<int>(iSubStep),
+                             static_cast<int>(subtraj.rows()),
+                             joint_positions0,
+                             joint_positions1,
+                             subtraj.row(iSubStep),
+                             subtraj.row(iSubStep + 1),
+                             sub_state_results);
 
             if (debug_logging)
               printContinuousDebugInfo(
@@ -482,16 +521,16 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                                                           segment_dt,
                                                           false);
             // If only one contact per step is requested, stop checking additional substates for this step
-            if (config.exit_condition == tesseract_collision::CollisionCheckExitType::ONE_PER_STEP)
+            if (exit_after_first_contact)
               break;
           }
 
-          if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+          if (found && exit_after_first_contact)
             break;
         }
         contacts.push_back(state_results);
 
-        if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+        if (found && exit_after_first_contact)
           break;
       }
       else
@@ -525,14 +564,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
         if (!sub_state_results.empty())
         {
           found = true;
-          traj_contacts.addContact(static_cast<int>(iStep),
-                                   0,
-                                   1,
-                                   joint_positions0,
-                                   joint_positions1,
-                                   joint_positions0,
-                                   joint_positions1,
-                                   sub_state_results);
+          addContactResult(traj_contacts,
+                           static_cast<int>(iStep),
+                           0,
+                           1,
+                           joint_positions0,
+                           joint_positions1,
+                           joint_positions0,
+                           joint_positions1,
+                           sub_state_results);
 
           if (debug_logging)
             printContinuousDebugInfo(joint_names, joint_positions0, joint_positions1, iStep, mi.size() - 1);
@@ -542,7 +582,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
         }
         contacts.push_back(state_results);
 
-        if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+        if (found && exit_after_first_contact)
           break;
       }
     }
@@ -581,26 +621,27 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
       if (!state_results.empty())
       {
         found = true;
-        traj_contacts.addContact(static_cast<int>(iStep),
-                                 0,
-                                 1,
-                                 joint_positions0,
-                                 joint_positions1,
-                                 joint_positions0,
-                                 joint_positions1,
-                                 state_results);
+        addContactResult(traj_contacts,
+                         static_cast<int>(iStep),
+                         0,
+                         1,
+                         joint_positions0,
+                         joint_positions1,
+                         joint_positions0,
+                         joint_positions1,
+                         state_results);
 
         if (debug_logging)
           printContinuousDebugInfo(joint_names, joint_positions0, joint_positions1, iStep, mi.size() - 1);
       }
       contacts.push_back(state_results);
 
-      if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+      if (found && exit_after_first_contact)
         break;
     }
   }
 
-  if (debug_logging && traj_contacts)
+  if (debug_logging && (traj_contacts.numContacts() > 0))
     std::cout << traj_contacts.trajectoryCollisionResultsTable().str();
 
   return traj_contacts;
@@ -625,6 +666,8 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
     throw std::runtime_error("contactCheckProgram was given continuous contact manager with empty trajectory.");
 
   bool debug_logging = console_bridge::getLogLevel() < console_bridge::LogLevel::CONSOLE_BRIDGE_LOG_INFO;
+  const bool exit_after_first_contact =
+      (config.contact_request.type == tesseract_collision::ContactTestType::FIRST);
 
   // Grab the first waypoint to get the joint names
   const auto& joint_names = getJointNames(mi.front().get().as<MoveInstructionPoly>().getWaypoint());
@@ -648,8 +691,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
 
     if (!sub_state_results.empty())
     {
-      traj_contacts.addContact(
-          0, 0, 1, joint_positions, joint_positions, joint_positions, joint_positions, sub_state_results);
+      addContactResult(traj_contacts,
+                       0,
+                       0,
+                       1,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       sub_state_results);
       // Always use addInterpolatedCollisionResults so cc_type is defined correctly
       state_results.addInterpolatedCollisionResults(
           sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, true);
@@ -669,14 +719,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
 
     if (!sub_state_results.empty())
     {
-      traj_contacts.addContact(static_cast<int>(mi.size() - 1),
-                               0,
-                               1,
-                               joint_positions,
-                               joint_positions,
-                               joint_positions,
-                               joint_positions,
-                               sub_state_results);
+      addContactResult(traj_contacts,
+                       static_cast<int>(mi.size() - 1),
+                       0,
+                       1,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       sub_state_results);
       // Always use addInterpolatedCollisionResults so cc_type is defined correctly
       state_results.addInterpolatedCollisionResults(
           sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, true);
@@ -702,8 +753,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
 
     if (!sub_state_results.empty())
     {
-      traj_contacts.addContact(
-          0, 0, 1, joint_positions, joint_positions, joint_positions, joint_positions, sub_state_results);
+      addContactResult(traj_contacts,
+                       0,
+                       0,
+                       1,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       joint_positions,
+                       sub_state_results);
 
       if (debug_logging)
         printDiscreteDebugInfo(joint_names, joint_positions, 0, mi.size() - 1);
@@ -714,7 +772,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
         sub_state_results, 0, sub_segment_last_index, manager.getActiveCollisionObjects(), segment_dt, true);
     contacts.push_back(state_results);
 
-    if (debug_logging && traj_contacts)
+    if (debug_logging && (traj_contacts.numContacts() > 0))
       std::cout << traj_contacts.trajectoryCollisionResultsTable().str();
 
     return traj_contacts;
@@ -781,14 +839,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
           if (!sub_state_results.empty())
           {
             found = true;
-            traj_contacts.addContact(static_cast<int>(iStep),
-                                     static_cast<int>(iSubStep),
-                                     static_cast<int>(subtraj.rows()),
-                                     p0,
-                                     p1,
-                                     subtraj.row(iSubStep),
-                                     subtraj.row(iSubStep),
-                                     sub_state_results);
+            addContactResult(traj_contacts,
+                             static_cast<int>(iStep),
+                             static_cast<int>(iSubStep),
+                             static_cast<int>(subtraj.rows()),
+                             p0,
+                             p1,
+                             subtraj.row(iSubStep),
+                             subtraj.row(iSubStep),
+                             sub_state_results);
 
             if (debug_logging)
               printDiscreteDebugInfo(jn, subtraj.row(iSubStep), iStep, mi.size() - 1, iSubStep);
@@ -801,16 +860,16 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                                                           segment_dt,
                                                           true);
             // If only one contact per step is requested, stop checking additional substates for this step
-            if (config.exit_condition == tesseract_collision::CollisionCheckExitType::ONE_PER_STEP)
+            if (exit_after_first_contact)
               break;
           }
 
-          if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+          if (found && exit_after_first_contact)
             break;
         }
         contacts.push_back(state_results);
 
-        if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+        if (found && exit_after_first_contact)
           break;
       }
       else
@@ -827,7 +886,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
             if (!sub_state_results.empty())
             {
               found = true;
-              traj_contacts.addContact(static_cast<int>(iStep), 0, 1, p0, p1, p0, p0, sub_state_results);
+              addContactResult(traj_contacts,
+                               static_cast<int>(iStep),
+                               0,
+                               1,
+                               p0,
+                               p1,
+                               p0,
+                               p0,
+                               sub_state_results);
               state_results.addInterpolatedCollisionResults(
                   sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, true);
 
@@ -835,7 +902,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                 printDiscreteDebugInfo(jn, p0, iStep, mi.size() - 1);
             }
 
-            if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+            if (found && exit_after_first_contact)
             {
               contacts.push_back(state_results);
               break;
@@ -852,7 +919,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
             if (!sub_state_results.empty())
             {
               found = true;
-              traj_contacts.addContact(static_cast<int>(iStep), 1, 1, p0, p1, p1, p1, sub_state_results);
+              addContactResult(traj_contacts,
+                               static_cast<int>(iStep),
+                               1,
+                               1,
+                               p0,
+                               p1,
+                               p1,
+                               p1,
+                               sub_state_results);
               state_results.addInterpolatedCollisionResults(
                   sub_state_results, 1, 1, manager.getActiveCollisionObjects(), 1, true);
 
@@ -860,7 +935,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
                 printDiscreteDebugInfo(jn, p1, iStep, mi.size() - 1, 1);
             }
 
-            if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+            if (found && exit_after_first_contact)
             {
               contacts.push_back(state_results);
               break;
@@ -888,7 +963,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
         if (!sub_state_results.empty())
         {
           found = true;
-          traj_contacts.addContact(static_cast<int>(iStep), 0, 1, p0, p1, p0, p0, sub_state_results);
+          addContactResult(traj_contacts,
+                           static_cast<int>(iStep),
+                           0,
+                           1,
+                           p0,
+                           p1,
+                           p0,
+                           p0,
+                           sub_state_results);
           state_results.addInterpolatedCollisionResults(
               sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, true);
 
@@ -896,7 +979,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
             printDiscreteDebugInfo(jn, p0, iStep, mi.size() - 1);
         }
 
-        if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+        if (found && exit_after_first_contact)
         {
           contacts.push_back(state_results);
           break;
@@ -919,7 +1002,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
           if (!sub_state_results.empty())
           {
             found = true;
-            traj_contacts.addContact(static_cast<int>(iStep), 1, 1, p0, p1, p1, p1, sub_state_results);
+            addContactResult(traj_contacts,
+                             static_cast<int>(iStep),
+                             1,
+                             1,
+                             p0,
+                             p1,
+                             p1,
+                             p1,
+                             sub_state_results);
             state_results.addInterpolatedCollisionResults(
                 sub_state_results, 1, 1, manager.getActiveCollisionObjects(), 1, true);
 
@@ -927,7 +1018,7 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
               printDiscreteDebugInfo(jn, p1, iStep, mi.size() - 1, 1);
           }
 
-          if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+          if (found && exit_after_first_contact)
           {
             contacts.push_back(state_results);
             break;
@@ -969,7 +1060,15 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
       if (!sub_state_results.empty())
       {
         found = true;
-        traj_contacts.addContact(static_cast<int>(iStep), 0, 1, p0, p0, p0, p0, sub_state_results);
+        addContactResult(traj_contacts,
+                         static_cast<int>(iStep),
+                         0,
+                         1,
+                         p0,
+                         p0,
+                         p0,
+                         p0,
+                         sub_state_results);
         state_results.addInterpolatedCollisionResults(
             sub_state_results, 0, 0, manager.getActiveCollisionObjects(), 0, true);
 
@@ -978,12 +1077,12 @@ contactCheckProgram(std::vector<tesseract_collision::ContactResultMap>& contacts
       }
       contacts.push_back(state_results);
 
-      if (found && (config.exit_condition == tesseract_collision::CollisionCheckExitType::FIRST))
+      if (found && exit_after_first_contact)
         break;
     }
   }
 
-  if (debug_logging && traj_contacts)
+  if (debug_logging && (traj_contacts.numContacts() > 0))
     std::cout << traj_contacts.trajectoryCollisionResultsTable().str();
 
   return traj_contacts;
