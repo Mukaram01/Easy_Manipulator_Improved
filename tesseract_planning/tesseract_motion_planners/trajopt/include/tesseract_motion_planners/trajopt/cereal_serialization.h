@@ -60,22 +60,18 @@ void serialize(Archive& ar, OSQPSettings& obj)
   ar(cereal::make_nvp("alpha", obj.alpha));
   ar(cereal::make_nvp("linsys_solver", obj.linsys_solver));
   ar(cereal::make_nvp("delta", obj.delta));
+#if defined(OSQP_API_TYPES_H)
   ar(cereal::make_nvp("polishing", obj.polishing));
+  ar(cereal::make_nvp("warm_starting", obj.warm_starting));
+#else
+  ar(cereal::make_nvp("polish", obj.polish));
+  ar(cereal::make_nvp("warm_start", obj.warm_start));
+#endif
   ar(cereal::make_nvp("polish_refine_iter", obj.polish_refine_iter));
   ar(cereal::make_nvp("verbose", obj.verbose));
   ar(cereal::make_nvp("scaled_termination", obj.scaled_termination));
   ar(cereal::make_nvp("check_termination", obj.check_termination));
-  ar(cereal::make_nvp("warm_starting", obj.warm_starting));
   ar(cereal::make_nvp("time_limit", obj.time_limit));
-  ar(cereal::make_nvp("allocate_solution", obj.allocate_solution));
-  ar(cereal::make_nvp("cg_max_iter", obj.cg_max_iter));
-  ar(cereal::make_nvp("cg_precond", obj.cg_precond));
-  ar(cereal::make_nvp("cg_tol_fraction", obj.cg_tol_fraction));
-  ar(cereal::make_nvp("cg_tol_reduction", obj.cg_tol_reduction));
-  ar(cereal::make_nvp("check_dualgap", obj.check_dualgap));
-  ar(cereal::make_nvp("device", obj.device));
-  ar(cereal::make_nvp("profiler_level", obj.profiler_level));
-  ar(cereal::make_nvp("rho_is_vec", obj.rho_is_vec));
 }
 
 }  // namespace cereal
