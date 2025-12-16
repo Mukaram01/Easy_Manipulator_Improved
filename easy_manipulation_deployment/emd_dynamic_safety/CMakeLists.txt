@@ -121,8 +121,11 @@ if(tesseract_environment_FOUND)
 
   ament_target_dependencies(${PROJECT_NAME}_tesseract
     rclcpp
+    tesseract_environment
     tesseract_rosutils
     tesseract_msgs
+    tesseract_motion_planners
+    tesseract_process_managers
   )
 
   ament_export_libraries(
@@ -268,6 +271,11 @@ ament_export_dependencies(
   std_msgs
   trajectory_msgs
   visualization_msgs
+  tesseract_environment
+  tesseract_motion_planners
+  tesseract_msgs
+  tesseract_process_managers
+  tesseract_rosutils
 )
 
 ament_package()
