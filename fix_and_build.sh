@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# Helper to repair and rebuild the easy_manipulation_deployment workspace.
+#
+# Optional environment toggles:
+#   SKIP_TESTS=1           Disable Tesseract tests/examples by appending
+#                          -DTESSERACT_ENABLE_TESTING=OFF and
+#                          -DTESSERACT_ENABLE_EXAMPLES=OFF to CMAKE_ARGS.
+#   LIGHTWEIGHT_PLANNERS=1 Disable heavyweight planners by appending
+#                          -DTESSERACT_BUILD_OMPL=OFF
+#                          -DTESSERACT_BUILD_DESCARTES=OFF
+#                          -DTESSERACT_BUILD_TRAJOPT=OFF
+#                          -DTESSERACT_BUILD_TRAJOPT_IFOPT=OFF to CMAKE_ARGS.
 set -euo pipefail
 
 WS=${WS:-$HOME/workcell_ws}
@@ -442,6 +453,21 @@ for dir in "${CEREAL_CMAKE_DIRS[@]}"; do
     break
   fi
 done
+if [[ ${SKIP_TESTS:-0} -eq 1 ]]; then
+  CMAKE_ARGS+=(
+    -DTESSERACT_ENABLE_TESTING=OFF
+    -DTESSERACT_ENABLE_EXAMPLES=OFF
+  )
+fi
+
+if [[ ${LIGHTWEIGHT_PLANNERS:-0} -eq 1 ]]; then
+  CMAKE_ARGS+=(
+    -DTESSERACT_BUILD_OMPL=OFF
+    -DTESSERACT_BUILD_DESCARTES=OFF
+    -DTESSERACT_BUILD_TRAJOPT=OFF
+    -DTESSERACT_BUILD_TRAJOPT_IFOPT=OFF
+  )
+fi
 
 # Minimal include fix for profile_dictionary
 # Use find's -print -quit to grab the first match and avoid non-zero exit when not found
