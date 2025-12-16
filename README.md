@@ -93,6 +93,9 @@ packages via `scripts/install_system_deps.sh`. After cloning into `~/workcell_ws
 cd easy_manipulation_deployment
 ./fix_and_build.sh
 ```
+The final `colcon build` stage can take several minutes when compiling
+`tesseract_motion_planners`; seeing repeated "Processing" lines for that package
+is expected while it finishes.
 Set `SKIP_TESTS=1` to disable building Tesseract tests and examples, or
 `LIGHTWEIGHT_PLANNERS=1` to skip heavyweight planners (OMPL, Descartes, Trajopt,
 Trajopt IFOPT). These toggles append the corresponding CMake flags to every
