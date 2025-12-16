@@ -27,6 +27,7 @@
 #define TESSERACT_COMMON_PROFILE_H
 
 #include <memory>
+#include <typeinfo>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/export.hpp>
 
@@ -66,6 +67,15 @@ private:
   template <class Archive>
   void serialize(Archive&, const unsigned int);  // NOLINT
 };
+
+/**
+ * @brief Generate a unique key for the provided profile type
+ */
+template <typename ProfileType>
+inline std::size_t createKey()
+{
+  return typeid(ProfileType).hash_code();
+}
 }  // namespace tesseract_common
 
 BOOST_CLASS_EXPORT_KEY(tesseract_common::Profile)
