@@ -36,19 +36,18 @@ list(
     "${trajopt_common_DIR}/../lib/cmake/trajopt_common"
     "${CMAKE_CURRENT_SOURCE_DIR}/../trajopt_common/cmake")
 
-find_file(
-  TRAJOPT_MACROS_FILE
-  trajopt_macros.cmake
-  PATHS ${TRAJOPT_MACRO_SEARCH_PATHS}
-  PATH_SUFFIXES "" cmake
-  NO_DEFAULT_PATH)
-if(NOT TRAJOPT_MACROS_FILE)
-  find_file(TRAJOPT_MACROS_FILE trajopt_macros.cmake)
-endif()
+foreach(path ${TRAJOPT_MACRO_SEARCH_PATHS})
+  if(EXISTS "${path}/trajopt_macros.cmake")
+    set(TRAJOPT_MACROS_FILE "${path}/trajopt_macros.cmake")
+    break()
+  endif()
+endforeach()
+
 if(NOT TRAJOPT_MACROS_FILE)
   message(FATAL_ERROR
-          "Failed to locate trajopt_macros.cmake; ensure trajopt_common is properly built and installed or available in the workspace.")
+          "Failed to locate trajopt_macros.cmake. Rebuild or reinstall trajopt_common, then delete any stale build/trajopt_common or install/trajopt_common directories before reconfiguring.")
 endif()
+
 include(${TRAJOPT_MACROS_FILE})
 if(NOT TARGET JsonCpp::JsonCpp)
   find_package(jsoncpp REQUIRED)
