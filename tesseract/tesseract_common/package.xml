@@ -29,6 +29,10 @@
   <build_export_depend>libboost-serialization-dev</build_export_depend>
   <exec_depend>libboost-serialization</exec_depend>
 
+  <build_depend>libcereal-dev</build_depend>
+  <build_export_depend>libcereal-dev</build_export_depend>
+  <exec_depend>libcereal-dev</exec_depend>
+
   <build_depend>libboost-stacktrace-dev</build_depend>
   <build_export_depend>libboost-stacktrace-dev</build_export_depend>
   <exec_depend>libboost-stacktrace-dev</exec_depend>
