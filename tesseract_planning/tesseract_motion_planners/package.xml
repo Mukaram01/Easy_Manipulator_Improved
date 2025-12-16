@@ -20,8 +20,6 @@
   <depend>tesseract_kinematics</depend>
   <depend>tesseract_command_language</depend>
   <build_depend>ros_industrial_cmake_boilerplate</build_depend>
-  <build_depend>roslib</build_depend>
-  <exec_depend>roslib</exec_depend>
 
   <depend>descartes_light</depend>
   <build_depend>eigen</build_depend>
