@@ -53,6 +53,7 @@ if [[ -z ${ROS_DISTRO:-} ]]; then
   echo "No supported ROS distro found (need humble or jazzy)" >&2
   exit 1
 fi
+echo "Using ROS_DISTRO=$ROS_DISTRO (script validated on ROS 2 Humble / Ubuntu 22.04)" >&2
 
 # shellcheck source=/dev/null
 # Disable nounset while sourcing ROS setup, as it references
@@ -288,6 +289,22 @@ for overlay in tesseract trajopt; do
   fi
 done
 
+# Ensure the workspace trajopt checkout tracks a stable branch instead of a detached commit
+TRAJOPT_WS_DIR="$SRC/trajopt"
+if [[ -d "$TRAJOPT_WS_DIR/.git" ]]; then
+  current_ref=$(git -C "$TRAJOPT_WS_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [[ "$current_ref" == "HEAD" ]]; then
+    if git -C "$TRAJOPT_WS_DIR" show-ref --verify --quiet refs/heads/main || \
+       git -C "$TRAJOPT_WS_DIR" show-ref --verify --quiet refs/remotes/origin/main; then
+      git -C "$TRAJOPT_WS_DIR" checkout --quiet main 2>/dev/null || \
+        git -C "$TRAJOPT_WS_DIR" checkout --quiet origin/main
+      echo "Switched trajopt to the main branch to avoid detached HEAD builds" >&2
+    else
+      echo "trajopt repository is detached and no main branch was found; please check out a stable tag manually." >&2
+    fi
+  fi
+fi
+
 # Ensure workspace layout is sanitized (handles stray trajopt sources)
 WS="$WS" "$REPO_DIR/scripts/fix_workspace_layout.sh"
 
@@ -333,6 +350,12 @@ mapfile -t ROSDEP_PATHS < <(colcon list --base-paths "$SRC" --paths-only)
 if [[ ${#ROSDEP_PATHS[@]} -eq 0 ]]; then
   echo "No packages discovered for rosdep installation" >&2
   exit 1
+fi
+
+ROSDEP_OVERRIDES="$REPO_DIR/scripts/rosdep_overrides.yaml"
+if [[ -f "$ROSDEP_OVERRIDES" ]]; then
+  export ROSDEP_ADDITIONAL_SOURCES_PATHS="$ROSDEP_OVERRIDES${ROSDEP_ADDITIONAL_SOURCES_PATHS:+:$ROSDEP_ADDITIONAL_SOURCES_PATHS}"
+  echo "Using rosdep overrides from $ROSDEP_OVERRIDES" >&2
 fi
 
 rosdep update
@@ -468,6 +491,13 @@ if [[ ${LIGHTWEIGHT_PLANNERS:-0} -eq 1 ]]; then
     -DTESSERACT_BUILD_TRAJOPT_IFOPT=OFF
   )
 fi
+
+COLCON_BASE_ARGS=(
+  --symlink-install
+  --merge-install
+  --allow-overriding
+  tesseract_motion_planners
+)
 
 # Minimal include fix for profile_dictionary
 # Use find's -print -quit to grab the first match and avoid non-zero exit when not found
@@ -1206,12 +1236,12 @@ EOF
 }
 
 # Build boost_plugin_loader first
-colcon build --symlink-install --packages-select boost_plugin_loader --cmake-args "${CMAKE_ARGS[@]}"
+colcon build "${COLCON_BASE_ARGS[@]}" --packages-select boost_plugin_loader --cmake-args "${CMAKE_ARGS[@]}"
 source_install
 find install -name 'tesseract_commonConfig.cmake' || true
 
 # Build up to tesseract_common and tesseract_msgs
-colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs --cmake-args "${CMAKE_ARGS[@]}"
+colcon build "${COLCON_BASE_ARGS[@]}" --packages-up-to tesseract_common tesseract_msgs --cmake-args "${CMAKE_ARGS[@]}"
 source_install
 find install -name 'tesseract_commonConfig.cmake'
 
@@ -1219,12 +1249,12 @@ find install -name 'tesseract_commonConfig.cmake'
 # tesseract_kinematics can reliably locate its exported CMake package. Build
 # its full dependency set instead of only the package itself to guarantee the
 # package.sh environment hooks exist when colcon tries to source them.
-colcon build --symlink-install --packages-up-to tesseract_state_solver --cmake-args "${CMAKE_ARGS[@]}"
+colcon build "${COLCON_BASE_ARGS[@]}" --packages-up-to tesseract_state_solver --cmake-args "${CMAKE_ARGS[@]}"
 source_install
 ensure_tesseract_state_solver_config
 
 # Build up to trajopt_sco
-colcon build --symlink-install --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
+colcon build "${COLCON_BASE_ARGS[@]}" --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
 source_install
 ensure_tesseract_collision_core_config
 ensure_tesseract_collision_bullet_config
@@ -1235,7 +1265,7 @@ find install -name 'tesseract_commonConfig.cmake'
 # synthesized tesseract_collision_core/tesseract_collision_bullet config files
 # that downstream packages need, so skip reprocessing that package here after it
 # has already been built in the trajopt_sco pass above.
-COLCON_BUILD_ARGS=(--symlink-install --cmake-args "${CMAKE_ARGS[@]}")
+COLCON_BUILD_ARGS=("${COLCON_BASE_ARGS[@]}" --packages-up-to tesseract_motion_planners --cmake-args "${CMAKE_ARGS[@]}")
 if colcon list --base-paths "$SRC" | grep -q '^tesseract_collision\\b'; then
   echo "Skipping tesseract_collision during final rebuild to preserve synthesized configs"
   COLCON_BUILD_ARGS+=(--packages-skip tesseract_collision)

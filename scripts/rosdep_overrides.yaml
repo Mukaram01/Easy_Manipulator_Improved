@@ -1,0 +1,42 @@
+# Additional rosdep rules to avoid unresolved keys when building the bundled
+# Tesseract/TrajOpt workspace on ROS 2 Humble (Ubuntu 22.04) or Jazzy.
+cereal:
+  ubuntu: [libcereal-dev]
+
+openmp:
+  ubuntu: [libomp-dev]
+
+roslib:
+  ubuntu:
+    jammy: [ros-humble-roslib]
+    noble: [ros-jazzy-roslib]
+
+trajopt_ifopt:
+  ubuntu:
+    jammy: [ros-humble-trajopt-ifopt]
+    noble: [ros-jazzy-trajopt-ifopt]
+
+tesseract_common:
+  ubuntu:
+    jammy: [ros-humble-tesseract-common]
+    noble: [ros-jazzy-tesseract-common]
+
+tesseract_environment:
+  ubuntu:
+    jammy: [ros-humble-tesseract-environment]
+    noble: [ros-jazzy-tesseract-environment]
+
+tesseract_kinematics:
+  ubuntu:
+    jammy: [ros-humble-tesseract-kinematics]
+    noble: [ros-jazzy-tesseract-kinematics]
+
+tesseract_command_language:
+  ubuntu:
+    jammy: [ros-humble-tesseract-command-language]
+    noble: [ros-jazzy-tesseract-command-language]
+
+tesseract_motion_planners:
+  ubuntu:
+    jammy: [ros-humble-tesseract-motion-planners]
+    noble: [ros-jazzy-tesseract-motion-planners]
