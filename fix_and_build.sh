@@ -439,8 +439,20 @@ CMAKE_ARGS=(
   -DCMAKE_CXX_STANDARD_REQUIRED=ON
   -DCMAKE_CXX_EXTENSIONS=OFF
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+  # Force CMake to use the system cereal package instead of FetchContent to avoid network delays during configure.
+  -DTESSERACT_DISABLE_CEREAL_FETCH=ON
 )
 
+CEREAL_CMAKE_DIRS=(
+  /usr/lib/cmake/cereal
+  /usr/lib/"${DEB_HOST_MULTIARCH:-x86_64-linux-gnu}"/cmake/cereal
+)
+for dir in "${CEREAL_CMAKE_DIRS[@]}"; do
+  if [[ -f "$dir/cerealConfig.cmake" ]]; then
+    CMAKE_ARGS+=("-Dcereal_DIR=$dir")
+    break
+  fi
+done
 if [[ ${SKIP_TESTS:-0} -eq 1 ]]; then
   CMAKE_ARGS+=(
     -DTESSERACT_ENABLE_TESTING=OFF
