@@ -1240,6 +1240,7 @@ if colcon list --base-paths "$SRC" | grep -q '^tesseract_collision\\b'; then
   echo "Skipping tesseract_collision during final rebuild to preserve synthesized configs"
   COLCON_BUILD_ARGS+=(--packages-skip tesseract_collision)
 fi
+echo "Starting final colcon build (this can sit on tesseract_motion_planners for a while; that's normal)"
 colcon build "${COLCON_BUILD_ARGS[@]}"
 source_install
 ensure_tesseract_collision_core_config
