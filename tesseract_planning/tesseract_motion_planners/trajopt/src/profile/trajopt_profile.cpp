@@ -25,11 +25,11 @@
 
 namespace tesseract_planning
 {
-TrajOptMoveProfile::TrajOptMoveProfile() : Profile(createKey<TrajOptMoveProfile>()) {}
+TrajOptMoveProfile::TrajOptMoveProfile() : Profile(tesseract_common::createKey<TrajOptMoveProfile>()) {}
 
-TrajOptCompositeProfile::TrajOptCompositeProfile() : Profile(createKey<TrajOptCompositeProfile>()) {}
+TrajOptCompositeProfile::TrajOptCompositeProfile() : Profile(tesseract_common::createKey<TrajOptCompositeProfile>()) {}
 
-TrajOptSolverProfile::TrajOptSolverProfile() : Profile(createKey<TrajOptSolverProfile>()) {}
+TrajOptSolverProfile::TrajOptSolverProfile() : Profile(tesseract_common::createKey<TrajOptSolverProfile>()) {}
 
 sco::BasicTrustRegionSQPParameters TrajOptSolverProfile::createOptimizationParameters() const { return opt_params; }
 
