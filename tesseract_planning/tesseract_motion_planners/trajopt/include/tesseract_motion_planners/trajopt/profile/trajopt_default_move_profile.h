@@ -31,6 +31,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <Eigen/Geometry>
 TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
+#include <tesseract_common/profile_plugin_factory.h>
 #include <tesseract_motion_planners/trajopt/trajopt_waypoint_config.h>
 #include <tesseract_motion_planners/trajopt/profile/trajopt_profile.h>
 

@@ -24,6 +24,7 @@
 #ifndef TESSERACT_MOTION_PLANNERS_TRAJOPT_OSQP_SOLVER_PROFILE_H
 #define TESSERACT_MOTION_PLANNERS_TRAJOPT_OSQP_SOLVER_PROFILE_H
 
+#include <tesseract_common/profile_plugin_factory.h>
 #include <tesseract_motion_planners/trajopt/profile/trajopt_profile.h>
 #include <trajopt_sco/osqp_interface.hpp>
 
