@@ -35,6 +35,8 @@ TESSERACT_COMMON_IGNORE_WARNINGS_POP
 #include <tesseract_motion_planners/ompl/profile/ompl_profile.h>
 #include <tesseract_motion_planners/ompl/ompl_solver_config.h>
 
+#include <tesseract_common/profile_plugin_factory.h>
+
 #include <tesseract_collision/core/fwd.h>
 #include <tesseract_collision/core/types.h>
 
