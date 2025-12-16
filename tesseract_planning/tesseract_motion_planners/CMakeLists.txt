@@ -34,6 +34,22 @@ if(NOT cereal_FOUND)
   endif()
 endif()
 
+if(cereal_FOUND)
+  get_target_property(_cereal_include_dirs cereal::cereal INTERFACE_INCLUDE_DIRECTORIES)
+  set(_cereal_valid_include_dirs "")
+  foreach(_cereal_include_dir ${_cereal_include_dirs})
+    string(GENEX_STRIP "${_cereal_include_dir}" _cereal_include_dir_stripped)
+    if(EXISTS "${_cereal_include_dir_stripped}")
+      list(APPEND _cereal_valid_include_dirs "${_cereal_include_dir_stripped}")
+    endif()
+  endforeach()
+
+  if(NOT _cereal_valid_include_dirs)
+    set(_cereal_hint "Install a proper cereal package (e.g., libcereal-dev or the ROS cereal_vendor) or toggle TESSERACT_DISABLE_CEREAL_FETCH accordingly.")
+    message(FATAL_ERROR "cereal::cereal target exports no valid include directories (found: ${_cereal_include_dirs}). ${_cereal_hint}")
+  endif()
+endif()
+
 include(${tesseract_common_DIR}/tesseract_macros.cmake)
 
 # Load variable for clang tidy args, compiler options and cxx version
