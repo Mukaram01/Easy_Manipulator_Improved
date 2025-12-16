@@ -33,6 +33,7 @@ TESSERACT_COMMON_IGNORE_WARNINGS_PUSH
 #include <trajopt_common/collision_types.h>
 TESSERACT_COMMON_IGNORE_WARNINGS_POP
 
+#include <tesseract_common/profile_plugin_factory.h>
 #include <tesseract_motion_planners/trajopt/profile/trajopt_profile.h>
 
 #include <tesseract_collision/core/fwd.h>
