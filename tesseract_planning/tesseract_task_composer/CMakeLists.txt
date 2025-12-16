@@ -15,6 +15,9 @@ find_package(boost_plugin_loader REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(cereal REQUIRED)
 
+# Import shared Tesseract CMake utilities (clang-tidy args, compiler options, C++ standard, etc.)
+include(${tesseract_common_DIR}/tesseract_macros.cmake)
+
 # Load variable for clang tidy args, compiler options and cxx version
 tesseract_variables()
 
