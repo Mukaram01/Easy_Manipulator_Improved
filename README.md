@@ -119,13 +119,13 @@ Could not find a package configuration file provided by "tesseract_motion_planne
 ```
 
 the bundled Tesseract and TrajOpt overlays may be hidden or mis-symlinked after
-importing the repositories. Re-run
-`./easy_manipulation_deployment/scripts/fix_workspace_layout.sh` to restore the
-intended overlay layout, rebuild the planner package, and retry the composer so
-the core package exports its config file into the workspace `CMAKE_PREFIX_PATH`:
+importing the repositories. Re-run `./scripts/fix_workspace_layout.sh` from the
+repository root to restore the intended overlay layout, rebuild the planner
+package, and retry the composer so the core package exports its config file into
+the workspace `CMAKE_PREFIX_PATH`:
 
 ```
-./easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+./scripts/fix_workspace_layout.sh
 colcon build --packages-select tesseract_motion_planners
 colcon test --packages-select tesseract_task_composer
 ```
@@ -141,6 +141,10 @@ packages via `scripts/install_system_deps.sh`. After cloning into `~/workcell_ws
 cd easy_manipulation_deployment
 ./fix_and_build.sh
 ```
+
+This helper also runs `scripts/fix_workspace_layout.sh` internally, so it repairs
+the overlay symlinks and dependency declarations required for
+`tesseract_motion_planners_core` to be discoverable before invoking `colcon`.
 The final `colcon build` stage can take several minutes when compiling
 `tesseract_motion_planners`; seeing repeated "Processing" lines for that package
 is expected while it finishes.
