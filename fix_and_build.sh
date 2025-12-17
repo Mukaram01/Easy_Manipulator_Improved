@@ -159,6 +159,18 @@ fi
 # trajopt_common.
 "$REPO_DIR/scripts/install_system_deps.sh"
 
+# Point CMake at the OSQP package configuration so find_package(osqp) succeeds
+# even on environments where the default prefix search path is trimmed down.
+if [[ -z ${OSQP_DIR:-} ]]; then
+  for candidate in /usr/lib/x86_64-linux-gnu/cmake/osqp /usr/lib/cmake/osqp; do
+    if [[ -f "${candidate}/osqpConfig.cmake" ]]; then
+      export OSQP_DIR="$candidate"
+      export CMAKE_PREFIX_PATH="${candidate}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
+      break
+    fi
+  done
+fi
+
 # Import any missing repositories listed in tesseract.repos.  Relying solely on
 # the presence of $SRC/tesseract is insufficient when the workspace already
 # contains a partial overlay copy (e.g., tesseract without tesseract_plugins).
