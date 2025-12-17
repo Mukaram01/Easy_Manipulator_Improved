@@ -36,6 +36,17 @@ configure_component(
     Threads
     Boost)
 
+# Explicitly install the generated CMake package files for the core component.
+# The configure_component helper creates these files in a component-specific
+# build directory, but some downstream builds (e.g., isolated colcon installs)
+# failed to locate the configuration because the files were not present under
+# the install prefix.  Installing the directory directly guarantees the
+# `tesseract_motion_planners_coreConfig.cmake` package file is available in
+# the expected location for `find_package`.
+install(
+  DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake/
+  DESTINATION lib/cmake/${PROJECT_NAME}_core)
+
 if(TESSERACT_PACKAGE)
   cpack_component(
     COMPONENT core
