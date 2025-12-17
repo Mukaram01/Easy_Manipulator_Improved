@@ -195,6 +195,13 @@ PY
   done
 fi
 
+# Repair the workspace layout (symlinks, overlay locations, and missing upstream
+# dependencies) so subsequent colcon builds can locate generated CMake package
+# files such as tesseract_motion_planners_coreConfig.cmake. This mirrors the
+# manual instructions from the troubleshooting section in the README and keeps
+# the workspace consistent even on fresh clones.
+WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
+
 ROSDEP_OVERRIDES="$SCRIPT_DIR/scripts/rosdep_overrides.yaml"
 if [[ -f "$ROSDEP_OVERRIDES" ]]; then
   export ROSDEP_ADDITIONAL_SOURCES_PATHS="$ROSDEP_OVERRIDES${ROSDEP_ADDITIONAL_SOURCES_PATHS:+:$ROSDEP_ADDITIONAL_SOURCES_PATHS}"
