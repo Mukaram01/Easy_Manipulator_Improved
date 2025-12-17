@@ -17,9 +17,31 @@ REQUIRED_PACKAGES=(
   libboost-stacktrace-dev
   libboost-program-options-dev
   libboost-serialization-dev
-  libosqp-dev
   libcereal-dev
 )
+
+OSQP_NATIVE_PACKAGE=libosqp-dev
+OSQP_PROVIDER=""
+
+if apt-cache show "$OSQP_NATIVE_PACKAGE" >/dev/null 2>&1; then
+  OSQP_PROVIDER="$OSQP_NATIVE_PACKAGE"
+  REQUIRED_PACKAGES+=("$OSQP_PROVIDER")
+  echo "Using $OSQP_PROVIDER from the distribution to provide OSQP." >&2
+else
+  if [[ -n ${ROS_DISTRO:-} ]]; then
+    ROS_OSQP_VENDOR="ros-${ROS_DISTRO}-osqp-vendor"
+    if apt-cache show "$ROS_OSQP_VENDOR" >/dev/null 2>&1; then
+      OSQP_PROVIDER="$ROS_OSQP_VENDOR"
+      REQUIRED_PACKAGES+=("$OSQP_PROVIDER")
+      echo "$OSQP_NATIVE_PACKAGE not found; installing $OSQP_PROVIDER as the OSQP provider." >&2
+    fi
+  fi
+
+  if [[ -z $OSQP_PROVIDER ]]; then
+    echo "Neither $OSQP_NATIVE_PACKAGE nor ros-<ROS_DISTRO>-osqp-vendor are available via APT." >&2
+    echo "OSQP will need to be built from source (see https://osqp.org/installation) or provided by another compatible package." >&2
+  fi
+fi
 
 missing=()
 for pkg in "${REQUIRED_PACKAGES[@]}"; do
