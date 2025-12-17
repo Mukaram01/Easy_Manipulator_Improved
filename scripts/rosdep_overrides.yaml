@@ -6,6 +6,9 @@ cereal:
 openmp:
   ubuntu: [libomp-dev]
 
+osqp:
+  ubuntu: [libosqp-dev]
+
 roslib:
   ubuntu:
     jammy: [ros-humble-roslib]
