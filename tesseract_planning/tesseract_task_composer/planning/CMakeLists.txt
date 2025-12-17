@@ -56,7 +56,6 @@ set(LIB_SOURCE_LINK_LIBRARIES
     tesseract::tesseract_command_language
     tesseract::tesseract_motion_planners_core
     tesseract::tesseract_motion_planners_simple
-    tesseract::tesseract_motion_planners_trajopt
     tesseract::tesseract_time_parameterization_core
     Boost::boost
     cereal::cereal
