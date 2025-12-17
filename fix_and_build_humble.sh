@@ -92,6 +92,18 @@ PY
 # failure in trajopt_common.
 "${SCRIPT_DIR}/scripts/install_system_deps.sh"
 
+# Point CMake at the OSQP package configuration so find_package(osqp) succeeds
+# even on environments where the default prefix search path is trimmed down.
+if [[ -z ${OSQP_DIR:-} ]]; then
+  for candidate in /usr/lib/x86_64-linux-gnu/cmake/osqp /usr/lib/cmake/osqp; do
+    if [[ -f "${candidate}/osqpConfig.cmake" ]]; then
+      export OSQP_DIR="$candidate"
+      export CMAKE_PREFIX_PATH="${candidate}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
+      break
+    fi
+  done
+fi
+
 # 0.5) Install missing build tools and dependencies
 if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
   if command -v sudo >/dev/null 2>&1; then

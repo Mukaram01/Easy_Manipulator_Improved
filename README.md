@@ -37,6 +37,9 @@ For installation guidance, see the ROS 2 [Jazzy](https://docs.ros.org/en/jazzy/I
   `find_package(TinyXML2)` calls during the build.
 - The `cereal` headers are required by `tesseract_motion_planners`; the helper
   script installs the `libcereal-dev` package to provide them.
+- The TrajOpt OSQP solver backend is required by
+  `tesseract_motion_planners/trajopt`; install the `libosqp-dev` package so
+  `find_package(osqp)` can locate the CMake config without additional setup.
 - If you plan to build manually (without the helper scripts below), run
   `./easy_manipulation_deployment/scripts/install_system_deps.sh` after cloning
   to install the TinyXML2 and Boost development packages that
@@ -47,7 +50,7 @@ below before running `colcon build` to avoid repeated fetch/fallback loops in
 `tesseract_motion_planners` and related dependencies:
 
 ```
-sudo apt update && sudo apt install -y libcereal-dev libjsoncpp-dev libomp-dev ros-humble-roslib
+sudo apt update && sudo apt install -y libcereal-dev libjsoncpp-dev libomp-dev libosqp-dev ros-humble-roslib
 ```
 
 ---
@@ -79,7 +82,9 @@ source install/setup.bash
 The helper scripts register `scripts/rosdep_overrides.yaml` automatically so
 rosdep can resolve the Humble-specific keys for `cereal`, `openmp`, `roslib`,
 and the various Tesseract packages without downloading sources during build
-configuration.
+configuration. They also install the OSQP development package and export
+`OSQP_DIR` when its CMake config is detected so `find_package(osqp)` resolves
+cleanly during the TrajOpt planner build.
 
 > **Tip:** Run `./easy_manipulation_deployment/scripts/fix_workspace_layout.sh`
 > after importing the repositories and before calling `rosdep install`. The
