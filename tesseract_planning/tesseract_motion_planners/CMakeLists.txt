@@ -184,7 +184,18 @@ if(TESSERACT_ENABLE_EXAMPLES)
 endif()
 
 # Package configuration
-configure_package(COMPONENT core SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS})
+set(_${PROJECT_NAME}_component_paths "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-component-paths.cmake")
+file(WRITE ${_${PROJECT_NAME}_component_paths} "# Component package hints for ${PROJECT_NAME}\n")
+foreach(_component IN LISTS SUPPORTED_COMPONENTS)
+  file(APPEND
+       ${_${PROJECT_NAME}_component_paths}
+       "set(${PROJECT_NAME}_${_component}_DIR \"\\${CMAKE_CURRENT_LIST_DIR}/../${PROJECT_NAME}_${_component}\")\n")
+endforeach()
+
+configure_package(
+  COMPONENT core
+  SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS}
+  CFG_EXTRAS ${_${PROJECT_NAME}_component_paths})
 
 if(TESSERACT_PACKAGE)
   cpack_component_package(

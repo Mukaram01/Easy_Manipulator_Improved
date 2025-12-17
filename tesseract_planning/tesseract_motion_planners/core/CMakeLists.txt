@@ -24,6 +24,7 @@ target_include_directories(${PROJECT_NAME}_core PUBLIC "$<BUILD_INTERFACE:${CMAK
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 
 # Configure Components
+set(_${PROJECT_NAME}_core_config_dir ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake)
 configure_component(
   COMPONENT core
   NAMESPACE tesseract
@@ -36,17 +37,12 @@ configure_component(
     Threads
     Boost)
 
-# Explicitly install the generated CMake package files for the core component.
-# The configure_component helper creates these files in a component-specific
-# build directory, but some downstream builds (e.g., isolated colcon installs)
-# failed to locate the configuration because the files were not present under
-# the install prefix.  Installing the directory directly guarantees the
-# `tesseract_motion_planners_coreConfig.cmake` package file is available in
-# the expected location for `find_package`.
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake)
+# Ensure the generated component package configuration is always installed
+# into the expected prefix location.
 install(
-  DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake/
-  DESTINATION lib/cmake/${PROJECT_NAME}_core)
+  DIRECTORY ${_${PROJECT_NAME}_core_config_dir}/
+  DESTINATION lib/cmake/${PROJECT_NAME}_core
+  COMPONENT core)
 
 if(TESSERACT_PACKAGE)
   cpack_component(
