@@ -43,6 +43,7 @@ configure_component(
 # the install prefix.  Installing the directory directly guarantees the
 # `tesseract_motion_planners_coreConfig.cmake` package file is available in
 # the expected location for `find_package`.
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake)
 install(
   DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake/
   DESTINATION lib/cmake/${PROJECT_NAME}_core)
