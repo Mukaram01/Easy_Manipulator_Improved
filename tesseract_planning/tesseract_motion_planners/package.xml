@@ -33,6 +33,8 @@
   <exec_depend>trajopt_ifopt</exec_depend>
   <depend>trajopt_sco</depend>
   <depend>trajopt_sqp</depend>
+  <build_depend>osqp</build_depend>
+  <exec_depend>osqp</exec_depend>
   <build_depend>openmp</build_depend>
   <exec_depend>openmp</exec_depend>
   <test_depend>gtest</test_depend>
