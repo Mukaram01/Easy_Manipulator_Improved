@@ -183,6 +183,12 @@ PY
   done
 fi
 
+ROSDEP_OVERRIDES="$SCRIPT_DIR/scripts/rosdep_overrides.yaml"
+if [[ -f "$ROSDEP_OVERRIDES" ]]; then
+  export ROSDEP_ADDITIONAL_SOURCES_PATHS="$ROSDEP_OVERRIDES${ROSDEP_ADDITIONAL_SOURCES_PATHS:+:$ROSDEP_ADDITIONAL_SOURCES_PATHS}"
+  echo "Using rosdep overrides from $ROSDEP_OVERRIDES" >&2
+fi
+
 rosdep update
 
 # Ensure trajopt_common declares all dependencies it links against. Some upstream
