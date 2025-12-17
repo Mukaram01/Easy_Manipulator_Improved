@@ -49,7 +49,8 @@ configure_component(
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_trajopt_ifopt
   DEPENDENCIES
-    "tesseract_motion_planners COMPONENTS core simple"
+    tesseract_motion_planners_core
+    "tesseract_motion_planners COMPONENTS simple"
     trajopt_ifopt
     trajopt_sqp
     cereal)

@@ -49,7 +49,8 @@ configure_component(
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_descartes
   DEPENDENCIES
-    "tesseract_motion_planners COMPONENTS core simple"
+    tesseract_motion_planners_core
+    "tesseract_motion_planners COMPONENTS simple"
     "descartes_light REQUIRED COMPONENTS core"
     "tesseract_collision COMPONENTS core"
     cereal)
