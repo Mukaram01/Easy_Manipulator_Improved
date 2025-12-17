@@ -61,7 +61,7 @@ configure_component(
   COMPONENT ompl
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_ompl
-  DEPENDENCIES "tesseract_motion_planners COMPONENTS core simple" ompl cereal)
+  DEPENDENCIES tesseract_motion_planners_core "tesseract_motion_planners COMPONENTS simple" ompl cereal)
 
 if(TESSERACT_PACKAGE)
   cpack_component(

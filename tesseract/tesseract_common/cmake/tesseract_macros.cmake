@@ -451,7 +451,7 @@ function(configure_package)
       endforeach()
       file(APPEND
         "${_tcp_config_file}"
-        "include(\"\${CMAKE_CURRENT_LIST_DIR}/${target}-export.cmake\")\n")
+        "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_tcp_export_file}\")\n")
 
       set(_tcp_extra_files "")
       foreach(_tcp_extra IN LISTS _TCP_CFG_EXTRAS)
