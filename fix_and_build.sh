@@ -1113,9 +1113,25 @@ EOF
 # when the upstream build does not install one. Downstream packages such as
 # tesseract_task_composer call find_package(tesseract_motion_planners_core), so a
 # missing config causes the composer to fail configuration even if the core
-# library was built successfully.
+# library was built successfully. Support both isolated and merged colcon
+# install layouts so the fallback works regardless of whether packages are
+# installed under install/<pkg> or directly under install/.
 ensure_tesseract_motion_planners_core_config() {
-  local package_prefix="$WS/install/tesseract_motion_planners"
+  local install_prefix="$WS/install"
+  local package_prefix="$install_prefix/tesseract_motion_planners"
+  local merge_layout_file="$install_prefix/.colcon_install_layout"
+  local merged_install=0
+
+  if [[ -f "$merge_layout_file" ]] && grep -q "merged" "$merge_layout_file"; then
+    merged_install=1
+  elif [[ -d "$install_prefix/lib/cmake/tesseract_motion_planners_core" ]]; then
+    merged_install=1
+  fi
+
+  if (( merged_install )); then
+    package_prefix="$install_prefix"
+  fi
+
   local config_dir="$package_prefix/lib/cmake/tesseract_motion_planners_core"
   local config_file="$config_dir/tesseract_motion_planners_coreConfig.cmake"
 
