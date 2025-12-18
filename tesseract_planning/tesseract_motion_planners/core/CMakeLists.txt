@@ -41,14 +41,6 @@ configure_component(
     Threads
     Boost)
 
-# Also install the generated target export so downstream packages can
-# discover tesseract_motion_planners_core from an install space.
-set(_${PROJECT_NAME}_core_export_file
-    ${CMAKE_CURRENT_BINARY_DIR}/tesseract_motion_planners_coreTargets.cmake)
-install(FILES ${_${PROJECT_NAME}_core_export_file}
-        DESTINATION lib/cmake/${PROJECT_NAME}_core
-        COMPONENT ${PROJECT_NAME}_core)
-
 # Upstream builds sometimes fail to install the generated
 # tesseract_motion_planners_core package configuration, which prevents
 # downstream packages (such as tesseract_task_composer) from resolving the
