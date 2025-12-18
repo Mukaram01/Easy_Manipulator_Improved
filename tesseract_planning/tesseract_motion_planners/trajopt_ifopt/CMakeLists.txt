@@ -35,16 +35,8 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_trajopt_ifopt PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                                 "$<INSTALL_INTERFACE:include>")
 
-install(
-  TARGETS ${PROJECT_NAME}_trajopt_ifopt
-  EXPORT tesseract_motion_planners_trajopt_ifoptTargets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  COMPONENT trajopt_ifopt)
-
 # Mark cpp header files for installation
-install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT trajopt_ifopt)
+install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ${PROJECT_NAME}_trajopt_ifopt)
 
 # Testing
 if(TESSERACT_ENABLE_TESTING)
@@ -53,7 +45,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT trajopt_ifopt
+  COMPONENT ${PROJECT_NAME}_trajopt_ifopt
   NAMESPACE tesseract
   EXPORT_NAME tesseract_motion_planners_trajopt_ifoptTargets
   EXPORT_FILE tesseract_motion_planners_trajopt_ifoptTargets.cmake
@@ -67,10 +59,10 @@ configure_component(
 
 if(TESSERACT_PACKAGE)
   cpack_component(
-    COMPONENT trajopt_ifopt
+    COMPONENT ${PROJECT_NAME}_trajopt_ifopt
     VERSION ${pkg_extracted_version}
     DESCRIPTION "Tesseract motion planners trajopt_ifopt components"
-    COMPONENT_DEPENDS core simple
+    COMPONENT_DEPENDS ${PROJECT_NAME}_core ${PROJECT_NAME}_simple
     LINUX_DEPENDS ${TESSERACT_PACKAGE_PREFIX}trajopt-ifopt ${TESSERACT_PACKAGE_PREFIX}trajopt-sqp
     WINDOWS_DEPENDS ${TESSERACT_PACKAGE_PREFIX}trajopt-ifopt ${TESSERACT_PACKAGE_PREFIX}trajopt-sqp)
 endif()

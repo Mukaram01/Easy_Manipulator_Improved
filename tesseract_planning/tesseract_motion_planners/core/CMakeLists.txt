@@ -20,30 +20,15 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_core PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                        "$<INSTALL_INTERFACE:include>")
 
-install(
-  TARGETS ${PROJECT_NAME}_core
-  EXPORT tesseract_motion_planners_coreTargets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  COMPONENT core)
-
-install(
-  EXPORT tesseract_motion_planners_coreTargets
-  NAMESPACE tesseract::
-  DESTINATION lib/cmake/${PROJECT_NAME}_core
-  FILE tesseract_motion_planners_coreTargets.cmake
-  COMPONENT core)
-
 # Mark cpp header files for installation
-install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
+install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ${PROJECT_NAME}_core)
 
 # Configure Components
 set(_${PROJECT_NAME}_core_config_dir ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake)
 # Ensure component config directory exists before installation
 file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_config_dir})
 configure_component(
-  COMPONENT core
+  COMPONENT ${PROJECT_NAME}_core
   NAMESPACE tesseract
   EXPORT_NAME tesseract_motion_planners_coreTargets
   EXPORT_FILE tesseract_motion_planners_coreTargets.cmake
@@ -77,18 +62,13 @@ install(
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
   DESTINATION lib/cmake/${PROJECT_NAME}_core
-  COMPONENT core)
+  COMPONENT ${PROJECT_NAME}_core)
 
 # Ensure the generated component package configuration is always installed
 # into the expected prefix location.
-install(
-  DIRECTORY ${_${PROJECT_NAME}_core_config_dir}/
-  DESTINATION lib/cmake/${PROJECT_NAME}_core
-  COMPONENT core)
-
 if(TESSERACT_PACKAGE)
   cpack_component(
-    COMPONENT core
+    COMPONENT ${PROJECT_NAME}_core
     VERSION ${pkg_extracted_version}
     DESCRIPTION "Tesseract motion planners core components"
     LINUX_DEPENDS
