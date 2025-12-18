@@ -128,7 +128,7 @@ if(NOT COMMAND configure_component)
     cmake_parse_arguments(
       _CC
       ""
-      "COMPONENT;NAMESPACE"
+      "COMPONENT;NAMESPACE;EXPORT_NAME;EXPORT_FILE"
       "TARGETS;DEPENDENCIES;CFG_EXTRAS"
       ${ARGN})
 
@@ -149,9 +149,23 @@ if(NOT COMMAND configure_component)
       set(_cc_component_args)
     endif()
 
+    if(_CC_EXPORT_NAME)
+      set(_cc_export_name_args EXPORT_NAME ${_CC_EXPORT_NAME})
+    else()
+      set(_cc_export_name_args)
+    endif()
+
+    if(_CC_EXPORT_FILE)
+      set(_cc_export_file_args EXPORT_FILE ${_CC_EXPORT_FILE})
+    else()
+      set(_cc_export_file_args)
+    endif()
+
     configure_package(
       ${_cc_namespace_args}
       ${_cc_component_args}
+      ${_cc_export_name_args}
+      ${_cc_export_file_args}
       TARGETS ${_CC_TARGETS}
       DEPENDENCIES ${_CC_DEPENDENCIES}
       CFG_EXTRAS ${_CC_CFG_EXTRAS})

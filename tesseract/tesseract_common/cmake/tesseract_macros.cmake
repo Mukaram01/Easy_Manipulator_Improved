@@ -369,7 +369,7 @@ function(configure_package)
   cmake_parse_arguments(
     _TCP
     ""
-    "NAMESPACE;COMPONENT"
+    "NAMESPACE;COMPONENT;EXPORT_NAME;EXPORT_FILE"
     "TARGETS;DEPENDENCIES;CFG_EXTRAS;SUPPORTED_COMPONENTS"
     ${ARGN})
   if(NOT _TCP_TARGETS)
@@ -412,13 +412,27 @@ function(configure_package)
       # If a component is provided, consolidate all targets for that component
       # into a single export set named "<component>-targets" to avoid exporting
       # the same dependency multiple times across different export sets.
-      if(_TCP_COMPONENT)
+      if(_TCP_EXPORT_NAME)
+        set(_tcp_export_name "${_TCP_EXPORT_NAME}")
+      elseif(_TCP_COMPONENT)
         set(_tcp_export_name "${_TCP_COMPONENT}-targets")
-        set(_tcp_export_file "${_TCP_COMPONENT}-targets.cmake")
-        set(_tcp_export_dest "lib/cmake/${target}")
       else()
         set(_tcp_export_name "${target}_export")
+      endif()
+
+      if(_TCP_EXPORT_FILE)
+        set(_tcp_export_file "${_TCP_EXPORT_FILE}")
+      elseif(_TCP_EXPORT_NAME)
+        set(_tcp_export_file "${_TCP_EXPORT_NAME}.cmake")
+      elseif(_TCP_COMPONENT)
+        set(_tcp_export_file "${_TCP_COMPONENT}-targets.cmake")
+      else()
         set(_tcp_export_file "${target}-export.cmake")
+      endif()
+
+      if(_TCP_COMPONENT)
+        set(_tcp_export_dest "lib/cmake/${target}")
+      else()
         set(_tcp_export_dest "lib/cmake/${target}")
       endif()
 
