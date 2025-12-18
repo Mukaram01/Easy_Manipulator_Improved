@@ -35,16 +35,8 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_descartes PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                             "$<INSTALL_INTERFACE:include>")
 
-install(
-  TARGETS ${PROJECT_NAME}_descartes
-  EXPORT tesseract_motion_planners_descartesTargets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  COMPONENT descartes)
-
 # Mark cpp header files for installation
-install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT descartes)
+install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ${PROJECT_NAME}_descartes)
 
 # Testing
 if(TESSERACT_ENABLE_TESTING)
@@ -53,7 +45,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT descartes
+  COMPONENT ${PROJECT_NAME}_descartes
   NAMESPACE tesseract
   EXPORT_NAME tesseract_motion_planners_descartesTargets
   EXPORT_FILE tesseract_motion_planners_descartesTargets.cmake
@@ -67,10 +59,10 @@ configure_component(
 
 if(TESSERACT_PACKAGE)
   cpack_component(
-    COMPONENT descartes
+    COMPONENT ${PROJECT_NAME}_descartes
     VERSION ${pkg_extracted_version}
     DESCRIPTION "Tesseract motion planners descartes components"
-    COMPONENT_DEPENDS core simple
+    COMPONENT_DEPENDS ${PROJECT_NAME}_core ${PROJECT_NAME}_simple
     LINUX_DEPENDS "${TESSERACT_PACKAGE_PREFIX}tesseract-collision-core"
                   "${TESSERACT_PACKAGE_PREFIX}descartes-light-core"
     WINDOWS_DEPENDS "${TESSERACT_PACKAGE_PREFIX}tesseract-collision-core"

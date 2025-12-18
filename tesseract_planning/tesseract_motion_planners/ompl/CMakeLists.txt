@@ -48,16 +48,8 @@ if(OMPL_VERSION VERSION_LESS "1.4.0")
   target_compile_definitions(${PROJECT_NAME}_ompl PUBLIC OMPL_LESS_1_4_0=ON)
 endif()
 
-install(
-  TARGETS ${PROJECT_NAME}_ompl
-  EXPORT tesseract_motion_planners_omplTargets
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  COMPONENT ompl)
-
 # Mark cpp header files for installation
-install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ompl)
+install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ${PROJECT_NAME}_ompl)
 
 # Testing
 if(TESSERACT_ENABLE_TESTING)
@@ -66,7 +58,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT ompl
+  COMPONENT ${PROJECT_NAME}_ompl
   NAMESPACE tesseract
   EXPORT_NAME tesseract_motion_planners_omplTargets
   EXPORT_FILE tesseract_motion_planners_omplTargets.cmake
@@ -75,10 +67,10 @@ configure_component(
 
 if(TESSERACT_PACKAGE)
   cpack_component(
-    COMPONENT ompl
+    COMPONENT ${PROJECT_NAME}_ompl
     VERSION ${pkg_extracted_version}
     DESCRIPTION "Tesseract motion planners ompl components"
-    COMPONENT_DEPENDS core simple
+    COMPONENT_DEPENDS ${PROJECT_NAME}_core ${PROJECT_NAME}_simple
     LINUX_DEPENDS "libompl-dev"
     WINDOWS_DEPENDS "ompl")
 endif()
