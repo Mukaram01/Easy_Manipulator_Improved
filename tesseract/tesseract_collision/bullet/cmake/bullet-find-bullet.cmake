@@ -101,6 +101,17 @@ if(NOT COMMAND find_bullet)
   function(find_bullet)
     set(HACD_LIBRARY "")
 
+    # The Debian/Ubuntu Bullet packages install their CMake config files and
+    # shared libraries under the multiarch lib directory (for example,
+    # /usr/lib/x86_64-linux-gnu/cmake/bullet and /usr/lib/x86_64-linux-gnu).
+    # Explicitly seed the search path with that location so find_package()
+    # locates the config package even when the default CMake prefix paths do
+    # not cover multiarch library directories (e.g. when CMAKE_PREFIX_PATH is
+    # empty in minimal builds or CMake -P scripts).
+    if(NOT Bullet_DIR AND DEFINED CMAKE_LIBRARY_ARCHITECTURE)
+      list(APPEND CMAKE_PREFIX_PATH "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/bullet")
+    endif()
+
     # Prefer the imported target exported by bullet's CONFIG package if it
     # is available (Ubuntu 22.04+).
     find_package(Bullet CONFIG QUIET)
@@ -174,6 +185,12 @@ if(NOT COMMAND find_bullet)
               list(APPEND _search_dirs "${_dir}")
             elseif(BULLET_ROOT_DIR)
               get_filename_component(_abs_dir "${BULLET_ROOT_DIR}/${_dir}" ABSOLUTE)
+              list(APPEND _search_dirs "${_abs_dir}")
+            elseif(DEFINED CMAKE_LIBRARY_ARCHITECTURE)
+              # Bullet installs under lib/<multiarch> on Debian derivatives;
+              # resolve relative library hints against that directory when no
+              # explicit root is reported.
+              get_filename_component(_abs_dir "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/${_dir}" ABSOLUTE)
               list(APPEND _search_dirs "${_abs_dir}")
             else()
               get_filename_component(_abs_dir "${_dir}" ABSOLUTE)
