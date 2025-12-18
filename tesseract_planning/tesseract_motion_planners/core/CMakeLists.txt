@@ -25,6 +25,8 @@ install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 
 # Configure Components
 set(_${PROJECT_NAME}_core_config_dir ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_core_cmake)
+# Ensure component config directory exists before installation
+file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_config_dir})
 configure_component(
   COMPONENT core
   NAMESPACE tesseract
