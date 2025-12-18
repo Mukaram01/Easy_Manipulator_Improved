@@ -20,6 +20,14 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_core PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                        "$<INSTALL_INTERFACE:include>")
 
+install(
+  TARGETS ${PROJECT_NAME}_core
+  EXPORT tesseract_motion_planners_coreTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT core)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 

@@ -56,6 +56,14 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_trajopt PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                           "$<INSTALL_INTERFACE:include>")
 
+install(
+  TARGETS ${PROJECT_NAME}_trajopt
+  EXPORT tesseract_motion_planners_trajoptTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT trajopt)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT trajopt)
 
@@ -68,6 +76,8 @@ endif()
 configure_component(
   COMPONENT trajopt
   NAMESPACE tesseract
+  EXPORT_NAME tesseract_motion_planners_trajoptTargets
+  EXPORT_FILE tesseract_motion_planners_trajoptTargets.cmake
   TARGETS ${PROJECT_NAME}_trajopt
   DEPENDENCIES
     tesseract_motion_planners_core
