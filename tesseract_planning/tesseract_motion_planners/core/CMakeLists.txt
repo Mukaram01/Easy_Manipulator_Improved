@@ -37,6 +37,29 @@ configure_component(
     Threads
     Boost)
 
+# Upstream builds sometimes fail to install the generated
+# tesseract_motion_planners_core package configuration, which prevents
+# downstream packages (such as tesseract_task_composer) from resolving the
+# core component even when the library itself is available. To guarantee that
+# a package configuration is present, explicitly generate and install one from
+# the provided template in addition to the configure_component output.
+include(CMakePackageConfigHelpers)
+set(_${PROJECT_NAME}_core_fallback_config_dir ${CMAKE_CURRENT_BINARY_DIR}/cmake)
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}_coreConfig.cmake.in
+  ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
+  INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}_core)
+write_basic_package_version_file(
+  ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
+  VERSION ${pkg_extracted_version}
+  COMPATIBILITY SameMajorVersion)
+install(
+  FILES
+    ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
+    ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
+  DESTINATION lib/cmake/${PROJECT_NAME}_core
+  COMPONENT core)
+
 # Ensure the generated component package configuration is always installed
 # into the expected prefix location.
 install(
