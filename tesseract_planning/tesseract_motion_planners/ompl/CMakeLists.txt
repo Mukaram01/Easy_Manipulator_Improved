@@ -48,6 +48,14 @@ if(OMPL_VERSION VERSION_LESS "1.4.0")
   target_compile_definitions(${PROJECT_NAME}_ompl PUBLIC OMPL_LESS_1_4_0=ON)
 endif()
 
+install(
+  TARGETS ${PROJECT_NAME}_ompl
+  EXPORT tesseract_motion_planners_omplTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT ompl)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT ompl)
 
@@ -60,6 +68,8 @@ endif()
 configure_component(
   COMPONENT ompl
   NAMESPACE tesseract
+  EXPORT_NAME tesseract_motion_planners_omplTargets
+  EXPORT_FILE tesseract_motion_planners_omplTargets.cmake
   TARGETS ${PROJECT_NAME}_ompl
   DEPENDENCIES tesseract_motion_planners_core "tesseract_motion_planners COMPONENTS simple" ompl cereal)
 

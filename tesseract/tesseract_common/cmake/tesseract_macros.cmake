@@ -431,7 +431,7 @@ function(configure_package)
       endif()
 
       if(_TCP_COMPONENT)
-        set(_tcp_export_dest "lib/cmake/${target}")
+        set(_tcp_export_dest "lib/cmake/${_TCP_COMPONENT}")
       else()
         set(_tcp_export_dest "lib/cmake/${target}")
       endif()

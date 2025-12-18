@@ -35,6 +35,14 @@ target_code_coverage(
 target_include_directories(${PROJECT_NAME}_descartes PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                             "$<INSTALL_INTERFACE:include>")
 
+install(
+  TARGETS ${PROJECT_NAME}_descartes
+  EXPORT tesseract_motion_planners_descartesTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT descartes)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT descartes)
 
@@ -47,6 +55,8 @@ endif()
 configure_component(
   COMPONENT descartes
   NAMESPACE tesseract
+  EXPORT_NAME tesseract_motion_planners_descartesTargets
+  EXPORT_FILE tesseract_motion_planners_descartesTargets.cmake
   TARGETS ${PROJECT_NAME}_descartes
   DEPENDENCIES
     tesseract_motion_planners_core

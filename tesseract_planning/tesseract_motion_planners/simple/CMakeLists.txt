@@ -27,6 +27,14 @@ target_include_directories(${PROJECT_NAME}_simple PUBLIC "$<BUILD_INTERFACE:${CM
                                                          "$<INSTALL_INTERFACE:include>")
 add_dependencies(${PROJECT_NAME}_simple ${PROJECT_NAME}_core)
 
+install(
+  TARGETS ${PROJECT_NAME}_simple
+  EXPORT tesseract_motion_planners_simpleTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT simple)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT simple)
 
@@ -39,6 +47,8 @@ endif()
 configure_component(
   COMPONENT simple
   NAMESPACE tesseract
+  EXPORT_NAME tesseract_motion_planners_simpleTargets
+  EXPORT_FILE tesseract_motion_planners_simpleTargets.cmake
   TARGETS ${PROJECT_NAME}_simple
   DEPENDENCIES
     tesseract_motion_planners_core
