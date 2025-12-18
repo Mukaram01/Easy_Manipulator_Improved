@@ -28,6 +28,13 @@ install(
   ARCHIVE DESTINATION lib
   COMPONENT core)
 
+install(
+  EXPORT tesseract_motion_planners_coreTargets
+  NAMESPACE tesseract::
+  DESTINATION lib/cmake/${PROJECT_NAME}_core
+  FILE tesseract_motion_planners_coreTargets.cmake
+  COMPONENT core)
+
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 
