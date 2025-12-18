@@ -31,6 +31,44 @@ option(TESSERACT_COLLISION_ENABLE_BENCHMARKING "Enable benchmarks specific to te
 if(NOT DEFINED TESSERACT_PACKAGE_SOURCE_UPLOAD)
   set(TESSERACT_PACKAGE_SOURCE_UPLOAD "" CACHE STRING "Upload target for source packages")
 endif()
+
+# Provide fallback definitions even if an existing ament_cmake package was
+# discovered but did not populate the helper macros (or they were filtered
+# out of the current project scope).
+if(NOT COMMAND ament_export_dependencies)
+  function(ament_export_dependencies)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_export_include_directories)
+  function(ament_export_include_directories)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_export_interfaces)
+  function(ament_export_interfaces)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_export_libraries)
+  function(ament_export_libraries)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_export_targets)
+  function(ament_export_targets)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_target_dependencies)
+  function(ament_target_dependencies)
+  endfunction()
+endif()
+
+if(NOT COMMAND ament_package)
+  function(ament_package)
+  endfunction()
+endif()
 if(NOT DEFINED TESSERACT_PACKAGE_SOURCE_DPUT_HOST)
   set(TESSERACT_PACKAGE_SOURCE_DPUT_HOST "" CACHE STRING "dput host for source package uploads")
 endif()
