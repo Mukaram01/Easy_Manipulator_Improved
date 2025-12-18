@@ -30,6 +30,8 @@ file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_config_dir})
 configure_component(
   COMPONENT core
   NAMESPACE tesseract
+  EXPORT_NAME tesseract_motion_planners_coreTargets
+  EXPORT_FILE tesseract_motion_planners_coreTargets.cmake
   TARGETS ${PROJECT_NAME}_core
   DEPENDENCIES
     tesseract_environment
@@ -38,28 +40,6 @@ configure_component(
     console_bridge
     Threads
     Boost)
-
-set(_${PROJECT_NAME}_core_config_file
-    "${_${PROJECT_NAME}_core_config_dir}/${PROJECT_NAME}_coreConfig.cmake")
-if(EXISTS "${_${PROJECT_NAME}_core_config_file}")
-  file(READ "${_${PROJECT_NAME}_core_config_file}" _core_config_content)
-  string(
-    REPLACE "core-targets.cmake"
-            "tesseract_motion_planners_coreTargets.cmake"
-            _core_config_content
-            "${_core_config_content}")
-  file(WRITE "${_${PROJECT_NAME}_core_config_file}" "${_core_config_content}")
-endif()
-
-# Provide an explicit export file that matches the core config template so
-# downstream find_package() calls can always locate the targets file even if
-# configure_component does not install it under the expected name.
-install(
-  EXPORT core-targets
-  FILE tesseract_motion_planners_coreTargets.cmake
-  NAMESPACE tesseract::
-  DESTINATION lib/cmake/${PROJECT_NAME}_core
-  COMPONENT core)
 
 # Upstream builds sometimes fail to install the generated
 # tesseract_motion_planners_core package configuration, which prevents
