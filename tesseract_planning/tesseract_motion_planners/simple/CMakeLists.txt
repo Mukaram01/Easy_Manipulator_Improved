@@ -35,20 +35,6 @@ if(TESSERACT_ENABLE_TESTING)
   add_subdirectory(test)
 endif()
 
-# Generate and install a package configuration alongside the exported
-# targets so the simple planner can be discovered from an install space.
-include(CMakePackageConfigHelpers)
-set(_${PROJECT_NAME}_simple_config_dir ${CMAKE_CURRENT_BINARY_DIR}/cmake)
-configure_package_config_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}_simpleConfig.cmake.in
-  ${_${PROJECT_NAME}_simple_config_dir}/${PROJECT_NAME}_simpleConfig.cmake
-  INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}_simple)
-write_basic_package_version_file(
-  ${_${PROJECT_NAME}_simple_config_dir}/${PROJECT_NAME}_simpleConfigVersion.cmake
-  VERSION ${pkg_extracted_version}
-  COMPATIBILITY SameMajorVersion)
-
-# Configure Components
 configure_component(
   COMPONENT ${PROJECT_NAME}_simple
   NAMESPACE tesseract
@@ -60,14 +46,6 @@ configure_component(
     tesseract_environment
     tesseract_command_language
     cereal)
-
-install(
-  FILES
-    ${_${PROJECT_NAME}_simple_config_dir}/${PROJECT_NAME}_simpleConfig.cmake
-    ${_${PROJECT_NAME}_simple_config_dir}/${PROJECT_NAME}_simpleConfigVersion.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/tesseract_motion_planners_simpleTargets.cmake
-  DESTINATION lib/cmake/${PROJECT_NAME}_simple
-  COMPONENT ${PROJECT_NAME}_simple)
 
 if(TESSERACT_PACKAGE)
   cpack_component(
