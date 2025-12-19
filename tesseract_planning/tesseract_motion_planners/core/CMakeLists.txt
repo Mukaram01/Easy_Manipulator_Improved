@@ -49,6 +49,7 @@ configure_component(
 # the provided template in addition to the configure_component output.
 include(CMakePackageConfigHelpers)
 set(_${PROJECT_NAME}_core_fallback_config_dir ${CMAKE_CURRENT_BINARY_DIR}/cmake)
+file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_fallback_config_dir})
 configure_package_config_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}_coreConfig.cmake.in
   ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
