@@ -71,10 +71,22 @@ if(EXISTS "${_${PROJECT_NAME}_core_generated_targets}")
   configure_file("${_${PROJECT_NAME}_core_generated_targets}"
                  "${_${PROJECT_NAME}_core_fallback_targets}" COPYONLY)
 else()
-  export(
-    EXPORT tesseract_motion_planners_coreTargets
-    FILE "${_${PROJECT_NAME}_core_fallback_targets}"
-    NAMESPACE tesseract::)
+  # Prefer to regenerate from the declared export set when available, but fall
+  # back to exporting the target list directly if no export set has been
+  # created in the current build configuration.
+  set(_${PROJECT_NAME}_core_export_set "tesseract_motion_planners_coreTargets")
+  get_property(_${PROJECT_NAME}_core_has_export GLOBAL PROPERTY EXPORT_${_${PROJECT_NAME}_core_export_set})
+  if(_${PROJECT_NAME}_core_has_export)
+    export(
+      EXPORT ${_${PROJECT_NAME}_core_export_set}
+      FILE "${_${PROJECT_NAME}_core_fallback_targets}"
+      NAMESPACE tesseract::)
+  else()
+    export(
+      TARGETS ${PROJECT_NAME}_core
+      FILE "${_${PROJECT_NAME}_core_fallback_targets}"
+      NAMESPACE tesseract::)
+  endif()
 endif()
 install(
   FILES
