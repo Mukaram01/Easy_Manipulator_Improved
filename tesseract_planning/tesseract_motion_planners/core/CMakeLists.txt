@@ -57,10 +57,30 @@ write_basic_package_version_file(
   ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
   VERSION ${pkg_extracted_version}
   COMPATIBILITY SameMajorVersion)
+
+# Ensure a matching targets export accompanies the fallback package config. In
+# some environments the primary install step omits the generated export file,
+# leaving downstream packages unable to locate the core component even though
+# the library exists. By copying (or regenerating) the export file into the
+# fallback directory and installing it alongside the fallback config, the
+# package remains discoverable when the normal export is skipped.
+set(_${PROJECT_NAME}_core_generated_targets "${CMAKE_CURRENT_BINARY_DIR}/tesseract_motion_planners_coreTargets.cmake")
+set(_${PROJECT_NAME}_core_fallback_targets
+    "${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets.cmake")
+if(EXISTS "${_${PROJECT_NAME}_core_generated_targets}")
+  configure_file("${_${PROJECT_NAME}_core_generated_targets}"
+                 "${_${PROJECT_NAME}_core_fallback_targets}" COPYONLY)
+else()
+  export(
+    EXPORT tesseract_motion_planners_coreTargets
+    FILE "${_${PROJECT_NAME}_core_fallback_targets}"
+    NAMESPACE tesseract::)
+endif()
 install(
   FILES
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
+    ${_${PROJECT_NAME}_core_fallback_targets}
   DESTINATION lib/cmake/${PROJECT_NAME}_core
   COMPONENT ${PROJECT_NAME}_core)
 
