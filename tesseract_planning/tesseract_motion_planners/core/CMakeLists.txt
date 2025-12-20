@@ -66,30 +66,15 @@ set(_${PROJECT_NAME}_core_export_file
     ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets.cmake)
 file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_fallback_config_dir})
 export(
-  TARGETS ${PROJECT_NAME}_core
+  EXPORT tesseract_motion_planners_coreTargets
   NAMESPACE tesseract::
   FILE ${_${PROJECT_NAME}_core_export_file})
-set(_${PROJECT_NAME}_core_export_install_file
-    ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets-install.cmake)
-if(NOT EXISTS ${_${PROJECT_NAME}_core_export_file})
-  message(
-    FATAL_ERROR
-      "Failed to generate fallback targets export at ${_${PROJECT_NAME}_core_export_file}")
-endif()
-configure_file(
-  ${_${PROJECT_NAME}_core_export_file}
-  ${_${PROJECT_NAME}_core_export_install_file}
-  COPYONLY)
 install(
   FILES
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
+    ${_${PROJECT_NAME}_core_export_file}
   DESTINATION lib/cmake/${PROJECT_NAME}_core
-  COMPONENT ${PROJECT_NAME}_core)
-install(
-  FILES ${_${PROJECT_NAME}_core_export_install_file}
-  DESTINATION lib/cmake/${PROJECT_NAME}_core
-  RENAME tesseract_motion_planners_coreTargets.cmake
   COMPONENT ${PROJECT_NAME}_core)
 
 # Ensure the generated component package configuration is always installed
