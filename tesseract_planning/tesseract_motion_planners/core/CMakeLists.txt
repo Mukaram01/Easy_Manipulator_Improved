@@ -66,7 +66,7 @@ set(_${PROJECT_NAME}_core_export_file
     ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets.cmake)
 file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_fallback_config_dir})
 export(
-  EXPORT tesseract_motion_planners_coreTargets
+  TARGETS ${PROJECT_NAME}_core
   NAMESPACE tesseract::
   FILE ${_${PROJECT_NAME}_core_export_file})
 install(
