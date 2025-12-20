@@ -64,12 +64,18 @@ write_basic_package_version_file(
 # primary install step omits the generated export file.
 set(_${PROJECT_NAME}_core_export_file
     ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets.cmake)
+file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_fallback_config_dir})
 export(
   TARGETS ${PROJECT_NAME}_core
   NAMESPACE tesseract::
   FILE ${_${PROJECT_NAME}_core_export_file})
 set(_${PROJECT_NAME}_core_export_install_file
     ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets-install.cmake)
+if(NOT EXISTS ${_${PROJECT_NAME}_core_export_file})
+  message(
+    FATAL_ERROR
+      "Failed to generate fallback targets export at ${_${PROJECT_NAME}_core_export_file}")
+endif()
 configure_file(
   ${_${PROJECT_NAME}_core_export_file}
   ${_${PROJECT_NAME}_core_export_install_file}
