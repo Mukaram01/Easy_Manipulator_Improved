@@ -26,6 +26,27 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
+# Ensure external trajopt checkouts fetched via tesseract.repos are ignored
+# before invoking colcon. Some upstream snapshots ship a COLCON_IGNORE.repo
+# marker instead of the expected COLCON_IGNORE file, which causes colcon to
+# discover duplicate packages alongside the patched overlays in
+# easy_manipulation_deployment and abort with a circular dependency error.
+ensure_colcon_ignore() {
+  local dir="$1"
+  if [ -d "$dir" ] && [ ! -L "$dir" ] && [ ! -e "$dir/COLCON_IGNORE" ]; then
+    echo "Adding COLCON_IGNORE to external checkout at $dir"
+    touch "$dir/COLCON_IGNORE"
+  fi
+}
+
+for duplicate in \
+  "$SRC_DIR/trajopt" \
+  "$SRC_DIR/trajopt/trajopt" \
+  "$SRC_DIR/trajopt/trajopt_common" \
+  "$SRC_DIR/trajopt/trajopt_sco"; do
+  ensure_colcon_ignore "$duplicate"
+done
+
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid
 # trajopt_common configure errors such as "Could NOT find Boost (missing:
