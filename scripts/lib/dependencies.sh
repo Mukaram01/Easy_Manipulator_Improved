@@ -47,6 +47,33 @@ install_system_packages() {
     fi
 }
 
+workspace_has_required_packages() {
+    mapfile -t workspace_packages < <(colcon list --base-paths "$SRC_DIR" --names-only 2>/dev/null || true)
+    if [[ ${#workspace_packages[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    local -A present
+    for pkg in "${workspace_packages[@]}"; do
+        present["$pkg"]=1
+    done
+
+    local required=(trajopt_sco trajopt_common tesseract_collision tesseract_state_solver tesseract_urdf)
+    local missing=()
+    for pkg in "${required[@]}"; do
+        if [[ -z ${present[$pkg]:-} ]]; then
+            missing+=("$pkg")
+        fi
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_warn "Workspace at $SRC_DIR is missing required packages: ${missing[*]}"
+        return 1
+    fi
+
+    return 0
+}
+
 remove_duplicate_packages() {
     log_info "Checking for duplicate packages in workspace"
     local -A preferred
@@ -130,8 +157,13 @@ install_dependencies() {
     ensure_dir "$STATE_DIR"
     local marker="$STATE_DIR/deps_installed"
     if [[ -f "$marker" ]]; then
-        log_info "Dependency installation already completed (marker present)"
-        return
+        if workspace_has_required_packages; then
+            log_info "Dependency installation already completed (marker present)"
+            return
+        fi
+
+        log_warn "Dependency marker is present but required packages are missing; reinstalling dependencies"
+        rm -f "$marker"
     fi
 
     clone_repositories
