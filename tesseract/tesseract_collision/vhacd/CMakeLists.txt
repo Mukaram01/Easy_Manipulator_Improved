@@ -1,14 +1,7 @@
 include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
 
-# Make trajopt CMake helpers discoverable whether we are building from source or
-# against an installed trajopt_common package. The installed package exports the
-# macros alongside trajopt_common_DIR; the in-tree path is retained for source builds.
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake")
-find_package(trajopt_common REQUIRED)
-
 set(_trajopt_macros_candidates
-    "${trajopt_common_DIR}/trajopt_macros.cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
+  "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
 
 set(_trajopt_macros_found FALSE)
 foreach(_trajopt_macros ${_trajopt_macros_candidates})
@@ -21,8 +14,7 @@ endforeach()
 
 if(NOT _trajopt_macros_found OR NOT COMMAND trajopt_variables)
   message(FATAL_ERROR
-          "trajopt_macros.cmake could not be found after locating trajopt_common; "
-          "ensure trajopt_common is installed and exports trajopt_macros.cmake")
+          "trajopt_macros.cmake could not be found; ensure trajopt/trajopt_common is present in the workspace")
 endif()
 
 trajopt_variables()
