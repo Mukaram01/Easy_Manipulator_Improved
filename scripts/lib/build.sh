@@ -49,6 +49,29 @@ colcon_base_args() {
 ' "${args[@]}"
 }
 
+# Copy motion planner component configs to expected locations
+# CMake expects each component in its own directory
+copy_motion_planner_configs() {
+    local install_cmake_dir="$WORKSPACE_ROOT/install/lib/cmake"
+    local src_dir="${install_cmake_dir}/tesseract_motion_planners"
+
+    if [[ ! -d "$src_dir" ]]; then
+        return 0
+    fi
+
+    log_info "Copying motion planner component configs to expected locations"
+
+    for comp in core simple ompl descartes trajopt; do
+        local config_file="${src_dir}/tesseract_motion_planners_${comp}-config.cmake"
+        if [[ -f "$config_file" ]]; then
+            local dst_dir="${install_cmake_dir}/tesseract_motion_planners_${comp}"
+            mkdir -p "$dst_dir"
+            cp "${src_dir}/tesseract_motion_planners_${comp}-config.cmake" "$dst_dir/"
+            cp "${src_dir}/tesseract_motion_planners_${comp}-targets"*.cmake "$dst_dir/" 2>/dev/null || true
+        fi
+    done
+}
+
 build_workspace() {
     compose_cmake_args
     ensure_dir "$STATE_DIR"
@@ -83,6 +106,8 @@ build_workspace() {
 
     log_info "Building full workspace"
     colcon build --base-paths "$SRC_DIR" "${full_args[@]}" --cmake-args "${CMAKE_ARGS[@]}"
+
+    copy_motion_planner_configs
 
     popd >/dev/null
 }
