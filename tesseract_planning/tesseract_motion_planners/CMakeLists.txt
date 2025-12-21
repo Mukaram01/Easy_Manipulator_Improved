@@ -189,7 +189,7 @@ file(WRITE ${_${PROJECT_NAME}_component_paths} "# Component package hints for ${
 foreach(_component IN LISTS SUPPORTED_COMPONENTS)
   file(APPEND
        ${_${PROJECT_NAME}_component_paths}
-       "set(${PROJECT_NAME}_${_component}_DIR \"\\${CMAKE_CURRENT_LIST_DIR}\")\n")
+       "set(${PROJECT_NAME}_${_component}_DIR \"${CMAKE_CURRENT_LIST_DIR}\")\n")
 endforeach()
 
 configure_package(
