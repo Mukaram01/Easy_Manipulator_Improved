@@ -189,13 +189,41 @@ file(WRITE ${_${PROJECT_NAME}_component_paths} "# Component package hints for ${
 foreach(_component IN LISTS SUPPORTED_COMPONENTS)
   file(APPEND
        ${_${PROJECT_NAME}_component_paths}
-       "set(${PROJECT_NAME}_${_component}_DIR \"${CMAKE_CURRENT_LIST_DIR}\")\n")
+       "set(${PROJECT_NAME}_${_component}_DIR \"\\${CMAKE_CURRENT_LIST_DIR}/../${PROJECT_NAME}_${_component}\")\n")
 endforeach()
 
 configure_package(
   COMPONENT core
   SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS}
   CFG_EXTRAS ${_${PROJECT_NAME}_component_paths})
+
+# Ensure each component's generated config files are installed into their own
+# package-specific CMake directory so downstream find_package() calls can
+# discover them without additional workspace copy steps. This runs at install
+# time so the generated files are guaranteed to exist.
+install(CODE "
+  set(_components \"${SUPPORTED_COMPONENTS}\")
+  foreach(_component IN LISTS _components)
+    set(_name \"${PROJECT_NAME}_\${_component}\")
+    set(_src \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/${PROJECT_NAME}\")
+    set(_dst \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_name}\")
+    file(GLOB _config_files
+      \"\${_src}/\${_name}Config.cmake\"
+      \"\${_src}/\${_name}-config.cmake\"
+      \"\${_src}/\${_name}ConfigVersion.cmake\"
+      \"\${_src}/\${_name}-config-version.cmake\"
+      \"\${_src}/\${_name}Targets*.cmake\"
+      \"\${_src}/\${_name}-targets*.cmake\")
+    if(_config_files)
+      file(MAKE_DIRECTORY \"\${_dst}\")
+      foreach(_file IN LISTS _config_files)
+        if(EXISTS \"\${_file}\")
+          file(COPY \"\${_file}\" DESTINATION \"\${_dst}\")
+        endif()
+      endforeach()
+    endif()
+  endforeach()
+")
 
 if(TESSERACT_PACKAGE)
   cpack_component_package(
