@@ -54,10 +54,16 @@ build_workspace() {
     ensure_dir "$STATE_DIR"
 
     local foundation_marker="$STATE_DIR/foundation_built"
+    local trajopt_setup="$WORKSPACE_ROOT/install/share/trajopt_sco/local_setup.bash"
     local args
     mapfile -t args < <(colcon_base_args)
 
     pushd "$WORKSPACE_ROOT" >/dev/null
+
+    if [[ -f "$foundation_marker" && ! -f "$trajopt_setup" ]]; then
+        log_warn "Foundation marker present but ${trajopt_setup} is missing; rebuilding foundation packages"
+        rm -f "$foundation_marker"
+    fi
 
     if [[ ! -f "$foundation_marker" ]]; then
         log_info "Building foundation packages (through trajopt_sco)"
