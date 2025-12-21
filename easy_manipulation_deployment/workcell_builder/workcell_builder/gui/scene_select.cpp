@@ -424,6 +424,7 @@ bool SceneSelect::check_files()
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
+  (void)index;
   ui->error_workcell->clear();
   check_scene();
 }

@@ -80,6 +80,7 @@ void GenerateObjectCMakeLists(
   fs::path package_filepath, std::string package_name,
   int ros_ver)
 {
+  (void)workcell_filepath;
   fs::path example_file;
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
