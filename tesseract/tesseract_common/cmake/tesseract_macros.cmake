@@ -300,26 +300,36 @@ function(_tesseract_configure_meta_package)
   file(APPEND "${_tcmp_config_file}" "if(NOT ${_tcmp_package}_FIND_COMPONENTS)\n")
   file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FIND_COMPONENTS \"${_TCMP_COMPONENT}\")\n")
   file(APPEND "${_tcmp_config_file}" "endif()\n")
-  file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_missing_components)\n")
+  file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_missing_required_components)\n")
   file(APPEND "${_tcmp_config_file}" "foreach(_component IN LISTS ${_tcmp_package}_FIND_COMPONENTS)\n")
   file(APPEND
     "${_tcmp_config_file}"
     "  list(FIND _${_tcmp_package}_supported_components \"\${_component}\" _component_index)\n")
   file(APPEND "${_tcmp_config_file}" "  if(_component_index EQUAL -1)\n")
-  file(APPEND "${_tcmp_config_file}" "    list(APPEND _${_tcmp_package}_missing_components \"\${_component}\")\n")
+  file(APPEND "${_tcmp_config_file}" "    set(${_tcmp_package}_\${_component}_FOUND FALSE)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "    if(${_tcmp_package}_FIND_REQUIRED_\${_component})\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "      list(APPEND _${_tcmp_package}_missing_required_components \"\${_component}\")\n")
+  file(APPEND "${_tcmp_config_file}" "    endif()\n")
   file(APPEND "${_tcmp_config_file}" "    continue()\n")
   file(APPEND "${_tcmp_config_file}" "  endif()\n")
   file(APPEND
     "${_tcmp_config_file}"
     "  find_dependency(${_tcmp_package}_\${_component})\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "  set(${_tcmp_package}_\${_component}_FOUND TRUE)\n")
   file(APPEND "${_tcmp_config_file}" "endforeach()\n")
-  file(APPEND "${_tcmp_config_file}" "if(_${_tcmp_package}_missing_components)\n")
+  file(APPEND "${_tcmp_config_file}" "if(_${_tcmp_package}_missing_required_components)\n")
   file(APPEND
     "${_tcmp_config_file}"
-    "  list(JOIN _${_tcmp_package}_missing_components \", \" _${_tcmp_package}_missing_components_str)\n")
+    "  list(JOIN _${_tcmp_package}_missing_required_components \", \" _${_tcmp_package}_missing_required_components_str)\n")
   file(APPEND
     "${_tcmp_config_file}"
-    "  set(${_tcmp_package}_NOT_FOUND_MESSAGE \"Unsupported components requested: \${_${_tcmp_package}_missing_components_str}\")\n")
+    "  set(${_tcmp_package}_NOT_FOUND_MESSAGE \"Required components not available: \${_${_tcmp_package}_missing_required_components_str}\")\n")
   file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FOUND FALSE)\n")
   file(APPEND "${_tcmp_config_file}" "  return()\n")
   file(APPEND "${_tcmp_config_file}" "endif()\n")
