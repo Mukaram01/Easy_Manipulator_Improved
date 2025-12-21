@@ -2,25 +2,30 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.
 
 # Make trajopt CMake helpers discoverable whether we are building from source or
 # against an installed trajopt_common package. The installed package exports the
-# macros alongside trajopt_common_DIR; fall back to the in-tree copy otherwise.
+# macros alongside trajopt_common_DIR; the in-tree path is retained for source builds.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake")
-find_package(trajopt_common QUIET)
-if(trajopt_common_FOUND AND EXISTS "${trajopt_common_DIR}/trajopt_macros.cmake")
-  include("${trajopt_common_DIR}/trajopt_macros.cmake")
-elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
-  include("${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
+find_package(trajopt_common REQUIRED)
+
+set(_trajopt_macros_candidates
+    "${trajopt_common_DIR}/trajopt_macros.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
+
+set(_trajopt_macros_found FALSE)
+foreach(_trajopt_macros ${_trajopt_macros_candidates})
+  if(EXISTS "${_trajopt_macros}")
+    include("${_trajopt_macros}")
+    set(_trajopt_macros_found TRUE)
+    break()
+  endif()
+endforeach()
+
+if(NOT _trajopt_macros_found OR NOT COMMAND trajopt_variables)
+  message(FATAL_ERROR
+          "trajopt_macros.cmake could not be found after locating trajopt_common; "
+          "ensure trajopt_common is installed and exports trajopt_macros.cmake")
 endif()
 
-# If trajopt_common is found but does not ship trajopt_macros.cmake, fall back to the
-# in-tree copy so trajopt_variables is always available.
-if(NOT COMMAND trajopt_variables
-   AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
-  include("${CMAKE_CURRENT_LIST_DIR}/../../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
-endif()
-
-if(COMMAND trajopt_variables)
-  trajopt_variables()
-endif()
+trajopt_variables()
 
 tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
 if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
