@@ -399,8 +399,8 @@ EOF
 # discarding the external checkouts prevents rosdep from aborting with runtime
 # errors about duplicate package names.
 if command -v colcon >/dev/null 2>&1; then
-  declare -A pkg_keep
-  declare -A pkg_removed
+  declare -A pkg_keep=()
+  declare -A pkg_removed=()
   while read -r name path _; do
     [ -n "${name}" ] || continue
     if [[ -v pkg_keep[$name] ]]; then
