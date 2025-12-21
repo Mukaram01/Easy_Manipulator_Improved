@@ -14,6 +14,16 @@ clone_repositories() {
     fi
 }
 
+fix_workspace_layout() {
+    log_info "Running workspace layout adjustments"
+    WORKSPACE_ROOT="$WORKSPACE_ROOT" WS="$WORKSPACE_ROOT" SRC_DIR="$SRC_DIR" "$REPO_ROOT/scripts/fix_workspace_layout.sh"
+}
+
+verify_workspace_packages() {
+    log_info "Verifying package discovery after layout fix"
+    colcon list --base-paths "$SRC_DIR" >/dev/null
+}
+
 install_system_packages() {
     local required=(
         libboost-dev
@@ -169,6 +179,8 @@ install_dependencies() {
     fi
 
     clone_repositories
+    fix_workspace_layout
+    verify_workspace_packages
     remove_duplicate_packages
     install_system_packages
     install_rosdeps

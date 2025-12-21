@@ -2,11 +2,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WS=${WS:-$HOME/workcell_ws}
-SRC_DIR="$WS/src"
-BACKUP_DIR="$WS/trajopt_DISABLED_BACKUP"
-ORIG_DIR="$BACKUP_DIR/original"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [[ -n ${WORKSPACE_ROOT:-} ]]; then
+  WORKSPACE_ROOT="$(cd "$WORKSPACE_ROOT" && pwd)"
+elif [[ -n ${WS:-} ]]; then
+  WORKSPACE_ROOT="$(cd "$WS" && pwd)"
+else
+  repo_parent="$(dirname "$REPO_DIR")"
+  if [[ $(basename "$repo_parent") == "src" ]]; then
+    WORKSPACE_ROOT="$(cd "$repo_parent/.." && pwd)"
+  else
+    WORKSPACE_ROOT="$HOME/workcell_ws"
+  fi
+fi
+
+WS="${WS:-$WORKSPACE_ROOT}"
+SRC_DIR="$WORKSPACE_ROOT/src"
+BACKUP_DIR="$WORKSPACE_ROOT/trajopt_DISABLED_BACKUP"
+ORIG_DIR="$BACKUP_DIR/original"
 
 if [ ! -d "$SRC_DIR" ]; then
   exit 0
