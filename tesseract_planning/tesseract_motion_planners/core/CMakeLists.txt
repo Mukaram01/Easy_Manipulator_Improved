@@ -59,21 +59,23 @@ write_basic_package_version_file(
   VERSION ${pkg_extracted_version}
   COMPATIBILITY SameMajorVersion)
 
-# Generate a self-contained targets export for the fallback package config so
-# that downstream consumers can reliably find the core component even if the
-# primary install step omits the generated export file.
-set(_${PROJECT_NAME}_core_export_file
-    ${_${PROJECT_NAME}_core_fallback_config_dir}/tesseract_motion_planners_coreTargets.cmake)
-file(MAKE_DIRECTORY ${_${PROJECT_NAME}_core_fallback_config_dir})
-export(
+# Install targets and export configuration
+install(
   TARGETS ${PROJECT_NAME}_core
-  NAMESPACE tesseract::
-  FILE ${_${PROJECT_NAME}_core_export_file})
+  EXPORT ${PROJECT_NAME}_coreTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  COMPONENT ${PROJECT_NAME}_core)
 install(
   FILES
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfig.cmake
     ${_${PROJECT_NAME}_core_fallback_config_dir}/${PROJECT_NAME}_coreConfigVersion.cmake
-    ${_${PROJECT_NAME}_core_export_file}
+  DESTINATION lib/cmake/${PROJECT_NAME}_core
+  COMPONENT ${PROJECT_NAME}_core)
+install(
+  EXPORT ${PROJECT_NAME}_coreTargets
+  NAMESPACE tesseract::
   DESTINATION lib/cmake/${PROJECT_NAME}_core
   COMPONENT ${PROJECT_NAME}_core)
 
