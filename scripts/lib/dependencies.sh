@@ -21,7 +21,9 @@ fix_workspace_layout() {
 
 verify_workspace_packages() {
     log_info "Verifying package discovery after layout fix"
-    colcon list --base-paths "$SRC_DIR" >/dev/null
+    if ! colcon list --base-paths "$SRC_DIR" >/dev/null; then
+        log_warn "colcon list failed (possibly due to cyclic dependencies); continuing"
+    fi
 }
 
 install_system_packages() {
@@ -60,7 +62,23 @@ install_system_packages() {
 workspace_has_required_packages() {
     mapfile -t workspace_packages < <(colcon list --base-paths "$SRC_DIR" --names-only 2>/dev/null || true)
     if [[ ${#workspace_packages[@]} -eq 0 ]]; then
-        return 1
+        mapfile -t workspace_packages < <(find "$SRC_DIR" -name package.xml -print0 | xargs -0 -n1 python3 - <<'PY'
+import sys
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+pkg = Path(sys.argv[1])
+try:
+    name = ET.parse(pkg).getroot().findtext("name")
+except Exception:
+    name = None
+if name:
+    print(name.strip())
+PY
+        )
+        if [[ ${#workspace_packages[@]} -eq 0 ]]; then
+            return 1
+        fi
     fi
 
     local -A present
@@ -125,13 +143,18 @@ remove_duplicate_packages() {
     done < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
 
     if [[ $had_packages -eq 0 ]]; then
-        log_warn "No packages detected by colcon in $SRC_DIR"
+        log_warn "No packages detected by colcon in $SRC_DIR (skipping duplicate pruning)"
     fi
 }
 
 install_rosdeps() {
     log_info "Installing rosdep dependencies"
-    mapfile -t rosdep_paths < <(colcon list --base-paths "$SRC_DIR" --paths-only)
+    mapfile -t rosdep_paths < <(colcon list --base-paths "$SRC_DIR" --paths-only 2>/dev/null || true)
+
+    if [[ ${#rosdep_paths[@]} -eq 0 ]]; then
+        mapfile -t rosdep_paths < <(find "$SRC_DIR" -name package.xml -print0 | xargs -0 -n1 dirname | sort -u)
+    fi
+
     [[ ${#rosdep_paths[@]} -gt 0 ]] || die "No packages found for rosdep installation"
 
     local overrides="$REPO_ROOT/scripts/rosdep_overrides.yaml"

@@ -84,6 +84,12 @@ fi
 link_from_backup() {
   local pkg="$1"
   local target=""
+
+  # Skip linking if the repository already provides this package.
+  if find "${REPO_DIR}" -path "*/${pkg}/package.xml" -print -quit >/dev/null 2>&1; then
+    return
+  fi
+
   for candidate in "${BACKUP_DIR}/${pkg}" "${ORIG_DIR}/${pkg}"; do
     if [ -d "${candidate}" ]; then
       target="${candidate}"
