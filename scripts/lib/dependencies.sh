@@ -76,10 +76,12 @@ workspace_has_required_packages() {
 
 remove_duplicate_packages() {
     log_info "Checking for duplicate packages in workspace"
-    local -A preferred
+    local -A preferred=()
+    local had_packages=0
 
     while read -r name path _; do
         [[ -z "$name" || -z "$path" ]] && continue
+        had_packages=1
 
         if [[ -z ${preferred[$name]:-} ]]; then
             preferred[$name]="$path"
@@ -112,7 +114,7 @@ remove_duplicate_packages() {
         preferred[$name]="$keep"
     done < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
 
-    if [[ ${#preferred[@]} -eq 0 ]]; then
+    if [[ $had_packages -eq 0 ]]; then
         log_warn "No packages detected by colcon in $SRC_DIR"
     fi
 }
