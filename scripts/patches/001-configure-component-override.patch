@@ -1,0 +1,24 @@
+diff --git a/tesseract/tesseract_common/cmake/tesseract_cmake_boilerplate.cmake b/tesseract/tesseract_common/cmake/tesseract_cmake_boilerplate.cmake
+index 83d19f9..1883066 100644
+--- a/tesseract/tesseract_common/cmake/tesseract_cmake_boilerplate.cmake
++++ b/tesseract/tesseract_common/cmake/tesseract_cmake_boilerplate.cmake
+@@ -161,8 +161,7 @@ function(install_targets)
+           ARCHIVE DESTINATION lib)
+ endfunction()
+ 
+-if(NOT COMMAND configure_component)
+-  function(configure_component)
++function(configure_component)
+     cmake_parse_arguments(
+       _CC
+       ""
+@@ -207,8 +206,7 @@ if(NOT COMMAND configure_component)
+       TARGETS ${_CC_TARGETS}
+       DEPENDENCIES ${_CC_DEPENDENCIES}
+       CFG_EXTRAS ${_CC_CFG_EXTRAS})
+-  endfunction()
+-endif()
++endfunction()
+ 
+ # ---------------------------------------------------------------------------
+ # ament_cmake shim
