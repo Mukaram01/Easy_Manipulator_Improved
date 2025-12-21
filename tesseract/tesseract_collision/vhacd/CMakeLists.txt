@@ -1,5 +1,20 @@
 include(${CMAKE_CURRENT_LIST_DIR}/../../tesseract_common/cmake/tesseract_macros.cmake)
 
+# Make trajopt CMake helpers discoverable whether we are building from source or
+# against an installed trajopt_common package. The installed package exports the
+# macros alongside trajopt_common_DIR; fall back to the in-tree copy otherwise.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../trajopt/trajopt_common/cmake")
+find_package(trajopt_common QUIET)
+if(trajopt_common_FOUND AND EXISTS "${trajopt_common_DIR}/trajopt_macros.cmake")
+  include("${trajopt_common_DIR}/trajopt_macros.cmake")
+elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/../../trajopt/trajopt_common/cmake/trajopt_macros.cmake")
+endif()
+
+if(COMMAND trajopt_variables)
+  trajopt_variables()
+endif()
+
 tesseract_resolve_tinyxml2(TESSERACT_TINYXML2_TARGET TESSERACT_TINYXML2_LINK_LIBRARIES)
 if(NOT TESSERACT_TINYXML2_TARGET AND NOT TESSERACT_TINYXML2_LINK_LIBRARIES)
   message(FATAL_ERROR "Failed to locate a TinyXML2 library for tesseract_collision vhacd components")
