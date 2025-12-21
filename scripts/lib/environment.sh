@@ -100,11 +100,19 @@ ensure_tools() {
     fi
 }
 
+configure_colcon_defaults() {
+    if [[ -z ${COLCON_DEFAULTS_FILE:-} ]]; then
+        COLCON_DEFAULTS_FILE="/dev/null"
+    fi
+    export COLCON_DEFAULTS_FILE
+}
+
 setup_environment() {
     detect_workspace
     setup_locale
     detect_ros_distro
     configure_apt
     ensure_tools
+    configure_colcon_defaults
     source_ros
 }
