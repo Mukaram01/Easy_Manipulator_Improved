@@ -1,3 +1,6 @@
+# External dependencies only. TrajOpt/Tesseract overlays (including trajopt_sco)
+# are already bundled in this repository, so keep them out of this import list
+# to avoid duplicate checkouts in a workspace.
 repositories:
   ros_industrial_cmake_boilerplate:
     type: git
