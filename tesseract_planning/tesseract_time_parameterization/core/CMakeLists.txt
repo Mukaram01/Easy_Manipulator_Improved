@@ -26,7 +26,7 @@ install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 
 # Configure Components
 configure_component(
-  COMPONENT core
+  COMPONENT ${PROJECT_NAME}_core
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_core
   DEPENDENCIES
