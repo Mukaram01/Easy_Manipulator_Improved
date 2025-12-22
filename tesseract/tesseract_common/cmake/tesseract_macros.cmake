@@ -275,9 +275,6 @@ function(_tesseract_configure_meta_package)
       list(APPEND _tcmp_supported_components "${_tcmp_component}")
     endif()
   endforeach()
-  if(NOT _tcmp_supported_components)
-    list(APPEND _tcmp_supported_components "${_TCMP_COMPONENT}")
-  endif()
   list(REMOVE_DUPLICATES _tcmp_supported_components)
 
   set(_tcmp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${_tcmp_package}_cmake")
@@ -297,43 +294,51 @@ function(_tesseract_configure_meta_package)
     file(APPEND "${_tcmp_config_file}" " \"${_tcmp_component}\"")
   endforeach()
   file(APPEND "${_tcmp_config_file}" ")\n")
-  file(APPEND "${_tcmp_config_file}" "if(NOT ${_tcmp_package}_FIND_COMPONENTS)\n")
-  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FIND_COMPONENTS \"${_TCMP_COMPONENT}\")\n")
-  file(APPEND "${_tcmp_config_file}" "endif()\n")
+  file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_requested_components \${${_tcmp_package}_FIND_COMPONENTS})\n")
   file(APPEND "${_tcmp_config_file}" "set(_${_tcmp_package}_missing_required_components)\n")
-  file(APPEND "${_tcmp_config_file}" "foreach(_component IN LISTS ${_tcmp_package}_FIND_COMPONENTS)\n")
+  file(APPEND "${_tcmp_config_file}" "if(NOT _${_tcmp_package}_requested_components)\n")
   file(APPEND
     "${_tcmp_config_file}"
-    "  list(FIND _${_tcmp_package}_supported_components \"\${_component}\" _component_index)\n")
-  file(APPEND "${_tcmp_config_file}" "  if(_component_index EQUAL -1)\n")
-  file(APPEND "${_tcmp_config_file}" "    set(${_tcmp_package}_\${_component}_FOUND FALSE)\n")
+    "  # No components were explicitly requested. Treat the metapackage as available without forcing a default\n")
   file(APPEND
     "${_tcmp_config_file}"
-    "    if(${_tcmp_package}_FIND_REQUIRED_\${_component})\n")
+    "  # component dependency (e.g. a *_core package) that may not be packaged separately.\n")
+  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FOUND TRUE)\n")
+  file(APPEND "${_tcmp_config_file}" "else()\n")
+  file(APPEND "${_tcmp_config_file}" "  foreach(_component IN LISTS _${_tcmp_package}_requested_components)\n")
   file(APPEND
     "${_tcmp_config_file}"
-    "      list(APPEND _${_tcmp_package}_missing_required_components \"\${_component}\")\n")
+    "    list(FIND _${_tcmp_package}_supported_components \"\${_component}\" _component_index)\n")
+  file(APPEND "${_tcmp_config_file}" "    if(_component_index EQUAL -1)\n")
+  file(APPEND "${_tcmp_config_file}" "      set(${_tcmp_package}_\${_component}_FOUND FALSE)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "      if(${_tcmp_package}_FIND_REQUIRED_\${_component})\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "        list(APPEND _${_tcmp_package}_missing_required_components \"\${_component}\")\n")
+  file(APPEND "${_tcmp_config_file}" "      endif()\n")
+  file(APPEND "${_tcmp_config_file}" "      continue()\n")
   file(APPEND "${_tcmp_config_file}" "    endif()\n")
-  file(APPEND "${_tcmp_config_file}" "    continue()\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "    find_dependency(${_tcmp_package}_\${_component})\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "    set(${_tcmp_package}_\${_component}_FOUND TRUE)\n")
+  file(APPEND "${_tcmp_config_file}" "  endforeach()\n")
+  file(APPEND "${_tcmp_config_file}" "  if(_${_tcmp_package}_missing_required_components)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "    list(JOIN _${_tcmp_package}_missing_required_components \", \" _${_tcmp_package}_missing_required_components_str)\n")
+  file(APPEND
+    "${_tcmp_config_file}"
+    "    set(${_tcmp_package}_NOT_FOUND_MESSAGE \"Required components not available: \${_${_tcmp_package}_missing_required_components_str}\")\n")
+  file(APPEND "${_tcmp_config_file}" "    set(${_tcmp_package}_FOUND FALSE)\n")
+  file(APPEND "${_tcmp_config_file}" "    return()\n")
   file(APPEND "${_tcmp_config_file}" "  endif()\n")
-  file(APPEND
-    "${_tcmp_config_file}"
-    "  find_dependency(${_tcmp_package}_\${_component})\n")
-  file(APPEND
-    "${_tcmp_config_file}"
-    "  set(${_tcmp_package}_\${_component}_FOUND TRUE)\n")
-  file(APPEND "${_tcmp_config_file}" "endforeach()\n")
-  file(APPEND "${_tcmp_config_file}" "if(_${_tcmp_package}_missing_required_components)\n")
-  file(APPEND
-    "${_tcmp_config_file}"
-    "  list(JOIN _${_tcmp_package}_missing_required_components \", \" _${_tcmp_package}_missing_required_components_str)\n")
-  file(APPEND
-    "${_tcmp_config_file}"
-    "  set(${_tcmp_package}_NOT_FOUND_MESSAGE \"Required components not available: \${_${_tcmp_package}_missing_required_components_str}\")\n")
-  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FOUND FALSE)\n")
-  file(APPEND "${_tcmp_config_file}" "  return()\n")
+  file(APPEND "${_tcmp_config_file}" "  set(${_tcmp_package}_FOUND TRUE)\n")
   file(APPEND "${_tcmp_config_file}" "endif()\n")
-  file(APPEND "${_tcmp_config_file}" "set(${_tcmp_package}_FOUND TRUE)\n")
 
   set(_tcmp_extra_files "")
   foreach(_tcmp_extra IN LISTS _TCMP_CFG_EXTRAS)

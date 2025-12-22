@@ -106,6 +106,9 @@ endforeach()
 configure_package(
   COMPONENT core
   SUPPORTED_COMPONENTS ${SUPPORTED_COMPONENTS}
+  # Avoid forcing a default component dependency when none is requested; the
+  # meta-package configuration now treats core as internal unless explicitly
+  # asked for, preventing a hard dependency on a non-existent *_core package.
   CFG_EXTRAS ${_${PROJECT_NAME}_component_paths})
 
 install(CODE "
