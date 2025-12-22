@@ -25,7 +25,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT isp
+  COMPONENT ${PROJECT_NAME}_isp
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_isp
   DEPENDENCIES "tesseract_time_parameterization COMPONENTS core")

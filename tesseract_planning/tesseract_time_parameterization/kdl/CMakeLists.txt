@@ -27,7 +27,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT kdl
+  COMPONENT ${PROJECT_NAME}_kdl
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_kdl
   DEPENDENCIES "tesseract_time_parameterization COMPONENTS core")

@@ -25,7 +25,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT totg
+  COMPONENT ${PROJECT_NAME}_totg
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_totg
   DEPENDENCIES "tesseract_time_parameterization COMPONENTS core")

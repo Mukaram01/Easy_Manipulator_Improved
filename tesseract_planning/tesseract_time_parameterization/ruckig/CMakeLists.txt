@@ -26,7 +26,7 @@ endif()
 
 # Configure Components
 configure_component(
-  COMPONENT ruckig
+  COMPONENT ${PROJECT_NAME}_ruckig
   NAMESPACE tesseract
   TARGETS ${PROJECT_NAME}_ruckig
   DEPENDENCIES "tesseract_time_parameterization COMPONENTS core" ruckig)
