@@ -91,6 +91,9 @@ target_include_directories(
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
          "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
          "$<INSTALL_INTERFACE:include>")
+if(BUILD_SHARED_LIBS)
+  set_target_properties(${PROJECT_NAME}_bullet PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # Create target for Bullet implementation
 add_library(${PROJECT_NAME}_bullet_factories src/bullet_factories.cpp)
@@ -106,6 +109,9 @@ target_include_directories(
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
          "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../core/include>"
          "$<INSTALL_INTERFACE:include>")
+if(BUILD_SHARED_LIBS)
+  set_target_properties(${PROJECT_NAME}_bullet_factories PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # Convex decomposition libraries
 if(HACD_LIBRARY)
