@@ -395,6 +395,16 @@ function(configure_package)
 
   include(CMakePackageConfigHelpers)
 
+  set(_tcp_exported_targets "")
+  foreach(_tcp_exported_target IN LISTS _TCP_TARGETS)
+    if(_TCP_NAMESPACE)
+      list(APPEND _tcp_exported_targets "${_TCP_NAMESPACE}::${_tcp_exported_target}")
+    else()
+      list(APPEND _tcp_exported_targets "${_tcp_exported_target}")
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES _tcp_exported_targets)
+
   foreach(target ${_TCP_TARGETS})
     if(TARGET ${target})
       get_target_property(_tcp_target_type ${target} TYPE)
@@ -498,6 +508,37 @@ function(configure_package)
           "${_tcp_config_file}"
           "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_tcp_extra_filename}\")\n")
       endforeach()
+
+      file(APPEND "${_tcp_config_file}" "set(_${target}_exported_targets")
+      foreach(_tcp_exported_target IN LISTS _tcp_exported_targets)
+        file(APPEND "${_tcp_config_file}" " \"${_tcp_exported_target}\"")
+      endforeach()
+      file(APPEND "${_tcp_config_file}" ")\n")
+      file(APPEND "${_tcp_config_file}"
+        "foreach(_tesseract_exported_target IN LISTS _${target}_exported_targets)\n")
+      file(APPEND "${_tcp_config_file}" "  if(NOT TARGET \"\${_tesseract_exported_target}\")\n")
+      file(APPEND "${_tcp_config_file}" "    continue()\n")
+      file(APPEND "${_tcp_config_file}" "  endif()\n")
+      file(APPEND "${_tcp_config_file}" "  foreach(_tesseract_config RELEASE DEBUG RELWITHDEBINFO MINSIZEREL)\n")
+      file(APPEND "${_tcp_config_file}" "    if(NOT _tesseract_config)\n")
+      file(APPEND "${_tcp_config_file}" "      continue()\n")
+      file(APPEND "${_tcp_config_file}" "    endif()\n")
+      file(APPEND "${_tcp_config_file}" "    string(TOUPPER \"\${_tesseract_config}\" _tesseract_config_upper)\n")
+      file(APPEND "${_tcp_config_file}"
+        "    get_target_property(_tesseract_location_\${_tesseract_config_upper} "
+        "\${_tesseract_exported_target} IMPORTED_LOCATION_\${_tesseract_config_upper})\n")
+      file(APPEND "${_tcp_config_file}"
+        "    if(_tesseract_location_\${_tesseract_config_upper})\n")
+      file(APPEND "${_tcp_config_file}" "      continue()\n")
+      file(APPEND "${_tcp_config_file}" "    endif()\n")
+      file(APPEND "${_tcp_config_file}"
+        "    get_target_property(_tesseract_location_noconfig \${_tesseract_exported_target} IMPORTED_LOCATION_NOCONFIG)\n")
+      file(APPEND "${_tcp_config_file}" "    if(_tesseract_location_noconfig)\n")
+      file(APPEND "${_tcp_config_file}"
+        "      set_property(TARGET \${_tesseract_exported_target} APPEND PROPERTY MAP_IMPORTED_CONFIG_\${_tesseract_config_upper} NOCONFIG)\n")
+      file(APPEND "${_tcp_config_file}" "    endif()\n")
+      file(APPEND "${_tcp_config_file}" "  endforeach()\n")
+      file(APPEND "${_tcp_config_file}" "endforeach()\n")
 
       set(_tcp_target_version "")
       get_target_property(_tcp_target_version ${target} VERSION)
