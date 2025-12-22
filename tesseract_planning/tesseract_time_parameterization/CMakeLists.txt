@@ -109,24 +109,24 @@ configure_package(
   CFG_EXTRAS ${_${PROJECT_NAME}_component_paths})
 
 install(CODE "
-  set(_components \"${SUPPORTED_COMPONENTS}\")
+  set(_components ${SUPPORTED_COMPONENTS})
+  set(_pkg \"${PROJECT_NAME}\")
   foreach(_component IN LISTS _components)
-    set(_name \"${PROJECT_NAME}_\${_component}\")
-    set(_src \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/${PROJECT_NAME}\")
-    set(_dst \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_name}\")
+    set(_src_dir \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_pkg}\")
+    set(_dst_dir \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_pkg}_\${_component}\")
     file(GLOB _config_files
-      \"\${_src}/\${_name}Config.cmake\"
-      \"\${_src}/\${_name}-config.cmake\"
-      \"\${_src}/\${_name}ConfigVersion.cmake\"
-      \"\${_src}/\${_name}-config-version.cmake\"
-      \"\${_src}/\${_name}Targets*.cmake\"
-      \"\${_src}/\${_name}-targets*.cmake\")
+      \"\${_src_dir}/\${_component}-config.cmake\"
+      \"\${_src_dir}/\${_component}-targets*.cmake\"
+      \"\${_src_dir}/\${_component}-extras.cmake\"
+      \"\${_src_dir}/\${_component}Config.cmake\"
+      \"\${_src_dir}/\${_component}Targets*.cmake\")
     if(_config_files)
-      file(MAKE_DIRECTORY \"\${_dst}\")
-      foreach(_file IN LISTS _config_files)
-        if(EXISTS \"\${_file}\")
-          file(COPY \"\${_file}\" DESTINATION \"\${_dst}\")
-        endif()
+      file(MAKE_DIRECTORY \"\${_dst_dir}\")
+      foreach(_src_file IN LISTS _config_files)
+        get_filename_component(_fname \"\${_src_file}\" NAME)
+        string(REPLACE \"\${_component}\" \"\${_pkg}_\${_component}\" _dst_fname \"\${_fname}\")
+        file(COPY \"\${_src_file}\" DESTINATION \"\${_dst_dir}\")
+        file(RENAME \"\${_dst_dir}/\${_fname}\" \"\${_dst_dir}/\${_dst_fname}\")
       endforeach()
     endif()
   endforeach()
