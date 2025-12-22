@@ -72,9 +72,33 @@ copy_motion_planner_configs() {
     done
 }
 
+ensure_install_layout() {
+    local install_dir="$WORKSPACE_ROOT/install"
+    local layout_file="${install_dir}/.colcon_install_layout"
+
+    if [[ ! -d "$install_dir" ]]; then
+        return 0
+    fi
+
+    if [[ -f "$layout_file" ]]; then
+        local layout
+        layout="$(<"$layout_file")"
+        if [[ "$layout" != "merged" ]]; then
+            log_warn "Existing install directory uses layout '${layout}'; removing to enforce merged install"
+            rm -rf "$install_dir"
+            rm -f "$STATE_DIR/foundation_built"
+        fi
+    else
+        log_warn "Existing install directory missing layout marker; removing to enforce merged install"
+        rm -rf "$install_dir"
+        rm -f "$STATE_DIR/foundation_built"
+    fi
+}
+
 build_workspace() {
     compose_cmake_args
     ensure_dir "$STATE_DIR"
+    ensure_install_layout
 
     local foundation_marker="$STATE_DIR/foundation_built"
     local trajopt_setup="$WORKSPACE_ROOT/install/share/trajopt_sco/local_setup.bash"
