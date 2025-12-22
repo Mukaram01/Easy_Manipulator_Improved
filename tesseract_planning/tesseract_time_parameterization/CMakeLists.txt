@@ -132,6 +132,28 @@ install(CODE "
   endforeach()
 ")
 
+set(_${PROJECT_NAME}_wrapper_dir "${CMAKE_CURRENT_BINARY_DIR}/cmake/config_wrappers")
+file(MAKE_DIRECTORY ${_${PROJECT_NAME}_wrapper_dir})
+foreach(_component IN LISTS SUPPORTED_COMPONENTS)
+  set(_component_prefix "${PROJECT_NAME}_${_component}")
+  set(_component_install_dir "lib/cmake/${_component_prefix}")
+  set(COMPONENT_PREFIX "${_component_prefix}")
+  configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/component-targets-wrapper.cmake.in"
+    "${_${PROJECT_NAME}_wrapper_dir}/${_component}-targets.cmake"
+    @ONLY)
+  install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component}-targets.cmake"
+          DESTINATION "${_component_install_dir}")
+  if(_component STREQUAL "core")
+    configure_file(
+      "${CMAKE_CURRENT_LIST_DIR}/cmake/component-extras-wrapper.cmake.in"
+      "${_${PROJECT_NAME}_wrapper_dir}/${_component}-extras.cmake"
+      @ONLY)
+    install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component}-extras.cmake"
+            DESTINATION "${_component_install_dir}")
+  endif()
+endforeach()
+
 if(TESSERACT_PACKAGE)
   cpack_component_package(
     VERSION ${pkg_extracted_version}
