@@ -16,11 +16,51 @@ find_package(yaml-cpp REQUIRED)
 find_package(cereal QUIET)
 find_package(Boost REQUIRED COMPONENTS filesystem system)
 
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/EnsureTinyXML2Target.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EnsureBoostStacktraceTarget.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/EnsureCerealTarget.cmake)
 
-tesseract_task_composer_ensure_tinyxml2_target()
+# TinyXML2 discovery: try vendor, then CONFIG packages, then manual fallback.
+if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET TinyXML2::TinyXML2)
+  find_package(tinyxml2_vendor QUIET)
+endif()
+
+if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET TinyXML2::TinyXML2)
+  find_package(tinyxml2 CONFIG QUIET)
+endif()
+
+if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET TinyXML2::TinyXML2)
+  find_package(TinyXML2 CONFIG QUIET)
+endif()
+
+if(TARGET TinyXML2::TinyXML2 AND NOT TARGET tinyxml2::tinyxml2)
+  add_library(tinyxml2::tinyxml2 ALIAS TinyXML2::TinyXML2)
+endif()
+
+if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET TinyXML2::TinyXML2)
+  find_path(TINYXML2_INCLUDE_DIR tinyxml2.h)
+  find_library(TINYXML2_LIBRARY tinyxml2)
+
+  if(TINYXML2_INCLUDE_DIR AND TINYXML2_LIBRARY)
+    add_library(tinyxml2::tinyxml2 UNKNOWN IMPORTED)
+    set_target_properties(
+      tinyxml2::tinyxml2
+      PROPERTIES
+        IMPORTED_LOCATION "${TINYXML2_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${TINYXML2_INCLUDE_DIR}")
+  endif()
+endif()
+
+if(TARGET tinyxml2::tinyxml2 AND NOT TARGET TinyXML2::TinyXML2)
+  add_library(TinyXML2::TinyXML2 ALIAS tinyxml2::tinyxml2)
+endif()
+
+if(NOT TARGET tinyxml2::tinyxml2)
+  message(
+    FATAL_ERROR
+      "tinyxml2 target not available. TINYXML2_INCLUDE_DIR='${TINYXML2_INCLUDE_DIR}'; TINYXML2_LIBRARY='${TINYXML2_LIBRARY}'"
+  )
+endif()
+
 tesseract_task_composer_ensure_boost_stacktrace_target()
 tesseract_task_composer_ensure_cereal_target()
 
