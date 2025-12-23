@@ -37,6 +37,16 @@ apply_patches() {
     for patch in "${patches[@]}"; do
         local name
         name="$(basename "$patch")"
+
+        local old_path new_path
+        old_path="$(sed -n 's/^--- a\\///p' "$patch" | head -n1)"
+        new_path="$(sed -n 's/^+++ b\\///p' "$patch" | head -n1)"
+
+        if [[ -n "$old_path" && "$old_path" != "/dev/null" && ! -e "$old_path" ]]; then
+            log_warn "Skipping patch $name: target file '$old_path' not present in repo root"
+            continue
+        fi
+
         if is_patch_applied "$patch"; then
             log_info "Patch $name already applied"
             record_patch "$name"
