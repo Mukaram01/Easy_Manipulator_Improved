@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+# Delegate to the canonical component configuration to resolve dependencies and
+# exported targets.
+include("${CMAKE_CURRENT_LIST_DIR}/@COMPONENT_PREFIX@Config.cmake")
+
+# Maintain compatibility with the shorter wrapper files installed alongside the
+# prefixed component exports.
+include("${CMAKE_CURRENT_LIST_DIR}/@COMPONENT_NAME@-targets.cmake")
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/@COMPONENT_NAME@-extras.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/@COMPONENT_NAME@-extras.cmake")
+endif()
