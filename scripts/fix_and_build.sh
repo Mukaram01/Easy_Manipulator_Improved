@@ -18,23 +18,32 @@ source "$SCRIPT_DIR/lib/patches.sh"
 source "$SCRIPT_DIR/lib/build.sh"
 
 detect_workspace() {
-    local repo_parent search_dir
-    search_dir="$(pwd)"
-    while [[ "$search_dir" != "/" ]]; do
-        if [[ -d "$search_dir/src" || -d "$search_dir/build" ]]; then
-            WORKSPACE_ROOT="$(cd "$search_dir" && pwd)"
-            break
-        fi
-        search_dir="$(dirname "$search_dir")"
-    done
+    local repo_parent search_dir candidate
 
     repo_parent="$(dirname "$REPO_ROOT")"
 
     if [[ -n ${WS:-} ]]; then
         WORKSPACE_ROOT="$(cd "$WS" && pwd)"
-    elif [[ -z ${WORKSPACE_ROOT:-} && $(basename "$repo_parent") == "src" ]]; then
+    elif [[ $(basename "$repo_parent") == "src" ]]; then
         WORKSPACE_ROOT="$(cd "$repo_parent/.." && pwd)"
-    elif [[ -z ${WORKSPACE_ROOT:-} ]]; then
+    fi
+
+    if [[ -z ${WORKSPACE_ROOT:-} ]]; then
+        search_dir="$(pwd)"
+        while [[ "$search_dir" != "/" ]]; do
+            if [[ -d "$search_dir/src" || -d "$search_dir/build" ]]; then
+                candidate="$(cd "$search_dir" && pwd)"
+                if [[ "$REPO_ROOT" == "$candidate/src/"* ]]; then
+                    WORKSPACE_ROOT="$candidate"
+                    break
+                fi
+                WORKSPACE_ROOT="${WORKSPACE_ROOT:-$candidate}"
+            fi
+            search_dir="$(dirname "$search_dir")"
+        done
+    fi
+
+    if [[ -z ${WORKSPACE_ROOT:-} ]]; then
         WORKSPACE_ROOT="$HOME/workcell_ws"
     fi
 
