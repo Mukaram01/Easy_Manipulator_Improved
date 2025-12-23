@@ -74,6 +74,16 @@ copy_motion_planner_configs() {
     done
 }
 
+repair_motion_planner_configs() {
+    local install_dir="$WORKSPACE_ROOT/install"
+    if [[ ! -d "$install_dir" ]]; then
+        return 0
+    fi
+
+    log_info "Repairing motion planner component configs in ${install_dir}"
+    ensure_motion_planners_component_configs "$WORKSPACE_ROOT" || true
+}
+
 ensure_install_layout() {
     local install_dir="$WORKSPACE_ROOT/install"
     local layout_file="${install_dir}/.colcon_install_layout"
@@ -101,6 +111,7 @@ build_workspace() {
     compose_cmake_args
     ensure_dir "$STATE_DIR"
     ensure_install_layout
+    repair_motion_planner_configs
 
     local foundation_marker="$STATE_DIR/foundation_built"
     local trajopt_setup="$WORKSPACE_ROOT/install/share/trajopt_sco/local_setup.bash"
@@ -124,6 +135,7 @@ build_workspace() {
     fi
 
     source_install
+    repair_motion_planner_configs
 
     local full_args=("${args[@]}")
     if [[ ${#PACKAGES[@]} -gt 0 ]]; then
