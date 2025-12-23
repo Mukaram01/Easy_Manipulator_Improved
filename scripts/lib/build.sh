@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build orchestration helpers
 
+source "$SCRIPT_DIR/lib/motion_planner_configs.sh"
+
 BASE_CMAKE_ARGS=(
     -DCMAKE_CXX_STANDARD=17
     -DCMAKE_CXX_STANDARD_REQUIRED=ON
@@ -132,6 +134,7 @@ build_workspace() {
     colcon build --base-paths "$SRC_DIR" "${full_args[@]}" --cmake-args "${CMAKE_ARGS[@]}"
 
     copy_motion_planner_configs
+    ensure_motion_planners_component_configs "$WORKSPACE_ROOT"
 
     popd >/dev/null
 }
