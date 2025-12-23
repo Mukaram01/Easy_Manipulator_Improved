@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Easy Manipulation Deployment <devnull@example.com>
+Date: Mon, 1 Jan 0001 00:00:00 +0000
+Subject: [PATCH] Fix CFG_EXTRAS handling for absolute paths
+
+diff --git a/cmake/cmake_tools.cmake b/cmake/cmake_tools.cmake
+index d567c42..b2db677 100644
+--- a/cmake/cmake_tools.cmake
++++ b/cmake/cmake_tools.cmake
+@@ -284,6 +284,10 @@ function(generate_package_config)
+       DEPENDENCIES ${ARG_DEPENDENCIES}
+       CFG_EXTRAS ${ARG_CFG_EXTRAS})
+ 
++    set(_ricb_cfg_extra_install_files "")
++    set(_ricb_config_output "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config.cmake")
++    get_filename_component(_ricb_config_dir "${_ricb_config_output}" DIRECTORY)
++    file(MAKE_DIRECTORY "${_ricb_config_dir}")
+     foreach(extra_config IN LISTS ARG_CFG_EXTRAS)
+       if(NOT extra_config)
+         continue()
+@@ -301,12 +302,7 @@ function(generate_package_config)
+       get_filename_component(_ricb_extra_filename "${_ricb_extra_src}" NAME)
+       set(_ricb_extra_destination "${_ricb_config_dir}/${_ricb_extra_filename}")
+       configure_file("${_ricb_extra_src}" "${_ricb_extra_destination}" COPYONLY)
+-
+-      if(EXISTS "${_ricb_extra_destination}")
+-        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
+-      else()
+-        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_src}")
+-      endif()
++      list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
+     endforeach()
+ 
+   else ()
+-- 
+2.39.2
