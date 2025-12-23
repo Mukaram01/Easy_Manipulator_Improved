@@ -259,6 +259,7 @@ function(generate_package_config)
   set(_ricb_cfg_extra_install_files "")
   set(_ricb_config_output "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config.cmake")
   get_filename_component(_ricb_config_dir "${_ricb_config_output}" DIRECTORY)
+  file(MAKE_DIRECTORY "${_ricb_config_dir}")
 
   if (ARG_EXPORT)
     if (ARG_NAMESPACE)
@@ -284,21 +285,28 @@ function(generate_package_config)
       CFG_EXTRAS ${ARG_CFG_EXTRAS})
 
     foreach(extra_config IN LISTS ARG_CFG_EXTRAS)
-      if (NOT extra_config)
+      if(NOT extra_config)
         continue()
       endif()
-      if (IS_ABSOLUTE "${extra_config}")
-        set(_ricb_extra_source "${extra_config}")
-      else()
-        set(_ricb_extra_source "${CMAKE_CURRENT_SOURCE_DIR}/${extra_config}")
+
+      set(_ricb_extra_src "${extra_config}")
+      if(NOT IS_ABSOLUTE "${_ricb_extra_src}")
+        set(_ricb_extra_src "${CMAKE_CURRENT_SOURCE_DIR}/${_ricb_extra_src}")
       endif()
-      if (NOT EXISTS "${_ricb_extra_source}")
-        message(FATAL_ERROR "Package configuration: CFG_EXTRAS file '${_ricb_extra_source}' does not exist")
+
+      if(NOT EXISTS "${_ricb_extra_src}")
+        message(FATAL_ERROR "Package configuration: CFG_EXTRAS file '${_ricb_extra_src}' does not exist")
       endif()
-      get_filename_component(_ricb_extra_filename "${_ricb_extra_source}" NAME)
+
+      get_filename_component(_ricb_extra_filename "${_ricb_extra_src}" NAME)
       set(_ricb_extra_destination "${_ricb_config_dir}/${_ricb_extra_filename}")
-      configure_file("${_ricb_extra_source}" "${_ricb_extra_destination}" COPYONLY)
-      list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
+      configure_file("${_ricb_extra_src}" "${_ricb_extra_destination}" COPYONLY)
+
+      if(EXISTS "${_ricb_extra_destination}")
+        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
+      else()
+        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_src}")
+      endif()
     endforeach()
 
   else ()
@@ -340,7 +348,7 @@ function(generate_package_config)
 
   if (_ricb_cfg_extra_install_files)
     install(FILES ${_ricb_cfg_extra_install_files}
-      DESTINATION lib/cmake/${PROJECT_NAME}/
+      DESTINATION lib/cmake/${PROJECT_NAME}
       COMPONENT ${ARG_COMPONENT})
   endif()
 
