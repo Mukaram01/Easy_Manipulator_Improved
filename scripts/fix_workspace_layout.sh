@@ -107,6 +107,10 @@ link_from_backup() {
 # Ensure symlink for trajopt_sco pointing to nested package
 if [ ! -e "${SRC_DIR}/trajopt_sco" ]; then
   ln -s "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" "${SRC_DIR}/trajopt_sco"
+elif [ ! -L "${SRC_DIR}/trajopt_sco" ] || [ "$(readlink -f "${SRC_DIR}/trajopt_sco")" != "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" ]; then
+  echo "Updating existing trajopt_sco entry at ${SRC_DIR}/trajopt_sco"
+  rm -rf "${SRC_DIR}/trajopt_sco"
+  ln -s "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" "${SRC_DIR}/trajopt_sco"
 fi
 
 # Ensure trajopt_common declares all dependencies it links against. Some
