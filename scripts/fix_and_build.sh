@@ -3,8 +3,8 @@
 # Supports: ROS 2 Humble on Ubuntu 22.04
 # Usage examples (sanitation always runs first):
 #   ./scripts/fix_and_build.sh
-#   SANITIZE_LEVEL=build-only ./scripts/fix_and_build.sh --clean
-#   SANITIZE_LEVEL=pkg SANITIZE_PKG=my_package ./scripts/fix_and_build.sh --packages my_package
+#   ./scripts/fix_and_build.sh --clean
+#   ./scripts/fix_and_build.sh --packages my_package
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,14 +18,23 @@ source "$SCRIPT_DIR/lib/patches.sh"
 source "$SCRIPT_DIR/lib/build.sh"
 
 detect_workspace() {
-    local repo_parent
+    local repo_parent search_dir
+    search_dir="$(pwd)"
+    while [[ "$search_dir" != "/" ]]; do
+        if [[ -d "$search_dir/src" || -d "$search_dir/build" ]]; then
+            WORKSPACE_ROOT="$(cd "$search_dir" && pwd)"
+            break
+        fi
+        search_dir="$(dirname "$search_dir")"
+    done
+
     repo_parent="$(dirname "$REPO_ROOT")"
 
     if [[ -n ${WS:-} ]]; then
         WORKSPACE_ROOT="$(cd "$WS" && pwd)"
-    elif [[ $(basename "$repo_parent") == "src" ]]; then
+    elif [[ -z ${WORKSPACE_ROOT:-} && $(basename "$repo_parent") == "src" ]]; then
         WORKSPACE_ROOT="$(cd "$repo_parent/.." && pwd)"
-    else
+    elif [[ -z ${WORKSPACE_ROOT:-} ]]; then
         WORKSPACE_ROOT="$HOME/workcell_ws"
     fi
 
@@ -58,35 +67,40 @@ validate_workspace_root() {
 }
 
 sanitize_workspace() {
-    local level="${1:-${SANITIZE_LEVEL:-full}}"
-    local pkg="${2:-${SANITIZE_PKG:-}}"
-
-    [[ -n "$level" ]] || level="full"
-
-    local targets=()
-    case "$level" in
-        full)
-            targets=("$WORKSPACE_ROOT/build" "$WORKSPACE_ROOT/install" "$WORKSPACE_ROOT/log")
-            ;;
-        build-only)
-            targets=("$WORKSPACE_ROOT/build" "$WORKSPACE_ROOT/log")
-            ;;
-        pkg)
-            [[ -n "$pkg" ]] || die "SANITIZE_PKG must be set when SANITIZE_LEVEL=pkg"
-            targets=("$WORKSPACE_ROOT/build/$pkg" "$WORKSPACE_ROOT/log")
-            log_warn "Package-level sanitation cannot remove merged install artifacts; consider SANITIZE_LEVEL=full if issues persist"
-            ;;
-        *)
-            die "Unknown sanitize level: $level"
-            ;;
-    esac
-
-    log_info "=== Sanitizing workspace: $WORKSPACE_ROOT (level=$level) ==="
-    for path in "${targets[@]}"; do
-        [[ -e "$path" ]] || continue
-        rm -rf "$path"
-    done
+    log_info "=== Sanitizing workspace: $WORKSPACE_ROOT (level=full) ==="
+    rm -rf "$WORKSPACE_ROOT/build" "$WORKSPACE_ROOT/install" "$WORKSPACE_ROOT/log"
     log_info "=== Sanitize complete ==="
+}
+
+apply_ros_industrial_patches() {
+    local target_repo="$WORKSPACE_ROOT/src/ros_industrial_cmake_boilerplate"
+    local patch
+
+    if [[ ! -d "$target_repo" ]]; then
+        log_warn "ros_industrial_cmake_boilerplate repo not found at $target_repo; skipping patch application"
+        return
+    fi
+
+    log_info "Applying ros_industrial_cmake_boilerplate patches from $SCRIPT_DIR/patches"
+
+    shopt -s nullglob
+    for patch in "$SCRIPT_DIR/patches/"*.patch; do
+        [[ -f "$patch" ]] || continue
+
+        if git -C "$target_repo" apply --reverse --check "$patch" >/dev/null 2>&1; then
+            log_info "Patch $(basename "$patch") already applied to ros_industrial_cmake_boilerplate"
+            continue
+        fi
+
+        git -C "$target_repo" apply --whitespace=nowarn "$patch" || true
+    done
+    shopt -u nullglob
+
+    local cfg_path="$target_repo/cmake/cmake_tools.cmake"
+    if grep -n 'install(FILES \${CMAKE_CURRENT_SOURCE_DIR}/\${extra_config}' "$cfg_path"; then
+        echo "ERROR: CFG_EXTRAS bug still present" >&2
+        exit 1
+    fi
 }
 
 usage() {
@@ -118,7 +132,8 @@ main() {
 
     detect_workspace
     validate_workspace_root
-    sanitize_workspace "${SANITIZE_LEVEL:-}" "${SANITIZE_PKG:-}"
+    cd "$WORKSPACE_ROOT"
+    sanitize_workspace
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -180,6 +195,7 @@ main() {
     ensure_dir "$STATE_DIR"
 
     install_dependencies
+    apply_ros_industrial_patches
     apply_patches
     build_workspace
 
