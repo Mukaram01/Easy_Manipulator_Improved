@@ -93,7 +93,7 @@ apply_ros_industrial_patches() {
     log_info "Applying ros_industrial_cmake_boilerplate patches from $SCRIPT_DIR/patches"
 
     shopt -s nullglob
-    for patch in "$SCRIPT_DIR/patches/"*.patch; do
+    for patch in "$SCRIPT_DIR/patches/"*-ricb-*.patch; do
         [[ -f "$patch" ]] || continue
 
         if git -C "$target_repo" apply --reverse --check "$patch" >/dev/null 2>&1; then
