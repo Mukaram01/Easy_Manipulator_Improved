@@ -457,8 +457,10 @@ function(configure_package)
 
       if(_TCP_COMPONENT)
         set(_tcp_export_dest "lib/cmake/${_TCP_COMPONENT}")
+        set(_tcp_package_name "${_TCP_COMPONENT}")
       else()
         set(_tcp_export_dest "lib/cmake/${target}")
+        set(_tcp_package_name "${target}")
       endif()
 
       install(
@@ -477,10 +479,10 @@ function(configure_package)
         NAMESPACE ${_TCP_NAMESPACE}::
         FILE ${_tcp_export_file})
 
-      set(_tcp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_cmake")
+      set(_tcp_config_dir "${CMAKE_CURRENT_BINARY_DIR}/${_tcp_package_name}_cmake")
       file(MAKE_DIRECTORY "${_tcp_config_dir}")
 
-      set(_tcp_config_file "${_tcp_config_dir}/${target}Config.cmake")
+      set(_tcp_config_file "${_tcp_config_dir}/${_tcp_package_name}Config.cmake")
       file(WRITE "${_tcp_config_file}" "include(CMakeFindDependencyMacro)\n")
       _tesseract_normalize_dependency_entries(_tcp_dependencies ${_TCP_DEPENDENCIES})
       foreach(_tcp_dependency IN LISTS _tcp_dependencies)
@@ -514,13 +516,13 @@ function(configure_package)
           "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_tcp_extra_filename}\")\n")
       endforeach()
 
-      file(APPEND "${_tcp_config_file}" "set(_${target}_exported_targets")
+      file(APPEND "${_tcp_config_file}" "set(_${_tcp_package_name}_exported_targets")
       foreach(_tcp_exported_target IN LISTS _tcp_exported_targets)
         file(APPEND "${_tcp_config_file}" " \"${_tcp_exported_target}\"")
       endforeach()
       file(APPEND "${_tcp_config_file}" ")\n")
       file(APPEND "${_tcp_config_file}"
-        "foreach(_tesseract_exported_target IN LISTS _${target}_exported_targets)\n")
+        "foreach(_tesseract_exported_target IN LISTS _${_tcp_package_name}_exported_targets)\n")
       file(APPEND "${_tcp_config_file}" "  if(NOT TARGET \"\${_tesseract_exported_target}\")\n")
       file(APPEND "${_tcp_config_file}" "    continue()\n")
       file(APPEND "${_tcp_config_file}" "  endif()\n")
@@ -554,7 +556,7 @@ function(configure_package)
         set(_tcp_target_version "0.0.0")
       endif()
 
-      set(_tcp_config_version_file "${_tcp_config_dir}/${target}ConfigVersion.cmake")
+      set(_tcp_config_version_file "${_tcp_config_dir}/${_tcp_package_name}ConfigVersion.cmake")
       write_basic_package_version_file(
         "${_tcp_config_version_file}"
         VERSION "${_tcp_target_version}"

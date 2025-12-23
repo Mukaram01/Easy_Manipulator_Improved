@@ -120,16 +120,16 @@ install(CODE "
       continue()
     endif()
 
-    file(GLOB _wrapper_files
-      \"\${_component_dir}/\${_component}-config.cmake\"
-      \"\${_component_dir}/\${_component}-targets*.cmake\"
-      \"\${_component_dir}/\${_component}-extras.cmake\")
-    foreach(_wrapper_file IN LISTS _wrapper_files)
+    file(GLOB _prefixed_wrapper_files
+      \"\${_component_dir}/\${_component_prefix}-config.cmake\"
+      \"\${_component_dir}/\${_component_prefix}-targets*.cmake\"
+      \"\${_component_dir}/\${_component_prefix}-extras.cmake\")
+    foreach(_wrapper_file IN LISTS _prefixed_wrapper_files)
       get_filename_component(_wrapper_name \"\${_wrapper_file}\" NAME)
-      string(REPLACE \"\${_component}\" \"\${_component_prefix}\" _prefixed_name \"\${_wrapper_name}\")
-      set(_prefixed_path \"\${_component_dir}/\${_prefixed_name}\")
-      if(NOT EXISTS \"\${_prefixed_path}\")
-        configure_file(\"\${_wrapper_file}\" \"\${_prefixed_path}\" COPYONLY)
+      string(REPLACE \"\${_component_prefix}\" \"\${_component}\" _compat_name \"\${_wrapper_name}\")
+      set(_compat_path \"\${_component_dir}/\${_compat_name}\")
+      if(NOT EXISTS \"\${_compat_path}\")
+        configure_file(\"\${_wrapper_file}\" \"\${_compat_path}\" COPYONLY)
       endif()
     endforeach()
 
@@ -148,19 +148,19 @@ foreach(_component IN LISTS SUPPORTED_COMPONENTS)
   set(_component_prefix "${PROJECT_NAME}_${_component}")
   set(_component_install_dir "lib/cmake/${_component_prefix}")
   set(COMPONENT_PREFIX "${_component_prefix}")
-  set(COMPONENT_NAME "${_component}")
+  set(COMPONENT_NAME "${_component_prefix}")
   configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/component-targets-wrapper.cmake.in"
-    "${_${PROJECT_NAME}_wrapper_dir}/${_component}-targets.cmake"
+    "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-targets.cmake"
     @ONLY)
-  install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component}-targets.cmake"
+  install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-targets.cmake"
           DESTINATION "${_component_install_dir}")
   if(_component STREQUAL "core")
     configure_file(
       "${CMAKE_CURRENT_LIST_DIR}/cmake/component-extras-wrapper.cmake.in"
-      "${_${PROJECT_NAME}_wrapper_dir}/${_component}-extras.cmake"
+      "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-extras.cmake"
       @ONLY)
-    install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component}-extras.cmake"
+    install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-extras.cmake"
             DESTINATION "${_component_install_dir}")
     set(_core_config_wrapper "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-config.cmake")
     configure_package_config_file("${CMAKE_CURRENT_LIST_DIR}/cmake/component-config-wrapper.cmake.in"
