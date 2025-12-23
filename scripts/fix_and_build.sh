@@ -83,10 +83,22 @@ sanitize_workspace() {
 
 apply_ros_industrial_patches() {
     local target_repo="$WORKSPACE_ROOT/src/ros_industrial_cmake_boilerplate"
+    local patch_failed=0
     local patch
 
     if [[ ! -d "$target_repo" ]]; then
         log_warn "ros_industrial_cmake_boilerplate repo not found at $target_repo; skipping patch application"
+        return
+    fi
+
+    local cfg_path="$target_repo/cmake/cmake_tools.cmake"
+    if [[ ! -f "$cfg_path" ]]; then
+        log_warn "ros_industrial_cmake_boilerplate config helper missing at $cfg_path; skipping targeted patches"
+        return
+    fi
+
+    if ! grep -q 'install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${extra_config}' "$cfg_path" >/dev/null 2>&1; then
+        log_info "ros_industrial_cmake_boilerplate already contains CFG_EXTRAS fix; skipping targeted patches"
         return
     fi
 
@@ -101,14 +113,30 @@ apply_ros_industrial_patches() {
             continue
         fi
 
-        git -C "$target_repo" apply --whitespace=nowarn "$patch" || true
+        log_info "Applying patch $(basename "$patch") to ros_industrial_cmake_boilerplate"
+        if git -C "$target_repo" apply --whitespace=nowarn "$patch" >/dev/null 2>&1; then
+            continue
+        fi
+
+        log_warn "Standard git apply failed; attempting 3-way merge for $(basename "$patch")"
+        if git -C "$target_repo" apply --3way --whitespace=nowarn "$patch" >/dev/null 2>&1; then
+            continue
+        fi
+
+        log_warn "3-way merge failed; attempting patch(1) for $(basename "$patch")"
+        if ! (cd "$target_repo" && patch -p1 -N <"$patch"); then
+            log_error "Failed to apply $(basename "$patch") to ros_industrial_cmake_boilerplate"
+            patch_failed=1
+        fi
     done
     shopt -u nullglob
 
-    local cfg_path="$target_repo/cmake/cmake_tools.cmake"
-    if grep -n 'install(FILES \${CMAKE_CURRENT_SOURCE_DIR}/\${extra_config}' "$cfg_path"; then
-        echo "ERROR: CFG_EXTRAS bug still present" >&2
-        exit 1
+    if grep -q 'install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${extra_config}' "$cfg_path" >/dev/null 2>&1; then
+        die "CFG_EXTRAS bug still present in ros_industrial_cmake_boilerplate after patch attempts"
+    fi
+
+    if [[ $patch_failed -eq 1 ]]; then
+        log_warn "One or more ros_industrial_cmake_boilerplate patches failed to apply cleanly, but the CFG_EXTRAS fix is present"
     fi
 }
 
