@@ -113,34 +113,42 @@ configure_package(
 
 install(CODE "
   set(_components ${SUPPORTED_COMPONENTS})
-  set(_pkg \"${PROJECT_NAME}\")
   foreach(_component IN LISTS _components)
-    set(_src_dir \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_pkg}\")
-    set(_dst_dir \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_pkg}_\${_component}\")
-    file(GLOB _config_files
-      \"\${_src_dir}/\${_component}-config.cmake\"
-      \"\${_src_dir}/\${_component}-targets*.cmake\"
-      \"\${_src_dir}/\${_component}-extras.cmake\"
-      \"\${_src_dir}/\${_component}Config.cmake\"
-      \"\${_src_dir}/\${_component}Targets*.cmake\")
-    if(_config_files)
-      file(MAKE_DIRECTORY \"\${_dst_dir}\")
-      foreach(_src_file IN LISTS _config_files)
-        get_filename_component(_fname \"\${_src_file}\" NAME)
-        string(REPLACE \"\${_component}\" \"\${_pkg}_\${_component}\" _dst_fname \"\${_fname}\")
-        file(COPY \"\${_src_file}\" DESTINATION \"\${_dst_dir}\")
-        file(RENAME \"\${_dst_dir}/\${_fname}\" \"\${_dst_dir}/\${_dst_fname}\")
-      endforeach()
+    set(_component_prefix \"${PROJECT_NAME}_\${_component}\")
+    set(_component_dir \"\${CMAKE_INSTALL_PREFIX}/lib/cmake/\${_component_prefix}\")
+    if(NOT IS_DIRECTORY \"\${_component_dir}\")
+      continue()
+    endif()
+
+    file(GLOB _wrapper_files
+      \"\${_component_dir}/\${_component}-config.cmake\"
+      \"\${_component_dir}/\${_component}-targets*.cmake\"
+      \"\${_component_dir}/\${_component}-extras.cmake\")
+    foreach(_wrapper_file IN LISTS _wrapper_files)
+      get_filename_component(_wrapper_name \"\${_wrapper_file}\" NAME)
+      string(REPLACE \"\${_component}\" \"\${_component_prefix}\" _prefixed_name \"\${_wrapper_name}\")
+      set(_prefixed_path \"\${_component_dir}/\${_prefixed_name}\")
+      if(NOT EXISTS \"\${_prefixed_path}\")
+        configure_file(\"\${_wrapper_file}\" \"\${_prefixed_path}\" COPYONLY)
+      endif()
+    endforeach()
+
+    set(_version_src \"\${_component_dir}/\${_component_prefix}ConfigVersion.cmake\")
+    set(_version_alias \"\${_component_dir}/\${_component_prefix}-config-version.cmake\")
+    if(EXISTS \"\${_version_src}\" AND NOT EXISTS \"\${_version_alias}\")
+      configure_file(\"\${_version_src}\" \"\${_version_alias}\" COPYONLY)
     endif()
   endforeach()
 ")
 
 set(_${PROJECT_NAME}_wrapper_dir "${CMAKE_CURRENT_BINARY_DIR}/cmake/config_wrappers")
 file(MAKE_DIRECTORY ${_${PROJECT_NAME}_wrapper_dir})
+include(CMakePackageConfigHelpers)
 foreach(_component IN LISTS SUPPORTED_COMPONENTS)
   set(_component_prefix "${PROJECT_NAME}_${_component}")
   set(_component_install_dir "lib/cmake/${_component_prefix}")
   set(COMPONENT_PREFIX "${_component_prefix}")
+  set(COMPONENT_NAME "${_component}")
   configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/component-targets-wrapper.cmake.in"
     "${_${PROJECT_NAME}_wrapper_dir}/${_component}-targets.cmake"
@@ -154,6 +162,16 @@ foreach(_component IN LISTS SUPPORTED_COMPONENTS)
       @ONLY)
     install(FILES "${_${PROJECT_NAME}_wrapper_dir}/${_component}-extras.cmake"
             DESTINATION "${_component_install_dir}")
+    set(_core_config_wrapper "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-config.cmake")
+    configure_package_config_file("${CMAKE_CURRENT_LIST_DIR}/cmake/component-config-wrapper.cmake.in"
+                                  "${_core_config_wrapper}"
+                                  INSTALL_DESTINATION "${_component_install_dir}")
+    set(_core_config_version "${_${PROJECT_NAME}_wrapper_dir}/${_component_prefix}-config-version.cmake")
+    write_basic_package_version_file(
+      "${_core_config_version}"
+      VERSION "${PROJECT_VERSION}"
+      COMPATIBILITY SameMajorVersion)
+    install(FILES "${_core_config_wrapper}" "${_core_config_version}" DESTINATION "${_component_install_dir}")
   endif()
 endforeach()
 

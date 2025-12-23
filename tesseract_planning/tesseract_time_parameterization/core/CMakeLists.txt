@@ -25,6 +25,9 @@ target_code_coverage(
 install(DIRECTORY include/${PROJECT_NAME} DESTINATION include COMPONENT core)
 
 # Configure Components
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/cmake")
+set(_${PROJECT_NAME}_core_extra "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}_core-extras.cmake")
+configure_file("${CMAKE_CURRENT_LIST_DIR}/cmake/core-extras.cmake" "${_${PROJECT_NAME}_core_extra}" COPYONLY)
 configure_component(
   COMPONENT ${PROJECT_NAME}_core
   NAMESPACE tesseract
@@ -36,7 +39,7 @@ configure_component(
     tesseract_command_language
     console_bridge
     Eigen3
-  CFG_EXTRAS cmake/core-extras.cmake)
+  CFG_EXTRAS "${_${PROJECT_NAME}_core_extra}")
 
 if(TESSERACT_PACKAGE)
   cpack_component(
