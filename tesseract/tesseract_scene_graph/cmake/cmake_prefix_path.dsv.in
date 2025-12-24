@@ -1,2 +1,0 @@
-# Generated from colcon-core style hook
-prepend-non-duplicate;CMAKE_PREFIX_PATH;${COLCON_CURRENT_PREFIX}

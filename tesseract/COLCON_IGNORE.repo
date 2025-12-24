@@ -1,2 +1,0 @@
-#!/bin/false
-# Renamed from COLCON_IGNORE so the overlay is visible to colcon when copied into a workspace.

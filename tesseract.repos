@@ -1,28 +1,46 @@
-# External dependencies only. TrajOpt/Tesseract overlays (including trajopt_sco)
-# are already bundled in this repository, so keep them out of this import list
-# to avoid duplicate checkouts in a workspace.
+# External dependencies - use official repos (ROS2 Humble compatible)
 repositories:
   ros_industrial_cmake_boilerplate:
     type: git
     url: https://github.com/ros-industrial/ros_industrial_cmake_boilerplate
-    version: f6db7e152c7ca428e1c8388432cf61e82131f467
+    version: master
   tesseract_external:
     type: git
     url: https://github.com/ros-industrial-consortium/tesseract_ext
-    version: e2acfc118a906864e64eb54861e83f993c9689f8
+    version: master
   descartes_light:
     type: git
     url: https://github.com/swri-robotics/descartes_light
-    version: 7ad97b6c45d86c9a218dfc209bfacb5efacd5eb1
+    version: master
   opw_kinematics:
     type: git
     url: https://github.com/Jmeyer1292/opw_kinematics
-    version: 0.4.3
+    version: master
   ifopt:
     type: git
     url: https://github.com/ethz-adrl/ifopt
-    version: 27451ce3212d3c0ccd3a0db9a1ee9a9963466674
+    version: master
   boost_plugin_loader:
     type: git
     url: https://github.com/tesseract-robotics/boost_plugin_loader
-    version: 0168d4277a96854de18bbb9fbeb5e13f401fe468
+    version: 0.4.3
+  tesseract:
+    type: git
+    url: https://github.com/tesseract-robotics/tesseract
+    version: master
+  tesseract_planning:
+    type: git
+    url: https://github.com/tesseract-robotics/tesseract_planning
+    version: master
+  trajopt:
+    type: git
+    url: https://github.com/tesseract-robotics/trajopt
+    version: master
+  tesseract_ros2:
+    type: git
+    url: https://github.com/tesseract-robotics/tesseract_ros2
+    version: master
+  tesseract_qt:
+    type: git
+    url: https://github.com/tesseract-robotics/tesseract_qt
+    version: master

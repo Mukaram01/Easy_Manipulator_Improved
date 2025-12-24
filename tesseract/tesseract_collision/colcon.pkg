@@ -1,6 +1,0 @@
-{
-    "hooks": [
-        "share/tesseract_collision/hook/cmake_prefix_path.sh",
-        "share/tesseract_collision/hook/cmake_prefix_path.dsv"
-    ]
-}

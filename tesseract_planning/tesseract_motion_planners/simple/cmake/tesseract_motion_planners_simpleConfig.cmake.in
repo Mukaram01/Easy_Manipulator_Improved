@@ -1,9 +1,0 @@
-@PACKAGE_INIT@
-
-include(CMakeFindDependencyMacro)
-find_dependency(tesseract_motion_planners_core)
-find_dependency(tesseract_environment)
-find_dependency(tesseract_command_language)
-find_dependency(cereal)
-
-include("${CMAKE_CURRENT_LIST_DIR}/tesseract_motion_planners_simpleTargets.cmake")

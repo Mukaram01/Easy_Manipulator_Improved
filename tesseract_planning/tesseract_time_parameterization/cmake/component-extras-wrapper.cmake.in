@@ -1,1 +1,0 @@
-include("${CMAKE_CURRENT_LIST_DIR}/@COMPONENT_PREFIX@-extras.cmake")
