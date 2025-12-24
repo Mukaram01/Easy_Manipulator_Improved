@@ -57,25 +57,43 @@ sudo apt update && sudo apt install -y libcereal-dev libjsoncpp-dev libomp-dev l
 ## Build on Jazzy or Humble
 
 ```
+## Installation (ROS2 Humble on Ubuntu 22.04)
+
+```bash
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 vcs import < easy_manipulation_deployment/tesseract.repos
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
-mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
+
 cd ~/workcell_ws
-export ROS_DISTRO=humble  # or jazzy
+export ROS_DISTRO=humble
 source /opt/ros/${ROS_DISTRO}/setup.bash
-# Install the Boost graph/program_options/serialization headers that
-# `trajopt_common` expects and the `cereal` headers required by
-# `tesseract_motion_planners` before configuring the workspace. This avoids
-# "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)" and
-# "Findcereal.cmake" errors during `colcon build` on minimal environments.
+
+# Install system dependencies
 ~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
-source ~/ws_moveit2/install/setup.bash
-colcon build --symlink-install
+
+# Fix Boost serialization header bug (Ubuntu 22.04)
+sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include <boost/serialization/library_version_type.hpp>' /usr/include/boost/serialization/unordered_collections_load_imp.hpp
+
+# Fix cereal CMake path
+sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
+sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
+
+# Skip incompatible packages
+touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+
+# Remove incompatible trajopt_ifopt planner
+rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
+sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+
+# Build
+colcon build --symlink-install --parallel-workers 2
 source install/setup.bash
 ```
 
