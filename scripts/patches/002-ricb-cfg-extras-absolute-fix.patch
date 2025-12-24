@@ -4,10 +4,55 @@ Date: Mon, 1 Jan 0001 00:00:00 +0000
 Subject: [PATCH] Fix CFG_EXTRAS handling for absolute paths
 
 diff --git a/cmake/cmake_tools.cmake b/cmake/cmake_tools.cmake
-index d567c42..b2db677 100644
+index 6d3e418..b2db677 100644
 --- a/cmake/cmake_tools.cmake
 +++ b/cmake/cmake_tools.cmake
-@@ -284,6 +284,10 @@ function(generate_package_config)
+@@ -146,6 +146,8 @@ function(make_default_package_config)
+       endif()
+     endif()
+ 
++    get_filename_component(_ricb_cfg_out_dir "${ARG_CONFIG_FILE}" DIRECTORY)
++
+     if (ARG_DEPENDENCIES)
+         set(find_dep_cmds "include(CMakeFindDependencyMacro)")
+         foreach(dep IN LISTS ARG_DEPENDENCIES)
+@@ -194,8 +196,21 @@ function(make_default_package_config)
+     if (ARG_CFG_EXTRAS)
+         string(APPEND ricb_pkgconfig "\n# Extra configuration files\n")
+         foreach(extra_config IN LISTS ARG_CFG_EXTRAS)
+-          get_filename_component(CFG_EXTRA_FILENAME ${extra_config} NAME BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+-          string(APPEND ricb_pkgconfig "include(\"\${CMAKE_CURRENT_LIST_DIR}/${CFG_EXTRA_FILENAME}\")\n")
++          if (NOT extra_config)
++            continue()
++          endif()
++          if (IS_ABSOLUTE "${extra_config}")
++            set(_ricb_extra_src "${extra_config}")
++          else()
++            set(_ricb_extra_src "${CMAKE_CURRENT_LIST_DIR}/${extra_config}")
++          endif()
++          if (NOT EXISTS "${_ricb_extra_src}")
++            message(FATAL_ERROR "Package configuration: CFG_EXTRAS file '${_ricb_extra_src}' does not exist")
++          endif()
++          get_filename_component(_ricb_extra_filename "${_ricb_extra_src}" NAME)
++          set(_ricb_extra_dst "${_ricb_cfg_out_dir}/${_ricb_extra_filename}")
++          configure_file("${_ricb_extra_src}" "${_ricb_extra_dst}" COPYONLY)
++          string(APPEND ricb_pkgconfig "include(\"\${CMAKE_CURRENT_LIST_DIR}/${_ricb_extra_filename}\")\n")
+         endforeach()
+     endif()
+ 
+@@ -241,6 +256,11 @@ function(generate_package_config)
+     set(ARG_CONFIG_NAME ${ARG_COMPONENT})
+   endif()
+ 
++  set(_ricb_cfg_extra_install_files "")
++  set(_ricb_config_output "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config.cmake")
++  get_filename_component(_ricb_config_dir "${_ricb_config_output}" DIRECTORY)
++  file(MAKE_DIRECTORY "${_ricb_config_dir}")
++
+   if (ARG_EXPORT)
+     if (ARG_NAMESPACE)
+       install(EXPORT ${ARG_COMPONENT}-targets NAMESPACE "${ARG_NAMESPACE}::" DESTINATION lib/cmake/${PROJECT_NAME} COMPONENT ${ARG_COMPONENT})
+@@ -264,8 +284,28 @@ function(generate_package_config)
        DEPENDENCIES ${ARG_DEPENDENCIES}
        CFG_EXTRAS ${ARG_CFG_EXTRAS})
  
@@ -16,21 +61,59 @@ index d567c42..b2db677 100644
 +    get_filename_component(_ricb_config_dir "${_ricb_config_output}" DIRECTORY)
 +    file(MAKE_DIRECTORY "${_ricb_config_dir}")
      foreach(extra_config IN LISTS ARG_CFG_EXTRAS)
-       if(NOT extra_config)
-         continue()
-@@ -301,12 +302,7 @@ function(generate_package_config)
-       get_filename_component(_ricb_extra_filename "${_ricb_extra_src}" NAME)
-       set(_ricb_extra_destination "${_ricb_config_dir}/${_ricb_extra_filename}")
-       configure_file("${_ricb_extra_src}" "${_ricb_extra_destination}" COPYONLY)
--
--      if(EXISTS "${_ricb_extra_destination}")
--        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
--      else()
--        list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_src}")
--      endif()
+-      install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${extra_config} DESTINATION lib/cmake/${PROJECT_NAME}/ COMPONENT ${ARG_COMPONENT})
++      if(NOT extra_config)
++        continue()
++      endif()
++
++      set(_ricb_extra_src "${extra_config}")
++      if(NOT IS_ABSOLUTE "${_ricb_extra_src}")
++        set(_ricb_extra_src "${CMAKE_CURRENT_SOURCE_DIR}/${_ricb_extra_src}")
++      endif()
++
++      if(NOT EXISTS "${_ricb_extra_src}")
++        message(FATAL_ERROR "Package configuration: CFG_EXTRAS file '${_ricb_extra_src}' does not exist")
++      endif()
++
++      get_filename_component(_ricb_extra_filename "${_ricb_extra_src}" NAME)
++      set(_ricb_extra_destination "${_ricb_config_dir}/${_ricb_extra_filename}")
++      configure_file("${_ricb_extra_src}" "${_ricb_extra_destination}" COPYONLY)
 +      list(APPEND _ricb_cfg_extra_install_files "${_ricb_extra_destination}")
      endforeach()
  
    else ()
+@@ -285,21 +325,28 @@ function(generate_package_config)
+   # Create cmake config files
+   include(CMakePackageConfigHelpers)
+   configure_package_config_file(${config_template}
+-    ${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config.cmake
++    ${_ricb_config_output}
+     INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+     NO_CHECK_REQUIRED_COMPONENTS_MACRO)
+ 
+   install(FILES
+-    "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config.cmake"
++    "${_ricb_config_output}"
+     DESTINATION lib/cmake/${PROJECT_NAME}
+     COMPONENT ${ARG_COMPONENT})
+ 
+   if (ARG_CONFIG_NAME STREQUAL PROJECT_NAME)
+-    write_basic_package_version_file(${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config-version.cmake
++    set(_ricb_config_version_output "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config-version.cmake")
++    write_basic_package_version_file(${_ricb_config_version_output}
+       VERSION ${PROJECT_VERSION} COMPATIBILITY ExactVersion)
+ 
+     install(FILES
+-      "${CMAKE_BINARY_DIR}/${ARG_CONFIG_NAME}-config-version.cmake"
++      "${_ricb_config_version_output}"
++      DESTINATION lib/cmake/${PROJECT_NAME}
++      COMPONENT ${ARG_COMPONENT})
++  endif()
++
++  if (_ricb_cfg_extra_install_files)
++    install(FILES ${_ricb_cfg_extra_install_files}
+       DESTINATION lib/cmake/${PROJECT_NAME}
+       COMPONENT ${ARG_COMPONENT})
+   endif()
 -- 
 2.39.2
