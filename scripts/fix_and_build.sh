@@ -123,8 +123,8 @@ apply_ros_industrial_patches() {
             continue
         fi
 
-        log_warn "3-way merge failed; attempting patch(1) for $(basename "$patch")"
-        if ! (cd "$target_repo" && patch -p1 -N <"$patch"); then
+        log_warn "3-way merge failed; attempting patch(1) with fuzz for $(basename "$patch")"
+        if ! (cd "$target_repo" && patch -p1 -N --fuzz=5 --ignore-whitespace <"$patch"); then
             log_error "Failed to apply $(basename "$patch") to ros_industrial_cmake_boilerplate"
             patch_failed=1
         fi
