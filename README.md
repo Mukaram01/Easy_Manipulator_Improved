@@ -228,14 +228,6 @@ This package uses the following external dependencies (fetched via `tesseract.re
 
 ---
 
-## Acknowledgements
-
-We acknowledge the Singapore government for their vision and support for the research project "Accelerating Open Source Technologies for Cross Domain Adoption through the Robot Operating System", supported by the Singapore National Robotics Programme (NRP).
-
-Any opinions, findings, conclusions, or recommendations expressed in this material are those of the author(s) and do not reflect the views of the NR2PO.
-
----
-
 ## License
 
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
