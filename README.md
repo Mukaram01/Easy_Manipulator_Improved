@@ -38,6 +38,10 @@ mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
+mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
+
 # 2. Import dependencies
 vcs import < easy_manipulation_deployment/tesseract.repos
 
