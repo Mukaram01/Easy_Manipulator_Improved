@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.logging import get_logger
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -58,6 +59,7 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 def load_file(package_name, file_path, mappings=None):
     """Load a robot description file, converting xacro sources to URDF."""
 
+    logger = get_logger(__name__)
     package_path = Path(get_package_share_directory(package_name))
     target = Path(file_path)
     absolute_file_path = (package_path / target) if not target.is_absolute() else target
@@ -74,8 +76,13 @@ def load_file(package_name, file_path, mappings=None):
 
             with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
                 return file.read()
-    except Exception:
-        return None
+    except Exception as exc:
+        message = (
+            "Failed to load robot description file from "
+            f"'{absolute_file_path}'. Original error: {exc}"
+        )
+        logger.error(message)
+        raise RuntimeError(message) from exc
 
 
 def load_yaml(package_name, file_path):
@@ -103,9 +110,19 @@ def generate_launch_description():
     # Component yaml files are grouped in separate namespaces
     robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro',
                                          initial_position_mappings)
+    if robot_description_config is None:
+        raise RuntimeError(
+            "robot_description_config is None. Check for missing packages "
+            "(e.g., ur5_moveit_config, ur_description) or xacro errors."
+        )
     robot_description = {'robot_description': robot_description_config}
 
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
+    if robot_description_semantic_config is None:
+        raise RuntimeError(
+            "robot_description_semantic_config is None. Check for missing packages "
+            "(e.g., ur5_moveit_config, ur_description) or xacro errors."
+        )
     robot_description_semantic = {'robot_description_semantic': robot_description_semantic_config}
 
     kinematics_yaml = {'robot_description_kinematics':
