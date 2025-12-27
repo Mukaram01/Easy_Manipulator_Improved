@@ -1,44 +1,25 @@
-# Copyright 2020 ROS Industrial Consortium Asia Pacific
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import tempfile
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.logging import get_logger
-from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
 
 import xacro
 
-scene_pkg = 'ur5_2f_test'
-robot_base_link = 'base_link'
-package_name = 'run_grasp_execution'
+scene_pkg = "ur5_2f_test"
+package_name = "run_grasp_execution"
 
 
 def to_urdf(xacro_path, urdf_path=None, mappings=None):
-    """Convert the given xacro file to a URDF file."""
-
     xacro_path = str(xacro_path)
 
     if urdf_path is None:
-        fd, urdf_path = tempfile.mkstemp(
-            prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
-        )
+        fd, urdf_path = tempfile.mkstemp(prefix=f"{Path(xacro_path).stem}_", suffix=".urdf")
         os.close(fd)
     else:
         urdf_path = Path(urdf_path)
@@ -51,16 +32,14 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 
     doc = xacro.process_file(xacro_path, mappings=mappings)
     with xacro.open_output(urdf_path) as out:
-        out.write(doc.toprettyxml(indent='  '))
+        out.write(doc.toprettyxml(indent="  "))
 
     return urdf_path
 
 
-def load_file(package_name, file_path, mappings=None):
-    """Load a robot description file, converting xacro sources to URDF."""
-
+def load_file(package, file_path, mappings=None):
     logger = get_logger(__name__)
-    package_path = Path(get_package_share_directory(package_name))
+    package_path = Path(get_package_share_directory(package))
     target = Path(file_path)
     absolute_file_path = (package_path / target) if not target.is_absolute() else target
 
@@ -68,110 +47,96 @@ def load_file(package_name, file_path, mappings=None):
         with tempfile.TemporaryDirectory() as tmpdir:
             if target.suffix == ".xacro":
                 temp_urdf_path = Path(tmpdir) / target.with_suffix(".urdf").name
-                temp_urdf_path = Path(
-                    to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings)
-                )
+                temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings))
             else:
                 temp_urdf_path = absolute_file_path
 
-            with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
-                return file.read()
+            with Path(temp_urdf_path).open("r", encoding="utf-8") as f:
+                return f.read()
     except Exception as exc:
-        message = (
-            "Failed to load robot description file from "
-            f"'{absolute_file_path}'. Original error: {exc}"
-        )
-        logger.error(message)
-        raise RuntimeError(message) from exc
+        msg = f"Failed to load robot description file from '{absolute_file_path}'. Original error: {exc}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
 
 
-def load_yaml(package_name, file_path):
-    package_path = get_package_share_directory(package_name)
-    absolute_file_path = os.path.join(package_path, file_path)
-    return xacro.load_yaml(absolute_file_path)
+def load_yaml(package, file_path):
+    package_path = get_package_share_directory(package)
+    return xacro.load_yaml(os.path.join(package_path, file_path))
 
 
 def generate_launch_description():
-    # moveit_cpp.yaml is passed by filename for now since it's node specific
-    grasp_execution_yaml_file_name = (
-        get_package_share_directory(package_name) + '/config/grasp_execution.yaml'
-    )
+    # args
+    debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Launch in debug mode")
 
-    debug_arg = DeclareLaunchArgument(
-        'debug', default_value='false', description='Launch in debug mode'
-    )
+    # package share
+    run_share = get_package_share_directory(package_name)
 
-    # Initial position mapping
-    initial_position_path = (get_package_share_directory(package_name) +
-                             '/config/start_positions.yaml')
-    initial_position_mappings = {
-        'initial_positions_file': initial_position_path}
+    # initial positions mapping for scene xacro
+    initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
+    initial_position_mappings = {"initial_positions_file": initial_position_path}
 
-    # Component yaml files are grouped in separate namespaces
-    robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro',
-                                         initial_position_mappings)
-    if robot_description_config is None:
-        raise RuntimeError(
-            "robot_description_config is None. Check for missing packages "
-            "(e.g., ur5_moveit_config, ur_description) or xacro errors."
-        )
-    robot_description = {'robot_description': robot_description_config}
+    # robot_description (+ semantic)
+    robot_description_config = load_file(scene_pkg, "urdf/scene.urdf.xacro", initial_position_mappings)
+    robot_description = {"robot_description": robot_description_config}
 
-    robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
-    if robot_description_semantic_config is None:
-        raise RuntimeError(
-            "robot_description_semantic_config is None. Check for missing packages "
-            "(e.g., ur5_moveit_config, ur_description) or xacro errors."
-        )
-    robot_description_semantic = {'robot_description_semantic': robot_description_semantic_config}
+    robot_description_semantic_config = load_file(scene_pkg, "urdf/arm_hand.srdf.xacro")
+    robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
 
-    kinematics_yaml = {'robot_description_kinematics':
-                       load_yaml('ur5_moveit_config', 'config/kinematics.yaml')}
+    # MoveIt configs (these must exist as packages)
+    kinematics_yaml = {"robot_description_kinematics": load_yaml("ur5_moveit_config", "config/kinematics.yaml")}
+    joint_limits_yaml = load_yaml("ur5_moveit_config", "config/joint_limits.yaml")
+    joint_limits = {"robot_description_planning": joint_limits_yaml}
 
     ompl_planning_pipeline_config = {
-        'ompl': {
-            'planning_plugin': 'ompl_interface/OMPLPlanner',
-            'request_adapters': ('default_planner_request_adapters/AddTimeOptimalParameterization '
-                                 'default_planner_request_adapters/FixWorkspaceBounds '
-                                 'default_planner_request_adapters/FixStartStateBounds '
-                                 'default_planner_request_adapters/FixStartStateCollision '
-                                 'default_planner_request_adapters/FixStartStatePathConstraints'),
-            'start_state_max_bounds_error': 0.1}
+        "ompl": {
+            "planning_plugin": "ompl_interface/OMPLPlanner",
+            "request_adapters": (
+                "default_planner_request_adapters/AddTimeOptimalParameterization "
+                "default_planner_request_adapters/FixWorkspaceBounds "
+                "default_planner_request_adapters/FixStartStateBounds "
+                "default_planner_request_adapters/FixStartStateCollision "
+                "default_planner_request_adapters/FixStartStatePathConstraints"
+            ),
+            "start_state_max_bounds_error": 0.1,
         }
+    }
+    ompl_planning_yaml = load_yaml("ur5_moveit_config", "config/ompl_planning.yaml")
+    ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
-    ompl_planning_yaml = load_yaml('ur5_moveit_config', 'config/ompl_planning.yaml')
-    ompl_planning_pipeline_config['ompl'].update(ompl_planning_yaml)
+    trajectory_execution = {
+        "moveit_manage_controllers": True,
+        "trajectory_execution.allowed_execution_duration_scaling": 1.2,
+        "trajectory_execution.allowed_goal_duration_margin": 0.5,
+        "trajectory_execution.allowed_start_tolerance": 0.01,
+    }
 
-    trajectory_execution = {'moveit_manage_controllers': True,
-                            'trajectory_execution.allowed_execution_duration_scaling': 1.2,
-                            'trajectory_execution.allowed_goal_duration_margin': 0.5,
-                            'trajectory_execution.allowed_start_tolerance': 0.01}
-
-    controllers_yaml = load_yaml(package_name, 'config/controllers.yaml')
+    controllers_yaml = load_yaml(package_name, "config/controllers.yaml")
     moveit_controller = {
-        'moveit_simple_controller_manager': controllers_yaml,
-        'moveit_controller_manager':
-            'moveit_simple_controller_manager/MoveItSimpleControllerManager'
-        }
+        "moveit_simple_controller_manager": controllers_yaml,
+        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
+    }
 
-    joint_limits_yaml = load_yaml('ur5_moveit_config', 'config/joint_limits.yaml')
-    joint_limits = {'robot_description_planning': joint_limits_yaml}
+    # parameter files
+    grasp_execution_yaml = os.path.join(run_share, "config", "grasp_execution.yaml")
+    sensors_yaml = os.path.join(run_share, "config", "sensors_3d.yaml")
+    rviz_config_file = os.path.join(run_share, "config", "grasp_execution.rviz")
 
     # MoveItCpp demo executable
     grasp_execution_demo_node = Node(
-        name='grasp_execution_node',
+        name="grasp_execution_node",
         package=package_name,
+        executable="demo_node",
+        output="screen",
         prefix=PythonExpression(
             [
                 "'xterm -e gdb --args' if '",
-                LaunchConfiguration('debug'),
+                LaunchConfiguration("debug"),
                 "' == 'true' else ''",
             ]
         ),
-        executable='demo_node',
-        output='screen',
         parameters=[
-            grasp_execution_yaml_file_name,
+            grasp_execution_yaml,   # YAML file (node params)
+            sensors_yaml,           # YAML file (planning_scene_monitor sensors)
             robot_description,
             robot_description_semantic,
             joint_limits,
@@ -182,65 +147,63 @@ def generate_launch_description():
         ],
     )
 
-    # RViz
-    rviz_config_file = (get_package_share_directory(package_name) +
-                        '/config/grasp_execution.rviz')
     rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='log',
-        arguments=['-d', rviz_config_file],
-        parameters=[robot_description,
-                    robot_description_semantic]
-        )
-
-    # Publish TF
-    robot_state_publisher = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        output='both',
-        parameters=[robot_description]
-        )
-
-    # ros2_control using FakeSystem as hardware
-    ros2_controllers_path = os.path.join(
-        get_package_share_directory("ur5_moveit_config"),
-        "config",
-        "ur5_ros_controllers.yaml",
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="log",
+        arguments=["-d", rviz_config_file],
+        parameters=[robot_description, robot_description_semantic],
     )
+
+    robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="robot_state_publisher",
+        output="both",
+        parameters=[robot_description],
+    )
+
+    # ✅ IMPORTANT: use THIS package’s controllers file (so your fix is permanent in your repo)
+    ros2_controllers_path = os.path.join(run_share, "config", "ur5_ros_controllers.yaml")
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
+        output={"stdout": "screen", "stderr": "screen"},
         parameters=[robot_description, ros2_controllers_path],
-        output={
-            "stdout": "screen",
-            "stderr": "screen",
-        },
     )
 
-    # Load controllers
-    load_controllers = []
-    for controller in ["ur5_arm_controller", "joint_state_broadcaster"]:
-        load_controllers += [
-            ExecuteProcess(
-                cmd=[
-                    "ros2 run controller_manager spawner {} "
-                    "--controller-manager /controller_manager".format(controller)
-                ],
-                shell=True,
-                output="screen",
-            )
-        ]
+    # Spawn controllers (delay a bit so controller_manager is ready)
+    joint_state_spawner = ExecuteProcess(
+        cmd=[
+            "ros2", "run", "controller_manager", "spawner",
+            "joint_state_broadcaster",
+            "--controller-manager", "/controller_manager",
+        ],
+        output="screen",
+    )
+
+    arm_spawner = ExecuteProcess(
+        cmd=[
+            "ros2", "run", "controller_manager", "spawner",
+            "ur5_arm_controller",
+            "--controller-manager", "/controller_manager",
+        ],
+        output="screen",
+    )
+
+    spawn_joint_state = TimerAction(period=2.0, actions=[joint_state_spawner])
+    spawn_arm = TimerAction(period=2.5, actions=[arm_spawner])
 
     return LaunchDescription(
         [
             debug_arg,
             robot_state_publisher,
             rviz_node,
-            grasp_execution_demo_node,
             ros2_control_node,
+            spawn_joint_state,
+            spawn_arm,
+            grasp_execution_demo_node,
         ]
-        + load_controllers
     )
+
