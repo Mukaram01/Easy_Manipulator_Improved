@@ -207,6 +207,16 @@ Multiple packages found with the same name "tesseract_common"
 
 ---
 
+## Checks
+
+Run the ros2_control joint state fix verification:
+
+```bash
+./scripts/check_ros2_control_joint_state_fix.sh
+```
+
+---
+
 ## Documentation
 
 - 📖 [Full Documentation](https://easy-manipulation-deployment-docs.readthedocs.io/)
