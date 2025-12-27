@@ -190,7 +190,9 @@ def generate_launch_description():
             ExecuteProcess(
                 cmd=[
                     "ros2 run controller_manager "
-                    "spawner.py {}".format(controller)
+                    "spawner.py {} --controller-manager /controller_manager".format(
+                        controller
+                    )
                 ],
                 shell=True,
                 output="screen",
