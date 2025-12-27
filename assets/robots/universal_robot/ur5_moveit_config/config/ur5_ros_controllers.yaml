@@ -5,8 +5,9 @@ controller_manager:
     ur5_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-    joint_state_broadcaster:
+    joint_state_controller:
       type: joint_state_broadcaster/JointStateBroadcaster
+      publish_rate: 50
 
 
 ur5_arm_controller:
