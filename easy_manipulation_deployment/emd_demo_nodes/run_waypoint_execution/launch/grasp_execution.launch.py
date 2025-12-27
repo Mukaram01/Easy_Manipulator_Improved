@@ -212,7 +212,10 @@ def generate_launch_description():
     for controller in ["ur5_arm_controller", "joint_state_broadcaster"]:
         load_controllers += [
             ExecuteProcess(
-                cmd=["ros2 run controller_manager spawner.py {}".format(controller)],
+                cmd=[
+                    "ros2 run controller_manager spawner.py {} "
+                    "--controller-manager /controller_manager".format(controller)
+                ],
                 shell=True,
                 output="screen",
             )
