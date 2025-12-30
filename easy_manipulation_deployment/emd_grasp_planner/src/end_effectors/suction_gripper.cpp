@@ -215,8 +215,10 @@ void SuctionGripper::get_all_possible_grasps(
       // RCLCPP_INFO(LOGGER, "Generate grasp samples");
 
       // Iterate at different angles to search for best possible grasp
-      for (int i = 1, angle = 2, toggle = 1; i < this->search_angle_resolution; i += toggle ^= 1) {
-        angle = (toggle == 1 ? i : -i);
+      for (int idx = 0, angle = 2; idx < (this->search_angle_resolution - 1) * 2; ++idx) {
+        int i = idx / 2 + 1;
+        int sign = (idx % 2 == 0) ? 1 : -1;
+        angle = sign * i;
 
         for (int j = 0, k = 0; j < this->num_sample_along_axis; j++, k ^= 1) {
 
@@ -578,7 +580,9 @@ SuctionCupArray SuctionGripper::generate_grasp_sample(
   grasp_sample.marker.color.r = 1.0f;
   grasp_sample.marker.color.a = 1.0;
 
-  for (int row = 0, row_updown_toggle = 0; row < this->row_itr; row += row_updown_toggle ^= 1) {
+  for (int row_idx = 0; row_idx < this->row_itr * 2; ++row_idx) {
+    int row = row_idx / 2;
+    int row_sign = (row_idx % 2 == 0) ? 1 : -1;
 
     // Get the constant gap between rows in each column
     float row_gap = get_gap(
@@ -587,14 +591,16 @@ SuctionCupArray SuctionGripper::generate_grasp_sample(
     if (row_gap < 0) { // For even grippers, the first iteration has no cup generation
       continue;
     }
-    (row_updown_toggle == 0 ? row_gap = row_gap : row_gap = -row_gap);
+    row_gap *= row_sign;
     Eigen::Vector3f row_cen_point = MathFunctions::get_point_in_direction(
       sample_gripper_center_eigen, row_direction,
       row_gap);
 
     std::vector<std::shared_ptr<SingleSuctionCup>> temp_row_array;
 
-    for (int col = 0, col_updown_toggle = 0; col < this->col_itr; col += col_updown_toggle ^= 1) {
+    for (int col_idx = 0; col_idx < this->col_itr * 2; ++col_idx) {
+      int col = col_idx / 2;
+      int col_sign = (col_idx % 2 == 0) ? 1 : -1;
 
       float col_gap = get_gap(
         col, this->col_is_even, this->col_initial_gap, this->col_dist_between_cups);
@@ -602,7 +608,7 @@ SuctionCupArray SuctionGripper::generate_grasp_sample(
       if (col_gap < 0) { // For even grippers, the first iteration has no cup generation
         continue;
       }
-      (col_updown_toggle == 0 ? col_gap = col_gap : col_gap = -col_gap);
+      col_gap *= col_sign;
 
       Eigen::Vector3f cup_vector = MathFunctions::get_point_in_direction(
         row_cen_point, col_direction,
