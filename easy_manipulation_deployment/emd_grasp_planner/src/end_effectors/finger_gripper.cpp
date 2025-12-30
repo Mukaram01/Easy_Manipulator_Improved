@@ -269,11 +269,12 @@ void FingerGripper::add_cutting_planes_equal_aligned(
   int min_fingers = (side_1_max ? this->num_fingers_side_2 : this->num_fingers_side_1);
   int num_itr = (max_fingers == 1 ? 0 : floor(max_fingers / 2) + 1);
   int curr_min_size = (side_1_max ? this->plane_2_index.size() : this->plane_1_index.size());
-  for (int row = 0, updown_toggle = 1; row < num_itr; row += updown_toggle ^= 1) {
+  for (int row_idx = 0; row_idx < num_itr * 2; ++row_idx) {
+    int row = row_idx / 2;
+    int row_sign = (row_idx % 2 == 0) ? -1 : 1;
     float gap;
     gap =
-      (updown_toggle ==
-      0 ? 1 : -1) * (initial_gap + (row > 0 ? (row - 1) : 0) * this->distance_between_fingers_1);
+      row_sign * (initial_gap + (row > 0 ? (row - 1) : 0) * this->distance_between_fingers_1);
     int plane_index = check_plane_exists(gap);
     if (plane_index >= 0) {
       // std::cout << "plane exists" <<std::endl;
@@ -316,10 +317,12 @@ void FingerGripper::add_cutting_planes(
   const float & initial_gap_1,
   const float & initial_gap_2)
 {
-  for (int side_1 = 0, updown_toggle_1 = 1; side_1 < num_itr_1; side_1 += updown_toggle_1 ^= 1) {
+  for (int side_1_idx = 0; side_1_idx < num_itr_1 * 2; ++side_1_idx) {
+    int side_1 = side_1_idx / 2;
+    int side_1_sign = (side_1_idx % 2 == 0) ? -1 : 1;
     float gap;
     gap =
-      (updown_toggle_1 == 0 ? 1 : -1) * (initial_gap_1 + side_1 * this->distance_between_fingers_1);
+      side_1_sign * (initial_gap_1 + side_1 * this->distance_between_fingers_1);
     int plane_index = check_plane_exists(gap);
     if (plane_index >= 0) {
       this->plane_1_index.push_back(plane_index);
@@ -327,10 +330,12 @@ void FingerGripper::add_cutting_planes(
       add_plane(gap, centerpoint, plane_vector, true, false);
     }
   }
-  for (int side_2 = 0, updown_toggle_2 = 1; side_2 < num_itr_2; side_2 += updown_toggle_2 ^= 1) {
+  for (int side_2_idx = 0; side_2_idx < num_itr_2 * 2; ++side_2_idx) {
+    int side_2 = side_2_idx / 2;
+    int side_2_sign = (side_2_idx % 2 == 0) ? -1 : 1;
     float gap;
     gap =
-      (updown_toggle_2 == 0 ? 1 : -1) * (initial_gap_2 + side_2 * this->distance_between_fingers_2);
+      side_2_sign * (initial_gap_2 + side_2 * this->distance_between_fingers_2);
     int plane_index = check_plane_exists(gap);
     if (plane_index >= 0) {
       this->plane_2_index.push_back(plane_index);
@@ -774,12 +779,13 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   }
 
   // Iterate through the points on side 1
-  for (int side_1 = 0, updown_toggle_1 = 1; side_1 < this->num_itr_1;
-    side_1 += updown_toggle_1 ^= 1)
+  for (int side_1_idx = 0; side_1_idx < this->num_itr_1 * 2; ++side_1_idx)
   {
+    int side_1 = side_1_idx / 2;
+    int side_1_sign = (side_1_idx % 2 == 0) ? -1 : 1;
     // Define the distance the current finger is from the center point.
     float gap1;
-    gap1 = (updown_toggle_1 == 0 ? 1 : -1) * (this->initial_gap_1 + side_1 *
+    gap1 = side_1_sign * (this->initial_gap_1 + side_1 *
       this->distance_between_fingers_1);
 
     // Get the coordinates of the current finger in the open configuration
@@ -829,12 +835,13 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   }
 
   // Iterate through the points on side 2
-  for (int side_2 = 0, updown_toggle_2 = 1; side_2 < this->num_itr_2;
-    side_2 += updown_toggle_2 ^= 1)
+  for (int side_2_idx = 0; side_2_idx < this->num_itr_2 * 2; ++side_2_idx)
   {
+    int side_2 = side_2_idx / 2;
+    int side_2_sign = (side_2_idx % 2 == 0) ? -1 : 1;
     float gap2;
     gap2 =
-      (updown_toggle_2 == 0 ? 1 : -1) * (initial_gap_2 + side_2 * this->distance_between_fingers_2);
+      side_2_sign * (initial_gap_2 + side_2 * this->distance_between_fingers_2);
     Eigen::Vector3f finger_2_open_temp = MathFunctions::get_point_in_direction(
       open_center_finger_2,
       plane_normal, gap2);
