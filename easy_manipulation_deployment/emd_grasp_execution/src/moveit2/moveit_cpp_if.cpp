@@ -1209,7 +1209,8 @@ bool MoveitCppGraspExecution::squash_and_execute(
 {
   auto & arm = arms_[group];
   squash_trajectories(group, velocity);
-  for (auto & traj : arm.traj) {
+  while (!arm.traj.empty()) {
+    auto traj = arm.traj.front();
     auto result = this->execute(traj, method);
     // this->print_trajectory_ros(LOGGER, traj);
     arm.traj.pop_front();
@@ -1217,8 +1218,6 @@ bool MoveitCppGraspExecution::squash_and_execute(
       return false;
     }
   }
-
-  arms_[group].traj.clear();
 
   return true;
 }
