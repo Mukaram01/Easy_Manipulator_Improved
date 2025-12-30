@@ -629,7 +629,12 @@ SuctionCupArray SuctionGripper::generate_grasp_sample(
   grasp_sample.total_contact_points = total_contact_points;
   grasp_sample.total_curvature = total_curvature;
   grasp_sample.center_dist = pcl::geometry::distance(sample_gripper_center, object_center);
-  grasp_sample.average_curvature = grasp_sample.total_curvature / grasp_sample.total_contact_points;
+  if (grasp_sample.total_contact_points > 0.0f) {
+    grasp_sample.average_curvature =
+      grasp_sample.total_curvature / grasp_sample.total_contact_points;
+  } else {
+    grasp_sample.average_curvature = 0.0f;
+  }
 
   return grasp_sample;
 }
