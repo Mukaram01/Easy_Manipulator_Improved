@@ -47,8 +47,6 @@ include_directories(
   PUBLIC
   include
   msg
-  # ${PCL_INCLUDE_DIRS}
-  # ${OCTOMAP_INCLUDE_DIRS}
 )
 
 add_definitions( ${PCL_DEFINITIONS} )
@@ -64,6 +62,11 @@ add_library(grasp_planning_interface
   src/common/pcl_visualizer.cpp
   src/common/fcl_functions.cpp
   src/common/math_functions.cpp
+)
+
+target_include_directories(grasp_planning_interface SYSTEM PRIVATE
+  ${PCL_INCLUDE_DIRS}
+  ${OCTOMAP_INCLUDE_DIRS}
 )
 
 if(${FCL_VERSION} VERSION_GREATER_EQUAL 0.6.0)
