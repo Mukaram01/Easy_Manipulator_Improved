@@ -1230,19 +1230,36 @@ void MoveitCppGraspExecution::squash_trajectories(
   bool time_parameterization)
 {
   auto & trajs = arms_[planning_group].traj;
-  int _end_idx = (end_idx == -1) ? (trajs.size() - 1) : end_idx;
-  size_t size = trajs.size();
-  if (start_idx <= _end_idx) {
+  if (trajs.empty()) {
+    return;
+  }
+
+  const size_t trajs_size = trajs.size();
+  const int max_index = static_cast<int>(trajs_size - 1);
+  int clamped_start = start_idx < 0 ? 0 : start_idx;
+  int clamped_end = (end_idx == -1) ? max_index : end_idx;
+  if (clamped_end < 0) {
+    clamped_end = 0;
+  } else if (clamped_end > max_index) {
+    clamped_end = max_index;
+  }
+  if (clamped_start > max_index) {
+    return;
+  }
+  const size_t start = static_cast<size_t>(clamped_start);
+  const size_t end = static_cast<size_t>(clamped_end);
+  const size_t size = trajs_size;
+  if (start <= end) {
     RCLCPP_INFO(LOGGER, "Squashing trajectory...");
-    while (trajs.size() > size - (_end_idx - start_idx)) {
-      trajs[start_idx]->append(*trajs[start_idx + 1], 0, 1);
-      trajs.erase(trajs.begin() + start_idx + 1);
+    while (trajs.size() > size - (end - start)) {
+      trajs[start]->append(*trajs[start + 1], 0, 1);
+      trajs.erase(trajs.begin() + start + 1);
     }
     RCLCPP_INFO(LOGGER, "Redo time parameterization...");
     if (time_parameterization) {
       // Strategy 1: TimeOptimization
       RCLCPP_INFO(LOGGER, "\nStrategy 1: Time Optimization");
-      auto temp_traj = trajs[start_idx];
+      auto temp_traj = trajs[start];
       bool validity;
       trajectory_processing::TimeOptimalTrajectoryGeneration time_op_param;
       time_op_param.computeTimeStamps(*temp_traj, velocity);
@@ -1256,7 +1273,7 @@ void MoveitCppGraspExecution::squash_trajectories(
       }   // Unlock PlanningScene
 
       if (validity) {
-        trajs[start_idx] = std::move(temp_traj);
+        trajs[start] = std::move(temp_traj);
         RCLCPP_INFO(LOGGER, "\nStrategy 1 succeeded!!");
       } else {
         // Strategy 2: Good old IterativeParabolicTimeParameterization
@@ -1264,7 +1281,7 @@ void MoveitCppGraspExecution::squash_trajectories(
           LOGGER, "\nStrategy 1 failed:<.\n"
           "Strategy 2: Good old IterativeParabolicTimeParameterization");
         trajectory_processing::IterativeParabolicTimeParameterization ip_time_param;
-        ip_time_param.computeTimeStamps(*trajs[start_idx], velocity);
+        ip_time_param.computeTimeStamps(*trajs[start], velocity);
       }
     }
   }
