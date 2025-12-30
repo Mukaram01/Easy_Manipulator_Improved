@@ -1007,11 +1007,20 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_ranks(
     emd_msgs::msg::OptionArray grasp_option;
     grasp_option.options.push_back(add_closed_grasp_distance_option(gripper));
     get_gripper_rank(gripper);
+    if (grasp_method.grasp_ranks.empty()) {
+      grasp_method.grasp_ranks.push_back(gripper->rank);
+      grasp_method.grasp_poses.push_back(gripper->pose);
+      grasp_method.grasp_markers.push_back(gripper->marker);
+      grasp_method.grasp_options.push_back(grasp_option);
+      sorted_gripper_ranks.push_back(gripper);
+      continue;
+    }
     std::vector<geometry_msgs::msg::PoseStamped>::iterator grasps_it;
     std::vector<std::shared_ptr<MultiFingerGripper>>::iterator contacts_it;
     std::vector<visualization_msgs::msg::Marker>::iterator markers_it;
     std::vector<emd_msgs::msg::OptionArray>::iterator options_it;
     size_t rank;
+    bool inserted = false;
     for (rank = 0,
       grasps_it = grasp_method.grasp_poses.begin(), contacts_it = sorted_gripper_ranks.begin(),
       markers_it = grasp_method.grasp_markers.begin(),
@@ -1025,8 +1034,17 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_ranks(
         grasp_method.grasp_markers.insert(markers_it, gripper->marker);
         grasp_method.grasp_options.insert(options_it, grasp_option);
         sorted_gripper_ranks.insert(contacts_it, gripper);
+        inserted = true;
         break;
       }
+    }
+
+    if (!inserted) {
+      grasp_method.grasp_ranks.push_back(gripper->rank);
+      grasp_method.grasp_poses.push_back(gripper->pose);
+      grasp_method.grasp_markers.push_back(gripper->marker);
+      grasp_method.grasp_options.push_back(grasp_option);
+      sorted_gripper_ranks.push_back(gripper);
     }
   }
   return sorted_gripper_ranks;

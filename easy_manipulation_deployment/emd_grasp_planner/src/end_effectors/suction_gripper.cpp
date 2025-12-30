@@ -742,9 +742,7 @@ void SuctionGripper::get_all_grasp_ranks(
       contact_points_norm * this->num_contact_points_weight;
     geometry_msgs::msg::PoseStamped grasp_pose = get_grasp_pose(grasp, object);
 
-    if (sorted_grasps.size() == 0 && grasp_method.grasp_ranks.empty() &&
-      grasp_method.grasp_poses.empty())
-    {
+    if (grasp_method.grasp_ranks.empty()) {
       sorted_grasps.push_back(grasp);
       grasp_method.grasp_ranks.push_back(grasp->rank);
       grasp_method.grasp_poses.push_back(grasp_pose);
@@ -755,6 +753,7 @@ void SuctionGripper::get_all_grasp_ranks(
       std::vector<visualization_msgs::msg::Marker>::iterator markers_it;
 
       int index;
+      bool inserted = false;
       for (index = 0, pose_it = grasp_method.grasp_poses.begin(), grasp_it = sorted_grasps.begin(),
         markers_it = grasp_method.grasp_markers.begin();
         index < static_cast<int>(grasp_method.grasp_ranks.size());
@@ -765,8 +764,16 @@ void SuctionGripper::get_all_grasp_ranks(
           grasp_method.grasp_ranks.insert(grasp_method.grasp_ranks.begin() + index, grasp->rank);
           grasp_method.grasp_poses.insert(pose_it, grasp_pose);
           grasp_method.grasp_markers.insert(markers_it, grasp->marker);
+          inserted = true;
           break;
         }
+      }
+
+      if (!inserted) {
+        sorted_grasps.push_back(grasp);
+        grasp_method.grasp_ranks.push_back(grasp->rank);
+        grasp_method.grasp_poses.push_back(grasp_pose);
+        grasp_method.grasp_markers.push_back(grasp->marker);
       }
     }
   }
