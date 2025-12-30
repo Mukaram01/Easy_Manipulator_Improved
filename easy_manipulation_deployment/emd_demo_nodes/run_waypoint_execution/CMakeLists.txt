@@ -15,6 +15,7 @@ find_package(ament_cmake REQUIRED)
 find_package(emd_grasp_execution REQUIRED)
 find_package(emd_waypoint_execution REQUIRED)
 find_package(emd_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
 add_executable(demo_node src/demo_node.cpp)
@@ -49,5 +50,4 @@ install(DIRECTORY
 )
 
 ament_package()
-
 
