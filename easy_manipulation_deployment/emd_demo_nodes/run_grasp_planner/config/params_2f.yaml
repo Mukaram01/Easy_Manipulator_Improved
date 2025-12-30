@@ -3,14 +3,14 @@ grasp_planning_node:
     grasp_output_service: "grasp_requests"
     table_to_camera_height: 0.65
     easy_perception_deployment:
-      epd_localization_topic: "/processor/epd_localize_output"
-      epd_tracking_topic: "/processor/epd_tracking_output"
+      epd_localization_topic: "/easy_perception_deployment/epd_localize_output"
+      epd_tracking_topic: "/easy_perception_deployment/epd_tracking_output"
       epd_service: "epd_perception_service"
       epd_enabled: true
       tracking_enabled: false
     camera_parameters:
-      point_cloud_topic: "/camera/pointcloud"
-      camera_frame: "camera_color_optical_frame"
+      point_cloud_topic: "/camera/camera/depth/color/points"
+      camera_frame: "camera_depth_optical_frame"
     point_cloud_params:
       passthrough_filter_limits_x: [-0.50, 0.50]
       passthrough_filter_limits_y: [-0.15, 0.10]
@@ -31,7 +31,7 @@ grasp_planning_node:
         distance_between_fingers_1: 0.0
         distance_between_fingers_2: 0.0
         finger_thickness: 0.02
-        gripper_stroke: 0.09
+        gripper_stroke: 0.085
         gripper_coordinate_system:
           grasp_stroke_direction: "x"
           grasp_stroke_normal_direction: "y"
@@ -46,5 +46,3 @@ grasp_planning_node:
           world_z_angle_threshold: 0.25
     visualization_params:
       point_cloud_visualization: true
-
-      

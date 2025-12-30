@@ -11,7 +11,7 @@ from launch_ros.actions import Node
 
 import xacro
 
-scene_pkg = "ur5_2f_test"
+scene_pkg = "new_scene"
 package_name = "run_grasp_execution"
 
 
