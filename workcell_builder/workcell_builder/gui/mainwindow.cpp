@@ -161,6 +161,11 @@ void MainWindow::on_change_workcell_clicked()
 bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::string scene_name)
 {
   boost::filesystem::current_path(original_path);
+  boost::system::error_code ec;
+  if (!boost::filesystem::is_directory(scene_name, ec) || ec)
+  {
+    return false;
+  }
   boost::filesystem::current_path(scene_name);
 
   if (!boost::filesystem::exists("urdf") || !boost::filesystem::exists("environment.yaml") ||
