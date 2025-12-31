@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "emd/grasp_execution/grasp_execution.hpp"
@@ -39,10 +41,10 @@ bool GraspExecutionInterface::execute_plan(
   // }
 
   if (!result) {
-    sleep(0.5);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     return false;
   }
-  sleep(0.5);
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
   return true;
 }
 
