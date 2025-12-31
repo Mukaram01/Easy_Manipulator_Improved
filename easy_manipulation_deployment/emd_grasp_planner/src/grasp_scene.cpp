@@ -52,8 +52,8 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
 
   if (this->grasp_objects.size() == 0) {return grasp_task;}
 
+  load_end_effectors();
   for (auto object : this->grasp_objects) {
-    load_end_effectors();
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     for (auto & gripper : this->end_effectors) {
       std::chrono::steady_clock::time_point grasp_begin = std::chrono::steady_clock::now();
