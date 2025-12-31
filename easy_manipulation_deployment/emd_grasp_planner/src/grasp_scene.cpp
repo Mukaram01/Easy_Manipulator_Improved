@@ -239,7 +239,8 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
 }
 
 template<>
-void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_direct()
+void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_direct(
+  const builtin_interfaces::msg::Time & stamp)
 {
   RCLCPP_INFO(LOGGER, "Extracting Objects from point cloud");
 
@@ -295,7 +296,7 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_d
       object.get_object_bb();
       object.get_object_world_angles();
       object.grasp_target.target_shape = object.get_object_shape();
-      object.grasp_target.target_pose = object.get_object_pose(camera_frame);
+      object.grasp_target.target_pose = object.get_object_pose(camera_frame, stamp);
       this->grasp_objects.push_back(object);
     }
   }
@@ -308,7 +309,8 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_d
 #if EPD_ENABLED == 1
 template<typename T>
 void grasp_planner::GraspScene<T>::extract_objects_epd(
-  const std::vector<epd_msgs::msg::LocalizedObject> & objects)
+  const std::vector<epd_msgs::msg::LocalizedObject> & objects,
+  const builtin_interfaces::msg::Time & stamp)
 {
   RCLCPP_INFO(LOGGER, "Processing Objects detected by EPD...");
 
@@ -343,7 +345,7 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
     object.get_object_bb();
     object.get_object_world_angles();
     object.grasp_target.target_shape = object.get_object_shape();
-    object.grasp_target.target_pose = object.get_object_pose(camera_frame);
+    object.grasp_target.target_pose = object.get_object_pose(camera_frame, stamp);
     this->grasp_objects.push_back(object);
   }
   RCLCPP_INFO(
@@ -357,7 +359,7 @@ template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
-  extract_objects_direct();
+  extract_objects_direct(msg->header.stamp);
 }
 
 #if EPD_ENABLED == 1
@@ -365,14 +367,14 @@ template<>
 void grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization>::extract_objects(
   const epd_msgs::msg::EPDObjectLocalization::ConstSharedPtr & msg)
 {
-  extract_objects_epd(msg->objects);
+  extract_objects_epd(msg->objects, msg->header.stamp);
 }
 
 template<>
 void grasp_planner::GraspScene<epd_msgs::msg::EPDObjectTracking>::extract_objects(
   const epd_msgs::msg::EPDObjectTracking::ConstSharedPtr & msg)
 {
-  extract_objects_epd(msg->objects);
+  extract_objects_epd(msg->objects, msg->header.stamp);
 }
 #endif
 

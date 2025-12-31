@@ -135,7 +135,9 @@ void GraspObject::get_object_world_angles()
     (this->axis.norm() * worldZVector.norm()));
 }
 
-geometry_msgs::msg::PoseStamped GraspObject::get_object_pose(std::string pose_frame)
+geometry_msgs::msg::PoseStamped GraspObject::get_object_pose(
+  std::string pose_frame,
+  const builtin_interfaces::msg::Time & stamp)
 {
   geometry_msgs::msg::PoseStamped result_pose;
 
@@ -154,13 +156,8 @@ geometry_msgs::msg::PoseStamped GraspObject::get_object_pose(std::string pose_fr
   result_pose.pose.orientation.z = quaternion_.z();
   result_pose.pose.orientation.w = quaternion_.w();
 
-  const auto clock = std::chrono::system_clock::now();
   result_pose.header.frame_id = pose_frame;
-  result_pose.header.stamp.sec = std::chrono::duration_cast<std::chrono::seconds>(
-    clock.time_since_epoch()).count();
-  /* result_pose.header.stamp.nsec =
-  std::chrono::duration_cast<std::chrono::nanoseconds>(clock.time_since_epoch()).count();
-  */
+  result_pose.header.stamp = stamp;
   return result_pose;
 }
 

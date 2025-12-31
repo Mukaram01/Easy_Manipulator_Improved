@@ -54,6 +54,7 @@
 #include <algorithm>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "builtin_interfaces/msg/time.hpp"
 #include "shape_msgs/msg/solid_primitive.hpp"
 
 // Custom Msg
@@ -130,8 +131,11 @@ public:
  * Method that gets the pose of the object
  *
  * \param[in] pose_frame  Reference frame for object
+ * \param[in] stamp  Timestamp to set for the pose header
  */
-  geometry_msgs::msg::PoseStamped get_object_pose(std::string pose_frame);
+  geometry_msgs::msg::PoseStamped get_object_pose(
+    std::string pose_frame,
+    const builtin_interfaces::msg::Time & stamp);
 
   /*! \brief Message output to describe grasp decisions for this object */
   emd_msgs::msg::GraspTarget grasp_target;
