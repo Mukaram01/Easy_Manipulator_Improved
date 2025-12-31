@@ -43,9 +43,14 @@ jobs:
         run: |
           colcon build --event-handlers console_cohesion+ --cmake-args -DCMAKE_BUILD_TYPE=Release
 
+      - name: Lint
+        working-directory: ros_ws
+        run: |
+          colcon test --event-handlers console_cohesion+ --ctest-args -R lint
+          colcon test-result --verbose --all --return-code-on-test-failure
+
       - name: Test
         working-directory: ros_ws
         run: |
           colcon test --event-handlers console_cohesion+
-          colcon test-result --verbose
-
+          colcon test-result --verbose --all --return-code-on-test-failure
