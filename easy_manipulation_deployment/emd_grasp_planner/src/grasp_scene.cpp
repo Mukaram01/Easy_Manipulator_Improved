@@ -15,6 +15,21 @@
 
 // Main PCL files
 #include "emd/grasp_planner/grasp_scene.hpp"
+#include <type_traits>
+#include <utility>
+
+namespace
+{
+template<typename T, typename = void>
+struct has_camera_info : std::false_type
+{
+};
+
+template<typename T>
+struct has_camera_info<T, std::void_t<decltype(std::declval<T>().camera_info)>> : std::true_type
+{
+};
+}  // namespace
 
 template<typename T>
 void grasp_planner::GraspScene<T>::send_to_execution(
@@ -380,15 +395,23 @@ template<typename T>
 void grasp_planner::GraspScene<T>::create_world_collision(
   const typename T::ConstSharedPtr & msg)
 {
-  // auto ppx = camera_info.k.at(2);
-  // auto fx = camera_info.k.at(0);
-  // auto ppy = camera_info.k.at(5);
-  // auto fy = camera_info.k.at(4);
+  float ppx = 0.0F;
+  float fx = 0.0F;
+  float ppy = 0.0F;
+  float fy = 0.0F;
 
-  float ppx = 323.3077697753906;
-  float fx = 610.3740844726562;
-  float ppy = 235.43516540527344;
-  float fy = 609.8685913085938;
+  if constexpr (has_camera_info<T>::value) {
+    const auto & camera_info = msg->camera_info;
+    ppx = static_cast<float>(camera_info.k.at(2));
+    fx = static_cast<float>(camera_info.k.at(0));
+    ppy = static_cast<float>(camera_info.k.at(5));
+    fy = static_cast<float>(camera_info.k.at(4));
+  } else {
+    ppx = static_cast<float>(node->get_parameter("camera_parameters.ppx").as_double());
+    fx = static_cast<float>(node->get_parameter("camera_parameters.fx").as_double());
+    ppy = static_cast<float>(node->get_parameter("camera_parameters.ppy").as_double());
+    fy = static_cast<float>(node->get_parameter("camera_parameters.fy").as_double());
+  }
   cv_bridge::CvImagePtr cv_ptr;
   cv_ptr = cv_bridge::toCvCopy(msg->depth_image, sensor_msgs::image_encodings::TYPE_16UC1);
   cv::Mat depth_img = cv_ptr->image;
