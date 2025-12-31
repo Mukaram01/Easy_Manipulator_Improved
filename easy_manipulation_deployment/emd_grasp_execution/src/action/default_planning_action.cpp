@@ -97,9 +97,13 @@ bool GraspExecutionInterface::plan_and_execute_collision_job(
   bool result = false;
   prompt_job_start(node_->get_logger(), target_id, "Plan to " + action_description);
 
+  const double min_step_size = 1e-6;
+  const double step_size = option.move_to_collide_step_size;
+  const double safe_step_size = step_size > min_step_size ? step_size : min_step_size;
+  const int max_attempts = static_cast<int>(option.clearance / safe_step_size);
   result = move_until_before_collide(
     option.planning_group, target_pose, option.ee_link,
-    option.move_to_collide_step_size, static_cast<int>(option.clearance / 0.005), axis, false);
+    step_size, max_attempts, axis, false);
   prompt_job_end(node_->get_logger(), result);
 
   if (!result) {
