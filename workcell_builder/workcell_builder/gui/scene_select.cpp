@@ -143,12 +143,18 @@ void SceneSelect::generate_scene_files(Scene scene)
   change_directory(target_path);
 
   find_replace("demo.launch.py", "demo_interim.launch.py", "scene_name", scene.name);
+  std::string base_link_name = "base_link";
+  std::string moveit_config_name = scene.name + "_moveit_config";
+  if (scene.robot_loaded && !scene.robot_vector.empty()) {
+    base_link_name = scene.robot_vector[0].base_link;
+    moveit_config_name = scene.robot_vector[0].name + "_moveit_config";
+  }
   find_replace(
     "demo_interim.launch.py", "demo_interim2.launch.py", "base_link_name",
-    scene.robot_vector[0].base_link);
+    base_link_name);
   find_replace(
     "demo_interim2.launch.py", "demo.launch.py", "moveit_config_name",
-    scene.robot_vector[0].name + "_moveit_config");
+    moveit_config_name);
 }
 void SceneSelect::refresh_scenes(int latest_scene)
 {
