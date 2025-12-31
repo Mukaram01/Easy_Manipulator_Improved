@@ -3,6 +3,7 @@
 <img src="./images/emd_logo.png" width="30%" height="30%">
 
 [![Documentation Status](https://readthedocs.org/projects/easy-manipulation-deployment-docs/badge/?version=latest)](https://easy-manipulation-deployment-docs.readthedocs.io/en/latest/?badge=latest)
+[![Humble CI](https://github.com/Mukaram01/Easy_Manipulator_Improved/actions/workflows/humble-ci.yml/badge.svg)](https://github.com/Mukaram01/Easy_Manipulator_Improved/actions/workflows/humble-ci.yml)
 [![License](https://img.shields.io/github/license/ros-industrial/easy_manipulation_deployment.svg)](https://github.com/ros-industrial/easy_manipulation_deployment/blob/master/LICENSE)
 
 A ROS 2 package providing a modular, easy-to-deploy manipulation pipeline that integrates perception elements to enable end-to-end pick-and-place tasks.
@@ -17,8 +18,13 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 | Platform | ROS 2 | Status |
 |----------|-------|--------|
-| Ubuntu 22.04 | Humble | ✅ Tested |
-| Ubuntu 24.04 | Jazzy | 🔧 Experimental |
+| Ubuntu 22.04 | Humble | ✅ Tested (see Version Notes) |
+| Ubuntu 24.04 | Jazzy | 🔧 Experimental (see Version Notes) |
+
+## Version Notes
+
+- **Humble** is the tested, CI-validated target.
+- **Jazzy** is experimental and does not have CI coverage unless added.
 
 ---
 
