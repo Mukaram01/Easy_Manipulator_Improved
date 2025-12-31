@@ -52,6 +52,10 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
-ament_package()
+if(BUILD_TESTING)
+  find_package(launch_testing_ament_cmake REQUIRED)
+  ament_add_launch_test(test/test_grasp_execution_launch.test.py TIMEOUT 120)
+endif()
 
+ament_package()
 
