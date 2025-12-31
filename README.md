@@ -46,59 +46,41 @@ adding `COLCON_IGNORE` files in the package directories.
 ### Prerequisites
 
 - ROS 2 Humble installed ([installation guide](https://docs.ros.org/en/humble/Installation.html))
-- [vcstool](https://github.com/dirk-thomas/vcstool): `sudo apt install python3-vcstool`
-- colcon: `sudo apt install python3-colcon-common-extensions`
+- CI uses Ubuntu 22.04 + ROS 2 Humble via `ros-tooling/setup-ros`
 
 ### Step-by-Step Installation
 
 ```bash
-# 1. Create workspace and clone repository
-mkdir -p ~/workcell_ws/src
-cd ~/workcell_ws/src
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+# 1. Install apt packages (matching CI)
+sudo apt-get update
+sudo apt-get install -y \
+  python3-vcstool \
+  python3-colcon-common-extensions \
+  ros-humble-moveit \
+  ros-humble-moveit-visual-tools \
+  ros-humble-xacro
 
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
+# 2. Create workspace and clone repository
+mkdir -p ~/ros_ws/src/emd_root
+cd ~/ros_ws/src/emd_root
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git .
 
-# 2. Import dependencies
-vcs import < easy_manipulation_deployment/tesseract.repos
+# 3. Import dependencies
+vcs import ~/ros_ws/src < ~/ros_ws/src/emd_root/tesseract.repos
 
-# 3. Setup environment
-cd ~/workcell_ws
+# 4. Setup environment
+cd ~/ros_ws
 export ROS_DISTRO=humble
 source /opt/ros/${ROS_DISTRO}/setup.bash
 
-# 4. Install system dependencies
-~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
+# 5. Install system dependencies
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
 
-# 5. Apply Ubuntu 22.04 fixes
-# Fix Boost serialization header bug
-sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include <boost/serialization/library_version_type.hpp>' \
-    /usr/include/boost/serialization/unordered_collections_load_imp.hpp
-
-# Fix cereal CMake path
-sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
-sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
-
-# 6. Skip incompatible packages
-touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
-
-# 7. Remove incompatible trajopt_ifopt planner
-rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
-sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
-sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
-
-# 8. Build (use parallel-workers 2 to reduce memory usage)
+# 6. Build (use parallel-workers 2 to reduce memory usage)
 colcon build --symlink-install --parallel-workers 2
 
-# 9. Source the workspace
+# 7. Source the workspace
 source install/setup.bash
 ```
 
@@ -169,6 +151,34 @@ ros2 launch new_scene demo.launch.py
 ---
 
 ## Troubleshooting
+
+### Optional manual patches
+
+The following steps are optional and only needed if you hit the corresponding build errors.
+
+<details>
+<summary><b>Skip incompatible packages</b></summary>
+
+```bash
+touch ~/ros_ws/src/tesseract_qt/COLCON_IGNORE
+touch ~/ros_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
+touch ~/ros_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
+touch ~/ros_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
+touch ~/ros_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+```
+</details>
+
+<details>
+<summary><b>Remove incompatible trajopt_ifopt planner</b></summary>
+
+```bash
+rm -rf ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
+sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
+    ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
+    ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+```
+</details>
 
 ### Common Build Errors
 
