@@ -11,6 +11,10 @@ grasp_planning_node:
     camera_parameters:
       point_cloud_topic: "/camera/pointcloud"
       camera_frame: "camera_color_optical_frame"
+      fx: 610.3740844726562
+      fy: 609.8685913085938
+      ppx: 323.3077697753906
+      ppy: 235.43516540527344
     point_cloud_params:
       passthrough_filter_limits_x: [-0.50, 0.50]
       passthrough_filter_limits_y: [-0.15, 0.10]
