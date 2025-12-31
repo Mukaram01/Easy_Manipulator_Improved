@@ -22,6 +22,25 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 ---
 
+## CI verified on Humble
+
+CI runs on Ubuntu 22.04 with ROS 2 Humble.
+
+To run the same checks locally:
+
+```bash
+rosdep install --from-paths src --ignore-src -yr --rosdistro humble
+colcon build --symlink-install
+colcon test
+colcon test-result --verbose
+```
+
+Some GUI-related packages are optional in CI. You can skip them locally with
+`--packages-skip` (e.g., `colcon build --packages-skip <pkg1> <pkg2>`) or by
+adding `COLCON_IGNORE` files in the package directories.
+
+---
+
 ## Quick Installation (Ubuntu 22.04 + ROS 2 Humble)
 
 ### Prerequisites
