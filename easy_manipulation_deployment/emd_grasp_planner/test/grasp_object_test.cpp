@@ -181,7 +181,7 @@ TEST_F(GraspObjectTest, getObjectPoseTest)
   object.get_object_bb();
   object.get_object_world_angles();
   geometry_msgs::msg::PoseStamped result_pose =
-    object.get_object_pose("camera_frame");
+    object.get_object_pose("camera_frame", builtin_interfaces::msg::Time());
   EXPECT_NEAR(centroid(0), result_pose.pose.position.x, 0.0001);
   EXPECT_NEAR(centroid(1), result_pose.pose.position.y, 0.0001);
   EXPECT_NEAR(centroid(2), result_pose.pose.position.z, 0.0001);
@@ -202,7 +202,7 @@ TEST_F(GraspObjectTest, getObjectPoseTest2)
   object.get_object_bb();
   object.get_object_world_angles();
   geometry_msgs::msg::PoseStamped result_pose =
-    object.get_object_pose("camera_frame");
+    object.get_object_pose("camera_frame", builtin_interfaces::msg::Time());
   EXPECT_NEAR(centroid(0), result_pose.pose.position.x, 0.0001);
   EXPECT_NEAR(centroid(1), result_pose.pose.position.y, 0.0001);
   EXPECT_NEAR(centroid(2), result_pose.pose.position.z, 0.0001);

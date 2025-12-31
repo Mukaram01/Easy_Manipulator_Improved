@@ -36,6 +36,7 @@
 #include "visualization_msgs/msg/marker.hpp"
 
 // Other libraries
+#include "builtin_interfaces/msg/time.hpp"
 #include <emd_msgs/msg/grasp_target.hpp>
 #include <emd_msgs/msg/grasp_task.hpp>
 #include <emd_msgs/srv/grasp_request.hpp>
@@ -157,7 +158,7 @@ protected:
  * Function that processes the Objects in a point cloud scene and outputs a vector
  * of GraspObjects. Method to extract grasp objects from Point Clouds for Direct Camera workflow
  */
-  void extract_objects_direct();
+  void extract_objects_direct(const builtin_interfaces::msg::Time & stamp);
 
 /**
  * Method that loads all available end effector based on the parameter files
@@ -186,7 +187,9 @@ protected:
  * of GraspObjects. Method to extract grasp objects from Point Clouds for EPD-EMD workflow
  * \param[in] objects EPD detected objects
  */
-  void extract_objects_epd(const std::vector<epd_msgs::msg::LocalizedObject> & objects);
+  void extract_objects_epd(
+    const std::vector<epd_msgs::msg::LocalizedObject> & objects,
+    const builtin_interfaces::msg::Time & stamp);
 
   /*! \brief Method to request service to trigger epd pipeline */
   void trigger_epd_pipeline();
