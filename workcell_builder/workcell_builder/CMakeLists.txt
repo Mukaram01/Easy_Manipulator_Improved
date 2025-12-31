@@ -151,6 +151,9 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  ament_add_launch_test(test/test_ur5_2f_demo_launch.test.py TIMEOUT 180)
 endif()
 
 install(TARGETS workcell_builder
