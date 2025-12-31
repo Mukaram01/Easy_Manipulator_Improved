@@ -55,6 +55,8 @@ install(DIRECTORY
 if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
   ament_add_launch_test(test/test_grasp_execution_launch.test.py TIMEOUT 120)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
 endif()
 
 ament_package()
