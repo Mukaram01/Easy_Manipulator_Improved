@@ -118,16 +118,7 @@ void MainWindow::on_load_workcell_clicked()
       Scene temp_scene;
       temp_scene.filepath = filepath.path().string();
 
-      std::string scene_name;
-      for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-        ++it)
-      {
-        if (*it != '/') {
-          scene_name = std::string(1, *it) + scene_name;
-        } else {
-          break;
-        }
-      }
+      std::string scene_name = filepath.path().filename().string();
       if (is_good_scene(boost::filesystem::current_path(), scene_name)) {
         temp_scene.name = scene_name;
         temp_scene.loaded = false;
