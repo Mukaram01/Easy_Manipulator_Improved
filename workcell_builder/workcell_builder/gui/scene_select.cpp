@@ -640,7 +640,15 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 }
 void SceneSelect::on_back_clicked()
 {
-  if (workcell.scene_vector[ui->scene_list->currentIndex()].loaded && !check_yaml()) {
+  int current_index = ui->scene_list->currentIndex();
+  if (current_index < 0 || workcell.scene_vector.empty() ||
+    current_index >= static_cast<int>(workcell.scene_vector.size()))
+  {
+    this->close();
+    return;
+  }
+
+  if (workcell.scene_vector[current_index].loaded && !check_yaml()) {
     ReplaceWarning replace_window;
     replace_window.setWindowTitle("Edit Scene");
     replace_window.set_label(
