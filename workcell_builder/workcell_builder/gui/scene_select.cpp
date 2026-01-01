@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <string>
+#include <unordered_set>
 
 #include "gui/ui_scene_select.h"
 #include "gui/scene_select.h"
@@ -488,6 +489,9 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   YAML::Node ext_joints;
   bool has_objects = false;
 
+  input_scene->object_vector.clear();
+  input_scene->parent_objects.clear();
+  input_scene->child_objects.clear();
 
   for (YAML::iterator it = yaml.begin(); it != yaml.end(); ++it) {
     std::string key = it->first.as<std::string>();
@@ -516,20 +520,16 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 
   if (has_objects) {  // We need to do this because the object field needs to load before
                       // the ext joint field, and it currently has a random load order
+    std::unordered_set<std::string> object_names;
     for (YAML::iterator objects_it = objects.begin(); objects_it != objects.end(); ++objects_it) {
       Object temp_object;
       temp_object.name = objects_it->first.as<std::string>();
-      // Ensure unique object names to prevent directory conflicts
-      std::string base_name = temp_object.name;
-      int suffix = 1;
-      auto name_exists = [&](const std::string & name) {
-        return std::any_of(
-          input_scene->object_vector.begin(), input_scene->object_vector.end(),
-          [&](const Object & o) {return o.name == name;});
-      };
-      while (name_exists(temp_object.name)) {
-        temp_object.name = base_name + "_" + std::to_string(suffix++);
+      if (object_names.find(temp_object.name) != object_names.end()) {
+        ui->error_workcell->append(
+          "<font color='red'> Error: Duplicate object name detected in YAML.</font>");
+        return false;
       }
+      object_names.insert(temp_object.name);
       YAML::Node ext_joint;
       temp_object.ext_joint.child_object = temp_object.name;
       for (YAML::iterator in_object_it = objects_it->second.begin();
