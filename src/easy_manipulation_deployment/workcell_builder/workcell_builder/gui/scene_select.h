@@ -77,6 +77,7 @@ private slots:
 
 private:
   Ui::SceneSelect * ui;
+  bool validate_description_xacros(const Scene & scene, const std::string & context_label);
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
