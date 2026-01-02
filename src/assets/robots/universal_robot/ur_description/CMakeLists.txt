@@ -8,9 +8,12 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(DIRECTORY urdf/generated/
-  DESTINATION share/${PROJECT_NAME}/urdf/generated
-)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/urdf/generated")
+  install(
+    DIRECTORY urdf/generated/
+    DESTINATION share/${PROJECT_NAME}/urdf/generated
+  )
+endif()
 
 ament_export_dependencies(${THIS_PACKAGE_INCLUDE_DEPENDS})
 
