@@ -75,10 +75,11 @@ adding `COLCON_IGNORE` files in the package directories.
 - ROS 2 Humble installed ([installation guide](https://docs.ros.org/en/humble/Installation.html))
 - CI uses Ubuntu 22.04 + ROS 2 Humble via `ros-tooling/setup-ros`
 
-### Step-by-Step Installation
+### Step-by-Step Installation (single, ordered flow)
+
+#### 0) Install apt packages (matching CI)
 
 ```bash
-# 1. Install apt packages (matching CI)
 sudo apt-get update
 sudo apt-get install -y \
   python3-vcstool \
@@ -86,29 +87,72 @@ sudo apt-get install -y \
   ros-humble-moveit \
   ros-humble-moveit-visual-tools \
   ros-humble-xacro
+```
 
-# 2. Create workspace and clone repository
-mkdir -p ~/workcell_ws/src/easy_manipulation_deployment
-cd ~/workcell_ws/src/easy_manipulation_deployment
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git .
+#### 1) Recreate the workspace the “original” way
 
-# 3. Import dependencies
-vcs import ~/workcell_ws/src < ~/workcell_ws/src/easy_manipulation_deployment/tesseract.repos
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
 
-# 4. Setup environment
+# clone your repo INTO src as easy_manipulation_deployment (this is the intended layout)
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+```
+
+#### 2) Put assets/scenes where the README expects them (original style)
+
+```bash
+cd ~/workcell_ws/src
+mv easy_manipulation_deployment/assets .
+mv easy_manipulation_deployment/scenes .
+```
+
+#### 3) Import dependencies into `~/workcell_ws/src`
+
+```bash
+cd ~/workcell_ws/src
+vcs import < easy_manipulation_deployment/tesseract.repos
+```
+
+#### 4) Apply the Humble “known fixes / skips” (matches README notes)
+
+```bash
 cd ~/workcell_ws
 export ROS_DISTRO=humble
 source /opt/ros/${ROS_DISTRO}/setup.bash
 
-# 5. Install system dependencies
+# Install deps script if you have it
+~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
+
+# Fix cereal CMake path (common on Jammy)
+sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
+sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
+
+# Skip packages that cause distro mismatches
+touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+```
+
+#### 5) Now rosdep + build
+
+```bash
+cd ~/workcell_ws
 rosdep update
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
 
-# 6. Build (use parallel-workers 2 to reduce memory usage)
+rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
-
-# 7. Source the workspace
 source install/setup.bash
+```
+
+#### After this, your repo commands are back to normal
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+git pull
 ```
 
 ### Alternative: Use Helper Script
