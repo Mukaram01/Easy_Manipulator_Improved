@@ -42,3 +42,7 @@ ifopt/
 opw_kinematics/
 descartes_light/
 tesseract_external/
+
+# Never commit vendored deps (use tesseract.repos + vcs import)
+src/boost_plugin_loader/
+src/ros_industrial_cmake_boilerplate/
