@@ -32,3 +32,13 @@ src/ifopt/
 src/opw_kinematics/
 src/tesseract*/
 src/trajopt/
+
+# Do not vendor dependencies in this repo (use tesseract.repos + vcs import)
+boost_plugin_loader/
+ros_industrial_cmake_boilerplate/
+tesseract*/
+trajopt*/
+ifopt/
+opw_kinematics/
+descartes_light/
+tesseract_external/
