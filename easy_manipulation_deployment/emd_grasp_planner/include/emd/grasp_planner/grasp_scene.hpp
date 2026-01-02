@@ -80,13 +80,13 @@ class GraspScene
 public:
 /*! \brief GraspScene Constructor */
   GraspScene(const rclcpp::Node::SharedPtr & node_)
-  : cloud(new pcl::PointCloud<pcl::PointXYZRGB>()),
+  : node(node_),
+    cloud(new pcl::PointCloud<pcl::PointXYZRGB>()),
     cloud_plane_removed(new pcl::PointCloud<pcl::PointXYZRGB>()),
     org_cloud(new pcl::PointCloud<pcl::PointXYZRGB>()),
     cloud_table(new pcl::PointCloud<pcl::PointXYZRGB>()),
     table_coeff(new pcl::ModelCoefficients),
-    viewer(new pcl::visualization::PCLVisualizer("Cloud viewer")),
-    node(node_)
+    viewer(new pcl::visualization::PCLVisualizer("Cloud viewer"))
   {
     rclcpp::Clock::SharedPtr clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
 
