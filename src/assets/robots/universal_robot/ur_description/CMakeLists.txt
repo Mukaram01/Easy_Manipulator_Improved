@@ -8,6 +8,10 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY urdf/generated/
+  DESTINATION share/${PROJECT_NAME}/urdf/generated
+)
+
 ament_export_dependencies(${THIS_PACKAGE_INCLUDE_DEPENDS})
 
 if(BUILD_TESTING)
