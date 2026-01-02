@@ -30,6 +30,10 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addrobot.h"
 
+namespace
+{
+constexpr const char * kMissingUrdfLabel = "Missing URDF";
+}  // namespace
 
 AddRobot::AddRobot(QWidget * parent)
 : QDialog(parent),
@@ -309,6 +313,16 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
 std::vector<std::string> AddRobot::GetLinks(std::string filename)
 {
   std::vector<std::string> links;
+  const boost::filesystem::path file_path(filename);
+  if (!boost::filesystem::exists(file_path)) {
+    std::cerr << "URDF/xacro file not found: " << file_path.string() << std::endl;
+    QMessageBox::warning(
+      this,
+      "URDF Missing",
+      QString("URDF/xacro file not found:\n%1")
+      .arg(QString::fromStdString(file_path.string())));
+    return links;
+  }
 
   QString urdf_xml;
   QProcess xacro_process;
@@ -319,6 +333,17 @@ std::vector<std::string> AddRobot::GetLinks(std::string filename)
   {
     urdf_xml = QString::fromUtf8(xacro_process.readAllStandardOutput());
   } else {
+    const QString stderr_output = QString::fromUtf8(xacro_process.readAllStandardError());
+    std::cerr
+      << "Failed to expand xacro for file: " << file_path.string()
+      << ". Error: " << stderr_output.toStdString() << std::endl;
+    QMessageBox::warning(
+      this,
+      "Xacro Expansion Failed",
+      QString(
+        "Failed to expand xacro file:\n%1\n\n"
+        "Please fix the robot description and try again.")
+      .arg(QString::fromStdString(file_path.string())));
     std::ifstream infile(filename);
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     urdf_xml = QString::fromStdString(content);
@@ -356,6 +381,13 @@ void AddRobot::on_robot_model_currentIndexChanged(int index)
   bool oldState2 = ui->robot_ee_link->blockSignals(true);
   ui->robot_links->clear();
   ui->robot_ee_link->clear();
+  const auto & selected_links =
+    available_robots[ui->robot_brand->currentIndex()][ui->robot_model->currentIndex()]
+    .robot_links;
+  if (selected_links.empty()) {
+    ui->robot_links->addItem(kMissingUrdfLabel);
+    ui->robot_ee_link->addItem(kMissingUrdfLabel);
+  }
   for (int i = 0;
     i <
     static_cast<int>(available_robots[ui->robot_brand->currentIndex()][ui->robot_model->currentIndex()  // NOLINT
@@ -443,6 +475,12 @@ void AddRobot::on_ok_2_clicked()
   } else {
     robot = available_robots[ui->robot_brand->currentIndex()][ui->robot_model->currentIndex()];
     ui->errorlist_2->clear();
+    if (robot.robot_links.empty()) {
+      ui->errorlist_2->append(
+        " <font color='red'> Missing URDF/xacro for selected robot."
+        " Please fix the robot description before continuing. \n </font>");
+      return;
+    }
     if (ErrorCheckOrigin() == 0) {
       if (ui->robot_links->currentIndex() < 0) {
         ui->errorlist_2->append(" <font color='red'> Invalid Base Link \n </font>");
