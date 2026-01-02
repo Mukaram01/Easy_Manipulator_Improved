@@ -14,6 +14,27 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 ---
 
+## Quick Start (Experienced Users)
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-vcstool python3-colcon-common-extensions ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro
+mkdir -p ~/workcell_ws/src/emd_root
+cd ~/workcell_ws/src/emd_root
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git .
+# Note: tesseract.repos lives in the repo root (e.g., ~/workcell_ws/src/emd_root/tesseract.repos)
+vcs import ~/workcell_ws/src < ~/workcell_ws/src/emd_root/tesseract.repos
+cd ~/workcell_ws
+export ROS_DISTRO=humble
+source /opt/ros/${ROS_DISTRO}/setup.bash
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install --parallel-workers 2
+source install/setup.bash
+```
+
+---
+
 ## Supported Platforms
 
 | Platform | ROS 2 | Status |
