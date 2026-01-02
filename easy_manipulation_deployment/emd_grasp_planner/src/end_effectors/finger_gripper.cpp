@@ -1386,8 +1386,8 @@ int FingerGripper::get_nearest_point_index(
 }
 
 Eigen::Vector3f FingerGripper::get_gripper_plane(
-  std::shared_ptr<SingleFinger> & finger_sample_1,
-  std::shared_ptr<SingleFinger> & finger_sample_2,
+  [[maybe_unused]] std::shared_ptr<SingleFinger> & finger_sample_1,
+  [[maybe_unused]] std::shared_ptr<SingleFinger> & finger_sample_2,
   const Eigen::Vector3f & grasp_direction,
   const GraspObject & object)
 {
