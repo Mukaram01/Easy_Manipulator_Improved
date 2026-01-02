@@ -25,3 +25,10 @@ __pycache__/
 .cache/
 tmp/
 
+
+# Third-party dependencies (imported via vcs/.repos; do not commit)
+src/descartes_light/
+src/ifopt/
+src/opw_kinematics/
+src/tesseract*/
+src/trajopt/
