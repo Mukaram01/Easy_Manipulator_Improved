@@ -41,7 +41,8 @@ void grasp_planner::GraspScene<T>::send_to_execution(
     req->grasp_targets = grasp_task.grasp_targets;
     if (!this->result_future.valid()) {
       RCLCPP_INFO(LOGGER, "Client Not started");
-      this->result_future = output_client->async_send_request(req);
+      auto request = output_client->async_send_request(req);
+      this->result_future = request.future.share();
     } else if (this->result_future.wait_for(std::chrono::nanoseconds(0)) ==
       std::future_status::timeout)
     {
@@ -51,7 +52,8 @@ void grasp_planner::GraspScene<T>::send_to_execution(
       RCLCPP_INFO(
         LOGGER, "Grasp Execution completed! STATUS: %s!!",
         (result->success) ? "SUCCESS" : "FAILURE");
-      this->result_future = output_client->async_send_request(req);
+      auto request = output_client->async_send_request(req);
+      this->result_future = request.future.share();
     }
   } else {
     RCLCPP_ERROR(LOGGER, "No grasp tasks generated, Skipping request to grasp execution...");
@@ -615,7 +617,8 @@ void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
   req->ready = true;
   if (!this->epd_result_future.valid()) {
     RCLCPP_INFO(LOGGER, "Client Not started");
-    this->epd_result_future = epd_client->async_send_request(req);
+    auto request = epd_client->async_send_request(req);
+    this->epd_result_future = request.future.share();
   } else if (this->epd_result_future.wait_for(std::chrono::nanoseconds(0)) ==
     std::future_status::timeout)
   {
@@ -625,7 +628,8 @@ void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
     RCLCPP_INFO(
       LOGGER, "EPD Pipeline triggering complete. STATUS: %s!!",
       (result->success) ? "SUCCESS" : "FAILURE");
-    this->epd_result_future = epd_client->async_send_request(req);
+    auto request = epd_client->async_send_request(req);
+    this->epd_result_future = request.future.share();
   }
 }
 #endif
