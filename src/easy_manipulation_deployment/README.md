@@ -88,15 +88,15 @@ sudo apt-get install -y \
   ros-humble-xacro
 
 # 2. Create workspace and clone repository
-mkdir -p ~/ros_ws/src/emd_root
-cd ~/ros_ws/src/emd_root
+mkdir -p ~/workcell_ws/src/easy_manipulation_deployment
+cd ~/workcell_ws/src/easy_manipulation_deployment
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git .
 
 # 3. Import dependencies
-vcs import ~/ros_ws/src < ~/ros_ws/src/emd_root/tesseract.repos
+vcs import ~/workcell_ws/src < ~/workcell_ws/src/easy_manipulation_deployment/tesseract.repos
 
 # 4. Setup environment
-cd ~/ros_ws
+cd ~/workcell_ws
 export ROS_DISTRO=humble
 source /opt/ros/${ROS_DISTRO}/setup.bash
 
@@ -187,11 +187,11 @@ The following steps are optional and only needed if you hit the corresponding bu
 <summary><b>Skip incompatible packages</b></summary>
 
 ```bash
-touch ~/ros_ws/src/tesseract_qt/COLCON_IGNORE
-touch ~/ros_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
-touch ~/ros_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
-touch ~/ros_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
-touch ~/ros_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
+touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
 ```
 </details>
 
@@ -201,11 +201,11 @@ touch ~/ros_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
 <summary><b>Remove incompatible trajopt_ifopt planner</b></summary>
 
 ```bash
-rm -rf ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
+rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
 sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
-    ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
 sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
-    ~/ros_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
 ```
 </details>
 
