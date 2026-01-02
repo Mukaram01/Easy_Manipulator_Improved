@@ -1,0 +1,23 @@
+{
+  "basic_info" : {
+    "n_steps" : 1,
+    "manip" : "left_arm",
+    "convex_solver" : "AUTO_SOLVER"
+  },
+  "constraints" : [
+  {
+    "type" : "cart_pose",
+    "params": {
+      "pos_coeffs" : [1, 1, 1],
+      "rot_coeffs" : [1, 1, 1],
+      "source_frame" : "l_gripper_tool_frame",
+      "target_frame" : "base_footprint",
+      "target_frame_offset_xyz" : [0.4,0,0.8],
+      "target_frame_offset_wxyz" : [0,0,1,0]
+    }
+  }
+  ],
+  "init_info" : {
+    "type" : "stationary"
+  }
+}

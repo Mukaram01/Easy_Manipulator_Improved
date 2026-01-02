@@ -1,0 +1,38 @@
+contact_manager_plugins:
+  search_paths:
+    - /usr/local/lib
+  search_libraries:
+    - tesseract_collision_bullet_factories
+    - tesseract_collision_fcl_factories
+  discrete_plugins:
+    default: BulletDiscreteBVHManager
+    plugins:
+      BulletDiscreteBVHManager:
+        class: BulletDiscreteBVHManagerFactory
+        config:
+          share_pool_allocators: false
+          max_persistent_manifold_pool_size: 100
+          max_collision_algorithm_pool_size: 100
+      BulletDiscreteSimpleManager:
+        class: BulletDiscreteSimpleManagerFactory
+        config:
+          share_pool_allocators: false
+          max_persistent_manifold_pool_size: 100
+          max_collision_algorithm_pool_size: 100
+      FCLDiscreteBVHManager:
+        class: FCLDiscreteBVHManagerFactory
+  continuous_plugins:
+    default: BulletCastBVHManager
+    plugins:
+      BulletCastBVHManager:
+        class: BulletCastBVHManagerFactory
+        config:
+          share_pool_allocators: false
+          max_persistent_manifold_pool_size: 100
+          max_collision_algorithm_pool_size: 100
+      BulletCastSimpleManager:
+        class: BulletCastSimpleManagerFactory
+        config:
+          share_pool_allocators: false
+          max_persistent_manifold_pool_size: 100
+          max_collision_algorithm_pool_size: 100

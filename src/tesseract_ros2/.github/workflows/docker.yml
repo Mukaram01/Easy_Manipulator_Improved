@@ -1,0 +1,81 @@
+name: Docker
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    paths:
+      - 'docker/Dockerfile'
+      - '.github/workflows/docker.yml'
+  release:
+    types:
+      - released
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: humble
+            os: jammy
+          - distro: jazzy
+            os: noble
+          - distro: rolling
+            os: noble
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+      PUSH_DOCKER_IMAGE: ${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker meta-information
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+            prefix=
+            suffix=
+          tags: |
+            type=ref,event=branch,prefix=${{ matrix.distro }}-,value=${{ env.BRANCH_NAME }}
+            type=raw,event=pr,prefix=${{ matrix.distro }}-,value=master
+            type=semver,pattern={{major}}.{{minor}},prefix=${{ matrix.distro }}-
+
+      - name: Set TAG environment variable based on metadata output
+        run: |
+          # All prior tesseract packages are on an OS level, being a ROS package, this is on a ROS distro level
+          TAG="${{ steps.meta.outputs.version }}"
+          # Replace all occurrences of matrix.distro with matrix.os in the generated tags. e.g. humble->jammy
+          TAG="${TAG//${{ matrix.distro }}/${{ matrix.os }}}"
+          # Export TAG to the environment variable for use in subsequent steps
+          echo "TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            TAG=${{ env.TAG }}
+            ROS_DISTRO=${{ matrix.distro }}
+          push: ${{ env.PUSH_DOCKER_IMAGE }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

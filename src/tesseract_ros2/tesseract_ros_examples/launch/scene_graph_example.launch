@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- By default we do not overwrite the URDF. Change the following to true to change the default behavior -->
+  <!-- The name of the parameter under which the URDF is loaded -->
+  <arg name="robot_description" default="robot_description"/>
+  <arg name="trajopt_description" default="trajopt_description"/>
+  <arg name="plotting" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="testing" default="false"/>
+
+  <!-- Load universal robot description format (URDF) -->
+  <let name="robot_description_file" value="$(command 'xacro $(find-pkg-share tesseract_support)/urdf/scene_graph_example.xacro')" />
+
+  <!-- The semantic description that corresponds to the URDF -->
+  <let name="robot_description_semantic_file" value="$(command 'cat $(find-pkg-share tesseract_support)/urdf/scene_graph_example.srdf')" />
+  
+  <group unless="$(var testing)">
+    <node pkg="tesseract_ros_examples" exec="tesseract_ros_examples_scene_graph_example_node" output="screen">
+      <param name="plotting" type="bool" value="$(var plotting)"/>
+      <param name="rviz" type="bool" value="$(var rviz)"/>
+      <param name="$(var robot_description)" value="$(var robot_description_file)" type="str"/>
+      <param name="$(var robot_description)_semantic" value="$(var robot_description_semantic_file)" type="str"/>
+    </node>
+
+    <!-- Launch visualization -->
+    <node pkg="rviz2" exec="rviz2"
+        args="-d $(find-pkg-share tesseract_ros_examples)/config/examples.rviz" output="screen">
+      <param name="$(var robot_description)" value="$(var robot_description_file)" type="str"/>
+      <param name="$(var robot_description)_semantic" value="$(var robot_description_semantic_file)" type="str"/>
+    </node>
+  </group>
+</launch>
