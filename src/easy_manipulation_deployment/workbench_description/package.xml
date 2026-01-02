@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>workbench_description</name>
+  <version>0.0.1</version>
+  <description>Simple workbench description used in EMD demos</description>
+  <maintainer email="glenn_tan@artc.a-star.edu.sg">Tan Jing Peng Glenn</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

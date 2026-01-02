@@ -1,0 +1,71 @@
+cmake_minimum_required(VERSION 3.5)
+project(emd_waypoint_execution)
+
+# Default to C++17
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+# find dependencies
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
+option(BUILD_WAYPOINT_EXECUTION_INTERFACE "Build waypoint execution interface" ON)
+if(BUILD_WAYPOINT_EXECUTION_INTERFACE)
+  find_package(emd_grasp_execution REQUIRED)
+endif()
+
+include_directories(
+  PUBLIC
+  include
+)
+
+if(BUILD_WAYPOINT_EXECUTION_INTERFACE)
+  add_library(waypoint_execution_interface
+    SHARED
+    src/waypoint_parser.cpp)
+
+  ament_target_dependencies(waypoint_execution_interface
+    emd_grasp_execution
+    rclcpp
+    geometry_msgs
+    tf2_geometry_msgs)
+
+  target_link_libraries(waypoint_execution_interface
+    jsoncpp_lib)
+
+  install(
+    DIRECTORY include/
+    DESTINATION include)
+
+  install(
+    TARGETS waypoint_execution_interface
+    EXPORT export_waypoint_execution_interface
+    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    INCLUDES DESTINATION include)
+
+  ament_export_include_directories(include)
+  ament_export_libraries(waypoint_execution_interface)
+  ament_export_targets(export_waypoint_execution_interface HAS_LIBRARY_TARGET)
+  ament_export_dependencies(jsoncpp tf2_geometry_msgs)
+endif()
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  add_subdirectory(test)
+endif()
+ament_package()

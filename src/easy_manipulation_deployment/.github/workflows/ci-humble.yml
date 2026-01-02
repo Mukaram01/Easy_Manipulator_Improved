@@ -1,0 +1,70 @@
+name: Humble CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      COLCON_SKIP_PACKAGES: workcell_builder workbench_description
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ROS
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-colcon-common-extensions \
+            python3-rosdep \
+            python3-vcstool
+
+      - name: Initialize rosdep
+        run: |
+          sudo rosdep init || true
+          rosdep update
+
+      - name: Create workspace
+        run: |
+          mkdir -p ros_ws/src/emd_root
+          rsync -a --exclude ros_ws/ . ros_ws/src/emd_root/
+          if [ -f ros_ws/src/emd_root/tesseract.repos ]; then
+            vcs import ros_ws/src < ros_ws/src/emd_root/tesseract.repos
+          fi
+
+      - name: Install dependencies
+        working-directory: ros_ws
+        run: |
+          rosdep install --from-paths src --ignore-src -yr --rosdistro humble
+
+      - name: Build
+        working-directory: ros_ws
+        run: |
+          colcon build \
+            --symlink-install \
+            --event-handlers console_cohesion+ \
+            --packages-skip ${COLCON_SKIP_PACKAGES}
+
+      - name: Test
+        working-directory: ros_ws
+        run: |
+          colcon test \
+            --event-handlers console_cohesion+ \
+            --packages-skip ${COLCON_SKIP_PACKAGES}
+          colcon test-result --verbose
+
+      - name: Lint
+        working-directory: ros_ws
+        run: |
+          colcon test \
+            --event-handlers console_cohesion+ \
+            --packages-skip ${COLCON_SKIP_PACKAGES} \
+            --ctest-args -L lint
+          colcon test-result --verbose

@@ -1,0 +1,176 @@
+// Copyright 2020 Advanced Remanufacturing and Technology Centre
+// Copyright 2020 ROS-Industrial Consortium Asia Pacific Team
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "gui/mainwindow.h"
+#include <QFileDialog>
+#include <boost/filesystem.hpp>
+#include <stdio.h>
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <string>
+
+#include "gui/ui_mainwindow.h"
+#include "gui/scene_select.h"
+#include "attributes/scene.h"
+
+
+MainWindow::MainWindow(QWidget * parent)
+: QMainWindow(parent),
+  ui(new Ui::MainWindow)
+{
+  ui->setupUi(this);
+  setWindowTitle("Workcell Builder");
+  ui->next->setDisabled(true);
+  ui->change_workcell->setDisabled(true);
+  success = false;
+  ui->error_label->setWordWrap(true);
+  ui->error_label->setText("<font color='red'>Workcell not available</font>");
+
+  // Detect available ROS 2 distributions from /opt/ros.
+  const boost::filesystem::path ros_root("/opt/ros");
+  if (boost::filesystem::exists(ros_root) && boost::filesystem::is_directory(ros_root)) {
+    for (const auto & entry : boost::filesystem::directory_iterator(ros_root)) {
+      if (boost::filesystem::is_directory(entry.path())) {
+        ros_dist.push_back(entry.path().filename().string());
+      }
+    }
+  }
+
+  const char * distro = std::getenv("ROS_DISTRO");
+  if (ros_dist.empty() && distro != nullptr) {
+    ros_dist.emplace_back(distro);
+  }
+
+  std::sort(ros_dist.begin(), ros_dist.end());
+  ros_dist.erase(std::unique(ros_dist.begin(), ros_dist.end()), ros_dist.end());
+
+  for (const auto & supported_distro : ros_dist) {
+    ui->ros_distro->addItem(QString::fromStdString(supported_distro));
+  }
+
+  if (distro != nullptr) {
+    std::string current_distro(distro);
+    for (const auto & supported_distro : ros_dist) {
+      if (supported_distro == current_distro) {
+        ui->ros_distro->setCurrentText(QString::fromStdString(supported_distro));
+        break;
+      }
+    }
+  }
+}
+
+MainWindow::~MainWindow()
+{
+  delete ui;
+}
+
+void MainWindow::on_load_workcell_clicked()
+{
+  QString workcell_file = QFileDialog::getExistingDirectory(
+    this,
+    "Target workcell project destination",
+    QDir::homePath());
+  if (!workcell_file.isEmpty()) {
+    boost::filesystem::current_path(workcell_file.toStdString());
+    if (!boost::filesystem::exists("src")) {
+      boost::filesystem::create_directory("src");
+    }
+    boost::filesystem::current_path("src");
+    workcell_path = boost::filesystem::current_path();
+    if (!boost::filesystem::exists("assets")) {
+      boost::filesystem::create_directory("assets");
+    }
+    if (!boost::filesystem::exists("scenes")) {
+      boost::filesystem::create_directory("scenes");
+    }
+
+    boost::filesystem::current_path("assets");
+    if (!boost::filesystem::exists("robots")) {
+      boost::filesystem::create_directory("robots");
+    }
+    if (!boost::filesystem::exists("end_effectors")) {
+      boost::filesystem::create_directory("end_effectors");
+    }
+    if (!boost::filesystem::exists("environment")) {
+      boost::filesystem::create_directory("environment");
+    }
+
+    boost::filesystem::current_path(workcell_path);
+    boost::filesystem::current_path("scenes");
+
+    workcell.scene_vector.clear();
+    for (auto & filepath :
+      boost::filesystem::directory_iterator(boost::filesystem::current_path()))
+    {
+      Scene temp_scene;
+      temp_scene.filepath = filepath.path().string();
+
+      std::string scene_name = filepath.path().filename().string();
+      if (is_good_scene(boost::filesystem::current_path(), scene_name)) {
+        temp_scene.name = scene_name;
+        temp_scene.loaded = false;
+        workcell.scene_vector.push_back(temp_scene);
+      }
+    }
+    ui->error_label->setText("<font color='green'>Workcell loaded</font>");
+    ui->next->setDisabled(false);
+    ui->load_workcell->setDisabled(true);
+    ui->change_workcell->setDisabled(false);
+    success = true;
+    ui->filepath->setText(workcell_file);
+    workcell.workcell_filepath = workcell_file.toStdString();
+  }
+}
+
+void MainWindow::on_next_clicked()
+{
+  boost::filesystem::path before_scene_select(boost::filesystem::current_path());
+  workcell.ros_ver = 2;
+  workcell.ros_distro = ui->ros_distro->currentText().toStdString();
+  SceneSelect scene_window;
+  scene_window.load_workcell(workcell);
+  scene_window.setWindowTitle("Create New Environment");
+  scene_window.setModal(true);
+  scene_window.exec();
+  boost::filesystem::current_path(before_scene_select);
+}
+
+void MainWindow::on_change_workcell_clicked()
+{
+  ui->next->setDisabled(true);
+  ui->load_workcell->setDisabled(false);
+  ui->change_workcell->setDisabled(true);
+  ui->filepath->clear();
+}
+bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::string scene_name)
+{
+  boost::filesystem::current_path(original_path);
+  boost::system::error_code ec;
+  if (!boost::filesystem::is_directory(scene_name, ec) || ec)
+  {
+    return false;
+  }
+  boost::filesystem::current_path(scene_name);
+
+  if (!boost::filesystem::exists("urdf") || !boost::filesystem::exists("environment.yaml") ||
+    !boost::filesystem::exists("CMakeLists.txt") || !boost::filesystem::exists("package.xml"))
+  {
+    boost::filesystem::current_path(original_path);
+    return false;
+  }
+  boost::filesystem::current_path(original_path);
+  return true;
+}

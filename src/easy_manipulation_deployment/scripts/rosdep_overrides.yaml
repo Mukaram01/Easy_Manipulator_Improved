@@ -1,0 +1,108 @@
+# Additional rosdep rules to avoid unresolved keys when building the bundled
+# Tesseract/TrajOpt workspace on ROS 2 Humble (Ubuntu 22.04) or Jazzy.
+cereal:
+  ubuntu: [libcereal-dev]
+
+cereal_vendor:
+  ubuntu: [libcereal-dev]
+
+descartes_light:
+  ubuntu:
+    jammy: [ros-humble-descartes-light]
+    noble: [ros-jazzy-descartes-light]
+
+fcl:
+  ubuntu: [libfcl-dev]
+
+jsoncpp:
+  ubuntu: [libjsoncpp-dev]
+
+libboost-graph-dev:
+  ubuntu: [libboost-graph-dev]
+
+libboost-stacktrace-dev:
+  ubuntu: [libboost-stacktrace-dev]
+
+opw_kinematics:
+  ubuntu:
+    jammy: [ros-humble-opw-kinematics]
+    noble: [ros-jazzy-opw-kinematics]
+
+openmp:
+  ubuntu: [libomp-dev]
+
+osqp:
+  ubuntu: [libosqp-dev]
+
+roslib:
+  ubuntu:
+    jammy: [ros-humble-roslib]
+    noble: [ros-jazzy-roslib]
+
+trajopt_ifopt:
+  ubuntu:
+    jammy: [ros-humble-trajopt-ifopt]
+    noble: [ros-jazzy-trajopt-ifopt]
+
+tesseract_common:
+  ubuntu:
+    jammy: [ros-humble-tesseract-common]
+    noble: [ros-jazzy-tesseract-common]
+
+tesseract_environment:
+  ubuntu:
+    jammy: [ros-humble-tesseract-environment]
+    noble: [ros-jazzy-tesseract-environment]
+
+tesseract_kinematics:
+  ubuntu:
+    jammy: [ros-humble-tesseract-kinematics]
+    noble: [ros-jazzy-tesseract-kinematics]
+
+tesseract_command_language:
+  ubuntu:
+    jammy: [ros-humble-tesseract-command-language]
+    noble: [ros-jazzy-tesseract-command-language]
+
+tesseract_motion_planners:
+  ubuntu:
+    jammy: [ros-humble-tesseract-motion-planners]
+    noble: [ros-jazzy-tesseract-motion-planners]
+
+tesseract_motion_planners_core:
+  ubuntu:
+    jammy: [ros-humble-tesseract-motion-planners]
+    noble: [ros-jazzy-tesseract-motion-planners]
+
+tesseract_motion_planners_simple:
+  ubuntu:
+    jammy: [ros-humble-tesseract-motion-planners-simple]
+    noble: [ros-jazzy-tesseract-motion-planners-simple]
+
+tesseract_msgs:
+  ubuntu:
+    jammy: [ros-humble-tesseract-msgs]
+    noble: [ros-jazzy-tesseract-msgs]
+
+tesseract_process_managers:
+  ubuntu:
+    jammy: [ros-humble-tesseract-process-managers]
+    noble: [ros-jazzy-tesseract-process-managers]
+
+tesseract:
+  ubuntu:
+    jammy: [ros-humble-tesseract]
+    noble: [ros-jazzy-tesseract]
+
+taskflow:
+  ubuntu: [libtaskflow-dev]
+
+trajopt_sqp:
+  ubuntu:
+    jammy: [ros-humble-trajopt-sqp]
+    noble: [ros-jazzy-trajopt-sqp]
+
+boost_plugin_loader:
+  ubuntu:
+    jammy: [ros-humble-boost-plugin-loader]
+    noble: [ros-jazzy-boost-plugin-loader]

@@ -1,0 +1,17 @@
+grasp_execution_node:
+  ros__parameters:
+    octomap_frame: "world"
+    octomap_resolution: 0.02
+
+    sensors: ["realsense_depth"]
+    realsense_depth:
+      sensor_plugin: "occupancy_map_monitor/PointCloudOctomapUpdater"
+      point_cloud_topic: "/camera/camera/depth/color/points"
+
+      max_range: 2.0
+      point_subsample: 1
+      padding_offset: 0.05
+      padding_scale: 1.0
+      max_update_rate: 10.0
+      filtered_cloud_topic: "/moveit/octomap_filtered_points"
+
