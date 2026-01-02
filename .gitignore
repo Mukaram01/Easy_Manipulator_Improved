@@ -1,20 +1,27 @@
-# Colcon build artifacts
+# colcon / ROS2 build artifacts
 build/
 install/
 log/
+.colcon/
+.ros/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-
-# IDE
+# common dev junk
 .vscode/
 .idea/
 *.swp
-*.swo
-
-# OS
+*~
 .DS_Store
-Thumbs.db
+
+# python
+__pycache__/
+*.pyc
+
+# C/C++
+*.o
+*.so
+*.a
+
+# generated / cache
+.cache/
+tmp/
+
