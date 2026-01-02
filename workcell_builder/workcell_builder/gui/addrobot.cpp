@@ -16,12 +16,14 @@
 #include "gui/addrobot.h"
 
 #include <boost/filesystem.hpp>
+#include <QMessageBox>
 #include <QKeyEvent>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addrobot.h"
 
 
@@ -251,7 +253,42 @@ Robot AddRobot::LoadRobot(std::string file, std::string brand)
 std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
 // load ur robots based on the way it is structured
 {
-  boost::filesystem::current_path("ur_description");
+  const boost::filesystem::path base_path = boost::filesystem::current_path();
+  const boost::filesystem::path ur_description_path = base_path / "ur_description";
+  if (!boost::filesystem::exists(ur_description_path)) {
+    std::cerr
+      << "ur_description directory not found at expected path: "
+      << ur_description_path.string() << std::endl;
+    bool resolved_package = false;
+    try {
+      const auto share = ament_index_cpp::get_package_share_directory("ur_description");
+      boost::filesystem::path share_path(share);
+      if (boost::filesystem::exists(share_path)) {
+        std::cerr
+          << "Resolved ur_description via package share directory: "
+          << share_path.string() << std::endl;
+        boost::filesystem::current_path(share_path);
+        resolved_package = true;
+      }
+    } catch (const std::exception & e) {
+      std::cerr
+        << "Failed to resolve ur_description package share directory: "
+        << e.what() << std::endl;
+    }
+    if (!resolved_package) {
+      QMessageBox::warning(
+        this,
+        "UR Description Missing",
+        QString(
+          "Unable to locate the ur_description directory.\n"
+          "Expected path: %1\n"
+          "Please install the ur_description package or fix the assets layout.")
+        .arg(QString::fromStdString(ur_description_path.string())));
+      return {};
+    }
+  } else {
+    boost::filesystem::current_path(ur_description_path);
+  }
   boost::filesystem::current_path("urdf");
 
   std::vector<Robot> ur_robot_vector;
