@@ -126,6 +126,12 @@ void SceneSelect::generate_scene_package(
 
 void SceneSelect::generate_scene_files(Scene scene)
 {
+  if (!validate_description_xacros(scene, "ERROR:")) {
+    ui->error_workcell->append(
+      "<font color='red'>ERROR: Scene file generation blocked due to missing description files."
+      "</font>");
+    return;
+  }
   // generate environment.urdf.xacro
   change_directory(workcell_path / "scenes" / scene.name / "urdf");
   generate_scene_xacro(scene);
@@ -427,6 +433,19 @@ bool SceneSelect::check_files()
       return false;
     }
   }
+  if (ui->scene_list->currentIndex() >= 0) {
+    Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+    if (!curr_scene.loaded) {
+      if (!load_scene_from_yaml(&curr_scene)) {
+        ui->error_workcell->append(
+          "<font color='red'>[Scene Status] ERROR: Unable to load scene metadata</font>");
+        return false;
+      }
+    }
+    if (!validate_description_xacros(curr_scene, "[Scene Status]")) {
+      return false;
+    }
+  }
   return true;
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
@@ -637,6 +656,58 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   input_scene->loaded = true;
   change_directory(scenes_path);
   return true;
+}
+
+bool SceneSelect::validate_description_xacros(
+  const Scene & scene,
+  const std::string & context_label)
+{
+  bool ok = true;
+  const std::string prefix = context_label.empty() ? "" : context_label + " ";
+  auto report_error = [&](const std::string & message) {
+      ui->error_workcell->append(
+        QString::fromStdString("<font color='red'>" + prefix + message + "</font>"));
+    };
+  auto check_xacro = [&](const std::string & package_name,
+      const std::string & filename,
+      const std::string & label) {
+      fs::path package_share;
+      try {
+        package_share = ament_index_cpp::get_package_share_directory(package_name);
+      } catch (const std::exception & e) {
+        ok = false;
+        report_error(
+          "ERROR: Missing " + label + " description package '" + package_name + "': " +
+          e.what() + ". Expected file in " + package_name + "/urdf/" + filename + ".");
+        return;
+      }
+      fs::path xacro_path = package_share / "urdf" / filename;
+      if (!fs::exists(xacro_path)) {
+        ok = false;
+        report_error(
+          "ERROR: Missing " + label + " xacro at " + xacro_path.string() +
+          ". Expected file in " + package_name + "/urdf.");
+      }
+    };
+
+  if (scene.robot_loaded) {
+    for (const auto & robot : scene.robot_vector) {
+      const std::string package_name =
+        robot.brand == "universal_robot" ? "ur_description" : (robot.name + "_description");
+      const std::string filename = robot.name + ".urdf.xacro";
+      check_xacro(package_name, filename, "robot '" + robot.name + "'");
+    }
+  }
+
+  if (scene.ee_loaded) {
+    for (const auto & ee : scene.ee_vector) {
+      const std::string package_name = ee.name + "_description";
+      const std::string filename = ee.name + "_gripper.urdf.xacro";
+      check_xacro(package_name, filename, "end effector '" + ee.name + "'");
+    }
+  }
+
+  return ok;
 }
 void SceneSelect::on_back_clicked()
 {
