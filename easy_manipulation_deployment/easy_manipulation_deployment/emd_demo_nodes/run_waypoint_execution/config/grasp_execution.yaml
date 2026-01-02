@@ -30,4 +30,4 @@ grasp_execution_node:
       max_velocity_scaling_factor: 1.0
       max_acceleration_scaling_factor: 1.0
     
-    waypoint_filepath: "src/easy_manipulation_deployment/easy_manipulation_deployment/emd_demo_nodes/run_waypoint_execution/config/waypoints.json"
+    waypoint_filepath: "easy_manipulation_deployment/emd_demo_nodes/run_waypoint_execution/config/waypoints.json"
