@@ -174,6 +174,8 @@ touch ~/ros_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
 ```
 </details>
 
+> **Caution:** The next step removes the `trajopt_ifopt` planner, which disables the `trajopt_ifopt` and related IFOPT-based planners. If you need to revert, use `git checkout` to restore the folder and `CMakeLists.txt` changes, or re-import the package from its source.
+
 <details>
 <summary><b>Remove incompatible trajopt_ifopt planner</b></summary>
 
