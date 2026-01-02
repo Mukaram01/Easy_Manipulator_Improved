@@ -16,9 +16,13 @@
 #include "gui/addendeffector.h"
 #include <QString>
 #include <QKeyEvent>
+#include <QProcess>
+#include <QRegularExpression>
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <fstream>
+#include <iterator>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -268,23 +272,37 @@ EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
 std::vector<std::string> AddEndEffector::GetLinks(std::string filename)
 {
   std::vector<std::string> links;
-  std::ifstream infile(filename);
-  std::string line;
-  while (std::getline(infile, line)) {
-    std::istringstream ss(line);
-    ss >> std::ws;
-    std::string temp_string;
-    temp_string.resize(11);
-    ss.read(&temp_string[0], 11);
-    if (temp_string.compare("<link name=") == 0) {
-      remove_if(line.begin(), line.end(), isspace);
-      line.erase(0, line.find("\"") + 1);
-      line.erase(line.begin() + line.find("\""), line.end());
-      line.erase(0, line.find("}") + 1);
-      links.push_back(line);
-    }
+  if (!boost::filesystem::exists(filename)) {
+    ui->errorlist->append(
+      QString::fromStdString(
+        "<font color='red'> End effector xacro file not found: " + filename + " </font>"));
+    return links;
   }
 
+  QString urdf_xml;
+  QProcess xacro_process;
+  xacro_process.start("xacro", {QString::fromStdString(filename)});
+  if (xacro_process.waitForFinished(5000) &&
+    xacro_process.exitStatus() == QProcess::NormalExit &&
+    xacro_process.exitCode() == 0)
+  {
+    urdf_xml = QString::fromUtf8(xacro_process.readAllStandardOutput());
+  } else {
+    std::ifstream infile(filename);
+    std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
+    urdf_xml = QString::fromStdString(content);
+  }
+
+  QRegularExpression link_regex(R"(<link\s+[^>]*name\s*=\s*\"([^\"]+)\")");
+  QRegularExpressionMatchIterator matches = link_regex.globalMatch(urdf_xml);
+  std::set<std::string> seen_links;
+  while (matches.hasNext()) {
+    QRegularExpressionMatch match = matches.next();
+    std::string link_name = match.captured(1).toStdString();
+    if (seen_links.insert(link_name).second) {
+      links.push_back(link_name);
+    }
+  }
   return links;
 }
 
