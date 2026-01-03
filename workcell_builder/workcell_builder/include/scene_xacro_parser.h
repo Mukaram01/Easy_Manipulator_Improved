@@ -35,33 +35,57 @@ void generate_scene_xacro(Scene scene)
 
   if (scene.robot_loaded) {
     for (int i = 0; i < static_cast < int > (scene.robot_vector.size()); i++) {
+      bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         // Current ur packages are done differently
-        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" +
-          scene.robot_vector[i].name + ".urdf.xacro\"/>\n";
-        MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot" +
-          " prefix=\"\" joint_limited=\"false\"/>\n";
+        add_world_joint = false;
+        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
+        MyFile << " <xacro:ur_robot name=\"" + scene.robot_vector[i].name + "\" tf_prefix=\"\" " +
+          "parent=\"" + scene.robot_vector[i].parent_link + "\" " +
+          "joint_limits_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/joint_limits.yaml\" " +
+          "kinematics_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/default_kinematics.yaml\" " +
+          "physical_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/physical_parameters.yaml\" " +
+          "visual_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/visual_parameters.yaml\" " +
+          "safety_limits=\"false\" safety_pos_margin=\"0.15\" safety_k_position=\"20\" " +
+          "force_abs_paths=\"false\">\n";
+        if (scene.robot_vector[i].origin.is_origin) {
+          MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
+            std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
+            scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
+            scene.robot_vector[i].origin.roll) + " " + std::to_string(
+            scene.robot_vector[i].origin.pitch) + " " + std::to_string(
+            scene.robot_vector[i].origin.yaw) + "\"/>\n";
+        } else {
+          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        }
+        MyFile << " </xacro:ur_robot>\n";
       } else {
         MyFile << " <xacro:include filename=\"$(find " + scene.robot_vector[i].name +
           "_description)/urdf/" + scene.robot_vector[i].name + ".urdf.xacro\"/>\n";
         MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot/>\n";
       }
 
-      MyFile << "  <joint name=\"world_" + scene.robot_vector[i].name + "\" type=\"" +
-        scene.robot_vector[i].parent_robot_joint_type + "\">\n";
-      MyFile << "\t<parent link=\"" + scene.robot_vector[i].parent_link + "\" />\n";
-      MyFile << "\t<child link=\"" + scene.robot_vector[i].base_link + "\" />\n";
-      if (scene.robot_vector[i].origin.is_origin) {
-        MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
-          std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
-          scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
-          scene.robot_vector[i].origin.roll) + " " + std::to_string(
-          scene.robot_vector[i].origin.pitch) + " " + std::to_string(
-          scene.robot_vector[i].origin.yaw) + "\"/>\n";
-      } else {
-        MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+      if (add_world_joint) {
+        MyFile << "  <joint name=\"world_" + scene.robot_vector[i].name + "\" type=\"" +
+          scene.robot_vector[i].parent_robot_joint_type + "\">\n";
+        MyFile << "\t<parent link=\"" + scene.robot_vector[i].parent_link + "\" />\n";
+        MyFile << "\t<child link=\"" + scene.robot_vector[i].base_link + "\" />\n";
+        if (scene.robot_vector[i].origin.is_origin) {
+          MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
+            std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
+            scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
+            scene.robot_vector[i].origin.roll) + " " + std::to_string(
+            scene.robot_vector[i].origin.pitch) + " " + std::to_string(
+            scene.robot_vector[i].origin.yaw) + "\"/>\n";
+        } else {
+          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        }
+        MyFile << "  </joint>\n";
       }
-      MyFile << "  </joint>\n";
     }
     MyFile << "\n";
   }
