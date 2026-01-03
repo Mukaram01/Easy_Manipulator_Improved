@@ -1,4 +1,5 @@
 <launch>
+  <!-- Deprecated: use demo.launch.py (ROS 2) -->
 
   <!-- specify the planning pipeline -->
   <arg name="pipeline" default="ompl" />
