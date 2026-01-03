@@ -34,7 +34,9 @@ std::vector<std::string> description_package_candidates(const Robot & robot)
 {
   std::vector<std::string> candidates;
   candidates.push_back(robot.name + "_description");
-  if (robot.brand == "panda_robot") {
+  if (robot.brand == "robotiq_3f_gripper") {
+    candidates.push_back("robotiq_3f_gripper_description");
+  } else if (robot.brand == "panda_robot") {
     candidates.push_back("moveit_resources_panda_description");
   } else if (robot.brand == "fanuc") {
     candidates.push_back("moveit_resources_fanuc_description");
@@ -44,9 +46,17 @@ std::vector<std::string> description_package_candidates(const Robot & robot)
   return candidates;
 }
 
+std::string resolve_robot_xacro_filename(const Robot & robot)
+{
+  if (robot.brand == "robotiq_3f_gripper") {
+    return "robotiq-3f-gripper_articulated.urdf.xacro";
+  }
+  return robot.name + ".urdf.xacro";
+}
+
 std::string resolve_description_package(const Robot & robot)
 {
-  const std::string filename = robot.name + ".urdf.xacro";
+  const std::string filename = resolve_robot_xacro_filename(robot);
   const auto candidates = description_package_candidates(robot);
   for (const auto & package_name : candidates) {
     try {
@@ -76,6 +86,28 @@ std::string resolve_universal_robot_xacro_filename(const Robot & robot)
     return it->second;
   }
   return robot.name + ".urdf.xacro";
+std::string resolve_ee_description_package(const EndEffector & ee)
+{
+  if (ee.brand == "robotiq_3f_gripper") {
+    return "robotiq_3f_gripper_description";
+  }
+  return ee.name + "_description";
+}
+
+std::string resolve_ee_xacro_filename(const EndEffector & ee)
+{
+  if (ee.brand == "robotiq_3f_gripper") {
+    return "robotiq-3f-gripper_articulated.urdf.xacro";
+  }
+  return ee.name + "_gripper.urdf.xacro";
+}
+
+std::string resolve_ee_xacro_macro(const EndEffector & ee)
+{
+  if (ee.brand == "robotiq_3f_gripper") {
+    return "robotiq-3f-gripper_articulated";
+  }
+  return ee.name + "_gripper";
 }
 }  // namespace
 
@@ -99,8 +131,9 @@ void generate_scene_xacro(Scene scene)
         MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
+        const std::string xacro_filename = resolve_robot_xacro_filename(scene.robot_vector[i]);
         MyFile << " <xacro:include filename=\"$(find " + package_name +
-          ")/urdf/" + scene.robot_vector[i].name + ".urdf.xacro\"/>\n";
+          ")/urdf/" + xacro_filename + "\"/>\n";
         MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot/>\n";
       }
 
@@ -127,10 +160,13 @@ void generate_scene_xacro(Scene scene)
 
   if (scene.ee_loaded) {
     for (int i = 0; i < static_cast < int > (scene.ee_vector.size()); i++) {
-      MyFile << " <xacro:include filename=\"$(find " + scene.ee_vector[i].name +
-        "_description)/urdf/" + scene.ee_vector[i].name + "_gripper.urdf.xacro\"/>\n";
+      const std::string ee_package = resolve_ee_description_package(scene.ee_vector[i]);
+      const std::string ee_xacro = resolve_ee_xacro_filename(scene.ee_vector[i]);
+      const std::string ee_macro = resolve_ee_xacro_macro(scene.ee_vector[i]);
+      MyFile << " <xacro:include filename=\"$(find " + ee_package +
+        ")/urdf/" + ee_xacro + "\"/>\n";
 
-      MyFile << " <xacro:" + scene.ee_vector[i].name + "_gripper" + " prefix=\"\" parent=\"" +
+      MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
         scene.robot_vector[scene.ee_vector[i].robot_pos].ee_link + "\">\n";
       if (scene.ee_vector[i].origin.is_origin) {
         std::cout << "Xacro parser has origin" << std::endl;
@@ -144,7 +180,7 @@ void generate_scene_xacro(Scene scene)
         std::cout << "Xacro parser has no origin" << std::endl;
         MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
       }
-      MyFile << " </xacro:" + scene.ee_vector[i].name + "_gripper" + ">\n";
+      MyFile << " </xacro:" + ee_macro + ">\n";
     }
     MyFile << "\n";
   }
