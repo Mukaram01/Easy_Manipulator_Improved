@@ -21,7 +21,7 @@ robot:
 end_effector:
   name: robotiq_85
   brand: robotiq_85_gripper
-  filepath: /home/user/workcell_ws/src/assets/end_effectors/robotiq_85_gripper/robotiq_85_description
+  filepath: package://robotiq_85_description
   base_link: gripper_base_link
   robot_link: tool0
   ee_type: finger
@@ -45,7 +45,7 @@ objects:
         visual:
           name: table
           geometry:
-            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
+            filepath: package://table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.00100000005
               scale_y: 0.00100000005
@@ -53,7 +53,7 @@ objects:
         collision:
           name: None
           geometry:
-            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
+            filepath: package://table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.00100000005
               scale_y: 0.00100000005
