@@ -38,9 +38,9 @@ constexpr const char * kMissingUrdfLabel = "Missing URDF";
 std::string resolve_universal_robot_xacro_filename(const std::string & robot_name)
 {
   static const std::unordered_map<std::string, std::string> kUrXacroByName = {
-    {"ur3", "ur3.urdf.xacro"},
-    {"ur5", "ur5.urdf.xacro"},
-    {"ur10", "ur10.urdf.xacro"}
+    {"ur3", "ur.urdf.xacro"},
+    {"ur5", "ur.urdf.xacro"},
+    {"ur10", "ur.urdf.xacro"}
   };
   const auto it = kUrXacroByName.find(robot_name);
   if (it != kUrXacroByName.end()) {
