@@ -694,7 +694,8 @@ bool SceneSelect::validate_description_xacros(
     for (const auto & robot : scene.robot_vector) {
       const std::string package_name =
         robot.brand == "universal_robot" ? "ur_description" : (robot.name + "_description");
-      const std::string filename = robot.name + ".urdf.xacro";
+      const std::string filename =
+        robot.brand == "universal_robot" ? "ur.urdf.xacro" : (robot.name + ".urdf.xacro");
       check_xacro(package_name, filename, "robot '" + robot.name + "'");
     }
   }
