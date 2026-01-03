@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <string>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -71,6 +72,20 @@ std::vector<std::string> description_package_candidates(const Robot & robot)
     candidates.push_back("moveit_resources_" + robot.name + "_description");
   }
   return candidates;
+}
+
+std::string resolve_universal_robot_xacro_filename(const Robot & robot)
+{
+  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
+    {"ur3", "ur3.urdf.xacro"},
+    {"ur5", "ur5.urdf.xacro"},
+    {"ur10", "ur10.urdf.xacro"}
+  };
+  const auto it = kUrXacroByName.find(robot.name);
+  if (it != kUrXacroByName.end()) {
+    return it->second;
+  }
+  return robot.name + ".urdf.xacro";
 }
 }  // namespace
 
@@ -739,7 +754,9 @@ bool SceneSelect::validate_description_xacros(
   if (scene.robot_loaded) {
     for (const auto & robot : scene.robot_vector) {
       const bool is_ur = robot.brand == "universal_robot";
-      const std::string filename = is_ur ? "ur.urdf.xacro" : (robot.name + ".urdf.xacro");
+      const std::string filename = is_ur ?
+        resolve_universal_robot_xacro_filename(robot) :
+        (robot.name + ".urdf.xacro");
       if (is_ur) {
         check_xacro("ur_description", filename, "robot '" + robot.name + "'");
       } else {

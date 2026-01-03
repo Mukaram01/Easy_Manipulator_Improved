@@ -26,6 +26,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addrobot.h"
@@ -33,6 +34,20 @@
 namespace
 {
 constexpr const char * kMissingUrdfLabel = "Missing URDF";
+
+std::string resolve_universal_robot_xacro_filename(const std::string & robot_name)
+{
+  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
+    {"ur3", "ur3.urdf.xacro"},
+    {"ur5", "ur5.urdf.xacro"},
+    {"ur10", "ur10.urdf.xacro"}
+  };
+  const auto it = kUrXacroByName.find(robot_name);
+  if (it != kUrXacroByName.end()) {
+    return it->second;
+  }
+  return robot_name + ".urdf.xacro";
+}
 }  // namespace
 
 AddRobot::AddRobot(QWidget * parent)
@@ -305,7 +320,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
     temp_robot.brand = "universal_robot";
     temp_robot.name = robot_list[i];
     temp_robot.robot_links = GetLinks(
-      "ur.urdf.xacro",
+      resolve_universal_robot_xacro_filename(temp_robot.name),
       {
         "ur_type:=" + temp_robot.name,
         "name:=" + temp_robot.name

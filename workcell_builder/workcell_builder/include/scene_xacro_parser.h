@@ -21,6 +21,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <boost/filesystem.hpp>
@@ -72,6 +73,19 @@ std::string resolve_description_package(const Robot & robot)
   return candidates.front();
 }
 
+std::string resolve_universal_robot_xacro_filename(const Robot & robot)
+{
+  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
+    {"ur3", "ur3.urdf.xacro"},
+    {"ur5", "ur5.urdf.xacro"},
+    {"ur10", "ur10.urdf.xacro"}
+  };
+
+  const auto it = kUrXacroByName.find(robot.name);
+  if (it != kUrXacroByName.end()) {
+    return it->second;
+  }
+  return robot.name + ".urdf.xacro";
 std::string resolve_ee_description_package(const EndEffector & ee)
 {
   if (ee.brand == "robotiq_3f_gripper") {
@@ -110,32 +124,11 @@ void generate_scene_xacro(Scene scene)
     for (int i = 0; i < static_cast < int > (scene.robot_vector.size()); i++) {
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
-        // Current ur packages are done differently
-        add_world_joint = false;
-        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
-        MyFile << " <xacro:ur_robot name=\"" + scene.robot_vector[i].name + "\" tf_prefix=\"\" " +
-          "parent=\"" + scene.robot_vector[i].parent_link + "\" " +
-          "joint_limits_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/joint_limits.yaml\" " +
-          "kinematics_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/default_kinematics.yaml\" " +
-          "physical_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/physical_parameters.yaml\" " +
-          "visual_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/visual_parameters.yaml\" " +
-          "safety_limits=\"false\" safety_pos_margin=\"0.15\" safety_k_position=\"20\" " +
-          "force_abs_paths=\"false\">\n";
-        if (scene.robot_vector[i].origin.is_origin) {
-          MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
-            std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
-            scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
-            scene.robot_vector[i].origin.roll) + " " + std::to_string(
-            scene.robot_vector[i].origin.pitch) + " " + std::to_string(
-            scene.robot_vector[i].origin.yaw) + "\"/>\n";
-        } else {
-          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
-        }
-        MyFile << " </xacro:ur_robot>\n";
+        const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
+        const std::string ur_macro = scene.robot_vector[i].name + "_robot";
+        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
+          "\"/>\n";
+        MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename = resolve_robot_xacro_filename(scene.robot_vector[i]);
