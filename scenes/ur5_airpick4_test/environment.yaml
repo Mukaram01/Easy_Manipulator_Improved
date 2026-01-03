@@ -16,9 +16,9 @@ robot:
     - base
     - tool0
 end_effector:
-  name: robotiq_85
-  brand: robotiq_85_gripper
-  filepath: package://robotiq_85_description
+  name: onrobot_airpick4_description
+  brand: onrobot_airpick4_description
+  filepath: /home/rosi5/emd_ws/src/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description
   base_link: gripper_base_link
   robot_link: tool0
   ee_type: finger
@@ -33,14 +33,6 @@ end_effector:
     yaw: 0
   links:
     - gripper_base_link
-    - gripper_finger1_knuckle_link
-    - gripper_finger2_knuckle_link
-    - gripper_finger1_finger_link
-    - gripper_finger2_finger_link
-    - gripper_finger1_inner_knuckle_link
-    - gripper_finger2_inner_knuckle_link
-    - gripper_finger1_finger_tip_link
-    - gripper_finger2_finger_tip_link
 objects:
   table:
     child_link: table

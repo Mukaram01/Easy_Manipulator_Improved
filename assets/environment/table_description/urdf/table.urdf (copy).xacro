@@ -4,12 +4,12 @@
 	<link name="table">
 	  <visual name="None">
 	    <geometry>
-	      <mesh filename="package://table_description/meshes/visual/table.stl" scale="0.001000 0.001000 0.001000"/>
+	      <mesh filename="package://table_description/meshes/collision/table.stl" scale="0.001000 0.001000 0.001000"/>
 	    </geometry>
 	  </visual>
 	  <collision name="None">
 	    <geometry>
-	      <mesh filename="package://table_description/meshes/visual/table.stl" scale="0.001000 0.001000 0.001000"/>
+	      <mesh filename="package://table_description/meshes/collision/table.stl" scale="0.001000 0.001000 0.001000"/>
 	    </geometry>
 	  </collision>
 	</link>
