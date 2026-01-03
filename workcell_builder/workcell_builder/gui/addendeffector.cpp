@@ -265,11 +265,19 @@ EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
   boost::filesystem::current_path("urdf");
   temp_ee.brand = brand;
   temp_ee.name = file.erase(file.length() - 12);
-  temp_ee.ee_links = GetLinks(temp_ee.name + "_gripper.urdf.xacro");
+  const std::string macro_filename = temp_ee.name + "_gripper.urdf.xacro";
+  const std::string standalone_filename = temp_ee.name + "_gripper_standalone.urdf.xacro";
+  if (boost::filesystem::exists(standalone_filename)) {
+    temp_ee.ee_links = GetLinks(standalone_filename);
+  } else {
+    temp_ee.ee_links = GetLinks(macro_filename);
+  }
   boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
   return temp_ee;
 }
-std::vector<std::string> AddEndEffector::GetLinks(std::string filename)
+std::vector<std::string> AddEndEffector::GetLinks(
+  std::string filename,
+  const std::vector<std::string> & xacro_arguments)
 {
   std::vector<std::string> links;
   if (!boost::filesystem::exists(filename)) {
@@ -281,7 +289,12 @@ std::vector<std::string> AddEndEffector::GetLinks(std::string filename)
 
   QString urdf_xml;
   QProcess xacro_process;
-  xacro_process.start("xacro", {QString::fromStdString(filename)});
+  QStringList xacro_args;
+  xacro_args << QString::fromStdString(filename);
+  for (const auto & arg : xacro_arguments) {
+    xacro_args << QString::fromStdString(arg);
+  }
+  xacro_process.start("xacro", xacro_args);
   if (xacro_process.waitForFinished(5000) &&
     xacro_process.exitStatus() == QProcess::NormalExit &&
     xacro_process.exitCode() == 0)

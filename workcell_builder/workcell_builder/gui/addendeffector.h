@@ -47,7 +47,9 @@ public:
   EndEffector LoadEE(std::string file, std::string brand);
   int LoadAvailableEE(Robot robot);
   void LoadExistingEE(EndEffector ee_input);
-  std::vector < std::string > GetLinks(std::string filename);
+  std::vector<std::string> GetLinks(
+    std::string filename,
+    const std::vector<std::string> & xacro_arguments = {});
   int ErrorCheckOrigin();
 
   explicit AddEndEffector(QWidget * parent = nullptr);
