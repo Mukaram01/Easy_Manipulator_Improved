@@ -14,27 +14,6 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 ---
 
-## Quick Start (Experienced Users)
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python3-vcstool python3-colcon-common-extensions ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro
-mkdir -p ~/workcell_ws/src/emd_root
-cd ~/workcell_ws/src/emd_root
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git .
-# Note: tesseract.repos lives in the repo root (e.g., ~/workcell_ws/src/emd_root/tesseract.repos)
-vcs import ~/workcell_ws/src < ~/workcell_ws/src/emd_root/tesseract.repos
-cd ~/workcell_ws
-export ROS_DISTRO=humble
-source /opt/ros/${ROS_DISTRO}/setup.bash
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --parallel-workers 2
-source install/setup.bash
-```
-
----
-
 ## Supported Platforms
 
 | Platform | ROS 2 | Status |
@@ -99,12 +78,19 @@ cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 ```
 
-#### 2) Put assets/scenes where the README expects them (original style)
+#### 2) Put assets/scenes where the README expects them but if you dont want to move them see 2.a.
 
 ```bash
 cd ~/workcell_ws/src
 mv easy_manipulation_deployment/assets .
 mv easy_manipulation_deployment/scenes .
+```
+
+#### 2.a) Create symlinks where the build expects them
+
+```bash
+ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets ~/workcell_ws/src/assets
+ln -s ~/workcell_ws/src/easy_manipulation_deployment/scenes ~/workcell_ws/src/scenes
 ```
 
 #### 3) Import dependencies into `~/workcell_ws/src`
