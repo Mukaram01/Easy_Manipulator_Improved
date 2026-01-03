@@ -34,6 +34,7 @@ find_package(moveit_msgs REQUIRED)
 find_package(moveit_core QUIET)
 
 find_package(tesseract_environment QUIET)
+find_package(tesseract_process_managers QUIET)
 
 set(PLANNING_FRAMEWORK_LIBRARY)
 
@@ -41,7 +42,7 @@ include_directories(
   PUBLIC
   include
 )
-if(tesseract_environment_FOUND)
+if(tesseract_environment_FOUND AND tesseract_process_managers_FOUND)
   add_definitions(-DEMD_DYNAMIC_SAFETY_TESSERACT)
 endif()
 if(moveit_core_FOUND)
@@ -81,7 +82,7 @@ else()
 endif()
 
 # Tesseract
-if(tesseract_environment_FOUND)
+if(tesseract_environment_FOUND AND tesseract_process_managers_FOUND)
   message(STATUS Tesseract Found!!)
 
   # Force -Wno-dev
@@ -92,8 +93,6 @@ if(tesseract_environment_FOUND)
   find_package(tesseract_rosutils REQUIRED)
   find_package(tesseract_msgs REQUIRED)
   find_package(tesseract_motion_planners REQUIRED)
-  find_package(tesseract_process_managers REQUIRED)
-
   add_library(${PROJECT_NAME}_tesseract
     SHARED
     src/tesseract/collision_checker_tesseract.cpp
@@ -145,7 +144,7 @@ if(tesseract_environment_FOUND)
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib)
 else()
-  message(WARNING Tesseract Not Found!!)
+  message(WARNING "Tesseract backend skipped because tesseract_environment or tesseract_process_managers was not found.")
 endif()
 
 
@@ -255,7 +254,7 @@ ament_export_libraries(
   ${PROJECT_NAME}_controller
 )
 
-ament_export_dependencies(
+set(EMD_DYNAMIC_SAFETY_EXPORT_DEPENDENCIES
   angles
   controller_interface
   geometry_msgs
@@ -271,11 +270,20 @@ ament_export_dependencies(
   std_msgs
   trajectory_msgs
   visualization_msgs
-  tesseract_environment
-  tesseract_motion_planners
-  tesseract_msgs
-  tesseract_process_managers
-  tesseract_rosutils
+)
+
+if(tesseract_environment_FOUND AND tesseract_process_managers_FOUND)
+  list(APPEND EMD_DYNAMIC_SAFETY_EXPORT_DEPENDENCIES
+    tesseract_environment
+    tesseract_motion_planners
+    tesseract_msgs
+    tesseract_process_managers
+    tesseract_rosutils
+  )
+endif()
+
+ament_export_dependencies(
+  ${EMD_DYNAMIC_SAFETY_EXPORT_DEPENDENCIES}
 )
 
 ament_package()
