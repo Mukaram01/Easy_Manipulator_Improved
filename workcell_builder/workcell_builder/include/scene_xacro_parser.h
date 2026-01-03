@@ -73,19 +73,30 @@ std::string resolve_description_package(const Robot & robot)
   return candidates.front();
 }
 
+std::vector<std::string> universal_robot_xacro_candidates(const Robot & robot)
+{
+  return {
+    robot.name + ".urdf.xacro",
+    robot.name + "_robot.urdf.xacro"
+  };
+}
+
 std::string resolve_universal_robot_xacro_filename(const Robot & robot)
 {
-  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
-    {"ur3", "ur3.urdf.xacro"},
-    {"ur5", "ur5.urdf.xacro"},
-    {"ur10", "ur10.urdf.xacro"}
-  };
-
-  const auto it = kUrXacroByName.find(robot.name);
-  if (it != kUrXacroByName.end()) {
-    return it->second;
+  const auto candidates = universal_robot_xacro_candidates(robot);
+  try {
+    const auto package_share = ament_index_cpp::get_package_share_directory("ur_description");
+    for (const auto & candidate : candidates) {
+      const boost::filesystem::path xacro_path =
+        boost::filesystem::path(package_share) / "urdf" / candidate;
+      if (boost::filesystem::exists(xacro_path)) {
+        return candidate;
+      }
+    }
+  } catch (const std::exception &) {
+    // Fall back to the default candidate when the package is missing.
   }
-  return robot.name + ".urdf.xacro";
+  return candidates.front();
 }
 std::string resolve_ee_description_package(const EndEffector & ee)
 {
