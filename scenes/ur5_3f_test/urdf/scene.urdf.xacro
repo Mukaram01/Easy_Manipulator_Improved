@@ -4,8 +4,8 @@
 
  <link name="world"/>
 
- <xacro:include filename="$(find ur_description)/urdf/ur5.urdf.xacro"/>
- <xacro:ur5_robot prefix="" joint_limited="false"/>
+ <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
+ <xacro:ur_robot prefix="" joint_limited="false" ur_type="ur5"/>
   <joint name="world_ur5" type="fixed">
 	<parent link="world" />
 	<child link="base_link" />
