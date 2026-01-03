@@ -86,6 +86,7 @@ std::string resolve_universal_robot_xacro_filename(const Robot & robot)
     return it->second;
   }
   return robot.name + ".urdf.xacro";
+}
 std::string resolve_ee_description_package(const EndEffector & ee)
 {
   if (ee.brand == "robotiq_3f_gripper") {
