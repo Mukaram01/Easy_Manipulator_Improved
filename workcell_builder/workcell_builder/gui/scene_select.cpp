@@ -60,33 +60,6 @@ bool change_directory(const fs::path & p)
   return true;
 }
 
-std::vector<std::string> description_package_candidates(const Robot & robot)
-{
-  std::vector<std::string> candidates;
-  candidates.push_back(robot.name + "_description");
-  if (robot.brand == "panda_robot") {
-    candidates.push_back("moveit_resources_panda_description");
-  } else if (robot.brand == "fanuc") {
-    candidates.push_back("moveit_resources_fanuc_description");
-  } else {
-    candidates.push_back("moveit_resources_" + robot.name + "_description");
-  }
-  return candidates;
-}
-
-std::string resolve_universal_robot_xacro_filename(const Robot & robot)
-{
-  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
-    {"ur3", "ur3.urdf.xacro"},
-    {"ur5", "ur5.urdf.xacro"},
-    {"ur10", "ur10.urdf.xacro"}
-  };
-  const auto it = kUrXacroByName.find(robot.name);
-  if (it != kUrXacroByName.end()) {
-    return it->second;
-  }
-  return robot.name + ".urdf.xacro";
-}
 }  // namespace
 
 
