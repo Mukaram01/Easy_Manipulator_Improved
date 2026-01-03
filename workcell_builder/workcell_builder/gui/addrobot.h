@@ -43,7 +43,9 @@ public:
   int ErrorCheckOrigin();
   std::vector < Robot > LoadUR(std::vector < std::string > robot_list);
   Robot LoadRobot(std::string folder, std::string brand);
-  std::vector < std::string > GetLinks(std::string filename);
+  std::vector < std::string > GetLinks(
+    std::string filename,
+    const std::vector<std::string> & xacro_arguments = {});
   int LoadAvailableRobots();
   void LoadExistingRobot(Robot robot_input);
   explicit AddRobot(QWidget * parent = nullptr);
