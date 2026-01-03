@@ -1,0 +1,22 @@
+<?xml version="1.0" ?> 
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="new_scene">
+
+ <link name="world"/>
+
+ <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
+ <xacro:ur_robot name="ur5" tf_prefix="" parent="world" joint_limits_parameters_file="$(find ur_description)/config/ur5/joint_limits.yaml" kinematics_parameters_file="$(find ur_description)/config/ur5/default_kinematics.yaml" physical_parameters_file="$(find ur_description)/config/ur5/physical_parameters.yaml" visual_parameters_file="$(find ur_description)/config/ur5/visual_parameters.yaml" safety_limits="false" safety_pos_margin="0.15" safety_k_position="20" force_abs_paths="false">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:ur_robot>
+
+ <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
+ <xacro:robotiq_85_gripper prefix="" parent="tool0">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:robotiq_85_gripper>
+
+ <xacro:include filename="$(find table_description)/urdf/table.urdf.xacro"/>
+ <xacro:table prefix="" parent="world">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:table>
+
+</robot>
