@@ -402,21 +402,9 @@ void AddRobot::on_robot_model_currentIndexChanged(int index)
     ui->robot_links->addItem(kMissingUrdfLabel);
     ui->robot_ee_link->addItem(kMissingUrdfLabel);
   }
-  for (int i = 0;
-    i <
-    static_cast<int>(available_robots[ui->robot_brand->currentIndex()][ui->robot_model->currentIndex()  // NOLINT
-    ].
-    robot_links
-    .size()); i++)
-  {
-    ui->robot_links->addItem(
-      QString::fromStdString(
-        available_robots[ui->robot_brand->currentIndex()
-        ][index].robot_links[i]));
-    ui->robot_ee_link->addItem(
-      QString::fromStdString(
-        available_robots[ui->robot_brand->currentIndex()
-        ][index].robot_links[i]));
+  for (const auto & link_name : selected_links) {
+    ui->robot_links->addItem(QString::fromStdString(link_name));
+    ui->robot_ee_link->addItem(QString::fromStdString(link_name));
   }
   ui->robot_links->blockSignals(oldState);
   ui->robot_links->setCurrentIndex(0);
