@@ -187,13 +187,16 @@ ros2 launch run_grasp_execution grasp_execution.launch.py
 
 ### 3. Workcell Builder
 
-GUI-based tool for generating robotic workcell simulations.
+GUI-based tool for generating robotic workcell simulations. The supported workflow targets
+**ROS 2 Humble** (ament + MoveIt 2).
 
 **Quick Start:**
 ```bash
 source ~/workcell_ws/install/setup.bash
 workcell_builder
 ```
+ 
+Example ROS 2 (Humble) launch templates live under `workcell_builder/examples/ros2/`.
 
 ---
 
