@@ -357,6 +357,19 @@ std::vector<std::string> AddRobot::GetLinks(
         "Please fix the robot description and try again.")
       .arg(QString::fromStdString(file_path.string())));
     std::ifstream infile(filename);
+    if (!infile) {
+      std::cerr
+        << "Failed to open URDF/xacro file after xacro error: "
+        << file_path.string() << std::endl;
+      QMessageBox::warning(
+        this,
+        "URDF Read Failed",
+        QString(
+          "Failed to open URDF/xacro file:\n%1\n\n"
+          "Please check the file path and permissions.")
+        .arg(QString::fromStdString(file_path.string())));
+      return links;
+    }
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     urdf_xml = QString::fromStdString(content);
   }
