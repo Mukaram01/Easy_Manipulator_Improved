@@ -21,8 +21,47 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
 
+#include <boost/filesystem.hpp>
+
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "attributes/workcell.h"
+
+namespace {
+std::vector<std::string> description_package_candidates(const Robot & robot)
+{
+  std::vector<std::string> candidates;
+  candidates.push_back(robot.name + "_description");
+  if (robot.brand == "panda_robot") {
+    candidates.push_back("moveit_resources_panda_description");
+  } else if (robot.brand == "fanuc") {
+    candidates.push_back("moveit_resources_fanuc_description");
+  } else {
+    candidates.push_back("moveit_resources_" + robot.name + "_description");
+  }
+  return candidates;
+}
+
+std::string resolve_description_package(const Robot & robot)
+{
+  const std::string filename = robot.name + ".urdf.xacro";
+  const auto candidates = description_package_candidates(robot);
+  for (const auto & package_name : candidates) {
+    try {
+      const auto package_share = ament_index_cpp::get_package_share_directory(package_name);
+      const boost::filesystem::path xacro_path =
+        boost::filesystem::path(package_share) / "urdf" / filename;
+      if (boost::filesystem::exists(xacro_path)) {
+        return package_name;
+      }
+    } catch (const std::exception &) {
+      continue;
+    }
+  }
+  return candidates.front();
+}
+}  // namespace
 
 
 void generate_scene_xacro(Scene scene)
@@ -64,8 +103,9 @@ void generate_scene_xacro(Scene scene)
         }
         MyFile << " </xacro:ur_robot>\n";
       } else {
-        MyFile << " <xacro:include filename=\"$(find " + scene.robot_vector[i].name +
-          "_description)/urdf/" + scene.robot_vector[i].name + ".urdf.xacro\"/>\n";
+        const std::string package_name = resolve_description_package(scene.robot_vector[i]);
+        MyFile << " <xacro:include filename=\"$(find " + package_name +
+          ")/urdf/" + scene.robot_vector[i].name + ".urdf.xacro\"/>\n";
         MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot/>\n";
       }
 
