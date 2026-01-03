@@ -304,13 +304,22 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
     Robot temp_robot;
     temp_robot.brand = "universal_robot";
     temp_robot.name = robot_list[i];
-    temp_robot.robot_links = GetLinks(temp_robot.name + ".urdf.xacro");
+    temp_robot.robot_links = GetLinks(
+      "ur.urdf.xacro",
+      {
+        "ur_type:=" + temp_robot.name,
+        "prefix:=",
+        "joint_limited:=true",
+        "safety_limits:=true"
+      });
     ur_robot_vector.push_back(temp_robot);
   }
   return ur_robot_vector;
 }
 
-std::vector<std::string> AddRobot::GetLinks(std::string filename)
+std::vector<std::string> AddRobot::GetLinks(
+  std::string filename,
+  const std::vector<std::string> & xacro_arguments)
 {
   std::vector<std::string> links;
   const boost::filesystem::path file_path(filename);
@@ -326,7 +335,12 @@ std::vector<std::string> AddRobot::GetLinks(std::string filename)
 
   QString urdf_xml;
   QProcess xacro_process;
-  xacro_process.start("xacro", {QString::fromStdString(filename)});
+  QStringList xacro_args;
+  xacro_args << QString::fromStdString(filename);
+  for (const auto & arg : xacro_arguments) {
+    xacro_args << QString::fromStdString(arg);
+  }
+  xacro_process.start("xacro", xacro_args);
   if (xacro_process.waitForFinished(5000) &&
     xacro_process.exitStatus() == QProcess::NormalExit &&
     xacro_process.exitCode() == 0)
