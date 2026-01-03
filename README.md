@@ -134,6 +134,13 @@ touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+
+# If you see trajopt_ifopt build errors, remove the incompatible planner
+rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
+sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
+    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
+sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
+    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
 ```
 
 #### 5) Now rosdep + build
