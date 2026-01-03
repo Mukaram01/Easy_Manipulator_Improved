@@ -41,7 +41,7 @@ objects:
         visual:
           name: table
           geometry:
-            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
+            filepath: package://table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
@@ -49,7 +49,7 @@ objects:
         collision:
           name: None
           geometry:
-            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
+            filepath: package://table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
