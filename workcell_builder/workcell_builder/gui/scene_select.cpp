@@ -741,8 +741,8 @@ bool SceneSelect::validate_description_xacros(
 
   if (scene.ee_loaded) {
     for (const auto & ee : scene.ee_vector) {
-      const std::string package_name = ee.name + "_description";
-      const std::string filename = ee.name + "_gripper.urdf.xacro";
+      const std::string package_name = resolve_ee_description_package(ee);
+      const std::string filename = resolve_ee_xacro_filename(ee);
       check_xacro(package_name, filename, "end effector '" + ee.name + "'");
     }
   }
