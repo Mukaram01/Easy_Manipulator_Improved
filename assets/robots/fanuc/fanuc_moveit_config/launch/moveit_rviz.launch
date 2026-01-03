@@ -1,4 +1,5 @@
 <launch>
+  <!-- Deprecated: use moveit_rviz.launch.py (ROS 2) -->
 
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix" value="" />

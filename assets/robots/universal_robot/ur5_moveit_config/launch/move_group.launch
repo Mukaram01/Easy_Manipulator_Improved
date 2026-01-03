@@ -1,4 +1,5 @@
 <launch>
+  <!-- Deprecated: use move_group.launch.py (ROS 2) -->
   <arg name="limited" default="false"/>
 
   <include file="$(find ur5_moveit_config)/launch/planning_context.launch">

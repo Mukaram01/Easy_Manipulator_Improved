@@ -1,4 +1,5 @@
 <launch>
+  <!-- Deprecated: use planning_context.launch.py (ROS 2) -->
   <arg name="load_gripper" default="true" />
 
   <!-- By default we do not overwrite the URDF. Change the following to true to change the default behavior -->
