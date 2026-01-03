@@ -18,7 +18,7 @@ robot:
 end_effector:
   name: robotiq_3f
   brand: robotiq_3f_gripper
-  filepath: /home/rosi5/emd_ws/src/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description
+  filepath: /workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description
   base_link: palm
   robot_link: tool0
   ee_type: finger
