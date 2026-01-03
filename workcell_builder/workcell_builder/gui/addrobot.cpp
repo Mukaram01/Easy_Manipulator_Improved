@@ -308,9 +308,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
       "ur.urdf.xacro",
       {
         "ur_type:=" + temp_robot.name,
-        "prefix:=",
-        "joint_limited:=true",
-        "safety_limits:=true"
+        "name:=" + temp_robot.name
       });
     ur_robot_vector.push_back(temp_robot);
   }
