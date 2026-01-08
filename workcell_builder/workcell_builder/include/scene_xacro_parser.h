@@ -138,13 +138,13 @@ void generate_scene_xacro(Scene scene)
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
         const std::string ur_macro = scene.robot_vector[i].name + "_robot";
-        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
+        MyFile << " <xacro:include filename=\"$(find-pkg-share ur_description)/urdf/" + ur_xacro +
           "\"/>\n";
         MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename = resolve_robot_xacro_filename(scene.robot_vector[i]);
-        MyFile << " <xacro:include filename=\"$(find " + package_name +
+        MyFile << " <xacro:include filename=\"$(find-pkg-share " + package_name +
           ")/urdf/" + xacro_filename + "\"/>\n";
         MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot/>\n";
       }
@@ -175,7 +175,7 @@ void generate_scene_xacro(Scene scene)
       const std::string ee_package = resolve_ee_description_package(scene.ee_vector[i]);
       const std::string ee_xacro = resolve_ee_xacro_filename(scene.ee_vector[i]);
       const std::string ee_macro = resolve_ee_xacro_macro(scene.ee_vector[i]);
-      MyFile << " <xacro:include filename=\"$(find " + ee_package +
+      MyFile << " <xacro:include filename=\"$(find-pkg-share " + ee_package +
         ")/urdf/" + ee_xacro + "\"/>\n";
 
       MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
@@ -208,7 +208,7 @@ void generate_scene_xacro(Scene scene)
     } else {
       parent_link = "world";
     }
-    MyFile << " <xacro:include filename=\"$(find " + scene.object_vector[i].name +
+    MyFile << " <xacro:include filename=\"$(find-pkg-share " + scene.object_vector[i].name +
       "_description)/urdf/" + scene.object_vector[i].name + ".urdf.xacro\"/>\n";
     MyFile << " <xacro:" + scene.object_vector[i].name + " prefix=\"\" parent=\"" + parent_link +
       "\">\n";
