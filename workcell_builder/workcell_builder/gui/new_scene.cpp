@@ -14,7 +14,9 @@
 // limitations under the License.
 
 #include "gui/new_scene.h"
+#include <QDoubleValidator>
 #include <QFileDialog>
+#include <QLocale>
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <sstream>
@@ -32,6 +34,21 @@ NewScene::NewScene(QWidget * parent)
   ui(new Ui::NewScene)
 {
   ui->setupUi(this);
+  auto float_validator = new QDoubleValidator(this);
+  float_validator->setLocale(QLocale::C);
+  float_validator->setNotation(QDoubleValidator::StandardNotation);
+  ui->robot_x->setValidator(float_validator);
+  ui->robot_y->setValidator(float_validator);
+  ui->robot_z->setValidator(float_validator);
+  ui->robot_roll->setValidator(float_validator);
+  ui->robot_pitch->setValidator(float_validator);
+  ui->robot_yaw->setValidator(float_validator);
+  ui->ee_x->setValidator(float_validator);
+  ui->ee_y->setValidator(float_validator);
+  ui->ee_z->setValidator(float_validator);
+  ui->ee_roll->setValidator(float_validator);
+  ui->ee_pitch->setValidator(float_validator);
+  ui->ee_yaw->setValidator(float_validator);
   on_enable_robot_stateChanged(0);
   on_enable_ee_stateChanged(0);
   success = false;
@@ -410,8 +427,6 @@ int NewScene::ErrorCheckOrigin(int robot_or_ee)
         " <font color='red'>Error: XYZ or RPY values for Robot not completely filled.</font>");
       num_errors++;
     } else {
-      int i = 0;
-      auto float_validator = new QDoubleValidator();
       QString input_x = ui->robot_x->text();
       QString input_y = ui->robot_y->text();
       QString input_z = ui->robot_z->text();
@@ -420,36 +435,14 @@ int NewScene::ErrorCheckOrigin(int robot_or_ee)
       QString input_pitch = ui->robot_pitch->text();
       QString input_yaw = ui->robot_yaw->text();
 
-      if (float_validator->validate(
-          input_x,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_y,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_z,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_roll,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_pitch,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(input_yaw, i) != QValidator::Acceptable)
-      {
-        ui->robot_desc_error->setText(
-          " <font color='red'>Type Error: Robot XYZ and RPY need to be floats</font>");
-        num_errors++;
-      } else {
-        gui_environment.environment.robot_vector[0].origin.is_origin = true;
-        gui_environment.environment.robot_vector[0].origin.x = input_x.toFloat();
-        gui_environment.environment.robot_vector[0].origin.y = input_y.toFloat();
-        gui_environment.environment.robot_vector[0].origin.z = input_z.toFloat();
+      gui_environment.environment.robot_vector[0].origin.is_origin = true;
+      gui_environment.environment.robot_vector[0].origin.x = input_x.toFloat();
+      gui_environment.environment.robot_vector[0].origin.y = input_y.toFloat();
+      gui_environment.environment.robot_vector[0].origin.z = input_z.toFloat();
 
-        gui_environment.environment.robot_vector[0].origin.roll = input_roll.toFloat();
-        gui_environment.environment.robot_vector[0].origin.pitch = input_pitch.toFloat();
-        gui_environment.environment.robot_vector[0].origin.yaw = input_yaw.toFloat();
-      }
+      gui_environment.environment.robot_vector[0].origin.roll = input_roll.toFloat();
+      gui_environment.environment.robot_vector[0].origin.pitch = input_pitch.toFloat();
+      gui_environment.environment.robot_vector[0].origin.yaw = input_yaw.toFloat();
     }
     if (num_errors == 0) {
       ui->robot_desc_error->setText(" <font color='green'> No Errors </font>");
@@ -464,8 +457,6 @@ int NewScene::ErrorCheckOrigin(int robot_or_ee)
         " End Effector not completely filled.</font>");
       num_errors++;
     } else {
-      int i = 0;
-      auto float_validator = new QDoubleValidator();
       QString input_x = ui->ee_x->text();
       QString input_y = ui->ee_y->text();
       QString input_z = ui->ee_z->text();
@@ -474,36 +465,14 @@ int NewScene::ErrorCheckOrigin(int robot_or_ee)
       QString input_pitch = ui->ee_pitch->text();
       QString input_yaw = ui->ee_yaw->text();
 
-      if (float_validator->validate(
-          input_x,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_y,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_z,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_roll,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(
-          input_pitch,
-          i) != QValidator::Acceptable ||
-        float_validator->validate(input_yaw, i) != QValidator::Acceptable)
-      {
-        ui->ee_desc_error->setText(
-          " <font color='red'>Type Error: End Effector XYZ and RPY need to be floats</font>");
-        num_errors++;
-      } else {
-        gui_environment.environment.ee_vector[0].origin.is_origin = true;
-        gui_environment.environment.ee_vector[0].origin.x = input_x.toFloat();
-        gui_environment.environment.ee_vector[0].origin.y = input_y.toFloat();
-        gui_environment.environment.ee_vector[0].origin.z = input_z.toFloat();
+      gui_environment.environment.ee_vector[0].origin.is_origin = true;
+      gui_environment.environment.ee_vector[0].origin.x = input_x.toFloat();
+      gui_environment.environment.ee_vector[0].origin.y = input_y.toFloat();
+      gui_environment.environment.ee_vector[0].origin.z = input_z.toFloat();
 
-        gui_environment.environment.ee_vector[0].origin.roll = input_roll.toFloat();
-        gui_environment.environment.ee_vector[0].origin.pitch = input_pitch.toFloat();
-        gui_environment.environment.ee_vector[0].origin.yaw = input_yaw.toFloat();
-      }
+      gui_environment.environment.ee_vector[0].origin.roll = input_roll.toFloat();
+      gui_environment.environment.ee_vector[0].origin.pitch = input_pitch.toFloat();
+      gui_environment.environment.ee_vector[0].origin.yaw = input_yaw.toFloat();
     }
 
     if (num_errors == 0) {
