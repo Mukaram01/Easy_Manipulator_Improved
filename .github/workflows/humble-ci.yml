@@ -1,0 +1,41 @@
+name: Humble CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  humble-ci:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up ROS 2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Create workspace
+        run: |
+          mkdir -p ws/src
+          ln -s "${GITHUB_WORKSPACE}" ws/src/easy_manipulation_deployment
+
+      - name: Install dependencies
+        working-directory: ws
+        run: |
+          rosdep update
+          rosdep install --from-paths src --ignore-src -yr --rosdistro humble
+
+      - name: Build
+        working-directory: ws
+        run: colcon build --symlink-install
+
+      - name: Test
+        working-directory: ws
+        run: colcon test
+
+      - name: Test results
+        working-directory: ws
+        run: colcon test-result --verbose
