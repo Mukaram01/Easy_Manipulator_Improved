@@ -16,6 +16,7 @@
 #include "gui/addobject.h"
 
 #include <QKeyEvent>
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -293,6 +294,10 @@ bool AddObject::ErrorObjectName()
         }
     }
     object.name = final_name;
+    int cursor_position = ui->lineEdit->cursorPosition();
+    ui->lineEdit->setText(QString::fromStdString(object.name));
+    ui->lineEdit->setCursorPosition(
+      std::min(cursor_position, ui->lineEdit->text().length()));
   }
   return false;
 }
