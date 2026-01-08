@@ -237,7 +237,7 @@ void NewScene::on_load_robot_desc_clicked()
     QDir::currentPath());
   if (!OutputFolder.isEmpty()) {
     ui->robot_desc_filepath->setText(OutputFolder);
-    gui_environment.environment.ee_vector[0].filepath = OutputFolder.toStdString();
+    gui_environment.environment.robot_vector[0].filepath = OutputFolder.toStdString();
     add_desc_links(OutputFolder, 0);
   }
 }
@@ -250,7 +250,7 @@ void NewScene::on_load_ee_desc_clicked()
     QDir::currentPath());
   if (!OutputFolder.isEmpty()) {
     ui->ee_desc_filepath->setText(OutputFolder);
-    gui_environment.environment.robot_vector[0].filepath = OutputFolder.toStdString();
+    gui_environment.environment.ee_vector[0].filepath = OutputFolder.toStdString();
     add_desc_links(OutputFolder, 1);
   }
 }
