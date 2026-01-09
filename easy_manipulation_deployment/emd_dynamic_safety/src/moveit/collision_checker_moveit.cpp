@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <stdexcept>
 
@@ -30,6 +31,105 @@ namespace dynamic_safety_moveit
 {
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety_moveit.collision_checker");
+
+namespace
+{
+void set_joint_positions_from_trajectory(
+  moveit::core::RobotState & state,
+  const std::vector<std::string> & joint_names,
+  const std::vector<double> & positions)
+{
+  size_t position_index = 0;
+  for (const auto & joint_name : joint_names) {
+    const moveit::core::JointModel * joint_model = state.getJointModel(joint_name);
+    if (joint_model) {
+      const size_t variable_count = joint_model->getVariableCount();
+      if (position_index + variable_count > positions.size()) {
+        RCLCPP_WARN(
+          LOGGER, "Not enough joint positions for '%s' (needed %zu, have %zu)",
+          joint_name.c_str(), variable_count, positions.size() - position_index);
+        break;
+      }
+      std::vector<double> joint_positions(
+        positions.begin() + position_index,
+        positions.begin() + position_index + variable_count);
+      state.setJointPositions(joint_model, joint_positions);
+      state.enforceBounds(joint_model);
+      position_index += variable_count;
+      continue;
+    }
+
+    if (state.hasVariable(joint_name)) {
+      if (position_index >= positions.size()) {
+        RCLCPP_WARN(LOGGER, "Not enough joint positions for variable '%s'", joint_name.c_str());
+        break;
+      }
+      state.setVariablePosition(joint_name, positions[position_index]);
+      state.enforceBounds();
+      position_index += 1;
+      continue;
+    }
+
+    RCLCPP_WARN(LOGGER, "Unknown joint or variable '%s' in trajectory", joint_name.c_str());
+  }
+}
+
+void set_joint_positions_from_state_msg(
+  moveit::core::RobotState & state,
+  const sensor_msgs::msg::JointState & joint_states)
+{
+  if (joint_states.name.size() != joint_states.position.size()) {
+    RCLCPP_WARN(
+      LOGGER, "JointState name/position size mismatch (%zu vs %zu)",
+      joint_states.name.size(), joint_states.position.size());
+  }
+
+  const size_t entry_count = std::min(joint_states.name.size(), joint_states.position.size());
+  std::unordered_map<std::string, double> position_lookup;
+  position_lookup.reserve(entry_count);
+  for (size_t i = 0; i < entry_count; ++i) {
+    position_lookup.emplace(joint_states.name[i], joint_states.position[i]);
+  }
+
+  const auto & joint_models = state.getRobotModel()->getJointModels();
+  for (const auto * joint_model : joint_models) {
+    const auto & variable_names = joint_model->getVariableNames();
+    if (variable_names.empty()) {
+      continue;
+    }
+    std::vector<double> joint_positions;
+    joint_positions.reserve(variable_names.size());
+    bool has_all_variables = true;
+    for (const auto & variable_name : variable_names) {
+      const auto it = position_lookup.find(variable_name);
+      if (it == position_lookup.end()) {
+        has_all_variables = false;
+        break;
+      }
+      joint_positions.push_back(it->second);
+    }
+    if (has_all_variables) {
+      state.setJointPositions(joint_model, joint_positions);
+      state.enforceBounds(joint_model);
+    }
+  }
+
+  for (size_t i = 0; i < entry_count; ++i) {
+    const std::string & name = joint_states.name[i];
+    const double value = joint_states.position[i];
+    const moveit::core::JointModel * joint_model = state.getJointModel(name);
+    if (joint_model && joint_model->getVariableCount() == 1) {
+      state.setJointPositions(joint_model, {value});
+      state.enforceBounds(joint_model);
+      continue;
+    }
+    if (state.hasVariable(name)) {
+      state.setVariablePosition(name, value);
+      state.enforceBounds();
+    }
+  }
+}
+}  // namespace
 
 MoveitCollisionCheckerContext::MoveitCollisionCheckerContext(
   const std::string & robot_urdf,
@@ -93,10 +193,7 @@ void MoveitCollisionCheckerContext::run_discrete(
   moveit::core::RobotState current_state = scene_->getCurrentState();
 
   // Update state
-  for (size_t i = 0; i < joint_names.size(); i++) {
-    // TODO(anyone): multi-axis joint
-    current_state.setJointPositions(joint_names[i], {point.positions[i]});
-  }
+  set_joint_positions_from_trajectory(current_state, joint_names, point.positions);
   // Check robot collision
   current_state.updateCollisionBodyTransforms();
   // scene_->checkCollision(collision_request_, collision_result_, state);
@@ -130,11 +227,8 @@ void MoveitCollisionCheckerContext::run_continuous(
   moveit::core::RobotState end_state = scene_->getCurrentState();
 
   // Update state
-  for (size_t i = 0; i < joint_names.size(); i++) {
-    // TODO(anyone): multi-axis joint
-    start_state.setJointPositions(joint_names[i], {point1.positions[i]});
-    end_state.setJointPositions(joint_names[i], {point2.positions[i]});
-  }
+  set_joint_positions_from_trajectory(start_state, joint_names, point1.positions);
+  set_joint_positions_from_trajectory(end_state, joint_names, point2.positions);
 
   // Check robot collision
   start_state.updateCollisionBodyTransforms();
@@ -163,12 +257,7 @@ void MoveitCollisionCheckerContext::update(const sensor_msgs::msg::JointState & 
 {
   auto & current_state = scene_->getCurrentStateNonConst();
   // Update state
-  for (size_t i = 0; i < joint_states.name.size(); i++) {
-    // TODO(anyone): multi-axis joint
-    if (current_state.getJointModel(joint_states.name[i])) {
-      current_state.setJointPositions(joint_states.name[i], {joint_states.position[i]});
-    }
-  }
+  set_joint_positions_from_state_msg(current_state, joint_states);
 }
 
 void MoveitCollisionCheckerContext::update(const moveit_msgs::msg::PlanningScene & scene_msgs)
