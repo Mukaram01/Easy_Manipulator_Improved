@@ -3,7 +3,8 @@ project(robotiq_3f_gripper_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf
+# This is the critical part that copies the files to the install folder
+install(DIRECTORY meshes urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
