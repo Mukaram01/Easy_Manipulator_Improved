@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <atomic>
+#include <chrono>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -72,14 +74,53 @@ bool DefaultExecutor::run(
 
   trajectory_execution_manager_->execute();
 
-  // ALWAYS BLOCKING !!!
-  auto status = trajectory_execution_manager_->waitForExecution();
+  const double expected_duration = robot_trajectory.getDuration();
+  const double requested_timeout =
+    expected_duration * trajectory_execution_manager_->allowedExecutionDurationScaling() +
+    trajectory_execution_manager_->allowedGoalDurationMargin();
+  std::atomic_bool execution_complete(false);
+  std::atomic_bool timed_out(false);
+  std::mutex status_mutex;
+  moveit_controller_manager::ExecutionStatus status(
+    moveit_controller_manager::ExecutionStatus::UNKNOWN);
+  std::thread wait_thread([this, &execution_complete, &status_mutex, &status]() {
+    const auto wait_status = trajectory_execution_manager_->waitForExecution();
+    {
+      std::lock_guard<std::mutex> lock(status_mutex);
+      status = wait_status;
+    }
+    execution_complete = true;
+  });
+
+  rclcpp::Clock steady_clock(RCL_STEADY_TIME);
+  const auto start_time = steady_clock.now();
+  rclcpp::Rate wait_rate(50);
+  while (rclcpp::ok() && !execution_complete) {
+    const auto elapsed = steady_clock.now() - start_time;
+    const double elapsed_seconds = elapsed.seconds();
+    if (requested_timeout > 0.0 && elapsed_seconds >= requested_timeout) {
+      const auto last_status = trajectory_execution_manager_->getLastExecutionStatus();
+      RCLCPP_WARN(
+        logger_,
+        "Execution timed out after %.3f s (requested %.3f s). Last action state: %s",
+        elapsed_seconds, requested_timeout, last_status.asString().c_str());
+      trajectory_execution_manager_->stopExecution();
+      timed_out = true;
+      break;
+    }
+    wait_rate.sleep();
+  }
+
+  wait_thread.join();
 
   finished = true;
   watchdog.join();
 
   // Allow timeout
   // TODO(anyone): fix doesn't finish in time problem.
+  if (timed_out) {
+    status = moveit_controller_manager::ExecutionStatus::TIMED_OUT;
+  }
   return (status == moveit_controller_manager::ExecutionStatus::SUCCEEDED) ||
          (status == moveit_controller_manager::ExecutionStatus::TIMED_OUT);
 }
