@@ -34,6 +34,12 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety_moveit.c
 
 namespace
 {
+bool state_has_variable(const moveit::core::RobotState & state, const std::string & name)
+{
+  const auto & variable_names = state.getVariableNames();
+  return std::find(variable_names.begin(), variable_names.end(), name) != variable_names.end();
+}
+
 void set_joint_positions_from_trajectory(
   moveit::core::RobotState & state,
   const std::vector<std::string> & joint_names,
@@ -59,7 +65,7 @@ void set_joint_positions_from_trajectory(
       continue;
     }
 
-    if (state.hasVariable(joint_name)) {
+    if (state_has_variable(state, joint_name)) {
       if (position_index >= positions.size()) {
         RCLCPP_WARN(LOGGER, "Not enough joint positions for variable '%s'", joint_name.c_str());
         break;
@@ -123,7 +129,7 @@ void set_joint_positions_from_state_msg(
       state.enforceBounds(joint_model);
       continue;
     }
-    if (state.hasVariable(name)) {
+    if (state_has_variable(state, name)) {
       state.setVariablePosition(name, value);
       state.enforceBounds();
     }
