@@ -29,9 +29,11 @@ void generate_armhand_xacro(Robot robot, EndEffector ee, std::string scene_name)
   std::ofstream MyFile("arm_hand.srdf.xacro");
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
-  MyFile << "  <xacro:include filename=\"$(find " + robot.name + "_moveit_config)/config/" +
+  MyFile << "  <xacro:include filename=\"$(find-pkg-share " + robot.name +
+    "_moveit_config)/config/" +
     robot.name + ".srdf.xacro\" />\n\n";
-  MyFile << "  <xacro:include filename=\"$(find " + ee.name + "_moveit_config)/config/" + ee.name +
+  MyFile << "  <xacro:include filename=\"$(find-pkg-share " + ee.name + "_moveit_config)/config/" +
+    ee.name +
     "_gripper.srdf.xacro\" />\n\n";
   MyFile << "  <xacro:" + robot.name + "/>\n\n";
   MyFile << "  <xacro:" + ee.name + "_gripper/>\n\n";
@@ -50,7 +52,8 @@ void generate_armhand_xacro(Robot robot, std::string scene_name)
   std::ofstream MyFile("arm_hand.srdf.xacro");
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
-  MyFile << "  <xacro:include filename=\"$(find " + robot.name + "_moveit_config)/config/" +
+  MyFile << "  <xacro:include filename=\"$(find-pkg-share " + robot.name +
+    "_moveit_config)/config/" +
     robot.name + ".srdf.xacro\" />\n\n";
   MyFile << "  <xacro:" + robot.name + "/>\n\n";
   MyFile << "\n\n</robot>";
