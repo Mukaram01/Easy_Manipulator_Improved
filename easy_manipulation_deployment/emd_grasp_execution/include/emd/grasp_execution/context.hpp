@@ -19,8 +19,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <yaml-cpp/yaml.h>
-
 namespace grasp_execution
 {
 
@@ -84,37 +82,27 @@ struct WorkcellContext
    * YAML configuration file format.
    * ```yaml
    * workcell:
-   *   - group: manipulator1
-   *     prefix: ur3e_
-   *     executors:
-   *       default:
-   *         plugin: grasp_execution/DefaultExecutor
-   *       <custom-executor>:
-   *         plugin: <package-name>/<plugin-name>
-   *         controller: <controller-name>
-   *     end_effectors:
-   *       robotiq_2f0:
-   *         brand: robotiq_85_2f_gripper
-   *         link: ur3e_gripper_link
-   *         driver:
-   *           plugin: <package-name>/<plugin-name>
-   *           controller: <controller-name>
-   *
-   *   - group: manipulator2
-   *     prefix: ur5_
-   *     executors:
-   *       default:
-   *         plugin: grasp_execution/DefaultExecutor
-   *       <custom-executor>:
-   *         plugin: <package-name>/<plugin-name>
-   *         controller: <controller-name>
-   *     end_effectors:
-   *       vg10_0:
-   *         brand: vg10_gripper
-   *         link: ur5_gripper_link
-   *         driver:
-   *           plugin: <package-name>/<plugin-name>
-   *           controller: <controller-name>
+   *   ros__parameters:
+   *     groups: [manipulator1, manipulator2]
+   *     groups.manipulator1.prefix: ur3e_
+   *     groups.manipulator1.executors: [default]
+   *     groups.manipulator1.executors.default.plugin:
+   *       grasp_execution/DefaultExecutor
+   *     groups.manipulator1.end_effectors: [robotiq_2f0]
+   *     groups.manipulator1.end_effectors.robotiq_2f0.brand:
+   *       robotiq_85_2f_gripper
+   *     groups.manipulator1.end_effectors.robotiq_2f0.link:
+   *       ur3e_gripper_link
+   *     groups.manipulator1.end_effectors.robotiq_2f0.driver.plugin:
+   *       <package-name>/<plugin-name>
+   *     groups.manipulator1.end_effectors.robotiq_2f0.driver.controller:
+   *       <controller-name>
+   *     groups.manipulator2.executors: [default]
+   *     groups.manipulator2.executors.default.plugin:
+   *       grasp_execution/DefaultExecutor
+   *     groups.manipulator2.end_effectors: [vg10_0]
+   *     groups.manipulator2.end_effectors.vg10_0.brand: vg10_gripper
+   *     groups.manipulator2.end_effectors.vg10_0.link: ur5_gripper_link
    * ```
    *
    * \param[in] path file path to the yaml configuration.
