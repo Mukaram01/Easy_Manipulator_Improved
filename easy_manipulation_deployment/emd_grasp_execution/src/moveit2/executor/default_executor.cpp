@@ -81,11 +81,6 @@ struct HasAllowedGoalDurationMargin<
 {
 };
 
-template <typename>
-struct dependent_false : std::false_type
-{
-};
-
 template <typename T>
 double get_allowed_execution_duration_scaling(const T & manager)
 {
@@ -93,10 +88,6 @@ double get_allowed_execution_duration_scaling(const T & manager)
     return manager.getAllowedExecutionDurationScaling();
   } else if constexpr (HasAllowedExecutionDurationScaling<T>::value) {
     return manager.allowedExecutionDurationScaling();
-  } else {
-    static_assert(
-      dependent_false<T>::value,
-      "TrajectoryExecutionManager lacks allowed execution duration scaling accessor.");
   }
   return 1.0;
 }
@@ -108,10 +99,6 @@ double get_allowed_goal_duration_margin(const T & manager)
     return manager.getAllowedGoalDurationMargin();
   } else if constexpr (HasAllowedGoalDurationMargin<T>::value) {
     return manager.allowedGoalDurationMargin();
-  } else {
-    static_assert(
-      dependent_false<T>::value,
-      "TrajectoryExecutionManager lacks allowed goal duration margin accessor.");
   }
   return 0.0;
 }
