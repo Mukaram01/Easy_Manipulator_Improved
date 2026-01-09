@@ -17,6 +17,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <type_traits>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_execution/moveit2/executor/default_executor.hpp"
@@ -27,6 +29,94 @@ namespace grasp_execution
 
 namespace moveit2
 {
+
+namespace
+{
+
+template <typename T, typename = void>
+struct HasGetAllowedExecutionDurationScaling : std::false_type
+{
+};
+
+template <typename T>
+struct HasGetAllowedExecutionDurationScaling<
+  T, std::void_t<decltype(std::declval<const T &>().getAllowedExecutionDurationScaling())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct HasAllowedExecutionDurationScaling : std::false_type
+{
+};
+
+template <typename T>
+struct HasAllowedExecutionDurationScaling<
+  T, std::void_t<decltype(std::declval<const T &>().allowedExecutionDurationScaling())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct HasGetAllowedGoalDurationMargin : std::false_type
+{
+};
+
+template <typename T>
+struct HasGetAllowedGoalDurationMargin<
+  T, std::void_t<decltype(std::declval<const T &>().getAllowedGoalDurationMargin())>>
+  : std::true_type
+{
+};
+
+template <typename T, typename = void>
+struct HasAllowedGoalDurationMargin : std::false_type
+{
+};
+
+template <typename T>
+struct HasAllowedGoalDurationMargin<
+  T, std::void_t<decltype(std::declval<const T &>().allowedGoalDurationMargin())>>
+  : std::true_type
+{
+};
+
+template <typename>
+struct dependent_false : std::false_type
+{
+};
+
+template <typename T>
+double get_allowed_execution_duration_scaling(const T & manager)
+{
+  if constexpr (HasGetAllowedExecutionDurationScaling<T>::value) {
+    return manager.getAllowedExecutionDurationScaling();
+  } else if constexpr (HasAllowedExecutionDurationScaling<T>::value) {
+    return manager.allowedExecutionDurationScaling();
+  } else {
+    static_assert(
+      dependent_false<T>::value,
+      "TrajectoryExecutionManager lacks allowed execution duration scaling accessor.");
+  }
+  return 1.0;
+}
+
+template <typename T>
+double get_allowed_goal_duration_margin(const T & manager)
+{
+  if constexpr (HasGetAllowedGoalDurationMargin<T>::value) {
+    return manager.getAllowedGoalDurationMargin();
+  } else if constexpr (HasAllowedGoalDurationMargin<T>::value) {
+    return manager.allowedGoalDurationMargin();
+  } else {
+    static_assert(
+      dependent_false<T>::value,
+      "TrajectoryExecutionManager lacks allowed goal duration margin accessor.");
+  }
+  return 0.0;
+}
+
+}  // namespace
 
 bool DefaultExecutor::load(
   const moveit_cpp::MoveItCppPtr & moveit_cpp,
@@ -76,8 +166,8 @@ bool DefaultExecutor::run(
 
   const double expected_duration = robot_trajectory.getDuration();
   const double requested_timeout =
-    expected_duration * trajectory_execution_manager_->allowedExecutionDurationScaling() +
-    trajectory_execution_manager_->allowedGoalDurationMargin();
+    expected_duration * get_allowed_execution_duration_scaling(*trajectory_execution_manager_) +
+    get_allowed_goal_duration_margin(*trajectory_execution_manager_);
   std::atomic_bool execution_complete(false);
   std::atomic_bool timed_out(false);
   std::mutex status_mutex;
