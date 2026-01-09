@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(robotiq_3f_gripper_description)
+project(single_suction_description)
 
 find_package(ament_cmake REQUIRED)
 
