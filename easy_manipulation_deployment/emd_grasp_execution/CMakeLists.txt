@@ -28,7 +28,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
-find_package(yaml-cpp REQUIRED)
+find_package(rcl_yaml_param_parser REQUIRED)
 
 include_directories(
   include
@@ -46,18 +46,13 @@ ament_target_dependencies(grasp_execution_interface
   emd_msgs
   moveit_msgs
   rclcpp
+  rcl_yaml_param_parser
   tf2
   tf2_ros
   tf2_geometry_msgs
   tf2_eigen
   trajectory_msgs
   pluginlib
-)
-target_link_libraries(grasp_execution_interface
-  yaml-cpp
-)
-target_include_directories(grasp_execution_interface
-  SYSTEM PRIVATE ${YAML_CPP_INCLUDE_DIRS}
 )
 target_compile_features(grasp_execution_interface
   PUBLIC cxx_std_17
@@ -116,11 +111,11 @@ install(
 ament_export_dependencies(
   moveit_ros_planning_interface
   emd_msgs
+  rcl_yaml_param_parser
   tf2
   tf2_ros
   tf2_eigen
   trajectory_msgs
-  yaml-cpp
   tinyxml2_vendor
 )
 

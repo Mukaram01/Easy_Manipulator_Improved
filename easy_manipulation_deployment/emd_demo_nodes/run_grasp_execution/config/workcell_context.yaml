@@ -1,13 +1,12 @@
 workcell:
-- group_name: manipulator
-  executors:
-    default:
-      plugin: grasp_execution/DefaultExecutor
-  end_effectors:
-    robotiq_2f0:
-      brand: robotiq_2f
-      link: ee_palm
-      clearance: 0.1
-      driver:
-        plugin: grasp_execution/DummyGripperDriver
-        controller: ""
+  ros__parameters:
+    groups: [manipulator]
+    groups.manipulator.executors: [default]
+    groups.manipulator.executors.default.plugin: grasp_execution/DefaultExecutor
+    groups.manipulator.end_effectors: [robotiq_2f0]
+    groups.manipulator.end_effectors.robotiq_2f0.brand: robotiq_2f
+    groups.manipulator.end_effectors.robotiq_2f0.link: ee_palm
+    groups.manipulator.end_effectors.robotiq_2f0.clearance: 0.1
+    groups.manipulator.end_effectors.robotiq_2f0.driver.plugin:
+      grasp_execution/DummyGripperDriver
+    groups.manipulator.end_effectors.robotiq_2f0.driver.controller: ""

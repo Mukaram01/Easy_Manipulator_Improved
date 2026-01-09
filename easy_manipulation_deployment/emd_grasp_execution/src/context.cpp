@@ -12,134 +12,199 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "emd/grasp_execution/context.hpp"
 #include "emd/grasp_execution/exception.hpp"
 
-namespace grasp_execution {
+#include "rcl_yaml_param_parser/parser.h"
+#include "rcl_yaml_param_parser/types.h"
+#include "rcutils/allocator.h"
+#include "rcutils/types/string_array.h"
 
-/// Parse optional field from yaml.
-/**
- * \param[in] field_name Name of the optional field.
- * \param[in] node yaml-cpp node object.
- * \param[in] default_value default value of the optional field.
- * \return value of the optional field.
- */
-template <typename T>
-T _parse_optional_field(const std::string &field_name, const YAML::Node &node,
-                        const T &default_value) {
-  const YAML::Node field = node[field_name];
-  if (!field || field.IsNull()) {
-    return default_value;
+namespace {
+
+const rcl_node_params_t * find_node_params(const rcl_params_t &params,
+                                           const std::string &node_name) {
+  for (size_t i = 0; i < params.num_nodes; ++i) {
+    if (params.node_names[i] && node_name == params.node_names[i]) {
+      return &params.params[i];
+    }
   }
-  try {
-    return field.as<T>();
-  } catch (const YAML::Exception &e) {
-    throw std::runtime_error("failed to parse optional field '" + field_name +
-                             "': " + e.what());
-  }
+  return nullptr;
 }
+
+std::optional<size_t> find_param_index(const rcl_node_params_t &node_params,
+                                       const std::string &param_name) {
+  for (size_t i = 0; i < node_params.num_params; ++i) {
+    if (node_params.parameter_names[i] &&
+        param_name == node_params.parameter_names[i]) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
+const rcl_variant_t * get_param_variant(const rcl_node_params_t &node_params,
+                                        const std::string &param_name) {
+  auto idx = find_param_index(node_params, param_name);
+  if (!idx) {
+    return nullptr;
+  }
+  return &node_params.parameter_values[*idx];
+}
+
+std::optional<std::string> get_string_param(
+    const rcl_node_params_t &node_params, const std::string &param_name) {
+  const rcl_variant_t * variant = get_param_variant(node_params, param_name);
+  if (!variant) {
+    return std::nullopt;
+  }
+  if (!variant->string_value) {
+    throw std::runtime_error("expected string parameter '" + param_name + "'");
+  }
+  return std::string(variant->string_value);
+}
+
+std::optional<double> get_double_param(const rcl_node_params_t &node_params,
+                                       const std::string &param_name) {
+  const rcl_variant_t * variant = get_param_variant(node_params, param_name);
+  if (!variant) {
+    return std::nullopt;
+  }
+  if (variant->double_value) {
+    return *variant->double_value;
+  }
+  if (variant->integer_value) {
+    return static_cast<double>(*variant->integer_value);
+  }
+  throw std::runtime_error("expected numeric parameter '" + param_name + "'");
+}
+
+std::optional<std::vector<std::string>> get_string_array_param(
+    const rcl_node_params_t &node_params, const std::string &param_name) {
+  const rcl_variant_t * variant = get_param_variant(node_params, param_name);
+  if (!variant) {
+    return std::nullopt;
+  }
+  if (!variant->string_array_value) {
+    throw std::runtime_error("expected string array parameter '" + param_name +
+                             "'");
+  }
+  const rcutils_string_array_t &array = *variant->string_array_value;
+  std::vector<std::string> values;
+  values.reserve(array.size);
+  for (size_t i = 0; i < array.size; ++i) {
+    if (!array.data[i]) {
+      values.emplace_back();
+      continue;
+    }
+    values.emplace_back(array.data[i]);
+  }
+  return values;
+}
+
+} // namespace
+
+namespace grasp_execution {
 
 /////////////////////////////////////////////////
 void WorkcellContext::init_from_yaml(const std::string &path) {
-  // TODO(anyone): use rcl_yaml_param_parser instead.
-  // https://github.com/ros2/rcl/tree/master/rcl_yaml_param_parser
-  YAML::Node config_yaml;
-  try {
-    config_yaml = YAML::LoadFile(path);
-  } catch (const YAML::Exception &e) {
-    throw ContextFileLoadingException(path, e.what());
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  std::unique_ptr<rcl_params_t, decltype(&rcl_yaml_node_struct_fini)> params(
+      rcl_yaml_node_struct_init(allocator), rcl_yaml_node_struct_fini);
+  if (!params) {
+    throw ContextFileLoadingException(
+        path, "failed to allocate yaml parameter structure");
+  }
+  if (!rcl_parse_yaml_file(path.c_str(), params.get())) {
+    throw ContextFileLoadingException(path, "failed to parse yaml parameters");
   }
 
-  // Check whether yaml starts with workcell namespace.
-  if (!config_yaml["workcell"]) {
+  const rcl_node_params_t *node_params = find_node_params(*params, "workcell");
+  if (!node_params) {
     throw ContextLoadingException("workcell");
   }
 
-  const YAML::Node &context_yaml = config_yaml["workcell"];
+  auto group_names = get_string_array_param(*node_params, "groups");
+  if (!group_names || group_names->empty()) {
+    throw ContextLoadingException("groups", "workcell");
+  }
 
-  // Iterate through to load all the groups.
-  for (const auto &group_yaml : context_yaml) {
-
-    // Parse group name, compulsory.
-    if (!group_yaml["group_name"]) {
-      throw ContextLoadingException("group_name");
-    }
-
-    std::string group_name = group_yaml["group_name"].as<std::string>();
-
+  for (const auto &group_name : *group_names) {
     this->init_group(group_name);
 
-    // Parse prefix, optional. Ensure it ends with an underscore for consistency
+    std::string group_prefix = "groups." + group_name + ".";
+
     std::string prefix =
-        _parse_optional_field<std::string>("prefix", group_yaml, "");
+        get_string_param(*node_params, group_prefix + "prefix").value_or("");
     if (!prefix.empty() && prefix.back() != '_' && prefix.back() != '/') {
       prefix.push_back('_');
     }
     this->groups[group_name].prefix = prefix;
 
-    // Parse executors, use default executor if none is found.
-    if (!group_yaml["executors"]) {
+    auto executor_names = get_string_array_param(
+        *node_params, group_prefix + "executors");
+    if (!executor_names || executor_names->empty()) {
       this->load_execution_method(group_name, "default",
                                   "grasp_execution/DefaultExecutor", "");
     } else {
-      const YAML::Node &executors_yaml = group_yaml["executors"];
-      for (const auto &exe_pair : executors_yaml) {
-        std::string execution_method = exe_pair.first.as<std::string>();
-
-        // Parse plugin name, compulsory.
-        if (!exe_pair.second["plugin"]) {
-          throw ContextLoadingException("plugin", group_name + ".executors");
+      for (const auto &execution_method : *executor_names) {
+        std::string executor_prefix =
+            group_prefix + "executors." + execution_method + ".";
+        auto plugin =
+            get_string_param(*node_params, executor_prefix + "plugin");
+        if (!plugin) {
+          throw ContextLoadingException("plugin",
+                                        group_name + ".executors");
         }
-        std::string execution_plugin =
-            exe_pair.second["plugin"].as<std::string>();
-
-        // Parse controller name, optional, default: "",
-        std::string execution_controller = _parse_optional_field<std::string>(
-            "controller", exe_pair.second, "");
-
-        this->load_execution_method(group_name, execution_method,
-                                    execution_plugin, execution_controller);
+        std::string controller =
+            get_string_param(*node_params, executor_prefix + "controller")
+                .value_or("");
+        this->load_execution_method(group_name, execution_method, *plugin,
+                                    controller);
       }
     }
 
-    // Parse end effector if field exists.
-    if (group_yaml["end_effectors"]) {
-      const YAML::Node &ees_yaml = group_yaml["end_effectors"];
-      for (const auto &ee_pair : ees_yaml) {
-        std::string ee_name = ee_pair.first.as<std::string>();
-        const YAML::Node &ee_yaml = ee_pair.second;
+    auto ee_names = get_string_array_param(
+        *node_params, group_prefix + "end_effectors");
+    if (!ee_names) {
+      continue;
+    }
+    for (const auto &ee_name : *ee_names) {
+      std::string ee_prefix =
+          group_prefix + "end_effectors." + ee_name + ".";
+      auto ee_brand = get_string_param(*node_params, ee_prefix + "brand");
+      if (!ee_brand) {
+        throw ContextLoadingException("brand",
+                                      group_name + ".end_effectors." + ee_name);
+      }
+      auto ee_link = get_string_param(*node_params, ee_prefix + "link");
+      if (!ee_link) {
+        throw ContextLoadingException("link",
+                                      group_name + ".end_effectors." +
+                                          *ee_brand);
+      }
 
-        // Parse brand, compulsory field.
-        if (!ee_yaml["brand"]) {
-          throw ContextLoadingException(
-              "brand", group_name + ".end_effectors." + ee_name);
-        }
-        std::string ee_brand = ee_yaml["brand"].as<std::string>();
-
-        // Parse link, compulsory field.
-        if (!ee_yaml["link"]) {
-          throw ContextLoadingException("link", group_name + ".end_effectors." +
-                                                    ee_brand);
-        }
-        std::string ee_link = ee_yaml["link"].as<std::string>();
-
-        // Parse clearance, optional field, default: 0.
-        double ee_clearance =
-            _parse_optional_field<double>("clearance", ee_yaml, 0.0);
-
-        // Parse dummy driver if no driver field found.
-        if (!ee_yaml["driver"] || !ee_yaml["driver"]["plugin"]) {
-          this->load_ee(group_name, ee_name, ee_brand, ee_link, ee_clearance,
-                        "grasp_execution/DummyGripperDriverPlugin", "");
-        } else {
-          this->load_ee(group_name, ee_name, ee_brand, ee_link, ee_clearance,
-                        ee_yaml["driver"]["plugin"].as<std::string>(),
-                        _parse_optional_field<std::string>(
-                            "controller", ee_yaml["driver"], ""));
-        }
+      double ee_clearance =
+          get_double_param(*node_params, ee_prefix + "clearance").value_or(
+              0.0);
+      std::string driver_prefix = ee_prefix + "driver.";
+      auto driver_plugin =
+          get_string_param(*node_params, driver_prefix + "plugin");
+      if (!driver_plugin) {
+        this->load_ee(group_name, ee_name, *ee_brand, *ee_link, ee_clearance,
+                      "grasp_execution/DummyGripperDriverPlugin", "");
+      } else {
+        std::string driver_controller =
+            get_string_param(*node_params, driver_prefix + "controller")
+                .value_or("");
+        this->load_ee(group_name, ee_name, *ee_brand, *ee_link, ee_clearance,
+                      *driver_plugin, driver_controller);
       }
     }
   }
