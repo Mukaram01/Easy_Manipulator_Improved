@@ -9,6 +9,9 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <build_depend>onrobot_airpick4_description</build_depend>
+  <build_export_depend>onrobot_airpick4_description</build_export_depend>
+
   <exec_depend>ur_description</exec_depend>
   <exec_depend>ur5_moveit_config</exec_depend>
   <exec_depend>onrobot_airpick4_description</exec_depend>
