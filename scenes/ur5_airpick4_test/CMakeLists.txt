@@ -15,8 +15,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
 find_package(ur_description REQUIRED)
 find_package(ur5_moveit_config REQUIRED)
-find_package(onrobot_airpick4_description REQUIRED)
-find_package(onrobot_airpick4_moveit_config REQUIRED)
+find_package(onrobot_airpick4_description QUIET)
+find_package(onrobot_airpick4_moveit_config QUIET)
 find_package(realsense2_description REQUIRED)
 find_package(workbench_description REQUIRED)
 install(DIRECTORY launch
@@ -26,11 +26,23 @@ install(DIRECTORY launch
 install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
-ament_export_dependencies(
+set(export_dependencies
   ur_description
   ur5_moveit_config
-  onrobot_airpick4_description
-  onrobot_airpick4_moveit_config
   realsense2_description
   workbench_description)
+
+if(onrobot_airpick4_description_FOUND)
+  list(APPEND export_dependencies onrobot_airpick4_description)
+else()
+  message(WARNING "onrobot_airpick4_description not found; skipping export dependency.")
+endif()
+
+if(onrobot_airpick4_moveit_config_FOUND)
+  list(APPEND export_dependencies onrobot_airpick4_moveit_config)
+else()
+  message(WARNING "onrobot_airpick4_moveit_config not found; skipping export dependency.")
+endif()
+
+ament_export_dependencies(${export_dependencies})
 ament_package()
