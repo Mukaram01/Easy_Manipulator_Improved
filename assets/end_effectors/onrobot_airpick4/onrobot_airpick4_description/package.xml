@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>single_suction_description</name>
+  <name>onrobot_airpick4_description</name>
   <version>0.0.0</version>
-  <description>Minimal description package for the single suction gripper.</description>
+  <description>Minimal description package for the OnRobot AirPick4 gripper.</description>
   <maintainer email="devnull@example.com">Easy Manipulator</maintainer>
   <license>Apache-2.0</license>
 
