@@ -93,6 +93,11 @@ ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets ~/workcell_ws/src/as
 ln -s ~/workcell_ws/src/easy_manipulation_deployment/scenes ~/workcell_ws/src/scenes
 ```
 
+**Asset sourcing note:** Workcell Builder first looks for assets inside the workcell's
+`src/assets` directory (robots, end effectors, environment). If those subfolders are empty,
+it copies the packaged defaults from `share/workcell_builder/assets` so new workcells still
+start with the bundled assets when running from an installed build.
+
 #### 3) Import dependencies into `~/workcell_ws/src`
 
 ```bash
