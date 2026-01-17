@@ -15,9 +15,11 @@
 
 #include "gui/mainwindow.h"
 #include <QFileDialog>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -25,6 +27,44 @@
 #include "gui/ui_mainwindow.h"
 #include "gui/scene_select.h"
 #include "attributes/scene.h"
+
+namespace fs = boost::filesystem;
+
+namespace {
+bool is_empty_directory(const fs::path & directory_path)
+{
+  boost::system::error_code ec;
+  if (!fs::exists(directory_path, ec) || ec || !fs::is_directory(directory_path, ec) || ec) {
+    return false;
+  }
+  return fs::is_empty(directory_path, ec) && !ec;
+}
+
+void copy_directory_contents(const fs::path & source, const fs::path & destination)
+{
+  boost::system::error_code ec;
+  if (!fs::exists(source, ec) || ec || !fs::is_directory(source, ec) || ec) {
+    return;
+  }
+  fs::create_directories(destination, ec);
+  for (fs::recursive_directory_iterator it(source, ec), end; it != end && !ec; it.increment(ec)) {
+    const fs::path & current_path = it->path();
+    const fs::path relative_path = current_path.lexically_relative(source);
+    const fs::path target_path = destination / relative_path;
+    if (fs::is_directory(current_path, ec) && !ec) {
+      if (!fs::exists(target_path, ec)) {
+        fs::create_directories(target_path, ec);
+      }
+      continue;
+    }
+    if (fs::is_regular_file(current_path, ec) && !ec) {
+      if (!fs::exists(target_path, ec)) {
+        fs::copy_file(current_path, target_path, ec);
+      }
+    }
+  }
+}
+}  // namespace
 
 
 MainWindow::MainWindow(QWidget * parent)
@@ -84,42 +124,53 @@ void MainWindow::on_load_workcell_clicked()
     "Target workcell project destination",
     QDir::homePath());
   if (!workcell_file.isEmpty()) {
-    boost::filesystem::current_path(workcell_file.toStdString());
-    if (!boost::filesystem::exists("src")) {
-      boost::filesystem::create_directory("src");
+    fs::current_path(workcell_file.toStdString());
+    if (!fs::exists("src")) {
+      fs::create_directory("src");
     }
-    boost::filesystem::current_path("src");
-    workcell_path = boost::filesystem::current_path();
-    if (!boost::filesystem::exists("assets")) {
-      boost::filesystem::create_directory("assets");
+    fs::current_path("src");
+    workcell_path = fs::current_path();
+    if (!fs::exists("assets")) {
+      fs::create_directory("assets");
     }
-    if (!boost::filesystem::exists("scenes")) {
-      boost::filesystem::create_directory("scenes");
-    }
-
-    boost::filesystem::current_path("assets");
-    if (!boost::filesystem::exists("robots")) {
-      boost::filesystem::create_directory("robots");
-    }
-    if (!boost::filesystem::exists("end_effectors")) {
-      boost::filesystem::create_directory("end_effectors");
-    }
-    if (!boost::filesystem::exists("environment")) {
-      boost::filesystem::create_directory("environment");
+    if (!fs::exists("scenes")) {
+      fs::create_directory("scenes");
     }
 
-    boost::filesystem::current_path(workcell_path);
-    boost::filesystem::current_path("scenes");
+    fs::current_path("assets");
+    if (!fs::exists("robots")) {
+      fs::create_directory("robots");
+    }
+    if (!fs::exists("end_effectors")) {
+      fs::create_directory("end_effectors");
+    }
+    if (!fs::exists("environment")) {
+      fs::create_directory("environment");
+    }
+
+    const fs::path assets_path = workcell_path / "assets";
+    const fs::path package_assets_path =
+      fs::path(ament_index_cpp::get_package_share_directory("workcell_builder")) / "assets";
+    const std::array<std::string, 3> asset_subdirs = { "robots", "end_effectors", "environment" };
+    for (const auto & asset_subdir : asset_subdirs) {
+      const fs::path target_path = assets_path / asset_subdir;
+      if (is_empty_directory(target_path)) {
+        copy_directory_contents(package_assets_path / asset_subdir, target_path);
+      }
+    }
+
+    fs::current_path(workcell_path);
+    fs::current_path("scenes");
 
     workcell.scene_vector.clear();
     for (auto & filepath :
-      boost::filesystem::directory_iterator(boost::filesystem::current_path()))
+      fs::directory_iterator(fs::current_path()))
     {
       Scene temp_scene;
       temp_scene.filepath = filepath.path().string();
 
       std::string scene_name = filepath.path().filename().string();
-      if (is_good_scene(boost::filesystem::current_path(), scene_name)) {
+      if (is_good_scene(fs::current_path(), scene_name)) {
         temp_scene.name = scene_name;
         temp_scene.loaded = false;
         workcell.scene_vector.push_back(temp_scene);

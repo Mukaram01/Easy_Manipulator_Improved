@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robotiq_3f_gripper">
+  <xacro:macro name="robotiq-3f-gripper_articulated" params="prefix parent *origin">
+    <link name="${prefix}palm" />
+
+    <joint name="${prefix}palm_joint" type="fixed">
+      <parent link="${parent}" />
+      <child link="${prefix}palm" />
+      <xacro:insert_block name="origin" />
+    </joint>
+  </xacro:macro>
+</robot>

@@ -165,4 +165,7 @@ install(TARGETS workcell_builder
 install(DIRECTORY templates
   DESTINATION share/${PROJECT_NAME})
 
+install(DIRECTORY assets
+  DESTINATION share/${PROJECT_NAME})
+
 ament_package()
