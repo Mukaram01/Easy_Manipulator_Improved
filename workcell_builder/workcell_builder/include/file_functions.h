@@ -118,8 +118,26 @@ void generate_cmakelists(
     if (out.is_open()) {
       out << "cmake_minimum_required(VERSION 3.5)\n";
       out << "project(" << package_name << ")\n";
+      out << "\n";
+      out << "# Default to C++17\n";
+      out << "if(NOT CMAKE_CXX_STANDARD)\n";
+      out << "  set(CMAKE_CXX_STANDARD 17)\n";
+      out << "endif()\n";
+      out << "\n";
+      out << "if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n";
+      out << "  add_compile_options(-Wall -Wextra -Wpedantic)\n";
+      out << "endif()\n";
+      out << "\n";
+      out << "# find dependencies\n";
       out << "find_package(ament_cmake REQUIRED)\n";
-      out << "install(DIRECTORY launch urdf DESTINATION share/${PROJECT_NAME})\n";
+      out << "find_package(rosidl_default_runtime REQUIRED)\n";
+      out << "install(DIRECTORY launch\n";
+      out << "  DESTINATION share/${PROJECT_NAME}\n";
+      out << ")\n";
+      out << "\n";
+      out << "install(DIRECTORY urdf\n";
+      out << "  DESTINATION share/${PROJECT_NAME}\n";
+      out << ")\n";
       out << "ament_package()\n";
     }
   }
@@ -171,12 +189,35 @@ void generate_package_xml(
     std::ofstream out((package_filepath / "package.xml").string());
     if (out.is_open()) {
       const char * pkgxml =
-        "<?xml version=\"1.0\"?>\n<package format=\"3\">\n  <name>%s</name>\n"
-        "  <version>0.0.0</version>\n  <description>Auto-generated scene</description>\n"
-        "  <maintainer email=\"user@example.com\">user</maintainer>\n"
-        "  <license>Apache-2.0</license>\n</package>\n";
+        "<?xml version=\"1.0\"?>\n"
+        "<?xml-model href=\"http://download.ros.org/schema/package_format3.xsd\" "
+        "schematypens=\"http://www.w3.org/2001/XMLSchema\"?>\n"
+        "<package format=\"3\">\n"
+        "  <name>%s</name>\n"
+        "  <version>2.0.0</version>\n"
+        "  <description>%s description</description>\n"
+        "  <maintainer email=\"example@gmail.com\">name</maintainer>\n"
+        "  <license>Apache-2.0</license>\n"
+        "\n"
+        "  <buildtool_depend>ament_cmake</buildtool_depend>\n"
+        "\n"
+        "  <exec_depend>xacro</exec_depend>\n"
+        "  <exec_depend>launch</exec_depend>\n"
+        "  <exec_depend>launch_ros</exec_depend>\n"
+        "  <exec_depend>rviz2</exec_depend>\n"
+        "  <exec_depend>tf2_ros</exec_depend>\n"
+        "  <exec_depend>ament_index_python</exec_depend>\n"
+        "  <exec_depend>python3-yaml</exec_depend>\n"
+        "\n"
+        "  <test_depend>ament_lint_auto</test_depend>\n"
+        "  <test_depend>ament_lint_common</test_depend>\n"
+        "\n"
+        "  <export>\n"
+        "    <build_type>ament_cmake</build_type>\n"
+        "  </export>\n"
+        "</package>\n";
       char buffer[1024];
-      std::snprintf(buffer, sizeof(buffer), pkgxml, package_name.c_str());
+      std::snprintf(buffer, sizeof(buffer), pkgxml, package_name.c_str(), package_name.c_str());
       out << buffer;
     }
   }
