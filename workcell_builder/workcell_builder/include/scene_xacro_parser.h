@@ -54,21 +54,57 @@ std::string resolve_robot_xacro_filename(const Robot & robot)
   return robot.name + ".urdf.xacro";
 }
 
+std::vector<std::string> robot_description_candidates(const Robot & robot)
+{
+  if (robot.brand == "robotiq_3f_gripper") {
+    return {
+      "robotiq-3f-gripper_articulated.urdf.xacro",
+      "robotiq-3f-gripper_articulated.urdf"
+    };
+  }
+  return {
+    robot.name + ".urdf.xacro",
+    robot.name + ".urdf"
+  };
+}
+
 std::string resolve_description_package(const Robot & robot)
 {
-  const std::string filename = resolve_robot_xacro_filename(robot);
+  const auto filenames = robot_description_candidates(robot);
   const auto candidates = description_package_candidates(robot);
   for (const auto & package_name : candidates) {
     try {
       const auto package_share = ament_index_cpp::get_package_share_directory(package_name);
-      const boost::filesystem::path xacro_path =
-        boost::filesystem::path(package_share) / "urdf" / filename;
-      if (boost::filesystem::exists(xacro_path)) {
-        return package_name;
+      for (const auto & filename : filenames) {
+        const boost::filesystem::path xacro_path =
+          boost::filesystem::path(package_share) / "urdf" / filename;
+        if (boost::filesystem::exists(xacro_path)) {
+          return package_name;
+        }
       }
     } catch (const std::exception &) {
       continue;
     }
+  }
+  return candidates.front();
+}
+
+std::string resolve_robot_description_filename(
+  const Robot & robot,
+  const std::string & package_name)
+{
+  const auto candidates = robot_description_candidates(robot);
+  try {
+    const auto package_share = ament_index_cpp::get_package_share_directory(package_name);
+    for (const auto & candidate : candidates) {
+      const boost::filesystem::path description_path =
+        boost::filesystem::path(package_share) / "urdf" / candidate;
+      if (boost::filesystem::exists(description_path)) {
+        return candidate;
+      }
+    }
+  } catch (const std::exception &) {
+    // Fall back to the default candidate when the package is missing.
   }
   return candidates.front();
 }
@@ -143,7 +179,8 @@ void generate_scene_xacro(Scene scene)
         MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
-        const std::string xacro_filename = resolve_robot_xacro_filename(scene.robot_vector[i]);
+        const std::string xacro_filename =
+          resolve_robot_description_filename(scene.robot_vector[i], package_name);
         MyFile << " <xacro:include filename=\"$(find-pkg-share " + package_name +
           ")/urdf/" + xacro_filename + "\"/>\n";
         MyFile << " <xacro:" + scene.robot_vector[i].name + "_robot/>\n";
