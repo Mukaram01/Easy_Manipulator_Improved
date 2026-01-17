@@ -12,6 +12,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -26,6 +27,7 @@ from ament_index_python.packages import get_package_share_directory
 scene_pkg = 'new_scene'
 robot_base_link = 'base_link'
 robot_moveit_pkg = 'ur5_moveit_config'
+logger = logging.getLogger(__name__)
 
 def to_urdf(
     xacro_path: Union[str, os.PathLike[str]],
@@ -197,8 +199,15 @@ def generate_launch_description() -> LaunchDescription:
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic' : robot_description_semantic_config}
 
-    kinematics_yaml = load_yaml(robot_moveit_pkg , 'config/kinematics.yaml')
-    robot_description_kinematics = { 'robot_description_kinematics' : kinematics_yaml }
+    try:
+        kinematics_yaml = load_yaml(robot_moveit_pkg , 'config/kinematics.yaml')
+    except FileNotFoundError as exc:
+        logger.warning(
+            "Kinematics YAML not found for '%s': %s",
+            robot_moveit_pkg,
+            exc,
+        )
+        kinematics_yaml = None
 
     ompl_planning_pipeline_config = { 'ompl' : {
         'planning_plugin' : 'ompl_interface/OMPLPlanner',
@@ -210,17 +219,21 @@ def generate_launch_description() -> LaunchDescription:
 
     # RViz
     rviz_config_file = get_package_share_directory(scene_pkg) + "/launch/demo.rviz"
+    rviz_parameters = [
+        robot_description,
+        robot_description_semantic,
+    ]
+    if kinematics_yaml is not None:
+        rviz_parameters.append(
+            {'robot_description_kinematics' : kinematics_yaml }
+        )
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
         output='log',
         arguments=['-d', rviz_config_file],
-        parameters=[
-            robot_description,
-            robot_description_semantic,
-            robot_description_kinematics,
-        ],
+        parameters=rviz_parameters,
     )
     # Publish base link TF
     static_tf = Node(package='tf2_ros',
