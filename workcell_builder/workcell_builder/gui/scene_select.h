@@ -43,7 +43,7 @@ public:
   Workcell workcell;
   void generate_scene_package(
     boost::filesystem::path scene_filepath, std::string scene_name,
-    int ros_ver);
+    int ros_ver, const std::string & ros_distro);
   void generate_scene_files(Scene scene);
   bool check_yaml();
   bool check_files();

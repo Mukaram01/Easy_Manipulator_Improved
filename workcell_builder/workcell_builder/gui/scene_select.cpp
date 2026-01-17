@@ -104,7 +104,8 @@ void SceneSelect::on_add_scene_clicked()
   if (scene_window.success) {
     change_directory(scenes_path);
     workcell.scene_vector.push_back(scene_window.scene);
-    generate_scene_package(scenes_path, scene_window.scene.name, workcell.ros_ver);
+    generate_scene_package(
+      scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
     refresh_scenes(workcell.scene_vector.size() - 1);
   }
   change_directory(scenes_path);
@@ -112,7 +113,7 @@ void SceneSelect::on_add_scene_clicked()
 
 void SceneSelect::generate_scene_package(
   fs::path scene_filepath,
-  std::string scene_name, int ros_ver)
+  std::string scene_name, int ros_ver, const std::string & ros_distro)
 {
   change_directory(scene_filepath);
   if (!boost::filesystem::exists(scene_name)) {
@@ -123,8 +124,8 @@ void SceneSelect::generate_scene_package(
     boost::filesystem::create_directory("urdf");
   }
   fs::path workcell_path(scene_filepath.branch_path());
-  generate_cmakelists(workcell_path, scene_name, ros_ver);
-  generate_package_xml(workcell_path, scene_name, ros_ver);
+  generate_cmakelists(workcell_path, scene_name, ros_ver, ros_distro);
+  generate_package_xml(workcell_path, scene_name, ros_ver, ros_distro);
   change_directory(scene_filepath);
 }
 
@@ -148,7 +149,11 @@ void SceneSelect::generate_scene_files(Scene scene)
   if (!scene.robot_loaded && !scene.ee_loaded) {  // no robot and ee
     generate_armhand_xacro(scene.name);
   }
-  fs::path launch_path = templates_path / ("ros" + std::to_string(workcell.ros_ver)) / "launch";
+  fs::path base_template_path = templates_path / ("ros" + std::to_string(workcell.ros_ver));
+  fs::path launch_path = base_template_path / workcell.ros_distro / "launch";
+  if (workcell.ros_distro.empty() || !boost::filesystem::exists(launch_path)) {
+    launch_path = base_template_path / "launch";
+  }
   fs::path target_path = workcell_path / "scenes" / scene.name / "launch";
   copyDir(launch_path, target_path);
   change_directory(target_path);
@@ -258,7 +263,8 @@ void SceneSelect::on_edit_scene_clicked()
           // Delete previous scene folder
           delete_folder(scenes_path, curr_scene.name);
           // Generate new folder
-          generate_scene_package(scenes_path, scene_window.scene.name, workcell.ros_ver);
+          generate_scene_package(
+            scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
           GenerateYAML::generate_yaml(
             scene_window.scene,
             scene_yaml_path.string(), scenes_path, assets_path);
