@@ -34,6 +34,10 @@
 namespace
 {
 constexpr const char * kMissingUrdfLabel = "Missing URDF";
+const std::unordered_map<std::string, std::vector<std::string>> kDescriptionPackagesByBrand = {
+  {"fanuc", {"moveit_resources_fanuc_description", "fanuc_description"}},
+  {"panda_robot", {"moveit_resources_panda_description", "panda_description"}}
+};
 
 std::string resolve_universal_robot_xacro_filename(const std::string & robot_name)
 {
@@ -47,6 +51,27 @@ std::string resolve_universal_robot_xacro_filename(const std::string & robot_nam
     return it->second;
   }
   return robot_name + ".urdf.xacro";
+}
+
+boost::filesystem::path resolve_description_package_path(const std::string & brand)
+{
+  const auto it = kDescriptionPackagesByBrand.find(brand);
+  if (it == kDescriptionPackagesByBrand.end()) {
+    return {};
+  }
+  for (const auto & package_name : it->second) {
+    try {
+      const auto share = ament_index_cpp::get_package_share_directory(package_name);
+      if (!share.empty()) {
+        return boost::filesystem::path(share);
+      }
+    } catch (const std::exception & e) {
+      std::cerr
+        << "Failed to resolve description package share directory for "
+        << package_name << ": " << e.what() << std::endl;
+    }
+  }
+  return {};
 }
 }  // namespace
 
@@ -162,27 +187,20 @@ int AddRobot::LoadAvailableRobots()
             brand_robot_vector = LoadUR(valid_robots);
           } else {
             std::vector<std::string> moveit_configs;
-            std::vector<std::string> descriptions;
+            const boost::filesystem::path brand_path = boost::filesystem::current_path();
             for (auto & filepath :
               boost::filesystem::directory_iterator(boost::filesystem::current_path()))
             {
-              bool is_description = false;
               bool is_moveit = false;
 
               std::string temp_model;
               int char_count = 0;
-              // Only _descrtiption
               for (auto it = filepath.path().string().crbegin();
                 it != filepath.path().string().crend(); ++it)
               {
                 if (*it != '/') {
                   temp_model = std::string(1, *it) + temp_model;
                   char_count++;
-                  if (char_count == 11) {
-                    if (temp_model.compare("description") == 0) {
-                      is_description = true;
-                    }
-                  }
                   if (char_count == 13) {
                     if (temp_model.compare("moveit_config") == 0) {
                       is_moveit = true;
@@ -193,39 +211,31 @@ int AddRobot::LoadAvailableRobots()
                 }
               }
 
-              if (is_description) {
-                descriptions.push_back(temp_model.substr(0, temp_model.size() - 12));
-              }
               if (is_moveit) {
                 moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
               }
             }
             boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
 
-            if (moveit_configs.size() < descriptions.size()) {
-              for (int i = 0; i < static_cast<int>(descriptions.size()); i++) {
-                if (std::find(
-                    moveit_configs.begin(), moveit_configs.end(),
-                    descriptions[i]) != moveit_configs.end())
-                {
-                  brand_robot_vector.push_back(
-                    LoadRobot(
-                      descriptions[i] + "_description",
-                      temp_brand));
-                }
+            for (const auto & moveit_config : moveit_configs) {
+              const std::string description_folder = moveit_config + "_description";
+              boost::filesystem::path description_path = brand_path / description_folder;
+              if (!boost::filesystem::exists(description_path)) {
+                description_path = resolve_description_package_path(temp_brand);
               }
-            } else {
-              for (int i = 0; i < static_cast<int>(moveit_configs.size()); i++) {
-                if (std::find(
-                    descriptions.begin(), descriptions.end(),
-                    moveit_configs[i]) != descriptions.end())
-                {
-                  brand_robot_vector.push_back(
-                    LoadRobot(
-                      moveit_configs[i] + "_description",
-                      temp_brand));
-                }
+              if (description_path.empty()) {
+                std::cerr
+                  << "No description folder found for " << moveit_config
+                  << " under assets/robots/" << temp_brand
+                  << " and no matching ROS 2 description package is installed."
+                  << std::endl;
+                continue;
               }
+              brand_robot_vector.push_back(
+                LoadRobot(
+                  description_folder,
+                  temp_brand,
+                  description_path));
             }
           }
           break;
@@ -258,18 +268,20 @@ int AddRobot::LoadAvailableRobots()
   return 0;
 }
 
-Robot AddRobot::LoadRobot(std::string file, std::string brand)
+Robot AddRobot::LoadRobot(
+  std::string file,
+  std::string brand,
+  const boost::filesystem::path & description_path)
 {
-  boost::filesystem::path temp_path(boost::filesystem::current_path());
   Robot temp_robot;
-  temp_robot.filepath = boost::filesystem::current_path().string() + "/" + file;
-  boost::filesystem::current_path(brand);
-  boost::filesystem::current_path(file);
-  boost::filesystem::current_path("urdf");
+  const boost::filesystem::path resolved_description_path = description_path.empty() ?
+    (boost::filesystem::current_path() / brand / file) : description_path;
+  temp_robot.filepath = resolved_description_path.string();
   temp_robot.brand = brand;
   temp_robot.name = file.erase(file.length() - 12);
-  temp_robot.robot_links = GetLinks(temp_robot.name + ".urdf.xacro");
-  boost::filesystem::current_path(temp_path);
+  const boost::filesystem::path urdf_path = resolved_description_path / "urdf";
+  const boost::filesystem::path urdf_file = urdf_path / (temp_robot.name + ".urdf.xacro");
+  temp_robot.robot_links = GetLinks(urdf_file.string());
   return temp_robot;
 }
 
