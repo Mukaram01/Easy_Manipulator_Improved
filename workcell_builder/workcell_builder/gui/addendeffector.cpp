@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
 #include "attributes/robot.h"
 
@@ -43,22 +44,25 @@ AddEndEffector::AddEndEffector(QWidget * parent)
 }
 
 
-int AddEndEffector::LoadAvailableEE(Robot robot)
+int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path & end_effector_path)
 {
   original_path = boost::filesystem::current_path();
   ui->parent_object->setText(QString::fromStdString(robot.name));
   ui->parent_link->setText(QString::fromStdString(robot.ee_link));
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path());  //
-  boost::filesystem::current_path("assets");
-  boost::filesystem::current_path("end_effectors");
+  boost::filesystem::path ee_path = end_effector_path;
+  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
+    const auto share =
+      ament_index_cpp::get_package_share_directory("workcell_builder");
+    ee_path = boost::filesystem::path(share) / "assets" / "end_effectors";
+  }
   available_brands.clear();
   available_ee.clear();
-  if (boost::filesystem::is_empty(boost::filesystem::current_path())) {
+  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
     return 0;
-
   } else {
+    boost::filesystem::current_path(ee_path);
     for (auto & filepath :
-      boost::filesystem::directory_iterator(boost::filesystem::current_path()))
+      boost::filesystem::directory_iterator(ee_path))
     {
       std::string temp_brand;
       std::vector<EndEffector> brand_ee_vector;
@@ -136,6 +140,15 @@ int AddEndEffector::LoadAvailableEE(Robot robot)
         available_brands.push_back(temp_brand);
       }
     }
+    int total_ee = 0;
+    for (int i = 0; i < static_cast<int>(available_brands.size()); i++) {
+      for (int j = 0; j < static_cast<int>(available_ee[i].size()); j++) {
+        total_ee++;
+      }
+    }
+    if (total_ee == 0) {
+      return 0;
+    }
     for (int i3 = 0; i3 < static_cast<int>(available_brands.size()); i3++) {
       ui->ee_brand->addItem(QString::fromStdString(available_brands[i3]));
     }
@@ -144,12 +157,6 @@ int AddEndEffector::LoadAvailableEE(Robot robot)
     ui->ee_model->setCurrentIndex(0);
     on_ee_model_currentIndexChanged(0);
     ui->ee_links->setCurrentIndex(0);
-    int total_ee = 0;
-    for (int i = 0; i < static_cast<int>(available_brands.size()); i++) {
-      for (int j = 0; j < static_cast<int>(available_ee[i].size()); j++) {
-        total_ee++;
-      }
-    }
     return total_ee;
   }
   return 0;
