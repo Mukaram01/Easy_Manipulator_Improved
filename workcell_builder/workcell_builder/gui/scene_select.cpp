@@ -673,38 +673,27 @@ bool SceneSelect::validate_description_xacros(
         QString::fromStdString("<font color='red'>" + prefix + message + "</font>"));
     };
   auto check_xacro = [&](const std::string & package_name,
-      const std::string & filename,
+      const std::vector<std::string> & filenames,
       const std::string & label) {
       fs::path package_share;
       try {
         package_share = ament_index_cpp::get_package_share_directory(package_name);
       } catch (const std::exception & e) {
         ok = false;
+        std::ostringstream expected_files;
+        for (size_t i = 0; i < filenames.size(); ++i) {
+          if (i != 0) {
+            expected_files << ", ";
+          }
+          expected_files << package_name << "/urdf/" << filenames[i];
+        }
         report_error(
           "ERROR: Missing " + label + " description package '" + package_name + "': " +
-          e.what() + ". Expected file in " + package_name + "/urdf/" + filename + ".");
+          e.what() + ". Expected file in " + expected_files.str() + ".");
         return;
       }
-      fs::path xacro_path = package_share / "urdf" / filename;
-      if (!fs::exists(xacro_path)) {
-        ok = false;
-        report_error(
-          "ERROR: Missing " + label + " xacro at " + xacro_path.string() +
-          ". Expected file in " + package_name + "/urdf.");
-      }
-    };
-  auto check_xacro_with_fallbacks = [&](const std::vector<std::string> & package_candidates,
-      const std::string & filename,
-      const std::string & label) {
       std::vector<std::string> attempts;
-      for (const auto & package_name : package_candidates) {
-        fs::path package_share;
-        try {
-          package_share = ament_index_cpp::get_package_share_directory(package_name);
-        } catch (const std::exception &) {
-          attempts.push_back(package_name + "/urdf/" + filename + " (package not found)");
-          continue;
-        }
+      for (const auto & filename : filenames) {
         fs::path xacro_path = package_share / "urdf" / filename;
         if (fs::exists(xacro_path)) {
           return;
@@ -723,18 +712,52 @@ bool SceneSelect::validate_description_xacros(
       error_stream << ".";
       report_error(error_stream.str());
     };
+  auto check_xacro_with_fallbacks = [&](const std::vector<std::string> & package_candidates,
+      const std::vector<std::string> & filenames,
+      const std::string & label) {
+      std::vector<std::string> attempts;
+      for (const auto & package_name : package_candidates) {
+        fs::path package_share;
+        try {
+          package_share = ament_index_cpp::get_package_share_directory(package_name);
+        } catch (const std::exception &) {
+          for (const auto & filename : filenames) {
+            attempts.push_back(package_name + "/urdf/" + filename + " (package not found)");
+          }
+          continue;
+        }
+        for (const auto & filename : filenames) {
+          fs::path xacro_path = package_share / "urdf" / filename;
+          if (fs::exists(xacro_path)) {
+            return;
+          }
+          attempts.push_back(xacro_path.string());
+        }
+      }
+      ok = false;
+      std::ostringstream error_stream;
+      error_stream << "ERROR: Missing " << label << " xacro. Tried ";
+      for (size_t i = 0; i < attempts.size(); ++i) {
+        if (i != 0) {
+          error_stream << "; ";
+        }
+        error_stream << attempts[i];
+      }
+      error_stream << ".";
+      report_error(error_stream.str());
+    };
 
   if (scene.robot_loaded) {
     for (const auto & robot : scene.robot_vector) {
       const bool is_ur = robot.brand == "universal_robot";
-      const std::string filename = is_ur ?
-        resolve_universal_robot_xacro_filename(robot) :
-        (robot.name + ".urdf.xacro");
+      const std::vector<std::string> filenames = is_ur ?
+        std::vector<std::string>{resolve_universal_robot_xacro_filename(robot)} :
+        robot_description_candidates(robot);
       if (is_ur) {
-        check_xacro("ur_description", filename, "robot '" + robot.name + "'");
+        check_xacro("ur_description", filenames, "robot '" + robot.name + "'");
       } else {
         check_xacro_with_fallbacks(
-          description_package_candidates(robot), filename, "robot '" + robot.name + "'");
+          description_package_candidates(robot), filenames, "robot '" + robot.name + "'");
       }
     }
   }
@@ -743,7 +766,7 @@ bool SceneSelect::validate_description_xacros(
     for (const auto & ee : scene.ee_vector) {
       const std::string package_name = resolve_ee_description_package(ee);
       const std::string filename = resolve_ee_xacro_filename(ee);
-      check_xacro(package_name, filename, "end effector '" + ee.name + "'");
+      check_xacro(package_name, {filename}, "end effector '" + ee.name + "'");
     }
   }
 

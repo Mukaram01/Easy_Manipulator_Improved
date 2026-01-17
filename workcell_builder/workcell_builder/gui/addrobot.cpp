@@ -73,6 +73,27 @@ boost::filesystem::path resolve_description_package_path(const std::string & bra
   }
   return {};
 }
+
+std::vector<boost::filesystem::path> robot_description_candidates(
+  const boost::filesystem::path & urdf_path,
+  const std::string & robot_name)
+{
+  return {
+    urdf_path / (robot_name + ".urdf.xacro"),
+    urdf_path / (robot_name + ".urdf")
+  };
+}
+
+boost::filesystem::path select_existing_description_file(
+  const std::vector<boost::filesystem::path> & candidates)
+{
+  for (const auto & candidate : candidates) {
+    if (boost::filesystem::exists(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates.empty() ? boost::filesystem::path() : candidates.front();
+}
 }  // namespace
 
 AddRobot::AddRobot(QWidget * parent)
@@ -280,7 +301,8 @@ Robot AddRobot::LoadRobot(
   temp_robot.brand = brand;
   temp_robot.name = file.erase(file.length() - 12);
   const boost::filesystem::path urdf_path = resolved_description_path / "urdf";
-  const boost::filesystem::path urdf_file = urdf_path / (temp_robot.name + ".urdf.xacro");
+  const auto candidates = robot_description_candidates(urdf_path, temp_robot.name);
+  const boost::filesystem::path urdf_file = select_existing_description_file(candidates);
   temp_robot.robot_links = GetLinks(urdf_file.string());
   return temp_robot;
 }
@@ -347,7 +369,7 @@ std::vector<std::string> AddRobot::GetLinks(
   const std::vector<std::string> & xacro_arguments)
 {
   std::vector<std::string> links;
-  const boost::filesystem::path file_path(filename);
+  const boost::filesystem::path file_path = boost::filesystem::absolute(filename);
   if (!boost::filesystem::exists(file_path)) {
     std::cerr << "URDF/xacro file not found: " << file_path.string() << std::endl;
     QMessageBox::warning(
@@ -361,7 +383,7 @@ std::vector<std::string> AddRobot::GetLinks(
   QString urdf_xml;
   QProcess xacro_process;
   QStringList xacro_args;
-  xacro_args << QString::fromStdString(filename);
+  xacro_args << QString::fromStdString(file_path.string());
   for (const auto & arg : xacro_arguments) {
     xacro_args << QString::fromStdString(arg);
   }
@@ -383,7 +405,7 @@ std::vector<std::string> AddRobot::GetLinks(
         "Failed to expand xacro file:\n%1\n\n"
         "Please fix the robot description and try again.")
       .arg(QString::fromStdString(file_path.string())));
-    std::ifstream infile(filename);
+    std::ifstream infile(file_path.string());
     if (!infile) {
       std::cerr
         << "Failed to open URDF/xacro file after xacro error: "
