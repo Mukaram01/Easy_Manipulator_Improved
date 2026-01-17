@@ -282,6 +282,33 @@ EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
   boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
   return temp_ee;
 }
+namespace
+{
+bool HasXacroArgument(const std::vector<std::string> & args, const std::string & key)
+{
+  for (const auto & arg : args) {
+    if (arg.rfind(key, 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void AppendDefaultXacroArguments(
+  const std::string & filename,
+  std::vector<std::string> & xacro_arguments)
+{
+  if (filename.find("robotiq_85_gripper") != std::string::npos) {
+    if (!HasXacroArgument(xacro_arguments, "prefix:=")) {
+      xacro_arguments.emplace_back("prefix:=");
+    }
+    if (!HasXacroArgument(xacro_arguments, "parent:=")) {
+      xacro_arguments.emplace_back("parent:=world");
+    }
+  }
+}
+}  // namespace
+
 std::vector<std::string> AddEndEffector::GetLinks(
   std::string filename,
   const std::vector<std::string> & xacro_arguments)
@@ -298,7 +325,9 @@ std::vector<std::string> AddEndEffector::GetLinks(
   QProcess xacro_process;
   QStringList xacro_args;
   xacro_args << QString::fromStdString(filename);
-  for (const auto & arg : xacro_arguments) {
+  std::vector<std::string> expanded_xacro_arguments = xacro_arguments;
+  AppendDefaultXacroArguments(filename, expanded_xacro_arguments);
+  for (const auto & arg : expanded_xacro_arguments) {
     xacro_args << QString::fromStdString(arg);
   }
   xacro_process.start("xacro", xacro_args);
@@ -308,6 +337,13 @@ std::vector<std::string> AddEndEffector::GetLinks(
   {
     urdf_xml = QString::fromUtf8(xacro_process.readAllStandardOutput());
   } else {
+    const QString stderr_output = QString::fromUtf8(xacro_process.readAllStandardError());
+    QString error_message =
+      QString::fromStdString("<font color='red'> Xacro failed for: " + filename + " </font>");
+    if (!stderr_output.trimmed().isEmpty()) {
+      error_message += QString::fromStdString("<br/><pre>") + stderr_output + "</pre>";
+    }
+    ui->errorlist->append(error_message);
     std::ifstream infile(filename);
     std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     urdf_xml = QString::fromStdString(content);
