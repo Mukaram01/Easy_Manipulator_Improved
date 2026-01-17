@@ -42,7 +42,10 @@ public:
 
   int ErrorCheckOrigin();
   std::vector < Robot > LoadUR(std::vector < std::string > robot_list);
-  Robot LoadRobot(std::string folder, std::string brand);
+  Robot LoadRobot(
+    std::string folder,
+    std::string brand,
+    const boost::filesystem::path & description_path = {});
   std::vector < std::string > GetLinks(
     std::string filename,
     const std::vector<std::string> & xacro_arguments = {});

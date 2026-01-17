@@ -198,6 +198,10 @@ workcell_builder
  
 Example ROS 2 (Humble) launch templates live under `workcell_builder/examples/ros2/`.
 
+**Required external robot descriptions (ROS 2 Humble):**
+* `fanuc`: `moveit_resources_fanuc_description` (or `fanuc_description` if you have it installed).
+* `panda_robot`: `moveit_resources_panda_description`.
+
 ---
 
 ## Running Demo Scenes
