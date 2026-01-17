@@ -12,6 +12,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -26,6 +27,7 @@ from ament_index_python.packages import get_package_share_directory
 scene_pkg = 'scene_name'
 robot_base_link = 'base_link_name'
 robot_moveit_pkg = 'moveit_config_name'
+logger = logging.getLogger(__name__)
 
 def to_urdf(
     xacro_path: Union[str, os.PathLike[str]],
@@ -206,7 +208,13 @@ def generate_launch_description() -> LaunchDescription:
         'start_state_max_bounds_error' : 0.1 } }
 
     ompl_planning_yaml = load_yaml(robot_moveit_pkg, 'config/ompl_planning.yaml')
-    ompl_planning_pipeline_config['ompl'].update(ompl_planning_yaml)
+    if ompl_planning_yaml is None:
+        logger.warning(
+            "OMPL planning YAML not found or invalid for '%s'",
+            robot_moveit_pkg,
+        )
+    else:
+        ompl_planning_pipeline_config['ompl'].update(ompl_planning_yaml)
 
     # RViz
     rviz_config_file = get_package_share_directory(scene_pkg) + "/launch/demo.rviz"
