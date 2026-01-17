@@ -44,35 +44,25 @@ AddEndEffector::AddEndEffector(QWidget * parent)
 }
 
 
-int AddEndEffector::LoadAvailableEE(
-  Robot robot,
-  const boost::filesystem::path & assets_end_effectors_path)
+int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path & end_effector_path)
 {
   original_path = boost::filesystem::current_path();
   ui->parent_object->setText(QString::fromStdString(robot.name));
   ui->parent_link->setText(QString::fromStdString(robot.ee_link));
+  boost::filesystem::path ee_path = end_effector_path;
+  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
+    const auto share =
+      ament_index_cpp::get_package_share_directory("workcell_builder");
+    ee_path = boost::filesystem::path(share) / "assets" / "end_effectors";
+  }
   available_brands.clear();
   available_ee.clear();
-  const bool workcell_has_assets =
-    boost::filesystem::exists(assets_end_effectors_path) &&
-    boost::filesystem::is_directory(assets_end_effectors_path) &&
-    !boost::filesystem::is_empty(assets_end_effectors_path);
-
-  boost::filesystem::path search_path = assets_end_effectors_path;
-  if (!workcell_has_assets) {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    search_path = boost::filesystem::path(share) / "assets" / "end_effectors";
-  }
-
-  if (!boost::filesystem::exists(search_path) ||
-    !boost::filesystem::is_directory(search_path) ||
-    boost::filesystem::is_empty(search_path))
-  {
+  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
     return 0;
   } else {
-    boost::filesystem::current_path(search_path);
+    boost::filesystem::current_path(ee_path);
     for (auto & filepath :
-      boost::filesystem::directory_iterator(boost::filesystem::current_path()))
+      boost::filesystem::directory_iterator(ee_path))
     {
       std::string temp_brand;
       std::vector<EndEffector> brand_ee_vector;
@@ -150,6 +140,15 @@ int AddEndEffector::LoadAvailableEE(
         available_brands.push_back(temp_brand);
       }
     }
+    int total_ee = 0;
+    for (int i = 0; i < static_cast<int>(available_brands.size()); i++) {
+      for (int j = 0; j < static_cast<int>(available_ee[i].size()); j++) {
+        total_ee++;
+      }
+    }
+    if (total_ee == 0) {
+      return 0;
+    }
     for (int i3 = 0; i3 < static_cast<int>(available_brands.size()); i3++) {
       ui->ee_brand->addItem(QString::fromStdString(available_brands[i3]));
     }
@@ -158,12 +157,6 @@ int AddEndEffector::LoadAvailableEE(
     ui->ee_model->setCurrentIndex(0);
     on_ee_model_currentIndexChanged(0);
     ui->ee_links->setCurrentIndex(0);
-    int total_ee = 0;
-    for (int i = 0; i < static_cast<int>(available_brands.size()); i++) {
-      for (int j = 0; j < static_cast<int>(available_ee[i].size()); j++) {
-        total_ee++;
-      }
-    }
     return total_ee;
   }
   return 0;
