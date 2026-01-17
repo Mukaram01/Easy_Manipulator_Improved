@@ -1,0 +1,23 @@
+planner_configs:
+  RRTConnectkConfigDefault:
+    type: geometric::RRTConnect
+    range: 0.0
+  RRTstar:
+    type: geometric::RRTstar
+    range: 0.0
+    goal_bias: 0.05
+  PRMkConfigDefault:
+    type: geometric::PRM
+    max_nearest_neighbors: 10
+  ESTkConfigDefault:
+    type: geometric::EST
+    range: 0.0
+
+manipulator:
+  planner_configs:
+    - RRTConnectkConfigDefault
+    - RRTstar
+    - PRMkConfigDefault
+    - ESTkConfigDefault
+  projection_evaluator: joints(shoulder_pan_joint,shoulder_lift_joint)
+  longest_valid_segment_fraction: 0.005
