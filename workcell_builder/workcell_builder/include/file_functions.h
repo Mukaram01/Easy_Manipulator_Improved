@@ -84,14 +84,20 @@ void find_replace(
 // std::string package_name,int ros_ver)
 void generate_cmakelists(
   fs::path workcell_filepath, std::string package_name,
-  int ros_ver)
+  int ros_ver, const std::string & ros_distro)
 {
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
-      ("ros" + std::to_string(ros_ver)) / "CMakeLists_example.txt";
+    fs::path base_template_path = fs::path(share) / "templates" /
+      ("ros" + std::to_string(ros_ver));
+    fs::path distro_template_path = base_template_path / ros_distro / "CMakeLists_example.txt";
+    if (!ros_distro.empty() && fs::exists(distro_template_path)) {
+      example_file = distro_template_path;
+    } else {
+      example_file = base_template_path / "CMakeLists_example.txt";
+    }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
@@ -139,14 +145,20 @@ void delete_folder(fs::path scene_filepath, std::string scene_name)
 
 void generate_package_xml(
   fs::path workcell_filepath, std::string package_name,
-  int ros_ver)
+  int ros_ver, const std::string & ros_distro)
 {
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
-      ("ros" + std::to_string(ros_ver)) / "package_example.xml";
+    fs::path base_template_path = fs::path(share) / "templates" /
+      ("ros" + std::to_string(ros_ver));
+    fs::path distro_template_path = base_template_path / ros_distro / "package_example.xml";
+    if (!ros_distro.empty() && fs::exists(distro_template_path)) {
+      example_file = distro_template_path;
+    } else {
+      example_file = base_template_path / "package_example.xml";
+    }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
