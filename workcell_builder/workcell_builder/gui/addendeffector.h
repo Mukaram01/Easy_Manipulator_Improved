@@ -45,7 +45,7 @@ public:
   boost::filesystem::path original_path;
 
   EndEffector LoadEE(std::string file, std::string brand);
-  int LoadAvailableEE(Robot robot);
+  int LoadAvailableEE(Robot robot, const boost::filesystem::path & assets_end_effectors_path);
   void LoadExistingEE(EndEffector ee_input);
   std::vector<std::string> GetLinks(
     std::string filename,

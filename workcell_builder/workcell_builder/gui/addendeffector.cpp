@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
 #include "attributes/robot.h"
 
@@ -43,20 +44,33 @@ AddEndEffector::AddEndEffector(QWidget * parent)
 }
 
 
-int AddEndEffector::LoadAvailableEE(Robot robot)
+int AddEndEffector::LoadAvailableEE(
+  Robot robot,
+  const boost::filesystem::path & assets_end_effectors_path)
 {
   original_path = boost::filesystem::current_path();
   ui->parent_object->setText(QString::fromStdString(robot.name));
   ui->parent_link->setText(QString::fromStdString(robot.ee_link));
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path());  //
-  boost::filesystem::current_path("assets");
-  boost::filesystem::current_path("end_effectors");
   available_brands.clear();
   available_ee.clear();
-  if (boost::filesystem::is_empty(boost::filesystem::current_path())) {
-    return 0;
+  const bool workcell_has_assets =
+    boost::filesystem::exists(assets_end_effectors_path) &&
+    boost::filesystem::is_directory(assets_end_effectors_path) &&
+    !boost::filesystem::is_empty(assets_end_effectors_path);
 
+  boost::filesystem::path search_path = assets_end_effectors_path;
+  if (!workcell_has_assets) {
+    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
+    search_path = boost::filesystem::path(share) / "assets" / "end_effectors";
+  }
+
+  if (!boost::filesystem::exists(search_path) ||
+    !boost::filesystem::is_directory(search_path) ||
+    boost::filesystem::is_empty(search_path))
+  {
+    return 0;
   } else {
+    boost::filesystem::current_path(search_path);
     for (auto & filepath :
       boost::filesystem::directory_iterator(boost::filesystem::current_path()))
     {

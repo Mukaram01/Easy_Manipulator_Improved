@@ -353,10 +353,14 @@ void AddScene::on_add_robot_clicked()
 void AddScene::on_add_ee_clicked()
 {
   AddEndEffector ee_window;
-  int num_ee = ee_window.LoadAvailableEE(scene.robot_vector[0]);
+  int num_ee = ee_window.LoadAvailableEE(scene.robot_vector[0], assets_path / "end_effectors");
   if (num_ee <= 0) {
-    ui->ee_brand->setText("<font color='orange'> No ee detected in the workcell folder.</font>");
-    ui->ee_model->setText("<font color='orange'> No ee detected in the workcell folder. </font>");
+    ui->ee_brand->setText(
+      "<font color='orange'> No end effector assets found in the workcell or shared package."
+      "</font>");
+    ui->ee_model->setText(
+      "<font color='orange'> No end effector assets found in the workcell or shared package."
+      "</font>");
   } else {
     if (scene.ee_loaded) {
       if (scene.ee_vector.size() > 0) {
