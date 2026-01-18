@@ -64,6 +64,21 @@ void copy_directory_contents(const fs::path & source, const fs::path & destinati
     }
   }
 }
+
+bool is_ros2_prefix(const fs::path & prefix)
+{
+  boost::system::error_code ec;
+  if (!fs::exists(prefix, ec) || ec || !fs::is_directory(prefix, ec) || ec) {
+    return false;
+  }
+  const fs::path share_path = prefix / "share";
+  if (!fs::exists(share_path, ec) || ec || !fs::is_directory(share_path, ec) || ec) {
+    return false;
+  }
+  const fs::path ament_index_path = share_path / "ament_index";
+  const fs::path rclcpp_path = share_path / "rclcpp";
+  return (fs::exists(ament_index_path, ec) && !ec) || (fs::exists(rclcpp_path, ec) && !ec);
+}
 }  // namespace
 
 
@@ -83,7 +98,7 @@ MainWindow::MainWindow(QWidget * parent)
   const boost::filesystem::path ros_root("/opt/ros");
   if (boost::filesystem::exists(ros_root) && boost::filesystem::is_directory(ros_root)) {
     for (const auto & entry : boost::filesystem::directory_iterator(ros_root)) {
-      if (boost::filesystem::is_directory(entry.path())) {
+      if (boost::filesystem::is_directory(entry.path()) && is_ros2_prefix(entry.path())) {
         ros_dist.push_back(entry.path().filename().string());
       }
     }
@@ -91,7 +106,10 @@ MainWindow::MainWindow(QWidget * parent)
 
   const char * distro = std::getenv("ROS_DISTRO");
   if (ros_dist.empty() && distro != nullptr) {
-    ros_dist.emplace_back(distro);
+    const fs::path distro_prefix = ros_root / distro;
+    if (is_ros2_prefix(distro_prefix)) {
+      ros_dist.emplace_back(distro);
+    }
   }
 
   std::sort(ros_dist.begin(), ros_dist.end());
