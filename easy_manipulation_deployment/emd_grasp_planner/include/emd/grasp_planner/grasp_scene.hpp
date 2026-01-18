@@ -88,8 +88,7 @@ public:
     table_coeff(new pcl::ModelCoefficients),
     viewer(new pcl::visualization::PCLVisualizer("Cloud viewer"))
   {
-    rclcpp::Clock::SharedPtr clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
-
+    auto clock = node->get_clock();
     this->buffer_ = std::make_shared<tf2_ros::Buffer>(clock);
     this->buffer_->setUsingDedicatedThread(true);
     this->tf_listener = std::make_shared<tf2_ros::TransformListener>(
