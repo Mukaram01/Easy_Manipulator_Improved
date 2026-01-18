@@ -67,19 +67,36 @@ SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
 {
-  scenes_path = fs::current_path();
-  change_directory(fs::current_path().branch_path());
-  workcell_path = fs::current_path();
+  fs::path cwd = fs::current_path();
+  if (fs::exists(cwd / "scenes")) {
+    workcell_path = cwd;
+  } else if (fs::exists(cwd.parent_path() / "scenes")) {
+    workcell_path = cwd.parent_path();
+  } else {
+    workcell_path = cwd;
+    RCLCPP_WARN(
+      rclcpp::get_logger("workcell_builder"),
+      "Unable to locate a 'scenes' directory from %s or its parent.",
+      cwd.string().c_str());
+  }
+  scenes_path = workcell_path / "scenes";
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
     templates_path = fs::path(share) / "templates";
+    if (!fs::exists(workcell_path / "assets")) {
+      assets_path = fs::path(share) / "assets";
+    }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
   change_directory(workcell_path);
-  change_directory(workcell_path / "assets");
-  assets_path = fs::current_path();
-  change_directory(scenes_path);
+  if (assets_path.empty()) {
+    change_directory(workcell_path / "assets");
+    assets_path = fs::current_path();
+  }
+  if (fs::exists(scenes_path)) {
+    change_directory(scenes_path);
+  }
   ui->setupUi(this);
 }
 
