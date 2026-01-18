@@ -43,7 +43,7 @@ find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
-find_package(Qt5 COMPONENTS Widgets REQUIRED)
+find_package(Qt5 COMPONENTS Widgets Concurrent REQUIRED)
 
 include_directories(include)
 include_directories(include/attributes)
@@ -132,6 +132,7 @@ ament_target_dependencies(workcell_builder
 
 target_link_libraries(workcell_builder
   Qt5::Widgets
+  Qt5::Concurrent
   yaml-cpp
   ${Boost_LIBRARIES}
 )
