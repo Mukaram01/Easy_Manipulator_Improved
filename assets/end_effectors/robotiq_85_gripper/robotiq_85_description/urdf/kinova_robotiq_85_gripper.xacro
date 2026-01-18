@@ -7,9 +7,11 @@
     <xacro:property name="pi" value="3.1415"/>
     
     <gazebo>
-        <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so"> 
-            <robotNamespace>/</robotNamespace>
-        </plugin> 
+        <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+            <ros2_control>
+                <parameters>$(find robotiq_85_description)/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
+        </plugin>
     </gazebo>
     
     <link name="world"/>
