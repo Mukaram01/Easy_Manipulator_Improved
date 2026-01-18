@@ -243,10 +243,10 @@ bool CheckExtJointEqual(ExternalJoint extjoint_1, ExternalJoint extjoint_2)
   if (extjoint_1.type.compare(extjoint_2.type) != 0) {
     return false;
   }
-  if (CheckAxisEqual(extjoint_1.axis, extjoint_2.axis)) {
+  if (!CheckAxisEqual(extjoint_1.axis, extjoint_2.axis)) {
     return false;
   }
-  if (CheckOriginEqual(extjoint_1.origin, extjoint_2.origin)) {
+  if (!CheckOriginEqual(extjoint_1.origin, extjoint_2.origin)) {
     return false;
   }
 
@@ -318,13 +318,13 @@ bool CheckVisualEqual(Visual visual_1, Visual visual_2)
   if (visual_1.name.compare(visual_2.name) != 0) {
     return false;
   }
-  if (CheckOriginEqual(visual_1.origin, visual_2.origin)) {
+  if (!CheckOriginEqual(visual_1.origin, visual_2.origin)) {
     return false;
   }
-  if (CheckGeometryEqual(visual_1.geometry, visual_2.geometry)) {
+  if (!CheckGeometryEqual(visual_1.geometry, visual_2.geometry)) {
     return false;
   }
-  if (CheckMaterialEqual(visual_1.material, visual_2.material)) {
+  if (!CheckMaterialEqual(visual_1.material, visual_2.material)) {
     return false;
   }
   if (visual_1.is_origin != visual_2.is_origin) {
