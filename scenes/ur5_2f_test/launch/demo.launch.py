@@ -20,7 +20,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-scene_pkg = 'ur5_test'
+scene_pkg = 'ur5_2f_test'
 robot_base_link = 'base_link'
 robot_moveit_pkg = 'ur5_moveit_config'
 
