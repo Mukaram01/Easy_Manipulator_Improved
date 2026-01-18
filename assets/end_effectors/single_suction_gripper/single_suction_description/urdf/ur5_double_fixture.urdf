@@ -732,7 +732,11 @@
         </plugin>
     </gazebo>
     <gazebo>
-        <plugin filename="libgazebo_ros_control.so" name="gazebo_ros_control" />
+        <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
+        </plugin>
     </gazebo>
     <joint name="ur5_to_double_fixture" type="fixed">
         <parent link="tool0" />
@@ -740,7 +744,11 @@
         <origin rpy="-1.57079632679 3.14159265359 4.71238898038" xyz="0 0 0" />
     </joint>
     <gazebo>
-        <plugin filename="libgazebo_ros_control.so" name="gazebo_ros_control" />
+        <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
+        </plugin>
     </gazebo>
     <transmission name="trans_shoulder_pan_joint">
         <type>transmission_interface/SimpleTransmission</type>
@@ -863,8 +871,10 @@
         </actuator>
     </transmission>
     <gazebo>
-        <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
-            <robotNamespace>/</robotNamespace>
+        <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
         </plugin>
     </gazebo>
 </robot>
@@ -1335,7 +1345,11 @@
         </plugin>
     </gazebo>
     <gazebo>
-        <plugin filename="libgazebo_ros_control.so" name="gazebo_ros_control" />
+        <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
+        </plugin>
     </gazebo>
     <joint name="ur5_to_double_fixture" type="fixed">
         <parent link="tool0" />
@@ -1343,7 +1357,11 @@
         <origin rpy="-1.57079632679 3.14159265359 4.71238898038" xyz="0 0 0" />
     </joint>
     <gazebo>
-        <plugin filename="libgazebo_ros_control.so" name="gazebo_ros_control" />
+        <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
+        </plugin>
     </gazebo>
     <transmission name="trans_shoulder_pan_joint">
         <type>transmission_interface/SimpleTransmission</type>
@@ -1466,8 +1484,10 @@
         </actuator>
     </transmission>
     <gazebo>
-        <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
-            <robotNamespace>/</robotNamespace>
+        <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+            <ros2_control>
+                <parameters>package://single_suction_description/config/ros2_controllers.yaml</parameters>
+            </ros2_control>
         </plugin>
     </gazebo>
 </robot>

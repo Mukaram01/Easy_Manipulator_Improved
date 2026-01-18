@@ -28,8 +28,11 @@
 
 
 <gazebo>
-	  <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
-	  </plugin>
-	</gazebo>
+  <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+    <ros2_control>
+      <parameters>$(find single_suction_description)/config/ros2_controllers.yaml</parameters>
+    </ros2_control>
+  </plugin>
+</gazebo>
 
 </robot>
