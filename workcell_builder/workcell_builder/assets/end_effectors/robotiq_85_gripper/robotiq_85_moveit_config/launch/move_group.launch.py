@@ -14,7 +14,7 @@ PACKAGE_NAME = "robotiq_85_moveit_config"
 ROBOT_NAME = "robotiq_85_gripper"
 DESCRIPTION_PACKAGE = "robotiq_85_description"
 URDF_PATH = ['urdf', 'robotiq_85_gripper.urdf.xacro']
-SRDF_PATH = ['config', 'robotiq_85_gripper.srdf']
+SRDF_PATH = ['config', 'robotiq_85_gripper.srdf.xacro']
 URDF_MAPPINGS = {}
 
 
