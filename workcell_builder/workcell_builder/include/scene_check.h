@@ -22,23 +22,23 @@
 #include "attributes/workcell.h"
 
 
-bool CheckSceneEqual(Scene scene_1, Scene scene_2);
-bool CheckRobotEqual(Robot robot_1, Robot robot_2);
-bool CheckEEEqual(EndEffector ee_1, EndEffector ee_2);
-bool CheckObjectEqual(Object object_1, Object object_2);
-bool CheckLinkEqual(Link link_1, Link link_2);
-bool CheckVisualEqual(Visual visual_1, Visual visual_2);
-bool CheckCollisionEqual(Collision collision_1, Collision collision_2);
-bool CheckInertiaEqual(Inertial inertial_1, Inertial inertial_2);
-bool CheckJointEqual(Joint joint_1, Joint joint_2);
-bool CheckOriginEqual(Origin origin_1, Origin origin_2);
-bool CheckAxisEqual(Axis axis_1, Axis axis_2);
-bool CheckGeometryEqual(Geometry geometry_1, Geometry geometry_2);
-bool CheckMaterialEqual(Material material_1, Material material_2);
-bool CheckExtJointEqual(ExternalJoint extjoint_1, ExternalJoint extjoint_2);
+bool CheckSceneEqual(const Scene &scene_1, const Scene &scene_2);
+bool CheckRobotEqual(const Robot &robot_1, const Robot &robot_2);
+bool CheckEEEqual(const EndEffector &ee_1, const EndEffector &ee_2);
+bool CheckObjectEqual(const Object &object_1, const Object &object_2);
+bool CheckLinkEqual(const Link &link_1, const Link &link_2);
+bool CheckVisualEqual(const Visual &visual_1, const Visual &visual_2);
+bool CheckCollisionEqual(const Collision &collision_1, const Collision &collision_2);
+bool CheckInertiaEqual(const Inertial &inertial_1, const Inertial &inertial_2);
+bool CheckJointEqual(const Joint &joint_1, const Joint &joint_2);
+bool CheckOriginEqual(const Origin &origin_1, const Origin &origin_2);
+bool CheckAxisEqual(const Axis &axis_1, const Axis &axis_2);
+bool CheckGeometryEqual(const Geometry &geometry_1, const Geometry &geometry_2);
+bool CheckMaterialEqual(const Material &material_1, const Material &material_2);
+bool CheckExtJointEqual(const ExternalJoint &extjoint_1, const ExternalJoint &extjoint_2);
 
 
-bool CheckSceneEqual(Scene scene_1, Scene scene_2)
+bool CheckSceneEqual(const Scene &scene_1, const Scene &scene_2)
 {
   if (scene_1.name.compare(scene_2.name) != 0) {
     std::cout << "name not identical" << std::endl;
@@ -134,7 +134,7 @@ bool CheckSceneEqual(Scene scene_1, Scene scene_2)
   std::cout << "scene identical" << std::endl;
   return true;
 }
-bool CheckRobotEqual(Robot robot_1, Robot robot_2)
+bool CheckRobotEqual(const Robot &robot_1, const Robot &robot_2)
 {
   if (robot_1.name.compare(robot_2.name) != 0) {
     return false;
@@ -162,7 +162,7 @@ bool CheckRobotEqual(Robot robot_1, Robot robot_2)
   }
   return true;
 }
-bool CheckEEEqual(EndEffector ee_1, EndEffector ee_2)
+bool CheckEEEqual(const EndEffector &ee_1, const EndEffector &ee_2)
 {
   if (ee_1.name.compare(ee_2.name) != 0) {
     return false;
@@ -200,7 +200,7 @@ bool CheckEEEqual(EndEffector ee_1, EndEffector ee_2)
   }
   return true;
 }
-bool CheckObjectEqual(Object object_1, Object object_2)
+bool CheckObjectEqual(const Object &object_1, const Object &object_2)
 {
   if (object_1.name.compare(object_2.name) != 0) {
     return false;
@@ -232,7 +232,7 @@ bool CheckObjectEqual(Object object_1, Object object_2)
   }
   return true;
 }
-bool CheckExtJointEqual(ExternalJoint extjoint_1, ExternalJoint extjoint_2)
+bool CheckExtJointEqual(const ExternalJoint &extjoint_1, const ExternalJoint &extjoint_2)
 {
   if (extjoint_1.name.compare(extjoint_2.name) != 0) {
     return false;
@@ -261,7 +261,7 @@ bool CheckExtJointEqual(ExternalJoint extjoint_1, ExternalJoint extjoint_2)
   }
   return true;
 }
-bool CheckLinkEqual(Link link_1, Link link_2)
+bool CheckLinkEqual(const Link &link_1, const Link &link_2)
 {
   if (link_1.name.compare(link_2.name) != 0) {
     return false;
@@ -313,7 +313,7 @@ bool CheckLinkEqual(Link link_1, Link link_2)
   }
   return true;
 }
-bool CheckVisualEqual(Visual visual_1, Visual visual_2)
+bool CheckVisualEqual(const Visual &visual_1, const Visual &visual_2)
 {
   if (visual_1.name.compare(visual_2.name) != 0) {
     return false;
@@ -335,7 +335,7 @@ bool CheckVisualEqual(Visual visual_1, Visual visual_2)
   }
   return true;
 }
-bool CheckCollisionEqual(Collision collision_1, Collision collision_2)
+bool CheckCollisionEqual(const Collision &collision_1, const Collision &collision_2)
 {
   if (collision_1.name.compare(collision_2.name) != 0) {
     return false;
@@ -348,7 +348,7 @@ bool CheckCollisionEqual(Collision collision_1, Collision collision_2)
   }
   return true;
 }
-bool CheckInertiaEqual(Inertial inertial_1, Inertial inertial_2)
+bool CheckInertiaEqual(const Inertial &inertial_1, const Inertial &inertial_2)
 {
   if (!CheckOriginEqual(inertial_1.origin, inertial_2.origin)) {
     return false;
@@ -362,7 +362,7 @@ bool CheckInertiaEqual(Inertial inertial_1, Inertial inertial_2)
   }
   return true;
 }
-bool CheckJointEqual(Joint joint_1, Joint joint_2)
+bool CheckJointEqual(const Joint &joint_1, const Joint &joint_2)
 {
   if (joint_1.name.compare(joint_2.name) != 0) {
     return false;
@@ -384,7 +384,7 @@ bool CheckJointEqual(Joint joint_1, Joint joint_2)
   }
   return true;
 }
-bool CheckOriginEqual(Origin origin_1, Origin origin_2)
+bool CheckOriginEqual(const Origin &origin_1, const Origin &origin_2)
 {
   if (origin_1.x != origin_2.x || origin_1.y != origin_2.y || origin_1.z != origin_2.z ||
     origin_1.roll != origin_2.roll || origin_1.pitch != origin_2.pitch ||
@@ -397,7 +397,7 @@ bool CheckOriginEqual(Origin origin_1, Origin origin_2)
   }
   return true;
 }
-bool CheckAxisEqual(Axis axis_1, Axis axis_2)
+bool CheckAxisEqual(const Axis &axis_1, const Axis &axis_2)
 {
   if (axis_1.x != axis_2.x || axis_1.y != axis_2.y || axis_1.z != axis_2.z) {
     return false;
@@ -407,7 +407,7 @@ bool CheckAxisEqual(Axis axis_1, Axis axis_2)
   }
   return true;
 }
-bool CheckGeometryEqual(Geometry geometry_1, Geometry geometry_2)
+bool CheckGeometryEqual(const Geometry &geometry_1, const Geometry &geometry_2)
 {
   if (geometry_1.is_stl != geometry_2.is_stl) {
     return false;
@@ -452,7 +452,7 @@ bool CheckGeometryEqual(Geometry geometry_1, Geometry geometry_2)
   }
   return true;
 }
-bool CheckMaterialEqual(Material material_1, Material material_2)
+bool CheckMaterialEqual(const Material &material_1, const Material &material_2)
 {
   if (material_1.is_material != material_2.is_material) {
     return false;
