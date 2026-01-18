@@ -78,7 +78,7 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
       emd_msgs::msg::GraspMethod grasp_method;
       grasp_method.ee_id = gripper.get_id();
       grasp_method.grasp_ranks.insert(
-        grasp_method.grasp_ranks.begin(), std::numeric_limits<float>::min());
+        grasp_method.grasp_ranks.begin(), std::numeric_limits<float>::lowest());
 
       gripper.plan_grasps(
         object, grasp_method, world_collision_object,
