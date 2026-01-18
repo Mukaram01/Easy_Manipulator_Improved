@@ -39,6 +39,15 @@ void grasp_planner::GraspScene<T>::send_to_execution(
     RCLCPP_INFO(LOGGER, "Sending Grasp Request to grasp execution module");
     auto req = std::make_shared<emd_msgs::srv::GraspRequest::Request>();
     req->grasp_targets = grasp_task.grasp_targets;
+    RCLCPP_INFO(LOGGER, "Waiting for grasp execution service");
+    while (!output_client->wait_for_service(std::chrono::seconds(1))) {
+      if (!rclcpp::ok()) {
+        RCLCPP_WARN(
+          node->get_logger(), "Grasp execution service wait interrupted. Skipping request.");
+        return;
+      }
+      RCLCPP_WARN(LOGGER, "Grasp execution service unavailable, waiting...");
+    }
     if (!this->result_future.valid()) {
       RCLCPP_INFO(LOGGER, "Client Not started");
       auto request = output_client->async_send_request(req);
