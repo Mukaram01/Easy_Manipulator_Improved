@@ -1,16 +1,12 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10.2)
 project(onrobot_airpick4_description)
-
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf
+install(DIRECTORY meshes DESTINATION "share/${PROJECT_NAME}")
+install(DIRECTORY urdf DESTINATION "share/${PROJECT_NAME}")
+install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/meshes")
-  install(DIRECTORY meshes
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
-
 ament_package()
+

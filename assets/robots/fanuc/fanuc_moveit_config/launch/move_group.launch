@@ -1,5 +1,4 @@
 <launch>
-  <!-- Deprecated: use move_group.launch.py (ROS 2) -->
 
   <!-- GDB Debug Option -->
   <arg name="debug" default="false" />

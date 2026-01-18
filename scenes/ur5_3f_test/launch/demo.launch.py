@@ -12,14 +12,10 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 
-import logging
 import os
-import tempfile
-from pathlib import Path
-from typing import Optional
-
-import xacro
 import yaml
+import xacro
+import tempfile
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -27,83 +23,45 @@ from ament_index_python.packages import get_package_share_directory
 scene_pkg = 'ur5_3f_test'
 robot_base_link = 'base_link'
 robot_moveit_pkg = 'ur5_moveit_config'
-logger = logging.getLogger(__name__)
 
 def to_urdf(xacro_path, urdf_path=None):
-    """Convert the given xacro file to a URDF file."""
-
-    xacro_path = str(xacro_path)
-
-    if urdf_path is None:
-        fd, urdf_path = tempfile.mkstemp(
-            prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
-        )
-        os.close(fd)
-    else:
-        urdf_path = Path(urdf_path)
-        if not urdf_path.name or urdf_path.name in {".", ".."}:
-            raise ValueError("urdf_path must not be empty")
-        urdf_path = str(urdf_path.with_suffix(".urdf"))
-        directory = os.path.dirname(urdf_path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-
-    doc = xacro.process_file(xacro_path)
-    with xacro.open_output(urdf_path) as out:
-        out.write(doc.toprettyxml(indent='  '))
-
-    return urdf_path
-
-
-def load_file(package_name: str, file_path: str) -> Optional[str]:
-    """Load a xacro file from *package_name* and return its processed XML.
-
-    The *file_path* may be absolute or relative to the package share directory.
-    ``None`` is returned if the package is missing or the file cannot be
-    processed. A :class:`FileNotFoundError` is raised when the file does not
-    exist.
+    """Convert the given xacro file to URDF file.
+    * xacro_path -- the path to the xacro file
+    * urdf_path -- the path to the urdf file
     """
+    # If no URDF path is given, use a temporary file
+    if urdf_path is None:
+        urdf_path = tempfile.mktemp(prefix="%s_" % os.path.basename(xacro_path))
+
+    # open and process file
+    doc = xacro.process_file(xacro_path)
+    # open the output file
+    out = xacro.open_output(urdf_path)
+    out.write(doc.toprettyxml(indent='  '))
+
+    return urdf_path  # Return path to the urdf file
+
+def load_file(package_name, file_path):
+    package_path = get_package_share_directory(package_name) #get package filepath
+    absolute_file_path = os.path.join(package_path, file_path)
+    temp_urdf_filepath = absolute_file_path.replace('.xacro','')
+    absolute_file_path = to_urdf(absolute_file_path,temp_urdf_filepath)
+    
     try:
-        package_path = Path(get_package_share_directory(package_name))
-    except EnvironmentError:
-        return None
-
-    file_path = Path(file_path).expanduser()
-    if not file_path.is_absolute():
-        absolute_file_path = package_path / file_path
-    else:
-        absolute_file_path = file_path
-
-    if not absolute_file_path.is_file():
-        raise FileNotFoundError(f"xacro file '{absolute_file_path}' does not exist")
-
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_urdf_path = Path(tmpdir) / file_path.with_suffix(".urdf").name
-            temp_urdf_path = Path(to_urdf(str(absolute_file_path), str(temp_urdf_path)))
-            return temp_urdf_path.read_text()
-    except EnvironmentError:
+        with open(absolute_file_path, 'r') as file:
+            return file.read()
+    except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
         return None
 
 def load_yaml(package_name, file_path):
-    """Load a YAML file from *package_name* and return its parsed content."""
-
+    package_path = get_package_share_directory(package_name)
+    absolute_file_path = os.path.join(package_path, file_path)
     try:
-        package_path = Path(get_package_share_directory(package_name))
-    except EnvironmentError:
-        return None
-
-    file_path = Path(file_path).expanduser()
-    if not file_path.is_absolute():
-        yaml_file = package_path / file_path
-    else:
-        yaml_file = file_path
-    if not yaml_file.is_file():
-        raise FileNotFoundError(f"YAML file '{yaml_file}' does not exist")
-    try:
-        with yaml_file.open('r') as f:
-            return yaml.safe_load(f)
-    except yaml.YAMLError:
+        with open(absolute_file_path, 'r') as file:
+            return yaml.load(file)
+    except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
+        print(package_path)
+        print(absolute_file_path)
         return None
 
 
@@ -116,15 +74,8 @@ def generate_launch_description():
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic' : robot_description_semantic_config}
 
-    try:
-        kinematics_yaml = load_yaml(robot_moveit_pkg , 'config/kinematics.yaml')
-    except FileNotFoundError as exc:
-        logger.warning(
-            "Kinematics YAML not found for '%s': %s",
-            robot_moveit_pkg,
-            exc,
-        )
-        kinematics_yaml = None
+    kinematics_yaml = load_yaml(robot_moveit_pkg , 'config/kinematics.yaml')
+    robot_description_kinematics = { 'robot_description_kinematics' : kinematics_yaml }
 
     ompl_planning_pipeline_config = { 'ompl' : {
         'planning_plugin' : 'ompl_interface/OMPLPlanner',
@@ -136,20 +87,13 @@ def generate_launch_description():
 
     # RViz
     rviz_config_file = get_package_share_directory(scene_pkg) + "/launch/demo.rviz"
-    rviz_parameters = [
-        robot_description,
-        robot_description_semantic,
-    ]
-    if kinematics_yaml is not None:
-        rviz_parameters.append(
-            {'robot_description_kinematics' : kinematics_yaml }
-        )
     rviz_node = Node(package='rviz2',
                      executable='rviz2',
                      name='rviz2',
                      output='log',
                      arguments=['-d', rviz_config_file],
-                     parameters=rviz_parameters)
+                     parameters=[robot_description,
+                                 robot_description_semantic])
     # Publish base link TF
     static_tf = Node(package='tf2_ros',
                      executable='static_transform_publisher',

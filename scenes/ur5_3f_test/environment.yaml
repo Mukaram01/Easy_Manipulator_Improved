@@ -16,10 +16,10 @@ robot:
     - base
     - tool0
 end_effector:
-  name: robotiq_3f
-  brand: robotiq_3f_gripper
-  filepath: package://robotiq_3f_gripper_description
-  base_link: palm
+  name: robotiq_85
+  brand: robotiq_85_gripper
+  filepath: /home/rosi5/emd_ws/src/assets/end_effectors/robotiq_85_gripper/robotiq_85_description
+  base_link: gripper_base_link
   robot_link: tool0
   ee_type: finger
   attributes:
@@ -32,19 +32,15 @@ end_effector:
     pitch: -1.5707
     yaw: 0
   links:
-    - palm
-    - finger_1_link_0
-    - finger_1_link_1
-    - finger_1_link_2
-    - finger_1_link_3
-    - finger_2_link_0
-    - finger_2_link_1
-    - finger_2_link_2
-    - finger_2_link_3
-    - finger_middle_link_0
-    - finger_middle_link_1
-    - finger_middle_link_2
-    - finger_middle_link_3
+    - gripper_base_link
+    - gripper_finger1_knuckle_link
+    - gripper_finger2_knuckle_link
+    - gripper_finger1_finger_link
+    - gripper_finger2_finger_link
+    - gripper_finger1_inner_knuckle_link
+    - gripper_finger2_inner_knuckle_link
+    - gripper_finger1_finger_tip_link
+    - gripper_finger2_finger_tip_link
 objects:
   table:
     child_link: table
@@ -53,7 +49,7 @@ objects:
         visual:
           name: table
           geometry:
-            filepath: package://table_description/meshes/visual/table.stl
+            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
@@ -61,7 +57,7 @@ objects:
         collision:
           name: None
           geometry:
-            filepath: package://table_description/meshes/visual/table.stl
+            filepath: /home/rosi/error_check_ws/src/assets/environment/table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001

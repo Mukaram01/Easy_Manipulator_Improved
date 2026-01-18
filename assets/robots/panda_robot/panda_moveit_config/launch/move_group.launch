@@ -1,5 +1,4 @@
 <launch>
-  <!-- Deprecated: use move_group.launch.py (ROS 2) -->
 
   <arg name="load_gripper" default="true" />
 

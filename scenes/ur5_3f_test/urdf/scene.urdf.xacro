@@ -4,24 +4,8 @@
 
  <link name="world"/>
 
- <xacro:include filename="$(find-pkg-share ur_description)/urdf/ur_macro.xacro"/>
-
- <xacro:arg name="joint_limits_parameters_file" default="$(find-pkg-share ur_description)/config/ur5/joint_limits.yaml"/>
- <xacro:arg name="kinematics_parameters_file" default="$(find-pkg-share ur_description)/config/ur5/default_kinematics.yaml"/>
- <xacro:arg name="physical_parameters_file" default="$(find-pkg-share ur_description)/config/ur5/physical_parameters.yaml"/>
- <xacro:arg name="visual_parameters_file" default="$(find-pkg-share ur_description)/config/ur5/visual_parameters.yaml"/>
-
- <xacro:ur_robot
-   name="ur5"
-   tf_prefix=""
-   parent="world"
-   joint_limits_parameters_file="$(arg joint_limits_parameters_file)"
-   kinematics_parameters_file="$(arg kinematics_parameters_file)"
-   physical_parameters_file="$(arg physical_parameters_file)"
-   visual_parameters_file="$(arg visual_parameters_file)"
-   generate_ros2_control_tag="false">
-   <origin xyz="0 0 0" rpy="0 0 0" />
- </xacro:ur_robot>
+ <xacro:include filename="$(find ur_description)/urdf/ur5.urdf.xacro"/>
+ <xacro:ur5_robot prefix="" joint_limited="false"/>
   <joint name="world_ur5" type="fixed">
 	<parent link="world" />
 	<child link="base_link" />
@@ -29,31 +13,29 @@
   </joint>
 
  <!-- Import ur5 ros2_control description -->
- <xacro:include filename="$(find-pkg-share ur5_moveit_config)/config/ur5.ros2_control.xacro" />
+ <xacro:include filename="$(find ur5_moveit_config)/config/ur5.ros2_control.xacro" />
 
- <xacro:arg name="initial_positions_file" default="$(find-pkg-share ur5_moveit_config)/config/initial_positions.yaml" />
+ <xacro:arg name="initial_positions_file" default="$(find ur5_moveit_config)/config/initial_positions.yaml" />
  <xacro:ur5_ros2_control name="UR5FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
    
- <!--xacro:include filename="$(find-pkg-share robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
+ <!--xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
  <xacro:robotiq_85_gripper prefix="" parent="tool0">
 	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
  </xacro:robotiq_85_gripper-->
  
- <xacro:include filename="$(find-pkg-share robotiq_3f_gripper_description)/urdf/robotiq-3f-gripper_articulated.urdf.xacro"/>
+ <xacro:include filename="$(find robotiq_3f_gripper_description)/urdf/robotiq-3f-gripper_articulated.urdf.xacro"/>
  <xacro:robotiq-3f-gripper_articulated prefix="" parent="tool0" >
 	<origin xyz="0 0 0.0" rpy="1.5707 0 0"/>
  </xacro:robotiq-3f-gripper_articulated>
 
- <xacro:include filename="$(find-pkg-share workbench_description)/urdf/table.urdf.xacro"/>
- <joint name="workbench_base_joint" type="fixed">
-        <parent link="world" />
-        <child link="workbench_link" />
-        <origin xyz="0 0 0" rpy="0 0 0"/>
- </joint>
+ <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
+ <xacro:table prefix="" parent="world">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:table>
  
- <xacro:include filename="$(find-pkg-share realsense2_description)/urdf/_d415.urdf.xacro"/>
+ <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro"/>
 <xacro:arg name="use_nominal_extrinsics" default="true" />
-<xacro:sensor_d415 parent="workbench_link" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+<xacro:sensor_d415 parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
     <origin xyz="-0.58 0.225 0.65" rpy="3.14159 1.57079506 0"/>
 </xacro:sensor_d415>
 
