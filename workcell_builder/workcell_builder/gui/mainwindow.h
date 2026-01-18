@@ -16,7 +16,10 @@
 #ifndef EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 
+#include <QFutureWatcher>
 #include <QMainWindow>
+#include <QString>
+#include <atomic>
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -26,6 +29,7 @@
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
+class QProgressDialog;
 
 class MainWindow: public QMainWindow
 {
@@ -52,5 +56,17 @@ private slots:
 
 private:
   Ui::MainWindow * ui;
+  struct WorkcellLoadResult
+  {
+    bool success{ false };
+    bool cancelled{ false };
+    QString error;
+    Workcell workcell;
+    boost::filesystem::path workcell_path;
+    QString workcell_file;
+  };
+  QFutureWatcher<WorkcellLoadResult> * load_watcher_{ nullptr };
+  QProgressDialog * progress_dialog_{ nullptr };
+  std::atomic<bool> cancel_requested_{ false };
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
