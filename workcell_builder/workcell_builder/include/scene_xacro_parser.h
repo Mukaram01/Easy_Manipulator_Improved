@@ -215,8 +215,11 @@ void generate_scene_xacro(Scene scene)
       MyFile << " <xacro:include filename=\"$(find-pkg-share " + ee_package +
         ")/urdf/" + ee_xacro + "\"/>\n";
 
+      const std::string parent_link = scene.ee_vector[i].robot_link.empty() ?
+        scene.robot_vector[scene.ee_vector[i].robot_pos].ee_link :
+        scene.ee_vector[i].robot_link;
       MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
-        scene.robot_vector[scene.ee_vector[i].robot_pos].ee_link + "\">\n";
+        parent_link + "\">\n";
       if (scene.ee_vector[i].origin.is_origin) {
         std::cout << "Xacro parser has origin" << std::endl;
         MyFile << "\t<origin xyz=\"" + std::to_string(scene.ee_vector[i].origin.x) + " " +
