@@ -72,6 +72,10 @@ SceneSelect::SceneSelect(QWidget * parent)
     workcell_path = cwd;
   } else if (fs::exists(cwd.parent_path() / "scenes")) {
     workcell_path = cwd.parent_path();
+  } else if (fs::exists(cwd / "src" / "easy_manipulation_deployment" / "scenes")) {
+    workcell_path = cwd / "src" / "easy_manipulation_deployment";
+  } else if (fs::exists(cwd / "src" / "scenes")) {
+    workcell_path = cwd / "src";
   } else {
     workcell_path = cwd;
     RCLCPP_WARN(
