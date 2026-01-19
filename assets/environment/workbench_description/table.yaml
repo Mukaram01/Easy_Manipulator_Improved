@@ -5,7 +5,7 @@ table:
       visual:
         name: None
         geometry:
-          filepath: /home/rosi5/emd_ws/src/assets/environment/table_description/meshes/visual/table.stl
+          filepath: package://workbench_description/meshes/visual/table.stl
           scale:
             scale_x: 0.001
             scale_y: 0.001
@@ -19,7 +19,7 @@ table:
       collision:
         name: None
         geometry:
-          filepath: /home/rosi5/emd_ws/src/assets/environment/table_description/meshes/collision/table.stl
+          filepath: package://workbench_description/meshes/collision/table.stl
           scale:
             scale_x: 0.001
             scale_y: 0.001

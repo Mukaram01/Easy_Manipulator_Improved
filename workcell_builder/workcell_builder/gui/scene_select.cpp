@@ -60,6 +60,50 @@ bool change_directory(const fs::path & p)
   return true;
 }
 
+bool is_package_uri(const std::string & path)
+{
+  return path.rfind("package://", 0) == 0;
+}
+
+void resolve_relative_path(const fs::path & base_path, std::string * path)
+{
+  if (!path || path->empty() || is_package_uri(*path)) {
+    return;
+  }
+  fs::path candidate(*path);
+  if (candidate.is_absolute()) {
+    return;
+  }
+  *path = (base_path / candidate).lexically_normal().string();
+}
+
+void resolve_scene_paths(Scene * scene, const fs::path & base_path)
+{
+  if (!scene) {
+    return;
+  }
+  if (scene->robot_loaded && !scene->robot_vector.empty()) {
+    resolve_relative_path(base_path, &scene->robot_vector[0].filepath);
+  }
+  if (scene->ee_loaded && !scene->ee_vector.empty()) {
+    resolve_relative_path(base_path, &scene->ee_vector[0].filepath);
+  }
+  for (auto & object : scene->object_vector) {
+    for (auto & link : object.link_vector) {
+      if (link.is_visual) {
+        for (auto & visual : link.visual_vector) {
+          resolve_relative_path(base_path, &visual.geometry.filepath);
+        }
+      }
+      if (link.is_collision) {
+        for (auto & collision : link.collision_vector) {
+          resolve_relative_path(base_path, &collision.geometry.filepath);
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 
 
@@ -680,6 +724,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     }
   }
 
+  resolve_scene_paths(input_scene, workcell_path);
   input_scene->loaded = true;
   change_directory(scenes_path);
   return true;
