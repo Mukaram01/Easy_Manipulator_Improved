@@ -18,7 +18,7 @@ robot:
 end_effector:
   name: single_suction
   brand: single_suction_gripper
-  filepath: /home/rosi5/emd_ws/src/assets/end_effectors/single_suction_gripper/single_suction_description
+  filepath: assets/end_effectors/single_suction_gripper/single_suction_description
   base_link: wrist_fixture
   robot_link: tool0
   ee_type: suction
@@ -36,7 +36,7 @@ objects:
         visual:
           name: None
           geometry:
-            filepath: /home/rosi5/emd_ws/src/assets/environment/table_description/meshes/visual/table.stl
+            filepath: assets/environment/table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
@@ -50,7 +50,7 @@ objects:
         collision:
           name: None
           geometry:
-            filepath: /home/rosi5/emd_ws/src/assets/environment/table_description/meshes/collision/table.stl
+            filepath: assets/environment/table_description/meshes/collision/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
