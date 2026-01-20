@@ -938,13 +938,20 @@ void DynamicSafety::Impl::_main_loop()
     // No Collision
     if (scale < 1.0) {
       // Gradually rescale back to 1
-      double scale_time;
+      double scale_time = 0.0;
       if (option_.safety_zone_options.slow_down_time <= 0 && option_.dynamic_parameterization) {
         scale_time = _cal_scale_time(*current_state_cache_.readFromRT(), scale, 1.0);
-        scale += (1.0 - scale) * (1.0 / option_.rate) / scale_time;
+        if (scale_time <= 0 && option_.safety_zone_options.slow_down_time > 0) {
+          scale_time = option_.safety_zone_options.slow_down_time;
+        }
+        if (scale_time > 0) {
+          scale += (1.0 - scale) * (1.0 / option_.rate) / scale_time;
+        }
       } else {
         scale_time = option_.safety_zone_options.slow_down_time;
-        scale += 1.0 * (1.0 / option_.rate) / scale_time;
+        if (scale_time > 0) {
+          scale += 1.0 * (1.0 / option_.rate) / scale_time;
+        }
       }
       scale = std::min<double>(scale, 1);
       RCLCPP_WARN_ONCE(LOGGER, "Speeding up");
@@ -962,7 +969,9 @@ double DynamicSafety::Impl::_cal_scale_time(
   double current_scale,
   double target_scale)
 {
-  double scale_time = -1.0;
+  double scale_time = 0.0;
+  bool found_joint = false;
+  constexpr double kMinScaleTime = 0.001;
   if (!current_state.state.velocities.empty()) {
     for (size_t i = 0; i < current_state.state.velocities.size(); i++) {
       // Skip joints that is not controlled by this controller
@@ -977,6 +986,7 @@ double DynamicSafety::Impl::_cal_scale_time(
       if (option_.joint_limits[current_state.joint_names[i]].second == 0) {
         continue;
       }
+      found_joint = true;
       // Slow down
       if (current_scale >= target_scale) {
         double temp_scale_time =
@@ -991,11 +1001,16 @@ double DynamicSafety::Impl::_cal_scale_time(
           (option_.joint_limits[current_state.joint_names[i]].first -
           ::fabs(current_state.state.velocities[i])) /
           option_.joint_limits[current_state.joint_names[i]].second;
+        temp_scale_time = std::max(0.0, temp_scale_time);
         if (temp_scale_time > scale_time) {
           scale_time = temp_scale_time;
         }
       }
     }
+  }
+  double fallback_time = std::max(option_.safety_zone_options.slow_down_time, kMinScaleTime);
+  if (!found_joint || scale_time <= 0) {
+    return fallback_time;
   }
   return scale_time;
 }
