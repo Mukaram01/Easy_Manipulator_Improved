@@ -24,8 +24,8 @@
 #include <cstdio>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "attributes/workcell.h"
+#include "path_resolver.h"
 
 namespace fs = boost::filesystem;
 
@@ -58,14 +58,9 @@ inline fs::path resolve_assets_root(const fs::path & start_path)
       break;
     }
   }
-  try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    const fs::path package_assets = fs::path(share) / "assets";
-    if (fs::exists(package_assets) && fs::is_directory(package_assets)) {
-      return package_assets;
-    }
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  const fs::path package_assets = PathResolver::assets_root();
+  if (fs::exists(package_assets) && fs::is_directory(package_assets)) {
+    return package_assets;
   }
   return {};
 }
@@ -115,18 +110,13 @@ void generate_cmakelists(
 {
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
-  try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    fs::path base_template_path = fs::path(share) / "templates" /
-      ("ros" + std::to_string(ros_ver));
-    fs::path distro_template_path = base_template_path / ros_distro / "CMakeLists_example.txt";
-    if (!ros_distro.empty() && fs::exists(distro_template_path)) {
-      example_file = distro_template_path;
-    } else {
-      example_file = base_template_path / "CMakeLists_example.txt";
-    }
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  fs::path base_template_path = PathResolver::templates_root() /
+    ("ros" + std::to_string(ros_ver));
+  fs::path distro_template_path = base_template_path / ros_distro / "CMakeLists_example.txt";
+  if (!ros_distro.empty() && fs::exists(distro_template_path)) {
+    example_file = distro_template_path;
+  } else {
+    example_file = base_template_path / "CMakeLists_example.txt";
   }
   fs::path target_location(package_filepath / "CMakeLists_example.txt");
   ensure_parent(target_location);
@@ -142,9 +132,8 @@ void generate_cmakelists(
   } catch(fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
-  safe_chdir(package_filepath);
   if (copied) {
-    find_replace("CMakeLists_example.txt", "CMakeLists.txt",
+    find_replace(target_location.string(), (package_filepath / "CMakeLists.txt").string(),
       "workcellexample", package_name);
   } else {
     std::ofstream out((package_filepath / "CMakeLists.txt").string());
@@ -178,10 +167,10 @@ void generate_cmakelists(
 
 void delete_folder(fs::path scene_filepath, std::string scene_name)
 {
-  safe_chdir(scene_filepath);
+  const fs::path target_path = scene_filepath / scene_name;
   try {
-    if (fs::exists(scene_name)) {
-      fs::remove_all(scene_name);
+    if (fs::exists(target_path)) {
+      fs::remove_all(target_path);
     }
   } catch(fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
@@ -194,18 +183,13 @@ void generate_package_xml(
 {
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
-  try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    fs::path base_template_path = fs::path(share) / "templates" /
-      ("ros" + std::to_string(ros_ver));
-    fs::path distro_template_path = base_template_path / ros_distro / "package_example.xml";
-    if (!ros_distro.empty() && fs::exists(distro_template_path)) {
-      example_file = distro_template_path;
-    } else {
-      example_file = base_template_path / "package_example.xml";
-    }
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  fs::path base_template_path = PathResolver::templates_root() /
+    ("ros" + std::to_string(ros_ver));
+  fs::path distro_template_path = base_template_path / ros_distro / "package_example.xml";
+  if (!ros_distro.empty() && fs::exists(distro_template_path)) {
+    example_file = distro_template_path;
+  } else {
+    example_file = base_template_path / "package_example.xml";
   }
   fs::path target_location(package_filepath / "package_example.xml");
   ensure_parent(target_location);
@@ -221,9 +205,9 @@ void generate_package_xml(
   } catch(fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
-  safe_chdir(package_filepath);
   if (copied) {
-    find_replace("package_example.xml", "package.xml", "workcellexample", package_name);
+    find_replace(target_location.string(), (package_filepath / "package.xml").string(),
+      "workcellexample", package_name);
   } else {
     std::ofstream out((package_filepath / "package.xml").string());
     if (out.is_open()) {

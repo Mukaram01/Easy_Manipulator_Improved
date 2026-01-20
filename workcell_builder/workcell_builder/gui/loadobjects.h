@@ -38,12 +38,13 @@ public:
   Object chosen_object;
   std::vector < std::string > current_object_names;
   boost::filesystem::path environment_path;
-  boost::filesystem::path original_path;
+  boost::filesystem::path assets_root;
 
   void get_all_objects();
   bool load_object_from_yaml(std::string object_name);
 
-  explicit LoadObjects(QWidget * parent = nullptr);
+  explicit LoadObjects(const boost::filesystem::path & assets_root_path,
+    QWidget * parent = nullptr);
   ~LoadObjects();
 
 private slots:

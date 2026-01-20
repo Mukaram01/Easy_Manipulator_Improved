@@ -46,7 +46,6 @@ AddEndEffector::AddEndEffector(QWidget * parent)
 
 int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path & end_effector_path)
 {
-  original_path = boost::filesystem::current_path();
   ui->parent_object->setText(QString::fromStdString(robot.name));
   ui->parent_link->setText(QString::fromStdString(robot.ee_link));
   boost::filesystem::path ee_path = end_effector_path;
@@ -60,79 +59,55 @@ int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path &
   if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
     return 0;
   } else {
-    boost::filesystem::current_path(ee_path);
-    for (auto & filepath :
-      boost::filesystem::directory_iterator(ee_path))
-    {
-      std::string temp_brand;
+    for (auto & brand_entry : boost::filesystem::directory_iterator(ee_path)) {
+      if (!boost::filesystem::is_directory(brand_entry.path())) {
+        continue;
+      }
+      const boost::filesystem::path brand_path = brand_entry.path();
+      const std::string temp_brand = brand_path.filename().string();
+      std::vector<std::string> moveit_configs;
+      std::vector<std::string> descriptions;
       std::vector<EndEffector> brand_ee_vector;
 
-      // Iterate brand
-      for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-        ++it)
-      {
-        if (*it != '/') {
-          temp_brand = std::string(1, *it) + temp_brand;
-        } else {
-          boost::filesystem::current_path(temp_brand);
-          std::vector<std::string> moveit_configs;
-          std::vector<std::string> descriptions;
-          for (auto & filepath_model :
-            boost::filesystem::directory_iterator(boost::filesystem::current_path()))
-          {
-            bool is_moveit_config = false;
-            bool is_description = false;
-            std::string temp_model;
-            int char_count = 0;
+      for (auto & model_entry : boost::filesystem::directory_iterator(brand_path)) {
+        const std::string folder_name = model_entry.path().filename().string();
+        const std::string description_suffix = "_description";
+        const std::string moveit_suffix = "_moveit_config";
+        if (folder_name.size() > description_suffix.size() &&
+          folder_name.compare(
+            folder_name.size() - description_suffix.size(),
+            description_suffix.size(), description_suffix) == 0)
+        {
+          descriptions.push_back(folder_name.substr(0, folder_name.size() - description_suffix.size()));
+        }
+        if (folder_name.size() > moveit_suffix.size() &&
+          folder_name.compare(
+            folder_name.size() - moveit_suffix.size(),
+            moveit_suffix.size(), moveit_suffix) == 0)
+        {
+          moveit_configs.push_back(folder_name.substr(0, folder_name.size() - moveit_suffix.size()));
+        }
+      }
 
-            for (auto it = filepath_model.path().string().crbegin();
-              it != filepath_model.path().string().crend(); ++it)
-            {
-              if (*it != '/') {
-                temp_model = std::string(1, *it) + temp_model;
-                char_count++;
-                if (char_count == 11) {
-                  if (temp_model.compare("description") == 0) {
-                    is_description = true;
-                  }
-                }
-                if (char_count == 13) {
-                  if (temp_model.compare("moveit_config") == 0) {
-                    is_moveit_config = true;
-                  }
-                }
-              } else {
-                break;
-              }
-            }
-            if (is_description) {
-              descriptions.push_back(temp_model.substr(0, temp_model.size() - 12));
-            }
-            if (is_moveit_config) {
-              moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
-            }
+      if (moveit_configs.size() < descriptions.size()) {
+        for (int i = 0; i < static_cast<int>(descriptions.size()); i++) {
+          if (std::find(
+              moveit_configs.begin(), moveit_configs.end(),
+              descriptions[i]) != moveit_configs.end())
+          {
+            brand_ee_vector.push_back(
+              LoadEE(brand_path, descriptions[i] + "_description", temp_brand));
           }
-          if (moveit_configs.size() < descriptions.size()) {
-            for (int i = 0; i < static_cast<int>(descriptions.size()); i++) {
-              if (std::find(
-                  moveit_configs.begin(), moveit_configs.end(),
-                  descriptions[i]) != moveit_configs.end())
-              {
-                brand_ee_vector.push_back(LoadEE(descriptions[i] + "_description", temp_brand));
-              }
-            }
-          } else {
-            for (int i = 0; i < static_cast<int>(moveit_configs.size()); i++) {
-              if (std::find(
-                  descriptions.begin(), descriptions.end(),
-                  moveit_configs[i]) != descriptions.end())
-              {
-                brand_ee_vector.push_back(LoadEE(moveit_configs[i] + "_description", temp_brand));
-              }
-            }
+        }
+      } else {
+        for (int i = 0; i < static_cast<int>(moveit_configs.size()); i++) {
+          if (std::find(
+              descriptions.begin(), descriptions.end(),
+              moveit_configs[i]) != descriptions.end())
+          {
+            brand_ee_vector.push_back(
+              LoadEE(brand_path, moveit_configs[i] + "_description", temp_brand));
           }
-          boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
-          break;
         }
       }
       if (!brand_ee_vector.empty()) {
@@ -264,22 +239,26 @@ void AddEndEffector::on_ee_type_currentIndexChanged(int index)
   ui->attribute_2->blockSignals(oldState2);
 }
 
-EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
+EndEffector AddEndEffector::LoadEE(
+  const boost::filesystem::path & brand_path,
+  std::string file,
+  std::string brand)
 {
   EndEffector temp_ee;
-  temp_ee.filepath = boost::filesystem::current_path().string() + "/" + file;
-  boost::filesystem::current_path(file);
-  boost::filesystem::current_path("urdf");
+  const boost::filesystem::path description_path = brand_path / file;
+  temp_ee.filepath = description_path.string();
+  const boost::filesystem::path urdf_path = description_path / "urdf";
   temp_ee.brand = brand;
   temp_ee.name = file.erase(file.length() - 12);
   const std::string macro_filename = temp_ee.name + "_gripper.urdf.xacro";
   const std::string standalone_filename = temp_ee.name + "_gripper_standalone.urdf.xacro";
-  if (boost::filesystem::exists(standalone_filename)) {
-    temp_ee.ee_links = GetLinks(standalone_filename);
+  const boost::filesystem::path standalone_path = urdf_path / standalone_filename;
+  const boost::filesystem::path macro_path = urdf_path / macro_filename;
+  if (boost::filesystem::exists(standalone_path)) {
+    temp_ee.ee_links = GetLinks(standalone_path.string());
   } else {
-    temp_ee.ee_links = GetLinks(macro_filename);
+    temp_ee.ee_links = GetLinks(macro_path.string());
   }
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
   return temp_ee;
 }
 namespace
@@ -504,7 +483,6 @@ int AddEndEffector::ErrorCheckOrigin()
 
 AddEndEffector::~AddEndEffector()
 {
-  boost::filesystem::current_path(original_path);
   delete ui;
 }
 

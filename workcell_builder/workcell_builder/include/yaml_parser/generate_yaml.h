@@ -36,6 +36,7 @@
 #include "yaml_parser/object_parser.h"
 #include "yaml_parser/origin_parser.h"
 
+namespace fs = boost::filesystem;
 
 class GenerateYAML
 {
@@ -45,6 +46,7 @@ public:
     boost::filesystem::path scene_filepath,
     boost::filesystem::path assets_filepath)
   {
+    (void)scene_filepath;
     YAML::Emitter out;
     out << YAML::BeginMap;
 
@@ -120,30 +122,25 @@ public:
     }
 //        boost::filesystem::path scene_filepath = boost::filesystem::current_path();
 //        boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
-    boost::filesystem::current_path(assets_filepath);
-    boost::filesystem::current_path("environment");
-    boost::filesystem::path env_assets_filepath = boost::filesystem::current_path();
+    const fs::path env_assets_filepath = assets_filepath / "environment";
 
     if (scene.object_vector.size() > 0) {
       out << YAML::Key << "objects";
       out << YAML::Value << YAML::BeginMap;
       for (int i = 0; i < static_cast < int > (scene.object_vector.size()); i++) {
-        if (!boost::filesystem::exists(scene.object_vector[i].name + "_description")) {
-          boost::filesystem::create_directory(scene.object_vector[i].name + "_description");
+        const fs::path object_dir =
+          env_assets_filepath / (scene.object_vector[i].name + "_description");
+        if (!boost::filesystem::exists(object_dir)) {
+          boost::filesystem::create_directories(object_dir);
         }
-        boost::filesystem::current_path(scene.object_vector[i].name + "_description");
         YAML::Emitter temp_obj_out;
         temp_obj_out << YAML::BeginMap;
         ObjectParser::generate_object(&temp_obj_out, scene.object_vector[i]);
         temp_obj_out << YAML::EndMap;
-        std::ofstream objectfile;
-        objectfile.open(scene.object_vector[i].name + ".yaml");
+        std::ofstream objectfile((object_dir / (scene.object_vector[i].name + ".yaml")).string());
         objectfile << temp_obj_out.c_str();
-        objectfile.close();
-        boost::filesystem::current_path(env_assets_filepath);
         ObjectParser::generate_object(&out, scene.object_vector[i]);
       }
-      boost::filesystem::current_path(scene_filepath);
       out << YAML::EndMap;
     }
 
@@ -170,10 +167,9 @@ public:
     }
 
     out << YAML::EndMap;
-    boost::filesystem::current_path(filepath);
 
-    std::ofstream myfile;
-    myfile.open("environment.yaml");
+    const fs::path output_dir(filepath);
+    std::ofstream myfile((output_dir / "environment.yaml").string());
     myfile << out.c_str();
     myfile.close();
   }

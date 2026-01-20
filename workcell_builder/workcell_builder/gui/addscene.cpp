@@ -28,6 +28,7 @@
 #include "gui/addendeffector.h"
 #include "gui/loadobjects.h"
 #include "include/file_functions.h"
+#include "path_resolver.h"
 
 
 AddScene::AddScene(QWidget * parent)
@@ -40,8 +41,11 @@ AddScene::AddScene(QWidget * parent)
   on_include_robot_stateChanged(0);
   success = false;
 
-  scenes_path = boost::filesystem::current_path();
+  scenes_path = PathResolver::scenes_root();
   assets_path = resolve_assets_root(scenes_path);
+  if (assets_path.empty()) {
+    assets_path = PathResolver::assets_root();
+  }
 }
 
 AddScene::~AddScene()
@@ -64,7 +68,6 @@ void AddScene::on_add_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(object_window.object);
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
@@ -90,7 +93,6 @@ void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
     item->setText(QString::fromStdString(object_window.object.name));
     ui->object_list_2->item(pos)->setText(QString::fromStdString(object_window.object.name));
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_include_robot_stateChanged(int arg1)
@@ -269,7 +271,6 @@ void AddScene::on_object_list_2_itemDoubleClicked(QListWidgetItem * item)
       ui->parent_link->item(pos)->setText(QString::fromStdString("world"));
     }
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_delete_object_clicked()
@@ -304,14 +305,14 @@ void AddScene::on_delete_object_clicked()
     delete ui->parent_link->takeItem(ui->object_list->row(item));
     delete ui->object_list->takeItem(ui->object_list->row(item));
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_add_robot_clicked()
 {
-  boost::filesystem::current_path(scenes_path);
   AddRobot robot_window;
-  int num_robots_loaded = robot_window.LoadAvailableRobots();
+  const boost::filesystem::path workspace_assets =
+    workcell_path.empty() ? assets_path : (workcell_path / "assets");
+  int num_robots_loaded = robot_window.LoadAvailableRobots(workspace_assets);
   if (num_robots_loaded <= 0) {
     ui->robot_brand->setText(
       "<font color='orange'> No robot detected in the workcell folder.</font>");
@@ -345,7 +346,6 @@ void AddScene::on_add_robot_clicked()
       }
     }
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_add_ee_clicked()
@@ -380,8 +380,6 @@ void AddScene::on_add_ee_clicked()
     }
   }
 
-
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_remove_robot_clicked()
@@ -441,7 +439,6 @@ bool AddScene::CheckRobot()
     ui->scene_errors->append("<font color='red'> No Robot Loaded.</font>");
     return false;
   }
-  boost::filesystem::current_path(scenes_path);
   return true;
 }
 
@@ -467,7 +464,6 @@ bool AddScene::CheckEE()
     scene.ee_loaded = false;
     scene.ee_vector.clear();
   }
-  boost::filesystem::current_path(scenes_path);
   return true;
 }
 
@@ -513,7 +509,6 @@ bool AddScene::CheckSceneName()
 
 void AddScene::LoadScene(Scene scene_input)
 {
-  boost::filesystem::current_path(scenes_path);
   scene = scene_input;
   // Load Scene Name
   ui->scene_name->setText(QString::fromStdString(scene.name));
@@ -591,8 +586,7 @@ void AddScene::on_load_object_clicked()
     available_object_names.push_back(scene.object_vector[i].name);
   }
 
-  safe_chdir(assets_path);
-  LoadObjects load_obj_window;
+  LoadObjects load_obj_window(assets_path);
   load_obj_window.current_object_names = available_object_names;
   load_obj_window.setWindowTitle("Load Existing Objects");
   load_obj_window.setModal(true);
@@ -604,5 +598,4 @@ void AddScene::on_load_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(load_obj_window.chosen_object);
   }
-  boost::filesystem::current_path(scenes_path);
 }

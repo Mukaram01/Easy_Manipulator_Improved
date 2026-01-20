@@ -22,14 +22,14 @@
 #include "gui/ui_loadobjects.h"
 #include "include/file_functions.h"
 #include "include/scene_parser.h"
+#include "path_resolver.h"
 
-LoadObjects::LoadObjects(QWidget * parent)
+LoadObjects::LoadObjects(const boost::filesystem::path & assets_root_path, QWidget * parent)
 : QDialog(parent),
   ui(new Ui::LoadObjects)
 {
   ui->setupUi(this);
-  original_path = boost::filesystem::current_path();
-  const boost::filesystem::path assets_root = resolve_assets_root(original_path);
+  assets_root = assets_root_path.empty() ? PathResolver::assets_root() : assets_root_path;
   if (assets_root.empty()) {
     ui->object_name->setDisabled(true);
     ui->available_objects->setDisabled(true);
@@ -49,7 +49,6 @@ LoadObjects::LoadObjects(QWidget * parent)
       " Check assets/environment. </font>");
     return;
   }
-  safe_chdir(environment_path);
   get_all_objects();
   if (available_objects.size() <= 0) {
     ui->object_name->setDisabled(true);
@@ -68,7 +67,6 @@ LoadObjects::LoadObjects(QWidget * parent)
 
 LoadObjects::~LoadObjects()
 {
-  safe_chdir(original_path);
   delete ui;
 }
 
@@ -100,38 +98,39 @@ void LoadObjects::on_exit_clicked()
 
 void LoadObjects::get_all_objects()
 {
-  boost::filesystem::path temp_path(boost::filesystem::current_path());
-  for (auto & filepath : boost::filesystem::directory_iterator(boost::filesystem::current_path())) {
-    boost::filesystem::current_path(filepath.path());
-    std::string temp_name;
-    for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-      ++it)
-    {
-      if (*it != '/') {
-        temp_name = std::string(1, *it) + temp_name;
-      } else {
-        temp_name = temp_name.substr(0, temp_name.size() - 12);
-        break;
-      }
+  if (environment_path.empty()) {
+    return;
+  }
+  for (auto & entry : boost::filesystem::directory_iterator(environment_path)) {
+    if (!boost::filesystem::is_directory(entry.path())) {
+      continue;
     }
-
-    if (boost::filesystem::exists(temp_name + ".yaml")) {
-      available_objects.push_back(temp_name);
+    const std::string folder_name = entry.path().filename().string();
+    const std::string suffix = "_description";
+    if (folder_name.size() <= suffix.size() ||
+      folder_name.compare(folder_name.size() - suffix.size(), suffix.size(), suffix) != 0)
+    {
+      continue;
+    }
+    const std::string object_name = folder_name.substr(0, folder_name.size() - suffix.size());
+    if (boost::filesystem::exists(entry.path() / (object_name + ".yaml"))) {
+      available_objects.push_back(object_name);
     }
   }
-  boost::filesystem::current_path(temp_path);
 }
 
 // Assumes you are at the environment directory
 bool LoadObjects::load_object_from_yaml(std::string object_name)
 {
-  boost::filesystem::path temp_path(boost::filesystem::current_path());
-  boost::filesystem::current_path(object_name + "_description");
+  const boost::filesystem::path object_dir = environment_path / (object_name + "_description");
+  if (!boost::filesystem::exists(object_dir)) {
+    return false;
+  }
   Object temp_object;
   YAML::Node yaml;
   // Load Yaml File.
   try {
-    yaml = YAML::LoadFile(object_name + ".yaml");
+    yaml = YAML::LoadFile((object_dir / (object_name + ".yaml")).string());
   } catch (YAML::BadFile & error) {
     return false;
   }
@@ -182,7 +181,6 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
     }
   }
 
-  boost::filesystem::current_path(temp_path);
   chosen_object = temp_object;
   chosen_object.name = ui->object_name->text().toStdString();
   return true;

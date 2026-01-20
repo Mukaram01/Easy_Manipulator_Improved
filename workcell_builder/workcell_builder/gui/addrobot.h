@@ -35,13 +35,14 @@ class AddRobot: public QDialog
 public:
   std::vector < std::vector < Robot >> available_robots;
   std::vector < std::string > available_brands;
-  boost::filesystem::path original_path;
   Robot robot;
   bool success;
   bool editing_mode = false;
 
   int ErrorCheckOrigin();
-  std::vector < Robot > LoadUR(std::vector < std::string > robot_list);
+  std::vector < Robot > LoadUR(
+    std::vector < std::string > robot_list,
+    const boost::filesystem::path & base_path);
   Robot LoadRobot(
     std::string folder,
     std::string brand,
@@ -49,7 +50,7 @@ public:
   std::vector < std::string > GetLinks(
     std::string filename,
     const std::vector<std::string> & xacro_arguments = {});
-  int LoadAvailableRobots();
+  int LoadAvailableRobots(const boost::filesystem::path & assets_root_path = {});
   void LoadExistingRobot(Robot robot_input);
   explicit AddRobot(QWidget * parent = nullptr);
   ~AddRobot();

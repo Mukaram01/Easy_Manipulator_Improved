@@ -52,6 +52,7 @@ include_directories(gui)
 
 
 add_executable(workcell_builder
+    src/path_resolver.cpp
     gui/main.cpp
     gui/mainwindow.cpp
     gui/mainwindow.h

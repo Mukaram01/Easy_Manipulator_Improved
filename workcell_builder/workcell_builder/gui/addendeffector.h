@@ -42,9 +42,11 @@ public:
   std::vector < std::vector < EndEffector >> available_ee;
   std::vector < std::string > supported_types {"finger", "suction"};
   std::vector < std::vector < std::vector < int >> > supported_attributes {{{2}}, {{1}, {1}}};
-  boost::filesystem::path original_path;
 
-  EndEffector LoadEE(std::string file, std::string brand);
+  EndEffector LoadEE(
+    const boost::filesystem::path & brand_path,
+    std::string file,
+    std::string brand);
   int LoadAvailableEE(Robot robot, const boost::filesystem::path & end_effector_path);
   void LoadExistingEE(EndEffector ee_input);
   std::vector<std::string> GetLinks(

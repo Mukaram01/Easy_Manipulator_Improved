@@ -17,6 +17,7 @@
 #ifndef ARMHAND_XACRO_PARSER_H_
 #define ARMHAND_XACRO_PARSER_H_
 
+#include <boost/filesystem.hpp>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -24,9 +25,13 @@
 #include "attributes/workcell.h"
 
 
-void generate_armhand_xacro(Robot robot, EndEffector ee, std::string scene_name)
+void generate_armhand_xacro(
+  Robot robot,
+  EndEffector ee,
+  std::string scene_name,
+  const boost::filesystem::path & output_dir)
 {
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile((output_dir / "arm_hand.srdf.xacro").string());
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "  <xacro:include filename=\"$(find-pkg-share " + robot.name +
@@ -47,9 +52,12 @@ void generate_armhand_xacro(Robot robot, EndEffector ee, std::string scene_name)
   MyFile << "\n\n</robot>";
 }
 
-void generate_armhand_xacro(Robot robot, std::string scene_name)
+void generate_armhand_xacro(
+  Robot robot,
+  std::string scene_name,
+  const boost::filesystem::path & output_dir)
 {
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile((output_dir / "arm_hand.srdf.xacro").string());
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "  <xacro:include filename=\"$(find-pkg-share " + robot.name +
@@ -59,10 +67,12 @@ void generate_armhand_xacro(Robot robot, std::string scene_name)
   MyFile << "\n\n</robot>";
 }
 
-void generate_armhand_xacro(std::string scene_name)
+void generate_armhand_xacro(
+  std::string scene_name,
+  const boost::filesystem::path & output_dir)
 {
   std::cout << "No robot or hand" << std::endl;
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile((output_dir / "arm_hand.srdf.xacro").string());
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "\n\n</robot>";

@@ -352,15 +352,14 @@ void MainWindow::on_load_workcell_clicked()
 
 void MainWindow::on_next_clicked()
 {
-  boost::filesystem::path before_scene_select(boost::filesystem::current_path());
   workcell.ros_ver = 2;
   workcell.ros_distro = ui->ros_distro->currentText().toStdString();
   SceneSelect scene_window;
+  scene_window.workcell_path = workcell_path;
   scene_window.load_workcell(workcell);
   scene_window.setWindowTitle("Create New Environment");
   scene_window.setModal(true);
   scene_window.exec();
-  boost::filesystem::current_path(before_scene_select);
 }
 
 void MainWindow::on_change_workcell_clicked()

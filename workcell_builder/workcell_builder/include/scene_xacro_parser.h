@@ -18,6 +18,7 @@
 #define SCENE_XACRO_PARSER_H_
 
 
+#include <boost/filesystem.hpp>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -161,9 +162,11 @@ std::string resolve_ee_xacro_macro(const EndEffector & ee)
 }  // namespace
 
 
-void generate_scene_xacro(Scene scene)
+void generate_scene_xacro(
+  Scene scene,
+  const boost::filesystem::path & output_dir)
 {
-  std::ofstream MyFile("scene.urdf.xacro");
+  std::ofstream MyFile((output_dir / "scene.urdf.xacro").string());
   MyFile << "<?xml version=\"1.0\" ?> \n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" +
     scene.name + "\">\n\n";  // Change it if you are generating multiple robots

@@ -18,6 +18,7 @@
 #define OBJECT_XACRO_PARSER_H_
 
 
+#include <boost/filesystem.hpp>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -39,9 +40,11 @@ void NewAxis(std::ofstream * MyFile, Axis axis);
 void NewOrigin(std::ofstream * MyFile, Origin origin, std::string space);
 void EndXacro(std::ofstream * MyFile);
 
-void make_object_xacro(Object object)  // Assumes that we are currently in the urdf folders
+void make_object_xacro(
+  Object object,
+  const boost::filesystem::path & output_dir)
 {
-  std::ofstream MyFile(object.name + ".urdf.xacro");
+  std::ofstream MyFile((output_dir / (object.name + ".urdf.xacro")).string());
   NewObject(&MyFile, object);
 }
 

@@ -15,12 +15,25 @@
 
 #include <QApplication>
 #include <iostream>
+#include <string>
 
 #include "gui/mainwindow.h"
+#include "path_resolver.h"
 
 
 int main(int argc, char * argv[])
 {
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if ((arg == "--workcell-root" || arg == "--workspace-root") && i + 1 < argc) {
+      PathResolver::set_workspace_root_override(argv[++i]);
+      continue;
+    }
+    if (arg == "--scenes-root" && i + 1 < argc) {
+      PathResolver::set_scenes_root_override(argv[++i]);
+      continue;
+    }
+  }
   QApplication a(argc, argv);
   MainWindow w;
   w.show();
