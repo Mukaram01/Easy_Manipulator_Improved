@@ -108,7 +108,7 @@ AddRobot::AddRobot(QWidget * parent)
 
 AddRobot::~AddRobot()
 {
-  boost::filesystem::current_path(original_path);
+  safe_chdir(original_path, original_path);
   delete ui;
 }
 void AddRobot::LoadExistingRobot(Robot robot_input)
@@ -183,7 +183,7 @@ int AddRobot::LoadAvailableRobots()
         if (*it != '/') {
           temp_brand = std::string(1, *it) + temp_brand;
         } else {
-          boost::filesystem::current_path(temp_brand);
+          safe_chdir(temp_brand, original_path);
           if (temp_brand.compare("universal_robot") == 0) {
             std::vector<std::string> valid_robots;
             for (auto & filepath :
@@ -243,7 +243,7 @@ int AddRobot::LoadAvailableRobots()
                 moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
               }
             }
-            boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
+            safe_chdir(boost::filesystem::current_path().branch_path(), original_path);
 
             for (const auto & moveit_config : moveit_configs) {
               const std::string description_folder = moveit_config + "_description";
@@ -273,7 +273,7 @@ int AddRobot::LoadAvailableRobots()
         available_robots.push_back(brand_robot_vector);
         available_brands.push_back(temp_brand);
       }
-      boost::filesystem::current_path(temp_path);
+      safe_chdir(temp_path, original_path);
     }
     for (int i3 = 0; i3 < static_cast<int>(available_brands.size()); i3++) {
       ui->robot_brand->addItem(QString::fromStdString(available_brands[i3]));
@@ -331,7 +331,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
         std::cerr
           << "Resolved ur_description via package share directory: "
           << share_path.string() << std::endl;
-        boost::filesystem::current_path(share_path);
+        safe_chdir(share_path, original_path);
         resolved_package = true;
       }
     } catch (const std::exception & e) {
@@ -351,9 +351,9 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
       return {};
     }
   } else {
-    boost::filesystem::current_path(ur_description_path);
+    safe_chdir(ur_description_path, original_path);
   }
-  boost::filesystem::current_path("urdf");
+  safe_chdir("urdf", original_path);
 
   std::vector<Robot> ur_robot_vector;
   for (int i = 0; i < static_cast<int>(robot_list.size()); i++) {
