@@ -6,20 +6,20 @@ if [[ ! -f /opt/ros/humble/setup.bash ]]; then
   exit 1
 fi
 
-if [[ ! -f ./install/setup.bash ]]; then
-  echo "Error: ./install/setup.bash not found. Run this from the workspace root after building." >&2
+if [[ ! -f /home/ubuntu/workcell_ws/install/setup.bash ]]; then
+  echo "Error: /home/ubuntu/workcell_ws/install/setup.bash not found." >&2
   exit 1
 fi
 
 source /opt/ros/humble/setup.bash
-source ./install/setup.bash
+source /home/ubuntu/workcell_ws/install/setup.bash
 
 shopt -s nullglob
-xacro_files=(scenes/*/urdf/scene.urdf.xacro)
+xacro_files=(src/scenes/*/urdf/scene.urdf.xacro)
 shopt -u nullglob
 
 if (( ${#xacro_files[@]} == 0 )); then
-  echo "Error: No scene.urdf.xacro files found under scenes/." >&2
+  echo "Error: No scene.urdf.xacro files found under src/scenes/." >&2
   exit 1
 fi
 
