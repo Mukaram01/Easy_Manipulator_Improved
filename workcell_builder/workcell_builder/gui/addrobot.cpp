@@ -30,6 +30,7 @@
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addrobot.h"
+#include "include/file_functions.h"
 
 namespace
 {
@@ -156,11 +157,17 @@ void AddRobot::LoadExistingRobot(Robot robot_input)
 int AddRobot::LoadAvailableRobots()
 {
   original_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path());  //
-  boost::filesystem::current_path("assets");
-  boost::filesystem::current_path("robots");
   available_brands.clear();
   available_robots.clear();
+  const boost::filesystem::path assets_root = resolve_assets_root(original_path);
+  if (assets_root.empty()) {
+    return 0;
+  }
+  const boost::filesystem::path robots_root = assets_root / "robots";
+  if (!boost::filesystem::exists(robots_root)) {
+    return 0;
+  }
+  safe_chdir(robots_root);
   if (boost::filesystem::is_empty(boost::filesystem::current_path())) {
     return 0;
   } else {

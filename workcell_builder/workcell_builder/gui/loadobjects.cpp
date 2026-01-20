@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "gui/ui_loadobjects.h"
+#include "include/file_functions.h"
 #include "include/scene_parser.h"
 
 LoadObjects::LoadObjects(QWidget * parent)
@@ -27,7 +28,28 @@ LoadObjects::LoadObjects(QWidget * parent)
   ui(new Ui::LoadObjects)
 {
   ui->setupUi(this);
-  boost::filesystem::current_path("environment");
+  original_path = boost::filesystem::current_path();
+  const boost::filesystem::path assets_root = resolve_assets_root(original_path);
+  if (assets_root.empty()) {
+    ui->object_name->setDisabled(true);
+    ui->available_objects->setDisabled(true);
+    ui->ok->setDisabled(true);
+    ui->error_message->append(
+      "<font color='red'> Error: No assets folder found."
+      " Check your workspace assets layout. </font>");
+    return;
+  }
+  environment_path = assets_root / "environment";
+  if (!boost::filesystem::exists(environment_path)) {
+    ui->object_name->setDisabled(true);
+    ui->available_objects->setDisabled(true);
+    ui->ok->setDisabled(true);
+    ui->error_message->append(
+      "<font color='red'> Error: No environment assets found."
+      " Check assets/environment. </font>");
+    return;
+  }
+  safe_chdir(environment_path);
   get_all_objects();
   if (available_objects.size() <= 0) {
     ui->object_name->setDisabled(true);
@@ -46,6 +68,7 @@ LoadObjects::LoadObjects(QWidget * parent)
 
 LoadObjects::~LoadObjects()
 {
+  safe_chdir(original_path);
   delete ui;
 }
 

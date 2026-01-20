@@ -17,6 +17,7 @@
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__LOADOBJECTS_H_
 
 #include <QDialog>
+#include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,8 @@ public:
   std::vector < std::string > available_objects;
   Object chosen_object;
   std::vector < std::string > current_object_names;
+  boost::filesystem::path environment_path;
+  boost::filesystem::path original_path;
 
   void get_all_objects();
   bool load_object_from_yaml(std::string object_name);

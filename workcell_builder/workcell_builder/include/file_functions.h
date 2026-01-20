@@ -43,6 +43,33 @@ inline void safe_chdir(const fs::path & p)
   }
 }
 
+inline fs::path resolve_assets_root(const fs::path & start_path)
+{
+  for (fs::path current = start_path; !current.empty(); current = current.parent_path()) {
+    const fs::path direct_assets = current / "assets";
+    if (fs::exists(direct_assets) && fs::is_directory(direct_assets)) {
+      return direct_assets;
+    }
+    const fs::path src_assets = current / "src" / "assets";
+    if (fs::exists(src_assets) && fs::is_directory(src_assets)) {
+      return src_assets;
+    }
+    if (current == current.root_path()) {
+      break;
+    }
+  }
+  try {
+    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
+    const fs::path package_assets = fs::path(share) / "assets";
+    if (fs::exists(package_assets) && fs::is_directory(package_assets)) {
+      return package_assets;
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  return {};
+}
+
 inline void ensure_parent(const fs::path & p)
 {
   try {
