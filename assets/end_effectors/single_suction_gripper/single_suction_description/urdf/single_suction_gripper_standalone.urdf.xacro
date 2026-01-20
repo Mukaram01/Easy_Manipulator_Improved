@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot name="single_suction_gripper" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:include filename="single_suction_gripper.urdf.xacro"/>
+
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="parent" default="base_link"/>
+
+  <link name="base_link"/>
+
+  <xacro:single_suction_gripper prefix="${prefix}" parent="${parent}">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:single_suction_gripper>
+</robot>
