@@ -32,6 +32,7 @@
 #include "gui/ui_mainwindow.h"
 #include "gui/scene_select.h"
 #include "attributes/scene.h"
+#include "include/file_functions.h"
 
 namespace fs = boost::filesystem;
 
@@ -77,7 +78,11 @@ void copy_directory_contents(const fs::path & source, const fs::path & destinati
     }
     if (fs::is_regular_file(current_path, ec) && !ec) {
       if (!fs::exists(target_path, ec)) {
-        fs::copy_file(current_path, target_path, ec);
+        safe_copy_file(
+          current_path,
+          target_path,
+          source,
+          "Ensure the source files exist in your workspace or re-run install to restore templates.");
       }
     }
   }
@@ -365,7 +370,7 @@ void MainWindow::on_next_clicked()
   scene_window.setWindowTitle("Create New Environment");
   scene_window.setModal(true);
   scene_window.exec();
-  boost::filesystem::current_path(before_scene_select);
+  safe_chdir(before_scene_select, before_scene_select);
 }
 
 void MainWindow::on_change_workcell_clicked()

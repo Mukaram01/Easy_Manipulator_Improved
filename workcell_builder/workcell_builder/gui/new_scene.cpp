@@ -27,6 +27,7 @@
 #include "gui/addexternaljoint.h"
 #include "gui/addobject.h"
 #include "gui/ui_new_scene.h"
+#include "include/file_functions.h"
 
 
 NewScene::NewScene(QWidget * parent)
@@ -145,7 +146,7 @@ std::vector<std::string> NewScene::GetLinks(std::string filename)
 void NewScene::add_desc_links(QString OutputFolder, int ee_or_robot)  // 0 for robot, 1 for ee
 {
   int error = 0;
-  boost::filesystem::current_path(OutputFolder.toStdString());
+  safe_chdir(OutputFolder.toStdString());
   boost::filesystem::path urdf = "urdf";
   std::string object_name;
   for (auto it = OutputFolder.toStdString().crbegin(); it != OutputFolder.toStdString().crend();
@@ -181,7 +182,7 @@ void NewScene::add_desc_links(QString OutputFolder, int ee_or_robot)  // 0 for r
     }
     return;
   } else {
-    boost::filesystem::current_path("urdf");
+    safe_chdir("urdf");
     std::string urdf_filename = object_name + ".urdf.xacro";
     if (!boost::filesystem::exists(urdf_filename) ) {
       if (ee_or_robot == 0) {

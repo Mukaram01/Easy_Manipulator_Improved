@@ -51,6 +51,13 @@ namespace fs = boost::filesystem;
 namespace {
 bool change_directory(const fs::path & p)
 {
+  if (!fs::exists(p) || !fs::is_directory(p)) {
+    log_missing_path(
+      p,
+      "Ensure the directory exists and set WORKCELL_BUILDER_ROOT to your workspace root if needed.",
+      p);
+    return false;
+  }
   boost::system::error_code ec;
   fs::current_path(p, ec);
   if (ec) {

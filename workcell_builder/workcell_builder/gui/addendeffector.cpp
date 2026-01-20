@@ -30,6 +30,7 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
 #include "attributes/robot.h"
+#include "include/file_functions.h"
 
 AddEndEffector::AddEndEffector(QWidget * parent)
 : QDialog(parent),
@@ -60,7 +61,7 @@ int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path &
   if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
     return 0;
   } else {
-    boost::filesystem::current_path(ee_path);
+    safe_chdir(ee_path, original_path);
     for (auto & filepath :
       boost::filesystem::directory_iterator(ee_path))
     {
@@ -74,7 +75,7 @@ int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path &
         if (*it != '/') {
           temp_brand = std::string(1, *it) + temp_brand;
         } else {
-          boost::filesystem::current_path(temp_brand);
+          safe_chdir(temp_brand, original_path);
           std::vector<std::string> moveit_configs;
           std::vector<std::string> descriptions;
           for (auto & filepath_model :
@@ -131,7 +132,7 @@ int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path &
               }
             }
           }
-          boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
+          safe_chdir(boost::filesystem::current_path().branch_path(), original_path);
           break;
         }
       }
@@ -268,8 +269,8 @@ EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
 {
   EndEffector temp_ee;
   temp_ee.filepath = boost::filesystem::current_path().string() + "/" + file;
-  boost::filesystem::current_path(file);
-  boost::filesystem::current_path("urdf");
+  safe_chdir(file, original_path);
+  safe_chdir("urdf", original_path);
   temp_ee.brand = brand;
   temp_ee.name = file.erase(file.length() - 12);
   const std::string macro_filename = temp_ee.name + "_gripper.urdf.xacro";
@@ -279,7 +280,7 @@ EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
   } else {
     temp_ee.ee_links = GetLinks(macro_filename);
   }
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
+  safe_chdir(boost::filesystem::current_path().branch_path().branch_path(), original_path);
   return temp_ee;
 }
 namespace
@@ -504,7 +505,7 @@ int AddEndEffector::ErrorCheckOrigin()
 
 AddEndEffector::~AddEndEffector()
 {
-  boost::filesystem::current_path(original_path);
+  safe_chdir(original_path, original_path);
   delete ui;
 }
 
