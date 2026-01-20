@@ -18,10 +18,12 @@
 #define FILE_FUNCTIONS_H_
 
 #include <boost/filesystem.hpp>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <cstdio>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
@@ -41,6 +43,46 @@ inline void safe_chdir(const fs::path & p)
   } catch (fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
   }
+}
+
+inline std::string parse_workcell_builder_root_flag(const std::vector<std::string> & args)
+{
+  constexpr const char * kFlag = "--workcell-builder-root";
+  constexpr const char * kAltFlag = "--workcell_builder_root";
+
+  for (size_t i = 0; i < args.size(); ++i) {
+    const auto & arg = args[i];
+    if (arg == kFlag || arg == kAltFlag) {
+      if (i + 1 < args.size()) {
+        return args[i + 1];
+      }
+      return {};
+    }
+    if (arg.rfind(std::string(kFlag) + "=", 0) == 0) {
+      return arg.substr(std::string(kFlag).size() + 1);
+    }
+    if (arg.rfind(std::string(kAltFlag) + "=", 0) == 0) {
+      return arg.substr(std::string(kAltFlag).size() + 1);
+    }
+  }
+  return {};
+}
+
+inline fs::path resolve_workcell_builder_root(const std::string & cli_override = {})
+{
+  if (!cli_override.empty()) {
+    return fs::path(cli_override);
+  }
+  const char * env_root = std::getenv("WORKCELL_BUILDER_ROOT");
+  if (env_root != nullptr && std::string(env_root).size() > 0) {
+    return fs::path(env_root);
+  }
+  try {
+    return fs::path(ament_index_cpp::get_package_share_directory("workcell_builder"));
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  return {};
 }
 
 inline fs::path resolve_assets_root(const fs::path & start_path)
