@@ -236,7 +236,7 @@ inline bool safe_copy_file(
   return true;
 }
 
-void find_replace(
+inline void find_replace(
   std::string example_text, std::string target_text, std::string current_text,
   std::string replaced_text)
 {
@@ -266,7 +266,7 @@ void find_replace(
 // void GenerateCMakeLists(boost::filesystem::path workcell_filepath,
 // boost::filesystem::path package_filepath,
 // std::string package_name,int ros_ver)
-void generate_cmakelists(
+inline void generate_cmakelists(
   fs::path workcell_filepath, std::string package_name,
   int ros_ver, const std::string & ros_distro)
 {
@@ -346,7 +346,7 @@ void generate_cmakelists(
   }
 }
 
-void delete_folder(fs::path scene_filepath, std::string scene_name)
+inline void delete_folder(fs::path scene_filepath, std::string scene_name)
 {
   safe_chdir(scene_filepath, scene_filepath);
   try {
@@ -358,7 +358,7 @@ void delete_folder(fs::path scene_filepath, std::string scene_name)
   }
 }
 
-void generate_package_xml(
+inline void generate_package_xml(
   fs::path workcell_filepath, std::string package_name,
   int ros_ver, const std::string & ros_distro)
 {
@@ -444,7 +444,7 @@ void generate_package_xml(
     }
   }
 }
-bool copyDir(fs::path const & source, fs::path const & destination)
+inline bool copyDir(fs::path const & source, fs::path const & destination)
 {
   if (!fs::exists(source) || !fs::is_directory(source)) {
     log_missing_path(
