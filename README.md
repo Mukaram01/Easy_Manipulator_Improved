@@ -325,6 +325,12 @@ Run the ros2_control joint state fix verification:
 ./scripts/check_ros2_control_joint_state_fix.sh
 ```
 
+Verify all scene xacros render cleanly:
+
+```bash
+./scripts/verify_scene_xacros.sh
+```
+
 ---
 
 ## Documentation
