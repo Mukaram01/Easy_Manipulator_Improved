@@ -64,7 +64,7 @@ void AddScene::on_add_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(object_window.object);
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
@@ -90,7 +90,7 @@ void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
     item->setText(QString::fromStdString(object_window.object.name));
     ui->object_list_2->item(pos)->setText(QString::fromStdString(object_window.object.name));
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_include_robot_stateChanged(int arg1)
@@ -269,7 +269,7 @@ void AddScene::on_object_list_2_itemDoubleClicked(QListWidgetItem * item)
       ui->parent_link->item(pos)->setText(QString::fromStdString("world"));
     }
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_delete_object_clicked()
@@ -304,12 +304,12 @@ void AddScene::on_delete_object_clicked()
     delete ui->parent_link->takeItem(ui->object_list->row(item));
     delete ui->object_list->takeItem(ui->object_list->row(item));
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_add_robot_clicked()
 {
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
   AddRobot robot_window;
   int num_robots_loaded = robot_window.LoadAvailableRobots();
   if (num_robots_loaded <= 0) {
@@ -345,7 +345,7 @@ void AddScene::on_add_robot_clicked()
       }
     }
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_add_ee_clicked()
@@ -381,7 +381,7 @@ void AddScene::on_add_ee_clicked()
   }
 
 
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }
 
 void AddScene::on_remove_robot_clicked()
@@ -441,7 +441,7 @@ bool AddScene::CheckRobot()
     ui->scene_errors->append("<font color='red'> No Robot Loaded.</font>");
     return false;
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
   return true;
 }
 
@@ -467,7 +467,7 @@ bool AddScene::CheckEE()
     scene.ee_loaded = false;
     scene.ee_vector.clear();
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
   return true;
 }
 
@@ -513,7 +513,7 @@ bool AddScene::CheckSceneName()
 
 void AddScene::LoadScene(Scene scene_input)
 {
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
   scene = scene_input;
   // Load Scene Name
   ui->scene_name->setText(QString::fromStdString(scene.name));
@@ -604,5 +604,5 @@ void AddScene::on_load_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(load_obj_window.chosen_object);
   }
-  boost::filesystem::current_path(scenes_path);
+  safe_chdir(scenes_path, scenes_path);
 }

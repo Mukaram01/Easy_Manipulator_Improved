@@ -30,6 +30,8 @@
 // For Yaml parsing
 #include "yaml-cpp/yaml.h"
 
+#include "include/file_functions.h"
+
 #include "attributes/scene.h"
 #include "attributes/environment.h"
 #include "yaml_parser/externaljoint_parser.h"
@@ -120,8 +122,8 @@ public:
     }
 //        boost::filesystem::path scene_filepath = boost::filesystem::current_path();
 //        boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
-    boost::filesystem::current_path(assets_filepath);
-    boost::filesystem::current_path("environment");
+    safe_chdir(assets_filepath, filepath);
+    safe_chdir("environment", filepath, "Ensure assets/environment exists in your workspace.");
     boost::filesystem::path env_assets_filepath = boost::filesystem::current_path();
 
     if (scene.object_vector.size() > 0) {
@@ -131,7 +133,10 @@ public:
         if (!boost::filesystem::exists(scene.object_vector[i].name + "_description")) {
           boost::filesystem::create_directory(scene.object_vector[i].name + "_description");
         }
-        boost::filesystem::current_path(scene.object_vector[i].name + "_description");
+        safe_chdir(
+          scene.object_vector[i].name + "_description",
+          filepath,
+          "Ensure the object description folder exists under assets/environment.");
         YAML::Emitter temp_obj_out;
         temp_obj_out << YAML::BeginMap;
         ObjectParser::generate_object(&temp_obj_out, scene.object_vector[i]);
@@ -140,10 +145,10 @@ public:
         objectfile.open(scene.object_vector[i].name + ".yaml");
         objectfile << temp_obj_out.c_str();
         objectfile.close();
-        boost::filesystem::current_path(env_assets_filepath);
+        safe_chdir(env_assets_filepath, filepath);
         ObjectParser::generate_object(&out, scene.object_vector[i]);
       }
-      boost::filesystem::current_path(scene_filepath);
+      safe_chdir(scene_filepath, filepath);
       out << YAML::EndMap;
     }
 
@@ -170,7 +175,7 @@ public:
     }
 
     out << YAML::EndMap;
-    boost::filesystem::current_path(filepath);
+    safe_chdir(filepath, filepath);
 
     std::ofstream myfile;
     myfile.open("environment.yaml");

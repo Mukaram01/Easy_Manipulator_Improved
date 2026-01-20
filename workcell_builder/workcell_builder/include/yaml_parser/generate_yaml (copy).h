@@ -28,6 +28,7 @@
 
 // For Yaml parsing
 #include "yaml-cpp/yaml.h"
+#include "include/file_functions.h"
 
 #include "attributes/environment.h"
 #include "attributes/object.h"
@@ -107,7 +108,7 @@ public:
     }
 
     out << YAML::EndMap;
-    boost::filesystem::current_path(filepath);
+    safe_chdir(filepath, filepath);
     std::cout << boost::filesystem::current_path() << std::endl;
 
     std::ofstream myfile;

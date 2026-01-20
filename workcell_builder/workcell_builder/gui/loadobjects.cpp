@@ -31,6 +31,10 @@ LoadObjects::LoadObjects(QWidget * parent)
   original_path = boost::filesystem::current_path();
   const boost::filesystem::path assets_root = resolve_assets_root(original_path);
   if (assets_root.empty()) {
+    log_missing_path(
+      original_path / "assets",
+      "Set WORKCELL_BUILDER_ROOT to your workspace root or re-run install to populate assets.",
+      original_path);
     ui->object_name->setDisabled(true);
     ui->available_objects->setDisabled(true);
     ui->ok->setDisabled(true);
@@ -41,6 +45,10 @@ LoadObjects::LoadObjects(QWidget * parent)
   }
   environment_path = assets_root / "environment";
   if (!boost::filesystem::exists(environment_path)) {
+    log_missing_path(
+      environment_path,
+      "Check that assets/environment exists in your workspace or re-run install to populate it.",
+      original_path);
     ui->object_name->setDisabled(true);
     ui->available_objects->setDisabled(true);
     ui->ok->setDisabled(true);
@@ -102,7 +110,9 @@ void LoadObjects::get_all_objects()
 {
   boost::filesystem::path temp_path(boost::filesystem::current_path());
   for (auto & filepath : boost::filesystem::directory_iterator(boost::filesystem::current_path())) {
-    boost::filesystem::current_path(filepath.path());
+    if (!safe_chdir(filepath.path(), temp_path)) {
+      continue;
+    }
     std::string temp_name;
     for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
       ++it)
@@ -119,14 +129,19 @@ void LoadObjects::get_all_objects()
       available_objects.push_back(temp_name);
     }
   }
-  boost::filesystem::current_path(temp_path);
+  safe_chdir(temp_path, temp_path);
 }
 
 // Assumes you are at the environment directory
 bool LoadObjects::load_object_from_yaml(std::string object_name)
 {
   boost::filesystem::path temp_path(boost::filesystem::current_path());
-  boost::filesystem::current_path(object_name + "_description");
+  if (!safe_chdir(
+      object_name + "_description",
+      temp_path,
+      "Ensure the object description folder exists under assets/environment.")) {
+    return false;
+  }
   Object temp_object;
   YAML::Node yaml;
   // Load Yaml File.
@@ -182,7 +197,7 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
     }
   }
 
-  boost::filesystem::current_path(temp_path);
+  safe_chdir(temp_path, temp_path);
   chosen_object = temp_object;
   chosen_object.name = ui->object_name->text().toStdString();
   return true;

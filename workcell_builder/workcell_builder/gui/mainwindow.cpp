@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include <QDir>
 #include <QFileDialog>
 #include <QMetaObject>
 #include <QPointer>
@@ -31,6 +32,7 @@
 #include "gui/ui_mainwindow.h"
 #include "gui/scene_select.h"
 #include "attributes/scene.h"
+#include "include/file_functions.h"
 
 namespace fs = boost::filesystem;
 
@@ -76,7 +78,11 @@ void copy_directory_contents(const fs::path & source, const fs::path & destinati
     }
     if (fs::is_regular_file(current_path, ec) && !ec) {
       if (!fs::exists(target_path, ec)) {
-        fs::copy_file(current_path, target_path, ec);
+        safe_copy_file(
+          current_path,
+          target_path,
+          source,
+          "Ensure the source files exist in your workspace or re-run install to restore templates.");
       }
     }
   }
@@ -99,9 +105,10 @@ bool is_ros2_prefix(const fs::path & prefix)
 }  // namespace
 
 
-MainWindow::MainWindow(QWidget * parent)
+MainWindow::MainWindow(const boost::filesystem::path & configured_root, QWidget * parent)
 : QMainWindow(parent),
-  ui(new Ui::MainWindow)
+  ui(new Ui::MainWindow),
+  configured_root_(configured_root)
 {
   ui->setupUi(this);
   setWindowTitle("Workcell Builder");
@@ -154,10 +161,13 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_load_workcell_clicked()
 {
+  const QString default_directory = configured_root_.empty() ?
+    QDir::homePath() :
+    QString::fromStdString(configured_root_.string());
   QString workcell_file = QFileDialog::getExistingDirectory(
     this,
     "Target workcell project destination",
-    QDir::homePath());
+    default_directory);
   if (workcell_file.isEmpty()) {
     return;
   }
@@ -360,7 +370,7 @@ void MainWindow::on_next_clicked()
   scene_window.setWindowTitle("Create New Environment");
   scene_window.setModal(true);
   scene_window.exec();
-  boost::filesystem::current_path(before_scene_select);
+  safe_chdir(before_scene_select, before_scene_select);
 }
 
 void MainWindow::on_change_workcell_clicked()

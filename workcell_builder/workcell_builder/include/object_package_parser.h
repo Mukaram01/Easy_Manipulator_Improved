@@ -37,28 +37,38 @@ void GenerateObjectPackageXML(
   fs::path package_filepath(
     workcell_filepath / "assets" / "environment" / package_name);
   fs::path example_file;
+  fs::path expected_template_path;
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
+    expected_template_path = fs::path(share) / "templates" /
       ("ros" + std::to_string(ros_ver)) / "package_example.xml";
+    example_file = expected_template_path;
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  if (expected_template_path.empty()) {
+    const fs::path templates_root = resolve_templates_root();
+    if (!templates_root.empty()) {
+      expected_template_path =
+        templates_root / ("ros" + std::to_string(ros_ver)) / "package_example.xml";
+    }
   }
   fs::path target_location(package_filepath / "package_example.xml");
   ensure_parent(target_location);
   bool copied = false;
-  try {
-    if (!example_file.empty() && fs::exists(example_file)) {
-      fs::copy_file(example_file, target_location, fs::copy_option::overwrite_if_exists);
-      copied = true;
-    } else {
-      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
-        "Template %s missing", example_file.string().c_str());
-    }
-  } catch(fs::filesystem_error const & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  if (!example_file.empty()) {
+    copied = safe_copy_file(
+      example_file, target_location, package_filepath,
+      "Re-run install to populate share/workcell_builder/templates for the selected ROS distro.",
+      workcell_filepath / "scenes");
+  } else {
+    log_missing_path(
+      expected_template_path.empty() ? target_location : expected_template_path,
+      "Re-run install to populate share/workcell_builder/templates for the selected ROS distro.",
+      package_filepath,
+      workcell_filepath / "scenes");
   }
-  safe_chdir(package_filepath);
+  safe_chdir(package_filepath, workcell_filepath);
   if (copied) {
     find_replace("package_example.xml", "package.xml", "workcellexample", package_name);
   } else {
@@ -82,28 +92,38 @@ void GenerateObjectCMakeLists(
 {
   (void)workcell_filepath;
   fs::path example_file;
+  fs::path expected_template_path;
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
+    expected_template_path = fs::path(share) / "templates" /
       ("ros" + std::to_string(ros_ver)) / "CMakeLists_object_example.txt";
+    example_file = expected_template_path;
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  }
+  if (expected_template_path.empty()) {
+    const fs::path templates_root = resolve_templates_root();
+    if (!templates_root.empty()) {
+      expected_template_path =
+        templates_root / ("ros" + std::to_string(ros_ver)) / "CMakeLists_object_example.txt";
+    }
   }
   fs::path target_location(package_filepath / "CMakeLists_object_example.txt");
   ensure_parent(target_location);
   bool copied = false;
-  try {
-    if (!example_file.empty() && fs::exists(example_file)) {
-      fs::copy_file(example_file, target_location, fs::copy_option::overwrite_if_exists);
-      copied = true;
-    } else {
-      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
-        "Template %s missing", example_file.string().c_str());
-    }
-  } catch(fs::filesystem_error const & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
+  if (!example_file.empty()) {
+    copied = safe_copy_file(
+      example_file, target_location, package_filepath,
+      "Re-run install to populate share/workcell_builder/templates for the selected ROS distro.",
+      workcell_filepath / "scenes");
+  } else {
+    log_missing_path(
+      expected_template_path.empty() ? target_location : expected_template_path,
+      "Re-run install to populate share/workcell_builder/templates for the selected ROS distro.",
+      package_filepath,
+      workcell_filepath / "scenes");
   }
-  safe_chdir(package_filepath);
+  safe_chdir(package_filepath, workcell_filepath);
   if (copied) {
     find_replace("CMakeLists_object_example.txt", "CMakeLists.txt", "workcellexample", package_name);
   } else {
@@ -119,11 +139,11 @@ void GenerateObjectCMakeLists(
 }
 void generate_object_package(fs::path workcell_filepath, Object object, int ros_ver)
 {
-  safe_chdir(workcell_filepath);
-  safe_chdir("assets/environment");
+  safe_chdir(workcell_filepath, workcell_filepath);
+  safe_chdir("assets/environment", workcell_filepath);
   if (!package_exists(object)) {
     std::cout << "generate_object_package: " << fs::current_path() << std::endl;
-    safe_chdir(object.name + std::string("_description"));
+    safe_chdir(object.name + std::string("_description"), workcell_filepath);
     fs::path package_filepath(
       workcell_filepath / "assets" / "environment" /
       (object.name + std::string("_description")));
@@ -134,7 +154,7 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
 
     fs::create_directory("urdf");
     fs::create_directory("meshes");
-    safe_chdir("meshes");
+    safe_chdir("meshes", workcell_filepath);
     fs::create_directory("visual");
     fs::create_directory("collision");
     fs::path collision_path(fs::current_path() / "collision");
@@ -152,14 +172,13 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
           }
         }
         fs::path link_visual_path = visual_path / stl_name;
-        safe_chdir(visual_path);
+        safe_chdir(visual_path, workcell_filepath);
         if (!fs::exists(stl_name)) {
           ensure_parent(link_visual_path);
-          try {
-            fs::copy_file(link.visual_vector[0].geometry.filepath, link_visual_path);
-          } catch(fs::filesystem_error const & e) {
-            RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
-          }
+          safe_copy_file(
+            link.visual_vector[0].geometry.filepath, link_visual_path, workcell_filepath,
+            "Ensure the mesh file exists in your assets workspace and re-run install if needed.",
+            workcell_filepath / "scenes");
         }
       }
       if (link.is_collision && link.collision_vector[0].geometry.is_stl) {
@@ -174,16 +193,15 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
           }
         }
         fs::path link_collision_path = collision_path / stl_name;
-        safe_chdir(collision_path);
+        safe_chdir(collision_path, workcell_filepath);
         if (!fs::exists(stl_name)) {
           ensure_parent(link_collision_path);
-          try {
-            fs::copy_file(
-              link.collision_vector[0].geometry.filepath,
-              link_collision_path);
-          } catch(fs::filesystem_error const & e) {
-            RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
-          }
+          safe_copy_file(
+            link.collision_vector[0].geometry.filepath,
+            link_collision_path,
+            workcell_filepath,
+            "Ensure the mesh file exists in your assets workspace and re-run install if needed.",
+            workcell_filepath / "scenes");
         }
       }
     }

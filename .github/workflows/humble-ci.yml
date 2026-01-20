@@ -32,6 +32,35 @@ jobs:
         working-directory: ws
         run: colcon build --symlink-install
 
+      - name: Lint
+        working-directory: ws
+        run: |
+          colcon test --packages-select \
+            emd_dynamic_safety \
+            emd_grasp_execution \
+            emd_grasp_planner \
+            emd_msgs \
+            emd_waypoint_execution \
+            realsense2_description \
+            run_dynamic_safety \
+            run_grasp_execution \
+            run_grasp_planner \
+            run_waypoint_execution \
+            suction_test \
+            table_description \
+            ur5_2f_test \
+            ur5_3f_test \
+            ur5_airpick4_test \
+            workbench_description \
+            workcell_builder
+
+      - name: Smoke tests
+        working-directory: ws
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          ./src/easy_manipulation_deployment/scripts/ci_smoke_test.sh
+
       - name: Test
         working-directory: ws
         run: colcon test

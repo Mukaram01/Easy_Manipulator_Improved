@@ -41,6 +41,7 @@
 #include "include/file_functions.h"
 #include "include/object_package_parser.h"
 #include "include/object_xacro_parser.h"
+#include "include/path_resolver.h"
 #include "include/scene_check.h"
 #include "include/scene_parser.h"
 #include "include/scene_xacro_parser.h"
@@ -50,6 +51,13 @@ namespace fs = boost::filesystem;
 namespace {
 bool change_directory(const fs::path & p)
 {
+  if (!fs::exists(p) || !fs::is_directory(p)) {
+    log_missing_path(
+      p,
+      "Ensure the directory exists and set WORKCELL_BUILDER_ROOT to your workspace root if needed.",
+      p);
+    return false;
+  }
   boost::system::error_code ec;
   fs::current_path(p, ec);
   if (ec) {
@@ -112,23 +120,35 @@ SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
 {
-  fs::path cwd = fs::current_path();
-  if (fs::exists(cwd / "scenes")) {
-    workcell_path = cwd;
-  } else if (fs::exists(cwd.parent_path() / "scenes")) {
-    workcell_path = cwd.parent_path();
-  } else if (fs::exists(cwd / "src" / "easy_manipulation_deployment" / "scenes")) {
-    workcell_path = cwd / "src" / "easy_manipulation_deployment";
-  } else if (fs::exists(cwd / "src" / "scenes")) {
-    workcell_path = cwd / "src";
+  const workcell_builder::PathResolver & resolver = workcell_builder::PathResolver::instance();
+  if (!resolver.scenes_root().empty()) {
+    workcell_path = resolver.workcell_root();
+    scenes_path = resolver.scenes_root();
+    if (!fs::exists(scenes_path)) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("workcell_builder"),
+        "Configured scenes root does not exist: %s",
+        scenes_path.string().c_str());
+    }
   } else {
-    workcell_path = cwd;
-    RCLCPP_WARN(
-      rclcpp::get_logger("workcell_builder"),
-      "Unable to locate a 'scenes' directory from %s or its parent.",
-      cwd.string().c_str());
+    fs::path cwd = fs::current_path();
+    if (fs::exists(cwd / "scenes")) {
+      workcell_path = cwd;
+    } else if (fs::exists(cwd.parent_path() / "scenes")) {
+      workcell_path = cwd.parent_path();
+    } else if (fs::exists(cwd / "src" / "easy_manipulation_deployment" / "scenes")) {
+      workcell_path = cwd / "src" / "easy_manipulation_deployment";
+    } else if (fs::exists(cwd / "src" / "scenes")) {
+      workcell_path = cwd / "src";
+    } else {
+      workcell_path = cwd;
+      RCLCPP_WARN(
+        rclcpp::get_logger("workcell_builder"),
+        "Unable to locate a 'scenes' directory from %s or its parent.",
+        cwd.string().c_str());
+    }
+    scenes_path = workcell_path / "scenes";
   }
-  scenes_path = workcell_path / "scenes";
   try {
     const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
     templates_path = fs::path(share) / "templates";
