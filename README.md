@@ -198,8 +198,14 @@ GUI-based tool for generating robotic workcell simulations. The supported workfl
 **Quick Start:**
 ```bash
 source ~/workcell_ws/install/setup.bash
-workcell_builder
+WORKCELL_BUILDER_ROOT=~/workcell_ws workcell_builder
+
+# Or pass the root explicitly
+workcell_builder --workcell-root ~/workcell_ws
 ```
+
+The root directory should contain the expected folders for Workcell Builder
+assets and generated content, such as `scenes/`.
  
 Example ROS 2 (Humble) launch templates live under `workcell_builder/examples/ros2/`.
 
