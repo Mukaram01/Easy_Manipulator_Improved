@@ -11,6 +11,7 @@
     <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
     <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
     <group name="gripper">
+        <chain base_link="gripper_base_link" tip_link="gripper_finger1_finger_tip_link" />
         <joint name="kinova_robotiq_coupler_joint" />
         <joint name="gripper_base_joint" />
         <joint name="gripper_finger1_inner_knuckle_joint" />
@@ -22,6 +23,7 @@
         <joint name="gripper_finger2_joint" />
         <joint name="gripper_finger2_finger_joint" />
     </group>
+    <end_effector name="robotiq_85_gripper" parent_link="gripper_base_link" group="gripper" />
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
     <!--virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="gripper_root_link" /-->
 

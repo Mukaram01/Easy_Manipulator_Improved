@@ -10,6 +10,10 @@
     <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
     <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
     <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
+    <group name="gripper">
+        <link name="gripper_base_link" />
+    </group>
+    <end_effector name="onrobot_airpick4" parent_link="gripper_base_link" group="gripper" />
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
     <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="gripper_base_link" />
     <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
