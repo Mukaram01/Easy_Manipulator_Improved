@@ -8,14 +8,14 @@
 <link name="world"/>
 
 <!-- <xacro:include filename="$(find ur_description)/urdf/gazebo.urdf.xacro" /> -->
-<xacro:include filename="$(find ur_description)/urdf/ur5.urdf.xacro"/>
+<xacro:include filename="$(find-pkg-share ur_description)/urdf/ur.urdf.xacro"/>
 
 <joint name="world_joint" type="fixed" >
   <parent link="world" />
   <child link = "base_link"/>
   <origin xyz= "0.0 0.0 0.0" rpy="0.0 0.0 0.0" />
 </joint>
-<xacro:ur5_robot prefix="" joint_limited="true"/>
+<xacro:ur_robot name="ur5" ur_type="ur5" prefix="" joint_limited="true"/>
 
 <!-- Robotiq Gripper -->
 <xacro:include filename="$(find dual_gripper)/urdf/double_end_effector.urdf.xacro"/>

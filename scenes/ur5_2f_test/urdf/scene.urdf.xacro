@@ -4,8 +4,8 @@
 
  <link name="world"/>
 
- <xacro:include filename="$(find-pkg-share ur_description)/urdf/ur5.urdf.xacro"/>
- <xacro:ur5_robot prefix="" joint_limited="false"/>
+ <xacro:include filename="$(find-pkg-share ur_description)/urdf/ur.urdf.xacro"/>
+ <xacro:ur_robot name="ur5" ur_type="ur5" prefix="" joint_limited="false"/>
   <joint name="world_ur5" type="fixed">
 	<parent link="world" />
 	<child link="base_link" />
