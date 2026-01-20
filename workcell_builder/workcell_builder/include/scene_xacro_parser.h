@@ -174,7 +174,9 @@ void generate_scene_xacro(Scene scene)
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         const std::string ur_name = scene.robot_vector[i].name;
-        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
+        const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
+        MyFile << " <xacro:include filename=\"$(find-pkg-share ur_description)/urdf/" +
+          ur_xacro + "\"/>\n";
         MyFile << " <xacro:ur_robot name=\"" + ur_name + "\" ur_type=\"" + ur_name +
           "\" prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
