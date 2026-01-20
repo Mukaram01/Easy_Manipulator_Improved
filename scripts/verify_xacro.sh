@@ -1,25 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ ! -f /opt/ros/humble/setup.bash ]]; then
-  echo "Error: /opt/ros/humble/setup.bash not found." >&2
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+workspace_root=""
+if [[ -n "${WORKSPACE_ROOT:-}" ]]; then
+  workspace_root="${WORKSPACE_ROOT}"
+elif [[ -n "${WS:-}" ]]; then
+  workspace_root="${WS}"
+else
+  search_dir="${repo_root}"
+  while [[ -n "${search_dir}" && "${search_dir}" != "/" ]]; do
+    if [[ -f "${search_dir}/install/setup.bash" ]]; then
+      workspace_root="${search_dir}"
+      break
+    fi
+    search_dir="$(dirname "${search_dir}")"
+  done
+
+  if [[ -z "${workspace_root}" ]]; then
+    if [[ "${repo_root}" == *"/src/"* ]]; then
+      workspace_root="${repo_root%%/src/*}"
+    elif [[ "${repo_root}" == */src ]]; then
+      workspace_root="${repo_root%/src}"
+    fi
+  fi
+fi
+
+if [[ -z "${workspace_root}" ]]; then
+  echo "Error: Unable to determine WORKSPACE_ROOT." >&2
+  echo "Resolved repo root: ${repo_root}" >&2
   exit 1
 fi
 
-if [[ ! -f /home/ubuntu/workcell_ws/install/setup.bash ]]; then
-  echo "Error: /home/ubuntu/workcell_ws/install/setup.bash not found." >&2
+ros_setup="/opt/ros/${ROS_DISTRO:-humble}/setup.bash"
+workspace_setup="${workspace_root}/install/setup.bash"
+
+if [[ ! -f "${ros_setup}" ]]; then
+  echo "Error: ROS setup file not found at ${ros_setup}." >&2
+  echo "Resolved workspace root: ${workspace_root}" >&2
   exit 1
 fi
 
-source /opt/ros/humble/setup.bash
-source /home/ubuntu/workcell_ws/install/setup.bash
+if [[ ! -f "${workspace_setup}" ]]; then
+  echo "Error: Workspace setup file not found at ${workspace_setup}." >&2
+  echo "Resolved workspace root: ${workspace_root}" >&2
+  exit 1
+fi
+
+source "${ros_setup}"
+source "${workspace_setup}"
+
+search_paths=(
+  "${workspace_root}/src/scenes"
+  "${repo_root}/scenes"
+)
 
 shopt -s nullglob
-xacro_files=(src/scenes/*/urdf/scene.urdf.xacro)
+xacro_files=(
+  "${search_paths[0]}"/*/urdf/scene.urdf.xacro
+  "${search_paths[1]}"/*/urdf/scene.urdf.xacro
+)
 shopt -u nullglob
 
 if (( ${#xacro_files[@]} == 0 )); then
-  echo "Error: No scene.urdf.xacro files found under src/scenes/." >&2
+  echo "Error: No scene.urdf.xacro files found." >&2
+  echo "Resolved workspace root: ${workspace_root}" >&2
+  echo "Search paths:" >&2
+  for path in "${search_paths[@]}"; do
+    echo "  - ${path}" >&2
+  done
   exit 1
 fi
 
