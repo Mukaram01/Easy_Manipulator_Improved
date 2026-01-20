@@ -120,6 +120,11 @@ MoveitReplannerContext::MoveitReplannerContext(
   if (planner_name == "ompl") {
     plugin_name = "ompl_interface/OMPLPlanner";
     planning_request_.planner_id = option.ompl_planner_id;
+  } else {
+    std::string error_message = "Unsupported planner '" + option.planner +
+      "'. Supported planners: ompl.";
+    RCLCPP_ERROR(LOGGER, "%s", error_message.c_str());
+    throw std::runtime_error(error_message);
   }
   // TODO(anyone): Add in other planning methods.
 
@@ -209,7 +214,6 @@ MoveitReplannerContext::MoveitReplannerContext(
   planning_request_.group_name = option.group;
   planning_request_.allowed_planning_time = option.deadline;
   planning_request_.num_planning_attempts = 1;
-  planning_request_.allowed_planning_time = 0.3;
   planning_request_.max_velocity_scaling_factor = 1;
   planning_request_.max_acceleration_scaling_factor = 1;
 
