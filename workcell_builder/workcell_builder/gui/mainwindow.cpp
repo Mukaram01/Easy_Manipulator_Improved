@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include <QDir>
 #include <QFileDialog>
 #include <QMetaObject>
 #include <QPointer>
@@ -99,9 +100,10 @@ bool is_ros2_prefix(const fs::path & prefix)
 }  // namespace
 
 
-MainWindow::MainWindow(QWidget * parent)
+MainWindow::MainWindow(const boost::filesystem::path & configured_root, QWidget * parent)
 : QMainWindow(parent),
-  ui(new Ui::MainWindow)
+  ui(new Ui::MainWindow),
+  configured_root_(configured_root)
 {
   ui->setupUi(this);
   setWindowTitle("Workcell Builder");
@@ -154,10 +156,13 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_load_workcell_clicked()
 {
+  const QString default_directory = configured_root_.empty() ?
+    QDir::homePath() :
+    QString::fromStdString(configured_root_.string());
   QString workcell_file = QFileDialog::getExistingDirectory(
     this,
     "Target workcell project destination",
-    QDir::homePath());
+    default_directory);
   if (workcell_file.isEmpty()) {
     return;
   }

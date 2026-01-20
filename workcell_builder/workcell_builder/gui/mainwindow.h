@@ -44,7 +44,8 @@ public:
   std::vector<std::string> ros_dist;
   bool is_good_scene(boost::filesystem::path original_path, std::string scene_name);
 
-  explicit MainWindow(QWidget * parent = nullptr);
+  explicit MainWindow(const boost::filesystem::path & configured_root,
+    QWidget * parent = nullptr);
   ~MainWindow();
 
 private slots:
@@ -56,6 +57,7 @@ private slots:
 
 private:
   Ui::MainWindow * ui;
+  boost::filesystem::path configured_root_;
   struct WorkcellLoadResult
   {
     bool success{ false };
