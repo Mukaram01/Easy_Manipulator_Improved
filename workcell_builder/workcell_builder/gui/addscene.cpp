@@ -27,6 +27,7 @@
 #include "gui/addrobot.h"
 #include "gui/addendeffector.h"
 #include "gui/loadobjects.h"
+#include "include/file_functions.h"
 
 
 AddScene::AddScene(QWidget * parent)
@@ -40,10 +41,7 @@ AddScene::AddScene(QWidget * parent)
   success = false;
 
   scenes_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(scenes_path.branch_path());
-  boost::filesystem::current_path("assets");
-  assets_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(scenes_path);
+  assets_path = resolve_assets_root(scenes_path);
 }
 
 AddScene::~AddScene()
@@ -593,7 +591,7 @@ void AddScene::on_load_object_clicked()
     available_object_names.push_back(scene.object_vector[i].name);
   }
 
-  boost::filesystem::current_path(assets_path);
+  safe_chdir(assets_path);
   LoadObjects load_obj_window;
   load_obj_window.current_object_names = available_object_names;
   load_obj_window.setWindowTitle("Load Existing Objects");
