@@ -18,6 +18,8 @@
 #include <QKeyEvent>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTemporaryFile>
+#include <QTextStream>
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <fstream>
@@ -322,26 +324,39 @@ std::vector<std::string> AddEndEffector::GetLinks(
   }
 
   QString urdf_xml;
-  QProcess xacro_process;
-  QStringList xacro_args;
-  xacro_args << QString::fromStdString(filename);
   std::vector<std::string> expanded_xacro_arguments = xacro_arguments;
   AppendDefaultXacroArguments(filename, expanded_xacro_arguments);
-  for (const auto & arg : expanded_xacro_arguments) {
-    xacro_args << QString::fromStdString(arg);
-  }
-  xacro_process.start("xacro", xacro_args);
-  if (xacro_process.waitForFinished(5000) &&
-    xacro_process.exitStatus() == QProcess::NormalExit &&
-    xacro_process.exitCode() == 0)
-  {
-    urdf_xml = QString::fromUtf8(xacro_process.readAllStandardOutput());
-  } else {
-    const QString stderr_output = QString::fromUtf8(xacro_process.readAllStandardError());
+  auto build_xacro_args = [&](const QString & target_file) {
+    QStringList xacro_args;
+    xacro_args << target_file;
+    for (const auto & arg : expanded_xacro_arguments) {
+      xacro_args << QString::fromStdString(arg);
+    }
+    return xacro_args;
+  };
+
+  auto run_xacro = [&](const QStringList & xacro_args, QString * output, QString * stderr_output) {
+    QProcess xacro_process;
+    xacro_process.start("xacro", xacro_args);
+    if (xacro_process.waitForFinished(5000) &&
+      xacro_process.exitStatus() == QProcess::NormalExit &&
+      xacro_process.exitCode() == 0)
+    {
+      *output = QString::fromUtf8(xacro_process.readAllStandardOutput());
+      return true;
+    }
+    *stderr_output = QString::fromUtf8(xacro_process.readAllStandardError());
+    return false;
+  };
+
+  const QString xacro_filename =
+    QString::fromStdString(boost::filesystem::absolute(filename).string());
+  QString xacro_stderr;
+  if (!run_xacro(build_xacro_args(xacro_filename), &urdf_xml, &xacro_stderr)) {
     QString error_message =
       QString::fromStdString("<font color='red'> Xacro failed for: " + filename + " </font>");
-    if (!stderr_output.trimmed().isEmpty()) {
-      error_message += QString::fromStdString("<br/><pre>") + stderr_output + "</pre>";
+    if (!xacro_stderr.trimmed().isEmpty()) {
+      error_message += QString::fromStdString("<br/><pre>") + xacro_stderr + "</pre>";
     }
     ui->errorlist->append(error_message);
     std::ifstream infile(filename);
@@ -350,14 +365,112 @@ std::vector<std::string> AddEndEffector::GetLinks(
   }
 
   QRegularExpression link_regex(R"(<link\s+[^>]*name\s*=\s*\"([^\"]+)\")");
-  QRegularExpressionMatchIterator matches = link_regex.globalMatch(urdf_xml);
-  std::set<std::string> seen_links;
-  while (matches.hasNext()) {
-    QRegularExpressionMatch match = matches.next();
-    std::string link_name = match.captured(1).toStdString();
-    if (seen_links.insert(link_name).second) {
-      links.push_back(link_name);
+  auto extract_links = [&](const QString & xml) {
+    std::vector<std::string> extracted_links;
+    QRegularExpressionMatchIterator matches = link_regex.globalMatch(xml);
+    std::set<std::string> seen_links;
+    while (matches.hasNext()) {
+      QRegularExpressionMatch match = matches.next();
+      std::string link_name = match.captured(1).toStdString();
+      if (seen_links.insert(link_name).second) {
+        extracted_links.push_back(link_name);
+      }
     }
+    return extracted_links;
+  };
+
+  links = extract_links(urdf_xml);
+  if (links.empty()) {
+    const QString standalone_suffix = "_standalone.urdf.xacro";
+    if (xacro_filename.endsWith(".urdf.xacro") && !xacro_filename.endsWith(standalone_suffix)) {
+      QString standalone_candidate = xacro_filename;
+      standalone_candidate.replace(".urdf.xacro", standalone_suffix);
+      if (boost::filesystem::exists(standalone_candidate.toStdString())) {
+        return GetLinks(standalone_candidate.toStdString(), xacro_arguments);
+      }
+    }
+
+    std::ifstream infile(filename);
+    std::string content((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
+    QString file_contents = QString::fromStdString(content);
+    QRegularExpression macro_regex(R"(<xacro:macro\s+[^>]*name\s*=\s*\"([^\"]+)\")");
+    QRegularExpressionMatch macro_match = macro_regex.match(file_contents);
+    if (macro_match.hasMatch()) {
+      QString macro_name = macro_match.captured(1);
+      QRegularExpression macro_tag_regex(R"(<xacro:macro[^>]*>)");
+      QRegularExpressionMatch tag_match = macro_tag_regex.match(file_contents, macro_match.capturedStart());
+      QString macro_tag = tag_match.hasMatch() ? tag_match.captured(0) : QString();
+      QRegularExpression params_regex(R"(params\s*=\s*\"([^\"]*)\")");
+      QRegularExpressionMatch params_match = params_regex.match(macro_tag);
+      QString params = params_match.hasMatch() ? params_match.captured(1) : QString();
+      QStringList param_tokens =
+        params.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+      std::set<QString> param_names;
+      bool needs_origin_block = false;
+      for (const auto & token : param_tokens) {
+        if (token.startsWith("*")) {
+          QString name = token.mid(1);
+          if (name == "origin") {
+            needs_origin_block = true;
+          }
+          if (!name.isEmpty()) {
+            param_names.insert(name);
+          }
+        } else {
+          param_names.insert(token);
+        }
+      }
+
+      QString wrapper_xml = "<?xml version=\"1.0\"?>\n";
+      wrapper_xml += "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"ee_wrapper\">\n";
+      wrapper_xml += QString("  <xacro:include filename=\"%1\"/>\n").arg(xacro_filename);
+      wrapper_xml += QString("  <xacro:%1").arg(macro_name);
+      for (const auto & arg : expanded_xacro_arguments) {
+        const auto delimiter_pos = arg.find(":=");
+        if (delimiter_pos == std::string::npos) {
+          continue;
+        }
+        const QString key = QString::fromStdString(arg.substr(0, delimiter_pos));
+        const QString value = QString::fromStdString(arg.substr(delimiter_pos + 2));
+        if (!param_names.empty() && param_names.find(key) == param_names.end()) {
+          continue;
+        }
+        wrapper_xml += QString(" %1=\"%2\"").arg(key, value);
+      }
+      if (needs_origin_block) {
+        wrapper_xml += ">\n    <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        wrapper_xml += QString("  </xacro:%1>\n").arg(macro_name);
+      } else {
+        wrapper_xml += "/>\n";
+      }
+      wrapper_xml += "</robot>\n";
+
+      QTemporaryFile wrapper_file;
+      if (wrapper_file.open()) {
+        QTextStream wrapper_stream(&wrapper_file);
+        wrapper_stream << wrapper_xml;
+        wrapper_stream.flush();
+        QString wrapper_output;
+        QString wrapper_error;
+        if (run_xacro(build_xacro_args(wrapper_file.fileName()), &wrapper_output, &wrapper_error)) {
+          links = extract_links(wrapper_output);
+        } else {
+          QString error_message =
+            QString::fromStdString("<font color='red'> Xacro wrapper failed for: " + filename +
+            " </font>");
+          if (!wrapper_error.trimmed().isEmpty()) {
+            error_message += QString::fromStdString("<br/><pre>") + wrapper_error + "</pre>";
+          }
+          ui->errorlist->append(error_message);
+        }
+      }
+    }
+  }
+
+  if (links.empty()) {
+    ui->errorlist->append(
+      "<font color='red'> No links found; end-effector xacro defines only macros. "
+      "Provide a *_standalone.urdf.xacro or macro instantiation. </font>");
   }
   return links;
 }
