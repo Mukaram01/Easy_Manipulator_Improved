@@ -8,7 +8,7 @@
 <link name="world"/>
 
 <!-- <xacro:include filename="$(find ur_description)/urdf/gazebo.urdf.xacro" /> -->
-<xacro:include filename="$(find-pkg-share ur_description)/urdf/ur.urdf.xacro"/>
+<xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
 
 <joint name="world_joint" type="fixed" >
   <parent link="world" />
