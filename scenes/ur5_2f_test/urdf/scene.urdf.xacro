@@ -5,7 +5,17 @@
  <link name="world"/>
 
  <xacro:include filename="$(find ur_description)/urdf/ur.urdf.xacro"/>
- <xacro:ur_robot name="ur5" ur_type="ur5" prefix="" joint_limited="false"/>
+ <xacro:arg name="joint_limits_parameters_file" default="$(find ur_description)/config/ur5/joint_limits.yaml" />
+ <xacro:arg name="kinematics_parameters_file" default="$(find ur_description)/config/ur5/kinematics.yaml" />
+ <xacro:arg name="physical_parameters_file" default="$(find ur_description)/config/ur5/physical_parameters.yaml" />
+ <xacro:arg name="visual_parameters_file" default="$(find ur_description)/config/ur5/visual_parameters.yaml" />
+ <xacro:arg name="safety_limits_parameters_file" default="$(find ur_description)/config/ur5/safety_limits.yaml" />
+ <xacro:ur_robot name="ur5" ur_type="ur5" prefix="" joint_limited="false"
+  joint_limits_parameters_file="$(arg joint_limits_parameters_file)"
+  kinematics_parameters_file="$(arg kinematics_parameters_file)"
+  physical_parameters_file="$(arg physical_parameters_file)"
+  visual_parameters_file="$(arg visual_parameters_file)"
+  safety_limits_parameters_file="$(arg safety_limits_parameters_file)"/>
   <joint name="world_ur5" type="fixed">
 	<parent link="world" />
 	<child link="base_link" />
