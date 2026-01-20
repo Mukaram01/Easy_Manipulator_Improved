@@ -112,6 +112,7 @@ std::string resolve_robot_description_filename(
 std::vector<std::string> universal_robot_xacro_candidates(const Robot & robot)
 {
   return {
+    "ur.urdf.xacro",
     robot.name + ".urdf.xacro",
     robot.name + "_robot.urdf.xacro"
   };
@@ -172,11 +173,10 @@ void generate_scene_xacro(Scene scene)
     for (int i = 0; i < static_cast < int > (scene.robot_vector.size()); i++) {
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
-        const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
-        const std::string ur_macro = scene.robot_vector[i].name + "_robot";
-        MyFile << " <xacro:include filename=\"$(find-pkg-share ur_description)/urdf/" + ur_xacro +
-          "\"/>\n";
-        MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
+        const std::string ur_name = scene.robot_vector[i].name;
+        MyFile << " <xacro:include filename=\"$(find-pkg-share ur_description)/urdf/ur.urdf.xacro\"/>\n";
+        MyFile << " <xacro:ur_robot name=\"" + ur_name + "\" ur_type=\"" + ur_name +
+          "\" prefix=\"\" joint_limited=\"false\"/>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename =
