@@ -32,6 +32,12 @@ jobs:
         working-directory: ws
         run: colcon build --symlink-install
 
+      - name: Verify scene xacros
+        working-directory: ws/src/easy_manipulation_deployment
+        run: |
+          ln -sfn "${GITHUB_WORKSPACE}/ws/install" "${GITHUB_WORKSPACE}/ws/src/easy_manipulation_deployment/install"
+          ./scripts/verify_scene_xacros.sh
+
       - name: Test
         working-directory: ws
         run: colcon test
