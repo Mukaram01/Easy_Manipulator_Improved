@@ -4,7 +4,8 @@
   <name>emd_dynamic_safety</name>
   <version>0.1.0</version>
   <description>
-      A collection of scripts for enabling dynamic safety capability during trajectory execution
+      A collection of scripts for enabling dynamic safety capability during trajectory execution.
+      MoveIt support is optional and requires moveit_core (and moveit_msgs) for the emd_dynamic_safety_moveit backend.
   </description>
   <maintainer email="chenbn@artc.a-star.edu.sg">Chen Bainian</maintainer>
   <maintainer email="glenn_tan@artc.a-star.edu.sg">Tan Jing Peng Glenn</maintainer>
@@ -28,6 +29,7 @@
   <depend>geometry_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>moveit_msgs</depend>
+  <depend>moveit_core</depend>
   <depend>tesseract_environment</depend>
   <depend>tesseract_rosutils</depend>
   <depend>tesseract_msgs</depend>
