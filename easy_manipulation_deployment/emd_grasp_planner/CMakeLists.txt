@@ -17,6 +17,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io visualization filters sample_consensus segmentation features)
+find_package(OpenMP QUIET)
 
 find_package(fcl QUIET)
 if(fcl_FOUND)
@@ -127,6 +128,9 @@ target_link_libraries(grasp_planning_interface
   ${FCL_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
 )
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(grasp_planning_interface OpenMP::OpenMP_CXX)
+endif()
 
 install(
   DIRECTORY include/
