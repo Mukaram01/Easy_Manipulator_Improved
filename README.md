@@ -54,7 +54,24 @@ adding `COLCON_IGNORE` files in the package directories.
 - ROS 2 Humble installed ([installation guide](https://docs.ros.org/en/humble/Installation.html))
 - CI uses Ubuntu 22.04 + ROS 2 Humble via `ros-tooling/setup-ros`
 
-### Step-by-Step Installation (single, ordered flow)
+### Recommended bootstrap (single command)
+
+The canonical entrypoint is the Humble bootstrap script. It installs system
+dependencies, applies the Cereal/Boost fixes, removes the incompatible
+`trajopt_ifopt` planner, and builds the workspace end-to-end.
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+
+# Clone the repo into the intended layout.
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+
+cd easy_manipulation_deployment
+./fix_and_build_humble.sh
+```
+
+### Manual Installation (advanced / troubleshooting)
 
 #### 0) Install apt packages (matching CI)
 
@@ -107,6 +124,9 @@ vcs import < easy_manipulation_deployment/tesseract.repos
 
 #### 4) Apply the Humble “known fixes / skips” (matches README notes)
 
+> **Note:** If you ran `./fix_and_build_humble.sh`, these fixes have already
+> been applied and you can skip this section.
+
 ```bash
 cd ~/workcell_ws
 export ROS_DISTRO=humble
@@ -153,13 +173,14 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 git pull
 ```
 
-### Alternative: Use Helper Script
+### Helper Script (preferred)
 
-After cloning, you can use the automated build script:
+If you already have the repository cloned, you can run the canonical Humble
+bootstrap script directly:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build.sh
+./fix_and_build_humble.sh
 ```
 
 ---

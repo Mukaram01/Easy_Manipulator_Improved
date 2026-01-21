@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Bootstrap + build script for ROS 2 Humble/Jazzy workspaces.
+# Usage: ./fix_and_build_humble.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws
@@ -85,12 +87,75 @@ PY
   ${APT_GET_CMD} install -y python3-yaml >/dev/null 2>&1
 }
 
+ensure_cereal_cmake_config() {
+  local cereal_config="/usr/lib/x86_64-linux-gnu/cmake/cereal/cerealConfig.cmake"
+  local cereal_source="/usr/share/cmake/cereal"
+
+  if [[ -f "$cereal_config" || ! -d "$cereal_source" ]]; then
+    return
+  fi
+
+  echo "Fixing cereal CMake package path"
+  if command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
+    sudo ln -sf "$cereal_source" /usr/lib/x86_64-linux-gnu/cmake/cereal
+  else
+    mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
+    ln -sf "$cereal_source" /usr/lib/x86_64-linux-gnu/cmake/cereal
+  fi
+}
+
+apply_trajopt_ifopt_patch() {
+  local planners_dir="$PWD/src/tesseract_planning/tesseract_motion_planners"
+  local cmake_file="$planners_dir/CMakeLists.txt"
+
+  if [[ ! -d "$planners_dir" ]]; then
+    return
+  fi
+
+  if [[ -d "$planners_dir/trajopt_ifopt" ]]; then
+    echo "Removing incompatible trajopt_ifopt planner from workspace"
+    rm -rf "$planners_dir/trajopt_ifopt"
+  fi
+
+  if [[ -f "$cmake_file" ]]; then
+    CMAKE_FILE="$cmake_file" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake_file = Path(os.environ["CMAKE_FILE"])
+lines = cmake_file.read_text().splitlines()
+new_lines = []
+changed = False
+
+for line in lines:
+    stripped = line.lstrip()
+    if "add_subdirectory(trajopt_ifopt)" in line and not stripped.startswith("#"):
+        new_lines.append(f"# {line}")
+        changed = True
+        continue
+    if (
+        "list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)" in line
+        and not stripped.startswith("#")
+    ):
+        new_lines.append(f"# {line}")
+        changed = True
+        continue
+    new_lines.append(line)
+
+if changed:
+    cmake_file.write_text("\n".join(new_lines) + "\n")
+PY
+  fi
+}
+
 # Install core system dependencies (Boost + TinyXML2) using the shared helper so
 # all setup paths stay in sync. The helper also reinstalls Boost headers when
 # container images omit them even though dpkg claims the packages are present,
 # preventing the "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
 # failure in trajopt_common.
 "${SCRIPT_DIR}/scripts/install_system_deps.sh"
+ensure_cereal_cmake_config
 
 # Point CMake at the OSQP package configuration so find_package(osqp) succeeds
 # even on environments where the default prefix search path is trimmed down.
@@ -201,6 +266,7 @@ fi
 # manual instructions from the troubleshooting section in the README and keeps
 # the workspace consistent even on fresh clones.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
+apply_trajopt_ifopt_patch
 
 ROSDEP_OVERRIDES="$SCRIPT_DIR/scripts/rosdep_overrides.yaml"
 if [[ -f "$ROSDEP_OVERRIDES" ]]; then
