@@ -166,7 +166,6 @@ install_rosdeps() {
     rosdep update
 
     local skip_keys=(
-        catkin
         rviz
         roslib
         tesseract
