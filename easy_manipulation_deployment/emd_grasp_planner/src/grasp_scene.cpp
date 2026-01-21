@@ -536,6 +536,7 @@ template<typename T>
 void grasp_planner::GraspScene<T>::start_planning(const typename T::ConstSharedPtr & msg)
 {
   RCLCPP_INFO(LOGGER, "Perception input received!");
+  last_epd_msg_time = node->get_clock()->now();
   create_world_collision(msg);
   extract_objects(msg);
   // load_end_effectors();
@@ -604,6 +605,28 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 
   this->tf_perception_sub->registerCallback(
     &grasp_planner::GraspScene<T>::start_planning, this);
+
+  last_epd_msg_time = node->get_clock()->now();
+  const double epd_msg_timeout_s =
+    node->get_parameter("easy_perception_deployment.epd_msg_timeout_s").as_double();
+  if (epd_msg_timeout_s > 0.0) {
+    const auto check_period =
+      std::chrono::duration<double>(std::min(epd_msg_timeout_s, 1.0));
+    this->epd_msg_timer = node->create_wall_timer(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(check_period),
+      [this, epd_msg_timeout_s]() {
+        const auto now = node->get_clock()->now();
+        const double elapsed = (now - last_epd_msg_time).seconds();
+        if (elapsed > epd_msg_timeout_s) {
+          RCLCPP_WARN(
+            LOGGER,
+            "No EPD message received for %.2f s (timeout %.2f s). Triggering EPD pipeline.",
+            elapsed, epd_msg_timeout_s);
+          trigger_epd_pipeline();
+          last_epd_msg_time = now;
+        }
+      });
+  }
 
   //First trigger to start EPD
   trigger_epd_pipeline();

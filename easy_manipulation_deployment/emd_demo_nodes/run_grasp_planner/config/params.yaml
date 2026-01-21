@@ -11,6 +11,7 @@ grasp_planning_node:
       epd_detection_topic: ""
       epd_detection_depth_topic: "/camera/depth/image_rect_raw"
       epd_detection_camera_info_topic: "/camera/color/camera_info"
+      epd_msg_timeout_s: 5.0
     camera_parameters:
       point_cloud_topic: "/camera/pointcloud"
       camera_frame: "camera_color_optical_frame"
