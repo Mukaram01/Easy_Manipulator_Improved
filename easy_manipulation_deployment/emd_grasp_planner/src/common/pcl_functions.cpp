@@ -16,6 +16,8 @@
 
 #include "emd/common/pcl_functions.hpp"
 
+#include <thread>
+
 bool PCLFunctions::passthrough_filter(
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
   const float & ptFilter_Ulimit_x,
@@ -168,12 +170,20 @@ void PCLFunctions::get_closest_points_by_radius(
 void PCLFunctions::compute_cloud_normal(
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
   pcl::PointCloud<pcl::PointNormal>::Ptr cloud_normal,
-  const float & cloud_normal_radius)
+  const float & cloud_normal_radius,
+  const int & normal_estimation_threads)
 {
   pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(
     new pcl::search::KdTree<pcl::PointXYZRGB>());
   pcl::NormalEstimationOMP<pcl::PointXYZRGB, pcl::PointNormal> normal_estimation;
-  normal_estimation.setNumberOfThreads(4);
+  if (normal_estimation_threads > 0) {
+    normal_estimation.setNumberOfThreads(normal_estimation_threads);
+  } else {
+    unsigned int hw_threads = std::thread::hardware_concurrency();
+    if (hw_threads > 0) {
+      normal_estimation.setNumberOfThreads(static_cast<int>(hw_threads));
+    }
+  }
   normal_estimation.setInputCloud(cloud);
   normal_estimation.setSearchMethod(tree);
   normal_estimation.setRadiusSearch(cloud_normal_radius);

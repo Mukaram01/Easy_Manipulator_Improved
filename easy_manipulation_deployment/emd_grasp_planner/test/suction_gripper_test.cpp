@@ -88,7 +88,7 @@ GraspObject SuctionGripperTest::GenerateObjectHorizontal()
   pcl::compute3DCentroid(*rectangle_cloud, centroid);
   GraspObject object("camera_frame", rectangle_cloud, centroid);
   // object = std::make_shared<GraspObject>(object_);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
   return object;
@@ -125,7 +125,7 @@ GraspObject SuctionGripperTest::GenerateObjectVertical()
   pcl::compute3DCentroid(*rectangle_cloud, centroid);
   GraspObject object("camera_frame", rectangle_cloud, centroid);
   // object = std::make_shared<GraspObject>(object_);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
   return object;
@@ -159,7 +159,7 @@ GraspObject SuctionGripperTest::CreateSphereCloud(
   pcl::compute3DCentroid(*output_sphere_cloud, centroid);
   GraspObject object("camera_frame", output_sphere_cloud, centroid);
   // object = std::make_shared<GraspObject>(object_);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
   return object;

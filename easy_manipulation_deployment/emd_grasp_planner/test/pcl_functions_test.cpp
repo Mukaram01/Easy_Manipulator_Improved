@@ -230,7 +230,8 @@ TEST_F(PCLFunctionsTest, getClosestPointsByRadiusTestNone)
 
   PCLFunctions::compute_cloud_normal(
     rectangle_cloud, rectNormalCloud,
-    0.03);
+    0.03,
+    0);
 
   PCLFunctions::get_closest_points_by_radius(
     point,
@@ -264,7 +265,8 @@ TEST_F(PCLFunctionsTest, getClosestPointsByRadiusTest)
 
   PCLFunctions::compute_cloud_normal(
     rectangle_cloud, rectNormalCloud,
-    0.03);
+    0.03,
+    0);
 
   PCLFunctions::get_closest_points_by_radius(
     point,
@@ -286,7 +288,8 @@ TEST_F(PCLFunctionsTest, computeCloudNormalTest)
 
   PCLFunctions::compute_cloud_normal(
     rectangle_cloud, rectNormalCloud,
-    0.03);
+    0.03,
+    0);
   EXPECT_GT(static_cast<int>(rectNormalCloud->points.size()), 0);
 }
 

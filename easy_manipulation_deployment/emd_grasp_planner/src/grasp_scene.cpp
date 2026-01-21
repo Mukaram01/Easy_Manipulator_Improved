@@ -263,6 +263,9 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_d
   float cloud_normal_radius = static_cast<float>(node->get_parameter(
       "point_cloud_params.cloud_normal_radius").as_double());
 
+  int normal_estimation_threads = node->get_parameter(
+    "point_cloud_params.normal_estimation_threads").as_int();
+
   float cluster_tolerance = static_cast<float>(node->get_parameter(
       "point_cloud_params.cluster_tolerance").as_double());
 
@@ -303,7 +306,11 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::extract_objects_d
         camera_frame,
         objectCloud,
         centroid);
-      PCLFunctions::compute_cloud_normal(objectCloud, object.cloud_normal, cloud_normal_radius);
+      PCLFunctions::compute_cloud_normal(
+        objectCloud,
+        object.cloud_normal,
+        cloud_normal_radius,
+        normal_estimation_threads);
       object.get_object_bb();
       object.get_object_world_angles();
       object.grasp_target.target_shape = object.get_object_shape();
@@ -330,6 +337,8 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
 
   float cloud_normal_radius = static_cast<float>(node->get_parameter(
       "point_cloud_params.cloud_normal_radius").as_double());
+  int normal_estimation_threads = node->get_parameter(
+    "point_cloud_params.normal_estimation_threads").as_int();
 
   for (auto raw_object : objects) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr objectCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
@@ -352,7 +361,11 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
       raw_object.name,
       camera_frame, objectCloud,
       centroid);
-    PCLFunctions::compute_cloud_normal(objectCloud, object.cloud_normal, cloud_normal_radius);
+    PCLFunctions::compute_cloud_normal(
+      objectCloud,
+      object.cloud_normal,
+      cloud_normal_radius,
+      normal_estimation_threads);
     object.get_object_bb();
     object.get_object_world_angles();
     object.grasp_target.target_shape = object.get_object_shape();

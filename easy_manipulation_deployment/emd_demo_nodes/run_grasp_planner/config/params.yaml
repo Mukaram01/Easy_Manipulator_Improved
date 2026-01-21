@@ -24,6 +24,7 @@ grasp_planning_node:
       cluster_tolerance: 0.01
       min_cluster_size: 750
       cloud_normal_radius: 0.03
+      normal_estimation_threads: 0
       fcl_voxel_size: 0.02
       octomap_resolution: 0.01
     end_effectors:

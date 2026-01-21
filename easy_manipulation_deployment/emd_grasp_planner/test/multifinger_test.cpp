@@ -90,7 +90,7 @@ GraspObject MultiFingerTest::GenerateObjectHorizontal()
   pcl::compute3DCentroid(*rectangle_cloud, centroid);
   GraspObject object_("camera_frame", rectangle_cloud, centroid);
   // object = object_;
-  PCLFunctions::compute_cloud_normal(object_.cloud, object_.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object_.cloud, object_.cloud_normal, 0.03, 0);
   object_.get_object_bb();
   object_.get_object_world_angles();
   return object_;
@@ -118,7 +118,7 @@ GraspObject MultiFingerTest::GenerateObjectVertical()
   pcl::compute3DCentroid(*rectangle_cloud, centroid);
   GraspObject object_("camera_frame", rectangle_cloud, centroid);
   // object = object_;
-  PCLFunctions::compute_cloud_normal(object_.cloud, object_.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object_.cloud, object_.cloud_normal, 0.03, 0);
   object_.get_object_bb();
   object_.get_object_world_angles();
   return object_;
