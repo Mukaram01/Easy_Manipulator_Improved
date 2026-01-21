@@ -42,6 +42,7 @@ find_package(tf2 REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
 
 include_directories(
   PUBLIC
@@ -56,6 +57,7 @@ add_library(grasp_planning_interface
   SHARED
   src/grasp_scene.cpp
   src/grasp_object.cpp
+  src/epd_detection_adapter.cpp
   src/end_effectors/finger_gripper.cpp
   src/end_effectors/suction_gripper.cpp
   src/common/pcl_functions.cpp
@@ -91,6 +93,7 @@ if(epd_msgs_FOUND)
         rclcpp
         emd_msgs
         epd_msgs
+        vision_msgs
         sensor_msgs
         geometry_msgs
         shape_msgs
@@ -108,6 +111,7 @@ else()
         tf2
         rclcpp
         emd_msgs
+        vision_msgs
         sensor_msgs
         geometry_msgs
         shape_msgs
@@ -209,6 +213,7 @@ if(epd_msgs_FOUND)
   ament_export_dependencies(
     emd_msgs
     epd_msgs
+    vision_msgs
     shape_msgs
     visualization_msgs
     cv_bridge
@@ -221,6 +226,7 @@ if(epd_msgs_FOUND)
 else()
   ament_export_dependencies(
     emd_msgs
+    vision_msgs
     shape_msgs
     visualization_msgs
     cv_bridge
