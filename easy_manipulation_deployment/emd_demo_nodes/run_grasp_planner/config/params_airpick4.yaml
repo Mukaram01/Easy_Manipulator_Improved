@@ -8,6 +8,7 @@ grasp_planning_node:
       epd_localization_topic: "/processor/epd_localize_output"
       epd_tracking_topic: "/processor/epd_tracking_output"
       epd_service: "epd_perception_service"
+      epd_msg_timeout_s: 5.0
     camera_parameters:
       point_cloud_topic: "/camera/pointcloud"
       camera_frame: "camera_color_optical_frame"

@@ -201,6 +201,12 @@ source ~/workcell_ws/install/setup.bash
 ros2 launch run_grasp_planner grasp_planner_3f_launch.py
 ```
 
+**EPD timeout parameter:**
+The grasp planner can monitor Easy Perception Deployment (EPD) message activity. Configure the
+timeout in `easy_manipulation_deployment/emd_demo_nodes/run_grasp_planner/config/*.yaml` via
+`easy_perception_deployment.epd_msg_timeout_s` to warn and re-trigger the EPD pipeline when
+messages stall.
+
 ### 2. Grasp Execution
 
 MoveIt2-based grasp execution with real-time dynamic safety components.
