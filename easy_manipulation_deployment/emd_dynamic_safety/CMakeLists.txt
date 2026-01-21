@@ -99,7 +99,7 @@ if(tesseract_environment_FOUND AND tesseract_process_managers_FOUND)
     src/tesseract/replanner_tesseract.cpp
   )
 
-  target_link_libraries(${PROJECT_NAME}_tesseract
+  set(EMD_DYNAMIC_SAFETY_TESSERACT_LIBS
     tesseract::tesseract_environment_core
     tesseract::tesseract_environment_kdl
     tesseract::tesseract_environment_ofkt
@@ -112,10 +112,21 @@ if(tesseract_environment_FOUND AND tesseract_process_managers_FOUND)
     tesseract::tesseract_motion_planners_core
     tesseract::tesseract_motion_planners_ompl
     tesseract::tesseract_motion_planners_trajopt
-    tesseract::tesseract_motion_planners_trajopt_ifopt
     tesseract::tesseract_time_parameterization
     tesseract::tesseract_process_managers
     tesseract::tesseract_rosutils
+  )
+
+  if(TARGET tesseract::tesseract_motion_planners_trajopt_ifopt)
+    list(APPEND EMD_DYNAMIC_SAFETY_TESSERACT_LIBS
+      tesseract::tesseract_motion_planners_trajopt_ifopt
+    )
+  else()
+    message(WARNING "Skipping tesseract::tesseract_motion_planners_trajopt_ifopt (target not found).")
+  endif()
+
+  target_link_libraries(${PROJECT_NAME}_tesseract
+    ${EMD_DYNAMIC_SAFETY_TESSERACT_LIBS}
   )
 
   ament_target_dependencies(${PROJECT_NAME}_tesseract
