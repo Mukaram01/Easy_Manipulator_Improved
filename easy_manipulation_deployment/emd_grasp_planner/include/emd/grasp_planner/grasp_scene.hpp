@@ -59,6 +59,7 @@
 #include <vector>
 #include <limits>
 #include <future>
+#include <algorithm>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -239,6 +240,10 @@ protected:
   rclcpp::Client<epd_msgs::srv::Perception>::SharedPtr epd_client;
   /*! \brief Futures for EPD service request */
   std::shared_future<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse> epd_result_future;
+  /*! \brief Timer that checks for stalled EPD messages */
+  rclcpp::TimerBase::SharedPtr epd_msg_timer;
+  /*! \brief Last time an EPD message was received */
+  rclcpp::Time last_epd_msg_time;
   /*! \brief Vector of objects in the scene to be picked */
   #endif
 
