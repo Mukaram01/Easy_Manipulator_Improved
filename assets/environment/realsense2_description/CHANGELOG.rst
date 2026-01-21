@@ -1,6 +1,9 @@
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Changelog for package realsense2_description
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. note::
+   ROS1 references below are historical for upstream provenance. This repository targets ROS2 Humble; ROS1
+   compatibility is not required here.
 
 2.2.15 (2020-07-13)
 -------------------
