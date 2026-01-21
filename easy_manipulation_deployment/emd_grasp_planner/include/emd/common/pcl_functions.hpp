@@ -153,11 +153,13 @@ void get_closest_points_by_radius(
  * \param[in] cloud Target Cloud input
  * \param[in] cloud_normal Output Cloud Normal
  * \param[in] cloud_normal_radius Radius value for cloud normal
+ * \param[in] normal_estimation_threads Number of threads to use for normal estimation
  */
 void compute_cloud_normal(
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
   pcl::PointCloud<pcl::PointNormal>::Ptr cloud_normal,
-  const float & cloud_normal_radius);
+  const float & cloud_normal_radius,
+  const int & normal_estimation_threads);
 
 
 /**

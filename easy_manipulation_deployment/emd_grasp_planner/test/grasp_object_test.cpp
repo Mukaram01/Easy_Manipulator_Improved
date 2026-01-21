@@ -60,7 +60,7 @@ TEST_F(GraspObjectTest, getObjectBBTestAlignedX)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
 
   EXPECT_NEAR(0, object.axis.dot(world_y), 0.0001);
@@ -79,7 +79,7 @@ TEST_F(GraspObjectTest, getObjectBBTestAlignedY)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
 
   EXPECT_NEAR(0, object.axis.dot(world_x), 0.0001);
@@ -98,7 +98,7 @@ TEST_F(GraspObjectTest, getObjectBBTestAlignedZ)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
 
   EXPECT_NEAR(0, object.axis.dot(world_x), 0.0001);
@@ -117,7 +117,7 @@ TEST_F(GraspObjectTest, getObjectDimensionsTest)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_dimensions();
   EXPECT_NEAR(0.05, object.dimensions[0], 0.0001);
@@ -131,7 +131,7 @@ TEST_F(GraspObjectTest, getObjectWorldAnglesTestX)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
 
@@ -146,7 +146,7 @@ TEST_F(GraspObjectTest, getObjectWorldAnglesTestY)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
 
@@ -162,7 +162,7 @@ TEST_F(GraspObjectTest, getObjectWorldAnglesTestZ)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
 
@@ -177,7 +177,7 @@ TEST_F(GraspObjectTest, getObjectPoseTest)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
   geometry_msgs::msg::PoseStamped result_pose =
@@ -198,7 +198,7 @@ TEST_F(GraspObjectTest, getObjectPoseTest2)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   object.get_object_world_angles();
   geometry_msgs::msg::PoseStamped result_pose =
@@ -219,7 +219,7 @@ TEST_F(GraspObjectTest, getObjectShapeTest)
   Eigen::Vector4f centroid;
   pcl::compute3DCentroid(*object_cloud, centroid);
   GraspObject object("camera_frame", object_cloud, centroid);
-  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03);
+  PCLFunctions::compute_cloud_normal(object.cloud, object.cloud_normal, 0.03, 0);
   object.get_object_bb();
   shape_msgs::msg::SolidPrimitive shape = object.get_object_shape();
 }
