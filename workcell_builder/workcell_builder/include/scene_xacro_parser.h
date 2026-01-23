@@ -122,6 +122,18 @@ std::string resolve_universal_robot_xacro_filename(const Robot & robot)
   const auto candidates = universal_robot_xacro_candidates(robot);
   try {
     const auto package_share = ament_index_cpp::get_package_share_directory("ur_description");
+    const boost::filesystem::path legacy_path =
+      boost::filesystem::path(package_share) / "urdf" / (robot.name + ".urdf.xacro");
+    if (boost::filesystem::exists(legacy_path)) {
+      return robot.name + ".urdf.xacro";
+    }
+
+    const boost::filesystem::path config_path =
+      boost::filesystem::path(package_share) / "config" / robot.name;
+    if (boost::filesystem::exists(config_path) && boost::filesystem::is_directory(config_path)) {
+      return "ur.urdf.xacro";
+    }
+
     for (const auto & candidate : candidates) {
       const boost::filesystem::path xacro_path =
         boost::filesystem::path(package_share) / "urdf" / candidate;
