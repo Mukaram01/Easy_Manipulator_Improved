@@ -78,6 +78,8 @@ cd easy_manipulation_deployment
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
+  libpcap-dev \
+  libpng-dev \
   python3-vcstool \
   python3-colcon-common-extensions \
   ros-humble-moveit \
