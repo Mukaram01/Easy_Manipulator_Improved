@@ -39,16 +39,20 @@ const std::unordered_map<std::string, std::vector<std::string>> kDescriptionPack
   {"panda_robot", {"moveit_resources_panda_description", "panda_description"}}
 };
 
-std::string resolve_universal_robot_xacro_filename(const std::string & robot_name)
+std::string resolve_universal_robot_xacro_filename(
+  const boost::filesystem::path & ur_description_path,
+  const std::string & robot_name)
 {
-  static const std::unordered_map<std::string, std::string> kUrXacroByName = {
-    {"ur3", "ur.urdf.xacro"},
-    {"ur5", "ur.urdf.xacro"},
-    {"ur10", "ur.urdf.xacro"}
-  };
-  const auto it = kUrXacroByName.find(robot_name);
-  if (it != kUrXacroByName.end()) {
-    return it->second;
+  if (!ur_description_path.empty()) {
+    const boost::filesystem::path model_xacro =
+      ur_description_path / "urdf" / (robot_name + ".urdf.xacro");
+    if (boost::filesystem::exists(model_xacro)) {
+      return model_xacro.filename().string();
+    }
+    const boost::filesystem::path config_dir = ur_description_path / "config" / robot_name;
+    if (boost::filesystem::exists(config_dir)) {
+      return "ur.urdf.xacro";
+    }
   }
   return robot_name + ".urdf.xacro";
 }
@@ -354,7 +358,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
     temp_robot.brand = "universal_robot";
     temp_robot.name = robot_list[i];
     temp_robot.robot_links = GetLinks(
-      resolve_universal_robot_xacro_filename(temp_robot.name),
+      resolve_universal_robot_xacro_filename(ur_description_path, temp_robot.name),
       {
         "ur_type:=" + temp_robot.name,
         "name:=" + temp_robot.name
