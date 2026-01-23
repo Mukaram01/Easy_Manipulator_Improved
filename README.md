@@ -27,6 +27,19 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - **Jazzy** is experimental and does not have CI coverage unless added.
 
 ---
+## Universal Robots Description (ur_description)
+
+- Supports Universal_Robots_ROS2_Description (`ur_description` v2.x).
+- Scenes use `ur_macro.xacro` with `ur_type` configs and no longer require per-robot xacros.
+- Legacy per-robot xacros remain supported when present.
+
+Example validation command:
+
+```bash
+ros2 run xacro xacro src/scenes/suction_test/urdf/scene.urdf.xacro ur_type:=ur5 > /tmp/scene.urdf
+```
+
+---
 
 ## CI verified on Humble
 
