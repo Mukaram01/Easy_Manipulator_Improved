@@ -24,28 +24,29 @@ scene_pkg = 'suction_test'
 robot_base_link = 'base_link'
 robot_moveit_pkg = 'ur5_moveit_config'
 
-def to_urdf(xacro_path, urdf_path=None):
+def to_urdf(xacro_path, urdf_path=None, mappings=None):
     """Convert the given xacro file to URDF file.
     * xacro_path -- the path to the xacro file
     * urdf_path -- the path to the urdf file
+    * mappings -- xacro mappings to apply
     """
     # If no URDF path is given, use a temporary file
     if urdf_path is None:
         urdf_path = tempfile.mktemp(prefix="%s_" % os.path.basename(xacro_path))
 
     # open and process file
-    doc = xacro.process_file(xacro_path)
+    doc = xacro.process_file(xacro_path, mappings=mappings)
     # open the output file
     out = xacro.open_output(urdf_path)
     out.write(doc.toprettyxml(indent='  '))
 
     return urdf_path  # Return path to the urdf file
 
-def load_file(package_name, file_path):
+def load_file(package_name, file_path, mappings=None):
     package_path = get_package_share_directory(package_name) #get package filepath
     absolute_file_path = os.path.join(package_path, file_path)
     temp_urdf_filepath = absolute_file_path.replace('.xacro','')
-    absolute_file_path = to_urdf(absolute_file_path,temp_urdf_filepath)
+    absolute_file_path = to_urdf(absolute_file_path, temp_urdf_filepath, mappings=mappings)
     
     try:
         with open(absolute_file_path, 'r') as file:
@@ -68,7 +69,11 @@ def load_yaml(package_name, file_path):
 def generate_launch_description():
 
     # Component yaml files are grouped in separate namespaces
-    robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro')
+    robot_description_config = load_file(
+        scene_pkg,
+        'urdf/scene.urdf.xacro',
+        mappings={'ur_type': 'ur5', 'name': 'ur5', 'tf_prefix': ''},
+    )
     robot_description = {'robot_description' : robot_description_config}
 
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
