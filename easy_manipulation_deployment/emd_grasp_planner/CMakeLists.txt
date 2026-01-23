@@ -134,6 +134,7 @@ target_link_libraries(grasp_planning_interface
 )
 if(OpenMP_CXX_FOUND)
   target_link_libraries(grasp_planning_interface OpenMP::OpenMP_CXX)
+  ament_export_dependencies(OpenMP)
 endif()
 
 install(
