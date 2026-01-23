@@ -174,9 +174,16 @@ void generate_scene_xacro(Scene scene)
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
         const std::string ur_macro = scene.robot_vector[i].name + "_robot";
-        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
-          "\"/>\n";
-        MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
+        // Modern ur_description uses ur.urdf.xacro with a shared ur_robot macro.
+        if (ur_xacro == "ur.urdf.xacro") {
+          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
+          MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
+            "\" prefix=\"\" joint_limited=\"false\"/>\n";
+        } else {
+          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
+            "\"/>\n";
+          MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
+        }
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename =
