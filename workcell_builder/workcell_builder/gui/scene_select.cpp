@@ -818,16 +818,47 @@ bool SceneSelect::validate_description_xacros(
       error_stream << ".";
       report_error(error_stream.str());
     };
+  auto check_universal_robot_xacro = [&](const Robot & robot) {
+      fs::path package_share;
+      try {
+        package_share = ament_index_cpp::get_package_share_directory("ur_description");
+      } catch (const std::exception & e) {
+        ok = false;
+        report_error(
+          "ERROR: Missing robot '" + robot.name + "' description package 'ur_description': " +
+          e.what() + ". Expected file in ur_description/urdf/" + robot.name +
+          ".urdf.xacro or ur_description/urdf/ur.urdf.xacro.");
+        return;
+      }
+      const fs::path model_xacro = package_share / "urdf" / (robot.name + ".urdf.xacro");
+      if (fs::exists(model_xacro)) {
+        return;
+      }
+      const fs::path config_dir = package_share / "config" / robot.name;
+      if (fs::exists(config_dir)) {
+        const fs::path ur_xacro = package_share / "urdf" / "ur.urdf.xacro";
+        if (fs::exists(ur_xacro)) {
+          return;
+        }
+        ok = false;
+        report_error(
+          "ERROR: Missing robot '" + robot.name + "' xacro. Tried " +
+          model_xacro.string() + "; " + ur_xacro.string() + ".");
+        return;
+      }
+      ok = false;
+      report_error(
+        "ERROR: Missing robot '" + robot.name + "' xacro. Tried " +
+        model_xacro.string() + ".");
+    };
 
   if (scene.robot_loaded) {
     for (const auto & robot : scene.robot_vector) {
       const bool is_ur = robot.brand == "universal_robot";
-      const std::vector<std::string> filenames = is_ur ?
-        std::vector<std::string>{resolve_universal_robot_xacro_filename(robot)} :
-        robot_description_candidates(robot);
       if (is_ur) {
-        check_xacro("ur_description", filenames, "robot '" + robot.name + "'");
+        check_universal_robot_xacro(robot);
       } else {
+        const std::vector<std::string> filenames = robot_description_candidates(robot);
         check_xacro_with_fallbacks(
           description_package_candidates(robot), filenames, "robot '" + robot.name + "'");
       }
