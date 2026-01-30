@@ -2,9 +2,9 @@
 
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="suction_test">
 
-  <xacro:include filename="$(find ur5_moveit_config)/config/ur5.srdf.xacro" />
+  <xacro:include filename="$(find-pkg-share ur5_moveit_config)/config/ur5.srdf.xacro" />
 
-  <xacro:include filename="$(find single_suction_moveit_config)/config/single_suction_gripper.srdf.xacro" />
+  <xacro:include filename="$(find-pkg-share single_suction_moveit_config)/config/single_suction_gripper.srdf.xacro" />
 
   <xacro:ur5/>
 
