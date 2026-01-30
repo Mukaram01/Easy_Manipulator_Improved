@@ -29,7 +29,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ---
 ## Universal Robots Description (ur_description)
 
-- Supports Universal_Robots_ROS2_Description (`ur_description` v2.x).
+- Expected source: [Universal_Robots_ROS2_Description](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description) (`ur_description` v2.x, ROS 2).
+- Install via apt when using ROS 2 binaries: `ros-${ROS_DISTRO}-ur-description`.
 - Scenes use `ur_macro.xacro` with `ur_type` configs and no longer require per-robot xacros.
 - Legacy per-robot xacros remain supported when present.
 
@@ -38,6 +39,9 @@ Example validation command:
 ```bash
 ros2 run xacro xacro src/scenes/suction_test/urdf/scene.urdf.xacro ur_type:=ur5 > /tmp/scene.urdf
 ```
+
+Troubleshooting:
+- If a ROS 1 `ur_description` is on your `ROS_PACKAGE_PATH`, `ur.urdf.xacro` will fail with `Undefined substitution argument name`. Remove the ROS 1 package and install the ROS 2 `ur_description` v2.x instead.
 
 ---
 
@@ -97,6 +101,7 @@ sudo apt-get install -y \
   python3-colcon-common-extensions \
   ros-humble-moveit \
   ros-humble-moveit-visual-tools \
+  ros-humble-ur-description \
   ros-humble-xacro
 ```
 
