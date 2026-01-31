@@ -14,10 +14,10 @@
 <xacro:ur_robot
   name="$(arg name)"
   tf_prefix="$(arg tf_prefix)"
-  joint_limits_parameters="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
-  kinematics_parameters="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
-  physical_parameters="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
-  visual_parameters="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
+  joint_limit_params="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
+  kinematics_params="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
+  physical_params="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
+  visual_params="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
 
 <joint name="world_joint" type="fixed" >
   <parent link="world" />
