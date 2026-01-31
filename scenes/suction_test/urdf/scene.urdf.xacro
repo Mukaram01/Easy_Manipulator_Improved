@@ -16,12 +16,7 @@
   kinematics_params="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
   physical_params="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_params="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
-  <joint name="world_ur5" type="fixed">
-	<parent link="world" />
-	<child link="base_link" />
-	<origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
-
+  
  <!-- Import ur5 ros2_control description -->
 <xacro:include filename="$(find ur5_moveit_config)/config/ur5.ros2_control.xacro" />
 
