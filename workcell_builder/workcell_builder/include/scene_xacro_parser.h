@@ -190,11 +190,11 @@ void generate_scene_xacro(Scene scene)
         if (ur_xacro == "ur.urdf.xacro") {
           MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
           MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
-            "\" prefix=\"\" joint_limited=\"false\"/>\n";
+            "\" prefix=\"\" safety_limits=\"false\"/>\n";
         } else {
           MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
             "\"/>\n";
-          MyFile << " <xacro:" + ur_macro + " prefix=\"\" joint_limited=\"false\"/>\n";
+          MyFile << " <xacro:" + ur_macro + " prefix=\"\" safety_limits=\"false\"/>\n";
         }
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
