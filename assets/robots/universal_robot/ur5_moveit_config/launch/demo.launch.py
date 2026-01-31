@@ -30,6 +30,9 @@ def generate_robot_description(limited_value):
                 "ur_type:=",
                 ROBOT_NAME,
                 " ",
+                "name:=",
+                ROBOT_NAME,
+                " ",
                 "safety_limits:=",
                 limited_value,
             ]
