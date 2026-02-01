@@ -3,7 +3,7 @@ robot:
   brand: universal_robot
   filepath: ""
   base_link: base_link
-  ee_link: tool0
+  tool0: tool0
   links:
     - base_link
     - shoulder_link
