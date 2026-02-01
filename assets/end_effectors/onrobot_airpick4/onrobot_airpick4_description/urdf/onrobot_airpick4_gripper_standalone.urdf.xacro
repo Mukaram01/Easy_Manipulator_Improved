@@ -7,7 +7,7 @@
 
   <link name="base_link"/>
 
-  <xacro:airpick_4_vacuum_gripper prefix="${prefix}" parent="${parent}">
+  <xacro:airpick_4_vacuum_gripper prefix="$(arg prefix)" parent="$(arg parent)">
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:airpick_4_vacuum_gripper>
 </robot>
