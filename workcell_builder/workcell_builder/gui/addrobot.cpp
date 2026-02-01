@@ -316,6 +316,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
 {
   const boost::filesystem::path base_path = boost::filesystem::current_path();
   const boost::filesystem::path ur_description_path = base_path / "ur_description";
+  boost::filesystem::path resolved_ur_description_path = ur_description_path;
   if (!boost::filesystem::exists(ur_description_path)) {
     std::cerr
       << "ur_description directory not found at expected path: "
@@ -328,6 +329,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
         std::cerr
           << "Resolved ur_description via package share directory: "
           << share_path.string() << std::endl;
+        resolved_ur_description_path = share_path;
         boost::filesystem::current_path(share_path);
         resolved_package = true;
       }
@@ -358,7 +360,7 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
     temp_robot.brand = "universal_robot";
     temp_robot.name = robot_list[i];
     temp_robot.robot_links = GetLinks(
-      resolve_universal_robot_xacro_filename(ur_description_path, temp_robot.name),
+      resolve_universal_robot_xacro_filename(resolved_ur_description_path, temp_robot.name),
       {
         "ur_type:=" + temp_robot.name,
         "name:=" + temp_robot.name
