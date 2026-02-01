@@ -26,7 +26,7 @@
         <joint name="palm_finger_2_joint" />
         <joint name="palm_finger_middle_joint" />
     </group>
-    <end_effector name="robotiq_3f_gripper" parent_link="palm" group="gripper" parent_group="${parent_group}" />
+    <end_effector name="robotiq_3f_gripper" parent_link="tool0" group="gripper" parent_group="${parent_group}" />
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
     <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="palm" />
     <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
