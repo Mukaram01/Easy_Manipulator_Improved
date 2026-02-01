@@ -13,7 +13,7 @@ from launch.substitutions import FindExecutable
 MOVEIT_CONFIG_PACKAGE = "ur3_moveit_config"
 DESCRIPTION_PACKAGE = "ur_description"
 ROBOT_NAME = "ur3"
-URDF_FILE = "ur.urdf.xacro"
+URDF_FILE = "ur_macro.xacro"
 SRDF_FILE = "ur3.srdf"
 
 
@@ -28,6 +28,9 @@ def generate_robot_description(limited_value):
                 ),
                 " ",
                 "ur_type:=",
+                ROBOT_NAME,
+                " ",
+                "name:=",
                 ROBOT_NAME,
                 " ",
                 "safety_limits:=",
