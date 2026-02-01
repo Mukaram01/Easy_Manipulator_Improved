@@ -179,29 +179,26 @@ void generate_scene_xacro(Scene scene)
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" +
     scene.name + "\">\n\n";  // Change it if you are generating multiple robots
   MyFile << " <link name=\"world\"/>\n\n";  // Declare world joint
+  MyFile << " <xacro:arg name=\"ur_type\" default=\"ur5\"/>\n";
+  MyFile << " <xacro:arg name=\"name\" default=\"$(arg ur_type)\"/>\n";
+  MyFile << " <xacro:arg name=\"tf_prefix\" default=\"\"/>\n\n";
 
   if (scene.robot_loaded) {
     for (int i = 0; i < static_cast < int > (scene.robot_vector.size()); i++) {
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
-        const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
         add_world_joint = false;
-        if (ur_xacro != "ur.urdf.xacro") {
-          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
-            "\"/>\n";
-        } else {
-          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
-        }
-        MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
-          "\" prefix=\"\" safety_limits=\"true\" safety_pos_margin=\"0.15\" "
-          "safety_k_position=\"20\" joint_limits_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/joint_limits.yaml\" "
-          "kinematics_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/default_kinematics.yaml\" "
-          "physical_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/physical_parameters.yaml\" "
-          "visual_parameters_file=\"$(find ur_description)/config/" +
-          scene.robot_vector[i].name + "/visual_parameters.yaml\" parent=\"world\">\n";
+        MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur_macro.xacro\"/>\n";
+        MyFile << " <xacro:ur_robot name=\"$(arg name)\" tf_prefix=\"$(arg tf_prefix)\" "
+          "safety_limits=\"true\" safety_pos_margin=\"0.15\" "
+          "safety_k_position=\"20\" joint_limits_parameters_file=\"$(find ur_description)/config/"
+          "$(arg ur_type)/joint_limits.yaml\" "
+          "kinematics_parameters_file=\"$(find ur_description)/config/"
+          "$(arg ur_type)/default_kinematics.yaml\" "
+          "physical_parameters_file=\"$(find ur_description)/config/"
+          "$(arg ur_type)/physical_parameters.yaml\" "
+          "visual_parameters_file=\"$(find ur_description)/config/"
+          "$(arg ur_type)/visual_parameters.yaml\" parent=\"world\">\n";
         if (scene.robot_vector[i].origin.is_origin) {
           MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
             std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
