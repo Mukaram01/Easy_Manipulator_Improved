@@ -7,7 +7,7 @@
 
   <link name="base_link"/>
 
-  <xacro:single_suction_gripper prefix="${arg('prefix')}" parent="${arg('parent')}">
+  <xacro:single_suction_gripper prefix="$(arg prefix)" parent="$(arg parent)">
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:single_suction_gripper>
 </robot>
