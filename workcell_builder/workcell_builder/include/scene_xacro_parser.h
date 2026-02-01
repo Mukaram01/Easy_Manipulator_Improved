@@ -193,7 +193,15 @@ void generate_scene_xacro(Scene scene)
           MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
         }
         MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
-          "\" prefix=\"\" safety_limits=\"true\" parent=\"world\">\n";
+          "\" prefix=\"\" safety_limits=\"true\" safety_pos_margin=\"0.15\" "
+          "safety_k_position=\"20\" joint_limits_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/joint_limits.yaml\" "
+          "kinematics_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/default_kinematics.yaml\" "
+          "physical_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/physical_parameters.yaml\" "
+          "visual_parameters_file=\"$(find ur_description)/config/" +
+          scene.robot_vector[i].name + "/visual_parameters.yaml\" parent=\"world\">\n";
         if (scene.robot_vector[i].origin.is_origin) {
           MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
             std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
