@@ -851,6 +851,27 @@ bool SceneSelect::validate_description_xacros(
         "ERROR: Missing robot '" + robot.name + "' xacro. Tried " +
         model_xacro.string() + ".");
     };
+  auto check_moveit_srdf = [&](const std::string & package_name,
+      const std::string & filename,
+      const std::string & label) {
+      fs::path package_share;
+      try {
+        package_share = ament_index_cpp::get_package_share_directory(package_name);
+      } catch (const std::exception & e) {
+        ok = false;
+        report_error(
+          "ERROR: Missing " + label + " MoveIt config package '" + package_name + "': " +
+          e.what() + ". Expected file in " + package_name + "/config/" + filename + ".");
+        return;
+      }
+      const fs::path srdf_path = package_share / "config" / filename;
+      if (fs::exists(srdf_path)) {
+        return;
+      }
+      ok = false;
+      report_error(
+        "ERROR: Missing " + label + " SRDF xacro. Tried " + srdf_path.string() + ".");
+    };
 
   if (scene.robot_loaded) {
     for (const auto & robot : scene.robot_vector) {
@@ -862,6 +883,9 @@ bool SceneSelect::validate_description_xacros(
         check_xacro_with_fallbacks(
           description_package_candidates(robot), filenames, "robot '" + robot.name + "'");
       }
+      const std::string moveit_package = robot.name + "_moveit_config";
+      const std::string srdf_filename = robot.name + ".srdf.xacro";
+      check_moveit_srdf(moveit_package, srdf_filename, "robot '" + robot.name + "'");
     }
   }
 
@@ -870,6 +894,9 @@ bool SceneSelect::validate_description_xacros(
       const std::string package_name = resolve_ee_description_package(ee);
       const std::string filename = resolve_ee_xacro_filename(ee);
       check_xacro(package_name, {filename}, "end effector '" + ee.name + "'");
+      const std::string moveit_package = ee.name + "_moveit_config";
+      const std::string srdf_filename = ee.name + "_gripper.srdf.xacro";
+      check_moveit_srdf(moveit_package, srdf_filename, "end effector '" + ee.name + "'");
     }
   }
 
