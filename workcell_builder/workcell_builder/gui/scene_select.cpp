@@ -827,7 +827,7 @@ bool SceneSelect::validate_description_xacros(
         report_error(
           "ERROR: Missing robot '" + robot.name + "' description package 'ur_description': " +
           e.what() + ". Expected file in ur_description/urdf/" + robot.name +
-          ".urdf.xacro or ur_description/urdf/ur.urdf.xacro.");
+          ".urdf.xacro or ur_description/urdf/ur_macro.xacro.");
         return;
       }
       const fs::path model_xacro = package_share / "urdf" / (robot.name + ".urdf.xacro");
@@ -836,7 +836,7 @@ bool SceneSelect::validate_description_xacros(
       }
       const fs::path config_dir = package_share / "config" / robot.name;
       if (fs::exists(config_dir)) {
-        const fs::path ur_xacro = package_share / "urdf" / "ur.urdf.xacro";
+        const fs::path ur_xacro = package_share / "urdf" / "ur_macro.xacro";
         if (fs::exists(ur_xacro)) {
           return;
         }
