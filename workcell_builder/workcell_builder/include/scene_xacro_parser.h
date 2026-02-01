@@ -247,7 +247,8 @@ void generate_scene_xacro(Scene scene)
       const std::string ee_macro = resolve_ee_xacro_macro(scene.ee_vector[i]);
       
       MyFile << " <xacro:include filename=\"$(find " + ee_package + ")/urdf/" + ee_xacro + "\"/>\n";
-      MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" + scene.ee_vector[i].parent_link + "\">\n";
+      MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
+        scene.ee_vector[i].robot_link + "\">\n";
       if (scene.ee_vector[i].origin.is_origin) {
         MyFile << "\t<origin xyz=\"" + std::to_string(scene.ee_vector[i].origin.x) + " " +
           std::to_string(scene.ee_vector[i].origin.y) + " " + std::to_string(
@@ -262,19 +263,31 @@ void generate_scene_xacro(Scene scene)
     }
   }
 
-  if (scene.object_loaded) {
+  if (!scene.object_vector.empty()) {
     for (int i = 0; i < static_cast < int > (scene.object_vector.size()); i++) {
+      std::string parent_link = "world";
+      const int parent_object_pos = scene.object_vector[i].ext_joint.parent_obj_pos;
+      const int parent_link_pos = scene.object_vector[i].ext_joint.parent_link_pos;
+      if (parent_object_pos >= 0 && parent_link_pos >= 0 &&
+        parent_object_pos < static_cast<int>(scene.object_vector.size()) &&
+        parent_link_pos <
+        static_cast<int>(scene.object_vector[parent_object_pos].link_vector.size()))
+      {
+        parent_link =
+          scene.object_vector[parent_object_pos].link_vector[parent_link_pos].name;
+      }
       MyFile << " <xacro:include filename=\"$(find " + scene.object_vector[i].name +
         "_description)/urdf/" + scene.object_vector[i].name + ".urdf.xacro\"/>\n";
       MyFile << " <xacro:" + scene.object_vector[i].name + " prefix=\"\" parent=\"" +
-        scene.object_vector[i].parent_link + "\">\n";
-      if (scene.object_vector[i].origin.is_origin) {
-        MyFile << "\t<origin xyz=\"" + std::to_string(scene.object_vector[i].origin.x) + " " +
-          std::to_string(scene.object_vector[i].origin.y) + " " + std::to_string(
-          scene.object_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
-          scene.object_vector[i].origin.roll) + " " + std::to_string(
-          scene.object_vector[i].origin.pitch) + " " + std::to_string(
-          scene.object_vector[i].origin.yaw) + "\"/>\n";
+        parent_link + "\">\n";
+      if (scene.object_vector[i].ext_joint.origin.is_origin) {
+        MyFile << "\t<origin xyz=\"" +
+          std::to_string(scene.object_vector[i].ext_joint.origin.x) + " " +
+          std::to_string(scene.object_vector[i].ext_joint.origin.y) + " " + std::to_string(
+          scene.object_vector[i].ext_joint.origin.z) + "\" rpy=\"" + std::to_string(
+          scene.object_vector[i].ext_joint.origin.roll) + " " + std::to_string(
+          scene.object_vector[i].ext_joint.origin.pitch) + " " + std::to_string(
+          scene.object_vector[i].ext_joint.origin.yaw) + "\"/>\n";
       } else {
         MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
       }
