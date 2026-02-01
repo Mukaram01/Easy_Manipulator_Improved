@@ -179,37 +179,38 @@ void generate_scene_xacro(Scene scene)
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" +
     scene.name + "\">\n\n";  // Change it if you are generating multiple robots
   MyFile << " <link name=\"world\"/>\n\n";  // Declare world joint
-  MyFile << " <xacro:arg name=\"ur_type\" default=\"ur5\"/>\n";
-  MyFile << " <xacro:arg name=\"name\" default=\"$(arg ur_type)\"/>\n";
-  MyFile << " <xacro:arg name=\"tf_prefix\" default=\"\"/>\n\n";
 
   if (scene.robot_loaded) {
     for (int i = 0; i < static_cast < int > (scene.robot_vector.size()); i++) {
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         add_world_joint = false;
+        MyFile << " <xacro:arg name=\"ur_type\" default=\"" + scene.robot_vector[i].name + "\"/>\n";
+        MyFile << " <xacro:arg name=\"name\" default=\"$(arg ur_type)\"/>\n";
+        MyFile << " <xacro:arg name=\"tf_prefix\" default=\"\"/>\n\n";
         MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur_macro.xacro\"/>\n";
-        MyFile << " <xacro:ur_robot name=\"$(arg name)\" tf_prefix=\"$(arg tf_prefix)\" "
-          "safety_limits=\"true\" safety_pos_margin=\"0.15\" "
-          "safety_k_position=\"20\" joint_limits_parameters_file=\"$(find ur_description)/config/"
-          "$(arg ur_type)/joint_limits.yaml\" "
-          "kinematics_parameters_file=\"$(find ur_description)/config/"
-          "$(arg ur_type)/default_kinematics.yaml\" "
-          "physical_parameters_file=\"$(find ur_description)/config/"
-          "$(arg ur_type)/physical_parameters.yaml\" "
-          "visual_parameters_file=\"$(find ur_description)/config/"
-          "$(arg ur_type)/visual_parameters.yaml\" parent=\"world\">\n";
+        MyFile << " <xacro:ur_robot\n";
+        MyFile << "   name=\"$(arg name)\"\n";
+        MyFile << "   tf_prefix=\"$(arg tf_prefix)\"\n";
+        MyFile << "   parent=\"world\"\n";
+        MyFile << "   safety_limits=\"true\"\n";
+        MyFile << "   safety_pos_margin=\"0.15\"\n";
+        MyFile << "   safety_k_position=\"20\"\n";
+        MyFile << "   joint_limits_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml\"\n";
+        MyFile << "   kinematics_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml\"\n";
+        MyFile << "   physical_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml\"\n";
+        MyFile << "   visual_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml\">\n";
         if (scene.robot_vector[i].origin.is_origin) {
-          MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
+          MyFile << "   <origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
             std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
             scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
             scene.robot_vector[i].origin.roll) + " " + std::to_string(
             scene.robot_vector[i].origin.pitch) + " " + std::to_string(
             scene.robot_vector[i].origin.yaw) + "\"/>\n";
         } else {
-          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+          MyFile << "   <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
         }
-        MyFile << " </xacro:ur_robot>\n";
+        MyFile << " </xacro:ur_robot>\n\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename =
@@ -237,7 +238,6 @@ void generate_scene_xacro(Scene scene)
         MyFile << "  </joint>\n";
       }
     }
-    MyFile << "\n";
   }
 
   if (scene.ee_loaded) {
@@ -245,13 +245,10 @@ void generate_scene_xacro(Scene scene)
       const std::string ee_package = resolve_ee_description_package(scene.ee_vector[i]);
       const std::string ee_xacro = resolve_ee_xacro_filename(scene.ee_vector[i]);
       const std::string ee_macro = resolve_ee_xacro_macro(scene.ee_vector[i]);
-      MyFile << " <xacro:include filename=\"$(find " + ee_package +
-        ")/urdf/" + ee_xacro + "\"/>\n";
-
-      MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
-        scene.robot_vector[scene.ee_vector[i].robot_pos].ee_link + "\">\n";
+      
+      MyFile << " <xacro:include filename=\"$(find " + ee_package + ")/urdf/" + ee_xacro + "\"/>\n";
+      MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" + scene.ee_vector[i].parent_link + "\">\n";
       if (scene.ee_vector[i].origin.is_origin) {
-        std::cout << "Xacro parser has origin" << std::endl;
         MyFile << "\t<origin xyz=\"" + std::to_string(scene.ee_vector[i].origin.x) + " " +
           std::to_string(scene.ee_vector[i].origin.y) + " " + std::to_string(
           scene.ee_vector[i].origin.z) + "\" rpy=\"" +
@@ -259,43 +256,32 @@ void generate_scene_xacro(Scene scene)
           scene.ee_vector[i].origin.pitch) + " " + std::to_string(scene.ee_vector[i].origin.yaw) +
           "\"/>\n";
       } else {
-        std::cout << "Xacro parser has no origin" << std::endl;
         MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
       }
-      MyFile << " </xacro:" + ee_macro + ">\n";
+      MyFile << " </xacro:" + ee_macro + ">\n\n";
     }
-    MyFile << "\n";
   }
 
-  for (int i = 0; i < static_cast < int > (scene.object_vector.size()); i++) {
-    std::string parent_link;
-    if (scene.object_vector[i].ext_joint.parent_obj_pos >= 0 ||
-      scene.object_vector[i].ext_joint.parent_link_pos >= 0)
-    {
-      parent_link =
-        scene.object_vector[scene.object_vector[i].ext_joint.parent_obj_pos].link_vector[scene.
-          object_vector[i].ext_joint.parent_link_pos].name;
-    } else {
-      parent_link = "world";
+  if (scene.object_loaded) {
+    for (int i = 0; i < static_cast < int > (scene.object_vector.size()); i++) {
+      MyFile << " <xacro:include filename=\"$(find " + scene.object_vector[i].name +
+        "_description)/urdf/" + scene.object_vector[i].name + ".urdf.xacro\"/>\n";
+      MyFile << " <xacro:" + scene.object_vector[i].name + " prefix=\"\" parent=\"" +
+        scene.object_vector[i].parent_link + "\">\n";
+      if (scene.object_vector[i].origin.is_origin) {
+        MyFile << "\t<origin xyz=\"" + std::to_string(scene.object_vector[i].origin.x) + " " +
+          std::to_string(scene.object_vector[i].origin.y) + " " + std::to_string(
+          scene.object_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
+          scene.object_vector[i].origin.roll) + " " + std::to_string(
+          scene.object_vector[i].origin.pitch) + " " + std::to_string(
+          scene.object_vector[i].origin.yaw) + "\"/>\n";
+      } else {
+        MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+      }
+      MyFile << " </xacro:" + scene.object_vector[i].name + ">\n\n";
     }
-    MyFile << " <xacro:include filename=\"$(find " + scene.object_vector[i].name +
-      "_description)/urdf/" + scene.object_vector[i].name + ".urdf.xacro\"/>\n";
-    MyFile << " <xacro:" + scene.object_vector[i].name + " prefix=\"\" parent=\"" + parent_link +
-      "\">\n";
-    if (scene.object_vector[i].ext_joint.origin.is_origin) {
-      MyFile << "\t<origin xyz=\"" + std::to_string(scene.object_vector[i].ext_joint.origin.x) +
-        " " + std::to_string(scene.object_vector[i].ext_joint.origin.y) + " " + std::to_string(
-        scene.object_vector[i].ext_joint.origin.z) + "\" rpy=\"" + std::to_string(
-        scene.object_vector[i].ext_joint.origin.roll) + " " + std::to_string(
-        scene.object_vector[i].ext_joint.origin.pitch) + " " + std::to_string(
-        scene.object_vector[i].ext_joint.origin.yaw) + "\"/>\n";
-    } else {
-      MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
-    }
-    MyFile << " </xacro:" + scene.object_vector[i].name + ">\n";
   }
-  MyFile << "\n";
   MyFile << "</robot>";
-  // connect EE to robot
+  MyFile.close();
 }
 #endif  // SCENE_XACRO_PARSER_H_
