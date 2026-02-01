@@ -149,11 +149,17 @@ def load_file(package_name: str, file_path: str) -> Optional[str]:
             # defaults which may not handle non-ASCII characters correctly.
             with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
                 return file.read()
-    except Exception:
+    except Exception as exc:
         # ``to_urdf`` may raise a variety of exceptions when the conversion
         # fails (e.g. malformed xacro, missing files or packages).  Swallow
         # any such error and indicate the failure by returning ``None`` to the
         # caller.
+        logger.exception(
+            "Failed to load %s/%s: %s",
+            package_name,
+            file_path,
+            exc,
+        )
         return None
 
 
