@@ -1,7 +1,13 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robotiq_3f_gripper">
   <xacro:macro name="robotiq-3f-gripper_articulated" params="prefix parent *origin">
-    <link name="${prefix}palm" />
+    <link name="${prefix}palm">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0" />
+        <mass value="1.3" />
+        <inertia ixx="0.006012" ixy="0.000079" ixz="-0.00024" iyy="0.012892" iyz="0" izz="0.002435" />
+      </inertial>
+    </link>
 
     <joint name="${prefix}palm_joint" type="fixed">
       <parent link="${parent}" />
