@@ -4,7 +4,7 @@
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robotiq-3f-gripper_articulated">
-<xacro:macro name="robotiq-3f-gripper_articulated">
+<xacro:macro name="robotiq-3f-gripper_articulated" params="parent_group:=manipulator">
     <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
     <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
     <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
@@ -26,7 +26,7 @@
         <joint name="palm_finger_2_joint" />
         <joint name="palm_finger_middle_joint" />
     </group>
-    <end_effector name="robotiq_3f_gripper" parent_link="palm" group="gripper" />
+    <end_effector name="robotiq_3f_gripper" parent_link="palm" group="gripper" parent_group="${parent_group}" />
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
     <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="palm" />
     <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
