@@ -14,7 +14,7 @@
         <chain base_link="wrist_fixture" tip_link="suction_cup_link" />
         <joint name="virtual_ee_joint" />
     </group>
-    <end_effector name="single_suction_gripper" parent_link="wrist_fixture" group="gripper" />
+    <end_effector name="single_suction_gripper" parent_link="tool0" parent_group="manipulator" group="gripper" />
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
     <!--virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="gripper_root_link" /-->
     <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
