@@ -214,6 +214,13 @@ void SceneSelect::generate_scene_files(Scene scene)
   if (!scene.robot_loaded && !scene.ee_loaded) {  // no robot and ee
     generate_armhand_xacro(scene.name);
   }
+  fs::path srdf_path =
+    workcell_path / "scenes" / scene.name / "urdf" / "arm_hand.srdf.xacro";
+  if (!boost::filesystem::exists(srdf_path)) {
+    ui->error_workcell->append(
+      "<font color='red'>ERROR: Failed to generate urdf/arm_hand.srdf.xacro.</font>");
+    return;
+  }
   fs::path base_template_path = templates_path / ("ros" + std::to_string(workcell.ros_ver));
   fs::path launch_path = base_template_path / workcell.ros_distro / "launch";
   if (workcell.ros_distro.empty() || !boost::filesystem::exists(launch_path)) {
