@@ -23,9 +23,10 @@
 #include <fstream>
 
 // General
+#include <algorithm>
 #include <iostream>
-#include <vector>
 #include <string>
+#include <vector>
 
 // For Yaml parsing
 #include "yaml-cpp/yaml.h"
@@ -35,6 +36,37 @@
 #include "yaml_parser/externaljoint_parser.h"
 #include "yaml_parser/object_parser.h"
 #include "yaml_parser/origin_parser.h"
+
+namespace {
+std::vector<std::string> normalize_robot_links(const Robot & robot)
+{
+  std::vector<std::string> links = robot.robot_links;
+  if (robot.ee_link.empty() || robot.ee_link == "ee_link") {
+    return links;
+  }
+
+  bool has_preferred = false;
+  bool has_placeholder = false;
+  for (const auto & link : links) {
+    if (link == robot.ee_link) {
+      has_preferred = true;
+    } else if (link == "ee_link") {
+      has_placeholder = true;
+    }
+  }
+
+  if (has_placeholder) {
+    links.erase(
+      std::remove(links.begin(), links.end(), "ee_link"),
+      links.end());
+    if (!has_preferred) {
+      links.push_back(robot.ee_link);
+    }
+  }
+
+  return links;
+}
+}  // namespace
 
 
 class GenerateYAML
@@ -69,8 +101,9 @@ public:
       out << YAML::Key << "links";
       out << YAML::Value << YAML::BeginSeq;
 
-      for (int i = 0; i < static_cast < int > (scene.robot_vector[0].robot_links.size()); i++) {
-        out << scene.robot_vector[0].robot_links[i];
+      const auto normalized_robot_links = normalize_robot_links(scene.robot_vector[0]);
+      for (int i = 0; i < static_cast < int > (normalized_robot_links.size()); i++) {
+        out << normalized_robot_links[i];
       }
       out << YAML::EndSeq;
       out << YAML::EndMap;
