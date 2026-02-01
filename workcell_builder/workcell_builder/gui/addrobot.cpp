@@ -46,12 +46,19 @@ std::string resolve_universal_robot_xacro_filename(
   if (!ur_description_path.empty()) {
     const boost::filesystem::path model_xacro =
       ur_description_path / "urdf" / (robot_name + ".urdf.xacro");
-    if (boost::filesystem::exists(model_xacro)) {
-      return model_xacro.filename().string();
-    }
     const boost::filesystem::path config_dir = ur_description_path / "config" / robot_name;
     if (boost::filesystem::exists(config_dir)) {
-      return "ur.urdf.xacro";
+      const boost::filesystem::path ur_macro = ur_description_path / "urdf" / "ur_macro.xacro";
+      if (boost::filesystem::exists(ur_macro)) {
+        return ur_macro.filename().string();
+      }
+      if (boost::filesystem::exists(model_xacro)) {
+        return model_xacro.filename().string();
+      }
+      return "ur_macro.xacro";
+    }
+    if (boost::filesystem::exists(model_xacro)) {
+      return model_xacro.filename().string();
     }
   }
   return robot_name + ".urdf.xacro";
