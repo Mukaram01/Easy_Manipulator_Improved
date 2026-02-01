@@ -13,7 +13,7 @@ from launch.substitutions import FindExecutable
 MOVEIT_CONFIG_PACKAGE = "ur5_moveit_config"
 DESCRIPTION_PACKAGE = "ur_description"
 ROBOT_NAME = "ur5"
-URDF_FILE = "ur.urdf.xacro"
+URDF_FILE = "ur_macro.xacro"
 SRDF_FILE = "ur5.srdf"
 
 
