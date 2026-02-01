@@ -185,17 +185,26 @@ void generate_scene_xacro(Scene scene)
       bool add_world_joint = true;
       if (scene.robot_vector[i].brand.compare("universal_robot") == 0) {
         const std::string ur_xacro = resolve_universal_robot_xacro_filename(scene.robot_vector[i]);
-        const std::string ur_macro = scene.robot_vector[i].name + "_robot";
-        // Modern ur_description uses ur.urdf.xacro with a shared ur_robot macro.
-        if (ur_xacro == "ur.urdf.xacro") {
-          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
-          MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
-            "\" prefix=\"\" safety_limits=\"false\"/>\n";
-        } else {
+        add_world_joint = false;
+        if (ur_xacro != "ur.urdf.xacro") {
           MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/" + ur_xacro +
             "\"/>\n";
-          MyFile << " <xacro:" + ur_macro + " prefix=\"\" safety_limits=\"false\"/>\n";
+        } else {
+          MyFile << " <xacro:include filename=\"$(find ur_description)/urdf/ur.urdf.xacro\"/>\n";
         }
+        MyFile << " <xacro:ur_robot ur_type:=\"" + scene.robot_vector[i].name +
+          "\" prefix=\"\" safety_limits=\"true\" parent=\"world\">\n";
+        if (scene.robot_vector[i].origin.is_origin) {
+          MyFile << "\t<origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
+            std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
+            scene.robot_vector[i].origin.z) + "\" rpy=\"" + std::to_string(
+            scene.robot_vector[i].origin.roll) + " " + std::to_string(
+            scene.robot_vector[i].origin.pitch) + " " + std::to_string(
+            scene.robot_vector[i].origin.yaw) + "\"/>\n";
+        } else {
+          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        }
+        MyFile << " </xacro:ur_robot>\n";
       } else {
         const std::string package_name = resolve_description_package(scene.robot_vector[i]);
         const std::string xacro_filename =
