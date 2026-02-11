@@ -33,6 +33,11 @@ void MultiFingerTest::reset_variables()
   voxel_size = 0.01;
   grasp_quality_weight1 = 1.5;
   grasp_quality_weight2 = 1.0;
+  centroid_dist_penalty_weight = 0.0;
+  wrist_rotation_penalty_weight = 0.0;
+  preferred_wrist_roll = 0.0;
+  preferred_wrist_pitch = 0.0;
+  preferred_wrist_yaw = 0.0;
   grasp_plane_dist_limit = 0.007;
   cloud_normal_radius = 0.03;
   worldXAngleThreshold = 0.5;
@@ -56,6 +61,11 @@ void MultiFingerTest::LoadGripper()
     voxel_size,
     grasp_quality_weight1,
     grasp_quality_weight2,
+    centroid_dist_penalty_weight,
+    wrist_rotation_penalty_weight,
+    preferred_wrist_roll,
+    preferred_wrist_pitch,
+    preferred_wrist_yaw,
     grasp_plane_dist_limit,
     cloud_normal_radius,
     worldXAngleThreshold,
@@ -2019,6 +2029,77 @@ TEST_F(MultiFingerTest, getGripperRankTest)
     gripper->get_gripper_rank_public(sample);
     EXPECT_NE(sample->rank, 0);
   }
+}
+
+TEST_F(MultiFingerTest, getGripperRankCenterDistancePenaltyChangesOrder)
+{
+  reset_variables();
+  centroid_dist_penalty_weight = 20.0;
+  ASSERT_NO_THROW(LoadGripper());
+
+  auto near_1 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+  auto near_2 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+  auto far_1 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.5F, 0.01F, 0.01F, 0);
+  auto far_2 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.5F, 0.01F, 0.01F, 0);
+
+  auto near_grasp = std::make_shared<MultiFingerGripper>(
+    near_1,
+    near_2,
+    Eigen::Vector3f(1.0F, 0.0F, 0.0F),
+    Eigen::Vector3f(0.0F, 1.0F, 0.0F));
+  near_grasp->closed_fingers_1 = {near_1};
+  near_grasp->closed_fingers_2 = {near_2};
+  near_grasp->grasp_plane_angle_cos = 0.2F;
+
+  auto far_grasp = std::make_shared<MultiFingerGripper>(
+    far_1,
+    far_2,
+    Eigen::Vector3f(1.0F, 0.0F, 0.0F),
+    Eigen::Vector3f(0.0F, 1.0F, 0.0F));
+  far_grasp->closed_fingers_1 = {far_1};
+  far_grasp->closed_fingers_2 = {far_2};
+  far_grasp->grasp_plane_angle_cos = 0.2F;
+
+  gripper->get_gripper_rank_public(near_grasp);
+  gripper->get_gripper_rank_public(far_grasp);
+
+  EXPECT_GT(near_grasp->rank, far_grasp->rank);
+}
+
+TEST_F(MultiFingerTest, getGripperRankWristRotationPenaltyChangesOrder)
+{
+  reset_variables();
+  wrist_rotation_penalty_weight = 5.0;
+  preferred_wrist_yaw = 0.0;
+  ASSERT_NO_THROW(LoadGripper());
+
+  auto aligned_1 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+  auto aligned_2 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+  auto rotated_1 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+  auto rotated_2 = std::make_shared<SingleFinger>(pcl::PointNormal(), 0.01F, 0.01F, 0.01F, 0);
+
+  auto aligned_grasp = std::make_shared<MultiFingerGripper>(
+    aligned_1,
+    aligned_2,
+    Eigen::Vector3f(1.0F, 0.0F, 0.0F),
+    Eigen::Vector3f(0.0F, 1.0F, 0.0F));
+  aligned_grasp->closed_fingers_1 = {aligned_1};
+  aligned_grasp->closed_fingers_2 = {aligned_2};
+  aligned_grasp->grasp_plane_angle_cos = 0.2F;
+
+  auto rotated_grasp = std::make_shared<MultiFingerGripper>(
+    rotated_1,
+    rotated_2,
+    Eigen::Vector3f(0.0F, -1.0F, 0.0F),
+    Eigen::Vector3f(1.0F, 0.0F, 0.0F));
+  rotated_grasp->closed_fingers_1 = {rotated_1};
+  rotated_grasp->closed_fingers_2 = {rotated_2};
+  rotated_grasp->grasp_plane_angle_cos = 0.2F;
+
+  gripper->get_gripper_rank_public(aligned_grasp);
+  gripper->get_gripper_rank_public(rotated_grasp);
+
+  EXPECT_GT(aligned_grasp->rank, rotated_grasp->rank);
 }
 
 // TEST_F(MultiFingerTest, get_planar_rpy_publicTestXYZ)

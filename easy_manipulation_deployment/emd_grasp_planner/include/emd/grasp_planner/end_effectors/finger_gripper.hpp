@@ -263,6 +263,11 @@ public:
    * \param[in] voxel_size_ Voxel size for downsampling
    * \param[in] grasp_quality_weight1_ weight 1 of grasp ranking
    * \param[in] grasp_quality_weight2_ weight 2 of grasp ranking
+   * \param[in] centroid_dist_penalty_weight_ weight for centroid distance penalty term
+   * \param[in] wrist_rotation_penalty_weight_ weight for wrist orientation penalty term
+   * \param[in] preferred_wrist_roll_ preferred wrist roll orientation in radians
+   * \param[in] preferred_wrist_pitch_ preferred wrist pitch orientation in radians
+   * \param[in] preferred_wrist_yaw_ preferred wrist yaw orientation in radians
    * \param[in] grasp_plane_dist_limit_ Parameter for SAC search for points on plane
    * \param[in] cloud_normal_radius_ Radius of which to determine cloud normals
    * \param[in] worldXAngleThreshold_ Threshold after which the object is angled to the world X axis
@@ -283,6 +288,11 @@ public:
     const float & voxel_size_,
     const float & grasp_quality_weight1_,
     const float & grasp_quality_weight2_,
+    const float & centroid_dist_penalty_weight_,
+    const float & wrist_rotation_penalty_weight_,
+    const float & preferred_wrist_roll_,
+    const float & preferred_wrist_pitch_,
+    const float & preferred_wrist_yaw_,
     const float & grasp_plane_dist_limit_,
     const float & cloud_normal_radius_,
     const float & worldXAngleThreshold_,
@@ -347,6 +357,16 @@ protected:
   const float grasp_quality_weight1;
   /*! \brief weight 2 of grasp ranking */
   const float grasp_quality_weight2;
+  /*! \brief penalty weight for mean finger distance to object centroid */
+  const float centroid_dist_penalty_weight;
+  /*! \brief penalty weight for wrist orientation offset from preferred orientation */
+  const float wrist_rotation_penalty_weight;
+  /*! \brief preferred wrist roll orientation in radians */
+  const float preferred_wrist_roll;
+  /*! \brief preferred wrist pitch orientation in radians */
+  const float preferred_wrist_pitch;
+  /*! \brief preferred wrist yaw orientation in radians */
+  const float preferred_wrist_yaw;
   /*! \brief Parameter for SAC search for points on plane */
   const float grasp_plane_dist_limit;
   /*! \brief Radius of which to determine cloud normals */
