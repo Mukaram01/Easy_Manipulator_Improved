@@ -30,21 +30,6 @@
 
 #include "moveit/macros/console_colors.h"
 
-namespace
-{
-template <class OptionsT>
-auto declare_parameters_from_overrides(OptionsT & options, int)
-    -> decltype(options.declare_parameters_from_overrides(true), void())
-{
-  options.declare_parameters_from_overrides(true);
-}
-
-template <class OptionsT>
-void declare_parameters_from_overrides(OptionsT & options, ...)
-{
-  options.automatically_declare_parameters_from_overrides(true);
-}
-}  // namespace
 
 namespace grasp_execution
 {
@@ -330,7 +315,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::NodeOptions node_options;
-  declare_parameters_from_overrides(node_options, 0);
+  node_options.declare_parameters_from_overrides(true);
   rclcpp::Node::SharedPtr node =
     rclcpp::Node::make_shared("grasp_execution_demo_node", "", node_options);
 

@@ -16,27 +16,12 @@
 #include <gtest/gtest.h>
 #include "grasp_scene_test.hpp"
 
-namespace
-{
-template <class OptionsT>
-auto declare_parameters_from_overrides(OptionsT & options, int)
-    -> decltype(options.declare_parameters_from_overrides(true), void())
-{
-  options.declare_parameters_from_overrides(true);
-}
-
-template <class OptionsT>
-void declare_parameters_from_overrides(OptionsT & options, ...)
-{
-  options.automatically_declare_parameters_from_overrides(true);
-}
-}  // namespace
 
 GraspSceneTest::GraspSceneTest()
 {
   rclcpp::NodeOptions node_options;
   node_options.allow_undeclared_parameters(true);
-  declare_parameters_from_overrides(node_options, 0);
+  node_options.declare_parameters_from_overrides(true);
   node = rclcpp::Node::make_shared("grasp_scene_test", "", node_options);
 }
 
