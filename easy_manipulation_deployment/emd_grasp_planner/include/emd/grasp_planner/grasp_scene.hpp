@@ -244,6 +244,8 @@ protected:
   rclcpp::TimerBase::SharedPtr epd_msg_timer;
   /*! \brief Last time an EPD message was received */
   rclcpp::Time last_epd_msg_time;
+  /*! \brief Earliest time when EPD trigger retries are allowed */
+  rclcpp::Time next_epd_trigger_time;
   /*! \brief Vector of objects in the scene to be picked */
   #endif
 

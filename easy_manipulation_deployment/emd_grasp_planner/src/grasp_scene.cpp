@@ -635,6 +635,7 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
     &grasp_planner::GraspScene<T>::start_planning, this);
 
   last_epd_msg_time = node->get_clock()->now();
+  next_epd_trigger_time = last_epd_msg_time;
   const double epd_msg_timeout_s =
     node->get_parameter("easy_perception_deployment.epd_msg_timeout_s").as_double();
   if (epd_msg_timeout_s > 0.0) {
@@ -644,6 +645,10 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
       std::chrono::duration_cast<std::chrono::nanoseconds>(check_period),
       [this, epd_msg_timeout_s]() {
         const auto now = node->get_clock()->now();
+        if (now < next_epd_trigger_time) {
+          return;
+        }
+
         const double elapsed = (now - last_epd_msg_time).seconds();
         if (elapsed > epd_msg_timeout_s) {
           RCLCPP_WARN(
@@ -651,7 +656,7 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
             "No EPD message received for %.2f s (timeout %.2f s). Triggering EPD pipeline.",
             elapsed, epd_msg_timeout_s);
           trigger_epd_pipeline();
-          last_epd_msg_time = now;
+          next_epd_trigger_time = now + rclcpp::Duration::from_seconds(epd_msg_timeout_s);
         }
       });
   }
@@ -665,32 +670,44 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 template<typename T>
 void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
 {
-  RCLCPP_INFO(LOGGER, "Waiting for EPD Service");
-  while (!epd_client->wait_for_service(std::chrono::seconds(1))) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(node->get_logger(), "client interrupted while waiting for service to appear.");
-      return;
-    }
+  const double epd_service_wait_timeout_s = std::max(
+    0.0, node->get_parameter("easy_perception_deployment.epd_service_wait_timeout_s").as_double());
+  const auto wait_timeout = std::chrono::duration<double>(epd_service_wait_timeout_s);
+
+  RCLCPP_INFO(
+    LOGGER, "Checking EPD service availability (timeout %.2f s).", epd_service_wait_timeout_s);
+  if (!epd_client->wait_for_service(wait_timeout)) {
+    RCLCPP_WARN(
+      LOGGER,
+      "EPD service unavailable after %.2f s wait. Skipping trigger request.",
+      epd_service_wait_timeout_s);
+    return;
   }
-  RCLCPP_INFO(LOGGER, "EPD Service found. Sending trigger to EPD pipeline");
+
   auto req = std::make_shared<epd_msgs::srv::Perception::Request>();
   req->ready = true;
+
   if (!this->epd_result_future.valid()) {
-    RCLCPP_INFO(LOGGER, "Client Not started");
+    RCLCPP_INFO(LOGGER, "Sending EPD trigger request (first request).");
     auto request = epd_client->async_send_request(req);
     this->epd_result_future = request.future.share();
-  } else if (this->epd_result_future.wait_for(std::chrono::nanoseconds(0)) ==
-    std::future_status::timeout)
-  {
-    RCLCPP_INFO(LOGGER, "EPD Pipeline already Ongoing");
-  } else {
-    auto result = this->epd_result_future.get();
-    RCLCPP_INFO(
-      LOGGER, "EPD Pipeline triggering complete. STATUS: %s!!",
-      (result->success) ? "SUCCESS" : "FAILURE");
-    auto request = epd_client->async_send_request(req);
-    this->epd_result_future = request.future.share();
+    return;
   }
+
+  if (this->epd_result_future.wait_for(std::chrono::nanoseconds(0)) == std::future_status::timeout) {
+    RCLCPP_INFO(LOGGER, "EPD trigger request already in-flight; skipping duplicate trigger.");
+    return;
+  }
+
+  auto result = this->epd_result_future.get();
+  if (result->success) {
+    RCLCPP_INFO(LOGGER, "Previous EPD trigger request succeeded. Sending next trigger request.");
+  } else {
+    RCLCPP_WARN(LOGGER, "Previous EPD trigger request failed. Sending retry trigger request.");
+  }
+
+  auto request = epd_client->async_send_request(req);
+  this->epd_result_future = request.future.share();
 }
 #endif
 
