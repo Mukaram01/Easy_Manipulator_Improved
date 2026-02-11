@@ -1,10 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Bootstrap + build script for ROS 2 Humble/Jazzy workspaces.
-# Usage: ./fix_and_build_humble.sh
+# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--legacy-workarounds]
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws
+
+PROFILE="minimal"
+ENABLE_LEGACY_WORKAROUNDS=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./fix_and_build_humble.sh [options]
+
+Options:
+  --profile minimal|full      Select bootstrap profile (default: minimal)
+  --legacy-workarounds        Enable legacy Humble patch/ignore behavior (opt-in)
+  -h, --help                  Show this help message
+
+Profiles:
+  minimal   Headless-friendly path that uses released apt packages and skips
+            importing the tesseract/trajopt source overlays.
+  full      Imports tesseract.repos overlays for planning/dev workflows.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      PROFILE="${2:-}"
+      shift 2
+      ;;
+    --legacy-workarounds)
+      ENABLE_LEGACY_WORKAROUNDS=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$PROFILE" != "minimal" && "$PROFILE" != "full" ]]; then
+  echo "Invalid --profile value: '$PROFILE' (expected: minimal or full)" >&2
+  exit 1
+fi
 
 APT_GET_CMD="apt-get"
 if command -v sudo >/dev/null 2>&1; then
@@ -149,6 +195,23 @@ PY
   fi
 }
 
+apply_legacy_ignore_workarounds() {
+  local ignore_paths=(
+    "$PWD/src/tesseract_qt/COLCON_IGNORE"
+    "$PWD/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE"
+    "$PWD/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE"
+    "$PWD/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE"
+    "$PWD/src/tesseract_planning/tesseract_examples/COLCON_IGNORE"
+  )
+
+  for marker in "${ignore_paths[@]}"; do
+    if [[ -d "$(dirname "$marker")" ]]; then
+      echo "Applying legacy ignore marker: $marker"
+      touch "$marker"
+    fi
+  done
+}
+
 # Install core system dependencies (Boost + TinyXML2) using the shared helper so
 # all setup paths stay in sync. The helper also reinstalls Boost headers when
 # container images omit them even though dpkg claims the packages are present,
@@ -181,7 +244,8 @@ if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
 fi
 
 REPO_FILE="$SCRIPT_DIR/tesseract.repos"
-if [ -f "$REPO_FILE" ]; then
+if [[ "$PROFILE" == "full" && -f "$REPO_FILE" ]]; then
+  echo "Profile 'full': importing source overlays from tesseract.repos"
   ensure_pyyaml
 
   mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_FILE" SRC="$PWD/src" python3 - <<'PY'
@@ -266,7 +330,11 @@ fi
 # manual instructions from the troubleshooting section in the README and keeps
 # the workspace consistent even on fresh clones.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
-apply_trajopt_ifopt_patch
+if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
+  echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
+  apply_trajopt_ifopt_patch
+  apply_legacy_ignore_workarounds
+fi
 
 ROSDEP_OVERRIDES="$SCRIPT_DIR/scripts/rosdep_overrides.yaml"
 if [[ -f "$ROSDEP_OVERRIDES" ]]; then
@@ -429,29 +497,34 @@ CMAKE_ARGS=(
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 )
 
-# 1) Ensure boost_plugin_loader exists
-if [ ! -d src/boost_plugin_loader ]; then
-  git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
-fi
-
 # 2) Clean fully (start from scratch)
 rm -rf build install log
 find src \( -name build -o -name install -o -name log \) -print0 | xargs -0 -r rm -rf
 
-# 3) Stage 1: infrastructure vendors first
-colcon build --symlink-install --packages-select \
-  ros_industrial_cmake_boilerplate eigen boost_plugin_loader
+if [[ "$PROFILE" == "full" ]]; then
+  # 1) Ensure boost_plugin_loader exists
+  if [ ! -d src/boost_plugin_loader ]; then
+    git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
+  fi
 
-# 4) Stage 2: up to tesseract_common/tesseract_msgs with C++17
-colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
-  --cmake-args "${CMAKE_ARGS[@]}"
+  # 3) Stage 1: infrastructure vendors first
+  colcon build --symlink-install --packages-select \
+    ros_industrial_cmake_boilerplate eigen boost_plugin_loader
 
-# 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
-# Build its dependency chain as well so the workspace has the expected environment
-# hooks available when colcon sources it during later stages.
-colcon build --symlink-install --packages-up-to tesseract_state_solver \
-  --cmake-args "${CMAKE_ARGS[@]}"
+  # 4) Stage 2: up to tesseract_common/tesseract_msgs with C++17
+  colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
+    --cmake-args "${CMAKE_ARGS[@]}"
 
-# 5) Stage 3: full workspace
-colcon build --symlink-install \
-  --cmake-args "${CMAKE_ARGS[@]}"
+  # 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
+  # Build its dependency chain as well so the workspace has the expected environment
+  # hooks available when colcon sources it during later stages.
+  colcon build --symlink-install --packages-up-to tesseract_state_solver \
+    --cmake-args "${CMAKE_ARGS[@]}"
+
+  # 5) Stage 3: full workspace
+  colcon build --symlink-install \
+    --cmake-args "${CMAKE_ARGS[@]}"
+else
+  echo "Profile 'minimal': skipping source overlays and running a single workspace build"
+  colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
+fi
