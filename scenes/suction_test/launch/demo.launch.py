@@ -30,27 +30,36 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
     * urdf_path -- the path to the urdf file
     * mappings -- xacro mappings to apply
     """
-    # If no URDF path is given, use a temporary file
+    # If no URDF path is given, use a secure temporary file path.
     if urdf_path is None:
-        urdf_path = tempfile.mktemp(prefix="%s_" % os.path.basename(xacro_path))
+        fd, urdf_path = tempfile.mkstemp(
+            prefix="%s_" % os.path.basename(xacro_path),
+            suffix='.urdf',
+        )
+        os.close(fd)
 
     # open and process file
     doc = xacro.process_file(xacro_path, mappings=mappings)
     # open the output file
-    out = xacro.open_output(urdf_path)
-    out.write(doc.toprettyxml(indent='  '))
+    with xacro.open_output(urdf_path) as out:
+        out.write(doc.toprettyxml(indent='  '))
 
     return urdf_path  # Return path to the urdf file
 
 def load_file(package_name, file_path, mappings=None):
     package_path = get_package_share_directory(package_name) #get package filepath
     absolute_file_path = os.path.join(package_path, file_path)
-    temp_urdf_filepath = absolute_file_path.replace('.xacro','')
-    absolute_file_path = to_urdf(absolute_file_path, temp_urdf_filepath, mappings=mappings)
-    
+
     try:
-        with open(absolute_file_path, 'r') as file:
-            return file.read()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_urdf_filepath = os.path.join(
+                tmpdir,
+                os.path.basename(absolute_file_path).replace('.xacro', ''),
+            )
+            absolute_file_path = to_urdf(absolute_file_path, temp_urdf_filepath, mappings=mappings)
+
+            with open(absolute_file_path, 'r') as file:
+                return file.read()
     except EnvironmentError: # parent of IOError, OSError *and* WindowsError where available
         return None
 
