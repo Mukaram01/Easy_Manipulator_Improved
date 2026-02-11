@@ -31,6 +31,11 @@ FingerGripper::FingerGripper(
   const float & voxel_size_,
   const float & grasp_quality_weight1_,
   const float & grasp_quality_weight2_,
+  const float & centroid_dist_penalty_weight_,
+  const float & wrist_rotation_penalty_weight_,
+  const float & preferred_wrist_roll_,
+  const float & preferred_wrist_pitch_,
+  const float & preferred_wrist_yaw_,
   const float & grasp_plane_dist_limit_,
   const float & cloud_normal_radius_,
   const float & worldXAngleThreshold_,
@@ -49,6 +54,11 @@ FingerGripper::FingerGripper(
   voxel_size(voxel_size_),
   grasp_quality_weight1(grasp_quality_weight1_),
   grasp_quality_weight2(grasp_quality_weight2_),
+  centroid_dist_penalty_weight(centroid_dist_penalty_weight_),
+  wrist_rotation_penalty_weight(wrist_rotation_penalty_weight_),
+  preferred_wrist_roll(preferred_wrist_roll_),
+  preferred_wrist_pitch(preferred_wrist_pitch_),
+  preferred_wrist_yaw(preferred_wrist_yaw_),
   grasp_plane_dist_limit(grasp_plane_dist_limit_),
   cloud_normal_radius(cloud_normal_radius_),
   worldXAngleThreshold(worldXAngleThreshold_),
@@ -1061,25 +1071,43 @@ void FingerGripper::get_gripper_rank(std::shared_ptr<MultiFingerGripper> gripper
 {
   float curvature_sum = 0;
   float grasp_plane_dist_sum = 0;
+  float centroid_dist_sum = 0;
 
   for (auto & finger_1 : gripper->closed_fingers_1) {
     curvature_sum += finger_1->curvature;
     grasp_plane_dist_sum += finger_1->grasp_plane_dist;
+    centroid_dist_sum += finger_1->centroid_dist;
 
   }
 
   for (auto & finger_2 : gripper->closed_fingers_2) {
     curvature_sum += finger_2->curvature;
     grasp_plane_dist_sum += finger_2->grasp_plane_dist;
+    centroid_dist_sum += finger_2->centroid_dist;
   }
 
-  float rank_1 = (gripper->closed_fingers_1.size() + gripper->closed_fingers_2.size()) -
+  const float num_contacts =
+    static_cast<float>(gripper->closed_fingers_1.size() + gripper->closed_fingers_2.size());
+  const float centroid_dist_mean = num_contacts > 0.0F ? centroid_dist_sum / num_contacts : 0.0F;
+
+  std::vector<double> grasp_rpy =
+    get_planar_rpy(gripper->grasping_direction, gripper->grasping_normal_direction);
+  const float wrist_rotation_penalty =
+    std::abs(static_cast<float>(grasp_rpy[0]) - this->preferred_wrist_roll) +
+    std::abs(static_cast<float>(grasp_rpy[1]) - this->preferred_wrist_pitch) +
+    std::abs(static_cast<float>(grasp_rpy[2]) - this->preferred_wrist_yaw);
+
+  float rank_1 = num_contacts -
     grasp_plane_dist_sum -
     (gripper->grasp_plane_angle_cos - 0.2) * 10.0;
   // More to add for rank 2
-  float rank_2 = (gripper->closed_fingers_1.size() + gripper->closed_fingers_2.size()) -
+  float rank_2 = num_contacts -
     curvature_sum;
-  gripper->rank = this->grasp_quality_weight1 * rank_1 + this->grasp_quality_weight2 * rank_2;
+  gripper->rank =
+    this->grasp_quality_weight1 * rank_1 +
+    this->grasp_quality_weight2 * rank_2 -
+    this->centroid_dist_penalty_weight * centroid_dist_mean -
+    this->wrist_rotation_penalty_weight * wrist_rotation_penalty;
 }
 
 std::vector<double> FingerGripper::get_planar_rpy(

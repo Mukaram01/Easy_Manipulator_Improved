@@ -50,6 +50,11 @@ public:
     const float & voxel_size_,
     const float & grasp_quality_weight1_,
     const float & grasp_quality_weight2_,
+    const float & centroid_dist_penalty_weight_,
+    const float & wrist_rotation_penalty_weight_,
+    const float & preferred_wrist_roll_,
+    const float & preferred_wrist_pitch_,
+    const float & preferred_wrist_yaw_,
     const float & grasp_plane_dist_limit_,
     const float & cloud_normal_radius_,
     const float & worldXAngleThreshold_,
@@ -71,6 +76,11 @@ public:
       voxel_size_,
       grasp_quality_weight1_,
       grasp_quality_weight2_,
+      centroid_dist_penalty_weight_,
+      wrist_rotation_penalty_weight_,
+      preferred_wrist_roll_,
+      preferred_wrist_pitch_,
+      preferred_wrist_yaw_,
       grasp_plane_dist_limit_,
       cloud_normal_radius_,
       worldXAngleThreshold_,
@@ -422,6 +432,11 @@ public:
   float voxel_size;
   float grasp_quality_weight1;
   float grasp_quality_weight2;
+  float centroid_dist_penalty_weight;
+  float wrist_rotation_penalty_weight;
+  float preferred_wrist_roll;
+  float preferred_wrist_pitch;
+  float preferred_wrist_yaw;
   float grasp_plane_dist_limit;
   float cloud_normal_radius;
   float worldXAngleThreshold;

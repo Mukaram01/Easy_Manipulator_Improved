@@ -177,6 +177,21 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
           ".grasp_planning_params.grasp_rank_weight_2").as_double()),
         static_cast<float>(node->get_parameter(
           "end_effectors." + end_effector +
+          ".grasp_planning_params.centroid_dist_penalty_weight").as_double()),
+        static_cast<float>(node->get_parameter(
+          "end_effectors." + end_effector +
+          ".grasp_planning_params.wrist_rotation_penalty_weight").as_double()),
+        static_cast<float>(node->get_parameter(
+          "end_effectors." + end_effector +
+          ".grasp_planning_params.preferred_wrist_roll").as_double()),
+        static_cast<float>(node->get_parameter(
+          "end_effectors." + end_effector +
+          ".grasp_planning_params.preferred_wrist_pitch").as_double()),
+        static_cast<float>(node->get_parameter(
+          "end_effectors." + end_effector +
+          ".grasp_planning_params.preferred_wrist_yaw").as_double()),
+        static_cast<float>(node->get_parameter(
+          "end_effectors." + end_effector +
           ".grasp_planning_params.grasp_plane_dist_limit").as_double()),
         static_cast<float>(node->get_parameter(
           "point_cloud_params.cloud_normal_radius").as_double()),
