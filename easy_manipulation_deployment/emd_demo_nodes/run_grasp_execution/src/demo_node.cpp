@@ -236,18 +236,48 @@ public:
 
     auto release_pose = get_curr_pose(ee_link);
 
-    // TODO(Briancbn): iterate to find the valid grasp_pose within grasp_method
-    const auto & grasp_pose = grasp_method.grasp_poses[0];
+    if (grasp_method.grasp_poses.empty()) {
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "No grasp poses provided by grasp method for target %s (ee: %s).",
+        target_id.c_str(), ee_brand.c_str());
+      return false;
+    }
 
-    bool result;
+    bool result = false;
+    const geometry_msgs::msg::PoseStamped * selected_grasp_pose = nullptr;
 
-    if(!this->plan_and_execute_job(
+    for (size_t pose_index = 0; pose_index < grasp_method.grasp_poses.size(); ++pose_index) {
+      const auto & grasp_pose = grasp_method.grasp_poses[pose_index];
+
+      result = this->plan_and_execute_job(
         options,
         "Grasp location",
         target_id,
-        grasp_pose)){
-          return false;
+        grasp_pose);
+
+      if (result) {
+        selected_grasp_pose = &grasp_pose;
+        RCLCPP_INFO(
+          node_->get_logger(),
+          "Grasp planning/execution succeeded for target %s using candidate %zu/%zu.",
+          target_id.c_str(), pose_index + 1, grasp_method.grasp_poses.size());
+        break;
       }
+
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Grasp planning/execution failed for target %s using candidate %zu/%zu. Trying next candidate.",
+        target_id.c_str(), pose_index + 1, grasp_method.grasp_poses.size());
+    }
+
+    if (!selected_grasp_pose) {
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "All %zu grasp pose candidates failed for target %s.",
+        grasp_method.grasp_poses.size(), target_id.c_str());
+      return false;
+    }
     // ------------------- Attach grasp object to robot --------------------------
     prompt_job_start(
       node_->get_logger(), target_id,
@@ -259,7 +289,7 @@ public:
 
     // TODO(Briancbn): Configurable release pose
     geometry_msgs::msg::PoseStamped base_grasp_pose;
-    to_frame(grasp_pose, base_grasp_pose, this->robot_frame_);
+    to_frame(*selected_grasp_pose, base_grasp_pose, this->robot_frame_);
     release_pose.pose.position.x -= 0.3;
     release_pose.pose.position.z = base_grasp_pose.pose.position.z;
     release_pose.pose.orientation = base_grasp_pose.pose.orientation;
