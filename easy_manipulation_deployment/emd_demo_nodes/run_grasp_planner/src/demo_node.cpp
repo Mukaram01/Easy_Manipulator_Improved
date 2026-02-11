@@ -43,6 +43,8 @@ int main(int argc, char * argv[])
   node->declare_parameter<bool>("easy_perception_deployment.tracking_enabled", false);
   node->declare_parameter<std::string>(
     "easy_perception_deployment.epd_tracking_topic", "/processor/epd_tracking_output");
+  node->declare_parameter<double>("easy_perception_deployment.epd_msg_timeout_s", 5.0);
+  node->declare_parameter<double>("easy_perception_deployment.epd_service_wait_timeout_s", 1.0);
   node->declare_parameter<std::string>("camera_parameters.point_cloud_topic", "/camera/pointcloud");
   node->declare_parameter<double>("camera_parameters.fx", 610.3740844726562);
   node->declare_parameter<double>("camera_parameters.fy", 609.8685913085938);
