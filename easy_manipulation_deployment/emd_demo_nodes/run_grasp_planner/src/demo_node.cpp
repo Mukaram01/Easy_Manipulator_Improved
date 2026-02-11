@@ -41,11 +41,29 @@ int main(int argc, char * argv[])
   rclcpp::init(argc, argv);
 
   rclcpp::NodeOptions node_options;
-  node_options.allow_undeclared_parameters(true);
   declare_parameters_from_overrides(node_options, 0);
 
   rclcpp::Node::SharedPtr node =
     rclcpp::Node::make_shared("grasp_planner_demo_node", "", node_options);
+
+  node->declare_parameter<bool>("easy_perception_deployment.epd_enabled", false);
+  node->declare_parameter<std::string>(
+    "easy_perception_deployment.epd_detection_topic", "");
+  node->declare_parameter<std::string>(
+    "easy_perception_deployment.epd_detection_depth_topic", "/camera/depth/image_rect_raw");
+  node->declare_parameter<std::string>(
+    "easy_perception_deployment.epd_detection_camera_info_topic", "/camera/color/camera_info");
+  node->declare_parameter<std::string>(
+    "easy_perception_deployment.epd_localization_topic", "/processor/epd_localize_output");
+  node->declare_parameter<bool>("easy_perception_deployment.tracking_enabled", false);
+  node->declare_parameter<std::string>(
+    "easy_perception_deployment.epd_tracking_topic", "/processor/epd_tracking_output");
+  node->declare_parameter<std::string>("camera_parameters.point_cloud_topic", "/camera/pointcloud");
+  node->declare_parameter<double>("camera_parameters.fx", 610.3740844726562);
+  node->declare_parameter<double>("camera_parameters.fy", 609.8685913085938);
+  node->declare_parameter<double>("camera_parameters.ppx", 323.3077697753906);
+  node->declare_parameter<double>("camera_parameters.ppy", 235.43516540527344);
+
   rclcpp::executors::MultiThreadedExecutor executor;
   #if EPD_ENABLED == 1
   if (node->get_parameter("easy_perception_deployment.epd_enabled").as_bool()) {
