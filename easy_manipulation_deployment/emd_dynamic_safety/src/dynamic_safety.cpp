@@ -648,7 +648,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
           update_scene(std::move(scene_msg));
         }
       },
-      env_state_sub_option
+      moveit_scene_sub_option
     );
   }
 
