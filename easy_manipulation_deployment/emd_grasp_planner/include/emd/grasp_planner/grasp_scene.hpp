@@ -194,6 +194,19 @@ protected:
   /*! \brief Method to request service to trigger epd pipeline */
   void trigger_epd_pipeline();
 
+  /*! \brief Evaluates timeout watchdog and triggers EPD when required */
+  void evaluate_epd_watchdog(const rclcpp::Time & now, double epd_msg_timeout_s);
+
+  /*! \brief Time source wrapper to enable deterministic tests */
+  virtual rclcpp::Time get_current_time() const;
+
+  /*! \brief Service wait wrapper to enable deterministic tests */
+  virtual bool wait_for_epd_service(const std::chrono::duration<double> & timeout);
+
+  /*! \brief Service request wrapper to enable deterministic tests */
+  virtual std::shared_future<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>
+  send_epd_trigger_request(const std::shared_ptr<epd_msgs::srv::Perception::Request> & request);
+
   #endif
 
   /*! \brief Grasp object pose rectification due to Point Cloud limitations */

@@ -21,6 +21,7 @@
 #include "fcl_functions_test.cpp"
 #include "grasp_object_test.cpp"
 #include "grasp_scene_test.cpp"
+#include "epd_detection_adapter_test.cpp"
 
 int
 main(int argc, char ** argv)

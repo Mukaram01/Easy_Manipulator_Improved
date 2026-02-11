@@ -16,6 +16,13 @@
 #include <gtest/gtest.h>
 #include "grasp_scene_test.hpp"
 
+#include <chrono>
+#include <future>
+
+#if EPD_ENABLED == 1
+#include <epd_msgs/msg/epd_object_localization.hpp>
+#include <epd_msgs/srv/perception.hpp>
+#endif
 
 GraspSceneTest::GraspSceneTest()
 {
@@ -25,26 +32,107 @@ GraspSceneTest::GraspSceneTest()
   node = rclcpp::Node::make_shared("grasp_scene_test", "", node_options);
 }
 
-// // Uncomment once Visualizer is removed from the graspScene class
-// TEST_F(GraspSceneTest, PrintPoseTest)
-// {
-//   geometry_msgs::msg::Pose test_pose;
-//   test_pose.position.x = 0.1;
-//   test_pose.position.y = 0.2;
-//   test_pose.position.z = 0.3;
-//   test_pose.orientation.x = 0.01;
-//   test_pose.orientation.y = 0.02;
-//   test_pose.orientation.z = 0.03;
-//   test_pose.orientation.w = 0.04;
+TEST_F(GraspSceneTest, ConstructDirectGraspScene)
+{
+  grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> test_direct(node);
+  SUCCEED();
+}
 
+#if EPD_ENABLED == 1
+namespace
+{
+class TestableEpdGraspScene : public grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization>
+{
+public:
+  explicit TestableEpdGraspScene(const rclcpp::Node::SharedPtr & node)
+  : grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization>(node)
+  {
+  }
 
-//   grasp_planner::GraspScene<epd_msgs::msg::EPDObjectTracking> test_tracking(node);
+  void evaluate_watchdog(const rclcpp::Time & now, const double timeout_s)
+  {
+    this->evaluate_epd_watchdog(now, timeout_s);
+  }
 
-//   grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization> test_localization(node);
+  void set_last_epd_msg_time(const rclcpp::Time & time)
+  {
+    this->last_epd_msg_time = time;
+  }
 
-//   grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> test_direct(node);
+  rclcpp::Time get_last_epd_msg_time() const
+  {
+    return this->last_epd_msg_time;
+  }
 
-//   test_tracking.printPose(test_pose);
-//   test_localization.printPose(test_pose);
-//   test_direct.printPose(test_pose);
-// }
+  void set_next_epd_trigger_time(const rclcpp::Time & time)
+  {
+    this->next_epd_trigger_time = time;
+  }
+
+  rclcpp::Time get_next_epd_trigger_time() const
+  {
+    return this->next_epd_trigger_time;
+  }
+
+  void call_trigger_epd_pipeline()
+  {
+    this->trigger_epd_pipeline();
+  }
+
+  int trigger_count{0};
+  bool service_available{true};
+
+protected:
+  bool wait_for_epd_service(const std::chrono::duration<double> &) override
+  {
+    return service_available;
+  }
+
+  std::shared_future<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>
+  send_epd_trigger_request(
+    const std::shared_ptr<epd_msgs::srv::Perception::Request> &) override
+  {
+    ++trigger_count;
+    auto promise = std::make_shared<std::promise<
+      rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>>();
+    auto response = std::make_shared<epd_msgs::srv::Perception::Response>();
+    response->success = true;
+    promise->set_value(response);
+    return promise->get_future().share();
+  }
+};
+}  // namespace
+
+TEST_F(GraspSceneTest, EpdWatchdogTriggersOncePerTimeoutAndUpdatesTimestamp)
+{
+  node->declare_parameter("easy_perception_deployment.epd_service_wait_timeout_s", 0.0);
+  TestableEpdGraspScene scene(node);
+
+  const rclcpp::Time start(1000000000LL);
+  scene.set_last_epd_msg_time(start);
+  scene.set_next_epd_trigger_time(start);
+
+  scene.evaluate_watchdog(start + rclcpp::Duration::from_seconds(1.2), 1.0);
+  EXPECT_EQ(scene.trigger_count, 1);
+  EXPECT_DOUBLE_EQ(scene.get_last_epd_msg_time().seconds(), 2.2);
+  EXPECT_DOUBLE_EQ(scene.get_next_epd_trigger_time().seconds(), 3.2);
+
+  scene.evaluate_watchdog(start + rclcpp::Duration::from_seconds(2.5), 1.0);
+  EXPECT_EQ(scene.trigger_count, 1);
+
+  scene.evaluate_watchdog(start + rclcpp::Duration::from_seconds(3.3), 1.0);
+  EXPECT_EQ(scene.trigger_count, 2);
+  EXPECT_DOUBLE_EQ(scene.get_last_epd_msg_time().seconds(), 4.3);
+}
+
+TEST_F(GraspSceneTest, TriggerEpdPipelineReturnsWhenServiceUnavailable)
+{
+  node->declare_parameter("easy_perception_deployment.epd_service_wait_timeout_s", 0.0);
+  TestableEpdGraspScene scene(node);
+  scene.service_available = false;
+
+  scene.call_trigger_epd_pipeline();
+
+  EXPECT_EQ(scene.trigger_count, 0);
+}
+#endif

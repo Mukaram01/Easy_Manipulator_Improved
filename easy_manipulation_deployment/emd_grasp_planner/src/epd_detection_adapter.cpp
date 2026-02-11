@@ -109,7 +109,7 @@ EpdDetectionAdapter::CameraIntrinsics EpdDetectionAdapter::resolve_intrinsics(
     intrinsics.fy = static_cast<float>(camera_info->k.at(4));
     intrinsics.ppx = static_cast<float>(camera_info->k.at(2));
     intrinsics.ppy = static_cast<float>(camera_info->k.at(5));
-    intrinsics.valid = true;
+    intrinsics.valid = intrinsics.fx > 0.0F && intrinsics.fy > 0.0F;
     return intrinsics;
   }
 
