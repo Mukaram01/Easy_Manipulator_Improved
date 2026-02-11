@@ -830,6 +830,24 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
       finger_1_point,
       this->grasp_samples[plane_index]->sample_side_1->finger_nvoxel);
 
+    const auto & side_1_samples = this->grasp_samples[plane_index]->sample_side_1->finger_samples;
+    const auto side_1_cloud_size =
+      this->grasp_samples[plane_index]->sample_side_1->finger_nvoxel->size();
+    if (point_index < 0 ||
+      point_index >= static_cast<int>(side_1_samples.size()))
+    {
+      RCLCPP_WARN(
+        LOGGER,
+        "Invalid nearest point index for gripper candidate. plane_index=%d side=1 "
+        "point_index=%d cloud_size=%zu finger_samples_size=%zu",
+        plane_index,
+        point_index,
+        side_1_cloud_size,
+        side_1_samples.size());
+      gripper.collides_with_world = true;
+      return std::make_shared<MultiFingerGripper>(gripper);
+    }
+
 
     // Add the finger sample to the gripper configuration
     gripper.closed_fingers_1.push_back(
@@ -870,6 +888,24 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
     int point_index_2 = get_nearest_point_index(
       finger_2_point,
       this->grasp_samples[plane_index_2]->sample_side_2->finger_nvoxel);
+
+    const auto & side_2_samples = this->grasp_samples[plane_index_2]->sample_side_2->finger_samples;
+    const auto side_2_cloud_size =
+      this->grasp_samples[plane_index_2]->sample_side_2->finger_nvoxel->size();
+    if (point_index_2 < 0 ||
+      point_index_2 >= static_cast<int>(side_2_samples.size()))
+    {
+      RCLCPP_WARN(
+        LOGGER,
+        "Invalid nearest point index for gripper candidate. plane_index=%d side=2 "
+        "point_index=%d cloud_size=%zu finger_samples_size=%zu",
+        plane_index_2,
+        point_index_2,
+        side_2_cloud_size,
+        side_2_samples.size());
+      gripper.collides_with_world = true;
+      return std::make_shared<MultiFingerGripper>(gripper);
+    }
 
     gripper.closed_fingers_2.push_back(
       this->grasp_samples[plane_index_2]->sample_side_2->finger_samples[point_index_2]);

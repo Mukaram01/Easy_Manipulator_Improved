@@ -1873,6 +1873,79 @@ TEST_F(MultiFingerTest, generateGripperOpenConfigTest)
 }
 
 // Disabled tests for CI/CD
+TEST_F(MultiFingerTest, generateGripperOpenConfigTestInvalidNearestPointIndex)
+{
+  GraspObject object = GenerateObjectHorizontal();
+  reset_variables();
+  num_fingers_side_1 = 4;
+  num_fingers_side_2 = 2;
+  distance_between_fingers_1 = 0.02;
+  distance_between_fingers_2 = 0.01;
+  ASSERT_NO_THROW(LoadGripper());
+  gripper->get_center_cutting_plane_public(object);
+  gripper->get_cutting_planes_public(object);
+  gripper->get_grasp_cloud_public(object);
+  gripper->get_initial_sample_points_public(object);
+  gripper->get_initial_sample_cloud_public(object);
+  gripper->voxelize_sample_cloud_public();
+  gripper->get_max_min_values_public(object);
+  gripper->get_finger_samples_public(object);
+  gripper->get_gripper_clusters_public();
+  gripper->update_gripper_attributes();
+
+  ASSERT_FALSE(gripper->grasp_samples_public.empty());
+  ASSERT_FALSE(gripper->grasp_samples_public[0]->sample_side_1->finger_samples.empty());
+  ASSERT_FALSE(gripper->grasp_samples_public[0]->sample_side_2->finger_samples.empty());
+
+  auto closed_finger_1 = gripper->grasp_samples_public[0]->sample_side_1->finger_samples[0];
+  auto closed_finger_2 = gripper->grasp_samples_public[0]->sample_side_2->finger_samples[0];
+
+  Eigen::Vector3f centerpoint_side1_vector =
+    PCLFunctions::convert_pcl_to_eigen(closed_finger_1->finger_point);
+  Eigen::Vector3f centerpoint_side2_vector =
+    PCLFunctions::convert_pcl_to_eigen(closed_finger_2->finger_point);
+
+  Eigen::Vector3f grasp_direction = Eigen::ParametrizedLine<float, 3>::Through(
+    centerpoint_side1_vector, centerpoint_side2_vector).direction();
+
+  Eigen::Vector3f perpendicular_grasp_direction = gripper->get_gripper_plane_public(
+    closed_finger_1,
+    closed_finger_2,
+    grasp_direction,
+    object);
+
+  std::vector<Eigen::Vector3f> open_coords = gripper->get_open_finger_coordinates_public(
+    grasp_direction,
+    centerpoint_side1_vector,
+    centerpoint_side2_vector);
+
+  for (size_t idx = 1; idx < gripper->grasp_samples_public.size(); ++idx) {
+    gripper->grasp_samples_public[idx]->sample_side_1->finger_nvoxel->clear();
+    gripper->grasp_samples_public[idx]->sample_side_1->finger_samples.clear();
+    gripper->grasp_samples_public[idx]->sample_side_2->finger_nvoxel->clear();
+    gripper->grasp_samples_public[idx]->sample_side_2->finger_samples.clear();
+  }
+
+  GenerateObjectCollision(0.01, 0.05, 0.02);
+  ASSERT_NO_THROW({
+    std::shared_ptr<MultiFingerGripper> gripper_sample = gripper->generate_gripper_open_config_public(
+      collision_object_ptr, closed_finger_1, closed_finger_2,
+      open_coords[0], open_coords[1], perpendicular_grasp_direction,
+      grasp_direction, "camera_frame");
+
+    ASSERT_TRUE(gripper_sample->collides_with_world);
+    EXPECT_TRUE(gripper_sample->closed_fingers_1.empty());
+    EXPECT_TRUE(gripper_sample->closed_fingers_2.empty());
+  });
+
+  std::vector<std::shared_ptr<MultiFingerGripper>> finger_samples;
+  EXPECT_NO_THROW({
+    finger_samples = gripper->get_all_gripper_configs_public(
+      object, collision_object_ptr, camera_frame);
+  });
+  EXPECT_EQ(0, static_cast<int>(finger_samples.size()));
+}
+
 TEST_F(MultiFingerTest, generateGripperOpenConfigTestCollision)
 {
   GraspObject object = GenerateObjectVertical();
