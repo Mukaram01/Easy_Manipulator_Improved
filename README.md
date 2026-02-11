@@ -74,8 +74,10 @@ adding `COLCON_IGNORE` files in the package directories.
 ### Recommended bootstrap (single command)
 
 The canonical entrypoint is the Humble bootstrap script. It installs system
-dependencies, applies the Cereal/Boost fixes, removes the incompatible
-`trajopt_ifopt` planner, and builds the workspace end-to-end.
+dependencies, applies the Cereal/Boost fixes, and builds the workspace.
+
+By default, it uses the **minimal** profile for headless/runtime deployments,
+which does **not** import the full Tesseract/TrajOpt source overlays.
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -87,6 +89,32 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 cd easy_manipulation_deployment
 ./fix_and_build_humble.sh
 ```
+
+Use the **full** profile when you explicitly need planning/dev overlays:
+
+```bash
+./fix_and_build_humble.sh --profile full
+```
+
+Enable legacy workaround behavior (optional, explicit opt-in):
+
+```bash
+./fix_and_build_humble.sh --profile full --legacy-workarounds
+```
+
+### Deployment profile matrix
+
+| Profile | Intended use | Overlay import (`tesseract.repos`) | Legacy ignores/patches |
+|---------|--------------|--------------------------------------|-------------------------|
+| `minimal` (default) | Runtime/headless deployment | ❌ No | ❌ No |
+| `full` | Planning + development workspace | ✅ Yes | ❌ No (unless `--legacy-workarounds`) |
+
+### Package matrix
+
+| Scope | Typical packages |
+|-------|------------------|
+| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep` |
+| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) |
 
 ### Manual Installation (advanced / troubleshooting)
 
@@ -135,17 +163,28 @@ ln -s ~/workcell_ws/src/easy_manipulation_deployment/scenes ~/workcell_ws/src/sc
 it copies the packaged defaults from `share/workcell_builder/assets` so new workcells still
 start with the bundled assets when running from an installed build.
 
-#### 3) Import dependencies into `~/workcell_ws/src`
+#### 3) Import full planning overlays (optional)
+
+Only needed for a full planning/development workspace:
 
 ```bash
 cd ~/workcell_ws/src
 vcs import < easy_manipulation_deployment/tesseract.repos
 ```
 
-#### 4) Apply the Humble “known fixes / skips” (matches README notes)
+#### 4) Preferred package/version guidance (before legacy workarounds)
+
+Prefer these first:
+
+- Use the latest `main` branch of this repository.
+- Keep to Ubuntu 22.04 + ROS 2 Humble for the tested path.
+- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment.
+- Use `./fix_and_build_humble.sh --profile full` only when you need overlay sources.
+
+#### 5) Legacy fallback workaround (explicit, only if needed)
 
 > **Note:** If you ran `./fix_and_build_humble.sh`, these fixes have already
-> been applied and you can skip this section.
+> been applied only when you opt in with `--legacy-workarounds`.
 
 ```bash
 cd ~/workcell_ws
@@ -174,7 +213,7 @@ sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED
     ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
 ```
 
-#### 5) Now rosdep + build
+#### 6) Now rosdep + build
 
 ```bash
 cd ~/workcell_ws
@@ -280,7 +319,7 @@ ros2 launch new_scene demo.launch.py
 The following steps are optional and only needed if you hit the corresponding build errors.
 
 <details>
-<summary><b>Skip incompatible packages</b></summary>
+<summary><b>Legacy fallback: skip incompatible packages</b></summary>
 
 ```bash
 touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
@@ -294,7 +333,7 @@ touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
 > **Caution:** The next step removes the `trajopt_ifopt` planner, which disables the `trajopt_ifopt` and related IFOPT-based planners. If you need to revert, use `git checkout` to restore the folder and `CMakeLists.txt` changes, or re-import the package from its source.
 
 <details>
-<summary><b>Remove incompatible trajopt_ifopt planner</b></summary>
+<summary><b>Legacy fallback: remove incompatible trajopt_ifopt planner</b></summary>
 
 ```bash
 rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
