@@ -14,6 +14,10 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
+
 #include "multifinger_test.hpp"
 
 MultiFingerTest::MultiFingerTest()
@@ -2221,16 +2225,84 @@ TEST_F(MultiFingerTest, getGraspPoseTest)
   finger_samples = gripper->get_all_gripper_configs_public(
     object, collision_object_ptr,
     camera_frame);
+  auto global_axis = [](char axis) -> Eigen::Vector3f {
+      if (axis == 'x') {
+        return {1.0F, 0.0F, 0.0F};
+      }
+      if (axis == 'y') {
+        return {0.0F, 1.0F, 0.0F};
+      }
+      return {0.0F, 0.0F, 1.0F};
+    };
+
+  auto align_with_axis = [&](const Eigen::Vector3f & direction, char axis) -> Eigen::Vector3f {
+      const Eigen::Vector3f axis_vec = global_axis(axis);
+      return (direction.dot(axis_vec) >= 0.0F ? direction : -direction).normalized();
+    };
+
   for (auto & sample : finger_samples) {
     gripper->get_grasp_pose_public(sample, object);
     EXPECT_EQ(sample->gripper_palm_center.x, sample->pose.pose.position.x);
     EXPECT_EQ(sample->gripper_palm_center.y, sample->pose.pose.position.y);
     EXPECT_EQ(sample->gripper_palm_center.z, sample->pose.pose.position.z);
 
-    EXPECT_EQ(0, sample->pose.pose.orientation.x);
-    EXPECT_EQ(0, sample->pose.pose.orientation.y);
-    EXPECT_GT(std::abs(sample->pose.pose.orientation.z), 0);
-    EXPECT_GT(std::abs(sample->pose.pose.orientation.w), 0);
+    Eigen::Vector3f x_expected;
+    Eigen::Vector3f y_expected;
+    Eigen::Vector3f z_expected;
+    bool x_filled = false;
+    bool y_filled = false;
+    bool z_filled = false;
+
+    const auto assign_axis = [&](char axis, const Eigen::Vector3f & direction) {
+        const Eigen::Vector3f aligned = align_with_axis(direction, axis);
+        if (axis == 'x') {
+          x_expected = aligned;
+          x_filled = true;
+        } else if (axis == 'y') {
+          y_expected = aligned;
+          y_filled = true;
+        } else {
+          z_expected = aligned;
+          z_filled = true;
+        }
+      };
+
+    assign_axis(grasp_stroke_direction[0], sample->grasping_direction);
+    assign_axis(grasp_stroke_normal_direction[0], sample->grasping_normal_direction);
+
+    if (x_filled && y_filled) {
+      z_expected = x_expected.cross(y_expected).normalized();
+    } else if (y_filled && z_filled) {
+      x_expected = y_expected.cross(z_expected).normalized();
+    } else {
+      y_expected = z_expected.cross(x_expected).normalized();
+    }
+
+    const tf2::Quaternion q(
+      sample->pose.pose.orientation.x,
+      sample->pose.pose.orientation.y,
+      sample->pose.pose.orientation.z,
+      sample->pose.pose.orientation.w);
+    const tf2::Matrix3x3 rotation(q);
+
+    tf2::Vector3 x_pose;
+    tf2::Vector3 y_pose;
+    tf2::Vector3 z_pose;
+    rotation.getColumn(0, x_pose);
+    rotation.getColumn(1, y_pose);
+    rotation.getColumn(2, z_pose);
+
+    EXPECT_NEAR(x_expected(0), static_cast<float>(x_pose.x()), 1e-4);
+    EXPECT_NEAR(x_expected(1), static_cast<float>(x_pose.y()), 1e-4);
+    EXPECT_NEAR(x_expected(2), static_cast<float>(x_pose.z()), 1e-4);
+
+    EXPECT_NEAR(y_expected(0), static_cast<float>(y_pose.x()), 1e-4);
+    EXPECT_NEAR(y_expected(1), static_cast<float>(y_pose.y()), 1e-4);
+    EXPECT_NEAR(y_expected(2), static_cast<float>(y_pose.z()), 1e-4);
+
+    EXPECT_NEAR(z_expected(0), static_cast<float>(z_pose.x()), 1e-4);
+    EXPECT_NEAR(z_expected(1), static_cast<float>(z_pose.y()), 1e-4);
+    EXPECT_NEAR(z_expected(2), static_cast<float>(z_pose.z()), 1e-4);
   }
 }
 

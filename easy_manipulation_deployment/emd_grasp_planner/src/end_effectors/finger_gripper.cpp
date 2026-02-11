@@ -1207,7 +1207,7 @@ void FingerGripper::get_grasp_pose(
   std::vector<double> rpy = get_planar_rpy(
     gripper->grasping_direction,
     gripper->grasping_normal_direction);
-  quaternion_.setRPY(0, 0, rpy[2]);
+  quaternion_.setRPY(rpy[0], rpy[1], rpy[2]);
 
   result_pose.pose.orientation.x = quaternion_.x();
   result_pose.pose.orientation.y = quaternion_.y();
