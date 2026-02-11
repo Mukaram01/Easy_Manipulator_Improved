@@ -23,6 +23,7 @@
 #include "moveit/robot_state/conversions.h"
 #include "pluginlib/class_loader.hpp"
 #include <rclcpp/parameter_client.hpp>
+#include <rcl_interfaces/msg/parameter_descriptor.hpp>
 
 namespace dynamic_safety_moveit
 {
@@ -128,8 +129,22 @@ MoveitReplannerContext::MoveitReplannerContext(
   // new node for planning config parameter loading
   auto planner_config_loader_node = std::make_shared<rclcpp::Node>(
     std::string(
-      node->get_name()) + "_planner_config_loader",
-    rclcpp::NodeOptions().allow_undeclared_parameters(true));
+      node->get_name()) + "_planner_config_loader");
+
+  auto declare_and_set_planner_parameters =
+    [&planner_config_loader_node](const std::vector<rclcpp::Parameter> & parameters) {
+      for (const auto & parameter : parameters) {
+        if (!planner_config_loader_node->has_parameter(parameter.get_name())) {
+          rcl_interfaces::msg::ParameterDescriptor descriptor;
+          descriptor.dynamic_typing = true;
+          planner_config_loader_node->declare_parameter(
+            parameter.get_name(),
+            parameter.get_parameter_value(),
+            descriptor);
+        }
+      }
+      planner_config_loader_node->set_parameters(parameters);
+    };
 
   // Load self parameters
   if (option.planner_parameter_server == node->get_name()) {
@@ -142,7 +157,7 @@ MoveitReplannerContext::MoveitReplannerContext(
       }
       RCLCPP_WARN(LOGGER, "%s", result.c_str());
       auto planner_config_params = node->get_parameters(planner_config.names);
-      planner_config_loader_node->set_parameters(planner_config_params);
+      declare_and_set_planner_parameters(planner_config_params);
     } else {
       RCLCPP_ERROR(
         LOGGER, "no planner configs defined");
@@ -196,7 +211,7 @@ MoveitReplannerContext::MoveitReplannerContext(
 
     auto f = parameters_client->get_parameters(planner_config.names);
     rclcpp::spin_until_future_complete(planner_config_loader_node, f);
-    planner_config_loader_node->set_parameters(f.get());
+    declare_and_set_planner_parameters(f.get());
   }
 
   if (!planning_manager_->initialize(
