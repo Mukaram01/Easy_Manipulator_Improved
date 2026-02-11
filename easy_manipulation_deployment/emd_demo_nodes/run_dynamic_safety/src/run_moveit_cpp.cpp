@@ -140,7 +140,7 @@ int main(int argc, char** argv)
   // This enables loading undeclared parameters
   // best practice would be to declare parameters in the corresponding classes
   // and provide descriptions about expected use
-  node_options.declare_parameters_from_overrides(true);
+  node_options.automatically_declare_parameters_from_overrides(true);
   rclcpp::Node::SharedPtr node = rclcpp::Node::make_shared("run_moveit_cpp", "", node_options);
 
   MoveItCppDemo demo(node);

@@ -355,7 +355,7 @@ public:
     // namespace. Parameters are automatically declared from overrides to mirror
     // the lifecycle node behaviour.
     rclcpp::NodeOptions base_options;
-    base_options.declare_parameters_from_overrides(true);
+    base_options.automatically_declare_parameters_from_overrides(true);
     auto base_node = std::make_shared<rclcpp::Node>(
       this->get_name(), this->get_namespace(), base_options);
     demo_ = std::make_shared<grasp_execution::Demo>(
@@ -401,7 +401,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   rclcpp::NodeOptions node_options;
-  node_options.declare_parameters_from_overrides(true);
+  node_options.automatically_declare_parameters_from_overrides(true);
   auto node = std::make_shared<DemoLifecycleNode>(node_options);
 
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
