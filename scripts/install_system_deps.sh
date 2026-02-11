@@ -42,6 +42,31 @@ else
     echo "OSQP will need to be built from source (see https://osqp.org/installation) or provided by another compatible package." >&2
   fi
 fi
+ONNXRUNTIME_NATIVE_PACKAGE=libonnxruntime-dev
+ONNXRUNTIME_PROVIDER=""
+
+if apt-cache show "$ONNXRUNTIME_NATIVE_PACKAGE" >/dev/null 2>&1; then
+  ONNXRUNTIME_PROVIDER="$ONNXRUNTIME_NATIVE_PACKAGE"
+  REQUIRED_PACKAGES+=("$ONNXRUNTIME_PROVIDER")
+  echo "Using $ONNXRUNTIME_PROVIDER from the distribution to provide ONNX Runtime." >&2
+else
+  if [[ -n ${ROS_DISTRO:-} ]]; then
+    ROS_ONNXRUNTIME_VENDOR="ros-${ROS_DISTRO}-onnxruntime-vendor"
+    if apt-cache show "$ROS_ONNXRUNTIME_VENDOR" >/dev/null 2>&1; then
+      ONNXRUNTIME_PROVIDER="$ROS_ONNXRUNTIME_VENDOR"
+      REQUIRED_PACKAGES+=("$ONNXRUNTIME_PROVIDER")
+      echo "$ONNXRUNTIME_NATIVE_PACKAGE not found; installing $ONNXRUNTIME_PROVIDER as the ONNX Runtime provider." >&2
+      echo "Note: on Ubuntu 22.04/Jammy, older vendor drops can fail with errors such as 'exponent has no digits'." >&2
+      echo "Prefer newer ONNX Runtime vendor releases when available for ROS 2 Humble." >&2
+    fi
+  fi
+
+  if [[ -z $ONNXRUNTIME_PROVIDER ]]; then
+    echo "Neither $ONNXRUNTIME_NATIVE_PACKAGE nor ros-<ROS_DISTRO>-onnxruntime-vendor are available via APT." >&2
+    echo "Install a compatible ONNX Runtime release manually; prefer versions validated on Ubuntu 22.04/Humble over legacy vendor snapshots." >&2
+  fi
+fi
+
 
 missing=()
 for pkg in "${REQUIRED_PACKAGES[@]}"; do

@@ -314,6 +314,35 @@ ros2 launch new_scene demo.launch.py
 
 ## Troubleshooting
 
+### Known Issues
+
+#### ONNX Runtime build failures on ROS 2 Humble (Ubuntu 22.04)
+
+On ROS 2 Humble/Jammy, older vendorized ONNX Runtime drops can fail during C/C++
+compilation with messages similar to:
+
+```
+error: exponent has no digits
+```
+
+This is a known compatibility issue in legacy packaging paths and should be
+handled in the following order:
+
+1. **Prefer the native APT package first** (`libonnxruntime-dev`) when it is
+   available for your platform and compatible with your ROS/Tesseract stack.
+2. **Otherwise prefer a newer ONNX Runtime release** (for example via an updated
+   ROS vendor package) that is known to support Ubuntu 22.04/Humble better than
+   legacy vendor drops.
+
+If you must stay on a vendor package path, expect to apply Jammy-specific
+patching and environment cleanup (for example locale normalization and compiler
+compatibility fixes) when hitting parser/compiler edge-case errors.
+
+**Why we document this explicitly:** maintainers repeatedly lose time by
+defaulting back to older vendor snapshots that compile unreliably on Jammy,
+while current system packages or newer ONNX Runtime releases are generally more
+stable and require less local patch maintenance.
+
 ### Optional manual patches
 
 The following steps are optional and only needed if you hit the corresponding build errors.
