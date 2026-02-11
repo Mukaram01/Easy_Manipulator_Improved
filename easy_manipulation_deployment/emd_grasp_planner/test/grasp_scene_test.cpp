@@ -28,7 +28,7 @@ GraspSceneTest::GraspSceneTest()
 {
   rclcpp::NodeOptions node_options;
   node_options.allow_undeclared_parameters(true);
-  node_options.declare_parameters_from_overrides(true);
+  node_options.automatically_declare_parameters_from_overrides(true);
   node = rclcpp::Node::make_shared("grasp_scene_test", "", node_options);
 }
 
