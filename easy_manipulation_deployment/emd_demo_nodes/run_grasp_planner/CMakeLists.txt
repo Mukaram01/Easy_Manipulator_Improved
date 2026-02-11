@@ -43,6 +43,8 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_with_epd_launch.test.py TIMEOUT 60)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
