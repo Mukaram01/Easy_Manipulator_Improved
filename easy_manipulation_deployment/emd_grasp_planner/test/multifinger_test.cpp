@@ -2358,12 +2358,9 @@ TEST_F(MultiFingerTest, getGraspPoseTest)
       sample->pose.pose.orientation.w);
     const tf2::Matrix3x3 rotation(q);
 
-    tf2::Vector3 x_pose;
-    tf2::Vector3 y_pose;
-    tf2::Vector3 z_pose;
-    rotation.getColumn(0, x_pose);
-    rotation.getColumn(1, y_pose);
-    rotation.getColumn(2, z_pose);
+    const tf2::Vector3 x_pose = rotation.getColumn(0);
+    const tf2::Vector3 y_pose = rotation.getColumn(1);
+    const tf2::Vector3 z_pose = rotation.getColumn(2);
 
     EXPECT_NEAR(x_expected(0), static_cast<float>(x_pose.x()), 1e-4);
     EXPECT_NEAR(x_expected(1), static_cast<float>(x_pose.y()), 1e-4);
