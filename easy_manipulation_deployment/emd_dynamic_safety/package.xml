@@ -34,7 +34,7 @@
   <depend>tesseract_rosutils</depend>
   <depend>tesseract_msgs</depend>
   <depend>tesseract_motion_planners</depend>
-  <depend>tesseract_process_managers</depend>
+  <depend>tesseract_task_composer</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

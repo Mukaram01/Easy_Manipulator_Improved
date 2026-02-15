@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="onrobot_airpick4">
+  <link name="onrobot_airpick4_base_link">
+    <visual>
+      <geometry>
+        <box size="0.1 0.1 0.05"/>
+      </geometry>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.1 0.1 0.05"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
