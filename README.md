@@ -27,6 +27,65 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - **Jazzy** is experimental and does not have CI coverage unless added.
 
 ---
+## Quick start (Ubuntu 22.04 + ROS 2 Humble)
+
+This repository is intended to live inside a larger ROS 2 workspace (for example, `~/emd_epd_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `tesseract_qt`, and related libraries imported by `vcs`).
+
+```bash
+# 1) System dependencies (Ubuntu 22.04 / ROS 2 Humble)
+sudo apt update
+sudo apt install -y \
+  build-essential cmake git curl \
+  python3-vcstool python3-colcon-common-extensions python3-rosdep \
+  qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev \
+  ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro ros-humble-ur-description
+
+# If this is your first ROS 2 machine:
+sudo rosdep init || true
+rosdep update
+
+# 2) Create workspace
+mkdir -p ~/emd_epd_ws/src
+cd ~/emd_epd_ws/src
+
+# 3) Clone this repo into src/
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git
+
+# 4) Import upstream source dependencies
+cd ~/emd_epd_ws
+vcs import src < src/Easy_Manipulator_Improved/dependencies/emd_epd_ws.repos
+
+# 5) Install package dependencies from source tree
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+
+# 6) Build
+colcon build --symlink-install
+
+# 7) Source + run demo
+source install/setup.bash
+ros2 launch suction_test demo.launch.py
+```
+
+> Tip: after syncing and validating a workspace, you can lock exact revisions with `vcs export --exact src > emd_epd_ws_exact.repos`.
+
+### If Studio build fails
+
+If `tesseract_qt` Studio fails to link against Qt ADS targets, apply the included upstream patch and rebuild:
+
+```bash
+cd ~/emd_epd_ws
+./src/Easy_Manipulator_Improved/scripts/apply_upstream_patches.sh
+colcon build --symlink-install
+```
+
+## Known issues / Troubleshooting
+
+- **Qt ADS target mismatch in `tesseract_qt` Studio (common on Ubuntu 22.04/Jammy):** some installations export `ads::qtadvanceddocking-qt5` instead of `ads::qtadvanceddocking`. This repository includes a patch script that applies `patches/tesseract_qt_qtads_target_fix.patch` so Studio chooses whichever exported ADS target exists.
+- **Patch application command:** run `./src/Easy_Manipulator_Improved/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
+- **Device/group permission changes:** if you add your user to groups such as `video`, `plugdev`, or `input`, log out and back in before retrying tools that require those permissions.
+
+---
+
 ## Universal Robots Description (ur_description)
 
 - Expected source: [Universal_Robots_ROS2_Description](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description) (`ur_description` v2.x, ROS 2).
