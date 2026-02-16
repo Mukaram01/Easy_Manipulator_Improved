@@ -81,7 +81,9 @@ def generate_launch_description():
         "moveit_simple_controller_manager": {
             "controller_names": ["fake_ur5_controller"],
             "fake_ur5_controller": {
+                "action_ns": "follow_joint_trajectory",
                 "type": "FollowJointTrajectory",
+                "default": True,
                 "joints": [
                     "shoulder_pan_joint",
                     "shoulder_lift_joint",
