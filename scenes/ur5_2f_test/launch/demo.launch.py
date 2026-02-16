@@ -36,11 +36,12 @@ def load_yaml(package_name, rel_path):
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
+    use_fake_hardware = LaunchConfiguration("use_fake_hardware")
 
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
-        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": ""},
+        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware},
     )
     robot_description = {"robot_description": robot_description_config}
 
@@ -60,13 +61,13 @@ def generate_launch_description():
     ompl_planning_pipeline_config = {
         "ompl": {
             "planning_plugin": "ompl_interface/OMPLPlanner",
-            "request_adapters": (
-                "default_planner_request_adapters/AddTimeOptimalParameterization "
-                "default_planner_request_adapters/FixWorkspaceBounds "
-                "default_planner_request_adapters/FixStartStateBounds "
-                "default_planner_request_adapters/FixStartStateCollision "
-                "default_planner_request_adapters/FixStartStatePathConstraints"
-            ),
+            "request_adapters": " ".join([
+                "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "default_planner_request_adapters/FixWorkspaceBounds",
+                "default_planner_request_adapters/FixStartStateBounds",
+                "default_planner_request_adapters/FixStartStateCollision",
+                "default_planner_request_adapters/FixStartStatePathConstraints",
+            ]),
             "start_state_max_bounds_error": 0.1,
         }
     }
@@ -190,6 +191,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument("use_fake_hardware", default_value="true"),
             static_tf,
             robot_state_publisher,
             joint_state_publisher,

@@ -5,6 +5,7 @@
  <xacro:arg name="ur_type" default="ur5"/>
  <xacro:arg name="name" default="$(arg ur_type)"/>
  <xacro:arg name="tf_prefix" default=""/>
+ <xacro:arg name="use_fake_hardware" default="true"/>
 
  <link name="world"/>
 
@@ -25,7 +26,9 @@
  <xacro:include filename="$(find ur5_moveit_config)/config/ur5.ros2_control.xacro" />
 
  <xacro:arg name="initial_positions_file" default="$(find ur5_moveit_config)/config/initial_positions.yaml" />
- <xacro:ur5_ros2_control name="UR5FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+ <xacro:if value="$(arg use_fake_hardware)">
+  <xacro:ur5_ros2_control name="UR5FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+ </xacro:if>
 
  <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
  <xacro:robotiq_85_gripper prefix="" parent="tool0">
