@@ -108,6 +108,12 @@ def generate_launch_description():
         "publish_transforms_updates": True,
     }
 
+    # No depth sensor is configured for this scene, so explicitly disable
+    # occupancy map sensor plugins to avoid octomap updater errors.
+    occupancy_map_monitor_params = {
+        "sensors": [],
+    }
+
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -159,6 +165,7 @@ def generate_launch_description():
             planning_pipelines_config,
             ompl_planning_pipeline_config,
             planning_scene_monitor_params,
+            occupancy_map_monitor_params,
             trajectory_execution,
             moveit_controller_manager,
             moveit_simple_controller_manager,
