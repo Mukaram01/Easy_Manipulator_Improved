@@ -32,6 +32,54 @@ endif()
 find_package(message_filters REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(octomap REQUIRED)
+
+set(EMD_OCTOMAP_LINK_LIBS "")
+set(_emd_octomap_targets_valid TRUE)
+foreach(_emd_octomap_target IN ITEMS octomap octomath)
+  if(TARGET ${_emd_octomap_target})
+    get_target_property(_emd_octomap_target_location ${_emd_octomap_target} IMPORTED_LOCATION)
+    if(NOT _emd_octomap_target_location)
+      get_target_property(_emd_octomap_target_location ${_emd_octomap_target} IMPORTED_LOCATION_RELEASE)
+    endif()
+    if(NOT _emd_octomap_target_location)
+      get_target_property(_emd_octomap_target_location ${_emd_octomap_target} IMPORTED_LOCATION_RELWITHDEBINFO)
+    endif()
+    if(NOT _emd_octomap_target_location)
+      get_target_property(_emd_octomap_target_location ${_emd_octomap_target} IMPORTED_LOCATION_MINSIZEREL)
+    endif()
+    if(NOT _emd_octomap_target_location)
+      get_target_property(_emd_octomap_target_location ${_emd_octomap_target} IMPORTED_LOCATION_DEBUG)
+    endif()
+
+    if(_emd_octomap_target_location)
+      list(APPEND EMD_OCTOMAP_LINK_LIBS ${_emd_octomap_target})
+    else()
+      set(_emd_octomap_targets_valid FALSE)
+    endif()
+  else()
+    set(_emd_octomap_targets_valid FALSE)
+  endif()
+endforeach()
+
+if(NOT _emd_octomap_targets_valid)
+  set(EMD_OCTOMAP_LINK_LIBS "")
+  unset(_emd_octomap_library_octomap CACHE)
+  unset(_emd_octomap_library_octomath CACHE)
+  find_library(_emd_octomap_library_octomap NAMES octomap)
+  find_library(_emd_octomap_library_octomath NAMES octomath)
+
+  if(_emd_octomap_library_octomap)
+    list(APPEND EMD_OCTOMAP_LINK_LIBS ${_emd_octomap_library_octomap})
+  endif()
+  if(_emd_octomap_library_octomath)
+    list(APPEND EMD_OCTOMAP_LINK_LIBS ${_emd_octomap_library_octomath})
+  endif()
+endif()
+
+if(NOT _emd_octomap_targets_valid AND NOT (_emd_octomap_library_octomap AND _emd_octomap_library_octomath))
+  message(FATAL_ERROR "Unable to resolve OctoMap link libraries: neither valid imported targets (octomap/octomath with locations) nor concrete library files were found.")
+endif()
+
 find_package(sensor_msgs REQUIRED)
 find_package(emd_msgs REQUIRED)
 find_package(epd_msgs QUIET)
@@ -130,7 +178,7 @@ endif()
 target_link_libraries(grasp_planning_interface
   ${PCL_LIBRARIES}
   ${FCL_LIBRARIES}
-  ${OCTOMAP_LIBRARIES}
+  ${EMD_OCTOMAP_LINK_LIBS}
 )
 if(OpenMP_CXX_FOUND)
   target_link_libraries(grasp_planning_interface OpenMP::OpenMP_CXX)
@@ -187,7 +235,7 @@ if(BUILD_TESTING)
   target_link_libraries(grasptest
   grasp_planning_interface
   ${PCL_LIBRARIES}
-  ${OCTOMAP_LIBRARIES}
+  ${EMD_OCTOMAP_LINK_LIBS}
   ${FCL_LIBRARIES}
   ${GTEST_LIBRARIES}
   ${Boost_LIBRARIES}
