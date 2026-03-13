@@ -221,6 +221,10 @@ main() {
 
     log_info "Starting build process"
 
+    # Apply targeted ros_industrial_cmake_boilerplate patches as early as possible
+    # so patch validation can run even on hosts without a sourced ROS environment.
+    apply_ros_industrial_patches
+
     setup_environment
 
     if [[ $CLEAN -eq 1 ]]; then
@@ -232,7 +236,6 @@ main() {
     ensure_dir "$STATE_DIR"
 
     install_dependencies
-    apply_ros_industrial_patches
     apply_patches
     build_workspace
 
