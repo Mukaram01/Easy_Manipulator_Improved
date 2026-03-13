@@ -19,7 +19,6 @@ add_executable(demo_node src/demo_node.cpp)
 
 target_link_libraries(demo_node
   ${PCL_LIBRARIES}
-  ${OCTOMAP_LIBRARIES}
   ${FCL_LIBRARIES}
   ccd
 )
