@@ -19,7 +19,6 @@
 #include <QPointer>
 #include <QProgressDialog>
 #include <QtConcurrent>
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
 #include <algorithm>
@@ -31,6 +30,7 @@
 #include "gui/ui_mainwindow.h"
 #include "gui/scene_select.h"
 #include "attributes/scene.h"
+#include "include/default_asset_paths.h"
 
 namespace fs = boost::filesystem;
 
@@ -310,8 +310,7 @@ void MainWindow::on_load_workcell_clicked()
       }
 
       report_progress(2, "Copying default assets...");
-      const fs::path package_assets_path =
-        fs::path(ament_index_cpp::get_package_share_directory("workcell_builder")) / "assets";
+      const fs::path package_assets_path = get_default_assets_directory();
       for (const auto & asset_subdir : asset_subdirs) {
         const fs::path target_path = assets_path / asset_subdir;
         if (is_empty_directory(target_path)) {

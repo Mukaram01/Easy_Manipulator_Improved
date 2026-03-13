@@ -272,10 +272,11 @@ If you must keep legacy symlinks, this is the exact expected tree:
     └── ...
 ```
 
-**Asset sourcing note:** Workcell Builder first looks for assets inside the workcell's
-`src/assets` directory (robots, end effectors, environment). If those subfolders are empty,
-it copies the packaged defaults from `share/workcell_builder/assets` so new workcells still
-start with the bundled assets when running from an installed build.
+**Asset sourcing note:** `share/workcell_builder/assets` is the canonical default-asset
+source. Runtime/workspace paths such as `src/assets` exist only as writable mirrors for user
+customization; Workcell Builder populates them from the packaged defaults when needed. The repo
+also keeps compatibility asset trees for older workflows, and CI now enforces that any tracked
+duplicate tree matches the canonical package asset tree by path list and checksum.
 
 #### 3) Import full planning overlays (optional)
 
