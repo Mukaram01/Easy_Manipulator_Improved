@@ -202,19 +202,74 @@ cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 ```
 
-#### 2) Put assets/scenes where the README expects them but if you dont want to move them see 2.a.
+#### 2) Use a single canonical location for `assets` and `scenes`
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+# Keep both directories in the repository root as the source of truth.
+# Do not keep separate copied directories in ~/workcell_ws/src.
+test -d assets && test -d scenes
+```
+
+Resulting layout (recommended):
+
+```text
+~/workcell_ws/src/
+└── easy_manipulation_deployment/
+    ├── assets/
+    ├── scenes/
+    ├── CMakeLists.txt
+    └── ...
+```
+
+#### 2.a) Migration from older dual-path setups
+
+Use this once if your workspace still has duplicate directories in both
+`~/workcell_ws/src/` and `~/workcell_ws/src/easy_manipulation_deployment/`.
+
+1. Detect existing duplicates.
+2. Choose `easy_manipulation_deployment/{assets,scenes}` as authoritative.
+3. Remove stale duplicate copies in `~/workcell_ws/src` safely.
+4. Recreate top-level symlinks only if a legacy tool still requires them.
 
 ```bash
 cd ~/workcell_ws/src
-mv easy_manipulation_deployment/assets .
-mv easy_manipulation_deployment/scenes .
+
+# 1) Detect duplicates and show their type (directory/symlink/missing)
+for p in assets scenes; do
+  printf "%-8s src/%-6s: " "$p" "$p"
+  [ -e "$p" ] && stat -c '%F -> %N' "$p" || echo "missing"
+  printf "%-8s repo/%-6s: " "$p" "$p"
+  [ -e "easy_manipulation_deployment/$p" ] && stat -c '%F -> %N' "easy_manipulation_deployment/$p" || echo "missing"
+done
+
+# 2) Ensure canonical directories exist in the repo path
+test -d easy_manipulation_deployment/assets
+test -d easy_manipulation_deployment/scenes
+
+# 3) Remove stale top-level copies ONLY if they are real directories (not symlinks)
+for p in assets scenes; do
+  if [ -d "$p" ] && [ ! -L "$p" ]; then
+    rm -rf "$p"
+  fi
+done
+
+# 4) Optional: recreate legacy compatibility symlinks (only if needed)
+# ln -s easy_manipulation_deployment/assets assets
+# ln -s easy_manipulation_deployment/scenes scenes
 ```
 
-#### 2.a) Create symlinks where the build expects them
+If you must keep legacy symlinks, this is the exact expected tree:
 
-```bash
-ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets ~/workcell_ws/src/assets
-ln -s ~/workcell_ws/src/easy_manipulation_deployment/scenes ~/workcell_ws/src/scenes
+```text
+~/workcell_ws/src/
+├── assets -> easy_manipulation_deployment/assets
+├── scenes -> easy_manipulation_deployment/scenes
+└── easy_manipulation_deployment/
+    ├── assets/
+    ├── scenes/
+    ├── CMakeLists.txt
+    └── ...
 ```
 
 **Asset sourcing note:** Workcell Builder first looks for assets inside the workcell's
