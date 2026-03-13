@@ -1,0 +1,74 @@
+diff --git a/cmake/cmake_tools.cmake b/cmake/cmake_tools.cmake
+index 6d3e418..d9c7e07 100644
+--- a/cmake/cmake_tools.cmake
++++ b/cmake/cmake_tools.cmake
+@@ -146,10 +146,16 @@ function(make_default_package_config)
+       endif()
+     endif()
+ 
++    set(_ricb_has_octomap_dependency FALSE)
+     if (ARG_DEPENDENCIES)
+         set(find_dep_cmds "include(CMakeFindDependencyMacro)")
+         foreach(dep IN LISTS ARG_DEPENDENCIES)
+-            list(APPEND find_dep_cmds "find_dependency(${dep})")
++            if(dep STREQUAL "octomap")
++              set(_ricb_has_octomap_dependency TRUE)
++              list(APPEND find_dep_cmds "find_dependency(octomap REQUIRED)")
++            else()
++              list(APPEND find_dep_cmds "find_dependency(${dep})")
++            endif()
+         endforeach()
+ 
+         # Convert list to newline-separated string
+@@ -157,6 +163,51 @@ function(make_default_package_config)
+         string(APPEND ricb_pkgconfig "\n# Dependencies\n" "${ricb_dependencies}\n")
+     endif()
+ 
++    if (ARG_CONFIG_NAME STREQUAL "tesseract_geometry" AND _ricb_has_octomap_dependency)
++      string(APPEND ricb_pkgconfig
++        "\n# OctoMap imported target validation\n"
++        "set(_tesseract_geometry_active_cfg \"\")\n"
++        "if(DEFINED CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL \"\")\n"
++        "  string(TOUPPER \"${CMAKE_BUILD_TYPE}\" _tesseract_geometry_active_cfg)\n"
++        "endif()\n"
++        "foreach(_tesseract_geometry_octomap_target octomap octomath)\n"
++        "  if(TARGET ${_tesseract_geometry_octomap_target})\n"
++        "    get_target_property(_tesseract_geometry_imported_location ${_tesseract_geometry_octomap_target} IMPORTED_LOCATION)\n"
++        "    get_target_property(_tesseract_geometry_imported_location_release ${_tesseract_geometry_octomap_target} IMPORTED_LOCATION_RELEASE)\n"
++        "    get_target_property(_tesseract_geometry_imported_location_relwithdebinfo ${_tesseract_geometry_octomap_target} IMPORTED_LOCATION_RELWITHDEBINFO)\n"
++        "    get_target_property(_tesseract_geometry_imported_location_debug ${_tesseract_geometry_octomap_target} IMPORTED_LOCATION_DEBUG)\n"
++        "\n"
++        "    if((NOT _tesseract_geometry_imported_location OR _tesseract_geometry_imported_location STREQUAL \"_tesseract_geometry_imported_location-NOTFOUND\")\n"
++        "       AND (_tesseract_geometry_imported_location_release OR _tesseract_geometry_imported_location_relwithdebinfo OR _tesseract_geometry_imported_location_debug))\n"
++        "      set(_tesseract_geometry_fallback_location \"\")\n"
++        "      if(_tesseract_geometry_active_cfg STREQUAL \"DEBUG\" AND _tesseract_geometry_imported_location_debug)\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_debug}\")\n"
++        "      elseif(_tesseract_geometry_active_cfg STREQUAL \"RELWITHDEBINFO\" AND _tesseract_geometry_imported_location_relwithdebinfo)\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_relwithdebinfo}\")\n"
++        "      elseif(_tesseract_geometry_active_cfg STREQUAL \"RELEASE\" AND _tesseract_geometry_imported_location_release)\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_release}\")\n"
++        "      elseif(_tesseract_geometry_imported_location_release)\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_release}\")\n"
++        "      elseif(_tesseract_geometry_imported_location_relwithdebinfo)\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_relwithdebinfo}\")\n"
++        "      else()\n"
++        "        set(_tesseract_geometry_fallback_location \"${_tesseract_geometry_imported_location_debug}\")\n"
++        "      endif()\n"
++        "\n"
++        "      if(_tesseract_geometry_fallback_location)\n"
++        "        set_target_properties(${_tesseract_geometry_octomap_target} PROPERTIES IMPORTED_LOCATION \"${_tesseract_geometry_fallback_location}\")\n"
++        "      endif()\n"
++        "    endif()\n"
++        "\n"
++        "    get_target_property(_tesseract_geometry_imported_location ${_tesseract_geometry_octomap_target} IMPORTED_LOCATION)\n"
++        "    if(NOT _tesseract_geometry_imported_location OR _tesseract_geometry_imported_location STREQUAL \"_tesseract_geometry_imported_location-NOTFOUND\")\n"
++        "      message(FATAL_ERROR \"${_tesseract_geometry_octomap_target} target has no import location. Reinstall OctoMap and verify its exported CMake targets set IMPORTED_LOCATION[_<CONFIG>] properties.\")\n"
++        "    endif()\n"
++        "  endif()\n"
++        "endforeach()\n"
++      )
++    endif()
++
+     if (ARG_SUPPORTED_COMPONENTS)
+       string(REPLACE ";" " " supported_components_string "${ARG_SUPPORTED_COMPONENTS}")
+       string(APPEND ricb_pkgconfig "\n# Components\n"
