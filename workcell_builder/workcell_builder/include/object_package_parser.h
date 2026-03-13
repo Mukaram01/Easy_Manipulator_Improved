@@ -23,7 +23,7 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "include/default_asset_paths.h"
 #include "attributes/object.h"
 #include "include/file_functions.h"
 
@@ -38,8 +38,7 @@ void GenerateObjectPackageXML(
     workcell_filepath / "assets" / "environment" / package_name);
   fs::path example_file;
   try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
+    example_file = get_default_templates_directory() /
       ("ros" + std::to_string(ros_ver)) / "package_example.xml";
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
@@ -83,8 +82,7 @@ void GenerateObjectCMakeLists(
   (void)workcell_filepath;
   fs::path example_file;
   try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    example_file = fs::path(share) / "templates" /
+    example_file = get_default_templates_directory() /
       ("ros" + std::to_string(ros_ver)) / "CMakeLists_object_example.txt";
   } catch (const std::exception & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());

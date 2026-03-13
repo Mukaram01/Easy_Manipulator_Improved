@@ -24,7 +24,7 @@
 #include <cstdio>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "include/default_asset_paths.h"
 #include "attributes/workcell.h"
 
 namespace fs = boost::filesystem;
@@ -89,8 +89,7 @@ void generate_cmakelists(
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
   try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    fs::path base_template_path = fs::path(share) / "templates" /
+    fs::path base_template_path = get_default_templates_directory() /
       ("ros" + std::to_string(ros_ver));
     fs::path distro_template_path = base_template_path / ros_distro / "CMakeLists_example.txt";
     if (!ros_distro.empty() && fs::exists(distro_template_path)) {
@@ -168,8 +167,7 @@ void generate_package_xml(
   fs::path package_filepath(workcell_filepath / "scenes" / package_name);
   fs::path example_file;
   try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    fs::path base_template_path = fs::path(share) / "templates" /
+    fs::path base_template_path = get_default_templates_directory() /
       ("ros" + std::to_string(ros_ver));
     fs::path distro_template_path = base_template_path / ros_distro / "package_example.xml";
     if (!ros_distro.empty() && fs::exists(distro_template_path)) {

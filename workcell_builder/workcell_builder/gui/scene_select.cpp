@@ -17,7 +17,6 @@
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
-#include "ament_index_cpp/get_package_share_directory.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +42,7 @@
 #include "include/scene_check.h"
 #include "include/scene_parser.h"
 #include "include/scene_xacro_parser.h"
+#include "include/default_asset_paths.h"
 
 namespace fs = boost::filesystem;
 
@@ -128,15 +128,8 @@ SceneSelect::SceneSelect(QWidget * parent)
       cwd.string().c_str());
   }
   scenes_path = workcell_path / "scenes";
-  try {
-    const auto share = ament_index_cpp::get_package_share_directory("workcell_builder");
-    templates_path = fs::path(share) / "templates";
-    if (!fs::exists(workcell_path / "assets")) {
-      assets_path = fs::path(share) / "assets";
-    }
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
-  }
+  templates_path = get_default_templates_directory();
+  assets_path = get_runtime_assets_directory(workcell_path);
   change_directory(workcell_path);
   if (assets_path.empty()) {
     change_directory(workcell_path / "assets");

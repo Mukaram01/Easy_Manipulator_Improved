@@ -142,6 +142,18 @@ target_include_directories(workcell_builder
     ${Boost_INCLUDE_DIRS}
 )
 
+set(WORKCELL_BUILDER_CANONICAL_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+set(WORKCELL_BUILDER_SECONDARY_ASSETS_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_assets")
+
+add_custom_target(generate_workcell_builder_secondary_assets ALL
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${WORKCELL_BUILDER_CANONICAL_ASSETS_DIR}
+    ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}
+  COMMENT "Generating secondary default-asset tree from canonical package assets")
+
+add_dependencies(workcell_builder generate_workcell_builder_secondary_assets)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -155,6 +167,14 @@ if(BUILD_TESTING)
 
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_ur5_2f_demo_launch.test.py TIMEOUT 180)
+
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(
+    NAME workcell_builder_asset_tree_consistency
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/check_asset_tree_sync.py
+      --repo-root ${CMAKE_CURRENT_SOURCE_DIR}/../..
+      --canonical workcell_builder/workcell_builder/assets
+      --compare src/assets)
 endif()
 
 install(TARGETS workcell_builder
@@ -168,5 +188,8 @@ install(DIRECTORY templates
 
 install(DIRECTORY assets
   DESTINATION share/${PROJECT_NAME})
+
+install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/
+  DESTINATION share/${PROJECT_NAME}/legacy_assets)
 
 ament_package()
