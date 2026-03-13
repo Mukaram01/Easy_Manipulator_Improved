@@ -4,6 +4,7 @@ import yaml
 import xacro
 
 from launch import LaunchDescription
+from launch.actions import OpaqueFunction
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -33,7 +34,7 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(f) or {}
 
 
-def generate_launch_description():
+def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
 
@@ -41,7 +42,12 @@ def generate_launch_description():
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
-        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware},
+        mappings={
+            "ur_type": "ur5",
+            "name": "ur5",
+            "tf_prefix": "",
+            "use_fake_hardware": use_fake_hardware.perform(context),
+        },
     )
     robot_description = {"robot_description": robot_description_config}
 
@@ -175,13 +181,19 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([
-        DeclareLaunchArgument("use_sim_time", default_value="false"),
-        DeclareLaunchArgument("use_fake_hardware", default_value="true"),
+    return [
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
         move_group,
         rviz_node,
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument("use_fake_hardware", default_value="true"),
+        OpaqueFunction(function=_launch_setup),
     ])
 
