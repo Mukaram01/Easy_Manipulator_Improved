@@ -64,6 +64,7 @@ private:
     Workcell workcell;
     boost::filesystem::path workcell_path;
     QString workcell_file;
+    QString workcell_root_label;
   };
   QFutureWatcher<WorkcellLoadResult> * load_watcher_{ nullptr };
   QProgressDialog * progress_dialog_{ nullptr };
