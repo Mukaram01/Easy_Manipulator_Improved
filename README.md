@@ -401,6 +401,27 @@ GUI-based tool for generating robotic workcell simulations. The supported workfl
 source ~/workcell_ws/install/setup.bash
 workcell_builder
 ```
+
+**Scene root resolution precedence (startup):**
+1. `--scene-root <path>` (or `--scene-root=<path>`) CLI flag.
+2. `WORKCELL_BUILDER_SCENE_ROOT` environment variable.
+3. Current working directory (`$PWD`).
+4. Parent of current working directory (`$PWD/..`).
+5. `$PWD/src/easy_manipulation_deployment`.
+6. `$PWD/src`.
+
+The selected workcell root and all rejected candidates are logged at startup. If multiple valid
+scene directories exist, Workcell Builder warns and keeps the highest-priority candidate.
+
+For deterministic behavior in multi-workspace setups, explicitly set one override:
+```bash
+# CLI override (highest priority)
+workcell_builder --scene-root ~/workcell_ws/src/easy_manipulation_deployment
+
+# or environment override
+export WORKCELL_BUILDER_SCENE_ROOT=~/workcell_ws/src/easy_manipulation_deployment
+workcell_builder
+```
  
 Example ROS 2 (Humble) launch templates live under `workcell_builder/examples/ros2/`.
 

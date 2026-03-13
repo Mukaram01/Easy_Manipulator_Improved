@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <QKeyEvent>
+#include <QCoreApplication>
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
@@ -47,6 +48,8 @@
 namespace fs = boost::filesystem;
 
 namespace {
+constexpr const char * kSceneRootEnvVar = "WORKCELL_BUILDER_SCENE_ROOT";
+
 bool change_directory(const fs::path & p)
 {
   boost::system::error_code ec;
@@ -104,6 +107,168 @@ void resolve_scene_paths(Scene * scene, const fs::path & base_path)
   }
 }
 
+struct SceneRootCandidate
+{
+  fs::path root;
+  std::string label;
+  bool valid = false;
+  std::string invalid_reason;
+};
+
+std::string path_or_placeholder(const fs::path & path)
+{
+  return path.empty() ? std::string("<none>") : path.string();
+}
+
+std::string parse_cli_scene_root_override()
+{
+  const QStringList args = QCoreApplication::arguments();
+  for (int i = 1; i < args.size(); ++i) {
+    const QString arg = args[i];
+    if (arg == "--scene-root" && i + 1 < args.size()) {
+      return args[i + 1].toStdString();
+    }
+    const QString prefix = "--scene-root=";
+    if (arg.startsWith(prefix)) {
+      return arg.mid(prefix.size()).toStdString();
+    }
+  }
+  return "";
+}
+
+SceneRootCandidate build_candidate(const fs::path & root, const std::string & label)
+{
+  SceneRootCandidate candidate;
+  candidate.root = root.lexically_normal();
+  candidate.label = label;
+
+  const fs::path scenes_dir = candidate.root / "scenes";
+  boost::system::error_code ec;
+  if (!fs::exists(scenes_dir, ec) || ec) {
+    candidate.valid = false;
+    candidate.invalid_reason = "missing scenes directory";
+    return candidate;
+  }
+  if (!fs::is_directory(scenes_dir, ec) || ec) {
+    candidate.valid = false;
+    candidate.invalid_reason = "scenes path is not a directory";
+    return candidate;
+  }
+
+  candidate.valid = true;
+  return candidate;
+}
+
+fs::path root_from_override(const std::string & override_value)
+{
+  fs::path override_path(override_value);
+  if (override_path.filename() == "scenes") {
+    return override_path.parent_path();
+  }
+  return override_path;
+}
+
+fs::path select_scene_root(const fs::path & cwd)
+{
+  std::vector<SceneRootCandidate> candidates;
+  const std::string cli_override = parse_cli_scene_root_override();
+  const char * env_override = std::getenv(kSceneRootEnvVar);
+
+  if (!cli_override.empty()) {
+    candidates.push_back(build_candidate(
+      root_from_override(cli_override),
+      std::string("CLI --scene-root=") + cli_override));
+  }
+  if (env_override != nullptr && std::strlen(env_override) > 0) {
+    candidates.push_back(build_candidate(
+      root_from_override(env_override),
+      std::string("environment ") + kSceneRootEnvVar + "=" + env_override));
+  }
+
+  candidates.push_back(build_candidate(cwd, "current working directory"));
+  candidates.push_back(build_candidate(cwd.parent_path(), "parent directory"));
+  candidates.push_back(build_candidate(
+    cwd / "src" / "easy_manipulation_deployment",
+    "cwd/src/easy_manipulation_deployment"));
+  candidates.push_back(build_candidate(cwd / "src", "cwd/src"));
+
+  SceneRootCandidate selected;
+  bool has_selected = false;
+  std::vector<SceneRootCandidate> valid_candidates;
+
+  for (const auto & candidate : candidates) {
+    if (candidate.valid) {
+      valid_candidates.push_back(candidate);
+      if (!has_selected) {
+        selected = candidate;
+        has_selected = true;
+      }
+    }
+  }
+
+  if (has_selected) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("workcell_builder"),
+      "Selected workcell root: %s (source: %s)",
+      selected.root.string().c_str(), selected.label.c_str());
+
+    for (const auto & candidate : candidates) {
+      if (candidate.root == selected.root && candidate.label == selected.label) {
+        continue;
+      }
+      if (candidate.valid) {
+        RCLCPP_INFO(
+          rclcpp::get_logger("workcell_builder"),
+          "Rejected valid scene root candidate: %s (source: %s)",
+          candidate.root.string().c_str(), candidate.label.c_str());
+      } else {
+        RCLCPP_INFO(
+          rclcpp::get_logger("workcell_builder"),
+          "Rejected scene root candidate: %s (source: %s, reason: %s)",
+          candidate.root.string().c_str(), candidate.label.c_str(), candidate.invalid_reason.c_str());
+      }
+    }
+
+    std::unordered_set<std::string> unique_valid_roots;
+    for (const auto & candidate : valid_candidates) {
+      unique_valid_roots.insert(candidate.root.string());
+    }
+
+    if (unique_valid_roots.size() > 1) {
+      std::ostringstream valid_paths;
+      size_t idx = 0;
+      for (const auto & root : unique_valid_roots) {
+        if (idx++ > 0) {
+          valid_paths << ", ";
+        }
+        valid_paths << root;
+      }
+      RCLCPP_WARN(
+        rclcpp::get_logger("workcell_builder"),
+        "Multiple valid scene directories were found (%zu). Using highest priority root %s. "
+        "Set --scene-root or %s for deterministic selection. Candidates: [%s]",
+        unique_valid_roots.size(), selected.root.string().c_str(), kSceneRootEnvVar,
+        valid_paths.str().c_str());
+    }
+
+    return selected.root;
+  }
+
+  RCLCPP_WARN(
+    rclcpp::get_logger("workcell_builder"),
+    "Unable to locate a valid 'scenes' directory from %s. Checked default locations plus optional "
+    "--scene-root and %s overrides.",
+    cwd.string().c_str(), kSceneRootEnvVar);
+  for (const auto & candidate : candidates) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("workcell_builder"),
+      "Rejected scene root candidate: %s (source: %s, reason: %s)",
+      path_or_placeholder(candidate.root).c_str(), candidate.label.c_str(),
+      candidate.invalid_reason.c_str());
+  }
+  return cwd;
+}
+
 }  // namespace
 
 
@@ -111,22 +276,8 @@ SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
 {
-  fs::path cwd = fs::current_path();
-  if (fs::exists(cwd / "scenes")) {
-    workcell_path = cwd;
-  } else if (fs::exists(cwd.parent_path() / "scenes")) {
-    workcell_path = cwd.parent_path();
-  } else if (fs::exists(cwd / "src" / "easy_manipulation_deployment" / "scenes")) {
-    workcell_path = cwd / "src" / "easy_manipulation_deployment";
-  } else if (fs::exists(cwd / "src" / "scenes")) {
-    workcell_path = cwd / "src";
-  } else {
-    workcell_path = cwd;
-    RCLCPP_WARN(
-      rclcpp::get_logger("workcell_builder"),
-      "Unable to locate a 'scenes' directory from %s or its parent.",
-      cwd.string().c_str());
-  }
+  const fs::path cwd = fs::current_path();
+  workcell_path = select_scene_root(cwd);
   scenes_path = workcell_path / "scenes";
   templates_path = get_default_templates_directory();
   assets_path = get_runtime_assets_directory(workcell_path);
