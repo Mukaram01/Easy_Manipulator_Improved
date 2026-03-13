@@ -71,8 +71,10 @@ apt_update_once() {
 
 ensure_tools() {
     local packages=()
+    local missing_tools=()
     for tool in git rosdep vcs colcon; do
         if ! command -v "$tool" >/dev/null 2>&1; then
+            missing_tools+=("$tool")
             case "$tool" in
                 git) packages+=(git);;
                 rosdep) packages+=(python3-rosdep);;
@@ -84,8 +86,46 @@ ensure_tools() {
 
     if [[ ${#packages[@]} -gt 0 ]]; then
         apt_update_once
-        $APT_GET install -y "${packages[@]}"
+        if ! $APT_GET install -y "${packages[@]}"; then
+            log_warn "Failed to install one or more CLI tools from apt; attempting pip fallback where possible"
+        fi
     fi
+
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        local need_pip=0
+
+        if ! command -v pip3 >/dev/null 2>&1; then
+            apt_update_once
+            $APT_GET install -y python3-pip || true
+        fi
+
+        for tool in "${missing_tools[@]}"; do
+            if command -v "$tool" >/dev/null 2>&1; then
+                continue
+            fi
+
+            need_pip=1
+            case "$tool" in
+                rosdep)
+                    pip3 install --break-system-packages rosdep || true
+                    ;;
+                vcs)
+                    pip3 install --break-system-packages vcstool || true
+                    ;;
+                colcon)
+                    pip3 install --break-system-packages colcon-common-extensions || true
+                    ;;
+            esac
+        done
+
+        if [[ $need_pip -eq 1 ]]; then
+            hash -r
+        fi
+    fi
+
+    for tool in git rosdep vcs colcon; do
+        command -v "$tool" >/dev/null 2>&1 || die "Required tool '$tool' is missing"
+    done
 
     if command -v rosdep >/dev/null 2>&1; then
         if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
