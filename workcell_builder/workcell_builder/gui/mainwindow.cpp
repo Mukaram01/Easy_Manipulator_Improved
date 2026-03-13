@@ -221,13 +221,55 @@ void MainWindow::on_load_workcell_clicked()
       report_progress(0, "Preparing directories...");
       boost::system::error_code ec;
       const fs::path base_path(workcell_file.toStdString());
-      const fs::path workcell_root = base_path / "src";
-      fs::create_directories(workcell_root, ec);
+      fs::path workcell_root;
+      QString root_status_suffix;
+      const auto has_workcell_root_directories = [&](const fs::path & candidate_root) {
+        ec.clear();
+        const bool has_scenes = fs::is_directory(candidate_root / "scenes", ec);
+        if (ec) {
+          return false;
+        }
+        ec.clear();
+        const bool has_assets = fs::is_directory(candidate_root / "assets", ec);
+        if (ec) {
+          return false;
+        }
+        return has_scenes || has_assets;
+      };
+
+      const bool base_has_root_dirs = has_workcell_root_directories(base_path);
       if (ec) {
-        result.error = QString("Failed to create src directory: %1")
+        result.error = QString("Failed to inspect selected directory: %1")
           .arg(QString::fromStdString(ec.message()));
         return result;
       }
+
+      const bool src_has_root_dirs = has_workcell_root_directories(base_path / "src");
+      if (ec) {
+        result.error = QString("Failed to inspect selected directory: %1")
+          .arg(QString::fromStdString(ec.message()));
+        return result;
+      }
+
+      if (base_has_root_dirs) {
+        workcell_root = base_path;
+        root_status_suffix = " (using selected path as workcell root)";
+      } else if (src_has_root_dirs) {
+        workcell_root = base_path / "src";
+        root_status_suffix = " (using selected path/src as workcell root)";
+      } else {
+        workcell_root = base_path / "src";
+        root_status_suffix = " (created selected path/src as workcell root)";
+      }
+
+      ec.clear();
+      fs::create_directories(workcell_root, ec);
+      if (ec) {
+        result.error = QString("Failed to create workcell root directory: %1")
+          .arg(QString::fromStdString(ec.message()));
+        return result;
+      }
+      result.workcell_root_label = root_status_suffix;
       const fs::path assets_path = workcell_root / "assets";
       const fs::path scenes_path = workcell_root / "scenes";
       fs::create_directories(assets_path, ec);
@@ -311,7 +353,7 @@ void MainWindow::on_load_workcell_clicked()
       }
 
       report_progress(5, "Finalizing...");
-      loaded_workcell.workcell_filepath = workcell_file.toStdString();
+      loaded_workcell.workcell_filepath = workcell_root.string();
       result.workcell = loaded_workcell;
       result.workcell_path = workcell_root;
       result.success = true;
@@ -330,7 +372,8 @@ void MainWindow::on_load_workcell_clicked()
     if (result.success) {
       workcell = result.workcell;
       workcell_path = result.workcell_path;
-      ui->error_label->setText("<font color='green'>Workcell loaded</font>");
+      ui->error_label->setText(
+        QString("<font color='green'>Workcell loaded%1</font>").arg(result.workcell_root_label));
       ui->next->setDisabled(false);
       ui->load_workcell->setDisabled(true);
       ui->change_workcell->setDisabled(false);
