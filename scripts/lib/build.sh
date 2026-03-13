@@ -11,8 +11,38 @@ BASE_CMAKE_ARGS=(
     -DTESSERACT_ENABLE_EXAMPLES=OFF
 )
 
+reset_colcon_environment() {
+    local ros_setup="/opt/ros/humble/setup.bash"
+    local local_setup="$WORKSPACE_ROOT/install/local_setup.bash"
+
+    unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+
+    if [[ ! -f "$ros_setup" ]]; then
+        die "Expected ROS base setup is missing: $ros_setup"
+    fi
+
+    set +u
+    : "${AMENT_TRACE_SETUP_FILES:=}"
+    # shellcheck source=/dev/null
+    source "$ros_setup"
+    if [[ -f "$local_setup" ]]; then
+        # shellcheck source=/dev/null
+        source "$local_setup"
+    fi
+    set -u
+}
+
 source_install() {
-    local setup_file="$WORKSPACE_ROOT/install/setup.bash"
+    local setup_file="$WORKSPACE_ROOT/install/local_setup.bash"
+    if [[ -f "$setup_file" ]]; then
+        set +u
+        # shellcheck source=/dev/null
+        source "$setup_file"
+        set -u
+        return
+    fi
+
+    setup_file="$WORKSPACE_ROOT/install/setup.bash"
     if [[ -f "$setup_file" ]]; then
         set +u
         # shellcheck source=/dev/null
@@ -127,6 +157,7 @@ build_workspace() {
 
     if [[ ! -f "$foundation_marker" ]]; then
         log_info "Building foundation packages (through trajopt_sco)"
+        reset_colcon_environment
         colcon build --base-paths "$SRC_DIR" "${args[@]}" \
             --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
         touch "$foundation_marker"
@@ -143,6 +174,7 @@ build_workspace() {
     fi
 
     log_info "Building full workspace"
+    reset_colcon_environment
     colcon build --base-paths "$SRC_DIR" "${full_args[@]}" --cmake-args "${CMAKE_ARGS[@]}"
 
     copy_motion_planner_configs

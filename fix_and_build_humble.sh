@@ -57,25 +57,31 @@ if command -v sudo >/dev/null 2>&1; then
   APT_GET_CMD="sudo apt-get"
 fi
 
-# 0) Source underlays (support Humble or Jazzy)
-default_rosdistro=""
-for d in jazzy humble; do
-  if [ -f "/opt/ros/${d}/setup.bash" ]; then
-    default_rosdistro=${d}
-    break
+# 0) Reset overlays and source only the intended base underlay (Humble)
+reset_colcon_environment() {
+  local ros_setup="/opt/ros/humble/setup.bash"
+  local local_setup="$PWD/install/local_setup.bash"
+
+  unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+
+  if [[ ! -f "$ros_setup" ]]; then
+    echo "Expected ROS setup is missing: $ros_setup" >&2
+    exit 1
   fi
-done
-ROS_DISTRO=${ROS_DISTRO:-${default_rosdistro}}
-[ -n "${ROS_DISTRO:-}" ] || { echo "ROS 2 distro not found (expected jazzy or humble)"; exit 1; }
-set +u
-: "${AMENT_TRACE_SETUP_FILES:=}"
-# shellcheck source=/dev/null
-source "/opt/ros/${ROS_DISTRO}/setup.bash"
-set -u
-if [ -f ~/ws_moveit2/install/setup.bash ]; then
+
+  set +u
+  : "${AMENT_TRACE_SETUP_FILES:=}"
   # shellcheck source=/dev/null
-  source ~/ws_moveit2/install/setup.bash
-fi
+  source "$ros_setup"
+  if [[ -f "$local_setup" ]]; then
+    # shellcheck source=/dev/null
+    source "$local_setup"
+  fi
+  set -u
+}
+
+ROS_DISTRO=humble
+reset_colcon_environment
 
 # Ensure required tools are available (install common ones if missing)
 MISSING_APT_PACKAGES=()
@@ -508,23 +514,28 @@ if [[ "$PROFILE" == "full" ]]; then
   fi
 
   # 3) Stage 1: infrastructure vendors first
+  reset_colcon_environment
   colcon build --symlink-install --packages-select \
     ros_industrial_cmake_boilerplate eigen boost_plugin_loader
 
   # 4) Stage 2: up to tesseract_common/tesseract_msgs with C++17
+  reset_colcon_environment
   colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
     --cmake-args "${CMAKE_ARGS[@]}"
 
   # 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
   # Build its dependency chain as well so the workspace has the expected environment
   # hooks available when colcon sources it during later stages.
+  reset_colcon_environment
   colcon build --symlink-install --packages-up-to tesseract_state_solver \
     --cmake-args "${CMAKE_ARGS[@]}"
 
   # 5) Stage 3: full workspace
+  reset_colcon_environment
   colcon build --symlink-install \
     --cmake-args "${CMAKE_ARGS[@]}"
 else
   echo "Profile 'minimal': skipping source overlays and running a single workspace build"
+  reset_colcon_environment
   colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
 fi
