@@ -84,6 +84,39 @@ colcon build --symlink-install
 - **Patch application command:** run `./src/Easy_Manipulator_Improved/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
 - **Device/group permission changes:** if you add your user to groups such as `video`, `plugdev`, or `input`, log out and back in before retrying tools that require those permissions.
 
+### Dependency-first build flow (catch `tesseract_geometry`/OctoMap issues early)
+
+If the workspace fails during global `colcon build`, validate the dependency layer first and only then build everything.
+
+```bash
+cd ~/emd_epd_ws
+
+# 1) Build the package that exports tesseract geometry config first.
+colcon build --symlink-install --packages-select tesseract_geometry \
+  2>&1 | tee /tmp/colcon_tesseract_geometry.log
+
+# 2) Build one OctoMap-consuming layer next to validate imported target exports.
+colcon build --symlink-install --packages-select tesseract_collision \
+  2>&1 | tee /tmp/colcon_tesseract_collision.log
+
+# 3) Immediately fail-fast on the known OctoMap import error signature.
+if rg -n 'IMPORTED_LOCATION not set for imported target "octomap"' \
+  /tmp/colcon_tesseract_geometry.log /tmp/colcon_tesseract_collision.log; then
+  echo "OctoMap import/export issue detected. Fix dependency exports before full build."
+  return 1 2>/dev/null || exit 1
+fi
+
+# 4) Only run the full workspace build after dependency checks pass.
+colcon build --symlink-install
+```
+
+Minimal invocation sequence:
+
+1. `colcon build --packages-select tesseract_geometry`
+2. `colcon build --packages-select tesseract_collision`
+3. `rg 'IMPORTED_LOCATION not set for imported target "octomap"' /tmp/colcon_tesseract_*.log`
+4. `colcon build --symlink-install`
+
 ---
 
 ## Universal Robots Description (ur_description)
