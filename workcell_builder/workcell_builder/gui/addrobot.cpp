@@ -464,6 +464,7 @@ void AddRobot::on_robot_brand_currentIndexChanged(int index)
 
 void AddRobot::on_robot_model_currentIndexChanged(int index)
 {
+  Q_UNUSED(index);
   bool oldState = ui->robot_links->blockSignals(true);
   bool oldState2 = ui->robot_ee_link->blockSignals(true);
   ui->robot_links->clear();

@@ -120,6 +120,25 @@ target_include_directories(grasp_planning_interface SYSTEM PRIVATE
   ${OCTOMAP_INCLUDE_DIRS}
 )
 
+
+# Keep strict warnings for project-owned targets and scope suppressions to
+# specific third-party imported targets that are known to emit benign warnings.
+function(emd_suppress_external_target_warnings external_target)
+  if(NOT TARGET ${external_target})
+    return()
+  endif()
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_property(TARGET ${external_target} APPEND PROPERTY INTERFACE_COMPILE_OPTIONS
+      -Wno-unused-parameter
+      -Wno-deprecated-declarations)
+  endif()
+endfunction()
+
+emd_suppress_external_target_warnings(octomap)
+emd_suppress_external_target_warnings(octomath)
+emd_suppress_external_target_warnings(qpoases)
+
 if(${FCL_VERSION} VERSION_GREATER_EQUAL 0.6.0)
   target_compile_definitions(grasp_planning_interface
     PUBLIC
@@ -131,10 +150,6 @@ else()
     FCL_VERSION_0_6_OR_HIGHER=0
   )
 endif()
-
-get_target_property(target_options grasp_planning_interface COMPILE_OPTIONS)
-list(REMOVE_ITEM target_options "-Wpedantic")
-set_property(TARGET grasp_planning_interface PROPERTY COMPILE_OPTIONS ${target_options})
 
 if(epd_msgs_FOUND)
   ament_target_dependencies(grasp_planning_interface
