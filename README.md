@@ -117,6 +117,19 @@ Minimal invocation sequence:
 3. `rg 'IMPORTED_LOCATION not set for imported target "octomap"' /tmp/colcon_tesseract_*.log`
 4. `colcon build --symlink-install`
 
+
+### Known benign warnings
+
+During source builds, warnings from third-party packages such as `qpoases` and
+`octomap-distribution` can appear noisy but are often harmless.
+
+Use this quick rule:
+- If build output only shows `warning:` diagnostics and the package finishes, treat it as benign.
+- If colcon stops, ignore preceding warning spam and start with the first `error:` line.
+
+The project keeps strict warnings (`-Wall -Wextra -Wpedantic`) for repository-owned
+code, while warning suppressions are scoped only to external imported targets.
+
 ---
 
 ## Universal Robots Description (ur_description)

@@ -18,10 +18,8 @@
 #define SCENE_XACRO_PARSER_H_
 
 
-#include <iostream>
 #include <fstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <boost/filesystem.hpp>
@@ -46,13 +44,6 @@ std::vector<std::string> description_package_candidates(const Robot & robot)
   return candidates;
 }
 
-std::string resolve_robot_xacro_filename(const Robot & robot)
-{
-  if (robot.brand == "robotiq_3f_gripper") {
-    return "robotiq-3f-gripper_articulated.urdf.xacro";
-  }
-  return robot.name + ".urdf.xacro";
-}
 
 std::vector<std::string> robot_description_candidates(const Robot & robot)
 {
@@ -109,43 +100,6 @@ std::string resolve_robot_description_filename(
   return candidates.front();
 }
 
-std::vector<std::string> universal_robot_xacro_candidates(const Robot & robot)
-{
-  return {
-    robot.name + ".urdf.xacro",
-    robot.name + "_robot.urdf.xacro"
-  };
-}
-
-std::string resolve_universal_robot_xacro_filename(const Robot & robot)
-{
-  const auto candidates = universal_robot_xacro_candidates(robot);
-  try {
-    const auto package_share = ament_index_cpp::get_package_share_directory("ur_description");
-    const boost::filesystem::path legacy_path =
-      boost::filesystem::path(package_share) / "urdf" / (robot.name + ".urdf.xacro");
-    if (boost::filesystem::exists(legacy_path)) {
-      return robot.name + ".urdf.xacro";
-    }
-
-    const boost::filesystem::path config_path =
-      boost::filesystem::path(package_share) / "config" / robot.name;
-    if (boost::filesystem::exists(config_path) && boost::filesystem::is_directory(config_path)) {
-      return "ur.urdf.xacro";
-    }
-
-    for (const auto & candidate : candidates) {
-      const boost::filesystem::path xacro_path =
-        boost::filesystem::path(package_share) / "urdf" / candidate;
-      if (boost::filesystem::exists(xacro_path)) {
-        return candidate;
-      }
-    }
-  } catch (const std::exception &) {
-    // Fall back to the default candidate when the package is missing.
-  }
-  return candidates.front();
-}
 std::string resolve_ee_description_package(const EndEffector & ee)
 {
   if (ee.brand == "robotiq_3f_gripper") {
