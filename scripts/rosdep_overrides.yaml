@@ -23,6 +23,22 @@ libboost-graph-dev:
 libboost-stacktrace-dev:
   ubuntu: [libboost-stacktrace-dev]
 
+
+gz-rendering7:
+  ubuntu:
+    jammy: [libignition-rendering6-dev]
+    noble: [libgz-rendering7-dev]
+
+moveit_planners_ompl:
+  ubuntu:
+    jammy: [ros-humble-moveit-planners-ompl]
+    noble: [ros-jazzy-moveit-planners-ompl]
+
+trajopt_sco:
+  ubuntu:
+    jammy: [ros-humble-trajopt-sco]
+    noble: [ros-jazzy-trajopt-sco]
+
 opw_kinematics:
   ubuntu:
     jammy: [ros-humble-opw-kinematics]
@@ -33,6 +49,19 @@ openmp:
 
 osqp:
   ubuntu: [libosqp-dev]
+
+osqp_vendor:
+  ubuntu: [libosqp-dev]
+
+ignition-math6:
+  ubuntu:
+    jammy: [libignition-math6-dev]
+    noble: [libgz-math7-dev]
+
+gz-math7:
+  ubuntu:
+    jammy: [libignition-math6-dev]
+    noble: [libgz-math7-dev]
 
 roslib:
   ubuntu:
@@ -94,6 +123,30 @@ tesseract:
     jammy: [ros-humble-tesseract]
     noble: [ros-jazzy-tesseract]
 
+tesseract_task_composer:
+  ubuntu:
+    jammy: [ros-humble-tesseract-task-composer]
+    noble: [ros-jazzy-tesseract-task-composer]
+
+
+gz-common5:
+  ubuntu:
+    jammy: [libignition-common4-dev]
+    noble: [libgz-common5-dev]
+
+ruckig:
+  ubuntu: [libruckig-dev]
+
+ros_industrial_cmake_boilerplate:
+  ubuntu:
+    jammy: [ros-humble-ros-industrial-cmake-boilerplate]
+    noble: [ros-jazzy-ros-industrial-cmake-boilerplate]
+
+tesseract_rosutils:
+  ubuntu:
+    jammy: [ros-humble-tesseract-rosutils]
+    noble: [ros-jazzy-tesseract-rosutils]
+
 taskflow:
   ubuntu: [libtaskflow-dev]
 
@@ -106,3 +159,40 @@ boost_plugin_loader:
   ubuntu:
     jammy: [ros-humble-boost-plugin-loader]
     noble: [ros-jazzy-boost-plugin-loader]
+
+
+qt_advanced_docking:
+  ubuntu:
+    jammy: [libqtads-dev]
+    noble: [libqtads-dev]
+
+trajopt:
+  ubuntu:
+    jammy: [ros-humble-trajopt]
+    noble: [ros-jazzy-trajopt]
+
+moveit_resources_panda_description:
+  ubuntu:
+    jammy: [ros-humble-moveit-resources-panda-description]
+    noble: [ros-jazzy-moveit-resources-panda-description]
+
+
+ament_cmake:
+  ubuntu:
+    jammy: [ros-humble-ament-cmake]
+    noble: [ros-jazzy-ament-cmake]
+
+ompl:
+  ubuntu: [libompl-dev]
+
+
+moveit_core:
+  ubuntu:
+    jammy: [ros-humble-moveit-core]
+    noble: [ros-jazzy-moveit-core]
+
+
+moveit_msgs:
+  ubuntu:
+    jammy: [ros-humble-moveit-msgs]
+    noble: [ros-jazzy-moveit-msgs]
