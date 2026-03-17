@@ -159,7 +159,14 @@ install_rosdeps() {
 
     local overrides="$REPO_ROOT/scripts/rosdep_overrides.yaml"
     if [[ -f "$overrides" ]]; then
-        export ROSDEP_ADDITIONAL_SOURCES_PATHS="$overrides${ROSDEP_ADDITIONAL_SOURCES_PATHS:+:$ROSDEP_ADDITIONAL_SOURCES_PATHS}"
+        local rosdep_local_list="/etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list"
+        local rosdep_override_entry="yaml file://$overrides"
+
+        if [[ ! -f "$rosdep_local_list" ]] || ! grep -Fxq "$rosdep_override_entry" "$rosdep_local_list"; then
+            echo "$rosdep_override_entry" > "$rosdep_local_list"
+            log_info "Registered rosdep overrides in $rosdep_local_list"
+        fi
+
         log_info "Using rosdep overrides from $overrides"
     fi
 
