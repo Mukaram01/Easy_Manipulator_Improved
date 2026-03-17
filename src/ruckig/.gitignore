@@ -1,0 +1,3 @@
+# Repository policy: avoid committing binary artifacts in vendored package content.
+doc/*.png
+examples/*_trajectory.pdf
