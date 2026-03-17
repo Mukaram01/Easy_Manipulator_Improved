@@ -58,6 +58,9 @@ vcs import src < src/Easy_Manipulator_Improved/dependencies/emd_epd_ws.repos
 # 5) Install package dependencies from source tree
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 
+# Note: this repository now ships ignore markers on compatibility asset mirrors
+# to prevent duplicate-package discovery errors in fresh clones.
+
 # 6) Build
 colcon build --symlink-install
 
@@ -609,7 +612,7 @@ sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include 
 Multiple packages found with the same name "tesseract_common"
 ```
 
-**Fix:** Remove duplicate packages or run `./scripts/fix_workspace_layout.sh`
+**Fix:** Fresh clones should avoid this automatically via ignore markers in `assets/`. If you still see it in an older checkout, run `./scripts/fix_workspace_layout.sh` or remove one duplicate tree.
 </details>
 
 ---
