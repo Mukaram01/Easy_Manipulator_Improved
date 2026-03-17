@@ -128,6 +128,20 @@ function(emd_suppress_external_target_warnings external_target)
     return()
   endif()
 
+  # Treat the target as external so consumer targets receive its headers as
+  # SYSTEM includes when possible. This keeps strict warnings enabled for
+  # project code while reducing noise from vendored third-party headers.
+  get_target_property(_emd_external_includes ${external_target} INTERFACE_INCLUDE_DIRECTORIES)
+  if(_emd_external_includes)
+    set_property(TARGET ${external_target} APPEND PROPERTY
+      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_emd_external_includes}")
+  endif()
+
+  get_target_property(_emd_external_is_imported ${external_target} IMPORTED)
+  if(_emd_external_is_imported)
+    set_property(TARGET ${external_target} PROPERTY SYSTEM TRUE)
+  endif()
+
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_property(TARGET ${external_target} APPEND PROPERTY INTERFACE_COMPILE_OPTIONS
       -Wno-unused-parameter
