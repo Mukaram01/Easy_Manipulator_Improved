@@ -382,7 +382,8 @@ sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED
 ```bash
 cd ~/workcell_ws
 rosdep update
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}"
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
+  --skip-keys "libqt5concurrent5 tesseract_task_composer tesseract_motion_planners"
 
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
