@@ -218,9 +218,10 @@ By default, it uses the **minimal** profile for headless/runtime deployments,
 which does **not** import the full Tesseract/TrajOpt source overlays and
 skips the planning/Qt rosdep keys that currently do not have a reliable
 released Humble/Jammy binary path in this workflow (`tesseract_environment`,
-`tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`,
-`trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`,
-and `taskflow`).
+`tesseract_motion_planners`, `tesseract_motion_planners_core`,
+`tesseract_motion_planners_simple`, `tesseract_task_composer`,
+`tesseract_visualization`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`,
+`trajopt_sqp`, `qt_advanced_docking`, and `taskflow`).
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -250,8 +251,8 @@ Enable legacy workaround behavior (optional, explicit opt-in):
 
 | Profile | Intended use | Overlay import (`tesseract.repos`) | Profile-specific rosdep handling | Legacy ignores/patches |
 |---------|--------------|--------------------------------------|----------------------------------|-------------------------|
-| `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
-| `full` | Planning + development workspace | ✅ Yes | Keeps the broader overlay-aware skip behavior; planning dependencies are expected from source overlays | ❌ No (unless `--legacy-workarounds`) |
+| `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_motion_planners_core`, `tesseract_motion_planners_simple`, `tesseract_task_composer`, `tesseract_visualization`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
+| `full` | Planning + development workspace | ✅ Yes | Uses overlay-aware skip keys so rosdep does not try to apt-install TrajOpt/Tesseract planning packages that are provided by source overlays; still skips Humble source-only keys such as `tesseract_visualization`, `qt_advanced_docking`, and `taskflow` | ❌ No (unless `--legacy-workarounds`) |
 
 ### Package matrix
 
@@ -316,8 +317,11 @@ echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/ros
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
 rosdep resolve taskflow
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO:-humble}"
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO:-humble}" \
+  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 ```
+
+For the **full** profile, a plain manual `rosdep install --from-paths src ...` after a partial bootstrap failure is **not** equivalent to rerunning `./fix_and_build_humble.sh --profile full`. Reuse the script or apply the same overlay-aware `--skip-keys` set that matches the source providers discovered by `colcon list --base-paths src --names-only`; otherwise `rosdep` can still try to install Humble binaries for packages that are meant to come from the imported `tesseract.repos` sources.
 
 If you have a separate MoveIt 2 overlay, source it before building:
 
@@ -515,7 +519,7 @@ rosdep update
 rosdep resolve taskflow
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
@@ -645,7 +649,7 @@ rosdep update
 rosdep resolve taskflow
 ```
 
-Those overrides are what make Humble/Jammy resolve the repo's otherwise-unresolved keys: `taskflow`, `gz-math7`, `fcl`, `osqp-eigen`, and `tesseract_task_composer`. If `rosdep resolve taskflow` succeeds, rerun the full `rosdep install` command for the workspace.
+Those overrides are what make Humble/Jammy resolve the repo's otherwise-unresolved keys such as `gz-math7`, `fcl`, and `osqp-eigen`. The bootstrap script still skips overlay-provided or source-only Humble keys during `rosdep install`, including `tesseract_visualization` (expected from `tesseract_qt` source in the full profile), `qt_advanced_docking`, `taskflow`, and the TrajOpt/Tesseract planning packages that are intentionally supplied by `tesseract.repos`. If `rosdep resolve taskflow` succeeds, that only confirms the override file is registered; it does **not** mean a plain `rosdep install --from-paths src ...` is equivalent to the scripted bootstrap unless you pass the same skip-keys.
 
 #### ONNX Runtime build failures on ROS 2 Humble (Ubuntu 22.04)
 
