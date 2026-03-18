@@ -33,17 +33,82 @@ path_exists() {
   [ -e "$path" ] || [ -L "$path" ]
 }
 
+path_type() {
+  local path="$1"
+
+  if [ -L "$path" ]; then
+    echo "symlink"
+  elif [ -d "$path" ]; then
+    echo "directory"
+  elif [ -f "$path" ]; then
+    echo "file"
+  elif [ -e "$path" ]; then
+    echo "other"
+  else
+    echo "missing"
+  fi
+}
+
+resolved_path_or_unresolved() {
+  local path="$1"
+
+  if path_exists "$path"; then
+    readlink -f "$path" 2>/dev/null || echo "<unresolved>"
+  else
+    echo "<missing>"
+  fi
+}
+
+path_details() {
+  local path="$1"
+  local listing resolved
+
+  listing="$(ls -ld -- "$path" 2>/dev/null || echo "<ls unavailable>")"
+  resolved="$(resolved_path_or_unresolved "$path")"
+  printf '%s (type=%s, resolved=%s)' "$listing" "$(path_type "$path")" "$resolved"
+}
+
+report_invalid_workspace_entry() {
+  local path="$1"
+  local expected_target="$2"
+
+  echo "Invalid workspace entry at ${path}: $(path_details "$path"). Expected a directory or symlink resolving to $(readlink -f "$expected_target")." >&2
+}
+
 symlink_repo_package() {
   local pkg_name="$1"
   local pkg_path="$2"
   local dest="$SRC_DIR/$pkg_name"
+  local expected_resolved actual_resolved
 
   if [ ! -d "$pkg_path" ]; then
     return
   fi
 
-  if path_exists "$dest"; then
-    return
+  expected_resolved="$(readlink -f "$pkg_path")"
+
+  if [ -L "$dest" ]; then
+    actual_resolved="$(resolved_path_or_unresolved "$dest")"
+    if [ "$actual_resolved" = "$expected_resolved" ]; then
+      return
+    fi
+
+    report_invalid_workspace_entry "$dest" "$pkg_path"
+    echo "Replacing incorrect symlink at ${dest} with the expected target." >&2
+    rm -f "$dest"
+  elif [ -d "$dest" ]; then
+    actual_resolved="$(resolved_path_or_unresolved "$dest")"
+    if [ "$actual_resolved" = "$expected_resolved" ]; then
+      return
+    fi
+
+    report_invalid_workspace_entry "$dest" "$pkg_path"
+    echo "Refusing to replace directory ${dest}. Remove or relocate it, then rerun scripts/fix_workspace_layout.sh." >&2
+    return 1
+  elif path_exists "$dest"; then
+    report_invalid_workspace_entry "$dest" "$pkg_path"
+    echo "Replacing invalid non-directory collision at ${dest} with the expected symlink." >&2
+    rm -rf "$dest"
   fi
 
   echo "Linking repository package ${pkg_name} -> ${pkg_path}"
@@ -130,12 +195,45 @@ done
 
 expose_repo_packages
 
-if [ -L "$SRC_DIR/workbench_description" ] || [ -d "$SRC_DIR/workbench_description" ]; then
-  echo "Verified workspace layout: src/workbench_description is present (symlink or directory)."
-else
-  echo "Error: expose_repo_packages scanned ${REPO_DIR}/assets but did not expose the expected workspace package at ${SRC_DIR}/workbench_description. rosdep install should not continue until the package is exposed." >&2
+verify_exposed_repo_package() {
+  local pkg_name="$1"
+  local expected_target="$2"
+  local dest="$SRC_DIR/$pkg_name"
+  local expected_resolved actual_type actual_resolved
+
+  expected_resolved="$(readlink -f "$expected_target")"
+  actual_type="$(path_type "$dest")"
+  actual_resolved="$(resolved_path_or_unresolved "$dest")"
+
+  if [ "$actual_type" = "directory" ] || [ "$actual_type" = "symlink" ]; then
+    if [ "$actual_resolved" = "$expected_resolved" ]; then
+      echo "Verified workspace layout: src/${pkg_name} is present as a ${actual_type} resolving to ${actual_resolved}."
+      return
+    fi
+  fi
+
+  if path_exists "$dest"; then
+    echo "Error: expose_repo_packages scanned ${REPO_DIR}/assets but ${dest} is ${actual_type} ($(path_details "$dest")); expected a directory or symlink resolving to ${expected_resolved}. Fix or remove the existing entry before rerunning rosdep install." >&2
+  else
+    echo "Error: expose_repo_packages scanned ${REPO_DIR}/assets but did not expose the expected workspace package at ${dest}. Existing path type: ${actual_type}; resolved target: ${actual_resolved}; expected target: ${expected_resolved}. rosdep install should not continue until the package is exposed." >&2
+  fi
   exit 1
-fi
+}
+
+while IFS= read -r pkg_xml; do
+  pkg_dir="$(dirname "$pkg_xml")"
+  pkg_name="$(
+    PKG_XML="$pkg_xml" python3 - <<'PY'
+import os
+import xml.etree.ElementTree as ET
+
+pkg_xml = os.environ["PKG_XML"]
+print((ET.parse(pkg_xml).getroot().findtext("name") or "").strip())
+PY
+  )"
+  [ -n "$pkg_name" ] || continue
+  verify_exposed_repo_package "$pkg_name" "$pkg_dir"
+done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
 
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid
