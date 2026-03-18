@@ -30,7 +30,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 >- **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17 toolchain/libstdc++ baseline.
 >- `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17`.
->- The source dependency manifest pins `ruckig` to `v0.15.3` (`37b6e7a`) so workspace source builds stay on the pre-`<format>` line that remains compatible with Jammy-era standard libraries.
+>- The source dependency manifests (`dependencies/emd_epd_ws.repos` and the full-profile `tesseract.repos`) pin `ruckig` to `v0.15.3` (`37b6e7a`) so workspace source builds stay on the pre-`<format>` line that remains compatible with Jammy-era standard libraries.
+>- `fix_and_build_humble.sh` reads that pinned `ruckig` revision from `dependencies/emd_epd_ws.repos` during preflight so the bootstrap guardrail stays aligned with the documented baseline.
 >- If you swap in a newer `ruckig` release that requires `std::format`, you must also move the workspace to a newer C++20-capable compiler and standard library baseline; that configuration is **not** the documented/CI-supported path in this repository.
 
 ---
@@ -235,7 +236,11 @@ cd easy_manipulation_deployment
 ```
 
 Use the **full** profile when you explicitly need Tesseract/TrajOpt
-planning-development overlays from source:
+planning-development overlays from source. That profile now imports the same
+pinned `ruckig` source revision documented in
+`dependencies/emd_epd_ws.repos`, and the bootstrap script fails fast if
+`src/ruckig` is newer than the supported pre-`<format>` line for Ubuntu 22.04 /
+ROS 2 Humble / GCC 11:
 
 ```bash
 ./fix_and_build_humble.sh --profile full
@@ -446,6 +451,9 @@ Only needed for a full planning/development workspace:
 ```bash
 cd ~/workcell_ws/src
 vcs import < easy_manipulation_deployment/tesseract.repos
+# Includes the same pinned ruckig v0.15.3 source checkout used by
+# dependencies/emd_epd_ws.repos so full-profile source builds stay on the
+# pre-<format> Humble/Jammy-compatible line.
 ```
 
 If you want the repo-pinned dependency set used by the older EMD/EPD workspace
