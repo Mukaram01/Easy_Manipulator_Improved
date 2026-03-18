@@ -26,6 +26,13 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - **Humble** is the tested, CI-validated target.
 - **Jazzy** is experimental and does not have CI coverage unless added.
 
+### Compiler and dependency compatibility baseline
+
+>- **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17 toolchain/libstdc++ baseline.
+>- `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17`.
+>- The source dependency manifest pins `ruckig` to `v0.15.3` (`37b6e7a`) so workspace source builds stay on the pre-`<format>` line that remains compatible with Jammy-era standard libraries.
+>- If you swap in a newer `ruckig` release that requires `std::format`, you must also move the workspace to a newer C++20-capable compiler and standard library baseline; that configuration is **not** the documented/CI-supported path in this repository.
+
 ---
 ## Quick start (Ubuntu 22.04 + ROS 2 Humble)
 
@@ -78,6 +85,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 # to prevent duplicate-package discovery errors in fresh clones.
 
 # 7) Build
+# Compatibility note: this workspace targets the Humble/Jammy C++17 baseline.
 colcon build --symlink-install --parallel-workers 2
 
 # 8) Source + run demo
@@ -207,7 +215,12 @@ The canonical entrypoint is the Humble bootstrap script. It installs system
 dependencies, applies the Cereal/Boost fixes, and builds the workspace.
 
 By default, it uses the **minimal** profile for headless/runtime deployments,
-which does **not** import the full Tesseract/TrajOpt source overlays.
+which does **not** import the full Tesseract/TrajOpt source overlays and
+skips the planning/Qt rosdep keys that currently do not have a reliable
+released Humble/Jammy binary path in this workflow (`tesseract_environment`,
+`tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`,
+`trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`,
+and `taskflow`).
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -220,7 +233,8 @@ cd easy_manipulation_deployment
 ./fix_and_build_humble.sh
 ```
 
-Use the **full** profile when you explicitly need planning/dev overlays:
+Use the **full** profile when you explicitly need Tesseract/TrajOpt
+planning-development overlays from source:
 
 ```bash
 ./fix_and_build_humble.sh --profile full
@@ -234,17 +248,17 @@ Enable legacy workaround behavior (optional, explicit opt-in):
 
 ### Deployment profile matrix
 
-| Profile | Intended use | Overlay import (`tesseract.repos`) | Legacy ignores/patches |
-|---------|--------------|--------------------------------------|-------------------------|
-| `minimal` (default) | Runtime/headless deployment | ❌ No | ❌ No |
-| `full` | Planning + development workspace | ✅ Yes | ❌ No (unless `--legacy-workarounds`) |
+| Profile | Intended use | Overlay import (`tesseract.repos`) | Profile-specific rosdep handling | Legacy ignores/patches |
+|---------|--------------|--------------------------------------|----------------------------------|-------------------------|
+| `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
+| `full` | Planning + development workspace | ✅ Yes | Keeps the broader overlay-aware skip behavior; planning dependencies are expected from source overlays | ❌ No (unless `--legacy-workarounds`) |
 
 ### Package matrix
 
 | Scope | Typical packages |
 |-------|------------------|
-| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep` |
-| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `tesseract_qt`, `boost_plugin_loader`) |
+| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep`, **excluding** the Tesseract/TrajOpt planning stack and Qt Studio/task-composer dependencies listed in the profile matrix |
+| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) required for Tesseract/TrajOpt development workflows |
 
 ### Manual Installation (advanced / troubleshooting)
 
@@ -444,8 +458,11 @@ Prefer these first:
 
 - Use the latest `main` branch of this repository.
 - Keep to Ubuntu 22.04 + ROS 2 Humble for the tested path.
-- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment.
-- Use `./fix_and_build_humble.sh --profile full` only when you need overlay sources.
+- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment; it prints a
+  rosdep preflight summary and skips the planning/Qt keys that are excluded from
+  the default profile.
+- Use `./fix_and_build_humble.sh --profile full` only when you need the
+  Tesseract/TrajOpt planning overlays from source.
 
 #### 5) Legacy fallback workaround (explicit, only if needed)
 
@@ -498,7 +515,7 @@ rosdep update
 rosdep resolve taskflow
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract_motion_planners"
+  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
@@ -751,21 +768,9 @@ Multiple packages found with the same name "tesseract_common"
 Cannot locate rosdep definition for [workbench_description]
 ```
 
-**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`.
+**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`. The helper now exits non-zero as soon as that package is still missing after scanning `assets/`, so follow-on `rosdep update` / `rosdep install` steps stop immediately instead of trying to recover automatically.
 
-**Fix:** From the workspace root, run the layout-fix helper first, confirm `src/workbench_description` now exists as a symlink or directory, and then re-run `rosdep install --from-paths src ...`.
-
-<details>
-<summary><b>`Cannot locate rosdep definition for [tesseract_visualization]` (often surfaced while importing `tesseract_qt`)</b></summary>
-
-```text
-Cannot locate rosdep definition for [tesseract_visualization]
-```
-
-**Cause:** the optional `full` profile imports `tesseract_qt` from `tesseract.repos`, and that source tree can declare the rosdep key `tesseract_visualization`. Ubuntu 22.04 / ROS 2 Humble does not ship a matching rosdep rule, so plain `rosdep install --from-paths src ...` fails even though the visualization code is expected to come from the imported source overlay.
-
-**Fix:** use `./fix_and_build_humble.sh --profile full`, which now auto-adds `tesseract_visualization` to the rosdep skip list whenever the `tesseract_qt` / `tesseract_visualization` source overlay is present. If you run `rosdep` manually in a full workspace, include `--skip-keys "tesseract_visualization"` (and keep `tesseract_qt` imported from source).
-</details>
+**Fix:** From the workspace root, run the layout-fix helper first. If it fails, use the error message to verify which repository `assets/` path was scanned and that `src/workbench_description` can be exposed in the workspace. Only re-run `rosdep install --from-paths src ...` after `src/workbench_description` exists as a symlink or directory.
 </details>
 
 ---

@@ -333,9 +333,9 @@ fi
 
 # Repair the workspace layout (symlinks, overlay locations, and missing upstream
 # dependencies) so subsequent colcon builds can locate generated CMake package
-# files such as tesseract_motion_planners_coreConfig.cmake. This mirrors the
-# manual instructions from the troubleshooting section in the README and keeps
-# the workspace consistent even on fresh clones.
+# files such as tesseract_motion_planners_coreConfig.cmake. The helper now
+# fails fast if workbench_description is still missing, which aborts this build
+# before rosdep update/install can proceed with a broken workspace layout.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
 if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
   echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
@@ -468,37 +468,52 @@ while read -r name path _; do
   fi
 done < <(colcon list --base-paths src)
 
-# Skip rosdep keys for packages supplied directly from source overlays or for
-# source-only leaf packages that do not publish Humble/Jammy rosdep rules.
+# Skip keys for packages supplied by unreleased overlays shipped with this repo.
+# The default minimal profile intentionally avoids the Tesseract/TrajOpt planning
+# stack and its Qt-only pieces because several Humble/Jammy rosdep keys either
+# resolve to unavailable binary packages or are only expected when the planning
+# overlays are checked out from source.
 mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
 declare -A WORKSPACE_PRESENT
 for pkg in "${WORKSPACE_PACKAGES[@]}"; do
   WORKSPACE_PRESENT["$pkg"]=1
 done
 
-OVERLAY_SKIP_CANDIDATES=(
-  tesseract
-  tesseract_process_planners
-  trajopt_ifopt
-  trajopt_sqp
-  trajopt
-  jsoncpp
-  message_generation
-)
 SKIP_KEYS=()
-for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
-  if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
-    SKIP_KEYS+=("$key")
-  fi
-done
+if [[ "$PROFILE" == "minimal" ]]; then
+  SKIP_KEYS=(
+    qt_advanced_docking
+    taskflow
+    tesseract_environment
+    tesseract_motion_planners
+    tesseract_task_composer
+    trajopt
+    trajopt_ifopt
+    trajopt_sco
+    trajopt_sqp
+  )
+else
+  OVERLAY_SKIP_CANDIDATES=(
+    tesseract
+    tesseract_process_planners
+    trajopt_ifopt
+    trajopt_sqp
+    trajopt
+    jsoncpp
+    message_generation
+  )
+  for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
+    if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
+      SKIP_KEYS+=("$key")
+    fi
+  done
+fi
 
-# The tesseract_qt overlay depends on the rosdep key `tesseract_visualization`,
-# but Jammy/Humble does not provide a corresponding binary rosdep rule. When the
-# visualization package is present from source, skip the rosdep lookup and let
-# colcon build it from the imported checkout instead of failing dependency
-# resolution.
-if [[ -n ${WORKSPACE_PRESENT[tesseract_visualization]:-} || -n ${WORKSPACE_PRESENT[tesseract_qt]:-} ]]; then
-  SKIP_KEYS+=("tesseract_visualization")
+if [[ ${#SKIP_KEYS[@]} -gt 0 ]]; then
+  printf "rosdep preflight (%s profile): skipping keys: %s\n" \
+    "$PROFILE" "$(IFS=', '; echo "${SKIP_KEYS[*]}")"
+else
+  printf "rosdep preflight (%s profile): no profile-specific skip keys\n" "$PROFILE"
 fi
 
 SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
