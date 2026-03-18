@@ -104,6 +104,7 @@ expose_repo_packages
 # TinyXML2) up front so users who only run this script still avoid
 # trajopt_common configure errors such as "Could NOT find Boost (missing:
 # Boost_INCLUDE_DIR graph)" during subsequent colcon builds.
+"${SCRIPT_DIR}/ensure_rosdep_overrides.sh" taskflow
 "${SCRIPT_DIR}/install_system_deps.sh"
 
 # Move old trajopt directory to backup if it exists. The previous implementation
