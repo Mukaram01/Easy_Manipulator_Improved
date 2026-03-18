@@ -37,7 +37,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ---
 ## Quick start (Ubuntu 22.04 + ROS 2 Humble)
 
-This repository is intended to live inside a larger ROS 2 workspace (for example, `~/emd_epd_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `tesseract_qt`, and related libraries imported by `vcs`).
+This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `tesseract_qt`, and related libraries imported by `vcs`).
 
 ```bash
 # 1) System dependencies (Ubuntu 22.04 / ROS 2 Humble)
@@ -52,7 +52,7 @@ sudo apt install -y \
 sudo rosdep init || true
 
 # Register the repo-local rosdep overrides before any rosdep install.
-echo "yaml file://$HOME/emd_epd_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
 
@@ -60,14 +60,14 @@ rosdep update
 rosdep resolve taskflow
 
 # 2) Create workspace
-mkdir -p ~/emd_epd_ws/src
-cd ~/emd_epd_ws/src
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
 
 # 3) Clone this repo into src/ using the workspace-facing name used below
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 
 # 4) Import upstream source dependencies
-cd ~/emd_epd_ws
+cd ~/workcell_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 # Note: the repo pins ruckig to v0.15.3 because newer upstream revisions
 # switched include/ruckig/block.hpp to std::format/C++20; that breaks the
@@ -94,14 +94,14 @@ source install/setup.bash
 ros2 launch suction_test demo.launch.py
 ```
 
-> Tip: after syncing and validating a workspace, you can lock exact revisions with `vcs export --exact src > emd_epd_ws_exact.repos`.
+> Tip: after syncing and validating a workspace, you can lock exact revisions with `vcs export --exact src > workcell_ws_exact.repos`.
 
 ### If Studio build fails
 
 If `tesseract_qt` Studio fails to link against Qt ADS targets, apply the included upstream patch and rebuild:
 
 ```bash
-cd ~/emd_epd_ws
+cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
 colcon build --symlink-install
 ```
@@ -117,7 +117,7 @@ colcon build --symlink-install
 If the workspace fails during global `colcon build`, validate the dependency layer first and only then build everything.
 
 ```bash
-cd ~/emd_epd_ws
+cd ~/workcell_ws
 
 # 1) Build the package that exports tesseract geometry config first.
 colcon build --symlink-install --packages-select tesseract_geometry \
