@@ -28,6 +28,11 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
+path_exists() {
+  local path="$1"
+  [ -e "$path" ] || [ -L "$path" ]
+}
+
 symlink_repo_package() {
   local pkg_name="$1"
   local pkg_path="$2"
@@ -37,7 +42,7 @@ symlink_repo_package() {
     return
   fi
 
-  if [ -e "$dest" ] || [ -L "$dest" ]; then
+  if path_exists "$dest"; then
     return
   fi
 
@@ -157,19 +162,31 @@ link_from_backup() {
     fi
   done
 
-  if [ -n "${target}" ] && [ ! -e "${SRC_DIR}/${pkg}" ]; then
+  if [ -n "${target}" ] && ! path_exists "${SRC_DIR}/${pkg}"; then
     ln -s "${target}" "${SRC_DIR}/${pkg}"
   fi
 }
 
+ensure_symlink_target() {
+  local dest="$1"
+  local target="$2"
+
+  if [ -L "$dest" ] && [ "$(readlink -f "$dest")" = "$(readlink -f "$target")" ]; then
+    return
+  fi
+
+  if path_exists "$dest"; then
+    echo "Updating existing entry at $dest"
+    rm -rf "$dest"
+  fi
+
+  ln -s "$target" "$dest"
+}
+
 # Ensure symlink for trajopt_sco pointing to nested package
-if [ ! -e "${SRC_DIR}/trajopt_sco" ]; then
-  ln -s "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" "${SRC_DIR}/trajopt_sco"
-elif [ ! -L "${SRC_DIR}/trajopt_sco" ] || [ "$(readlink -f "${SRC_DIR}/trajopt_sco")" != "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" ]; then
-  echo "Updating existing trajopt_sco entry at ${SRC_DIR}/trajopt_sco"
-  rm -rf "${SRC_DIR}/trajopt_sco"
-  ln -s "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco" "${SRC_DIR}/trajopt_sco"
-fi
+ensure_symlink_target \
+  "${SRC_DIR}/trajopt_sco" \
+  "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco"
 
 # Ensure trajopt_common declares all dependencies it links against. Some
 # upstream snapshots omit find_package() calls for tinyxml2, Boost graph, and
