@@ -469,27 +469,53 @@ while read -r name path _; do
 done < <(colcon list --base-paths src)
 
 # Skip keys for packages supplied by unreleased overlays shipped with this repo.
+# The default minimal profile intentionally avoids the Tesseract/TrajOpt planning
+# stack and its Qt-only pieces because several Humble/Jammy rosdep keys either
+# resolve to unavailable binary packages or are only expected when the planning
+# overlays are checked out from source.
 mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
 declare -A WORKSPACE_PRESENT
 for pkg in "${WORKSPACE_PACKAGES[@]}"; do
   WORKSPACE_PRESENT["$pkg"]=1
 done
 
-OVERLAY_SKIP_CANDIDATES=(
-  tesseract
-  tesseract_process_planners
-  trajopt_ifopt
-  trajopt_sqp
-  trajopt
-  jsoncpp
-  message_generation
-)
 SKIP_KEYS=()
-for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
-  if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
-    SKIP_KEYS+=("$key")
-  fi
-done
+if [[ "$PROFILE" == "minimal" ]]; then
+  SKIP_KEYS=(
+    qt_advanced_docking
+    taskflow
+    tesseract_environment
+    tesseract_motion_planners
+    tesseract_task_composer
+    trajopt
+    trajopt_ifopt
+    trajopt_sco
+    trajopt_sqp
+  )
+else
+  OVERLAY_SKIP_CANDIDATES=(
+    tesseract
+    tesseract_process_planners
+    trajopt_ifopt
+    trajopt_sqp
+    trajopt
+    jsoncpp
+    message_generation
+  )
+  for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
+    if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
+      SKIP_KEYS+=("$key")
+    fi
+  done
+fi
+
+if [[ ${#SKIP_KEYS[@]} -gt 0 ]]; then
+  printf "rosdep preflight (%s profile): skipping keys: %s\n" \
+    "$PROFILE" "$(IFS=', '; echo "${SKIP_KEYS[*]}")"
+else
+  printf "rosdep preflight (%s profile): no profile-specific skip keys\n" "$PROFILE"
+fi
+
 SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
