@@ -26,6 +26,13 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - **Humble** is the tested, CI-validated target.
 - **Jazzy** is experimental and does not have CI coverage unless added.
 
+### Compiler and dependency compatibility baseline
+
+>- **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17 toolchain/libstdc++ baseline.
+>- `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17`.
+>- The source dependency manifest pins `ruckig` to `v0.15.3` (`37b6e7a`) so workspace source builds stay on the pre-`<format>` line that remains compatible with Jammy-era standard libraries.
+>- If you swap in a newer `ruckig` release that requires `std::format`, you must also move the workspace to a newer C++20-capable compiler and standard library baseline; that configuration is **not** the documented/CI-supported path in this repository.
+
 ---
 ## Quick start (Ubuntu 22.04 + ROS 2 Humble)
 
@@ -78,6 +85,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 # to prevent duplicate-package discovery errors in fresh clones.
 
 # 7) Build
+# Compatibility note: this workspace targets the Humble/Jammy C++17 baseline.
 colcon build --symlink-install --parallel-workers 2
 
 # 8) Source + run demo
