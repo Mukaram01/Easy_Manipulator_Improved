@@ -48,12 +48,12 @@ rosdep update
 mkdir -p ~/emd_epd_ws/src
 cd ~/emd_epd_ws/src
 
-# 3) Clone this repo into src/
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git
+# 3) Clone this repo into src/ using the workspace-facing name used below
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 
 # 4) Import upstream source dependencies
 cd ~/emd_epd_ws
-vcs import src < src/Easy_Manipulator_Improved/dependencies/emd_epd_ws.repos
+vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
 # 5) Install package dependencies from source tree
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
@@ -77,14 +77,14 @@ If `tesseract_qt` Studio fails to link against Qt ADS targets, apply the include
 
 ```bash
 cd ~/emd_epd_ws
-./src/Easy_Manipulator_Improved/scripts/apply_upstream_patches.sh
+./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
 colcon build --symlink-install
 ```
 
 ## Known issues / Troubleshooting
 
 - **Qt ADS target mismatch in `tesseract_qt` Studio (common on Ubuntu 22.04/Jammy):** some installations export `ads::qtadvanceddocking-qt5` instead of `ads::qtadvanceddocking`. This repository includes a patch script that applies `patches/tesseract_qt_qtads_target_fix.patch` so Studio chooses whichever exported ADS target exists.
-- **Patch application command:** run `./src/Easy_Manipulator_Improved/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
+- **Patch application command:** run `./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
 - **Device/group permission changes:** if you add your user to groups such as `video`, `plugdev`, or `input`, log out and back in before retrying tools that require those permissions.
 
 ### Dependency-first build flow (catch `tesseract_geometry`/OctoMap issues early)
@@ -260,6 +260,31 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 test -d assets && test -d scenes
 ```
 
+If you are migrating an older workspace, do **not** run:
+
+```bash
+mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
+```
+
+That path never existed in this repository. The ROS package lives at:
+
+```text
+easy_manipulation_deployment/workcell_builder/workcell_builder
+```
+
+The recommended fix is to let the repository helper expose the correct package
+layout for you:
+
+```bash
+cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+```
+
+That helper creates `src/workcell_builder` plus symlinks for the hidden asset
+packages (for example `workbench_description`, `ur5_moveit_config`,
+`robotiq_85_moveit_config`, and related robot/environment packages) so
+`rosdep` and `colcon` can discover them without manually moving directories.
+
 Resulting layout (recommended):
 
 ```text
@@ -336,6 +361,14 @@ cd ~/workcell_ws/src
 vcs import < easy_manipulation_deployment/tesseract.repos
 ```
 
+If you want the repo-pinned dependency set used by the older EMD/EPD workspace
+instructions instead, the correct file is:
+
+```bash
+cd ~/workcell_ws
+vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+```
+
 #### 4) Preferred package/version guidance (before legacy workarounds)
 
 Prefer these first:
@@ -354,6 +387,10 @@ Prefer these first:
 cd ~/workcell_ws
 export ROS_DISTRO=humble
 source /opt/ros/${ROS_DISTRO}/setup.bash
+
+# Recreate the expected package layout first so rosdep sees workbench_description
+# and the robot/end-effector config packages hidden under assets/.
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 
 # Install deps script if you have it
 ~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
@@ -383,7 +420,7 @@ sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED
 cd ~/workcell_ws
 rosdep update
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "libqt5concurrent5 tesseract_task_composer tesseract_motion_planners"
+  --skip-keys "tesseract_motion_planners"
 
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2

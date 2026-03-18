@@ -17,6 +17,11 @@ fcl:
 jsoncpp:
   ubuntu: [libjsoncpp-dev]
 
+libqt5concurrent5:
+  ubuntu:
+    jammy: [libqt5concurrent5]
+    noble: [libqt5concurrent5t64]
+
 libboost-graph-dev:
   ubuntu: [libboost-graph-dev]
 
@@ -49,6 +54,11 @@ openmp:
 
 osqp:
   ubuntu: [libosqp-dev]
+
+osqp-eigen:
+  ubuntu:
+    jammy: [libosqp-eigen-dev]
+    noble: [libosqp-eigen-dev]
 
 osqp_vendor:
   ubuntu: [libosqp-dev]

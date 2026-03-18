@@ -28,6 +28,55 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
 
+symlink_repo_package() {
+  local pkg_name="$1"
+  local pkg_path="$2"
+  local dest="$SRC_DIR/$pkg_name"
+
+  if [ ! -d "$pkg_path" ]; then
+    return
+  fi
+
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    return
+  fi
+
+  echo "Linking repository package ${pkg_name} -> ${pkg_path}"
+  ln -s "$pkg_path" "$dest"
+}
+
+expose_repo_packages() {
+  local pkg_xml pkg_dir pkg_name
+
+  # The repository keeps many robot/environment asset packages under assets/
+  # with top-level ignore markers to avoid duplicate discovery in fresh clones.
+  # When the repo is used directly inside a workspace, rosdep/colcon still need
+  # concrete package entries at src/<package_name>. Create symlinks for those
+  # hidden packages so dependencies such as workbench_description,
+  # ur5_moveit_config, and robotiq_85_moveit_config resolve without requiring
+  # users to manually move directories around the workspace.
+  while IFS= read -r pkg_xml; do
+    pkg_dir="$(dirname "$pkg_xml")"
+    pkg_name="$(
+      PKG_XML="$pkg_xml" python3 - <<'PY'
+import os
+import xml.etree.ElementTree as ET
+
+pkg_xml = os.environ["PKG_XML"]
+print((ET.parse(pkg_xml).getroot().findtext("name") or "").strip())
+PY
+    )"
+    [ -n "$pkg_name" ] || continue
+    symlink_repo_package "$pkg_name" "$pkg_dir"
+  done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
+
+  # The workcell_builder ROS package lives under workcell_builder/workcell_builder
+  # in this repository, while some older setup notes referenced a nonexistent
+  # easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder
+  # path. Export the actual package location into src/workcell_builder.
+  symlink_repo_package "workcell_builder" "$REPO_DIR/workcell_builder/workcell_builder"
+}
+
 # Ensure external trajopt checkouts fetched via tesseract.repos are ignored
 # before invoking colcon. Some upstream snapshots ship a COLCON_IGNORE.repo
 # marker instead of the expected COLCON_IGNORE file, which causes colcon to
@@ -48,6 +97,8 @@ for duplicate in \
   "$SRC_DIR/trajopt/trajopt_sco"; do
   ensure_colcon_ignore "$duplicate"
 done
+
+expose_repo_packages
 
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid
