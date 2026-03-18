@@ -517,6 +517,9 @@ else
 fi
 
 SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
+if [[ -n "$SKIP_KEYS_ARG" ]]; then
+  echo "rosdep skip-keys: $SKIP_KEYS_ARG"
+fi
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "$SKIP_KEYS_ARG"
