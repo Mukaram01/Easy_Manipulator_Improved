@@ -88,6 +88,10 @@ tesseract_common:
     jammy: [ros-humble-tesseract-common]
     noble: [ros-jazzy-tesseract-common]
 
+# The planning/task-composer and Qt Studio related keys below remain useful for
+# full overlay workspaces, but the default minimal bootstrap profile skips them
+# so Humble/Jammy runtime installs do not rely on unreleased or missing apt
+# binaries.
 tesseract_environment:
   ubuntu:
     jammy: [ros-humble-tesseract-environment]

@@ -215,7 +215,12 @@ The canonical entrypoint is the Humble bootstrap script. It installs system
 dependencies, applies the Cereal/Boost fixes, and builds the workspace.
 
 By default, it uses the **minimal** profile for headless/runtime deployments,
-which does **not** import the full Tesseract/TrajOpt source overlays.
+which does **not** import the full Tesseract/TrajOpt source overlays and
+skips the planning/Qt rosdep keys that currently do not have a reliable
+released Humble/Jammy binary path in this workflow (`tesseract_environment`,
+`tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`,
+`trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`,
+and `taskflow`).
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -228,7 +233,8 @@ cd easy_manipulation_deployment
 ./fix_and_build_humble.sh
 ```
 
-Use the **full** profile when you explicitly need planning/dev overlays:
+Use the **full** profile when you explicitly need Tesseract/TrajOpt
+planning-development overlays from source:
 
 ```bash
 ./fix_and_build_humble.sh --profile full
@@ -242,17 +248,17 @@ Enable legacy workaround behavior (optional, explicit opt-in):
 
 ### Deployment profile matrix
 
-| Profile | Intended use | Overlay import (`tesseract.repos`) | Legacy ignores/patches |
-|---------|--------------|--------------------------------------|-------------------------|
-| `minimal` (default) | Runtime/headless deployment | ❌ No | ❌ No |
-| `full` | Planning + development workspace | ✅ Yes | ❌ No (unless `--legacy-workarounds`) |
+| Profile | Intended use | Overlay import (`tesseract.repos`) | Profile-specific rosdep handling | Legacy ignores/patches |
+|---------|--------------|--------------------------------------|----------------------------------|-------------------------|
+| `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_task_composer`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
+| `full` | Planning + development workspace | ✅ Yes | Keeps the broader overlay-aware skip behavior; planning dependencies are expected from source overlays | ❌ No (unless `--legacy-workarounds`) |
 
 ### Package matrix
 
 | Scope | Typical packages |
 |-------|------------------|
-| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep` |
-| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) |
+| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep`, **excluding** the Tesseract/TrajOpt planning stack and Qt Studio/task-composer dependencies listed in the profile matrix |
+| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) required for Tesseract/TrajOpt development workflows |
 
 ### Manual Installation (advanced / troubleshooting)
 
@@ -452,8 +458,11 @@ Prefer these first:
 
 - Use the latest `main` branch of this repository.
 - Keep to Ubuntu 22.04 + ROS 2 Humble for the tested path.
-- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment.
-- Use `./fix_and_build_humble.sh --profile full` only when you need overlay sources.
+- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment; it prints a
+  rosdep preflight summary and skips the planning/Qt keys that are excluded from
+  the default profile.
+- Use `./fix_and_build_humble.sh --profile full` only when you need the
+  Tesseract/TrajOpt planning overlays from source.
 
 #### 5) Legacy fallback workaround (explicit, only if needed)
 
@@ -506,7 +515,7 @@ rosdep update
 rosdep resolve taskflow
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "tesseract_motion_planners"
+  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
