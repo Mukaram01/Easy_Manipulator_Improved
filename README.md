@@ -247,11 +247,52 @@ sudo apt-get install -y \
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 
-# clone your repo INTO src as easy_manipulation_deployment (this is the intended layout)
+# Clone the repo into src as easy_manipulation_deployment (this is the intended layout).
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
 ```
 
-#### 2) Use a single canonical location for `assets` and `scenes`
+#### 2) Keep the repository layout intact
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+# The repo already contains assets/, scenes/, and workcell_builder/ in the correct places.
+# Do not move workcell_builder out of the repository tree.
+test -d assets && test -d scenes && test -d workcell_builder
+```
+
+If you are following older instructions that say to run commands such as:
+
+```bash
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
+mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
+```
+
+skip them. Those commands describe an outdated layout, and the last one fails because this repository does **not** contain `easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder`.
+
+#### 3) Import dependencies from the workspace root
+
+```bash
+cd ~/workcell_ws
+source /opt/ros/humble/setup.bash
+vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO:-humble}"
+```
+
+If you have a separate MoveIt 2 overlay, source it before building:
+
+```bash
+source ~/ws_moveit2/install/setup.bash
+```
+
+Then build the workspace:
+
+```bash
+colcon build --symlink-install --parallel-workers 2
+source install/setup.bash
+```
+
+#### 4) Use a single canonical location for `assets` and `scenes`
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
