@@ -75,7 +75,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 # to prevent duplicate-package discovery errors in fresh clones.
 
 # 7) Build
-colcon build --symlink-install
+colcon build --symlink-install --parallel-workers 2
 
 # 8) Source + run demo
 source install/setup.bash
