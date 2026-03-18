@@ -223,6 +223,7 @@ apply_legacy_ignore_workarounds() {
 # container images omit them even though dpkg claims the packages are present,
 # preventing the "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
 # failure in trajopt_common.
+"${SCRIPT_DIR}/scripts/ensure_rosdep_overrides.sh" taskflow
 "${SCRIPT_DIR}/scripts/install_system_deps.sh"
 ensure_cereal_cmake_config
 

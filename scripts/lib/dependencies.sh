@@ -157,20 +157,13 @@ install_rosdeps() {
 
     [[ ${#rosdep_paths[@]} -gt 0 ]] || die "No packages found for rosdep installation"
 
-    local overrides="$REPO_ROOT/scripts/rosdep_overrides.yaml"
-    if [[ -f "$overrides" ]]; then
-        local rosdep_local_list="/etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list"
-        local rosdep_override_entry="yaml file://$overrides"
-
-        if [[ ! -f "$rosdep_local_list" ]] || ! grep -Fxq "$rosdep_override_entry" "$rosdep_local_list"; then
-            echo "$rosdep_override_entry" > "$rosdep_local_list"
-            log_info "Registered rosdep overrides in $rosdep_local_list"
-        fi
-
-        log_info "Using rosdep overrides from $overrides"
+    local ensure_overrides="$REPO_ROOT/scripts/ensure_rosdep_overrides.sh"
+    if [[ -x "$ensure_overrides" ]]; then
+        "$ensure_overrides" taskflow
+    else
+        die "Missing rosdep override helper: $ensure_overrides"
     fi
 
-    rosdep update
 
     local skip_keys=(
         rviz
