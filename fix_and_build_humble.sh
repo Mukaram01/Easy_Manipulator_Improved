@@ -468,16 +468,66 @@ while read -r name path _; do
   fi
 done < <(colcon list --base-paths src)
 
-# Skip keys for packages supplied by unreleased overlays shipped with this repo.
-# The default minimal profile intentionally avoids the Tesseract/TrajOpt planning
-# stack and its Qt-only pieces because several Humble/Jammy rosdep keys either
-# resolve to unavailable binary packages or are only expected when the planning
-# overlays are checked out from source.
+# Skip rosdep keys for packages that are either intentionally source-only on
+# Humble/Jammy or are supplied by the imported overlay workspaces. This avoids
+# asking rosdep/apt for binary packages when the source checkout is the intended
+# provider and also covers keys that still look unresolved to rosdep even though
+# colcon can build them from the overlay (for example tesseract_visualization
+# from the tesseract_qt source tree).
 mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
 declare -A WORKSPACE_PRESENT
 for pkg in "${WORKSPACE_PACKAGES[@]}"; do
   WORKSPACE_PRESENT["$pkg"]=1
 done
+
+# Humble/Jammy full-profile overlays intentionally provide the planning stack
+# from source. Keep this list aligned with the rosdep keys used by the upstream
+# Tesseract/TrajOpt manifests so manual rosdep retries can reproduce the same
+# bootstrap behavior.
+SOURCE_OVERLAY_SKIP_KEYS=(
+  boost_plugin_loader
+  descartes_light
+  opw_kinematics
+  qt_advanced_docking
+  taskflow
+  tesseract
+  tesseract_collision
+  tesseract_command_language
+  tesseract_common
+  tesseract_environment
+  tesseract_kinematics
+  tesseract_motion_planners
+  tesseract_motion_planners_core
+  tesseract_motion_planners_simple
+  tesseract_msgs
+  tesseract_process_managers
+  tesseract_rosutils
+  tesseract_task_composer
+  tesseract_visualization
+  trajopt
+  trajopt_ifopt
+  trajopt_sco
+  trajopt_sqp
+)
+
+# Some keys still appear in Humble dependency resolution but do not have a
+# supported binary bootstrap path for this workflow. Treat them as source-only.
+SOURCE_ONLY_SKIP_KEYS=(
+  qt_advanced_docking
+  taskflow
+  tesseract_visualization
+)
+
+add_skip_key() {
+  local key="$1"
+  local existing
+  for existing in "${SKIP_KEYS[@]:-}"; do
+    if [[ "$existing" == "$key" ]]; then
+      return
+    fi
+  done
+  SKIP_KEYS+=("$key")
+}
 
 SKIP_KEYS=()
 if [[ "$PROFILE" == "minimal" ]]; then
@@ -486,26 +536,40 @@ if [[ "$PROFILE" == "minimal" ]]; then
     taskflow
     tesseract_environment
     tesseract_motion_planners
+    tesseract_motion_planners_core
+    tesseract_motion_planners_simple
     tesseract_task_composer
+    tesseract_visualization
     trajopt
     trajopt_ifopt
     trajopt_sco
     trajopt_sqp
   )
 else
-  OVERLAY_SKIP_CANDIDATES=(
-    tesseract
-    tesseract_process_planners
-    trajopt_ifopt
-    trajopt_sqp
-    trajopt
-    jsoncpp
-    message_generation
-  )
-  for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
+  for key in "${SOURCE_OVERLAY_SKIP_KEYS[@]}"; do
     if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
-      SKIP_KEYS+=("$key")
+      add_skip_key "$key"
+      continue
     fi
+
+    case "$key" in
+      tesseract_visualization)
+        if [[ -d "$PWD/src/tesseract_qt" ]]; then
+          add_skip_key "$key"
+        fi
+        ;;
+      qt_advanced_docking|taskflow)
+        if [[ -d "$PWD/src/tesseract_qt" || -d "$PWD/src/tesseract_planning" ]]; then
+          add_skip_key "$key"
+        fi
+        ;;
+    esac
+  done
+fi
+
+if [[ "$PROFILE" == "full" ]]; then
+  for key in "${SOURCE_ONLY_SKIP_KEYS[@]}"; do
+    add_skip_key "$key"
   done
 fi
 

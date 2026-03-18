@@ -1,5 +1,10 @@
 # Additional rosdep rules to avoid unresolved keys when building the bundled
 # Tesseract/TrajOpt workspace on ROS 2 Humble (Ubuntu 22.04) or Jazzy.
+# Note: the full Humble bootstrap profile intentionally skips several planning/
+# Qt rosdep keys when their provider is an imported source overlay. That skip
+# list includes source-only Humble workflow keys such as `tesseract_visualization`,
+# `qt_advanced_docking`, and the TrajOpt/Tesseract planning stack, so the
+# overrides below focus on keys that should still resolve to OS/ROS packages.
 cereal:
   ubuntu: [libcereal-dev]
 
