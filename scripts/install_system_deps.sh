@@ -89,6 +89,13 @@ if [[ ! -f $BOOST_HEADER || ! -f $STACKTRACE_HEADER ]]; then
   done
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Ensure repo-local rosdep overrides are active before any workspace-level
+# rosdep install step. These rules cover unresolved keys such as taskflow,
+# gz-math7, fcl, osqp-eigen, and tesseract_task_composer on Humble/Jammy.
+"$SCRIPT_DIR/ensure_rosdep_overrides.sh" taskflow
+
 if [[ ${#missing[@]} -eq 0 ]]; then
   echo "All required system dependencies are already installed."
   exit 0

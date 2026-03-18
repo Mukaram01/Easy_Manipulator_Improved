@@ -42,7 +42,14 @@ sudo apt install -y \
 
 # If this is your first ROS 2 machine:
 sudo rosdep init || true
+
+# Register the repo-local rosdep overrides before any rosdep install.
+echo "yaml file://$HOME/emd_epd_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
+
+# Validate one repo-local override before the full install.
+rosdep resolve taskflow
 
 # 2) Create workspace
 mkdir -p ~/emd_epd_ws/src
@@ -56,6 +63,8 @@ cd ~/emd_epd_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
 # 5) Install package dependencies from source tree
+# The override source above is required for Humble/Jammy keys such as
+# taskflow, gz-math7, fcl, osqp-eigen, and tesseract_task_composer.
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 
 # Note: this repository now ships ignore markers on compatibility asset mirrors
@@ -160,6 +169,10 @@ CI runs on Ubuntu 22.04 with ROS 2 Humble.
 To run the same checks locally:
 
 ```bash
+echo "yaml file://$PWD/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
+rosdep update
+rosdep resolve taskflow
 rosdep install --from-paths src --ignore-src -yr --rosdistro humble
 colcon build --symlink-install
 colcon test
@@ -276,6 +289,10 @@ skip them. Those commands describe an outdated layout, and the last one fails be
 cd ~/workcell_ws
 source /opt/ros/humble/setup.bash
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
+rosdep update
+rosdep resolve taskflow
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO:-humble}"
 ```
 
@@ -459,7 +476,13 @@ sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED
 
 ```bash
 cd ~/workcell_ws
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
+
+# Validate override resolution before retrying the full install.
+rosdep resolve taskflow
+
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "tesseract_motion_planners"
 
@@ -579,6 +602,19 @@ ros2 launch new_scene demo.launch.py
 ## Troubleshooting
 
 ### Known Issues
+
+#### Rosdep key resolution on Humble/Jammy
+
+Before running plain `rosdep install`, make sure the repository override source is registered and refreshed:
+
+```bash
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
+rosdep update
+rosdep resolve taskflow
+```
+
+Those overrides are what make Humble/Jammy resolve the repo's otherwise-unresolved keys: `taskflow`, `gz-math7`, `fcl`, `osqp-eigen`, and `tesseract_task_composer`. If `rosdep resolve taskflow` succeeds, rerun the full `rosdep install` command for the workspace.
 
 #### ONNX Runtime build failures on ROS 2 Humble (Ubuntu 22.04)
 
