@@ -75,11 +75,36 @@ PY
     symlink_repo_package "$pkg_name" "$pkg_dir"
   done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
 
-  # The workcell_builder ROS package lives under workcell_builder/workcell_builder
-  # in this repository, while some older setup notes referenced a nonexistent
-  # easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder
-  # path. Export the actual package location into src/workcell_builder.
-  symlink_repo_package "workcell_builder" "$REPO_DIR/workcell_builder/workcell_builder"
+  # The workcell_builder ROS package already lives underneath this repository.
+  # When the repository itself is checked out inside workspace/src, rosdep and
+  # colcon discover that nested package recursively, so creating an additional
+  # src/workcell_builder symlink introduces a duplicate package name
+  # ("workcell_builder" vs
+  # "easy_manipulation_deployment/workcell_builder/workcell_builder"). Only
+  # export the convenience symlink when the repository is *not* already under
+  # the active workspace src tree.
+  local repo_exposed_in_src=0
+  if [[ "${REPO_DIR}" == "${SRC_DIR}/"* ]]; then
+    repo_exposed_in_src=1
+  else
+    local candidate
+    while IFS= read -r candidate; do
+      if [ "$(readlink -f "$candidate")" = "$(readlink -f "$REPO_DIR")" ]; then
+        repo_exposed_in_src=1
+        break
+      fi
+    done < <(find "$SRC_DIR" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -print 2>/dev/null)
+  fi
+
+  if [[ $repo_exposed_in_src -eq 1 ]]; then
+    local legacy_link="$SRC_DIR/workcell_builder"
+    if [ -L "$legacy_link" ] && [ "$(readlink -f "$legacy_link")" = "$(readlink -f "$REPO_DIR/workcell_builder/workcell_builder")" ]; then
+      echo "Removing legacy workcell_builder symlink at ${legacy_link}"
+      rm -f "$legacy_link"
+    fi
+  else
+    symlink_repo_package "workcell_builder" "$REPO_DIR/workcell_builder/workcell_builder"
+  fi
 }
 
 # Ensure external trajopt checkouts fetched via tesseract.repos are ignored
