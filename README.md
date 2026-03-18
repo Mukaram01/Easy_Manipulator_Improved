@@ -244,7 +244,7 @@ Enable legacy workaround behavior (optional, explicit opt-in):
 | Scope | Typical packages |
 |-------|------------------|
 | Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep` |
-| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) |
+| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `tesseract_qt`, `boost_plugin_loader`) |
 
 ### Manual Installation (advanced / troubleshooting)
 
@@ -754,6 +754,18 @@ Cannot locate rosdep definition for [workbench_description]
 **Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`.
 
 **Fix:** From the workspace root, run the layout-fix helper first, confirm `src/workbench_description` now exists as a symlink or directory, and then re-run `rosdep install --from-paths src ...`.
+
+<details>
+<summary><b>`Cannot locate rosdep definition for [tesseract_visualization]` (often surfaced while importing `tesseract_qt`)</b></summary>
+
+```text
+Cannot locate rosdep definition for [tesseract_visualization]
+```
+
+**Cause:** the optional `full` profile imports `tesseract_qt` from `tesseract.repos`, and that source tree can declare the rosdep key `tesseract_visualization`. Ubuntu 22.04 / ROS 2 Humble does not ship a matching rosdep rule, so plain `rosdep install --from-paths src ...` fails even though the visualization code is expected to come from the imported source overlay.
+
+**Fix:** use `./fix_and_build_humble.sh --profile full`, which now auto-adds `tesseract_visualization` to the rosdep skip list whenever the `tesseract_qt` / `tesseract_visualization` source overlay is present. If you run `rosdep` manually in a full workspace, include `--skip-keys "tesseract_visualization"` (and keep `tesseract_qt` imported from source).
+</details>
 </details>
 
 ---

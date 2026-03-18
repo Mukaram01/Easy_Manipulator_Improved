@@ -468,7 +468,8 @@ while read -r name path _; do
   fi
 done < <(colcon list --base-paths src)
 
-# Skip keys for packages supplied by unreleased overlays shipped with this repo.
+# Skip rosdep keys for packages supplied directly from source overlays or for
+# source-only leaf packages that do not publish Humble/Jammy rosdep rules.
 mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
 declare -A WORKSPACE_PRESENT
 for pkg in "${WORKSPACE_PACKAGES[@]}"; do
@@ -490,7 +491,20 @@ for key in "${OVERLAY_SKIP_CANDIDATES[@]}"; do
     SKIP_KEYS+=("$key")
   fi
 done
+
+# The tesseract_qt overlay depends on the rosdep key `tesseract_visualization`,
+# but Jammy/Humble does not provide a corresponding binary rosdep rule. When the
+# visualization package is present from source, skip the rosdep lookup and let
+# colcon build it from the imported checkout instead of failing dependency
+# resolution.
+if [[ -n ${WORKSPACE_PRESENT[tesseract_visualization]:-} || -n ${WORKSPACE_PRESENT[tesseract_qt]:-} ]]; then
+  SKIP_KEYS+=("tesseract_visualization")
+fi
+
 SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
+if [[ -n "$SKIP_KEYS_ARG" ]]; then
+  echo "rosdep skip-keys: $SKIP_KEYS_ARG"
+fi
 
 rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
   --skip-keys "$SKIP_KEYS_ARG"
