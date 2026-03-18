@@ -139,6 +139,76 @@ PY
   ${APT_GET_CMD} install -y python3-yaml >/dev/null 2>&1
 }
 
+load_ruckig_baseline() {
+  local repos_file="$SCRIPT_DIR/dependencies/emd_epd_ws.repos"
+
+  ensure_pyyaml
+
+  mapfile -t _ruckig_meta < <(REPOS_FILE="$repos_file" python3 - <<'PY'
+import os
+import sys
+
+import yaml
+
+repos_file = os.environ["REPOS_FILE"]
+with open(repos_file, "r", encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+ruckig = ((data.get("repositories") or {}).get("ruckig") or {})
+version = (ruckig.get("version") or "").strip()
+url = (ruckig.get("url") or "").strip()
+
+if not version or not url:
+    sys.exit("dependencies/emd_epd_ws.repos is missing the pinned ruckig source entry")
+
+print(version)
+print(url)
+PY
+  )
+
+  if [[ ${#_ruckig_meta[@]} -lt 2 ]]; then
+    echo "Failed to load the documented ruckig baseline from $repos_file" >&2
+    exit 1
+  fi
+
+  RUCKIG_PINNED_REVISION="${_ruckig_meta[0]}"
+  RUCKIG_REMOTE_URL="${_ruckig_meta[1]}"
+}
+
+check_ruckig_preflight() {
+  local repo_dir="$PWD/src/ruckig"
+
+  if [[ ! -d "$repo_dir/.git" ]]; then
+    return
+  fi
+
+  local head_revision
+  head_revision=$(git -C "$repo_dir" rev-parse HEAD)
+
+  if [[ "$head_revision" == "$RUCKIG_PINNED_REVISION" ]]; then
+    return
+  fi
+
+  if git -C "$repo_dir" merge-base --is-ancestor "$RUCKIG_PINNED_REVISION" "$head_revision"; then
+    cat >&2 <<EOF
+Unsupported ruckig checkout detected at src/ruckig.
+  checked out: $head_revision
+  supported:   $RUCKIG_PINNED_REVISION ($RUCKIG_REMOTE_URL)
+
+This workspace is documented and CI-tested for Ubuntu 22.04 + ROS 2 Humble + GCC 11
+with the pre-<format> ruckig line. A newer ruckig revision that includes <format>
+(or otherwise requires std::format/C++20) is not supported on the default Jammy/Humble
+libstdc++ baseline.
+
+Fix it by re-importing the pinned manifest entry from dependencies/emd_epd_ws.repos /
+tesseract.repos, or remove src/ruckig and rely on the distro libruckig-dev package.
+EOF
+    exit 1
+  fi
+}
+
+load_ruckig_baseline
+
 ensure_cereal_cmake_config() {
   local cereal_config="/usr/lib/x86_64-linux-gnu/cmake/cereal/cerealConfig.cmake"
   local cereal_source="/usr/share/cmake/cereal"
@@ -337,6 +407,7 @@ fi
 # fails fast if workbench_description is still missing, which aborts this build
 # before rosdep update/install can proceed with a broken workspace layout.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
+check_ruckig_preflight
 if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
   echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
   apply_trajopt_ifopt_patch

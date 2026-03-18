@@ -24,6 +24,10 @@ repositories:
     type: git
     url: https://github.com/tesseract-robotics/boost_plugin_loader
     version: 0.4.3
+  ruckig:
+    type: git
+    url: https://github.com/pantor/ruckig.git
+    version: 37b6e7a  # v0.15.3; keep Humble/Jammy builds on the C++17-era baseline (no <format> dependency)
   tesseract:
     type: git
     url: https://github.com/tesseract-robotics/tesseract
