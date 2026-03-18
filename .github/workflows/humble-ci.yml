@@ -22,6 +22,11 @@ jobs:
           mkdir -p ws/src
           ln -s "${GITHUB_WORKSPACE}" ws/src/easy_manipulation_deployment
 
+      - name: Validate shell scripts and embedded Python
+        run: |
+          bash -n fix_and_build_humble.sh scripts/fix_workspace_layout.sh
+          python3 scripts/check_python_heredocs.py fix_and_build_humble.sh scripts/fix_workspace_layout.sh
+
       - name: Install dependencies
         working-directory: ws
         run: |

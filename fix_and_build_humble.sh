@@ -454,7 +454,7 @@ ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
 ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
 ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
 
-  cmake.write_text("\n".join(lines) + "\n")
+cmake.write_text("\n".join(lines) + "\n")
 PY
 fi
 
