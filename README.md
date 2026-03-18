@@ -759,9 +759,9 @@ Multiple packages found with the same name "tesseract_common"
 Cannot locate rosdep definition for [workbench_description]
 ```
 
-**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`.
+**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`. The helper now exits non-zero as soon as that package is still missing after scanning `assets/`, so follow-on `rosdep update` / `rosdep install` steps stop immediately instead of trying to recover automatically.
 
-**Fix:** From the workspace root, run the layout-fix helper first, confirm `src/workbench_description` now exists as a symlink or directory, and then re-run `rosdep install --from-paths src ...`.
+**Fix:** From the workspace root, run the layout-fix helper first. If it fails, use the error message to verify which repository `assets/` path was scanned and that `src/workbench_description` can be exposed in the workspace. Only re-run `rosdep install --from-paths src ...` after `src/workbench_description` exists as a symlink or directory.
 </details>
 
 ---
