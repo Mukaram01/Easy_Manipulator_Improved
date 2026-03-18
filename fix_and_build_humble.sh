@@ -333,9 +333,9 @@ fi
 
 # Repair the workspace layout (symlinks, overlay locations, and missing upstream
 # dependencies) so subsequent colcon builds can locate generated CMake package
-# files such as tesseract_motion_planners_coreConfig.cmake. This mirrors the
-# manual instructions from the troubleshooting section in the README and keeps
-# the workspace consistent even on fresh clones.
+# files such as tesseract_motion_planners_coreConfig.cmake. The helper now
+# fails fast if workbench_description is still missing, which aborts this build
+# before rosdep update/install can proceed with a broken workspace layout.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
 if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
   echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
