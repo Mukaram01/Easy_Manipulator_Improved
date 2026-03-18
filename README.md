@@ -62,18 +62,22 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 cd ~/emd_epd_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
-# 5) Install package dependencies from source tree
-# The override source above is required for Humble/Jammy keys such as
-# taskflow, gz-math7, fcl, osqp-eigen, and tesseract_task_composer.
+# 5) Expose repository asset packages into src/ before resolving dependencies
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+
+# Verify the layout fix exposed workbench_description as a symlink or directory
+test -L src/workbench_description -o -d src/workbench_description
+
+# 6) Install package dependencies from source tree
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 
 # Note: this repository now ships ignore markers on compatibility asset mirrors
 # to prevent duplicate-package discovery errors in fresh clones.
 
-# 6) Build
+# 7) Build
 colcon build --symlink-install
 
-# 7) Source + run demo
+# 8) Source + run demo
 source install/setup.bash
 ros2 launch suction_test demo.launch.py
 ```
@@ -169,6 +173,8 @@ CI runs on Ubuntu 22.04 with ROS 2 Humble.
 To run the same checks locally:
 
 ```bash
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+test -L src/workbench_description -o -d src/workbench_description
 echo "yaml file://$PWD/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
@@ -331,7 +337,7 @@ easy_manipulation_deployment/workcell_builder/workcell_builder
 ```
 
 The recommended fix is to let the repository helper expose the correct package
-layout for you:
+layout for you before any `rosdep install --from-paths src ...` step:
 
 ```bash
 cd ~/workcell_ws
@@ -342,6 +348,8 @@ That helper creates `src/workcell_builder` plus symlinks for the hidden asset
 packages (for example `workbench_description`, `ur5_moveit_config`,
 `robotiq_85_moveit_config`, and related robot/environment packages) so
 `rosdep` and `colcon` can discover them without manually moving directories.
+After it runs, verify that `src/workbench_description` exists as either a
+symlink or a real directory before continuing to dependency resolution.
 
 Resulting layout (recommended):
 
@@ -449,6 +457,9 @@ source /opt/ros/${ROS_DISTRO}/setup.bash
 # Recreate the expected package layout first so rosdep sees workbench_description
 # and the robot/end-effector config packages hidden under assets/.
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+
+# Verify the layout fix before rosdep/dependency helpers continue.
+test -L src/workbench_description -o -d src/workbench_description
 
 # Install deps script if you have it
 ~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
@@ -728,6 +739,18 @@ Multiple packages found with the same name "tesseract_common"
 ```
 
 **Fix:** Fresh clones should avoid this automatically via ignore markers in `assets/`. If you still see it in an older checkout, run `./scripts/fix_workspace_layout.sh` or remove one duplicate tree.
+</details>
+
+<details>
+<summary><b>`Cannot locate rosdep definition for [workbench_description]`</b></summary>
+
+```
+Cannot locate rosdep definition for [workbench_description]
+```
+
+**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`.
+
+**Fix:** From the workspace root, run the layout-fix helper first, confirm `src/workbench_description` now exists as a symlink or directory, and then re-run `rosdep install --from-paths src ...`.
 </details>
 
 ---

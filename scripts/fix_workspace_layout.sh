@@ -100,6 +100,12 @@ done
 
 expose_repo_packages
 
+if [ -L "$SRC_DIR/workbench_description" ] || [ -d "$SRC_DIR/workbench_description" ]; then
+  echo "Verified workspace layout: src/workbench_description is present (symlink or directory)."
+else
+  echo "Warning: src/workbench_description is still missing after expose_repo_packages()." >&2
+fi
+
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid
 # trajopt_common configure errors such as "Could NOT find Boost (missing:
