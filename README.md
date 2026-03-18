@@ -61,6 +61,9 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 # 4) Import upstream source dependencies
 cd ~/emd_epd_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+# Note: the repo pins ruckig to v0.15.3 because newer upstream revisions
+# switched include/ruckig/block.hpp to std::format/C++20; that breaks the
+# default Ubuntu 22.04 / ROS 2 Humble GCC 11 environment.
 
 # 5) Expose repository asset packages into src/ before resolving dependencies
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
