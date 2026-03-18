@@ -47,3 +47,8 @@ repositories:
     type: git
     url: https://github.com/pantor/ruckig.git
     version: 37b6e7a  # v0.15.3; keep Humble/Jammy builds on the C++17-era baseline (no <format> dependency)
+    # Pin to the last pre-C++20/std::format release for Ubuntu 22.04 / ROS 2 Humble.
+    # Newer revisions after pantor/ruckig commit da87c8f ("modernize toolchain to c++20,
+    # use std::format") change include/ruckig/block.hpp to rely on <format>, which is
+    # not available in the default Humble/GCC 11 toolchain.
+    version: v0.15.3
