@@ -145,6 +145,9 @@ gz-common5:
     noble: [libgz-common5-dev]
 
 ruckig:
+  # Compatibility note: the workspace baseline is Ubuntu 22.04 / ROS 2 Humble with C++17.
+  # Keep source checkouts on the pre-<format> Ruckig line (for example v0.15.3 in
+  # dependencies/emd_epd_ws.repos) or use the distro libruckig-dev package instead.
   ubuntu: [libruckig-dev]
 
 ros_industrial_cmake_boilerplate:

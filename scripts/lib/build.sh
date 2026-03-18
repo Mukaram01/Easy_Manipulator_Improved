@@ -4,6 +4,8 @@
 source "$SCRIPT_DIR/lib/motion_planner_configs.sh"
 
 BASE_CMAKE_ARGS=(
+    # Workspace compatibility baseline: Ubuntu 22.04 / ROS 2 Humble / C++17-era libstdc++.
+    # Keep Ruckig on the pre-<format> line documented in dependencies/emd_epd_ws.repos.
     -DCMAKE_CXX_STANDARD=17
     -DCMAKE_CXX_STANDARD_REQUIRED=ON
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON

@@ -7,6 +7,7 @@ build/test flow used in CI and helper scripts.
 ## Supported ROS 2 distros
 
 - **Humble (Ubuntu 22.04)**: **required** and CI-validated.
+- **Compiler/dependency baseline**: keep workspace changes compatible with the repository's C++17-era Humble/Jammy toolchain expectations; do not assume newer `ruckig` / `std::format` requirements unless the baseline docs and CI are updated together.
 - **Jazzy (Ubuntu 24.04)**: experimental (no CI coverage).
 
 ## Workspace layout
