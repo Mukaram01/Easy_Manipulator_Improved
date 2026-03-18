@@ -1,9 +1,0 @@
-<?xml version="1.0" ?>
-
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="suction_gripper">
-  <xacro:macro name="single_suction_gripper" params="">
-    <group name="gripper">
-      <link name="single_suction_gripper_base_link" />
-    </group>
-  </xacro:macro>
-</robot>
