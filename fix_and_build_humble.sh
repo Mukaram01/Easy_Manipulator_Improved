@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Bootstrap + build script for ROS 2 Humble/Jazzy workspaces.
-# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--legacy-workarounds]
+# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--with-tesseract-qt] [--legacy-workarounds]
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws
 
 PROFILE="minimal"
 ENABLE_LEGACY_WORKAROUNDS=0
+WITH_TESSERACT_QT=0
 
 usage() {
   cat <<'EOF'
@@ -15,6 +16,7 @@ Usage: ./fix_and_build_humble.sh [options]
 
 Options:
   --profile minimal|full      Select bootstrap profile (default: minimal)
+  --with-tesseract-qt         Opt in to building optional Studio/Qt widgets in full profile
   --legacy-workarounds        Enable legacy Humble patch/ignore behavior (opt-in)
   -h, --help                  Show this help message
 
@@ -22,6 +24,8 @@ Profiles:
   minimal   Headless-friendly path that uses released apt packages and skips
             importing the tesseract/trajopt source overlays.
   full      Imports tesseract.repos overlays for planning/dev workflows.
+            By default this skips optional tesseract_qt; pass
+            --with-tesseract-qt to build Studio/Qt widgets.
 EOF
 }
 
@@ -30,6 +34,10 @@ while [[ $# -gt 0 ]]; do
     --profile)
       PROFILE="${2:-}"
       shift 2
+      ;;
+    --with-tesseract-qt)
+      WITH_TESSERACT_QT=1
+      shift
       ;;
     --legacy-workarounds)
       ENABLE_LEGACY_WORKAROUNDS=1
@@ -672,6 +680,12 @@ CMAKE_ARGS=(
 rm -rf build install log
 find src \( -name build -o -name install -o -name log \) -print0 | xargs -0 -r rm -rf
 
+FULL_BUILD_ARGS=()
+if [[ "$PROFILE" == "full" && "$WITH_TESSERACT_QT" -eq 0 ]]; then
+  echo "Full profile: skipping optional tesseract_qt (use --with-tesseract-qt to enable Studio/Qt widgets)"
+  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt)
+fi
+
 if [[ "$PROFILE" == "full" ]]; then
   # 1) Ensure boost_plugin_loader exists
   if [ ! -d src/boost_plugin_loader ]; then
@@ -683,9 +697,9 @@ if [[ "$PROFILE" == "full" ]]; then
   colcon build --symlink-install --packages-select \
     ros_industrial_cmake_boilerplate eigen boost_plugin_loader
 
-  # 4) Stage 2: up to tesseract_common/tesseract_msgs with C++17
+  # 4) Stage 2: up to tesseract/tesseract_msgs with C++17
   reset_colcon_environment
-  colcon build --symlink-install --packages-up-to tesseract_common tesseract_msgs \
+  colcon build --symlink-install --packages-up-to tesseract tesseract_msgs \
     --cmake-args "${CMAKE_ARGS[@]}"
 
   # 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
@@ -697,7 +711,7 @@ if [[ "$PROFILE" == "full" ]]; then
 
   # 5) Stage 3: full workspace
   reset_colcon_environment
-  colcon build --symlink-install \
+  colcon build --symlink-install "${FULL_BUILD_ARGS[@]}" \
     --cmake-args "${CMAKE_ARGS[@]}"
 else
   echo "Profile 'minimal': skipping source overlays and running a single workspace build"
