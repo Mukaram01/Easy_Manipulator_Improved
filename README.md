@@ -37,7 +37,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ---
 ## Quick start (Ubuntu 22.04 + ROS 2 Humble)
 
-This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, and related libraries imported by `vcs`). The `tesseract_qt` and `qtadvanceddocking` overlays are optional and are only needed if you want Tesseract Studio / Qt widgets.
+This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, and related libraries imported by `vcs`). The normal Humble install path is headless-friendly and does **not** require Studio/Qt GUI tools; `tesseract_qt` and `qtadvanceddocking` overlays stay optional unless you explicitly opt in with `--with-gui`.
 
 ```bash
 # 1) System dependencies (Ubuntu 22.04 / ROS 2 Humble)
@@ -72,8 +72,8 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 # 4) Import upstream source dependencies
 cd ~/workcell_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
-# Optional: import `tesseract_qt` separately only if you want Studio / Qt widgets.
-# The default Humble install path does not require it.
+# Optional: import `tesseract_qt` / Qt ADS only if you want Studio / Qt widgets.
+# The default Humble install path does not require those GUI packages.
 # Note: the repo pins ruckig to v0.15.3 because newer upstream revisions
 # switched include/ruckig/block.hpp to std::format/C++20; that breaks the
 # default Ubuntu 22.04 / ROS 2 Humble GCC 11 environment.
@@ -145,6 +145,43 @@ The helper script automates the same behavior with:
 cd ~/workcell_ws/src/easy_manipulation_deployment
 ./fix_and_build_humble.sh --clean
 ```
+
+### Ruckig header/library mismatch on Humble
+
+On Humble it is possible to have both:
+
+- older ROS-installed headers in `/opt/ros/humble/include/ruckig`, and
+- a newer workspace-built Ruckig library under `~/workcell_ws/install/ruckig`.
+
+If the compiler sees the old ROS headers first but the linker uses the newer workspace
+library, you get the classic mismatch: **old headers + new library = linker error**.
+That is why errors mention old names such as `PositionStep1` / `VelocityStep2` even
+though the workspace-built library exports newer `*FirstOrder*`, `*SecondOrder*`, and
+`*ThirdOrder*` symbols.
+
+This repository now handles that case by prioritizing the workspace Ruckig include
+directories for `tesseract_planning` during the build. You should **not** uninstall
+`ros-humble-ruckig` just to build this repo; removing it can also remove unrelated
+MoveIt packages from the system.
+
+Recommended recovery path:
+
+1. Open a fresh shell.
+2. Unset old workspace overlay variables if needed:
+   ```bash
+   unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+   ```
+3. Source only the base underlay:
+   ```bash
+   source /opt/ros/humble/setup.bash
+   ```
+4. Rebuild from the repository helper, preferably clean:
+   ```bash
+   cd ~/workcell_ws/src/easy_manipulation_deployment
+   ./fix_and_build_humble.sh --profile full --clean
+   ```
+5. Keep GUI packages skipped unless you actually need them; add `--with-gui` only for
+   Studio / Qt widgets.
 
 ### Dependency-first build flow (catch `tesseract_geometry`/OctoMap issues early)
 
@@ -251,6 +288,9 @@ dependencies, applies the Cereal/Boost fixes, and builds the workspace.
 
 `tesseract_qt` and `qtadvanceddocking` are optional in this repository. The default
 supported Humble install path does **not** require Tesseract Studio / Qt widgets.
+Use `--with-gui` only when you explicitly want those GUI packages, and use
+`--clean` when you want the helper to remove `build/`, `install/`, and `log/`
+before rebuilding.
 
 By default, it uses the **minimal** profile for headless/runtime deployments,
 which does **not** import the full Tesseract/TrajOpt source overlays and
@@ -283,6 +323,11 @@ pre-`<format>` line for Ubuntu 22.04 / ROS 2 Humble / GCC 11:
 ```bash
 ./fix_and_build_humble.sh --profile full
 ```
+
+If `ros-humble-ruckig` is installed too, the helper now makes the
+`tesseract_planning` Ruckig target prefer workspace/source-built Ruckig headers
+over older ROS-installed headers in `/opt/ros/humble/include/ruckig`, so users
+do not need to uninstall `ros-humble-ruckig` to build this repository.
 
 Opt into Studio / Qt widgets on top of the full profile:
 
