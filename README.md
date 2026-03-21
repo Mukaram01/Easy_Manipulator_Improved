@@ -1,651 +1,359 @@
 # Easy Manipulation Deployment
 
+Modular ROS 2 manipulation packages for grasp planning, grasp execution, and workcell deployment.
+
 <img src="./images/emd_logo.png" width="30%" height="30%">
 
 [![Documentation Status](https://readthedocs.org/projects/easy-manipulation-deployment-docs/badge/?version=latest)](https://easy-manipulation-deployment-docs.readthedocs.io/en/latest/?badge=latest)
 [![Humble CI](https://github.com/Mukaram01/Easy_Manipulator_Improved/actions/workflows/humble-ci.yml/badge.svg)](https://github.com/Mukaram01/Easy_Manipulator_Improved/actions/workflows/humble-ci.yml)
 [![License](https://img.shields.io/github/license/ros-industrial/easy_manipulation_deployment.svg)](https://github.com/ros-industrial/easy_manipulation_deployment/blob/master/LICENSE)
 
-A ROS 2 package providing a modular, easy-to-deploy manipulation pipeline that integrates perception elements to enable end-to-end pick-and-place tasks.
-
 <img src="./images/grasp_planner.gif" width="20%" height="20%"> <img src="./images/grasp_execution.gif" width="20%" height="20%">
 
 This package was tested with [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment), but any perception system publishing compatible ROS 2 messages will work.
 
----
+## Supported platform
 
-## Supported Platforms
+- **Supported/tested:** Ubuntu 22.04 + ROS 2 Humble
+- Other platforms and experimental combinations are listed later in [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
 
-| Platform | ROS 2 | Status |
-|----------|-------|--------|
-| Ubuntu 22.04 | Humble | ✅ Tested (see Version Notes) |
-| Ubuntu 24.04 | Jazzy | 🔧 Experimental (see Version Notes) |
+## Step-by-step install
 
-## Version Notes
+Use this for the normal, supported, non-GUI Humble path.
 
-- **Humble** is the tested, CI-validated target.
-- **Jazzy** is experimental and does not have CI coverage unless added.
-
-### Compiler and dependency compatibility baseline
-
->- **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17 toolchain/libstdc++ baseline.
->- `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17`.
->- The source dependency manifests (`dependencies/emd_epd_ws.repos` and the full-profile `tesseract.repos`) pin `ruckig` to `v0.15.3` (`37b6e7a`) so workspace source builds stay on the pre-`<format>` line that remains compatible with Jammy-era standard libraries.
->- `fix_and_build_humble.sh` reads that pinned `ruckig` revision from `dependencies/emd_epd_ws.repos` during preflight so the bootstrap guardrail stays aligned with the documented baseline.
->- If you swap in a newer `ruckig` release that requires `std::format`, you must also move the workspace to a newer C++20-capable compiler and standard library baseline; that configuration is **not** the documented/CI-supported path in this repository.
-
----
-## Quick start (Ubuntu 22.04 + ROS 2 Humble)
-
-This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, and related libraries imported by `vcs`). The normal Humble install path is headless-friendly and does **not** require Studio/Qt GUI tools; `tesseract_qt` and `qtadvanceddocking` overlays stay optional unless you explicitly opt in with `--with-gui`.
+1. Install system dependencies.
 
 ```bash
-# 1) System dependencies (Ubuntu 22.04 / ROS 2 Humble)
 sudo apt update
 sudo apt install -y \
-  build-essential cmake git curl \
-  python3-vcstool python3-colcon-common-extensions python3-rosdep \
-  ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro ros-humble-ur-description
+  build-essential cmake curl git libpcap-dev libpng-dev \
+  python3-colcon-common-extensions python3-rosdep python3-vcstool \
+  ros-humble-moveit ros-humble-moveit-visual-tools \
+  ros-humble-ur-description ros-humble-xacro
+```
 
-# Optional only if you want Tesseract Studio / Qt widgets (`--with-gui`)
-sudo apt install -y \
-  qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
+2. Initialize `rosdep` if needed, then refresh it.
 
-# If this is your first ROS 2 machine:
+```bash
 sudo rosdep init || true
+rosdep update
+```
 
-# Register the repo-local rosdep overrides before any rosdep install.
+3. Create the workspace and clone this repo into the expected path.
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+```
+
+4. Import the source dependencies.
+
+```bash
+cd ~/workcell_ws
+vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+```
+
+5. Register the repo-local `rosdep` overrides.
+
+```bash
 echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
-
-# Validate one repo-local override before the full install.
 rosdep resolve taskflow
+```
 
-# 2) Create workspace
-mkdir -p ~/workcell_ws/src
-cd ~/workcell_ws/src
+6. Expose the repository asset packages into `src/`.
 
-# 3) Clone this repo into src/ using the workspace-facing name used below
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-
-# 4) Import upstream source dependencies
-cd ~/workcell_ws
-vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
-# Optional: import `tesseract_qt` / Qt ADS only if you want Studio / Qt widgets.
-# The default Humble install path does not require those GUI packages.
-# Note: the repo pins ruckig to v0.15.3 because newer upstream revisions
-# switched include/ruckig/block.hpp to std::format/C++20; that breaks the
-# default Ubuntu 22.04 / ROS 2 Humble GCC 11 environment.
-
-# 5) Expose repository asset packages into src/ before resolving dependencies
+```bash
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-
-# Verify the layout fix exposed workbench_description as a symlink or directory
 test -L src/workbench_description -o -d src/workbench_description
+```
 
-# 6) Install package dependencies from source tree
+7. Install package dependencies from the workspace source tree.
+
+```bash
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+```
 
-# Note: this repository now ships ignore markers on compatibility asset mirrors
-# to prevent duplicate-package discovery errors in fresh clones.
+8. Build and source the workspace.
 
-# 7) Build
-# Compatibility note: this workspace targets the Humble/Jammy C++17 baseline.
-colcon build --symlink-install --parallel-workers 2
-
-# 8) Source + run demo
+```bash
+colcon build --parallel-workers 2
 source install/setup.bash
+```
+
+## First run / verification
+
+Source the workspace in each new shell:
+
+```bash
+source ~/workcell_ws/install/setup.bash
+```
+
+Quick verification options:
+
+```bash
+ros2 pkg prefix emd_msgs
+```
+
+```bash
 ros2 launch suction_test demo.launch.py
 ```
 
-> Tip: after syncing and validating a workspace, you can lock exact revisions with `vcs export --exact src > workcell_ws_exact.repos`.
+If you only want to confirm the workspace built successfully, `source install/setup.bash` plus a successful `ros2 pkg prefix emd_msgs` is the safest quick check.
 
-### If Studio build fails
+## Common scenarios
 
-If you opted into `--with-gui` and `tesseract_qt` Studio fails to link against Qt ADS targets, apply the included upstream patch and rebuild:
+### Build with GUI / Studio tools
+
+The default supported path is non-GUI. Only opt in if you need Tesseract Studio / Qt widgets.
 
 ```bash
-cd ~/workcell_ws
-./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
-colcon build --symlink-install
+sudo apt install -y \
+  qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
 ```
 
-## Known issues / Troubleshooting
-
-- **Qt ADS target mismatch in `tesseract_qt` Studio (common on Ubuntu 22.04/Jammy):** some installations export `ads::qtadvanceddocking-qt5` instead of `ads::qtadvanceddocking`. This repository includes a patch script that applies `patches/tesseract_qt_qtads_target_fix.patch` so Studio chooses whichever exported ADS target exists.
-- **Patch application command:** run `./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
-- **Device/group permission changes:** if you add your user to groups such as `video`, `plugdev`, or `input`, log out and back in before retrying tools that require those permissions.
-
-### Stale Ruckig/Tesseract linker mismatch recovery
-
-If linker errors mention old Ruckig symbols such as `PositionStep1`, `PositionStep2`,
-`VelocityStep1`, or `VelocityStep2`, but the current source tree does not reference those
-names and `libruckig.so` exports newer `*FirstOrder*`, `*SecondOrder*`, or `*ThirdOrder*`
-symbols instead, the likely problem is a stale or mixed workspace build.
-
-This is usually caused by reusing `build/`, `install/`, or `log/` from an older checkout
-or by sourcing an old workspace overlay before rebuilding.
-
-Recommended recovery sequence for the normal non-GUI Humble path:
-
 ```bash
-open a fresh shell
+cd ~/workcell_ws/src
+vcs import < easy_manipulation_deployment/tesseract.repos
 cd ~/workcell_ws
-rm -rf build install log
-touch src/tesseract_qt/COLCON_IGNORE
-touch src/qtadvanceddocking/COLCON_IGNORE
-source /opt/ros/humble/setup.bash
 colcon build --symlink-install --parallel-workers 2
 ```
 
-The helper script automates the same behavior with:
+If you use the helper script instead, the equivalent GUI-enabled path is:
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh --profile full --with-gui
+```
+
+`tesseract_qt` and `qtadvanceddocking` remain optional in this repository.
+
+### Clean rebuild
+
+```bash
+cd ~/workcell_ws
+rm -rf build install log
+colcon build --parallel-workers 2
+```
+
+Helper-script equivalent:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
 ./fix_and_build_humble.sh --clean
 ```
 
-### Ruckig header/library mismatch on Humble
-
-On Humble it is possible to have both:
-
-- older ROS-installed headers in `/opt/ros/humble/include/ruckig`, and
-- a newer workspace-built Ruckig library under `~/workcell_ws/install/ruckig`.
-
-If the compiler sees the old ROS headers first but the linker uses the newer workspace
-library, you get the classic mismatch: **old headers + new library = linker error**.
-That is why errors mention old names such as `PositionStep1` / `VelocityStep2` even
-though the workspace-built library exports newer `*FirstOrder*`, `*SecondOrder*`, and
-`*ThirdOrder*` symbols.
-
-This repository now handles that case by prioritizing the workspace Ruckig include
-directories for `tesseract_planning` during the build. You should **not** uninstall
-`ros-humble-ruckig` just to build this repo; removing it can also remove unrelated
-MoveIt packages from the system.
-
-Recommended recovery path:
-
-1. Open a fresh shell.
-2. Unset old workspace overlay variables if needed:
-   ```bash
-   unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-   ```
-3. Source only the base underlay:
-   ```bash
-   source /opt/ros/humble/setup.bash
-   ```
-4. Rebuild from the repository helper, preferably clean:
-   ```bash
-   cd ~/workcell_ws/src/easy_manipulation_deployment
-   ./fix_and_build_humble.sh --profile full --clean
-   ```
-5. Keep GUI packages skipped unless you actually need them; add `--with-gui` only for
-   Studio / Qt widgets.
-
-### Dependency-first build flow (catch `tesseract_geometry`/OctoMap issues early)
-
-If the workspace fails during global `colcon build`, validate the dependency layer first and only then build everything.
+### Rebuild only one package
 
 ```bash
 cd ~/workcell_ws
-
-# 1) Build the package that exports tesseract geometry config first.
-colcon build --symlink-install --packages-select tesseract_geometry \
-  2>&1 | tee /tmp/colcon_tesseract_geometry.log
-
-# 2) Build one OctoMap-consuming layer next to validate imported target exports.
-colcon build --symlink-install --packages-select tesseract_collision \
-  2>&1 | tee /tmp/colcon_tesseract_collision.log
-
-# 3) Immediately fail-fast on the known OctoMap import error signature.
-if rg -n 'IMPORTED_LOCATION not set for imported target "octomap"' \
-  /tmp/colcon_tesseract_geometry.log /tmp/colcon_tesseract_collision.log; then
-  echo "OctoMap import/export issue detected. Fix dependency exports before full build."
-  return 1 2>/dev/null || exit 1
-fi
-
-# 4) Only run the full workspace build after dependency checks pass.
-colcon build --symlink-install
+colcon build --packages-select emd_grasp_planner --parallel-workers 2
 ```
 
-Minimal invocation sequence:
-
-1. `colcon build --packages-select tesseract_geometry`
-2. `colcon build --packages-select tesseract_collision`
-3. `rg 'IMPORTED_LOCATION not set for imported target "octomap"' /tmp/colcon_tesseract_*.log`
-4. `colcon build --symlink-install`
-
-
-### Known benign warnings
-
-During source builds, warnings from third-party packages such as `qpoases` and
-`octomap-distribution` can appear noisy but are often harmless.
-
-Use this quick rule:
-- If build output only shows `warning:` diagnostics and the package finishes, treat it as benign.
-- If colcon stops, ignore preceding warning spam and start with the first `error:` line.
-
-The project keeps strict warnings (`-Wall -Wextra -Wpedantic`) for repository-owned
-code, while warning suppressions are scoped only to external imported targets.
-
----
-
-## Universal Robots Description (ur_description)
-
-- Expected source: [Universal_Robots_ROS2_Description](https://github.com/UniversalRobots/Universal_Robots_ROS2_Description) (`ur_description` v2.x, ROS 2).
-- Install via apt when using ROS 2 binaries: `ros-${ROS_DISTRO}-ur-description`.
-- Scenes use `ur_macro.xacro` with `ur_type` configs and no longer require per-robot xacros.
-- Legacy per-robot xacros remain supported when present.
-
-Example validation command:
+For dependency-first troubleshooting of the planning stack:
 
 ```bash
-ros2 run xacro xacro src/scenes/suction_test/urdf/scene.urdf.xacro ur_type:=ur5 > /tmp/scene.urdf
+cd ~/workcell_ws
+colcon build --packages-select tesseract_geometry 2>&1 | tee /tmp/colcon_tesseract_geometry.log
+colcon build --packages-select tesseract_collision 2>&1 | tee /tmp/colcon_tesseract_collision.log
+rg -n 'IMPORTED_LOCATION not set for imported target "octomap"' /tmp/colcon_tesseract_geometry.log /tmp/colcon_tesseract_collision.log
 ```
 
-Troubleshooting:
-- If a ROS 1 `ur_description` is on your `ROS_PACKAGE_PATH`, `ur.urdf.xacro` will fail with `Undefined substitution argument name`. Remove the ROS 1 package and install the ROS 2 `ur_description` v2.x instead.
+### Dynamic safety tests
 
----
-
-## CI verified on Humble
-
-CI runs on Ubuntu 22.04 with ROS 2 Humble.
-
-To run the same checks locally:
+Dynamic safety is part of the grasp execution workflow.
 
 ```bash
-./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-test -L src/workbench_description -o -d src/workbench_description
-echo "yaml file://$PWD/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
-  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
-rosdep update
-rosdep resolve taskflow
-rosdep install --from-paths src --ignore-src -yr --rosdistro humble
-colcon build --symlink-install
+source ~/workcell_ws/install/setup.bash
+ros2 launch run_grasp_execution grasp_execution.launch.py
+```
+
+If you are validating packages only, run the workspace tests after a build:
+
+```bash
+cd ~/workcell_ws
 colcon test
 colcon test-result --verbose
 ```
 
-Some GUI-related packages are optional in CI. You can skip them locally with
-`--packages-skip` (e.g., `colcon build --packages-skip <pkg1> <pkg2>`) or by
-adding `COLCON_IGNORE` files in the package directories.
+### Using `--symlink-install` if desired
 
----
-
-## Quick Installation (Ubuntu 22.04 + ROS 2 Humble)
-
-### Prerequisites
-
-- ROS 2 Humble installed ([installation guide](https://docs.ros.org/en/humble/Installation.html))
-- CI uses Ubuntu 22.04 + ROS 2 Humble via `ros-tooling/setup-ros`
-
-### Recommended bootstrap (single command)
-
-The canonical entrypoint is the Humble bootstrap script. It installs system
-dependencies, applies the Cereal/Boost fixes, and builds the workspace.
-
-`tesseract_qt` and `qtadvanceddocking` are optional in this repository. The default
-supported Humble install path does **not** require Tesseract Studio / Qt widgets.
-Use `--with-gui` only when you explicitly want those GUI packages, and use
-`--clean` when you want the helper to remove `build/`, `install/`, and `log/`
-before rebuilding.
-
-By default, it uses the **minimal** profile for headless/runtime deployments,
-which does **not** import the full Tesseract/TrajOpt source overlays and
-skips the planning/Qt rosdep keys that currently do not have a reliable
-released Humble/Jammy binary path in this workflow (`tesseract_environment`,
-`tesseract_motion_planners`, `tesseract_motion_planners_core`,
-`tesseract_motion_planners_simple`, `tesseract_task_composer`,
-`tesseract_visualization`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`,
-`trajopt_sqp`, `qt_advanced_docking`, and `taskflow`).
+The main supported quick-start path uses a plain build:
 
 ```bash
-mkdir -p ~/workcell_ws/src
-cd ~/workcell_ws/src
-
-# Clone the repo into the intended layout.
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-
-cd easy_manipulation_deployment
-./fix_and_build_humble.sh
+colcon build --parallel-workers 2
 ```
 
-Use the **full** profile when you explicitly need the Tesseract/TrajOpt
-planning/development overlays from source. By default, the full profile still
-**skips** `tesseract_qt` and `qtadvanceddocking`; pass `--with-gui` only if you also want
-Tesseract Studio / Qt widgets. That profile imports the same pinned `ruckig`
-source revision documented in `dependencies/emd_epd_ws.repos`, and the
-bootstrap script fails fast if `src/ruckig` is newer than the supported
-pre-`<format>` line for Ubuntu 22.04 / ROS 2 Humble / GCC 11:
-
-```bash
-./fix_and_build_humble.sh --profile full
-```
-
-If `ros-humble-ruckig` is installed too, the helper now makes the
-`tesseract_planning` Ruckig target prefer workspace/source-built Ruckig headers
-over older ROS-installed headers in `/opt/ros/humble/include/ruckig`, so users
-do not need to uninstall `ros-humble-ruckig` to build this repository.
-
-Opt into Studio / Qt widgets on top of the full profile:
-
-```bash
-./fix_and_build_humble.sh --profile full --with-gui
-```
-
-Enable legacy workaround behavior (optional, explicit opt-in):
-
-```bash
-./fix_and_build_humble.sh --profile full --legacy-workarounds
-```
-
-### Deployment profile matrix
-
-| Profile | Intended use | Overlay import (`tesseract.repos`) | Profile-specific rosdep handling | Legacy ignores/patches |
-|---------|--------------|--------------------------------------|----------------------------------|-------------------------|
-| `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_motion_planners_core`, `tesseract_motion_planners_simple`, `tesseract_task_composer`, `tesseract_visualization`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
-| `full` | Planning + development workspace | ✅ Yes | Uses overlay-aware skip keys so rosdep does not try to apt-install TrajOpt/Tesseract planning packages that are provided by source overlays; still skips Humble source-only keys such as `tesseract_visualization`, `qt_advanced_docking`, and `taskflow` | ❌ No (unless `--legacy-workarounds`) |
-
-By default, the full-profile build excludes `tesseract_qt` and `qtadvanceddocking`. Pass `--with-gui` only when you want Studio / Qt widgets.
-
-### Package matrix
-
-| Scope | Typical packages |
-|-------|------------------|
-| Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep`, **excluding** the Tesseract/TrajOpt planning stack and Qt Studio/task-composer dependencies listed in the profile matrix |
-| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) required for Tesseract/TrajOpt development workflows; `tesseract_qt` and `qtadvanceddocking` remain optional and are only built when `--with-gui` is passed |
-
-### Manual Installation (advanced / troubleshooting)
-
-#### 0) Install apt packages (matching CI)
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  libpcap-dev \
-  libpng-dev \
-  python3-vcstool \
-  python3-colcon-common-extensions \
-  ros-humble-moveit \
-  ros-humble-moveit-visual-tools \
-  ros-humble-ur-description \
-  ros-humble-xacro
-```
-
-#### 1) Recreate the workspace the “original” way
-
-```bash
-mkdir -p ~/workcell_ws/src
-cd ~/workcell_ws/src
-
-# Clone the repo into src as easy_manipulation_deployment (this is the intended layout).
-git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-```
-
-#### 2) Keep the repository layout intact
-
-```bash
-cd ~/workcell_ws/src/easy_manipulation_deployment
-# The repo already contains assets/, scenes/, and workcell_builder/ in the correct places.
-# Do not move workcell_builder out of the repository tree.
-test -d assets && test -d scenes && test -d workcell_builder
-```
-
-If you are following older instructions that say to run commands such as:
-
-```bash
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
-mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
-```
-
-skip them. Those commands describe an outdated layout, and the last one fails because this repository does **not** contain `easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder`.
-
-#### 3) Import dependencies from the workspace root
+If you are actively developing packages and want editable install behavior, use:
 
 ```bash
 cd ~/workcell_ws
-source /opt/ros/humble/setup.bash
-vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
-echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
-  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
-rosdep update
-rosdep resolve taskflow
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO:-humble}" \
-  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
-```
-
-For the **full** profile, a plain manual `rosdep install --from-paths src ...` after a partial bootstrap failure is **not** equivalent to rerunning `./fix_and_build_humble.sh --profile full`. Reuse the script or apply the same overlay-aware `--skip-keys` set that matches the source providers discovered by `colcon list --base-paths src --names-only`; otherwise `rosdep` can still try to install Humble binaries for packages that are meant to come from the imported `tesseract.repos` sources. If you do not need Studio / Qt widgets, it is also appropriate to keep `tesseract_qt` out of manual builds with `touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE`.
-
-If you have a separate MoveIt 2 overlay, source it before building:
-
-```bash
-source ~/ws_moveit2/install/setup.bash
-```
-
-Then build the workspace:
-
-```bash
 colcon build --symlink-install --parallel-workers 2
-source install/setup.bash
 ```
 
-#### 4) Use a single canonical location for `assets` and `scenes`
+Some helper scripts and source-overlay workflows still use `--symlink-install`, especially for full-profile development workspaces.
+
+## Troubleshooting
+
+### Old ROS-installed Ruckig headers vs source-built Ruckig on Humble
+
+If the compiler picks `/opt/ros/humble/include/ruckig` but the linker picks a newer workspace-built `ruckig`, you can get linker errors mentioning older symbols such as `PositionStep1` or `VelocityStep2`.
+
+Recommended recovery:
 
 ```bash
-cd ~/workcell_ws/src/easy_manipulation_deployment
-# Keep both directories in the repository root as the source of truth.
-# Do not keep separate copied directories in ~/workcell_ws/src.
-test -d assets && test -d scenes
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+cd ~/workcell_ws
+rm -rf build install log
+colcon build --parallel-workers 2
 ```
 
-If you are migrating an older workspace, do **not** run:
+Do **not** remove `ros-humble-ruckig` just to build this repository; that can remove unrelated MoveIt packages.
 
-```bash
-mv easy_manipulation_deployment/easy_manipulation_deployment/workcell_builder ./easy_manipulation_deployment
-```
+### Optional GUI package issues
 
-That path never existed in this repository. The ROS package lives at:
-
-```text
-easy_manipulation_deployment/workcell_builder/workcell_builder
-```
-
-The recommended fix is to let the repository helper expose the correct package
-layout for you before any `rosdep install --from-paths src ...` step:
+If `tesseract_qt` fails to link because the ADS target name differs on your system, apply the included patch and rebuild:
 
 ```bash
 cd ~/workcell_ws
-./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
+colcon build --symlink-install --parallel-workers 2
 ```
 
-That helper creates `src/workcell_builder` plus symlinks for the hidden asset
-packages (for example `workbench_description`, `ur5_moveit_config`,
-`robotiq_85_moveit_config`, and related robot/environment packages) so
-`rosdep` and `colcon` can discover them without manually moving directories.
-After it runs, verify that `src/workbench_description` exists as either a
-symlink or a real directory before continuing to dependency resolution.
-
-Resulting layout (recommended):
-
-```text
-~/workcell_ws/src/
-└── easy_manipulation_deployment/
-    ├── assets/
-    ├── scenes/
-    ├── CMakeLists.txt
-    └── ...
-```
-
-#### 2.a) Migration from older dual-path setups
-
-Use this once if your workspace still has duplicate directories in both
-`~/workcell_ws/src/` and `~/workcell_ws/src/easy_manipulation_deployment/`.
-
-1. Detect existing duplicates.
-2. Choose `easy_manipulation_deployment/{assets,scenes}` as authoritative.
-3. Remove stale duplicate copies in `~/workcell_ws/src` safely.
-4. Recreate top-level symlinks only if a legacy tool still requires them.
+If you do not need Studio / Qt widgets, keep the default non-GUI path or temporarily skip the GUI-facing packages:
 
 ```bash
-cd ~/workcell_ws/src
-
-# 1) Detect duplicates and show their type (directory/symlink/missing)
-for p in assets scenes; do
-  printf "%-8s src/%-6s: " "$p" "$p"
-  [ -e "$p" ] && stat -c '%F -> %N' "$p" || echo "missing"
-  printf "%-8s repo/%-6s: " "$p" "$p"
-  [ -e "easy_manipulation_deployment/$p" ] && stat -c '%F -> %N' "easy_manipulation_deployment/$p" || echo "missing"
-done
-
-# 2) Ensure canonical directories exist in the repo path
-test -d easy_manipulation_deployment/assets
-test -d easy_manipulation_deployment/scenes
-
-# 3) Remove stale top-level copies ONLY if they are real directories (not symlinks)
-for p in assets scenes; do
-  if [ -d "$p" ] && [ ! -L "$p" ]; then
-    rm -rf "$p"
-  fi
-done
-
-# 4) Optional: recreate legacy compatibility symlinks (only if needed)
-# ln -s easy_manipulation_deployment/assets assets
-# ln -s easy_manipulation_deployment/scenes scenes
-```
-
-If you must keep legacy symlinks, this is the exact expected tree:
-
-```text
-~/workcell_ws/src/
-├── assets -> easy_manipulation_deployment/assets
-├── scenes -> easy_manipulation_deployment/scenes
-└── easy_manipulation_deployment/
-    ├── assets/
-    ├── scenes/
-    ├── CMakeLists.txt
-    └── ...
-```
-
-**Asset sourcing note:** `share/workcell_builder/assets` is the canonical default-asset
-source. Runtime/workspace paths such as `src/assets` exist only as writable mirrors for user
-customization; Workcell Builder populates them from the packaged defaults when needed. The repo
-also keeps compatibility asset trees for older workflows, and CI now enforces that any tracked
-duplicate tree matches the canonical package asset tree by path list and checksum.
-
-#### 3) Import full planning overlays (optional)
-
-Only needed for a full planning/development workspace:
-
-```bash
-cd ~/workcell_ws/src
-vcs import < easy_manipulation_deployment/tesseract.repos
-# Includes the same pinned ruckig v0.15.3 source checkout used by
-# dependencies/emd_epd_ws.repos so full-profile source builds stay on the
-# pre-<format> Humble/Jammy-compatible line.
-```
-
-If you want the repo-pinned dependency set used by the older EMD/EPD workspace
-instructions instead, the correct file is:
-
-```bash
-cd ~/workcell_ws
-vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
-```
-
-#### 4) Preferred package/version guidance (before legacy workarounds)
-
-Prefer these first:
-
-- Use the latest `main` branch of this repository.
-- Keep to Ubuntu 22.04 + ROS 2 Humble for the tested path.
-- Run `./fix_and_build_humble.sh` (minimal) for runtime deployment; it prints a
-  rosdep preflight summary and skips the planning/Qt keys that are excluded from
-  the default profile.
-- Use `./fix_and_build_humble.sh --profile full` only when you need the
-  Tesseract/TrajOpt planning overlays from source.
-- Add `--with-gui` only when you also want Tesseract Studio / Qt
-  widgets; otherwise the normal Humble path keeps `tesseract_qt` and
-  `qtadvanceddocking` optional.
-
-#### 5) Legacy fallback workaround (explicit, only if needed)
-
-> **Note:** If you ran `./fix_and_build_humble.sh`, these fixes have already
-> been applied only when you opt in with `--legacy-workarounds`.
-
-```bash
-cd ~/workcell_ws
-export ROS_DISTRO=humble
-source /opt/ros/${ROS_DISTRO}/setup.bash
-
-# Recreate the expected package layout first so rosdep sees workbench_description
-# and the robot/end-effector config packages hidden under assets/.
-./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-
-# Verify the layout fix before rosdep/dependency helpers continue.
-test -L src/workbench_description -o -d src/workbench_description
-
-# Install deps script if you have it
-~/workcell_ws/src/easy_manipulation_deployment/scripts/install_system_deps.sh
-
-# Fix cereal CMake path (common on Jammy)
-sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
-sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
-
-# Skip optional Studio/Qt packages if you do not need Tesseract Studio widgets
 touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
 touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
-
-# If you see trajopt_ifopt build errors, remove the incompatible planner
-rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
-sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
-sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
 ```
 
-#### 6) Now rosdep + build
+### `emd_dynamic_safety` / MoveIt / Ruckig mismatch on Humble
+
+On Humble, test-only or overlay builds can expose a mismatch between the MoveIt-provided Ruckig headers and a newer source-built Ruckig library. Start from a clean shell, source only `/opt/ros/humble/setup.bash`, and rebuild the workspace before rerunning dynamic safety or grasp execution tests.
+
+If you need the full source-overlay workflow, prefer the repository helper so its preflight checks stay aligned with the pinned dependency set:
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh --profile full --clean
+```
+
+### Clean shell / clean workspace recovery
+
+If the workspace starts failing after switching branches, changing overlays, or reusing old build outputs, reset to a clean state:
+
+```bash
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+cd ~/workcell_ws
+rm -rf build install log
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+colcon build --parallel-workers 2
+```
+
+### `workbench_description` missing during `rosdep install`
+
+If you see `Cannot locate rosdep definition for [workbench_description]`, the layout helper was not run before `rosdep install`.
 
 ```bash
 cd ~/workcell_ws
-echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
-  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
-rosdep update
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+test -L src/workbench_description -o -d src/workbench_description
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+```
 
-# Validate override resolution before retrying the full install.
-rosdep resolve taskflow
+### Duplicate package discovery errors
 
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "qt_advanced_docking taskflow tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+If `rosdep` or `colcon` reports duplicate packages in an older workspace, rerun the layout helper or remove the stale duplicate tree.
 
+```bash
+cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+```
+
+### Common dependency fixes
+
+Boost missing components:
+
+```bash
+sudo apt install -y libboost-dev libboost-graph-dev libboost-program-options-dev \
+  libboost-serialization-dev libboost-stacktrace-dev
+cd ~/workcell_ws
 rm -rf build install log
 colcon build --symlink-install --parallel-workers 2
-source install/setup.bash
 ```
 
-#### After this, your repo commands are back to normal
+Cereal not found:
+
+```bash
+sudo apt install -y libcereal-dev
+sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
+sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
+```
+
+Boost serialization `library_version_type` error:
+
+```bash
+sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include <boost/serialization/library_version_type.hpp>' \
+  /usr/include/boost/serialization/unordered_collections_load_imp.hpp
+```
+
+## Version notes / advanced compatibility
+
+- **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17/libstdc++ baseline.
+- **Experimental:** Ubuntu 24.04 + ROS 2 Jazzy is not the main supported path for this repository.
+- `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17` for the supported baseline.
+- `dependencies/emd_epd_ws.repos` and `tesseract.repos` pin `ruckig` to `v0.15.3` (`37b6e7a`) so source builds stay on the pre-`std::format` line that still works with the Humble/Jammy toolchain.
+- `fix_and_build_humble.sh` reads that pinned revision during preflight so its guardrails match the documented baseline.
+- If you move to a newer `ruckig` release that requires `std::format`, you are also moving beyond the documented Humble/Jammy support envelope.
+
+### Full-profile and helper-script notes
+
+The repository helper remains the canonical bootstrap for full planning/development workspaces:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-git pull
+./fix_and_build_humble.sh --profile full
 ```
 
-### Helper Script (preferred)
+Use it when you explicitly need the Tesseract/TrajOpt planning overlays from source, overlay-aware `rosdep` skip keys, or the repo's additional preflight checks.
 
-If you already have the repository cloned, you can run the canonical Humble
-bootstrap script directly:
+### Optional GUI details
 
-```bash
-cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh
+- `tesseract_qt` and `qtadvanceddocking` are optional.
+- The default install path stays headless/non-GUI.
+- Use `--with-gui` only when you want Studio / Qt widgets.
+- If Studio builds fail on Qt ADS targets, use `scripts/apply_upstream_patches.sh` and rebuild.
+
+### Workspace layout notes
+
+This repository is intended to live inside a larger ROS 2 workspace, typically as:
+
+```text
+~/workcell_ws/src/easy_manipulation_deployment
 ```
 
----
+The layout helper exposes repository asset packages into `src/` so `rosdep` and `colcon` can discover packages such as `workbench_description` without manually moving directories.
+
+Recommended layout:
+
+```text
+~/workcell_ws/src/
+└── easy_manipulation_deployment/
+    ├── assets/
+    ├── scenes/
+    ├── CMakeLists.txt
+    └── ...
+```
+
+Legacy compatibility symlinks can still exist in older workspaces, but the repository tree above is the source of truth.
 
 ## Components
 
@@ -657,23 +365,17 @@ An algorithm-based grasp planner for 3D space. Supports multifinger parallel gri
 |:----------:|:------------:|:--------------:|:-----------------:|
 | <img src="./images/two_finger.png" width="80"> | <img src="./images/three_finger.png" width="80"> | <img src="./images/single_suction.png" width="80"> | <img src="./images/2x2_array.png" width="80"> |
 
-**Quick Start:**
 ```bash
 source ~/workcell_ws/install/setup.bash
 ros2 launch run_grasp_planner grasp_planner_3f_launch.py
 ```
 
-**EPD timeout parameter:**
-The grasp planner can monitor Easy Perception Deployment (EPD) message activity. Configure the
-timeout in `easy_manipulation_deployment/emd_demo_nodes/run_grasp_planner/config/*.yaml` via
-`easy_perception_deployment.epd_msg_timeout_s` to warn and re-trigger the EPD pipeline when
-messages stall.
+The grasp planner can monitor Easy Perception Deployment (EPD) message activity. Configure the timeout in `easy_manipulation_deployment/emd_demo_nodes/run_grasp_planner/config/*.yaml` via `easy_perception_deployment.epd_msg_timeout_s`.
 
 ### 2. Grasp Execution
 
 MoveIt2-based grasp execution with real-time dynamic safety components.
 
-**Quick Start:**
 ```bash
 source ~/workcell_ws/install/setup.bash
 ros2 launch run_grasp_execution grasp_execution.launch.py
@@ -681,224 +383,57 @@ ros2 launch run_grasp_execution grasp_execution.launch.py
 
 ### 3. Workcell Builder
 
-GUI-based tool for generating robotic workcell simulations. The supported workflow targets
-**ROS 2 Humble** (ament + MoveIt 2).
+GUI-based tool for generating robotic workcell simulations on ROS 2 Humble.
 
-**Quick Start:**
 ```bash
 source ~/workcell_ws/install/setup.bash
 workcell_builder
 ```
 
-**Scene root resolution precedence (startup):**
-1. `--scene-root <path>` (or `--scene-root=<path>`) CLI flag.
-2. `WORKCELL_BUILDER_SCENE_ROOT` environment variable.
-3. Current working directory (`$PWD`).
-4. Parent of current working directory (`$PWD/..`).
-5. `$PWD/src/easy_manipulation_deployment`.
-6. `$PWD/src`.
+Scene root resolution precedence:
 
-The selected workcell root and all rejected candidates are logged at startup. If multiple valid
-scene directories exist, Workcell Builder warns and keeps the highest-priority candidate.
+1. `--scene-root <path>`
+2. `WORKCELL_BUILDER_SCENE_ROOT`
+3. `$PWD`
+4. `$PWD/..`
+5. `$PWD/src/easy_manipulation_deployment`
+6. `$PWD/src`
 
-For deterministic behavior in multi-workspace setups, explicitly set one override:
+For deterministic behavior in multi-workspace setups:
+
 ```bash
-# CLI override (highest priority)
 workcell_builder --scene-root ~/workcell_ws/src/easy_manipulation_deployment
+```
 
-# or environment override
+```bash
 export WORKCELL_BUILDER_SCENE_ROOT=~/workcell_ws/src/easy_manipulation_deployment
 workcell_builder
 ```
- 
-Example ROS 2 (Humble) launch templates live under `workcell_builder/examples/ros2/`.
 
-**Required external robot descriptions (ROS 2 Humble):**
-* `fanuc`: `moveit_resources_fanuc_description` (or `fanuc_description` if you have it installed).
-* `panda_robot`: `moveit_resources_panda_description`.
+Required external robot descriptions on ROS 2 Humble:
 
----
+- `fanuc`: `moveit_resources_fanuc_description` or `fanuc_description`
+- `panda_robot`: `moveit_resources_panda_description`
 
-## Running Demo Scenes
+## Running demo scenes
 
 ```bash
 source ~/workcell_ws/install/setup.bash
-
-# UR5 with three-finger gripper
 ros2 launch ur5_3f_test demo.launch.py
-
-# UR5 with two-finger gripper
 ros2 launch ur5_2f_test demo.launch.py
-
-# Custom scene (if you created one with workcell_builder)
 ros2 launch new_scene demo.launch.py
 ```
 
----
-
-## Troubleshooting
-
-### Known Issues
-
-#### Rosdep key resolution on Humble/Jammy
-
-Before running plain `rosdep install`, make sure the repository override source is registered and refreshed:
-
-```bash
-echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
-  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
-rosdep update
-rosdep resolve taskflow
-```
-
-Those overrides are what make Humble/Jammy resolve the repo's otherwise-unresolved keys such as `gz-math7`, `fcl`, and `osqp-eigen`. The bootstrap script still skips overlay-provided or source-only Humble keys during `rosdep install`, including `tesseract_visualization` (expected from `tesseract_qt` source in the full profile), `qt_advanced_docking`, `taskflow`, and the TrajOpt/Tesseract planning packages that are intentionally supplied by `tesseract.repos`. If `rosdep resolve taskflow` succeeds, that only confirms the override file is registered; it does **not** mean a plain `rosdep install --from-paths src ...` is equivalent to the scripted bootstrap unless you pass the same skip-keys.
-
-#### ONNX Runtime build failures on ROS 2 Humble (Ubuntu 22.04)
-
-On ROS 2 Humble/Jammy, older vendorized ONNX Runtime drops can fail during C/C++
-compilation with messages similar to:
-
-```
-error: exponent has no digits
-```
-
-This is a known compatibility issue in legacy packaging paths and should be
-handled in the following order:
-
-1. **Prefer the native APT package first** (`libonnxruntime-dev`) when it is
-   available for your platform and compatible with your ROS/Tesseract stack.
-2. **Otherwise prefer a newer ONNX Runtime release** (for example via an updated
-   ROS vendor package) that is known to support Ubuntu 22.04/Humble better than
-   legacy vendor drops.
-
-If you must stay on a vendor package path, expect to apply Jammy-specific
-patching and environment cleanup (for example locale normalization and compiler
-compatibility fixes) when hitting parser/compiler edge-case errors.
-
-**Why we document this explicitly:** maintainers repeatedly lose time by
-defaulting back to older vendor snapshots that compile unreliably on Jammy,
-while current system packages or newer ONNX Runtime releases are generally more
-stable and require less local patch maintenance.
-
-### Optional manual patches
-
-The following steps are optional and only needed if you hit the corresponding build errors.
-
-<details>
-<summary><b>Legacy fallback: skip incompatible packages</b></summary>
-
-```bash
-touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
-```
-</details>
-
-> `touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE` is the simplest manual fallback when you want the non-GUI manipulation stack only; use it to keep `tesseract_qt` out of colcon discovery when you are not building Studio / Qt widgets.
-
-> **Caution:** The next step removes the `trajopt_ifopt` planner, which disables the `trajopt_ifopt` and related IFOPT-based planners. If you need to revert, use `git checkout` to restore the folder and `CMakeLists.txt` changes, or re-import the package from its source.
-
-<details>
-<summary><b>Legacy fallback: remove incompatible trajopt_ifopt planner</b></summary>
-
-```bash
-rm -rf ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/trajopt_ifopt/
-sed -i 's/add_subdirectory(trajopt_ifopt)/#add_subdirectory(trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
-sed -i 's/list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/#list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)/' \
-    ~/workcell_ws/src/tesseract_planning/tesseract_motion_planners/CMakeLists.txt
-```
-</details>
-
-### Common Build Errors
-
-<details>
-<summary><b>Boost missing components</b></summary>
-
-```
-Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)
-```
-
-**Fix:**
-```bash
-sudo apt install -y libboost-dev libboost-graph-dev libboost-program-options-dev \
-    libboost-serialization-dev libboost-stacktrace-dev
-rm -rf build/ install/ log/
-colcon build --symlink-install --parallel-workers 2
-```
-</details>
-
-<details>
-<summary><b>Cereal not found</b></summary>
-
-```
-Could not find a package configuration file provided by "cereal"
-```
-
-**Fix:**
-```bash
-sudo apt install -y libcereal-dev
-sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
-sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
-```
-</details>
-
-<details>
-<summary><b>Boost serialization library_version_type error</b></summary>
-
-```
-'library_version_type' is not a member of 'boost::serialization'
-```
-
-**Fix:**
-```bash
-sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include <boost/serialization/library_version_type.hpp>' \
-    /usr/include/boost/serialization/unordered_collections_load_imp.hpp
-```
-</details>
-
-<details>
-<summary><b>Duplicate package errors from rosdep</b></summary>
-
-```
-Multiple packages found with the same name "tesseract_common"
-```
-
-**Fix:** Fresh clones should avoid this automatically via ignore markers in `assets/`. If you still see it in an older checkout, run `./scripts/fix_workspace_layout.sh` or remove one duplicate tree.
-</details>
-
-<details>
-<summary><b>`Cannot locate rosdep definition for [workbench_description]`</b></summary>
-
-```
-Cannot locate rosdep definition for [workbench_description]
-```
-
-**Cause:** `rosdep install --from-paths src ...` ran before `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh` exposed the asset packages into `src/`. The helper now exits non-zero as soon as that package is still missing after scanning `assets/`, so follow-on `rosdep update` / `rosdep install` steps stop immediately instead of trying to recover automatically.
-
-**Fix:** From the workspace root, run the layout-fix helper first. If it fails, use the error message to verify which repository `assets/` path was scanned and that `src/workbench_description` can be exposed in the workspace. Only re-run `rosdep install --from-paths src ...` after `src/workbench_description` exists as a symlink or directory.
-</details>
-
----
-
 ## Checks
-
-Run the ros2_control joint state fix verification:
 
 ```bash
 ./scripts/check_ros2_control_joint_state_fix.sh
 ```
 
----
-
 ## Documentation
 
 - 📖 [Full Documentation](https://easy-manipulation-deployment-docs.readthedocs.io/)
 - 📚 [API Documentation](https://tanjpg.github.io/emd_docs/html/index.html)
-
----
 
 ## Architecture
 
@@ -911,8 +446,6 @@ This package uses the following external dependencies (fetched via `tesseract.re
 | [trajopt](https://github.com/tesseract-robotics/trajopt) | Trajectory optimization |
 | [tesseract_ros2](https://github.com/tesseract-robotics/tesseract_ros2) | ROS 2 integration |
 | [boost_plugin_loader](https://github.com/tesseract-robotics/boost_plugin_loader) | Plugin system |
-
----
 
 ## License
 
