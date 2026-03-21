@@ -93,7 +93,7 @@ reset_colcon_environment() {
   : "${AMENT_TRACE_SETUP_FILES:=}"
   # shellcheck source=/dev/null
   source "$ros_setup"
-  if [[ $CLEAN_BUILD -eq 0 && -f "$local_setup" ]]; then
+  if [[ -f "$local_setup" && -d "$PWD/build" && -d "$PWD/install" && -d "$PWD/log" ]]; then
     # shellcheck source=/dev/null
     source "$local_setup"
   fi
@@ -279,6 +279,47 @@ clean_workspace_artifacts() {
   find src -mindepth 2 \( -name build -o -name install -o -name log \) -prune -print0 | xargs -0 -r rm -rf
 }
 
+apply_tesseract_planning_ruckig_include_fix() {
+  local cmake_file="$PWD/src/tesseract_planning/time_parameterization/ruckig/CMakeLists.txt"
+
+  if [[ ! -f "$cmake_file" ]]; then
+    return
+  fi
+
+  CMAKE_FILE="$cmake_file" python3 - <<'PY'
+import os
+from pathlib import Path
+
+cmake = Path(os.environ["CMAKE_FILE"])
+text = cmake.read_text()
+
+if "target_include_directories(time_parameterization_ruckig BEFORE PUBLIC ${RUCKIG_INCLUDE_DIRS})" in text:
+    raise SystemExit(0)
+
+find_package_line = "find_package(ruckig REQUIRED)"
+include_block = """target_include_directories(time_parameterization_ruckig PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                               "$<INSTALL_INTERFACE:include>")"""
+replacement = """# Prefer workspace/source-built Ruckig headers over older ROS-installed headers in /opt/ros/humble/include.
+target_include_directories(time_parameterization_ruckig BEFORE PUBLIC ${RUCKIG_INCLUDE_DIRS})
+target_include_directories(time_parameterization_ruckig PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                                                               "$<INSTALL_INTERFACE:include>")"""
+
+if find_package_line not in text:
+    raise SystemExit("find_package(ruckig REQUIRED) not found in tesseract_planning Ruckig CMakeLists.txt")
+
+if include_block not in text:
+    raise SystemExit("time_parameterization_ruckig include block not found in tesseract_planning Ruckig CMakeLists.txt")
+
+text = text.replace(
+    find_package_line,
+    find_package_line + "\nget_target_property(RUCKIG_INCLUDE_DIRS ruckig::ruckig INTERFACE_INCLUDE_DIRECTORIES)",
+    1,
+)
+text = text.replace(include_block, replacement, 1)
+cmake.write_text(text)
+PY
+}
+
 set_gui_package_state() {
   local marker
   local gui_paths=(
@@ -302,35 +343,31 @@ set_gui_package_state() {
 }
 
 detect_stale_ruckig_mismatch() {
-  local old_symbol_hits old_linker_hits new_symbol_hits
-  old_symbol_hits=""
+  local old_linker_hits
   old_linker_hits=""
-  new_symbol_hits=""
 
-  if command -v rg >/dev/null 2>&1; then
-    old_symbol_hits=$(rg -n "PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" src 2>/dev/null || true)
-    if [[ -d log || -d build ]]; then
-      old_linker_hits=$(rg -n "PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" log build 2>/dev/null || true)
-    fi
+  if [[ ! -d /opt/ros/humble/include/ruckig || ! -d "$PWD/install/ruckig" ]]; then
+    return
   fi
 
-  if command -v nm >/dev/null 2>&1 && [[ -f "$PWD/install/lib/libruckig.so" ]]; then
-    new_symbol_hits=$(nm -D "$PWD/install/lib/libruckig.so" 2>/dev/null | rg "FirstOrder|SecondOrder|ThirdOrder" || true)
-  elif command -v readelf >/dev/null 2>&1 && [[ -f "$PWD/install/lib/libruckig.so" ]]; then
-    new_symbol_hits=$(readelf -Ws "$PWD/install/lib/libruckig.so" 2>/dev/null | rg "FirstOrder|SecondOrder|ThirdOrder" || true)
+  if command -v rg >/dev/null 2>&1 && [[ -d log || -d build ]]; then
+    old_linker_hits=$(rg -n -g '*stderr.log' -g '*stdout.log' -g '*.log' \
+      "tesseract_planning|PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" log build 2>/dev/null || true)
   fi
 
-  if [[ -z "$old_symbol_hits" && -n "$old_linker_hits" && -n "$new_symbol_hits" ]]; then
+  if [[ -n "$old_linker_hits" ]] && [[ "$old_linker_hits" == *"tesseract_planning"* ]] && \
+     [[ "$old_linker_hits" =~ PositionStep1|PositionStep2|VelocityStep1|VelocityStep2 ]]; then
     cat >&2 <<EOF
-Detected a stale Ruckig/Tesseract ABI mismatch pattern:
-  - workspace sources do not reference the old Ruckig Step symbols
-  - previous linker output still references old Step symbols
-  - the current libruckig.so exports only newer *FirstOrder/*SecondOrder/*ThirdOrder names
+Detected a likely Ruckig header/library mismatch on Humble:
+  - older ROS-installed Ruckig headers exist in /opt/ros/humble/include/ruckig
+  - a workspace-built Ruckig install exists in $PWD/install/ruckig
+  - recent tesseract_planning build logs reference old symbols such as PositionStep1/VelocityStep2
 
-This usually means stale build/install artifacts or a mixed workspace overlay, not
-a source-level API bug. Recommended recovery: rebuild at least ruckig, tesseract,
-and tesseract_planning after cleaning build/, install/, and log/, or rerun this
-script with --clean in a fresh shell that only sources /opt/ros/humble/setup.bash.
+This usually happens when older ROS-installed Ruckig headers are picked before the
+workspace/source-built Ruckig headers. This repository includes a fix that
+prioritizes the workspace Ruckig include directories for tesseract_planning.
+Do not remove ros-humble-ruckig just to build this repo; that can remove other
+unrelated MoveIt packages from the system.
 EOF
   fi
 }
@@ -574,6 +611,7 @@ for repo in ruckig tesseract tesseract_planning; do
   fi
 done
 check_ruckig_preflight
+apply_tesseract_planning_ruckig_include_fix
 if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
   echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
   apply_trajopt_ifopt_patch
