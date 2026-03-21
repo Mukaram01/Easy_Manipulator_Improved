@@ -37,7 +37,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ---
 ## Quick start (Ubuntu 22.04 + ROS 2 Humble)
 
-This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, and related libraries imported by `vcs`). The `tesseract_qt` overlay is optional and is only needed if you want Tesseract Studio / Qt widgets.
+This repository is intended to live inside a larger ROS 2 workspace (for example, `~/workcell_ws`) alongside upstream source dependencies (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, and related libraries imported by `vcs`). The `tesseract_qt` and `qtadvanceddocking` overlays are optional and are only needed if you want Tesseract Studio / Qt widgets.
 
 ```bash
 # 1) System dependencies (Ubuntu 22.04 / ROS 2 Humble)
@@ -47,7 +47,7 @@ sudo apt install -y \
   python3-vcstool python3-colcon-common-extensions python3-rosdep \
   ros-humble-moveit ros-humble-moveit-visual-tools ros-humble-xacro ros-humble-ur-description
 
-# Optional only if you want Tesseract Studio / Qt widgets (`--with-tesseract-qt`)
+# Optional only if you want Tesseract Studio / Qt widgets (`--with-gui`)
 sudo apt install -y \
   qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
 
@@ -103,7 +103,7 @@ ros2 launch suction_test demo.launch.py
 
 ### If Studio build fails
 
-If you opted into `--with-tesseract-qt` and `tesseract_qt` Studio fails to link against Qt ADS targets, apply the included upstream patch and rebuild:
+If you opted into `--with-gui` and `tesseract_qt` Studio fails to link against Qt ADS targets, apply the included upstream patch and rebuild:
 
 ```bash
 cd ~/workcell_ws
@@ -116,6 +116,35 @@ colcon build --symlink-install
 - **Qt ADS target mismatch in `tesseract_qt` Studio (common on Ubuntu 22.04/Jammy):** some installations export `ads::qtadvanceddocking-qt5` instead of `ads::qtadvanceddocking`. This repository includes a patch script that applies `patches/tesseract_qt_qtads_target_fix.patch` so Studio chooses whichever exported ADS target exists.
 - **Patch application command:** run `./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh` from your workspace root, then rebuild with `colcon build --symlink-install`.
 - **Device/group permission changes:** if you add your user to groups such as `video`, `plugdev`, or `input`, log out and back in before retrying tools that require those permissions.
+
+### Stale Ruckig/Tesseract linker mismatch recovery
+
+If linker errors mention old Ruckig symbols such as `PositionStep1`, `PositionStep2`,
+`VelocityStep1`, or `VelocityStep2`, but the current source tree does not reference those
+names and `libruckig.so` exports newer `*FirstOrder*`, `*SecondOrder*`, or `*ThirdOrder*`
+symbols instead, the likely problem is a stale or mixed workspace build.
+
+This is usually caused by reusing `build/`, `install/`, or `log/` from an older checkout
+or by sourcing an old workspace overlay before rebuilding.
+
+Recommended recovery sequence for the normal non-GUI Humble path:
+
+```bash
+open a fresh shell
+cd ~/workcell_ws
+rm -rf build install log
+touch src/tesseract_qt/COLCON_IGNORE
+touch src/qtadvanceddocking/COLCON_IGNORE
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --parallel-workers 2
+```
+
+The helper script automates the same behavior with:
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh --clean
+```
 
 ### Dependency-first build flow (catch `tesseract_geometry`/OctoMap issues early)
 
@@ -220,8 +249,8 @@ adding `COLCON_IGNORE` files in the package directories.
 The canonical entrypoint is the Humble bootstrap script. It installs system
 dependencies, applies the Cereal/Boost fixes, and builds the workspace.
 
-`tesseract_qt` is optional in this repository. The default supported Humble install
-path does **not** require Tesseract Studio / Qt widgets.
+`tesseract_qt` and `qtadvanceddocking` are optional in this repository. The default
+supported Humble install path does **not** require Tesseract Studio / Qt widgets.
 
 By default, it uses the **minimal** profile for headless/runtime deployments,
 which does **not** import the full Tesseract/TrajOpt source overlays and
@@ -245,7 +274,7 @@ cd easy_manipulation_deployment
 
 Use the **full** profile when you explicitly need the Tesseract/TrajOpt
 planning/development overlays from source. By default, the full profile still
-**skips** `tesseract_qt`; pass `--with-tesseract-qt` only if you also want
+**skips** `tesseract_qt` and `qtadvanceddocking`; pass `--with-gui` only if you also want
 Tesseract Studio / Qt widgets. That profile imports the same pinned `ruckig`
 source revision documented in `dependencies/emd_epd_ws.repos`, and the
 bootstrap script fails fast if `src/ruckig` is newer than the supported
@@ -258,7 +287,7 @@ pre-`<format>` line for Ubuntu 22.04 / ROS 2 Humble / GCC 11:
 Opt into Studio / Qt widgets on top of the full profile:
 
 ```bash
-./fix_and_build_humble.sh --profile full --with-tesseract-qt
+./fix_and_build_humble.sh --profile full --with-gui
 ```
 
 Enable legacy workaround behavior (optional, explicit opt-in):
@@ -274,14 +303,14 @@ Enable legacy workaround behavior (optional, explicit opt-in):
 | `minimal` (default) | Runtime/headless deployment | ❌ No | Skips planning/Qt keys: `tesseract_environment`, `tesseract_motion_planners`, `tesseract_motion_planners_core`, `tesseract_motion_planners_simple`, `tesseract_task_composer`, `tesseract_visualization`, `trajopt`, `trajopt_ifopt`, `trajopt_sco`, `trajopt_sqp`, `qt_advanced_docking`, `taskflow` | ❌ No |
 | `full` | Planning + development workspace | ✅ Yes | Uses overlay-aware skip keys so rosdep does not try to apt-install TrajOpt/Tesseract planning packages that are provided by source overlays; still skips Humble source-only keys such as `tesseract_visualization`, `qt_advanced_docking`, and `taskflow` | ❌ No (unless `--legacy-workarounds`) |
 
-By default, the full-profile build excludes `tesseract_qt`. Pass `--with-tesseract-qt` only when you want Studio / Qt widgets.
+By default, the full-profile build excludes `tesseract_qt` and `qtadvanceddocking`. Pass `--with-gui` only when you want Studio / Qt widgets.
 
 ### Package matrix
 
 | Scope | Typical packages |
 |-------|------------------|
 | Minimal runtime | `easy_manipulation_deployment`, `emd_msgs`, `workcell_builder`, scene/demo packages, ROS binary dependencies installed via `rosdep`, **excluding** the Tesseract/TrajOpt planning stack and Qt Studio/task-composer dependencies listed in the profile matrix |
-| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) required for Tesseract/TrajOpt development workflows; `tesseract_qt` remains optional and is only built when `--with-tesseract-qt` is passed |
+| Full planning/dev | Minimal runtime packages **plus** source overlays from `tesseract.repos` (`tesseract`, `tesseract_planning`, `trajopt`, `tesseract_ros2`, `boost_plugin_loader`) required for Tesseract/TrajOpt development workflows; `tesseract_qt` and `qtadvanceddocking` remain optional and are only built when `--with-gui` is passed |
 
 ### Manual Installation (advanced / troubleshooting)
 
@@ -492,8 +521,9 @@ Prefer these first:
   the default profile.
 - Use `./fix_and_build_humble.sh --profile full` only when you need the
   Tesseract/TrajOpt planning overlays from source.
-- Add `--with-tesseract-qt` only when you also want Tesseract Studio / Qt
-  widgets; otherwise the normal Humble path keeps `tesseract_qt` optional.
+- Add `--with-gui` only when you also want Tesseract Studio / Qt
+  widgets; otherwise the normal Humble path keeps `tesseract_qt` and
+  `qtadvanceddocking` optional.
 
 #### 5) Legacy fallback workaround (explicit, only if needed)
 

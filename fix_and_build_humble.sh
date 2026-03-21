@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Bootstrap + build script for ROS 2 Humble/Jazzy workspaces.
-# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--with-tesseract-qt] [--legacy-workarounds]
+# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--clean] [--with-gui] [--sync-manifests] [--legacy-workarounds]
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws
 
 PROFILE="minimal"
 ENABLE_LEGACY_WORKAROUNDS=0
-WITH_TESSERACT_QT=0
+WITH_GUI=0
+CLEAN_BUILD=0
+SYNC_MANIFESTS=0
 
 usage() {
   cat <<'EOF'
@@ -16,7 +18,9 @@ Usage: ./fix_and_build_humble.sh [options]
 
 Options:
   --profile minimal|full      Select bootstrap profile (default: minimal)
-  --with-tesseract-qt         Opt in to building optional Studio/Qt widgets in full profile
+  --clean                     Remove build/, install/, and log/ before building
+  --with-gui                  Opt in to building optional Studio/Qt widgets / Qt ADS packages
+  --sync-manifests            Reset manifest-managed repos to expected revisions when clean
   --legacy-workarounds        Enable legacy Humble patch/ignore behavior (opt-in)
   -h, --help                  Show this help message
 
@@ -24,8 +28,8 @@ Profiles:
   minimal   Headless-friendly path that uses released apt packages and skips
             importing the tesseract/trajopt source overlays.
   full      Imports tesseract.repos overlays for planning/dev workflows.
-            By default this skips optional tesseract_qt; pass
-            --with-tesseract-qt to build Studio/Qt widgets.
+            By default this skips optional tesseract_qt / Qt ADS packages; pass
+            --with-gui to build Studio/Qt widgets.
 EOF
 }
 
@@ -35,8 +39,16 @@ while [[ $# -gt 0 ]]; do
       PROFILE="${2:-}"
       shift 2
       ;;
-    --with-tesseract-qt)
-      WITH_TESSERACT_QT=1
+    --clean)
+      CLEAN_BUILD=1
+      shift
+      ;;
+    --with-gui|--with-tesseract-qt)
+      WITH_GUI=1
+      shift
+      ;;
+    --sync-manifests)
+      SYNC_MANIFESTS=1
       shift
       ;;
     --legacy-workarounds)
@@ -81,7 +93,7 @@ reset_colcon_environment() {
   : "${AMENT_TRACE_SETUP_FILES:=}"
   # shellcheck source=/dev/null
   source "$ros_setup"
-  if [[ -f "$local_setup" ]]; then
+  if [[ $CLEAN_BUILD -eq 0 && -f "$local_setup" ]]; then
     # shellcheck source=/dev/null
     source "$local_setup"
   fi
@@ -147,12 +159,12 @@ PY
   ${APT_GET_CMD} install -y python3-yaml >/dev/null 2>&1
 }
 
-load_ruckig_baseline() {
-  local repos_file="$SCRIPT_DIR/dependencies/emd_epd_ws.repos"
+load_repo_baselines() {
+  local repos_file="$SCRIPT_DIR/tesseract.repos"
 
   ensure_pyyaml
 
-  mapfile -t _ruckig_meta < <(REPOS_FILE="$repos_file" python3 - <<'PY'
+  mapfile -t _repo_meta < <(REPOS_FILE="$repos_file" python3 - <<'PY'
 import os
 import sys
 
@@ -162,25 +174,165 @@ repos_file = os.environ["REPOS_FILE"]
 with open(repos_file, "r", encoding="utf-8") as handle:
     data = yaml.safe_load(handle) or {}
 
-ruckig = ((data.get("repositories") or {}).get("ruckig") or {})
-version = (ruckig.get("version") or "").strip()
-url = (ruckig.get("url") or "").strip()
-
-if not version or not url:
-    sys.exit("dependencies/emd_epd_ws.repos is missing the pinned ruckig source entry")
-
-print(version)
-print(url)
+repos = data.get("repositories") or {}
+for name in ("ruckig", "tesseract", "tesseract_planning"):
+    repo = repos.get(name) or {}
+    version = (repo.get("version") or "").strip()
+    url = (repo.get("url") or "").strip()
+    if not version or not url:
+        sys.exit(f"{repos_file} is missing the expected {name} entry")
+    print(name)
+    print(version)
+    print(url)
 PY
   )
 
-  if [[ ${#_ruckig_meta[@]} -lt 2 ]]; then
-    echo "Failed to load the documented ruckig baseline from $repos_file" >&2
+  if [[ ${#_repo_meta[@]} -lt 9 ]]; then
+    echo "Failed to load the documented repo baselines from $repos_file" >&2
     exit 1
   fi
 
-  RUCKIG_PINNED_REVISION="${_ruckig_meta[0]}"
-  RUCKIG_REMOTE_URL="${_ruckig_meta[1]}"
+  declare -gA EXPECTED_REPO_VERSION EXPECTED_REPO_URL
+  local i=0
+  while [[ $i -lt ${#_repo_meta[@]} ]]; do
+    local name="${_repo_meta[$i]}"
+    EXPECTED_REPO_VERSION["$name"]="${_repo_meta[$((i + 1))]}"
+    EXPECTED_REPO_URL["$name"]="${_repo_meta[$((i + 2))]}"
+    i=$((i + 3))
+  done
+
+  RUCKIG_PINNED_REVISION="${EXPECTED_REPO_VERSION[ruckig]}"
+  RUCKIG_REMOTE_URL="${EXPECTED_REPO_URL[ruckig]}"
+}
+
+normalize_git_remote() {
+  local url="$1"
+  url="${url%.git}"
+  url="${url#git@github.com:}"
+  url="${url#https://github.com/}"
+  printf '%s' "$url"
+}
+
+validate_manifest_repo() {
+  local name="$1"
+  local repo_dir="$PWD/src/$name"
+  local expected_version="${EXPECTED_REPO_VERSION[$name]:-}"
+  local expected_url="${EXPECTED_REPO_URL[$name]:-}"
+
+  if [[ -z "$expected_version" || ! -d "$repo_dir/.git" ]]; then
+    return
+  fi
+
+  local actual_head actual_branch actual_remote normalized_expected normalized_actual
+  actual_head=$(git -C "$repo_dir" rev-parse --short=12 HEAD)
+  actual_branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD)
+  actual_remote=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)
+  normalized_expected=$(normalize_git_remote "$expected_url")
+  normalized_actual=$(normalize_git_remote "$actual_remote")
+
+  local mismatch=0
+  if [[ -n "$normalized_expected" && -n "$normalized_actual" && "$normalized_expected" != "$normalized_actual" ]]; then
+    mismatch=1
+  fi
+  if ! git -C "$repo_dir" merge-base --is-ancestor "$expected_version" HEAD >/dev/null 2>&1 && \
+     ! git -C "$repo_dir" merge-base --is-ancestor HEAD "$expected_version" >/dev/null 2>&1; then
+    mismatch=1
+  fi
+
+  if [[ $mismatch -eq 1 ]]; then
+    cat >&2 <<EOF
+Warning: src/$name does not match the manifest expectation.
+  current branch: $actual_branch
+  current head:   $actual_head
+  current remote: ${actual_remote:-<none>}
+  expected rev:   $expected_version
+  expected remote:${expected_url:-<none>}
+
+This can leave the workspace in a mixed state. Use --sync-manifests only if you
+want this script to reset manifest-managed repos without preserving divergent
+checkout state. Local changes are never reset automatically.
+EOF
+  fi
+}
+
+sync_manifest_repo() {
+  local name="$1"
+  local repo_dir="$PWD/src/$name"
+  local expected_version="${EXPECTED_REPO_VERSION[$name]:-}"
+
+  if [[ -z "$expected_version" || ! -d "$repo_dir/.git" ]]; then
+    return
+  fi
+  if [[ -n "$(git -C "$repo_dir" status --short)" ]]; then
+    echo "Skipping manifest sync for src/$name because it has local changes" >&2
+    return
+  fi
+
+  echo "Resetting src/$name to manifest revision $expected_version"
+  git -C "$repo_dir" fetch --tags --all --prune >/dev/null 2>&1
+  git -C "$repo_dir" checkout "$expected_version" >/dev/null 2>&1
+}
+
+clean_workspace_artifacts() {
+  echo "Cleaning workspace artifacts under $PWD"
+  rm -rf build install log
+  find src -mindepth 2 \( -name build -o -name install -o -name log \) -prune -print0 | xargs -0 -r rm -rf
+}
+
+set_gui_package_state() {
+  local marker
+  local gui_paths=(
+    "$PWD/src/tesseract_qt/COLCON_IGNORE"
+    "$PWD/src/qtadvanceddocking/COLCON_IGNORE"
+  )
+
+  if [[ $WITH_GUI -eq 1 ]]; then
+    for marker in "${gui_paths[@]}"; do
+      if [[ -f "$marker" ]]; then
+        rm -f "$marker"
+      fi
+    done
+  else
+    for marker in "${gui_paths[@]}"; do
+      if [[ -d "$(dirname "$marker")" ]]; then
+        touch "$marker"
+      fi
+    done
+  fi
+}
+
+detect_stale_ruckig_mismatch() {
+  local old_symbol_hits old_linker_hits new_symbol_hits
+  old_symbol_hits=""
+  old_linker_hits=""
+  new_symbol_hits=""
+
+  if command -v rg >/dev/null 2>&1; then
+    old_symbol_hits=$(rg -n "PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" src 2>/dev/null || true)
+    if [[ -d log || -d build ]]; then
+      old_linker_hits=$(rg -n "PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" log build 2>/dev/null || true)
+    fi
+  fi
+
+  if command -v nm >/dev/null 2>&1 && [[ -f "$PWD/install/lib/libruckig.so" ]]; then
+    new_symbol_hits=$(nm -D "$PWD/install/lib/libruckig.so" 2>/dev/null | rg "FirstOrder|SecondOrder|ThirdOrder" || true)
+  elif command -v readelf >/dev/null 2>&1 && [[ -f "$PWD/install/lib/libruckig.so" ]]; then
+    new_symbol_hits=$(readelf -Ws "$PWD/install/lib/libruckig.so" 2>/dev/null | rg "FirstOrder|SecondOrder|ThirdOrder" || true)
+  fi
+
+  if [[ -z "$old_symbol_hits" && -n "$old_linker_hits" && -n "$new_symbol_hits" ]]; then
+    cat >&2 <<EOF
+Detected a stale Ruckig/Tesseract ABI mismatch pattern:
+  - workspace sources do not reference the old Ruckig Step symbols
+  - previous linker output still references old Step symbols
+  - the current libruckig.so exports only newer *FirstOrder/*SecondOrder/*ThirdOrder names
+
+This usually means stale build/install artifacts or a mixed workspace overlay, not
+a source-level API bug. Recommended recovery: rebuild at least ruckig, tesseract,
+and tesseract_planning after cleaning build/, install/, and log/, or rerun this
+script with --clean in a fresh shell that only sources /opt/ros/humble/setup.bash.
+EOF
+  fi
 }
 
 check_ruckig_preflight() {
@@ -215,7 +367,7 @@ EOF
   fi
 }
 
-load_ruckig_baseline
+load_repo_baselines
 
 ensure_cereal_cmake_config() {
   local cereal_config="/usr/lib/x86_64-linux-gnu/cmake/cereal/cerealConfig.cmake"
@@ -415,6 +567,12 @@ fi
 # fails fast if workbench_description is still missing, which aborts this build
 # before rosdep update/install can proceed with a broken workspace layout.
 WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
+for repo in ruckig tesseract tesseract_planning; do
+  validate_manifest_repo "$repo"
+  if [[ $SYNC_MANIFESTS -eq 1 ]]; then
+    sync_manifest_repo "$repo"
+  fi
+done
 check_ruckig_preflight
 if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
   echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
@@ -572,7 +730,6 @@ SOURCE_OVERLAY_SKIP_KEYS=(
   tesseract
   tesseract_collision
   tesseract_command_language
-  tesseract_common
   tesseract_environment
   tesseract_kinematics
   tesseract_motion_planners
@@ -676,14 +833,18 @@ CMAKE_ARGS=(
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 )
 
-# 2) Clean fully (start from scratch)
-rm -rf build install log
-find src \( -name build -o -name install -o -name log \) -print0 | xargs -0 -r rm -rf
+if [[ $CLEAN_BUILD -eq 1 ]]; then
+  clean_workspace_artifacts
+  reset_colcon_environment
+fi
+
+set_gui_package_state
+detect_stale_ruckig_mismatch
 
 FULL_BUILD_ARGS=()
-if [[ "$PROFILE" == "full" && "$WITH_TESSERACT_QT" -eq 0 ]]; then
-  echo "Full profile: skipping optional tesseract_qt (use --with-tesseract-qt to enable Studio/Qt widgets)"
-  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt)
+if [[ "$PROFILE" == "full" && "$WITH_GUI" -eq 0 ]]; then
+  echo "Full profile: skipping optional GUI packages (use --with-gui to enable Studio/Qt widgets)"
+  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking)
 fi
 
 if [[ "$PROFILE" == "full" ]]; then
