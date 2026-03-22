@@ -165,6 +165,15 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
+  if(TARGET workcell_directory_inspection_test)
+    target_link_libraries(workcell_directory_inspection_test
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_directory_inspection_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+    )
+  endif()
 
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_ur5_2f_demo_launch.test.py TIMEOUT 180)
