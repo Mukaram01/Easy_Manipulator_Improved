@@ -167,7 +167,7 @@ Dynamic safety is part of the grasp execution workflow.
 
 ```bash
 source ~/workcell_ws/install/setup.bash
-ros2 launch run_grasp_execution grasp_execution.launch.py
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_test
 ```
 
 If you are validating packages only, run the workspace tests after a build:
@@ -378,7 +378,9 @@ MoveIt2-based grasp execution with real-time dynamic safety components.
 
 ```bash
 source ~/workcell_ws/install/setup.bash
-ros2 launch run_grasp_execution grasp_execution.launch.py
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_test
+# or, after generating and building your own scene package:
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=my_generated_scene
 ```
 
 ### 3. Workcell Builder
@@ -421,7 +423,8 @@ Required external robot descriptions on ROS 2 Humble:
 source ~/workcell_ws/install/setup.bash
 ros2 launch ur5_3f_test demo.launch.py
 ros2 launch ur5_2f_test demo.launch.py
-ros2 launch new_scene demo.launch.py
+# after generating and building your own package:
+ros2 launch my_generated_scene demo.launch.py
 ```
 
 ## Checks

@@ -2,17 +2,31 @@ import os
 import tempfile
 from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, TimerAction
 from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 import xacro
 
-scene_pkg = "new_scene"
-package_name = "run_grasp_execution"
+DEFAULT_SCENE_PACKAGE_CANDIDATES = ("ur5_3f_test", "ur5_2f_test", "ur5_airpick4_test", "suction_test")
+PACKAGE_NAME = "run_grasp_execution"
+SCENE_PACKAGE_ARGUMENT = "scene_package"
+
+
+def find_default_scene_package():
+    for package_name in DEFAULT_SCENE_PACKAGE_CANDIDATES:
+        try:
+            get_package_share_directory(package_name)
+            return package_name
+        except PackageNotFoundError:
+            continue
+    return None
+
+
+DEFAULT_SCENE_PACKAGE = find_default_scene_package()
 
 
 def to_urdf(xacro_path, urdf_path=None, mappings=None):
@@ -64,25 +78,32 @@ def load_yaml(package, file_path):
     return xacro.load_yaml(os.path.join(package_path, file_path))
 
 
-def generate_launch_description():
-    # args
-    debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Launch in debug mode")
+def resolve_scene_package_share_dir(scene_package):
+    try:
+        return get_package_share_directory(scene_package)
+    except PackageNotFoundError as exc:
+        available = ", ".join(DEFAULT_SCENE_PACKAGE_CANDIDATES)
+        raise RuntimeError(
+            f"Scene package '{scene_package}' was not found. Pass a valid '{SCENE_PACKAGE_ARGUMENT}' launch "
+            f"argument, for example '{SCENE_PACKAGE_ARGUMENT}:={available.split(', ')[0]}', or build/source "
+            "your generated scene package first."
+        ) from exc
 
-    # package share
-    run_share = get_package_share_directory(package_name)
 
-    # initial positions mapping for scene xacro
+def launch_setup(context, *args, **kwargs):
+    scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
+    run_share = get_package_share_directory(PACKAGE_NAME)
+    resolve_scene_package_share_dir(scene_package)
+
     initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
     initial_position_mappings = {"initial_positions_file": initial_position_path}
 
-    # robot_description (+ semantic)
-    robot_description_config = load_file(scene_pkg, "urdf/scene.urdf.xacro", initial_position_mappings)
+    robot_description_config = load_file(scene_package, "urdf/scene.urdf.xacro", initial_position_mappings)
     robot_description = {"robot_description": robot_description_config}
 
-    robot_description_semantic_config = load_file(scene_pkg, "urdf/arm_hand.srdf.xacro")
+    robot_description_semantic_config = load_file(scene_package, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
 
-    # MoveIt configs (these must exist as packages)
     kinematics_yaml = {"robot_description_kinematics": load_yaml("ur5_moveit_config", "config/kinematics.yaml")}
     joint_limits_yaml = load_yaml("ur5_moveit_config", "config/joint_limits.yaml")
     joint_limits = {"robot_description_planning": joint_limits_yaml}
@@ -110,21 +131,19 @@ def generate_launch_description():
         "trajectory_execution.allowed_start_tolerance": 0.01,
     }
 
-    controllers_yaml = load_yaml(package_name, "config/controllers.yaml")
+    controllers_yaml = load_yaml(PACKAGE_NAME, "config/controllers.yaml")
     moveit_controller = {
         "moveit_simple_controller_manager": controllers_yaml,
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
     }
 
-    # parameter files
     grasp_execution_yaml = os.path.join(run_share, "config", "grasp_execution.yaml")
     sensors_yaml = os.path.join(run_share, "config", "sensors_3d.yaml")
     rviz_config_file = os.path.join(run_share, "config", "grasp_execution.rviz")
 
-    # MoveItCpp demo executable
     grasp_execution_demo_node = Node(
         name="grasp_execution_node",
-        package=package_name,
+        package=PACKAGE_NAME,
         executable="demo_node",
         output="screen",
         prefix=PythonExpression(
@@ -135,8 +154,8 @@ def generate_launch_description():
             ]
         ),
         parameters=[
-            grasp_execution_yaml,   # YAML file (node params)
-            sensors_yaml,           # YAML file (planning_scene_monitor sensors)
+            grasp_execution_yaml,
+            sensors_yaml,
             robot_description,
             robot_description_semantic,
             joint_limits,
@@ -164,7 +183,6 @@ def generate_launch_description():
         parameters=[robot_description],
     )
 
-    # ✅ IMPORTANT: use THIS package’s controllers file (so your fix is permanent in your repo)
     ros2_controllers_path = os.path.join(run_share, "config", "ur5_ros_controllers.yaml")
     ros2_control_node = Node(
         package="controller_manager",
@@ -173,7 +191,6 @@ def generate_launch_description():
         parameters=[robot_description, ros2_controllers_path],
     )
 
-    # Spawn controllers (delay a bit so controller_manager is ready)
     joint_state_spawner = ExecuteProcess(
         cmd=[
             "ros2", "run", "controller_manager", "spawner",
@@ -195,15 +212,27 @@ def generate_launch_description():
     spawn_joint_state = TimerAction(period=2.0, actions=[joint_state_spawner])
     spawn_arm = TimerAction(period=2.5, actions=[arm_spawner])
 
+    return [
+        robot_state_publisher,
+        rviz_node,
+        ros2_control_node,
+        spawn_joint_state,
+        spawn_arm,
+        grasp_execution_demo_node,
+    ]
+
+
+def generate_launch_description():
+    debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Launch in debug mode")
+    scene_description = "Scene package containing urdf/scene.urdf.xacro and urdf/arm_hand.srdf.xacro"
+    scene_arg_kwargs = {"description": scene_description}
+    if DEFAULT_SCENE_PACKAGE is not None:
+        scene_arg_kwargs["default_value"] = DEFAULT_SCENE_PACKAGE
+
     return LaunchDescription(
         [
             debug_arg,
-            robot_state_publisher,
-            rviz_node,
-            ros2_control_node,
-            spawn_joint_state,
-            spawn_arm,
-            grasp_execution_demo_node,
+            DeclareLaunchArgument(SCENE_PACKAGE_ARGUMENT, **scene_arg_kwargs),
+            OpaqueFunction(function=launch_setup),
         ]
     )
-

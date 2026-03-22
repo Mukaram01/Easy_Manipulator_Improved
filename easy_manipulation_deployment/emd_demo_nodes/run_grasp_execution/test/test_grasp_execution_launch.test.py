@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import importlib.util
 import os
 import time
 import unittest
+from pathlib import Path
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 import launch
@@ -15,10 +17,29 @@ import pytest
 import rclpy
 
 
+SCENE_PACKAGE = "ur5_3f_test"
+
 try:
-    get_package_share_directory("new_scene")
+    get_package_share_directory(SCENE_PACKAGE)
 except PackageNotFoundError:
-    pytest.skip("new_scene package not available", allow_module_level=True)
+    pytest.skip(f"{SCENE_PACKAGE} package not available", allow_module_level=True)
+
+
+def import_launch_module():
+    launch_path = Path(get_package_share_directory("run_grasp_execution")) / "launch" / "grasp_execution.launch.py"
+    spec = importlib.util.spec_from_file_location("run_grasp_execution_launch", launch_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_missing_scene_package_error_message():
+    module = import_launch_module()
+    missing_scene = "missing_scene_package"
+    with pytest.raises(RuntimeError, match=rf"Scene package '{missing_scene}' was not found") as exc_info:
+        module.resolve_scene_package_share_dir(missing_scene)
+    assert "build/source your generated scene package first" in str(exc_info.value)
 
 
 @pytest.mark.launch_test
@@ -33,6 +54,7 @@ def generate_test_description():
             [
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(launch_path),
+                    launch_arguments={"scene_package": SCENE_PACKAGE}.items(),
                 ),
                 WaitForTopics([
                     ("/joint_states", "sensor_msgs/msg/JointState"),
