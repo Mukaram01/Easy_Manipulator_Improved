@@ -111,7 +111,9 @@ add_executable(workcell_builder
 
     gui/loadobjects.cpp
     gui/loadobjects.h
-    gui/loadobjects.ui)
+    gui/loadobjects.ui
+
+    src_scene_select_paths.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp
@@ -165,6 +167,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
+  ament_add_gtest(workcell_scene_select_paths_test test/scene_select_paths_test.cpp src_scene_select_paths.cpp)
   if(TARGET workcell_directory_inspection_test)
     target_link_libraries(workcell_directory_inspection_test
       ${Boost_LIBRARIES}
@@ -172,6 +175,19 @@ if(BUILD_TESTING)
     target_include_directories(workcell_directory_inspection_test
       PRIVATE
         ${Boost_INCLUDE_DIRS}
+    )
+  endif()
+
+  if(TARGET workcell_scene_select_paths_test)
+    target_link_libraries(workcell_scene_select_paths_test
+      ${Boost_LIBRARIES}
+      yaml-cpp
+    )
+    target_include_directories(workcell_scene_select_paths_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
     )
   endif()
 

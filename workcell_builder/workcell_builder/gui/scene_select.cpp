@@ -44,6 +44,7 @@
 #include "include/scene_parser.h"
 #include "include/scene_xacro_parser.h"
 #include "include/default_asset_paths.h"
+#include "scene_select_paths.h"
 
 namespace fs = boost::filesystem;
 
@@ -276,11 +277,26 @@ SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
 {
-  const fs::path cwd = fs::current_path();
-  workcell_path = select_scene_root(cwd);
-  scenes_path = workcell_path / "scenes";
+  ui->setupUi(this);
   templates_path = get_default_templates_directory();
+}
+
+SceneSelect::~SceneSelect()
+{
+  delete ui;
+}
+void SceneSelect::configure_startup_fallback_paths()
+{
+  if (!workcell_path.empty()) {
+    return;
+  }
+
+  const fs::path fallback_root = select_scene_root(fs::current_path());
+  workcell_path = fallback_root;
+  scenes_path = workcell_path / "scenes";
   assets_path = get_runtime_assets_directory(workcell_path);
+  templates_path = get_default_templates_directory();
+
   change_directory(workcell_path);
   if (assets_path.empty()) {
     change_directory(workcell_path / "assets");
@@ -289,20 +305,53 @@ SceneSelect::SceneSelect(QWidget * parent)
   if (fs::exists(scenes_path)) {
     change_directory(scenes_path);
   }
-  ui->setupUi(this);
 }
 
-SceneSelect::~SceneSelect()
+void SceneSelect::show_invalid_workcell_error(const std::string & error_message)
 {
-  delete ui;
+  bool oldState = ui->scene_list->blockSignals(true);
+  ui->scene_list->clear();
+  ui->scene_list->setDisabled(true);
+  ui->generate_yaml->setDisabled(true);
+  ui->generate_files->setDisabled(true);
+  ui->edit_scene->setDisabled(true);
+  ui->delete_scene->setDisabled(true);
+  ui->error_workcell->setText(
+    QString::fromStdString("<font color='red'>" + error_message + "</font>"));
+  ui->scene_list->blockSignals(oldState);
 }
+
 void SceneSelect::load_workcell(Workcell workcell_input)
 {
   workcell = workcell_input;
+
+  const auto resolution = workcell_builder::resolve_scene_select_paths(workcell);
+  templates_path = resolution.paths.templates_path;
+  if (!resolution.success) {
+    workcell_path.clear();
+    scenes_path.clear();
+    assets_path.clear();
+    show_invalid_workcell_error(resolution.error);
+    return;
+  }
+
+  workcell_path = resolution.paths.workcell_path;
+  scenes_path = resolution.paths.scenes_path;
+  assets_path = resolution.paths.assets_path;
+
+  change_directory(workcell_path);
+  if (assets_path.empty()) {
+    change_directory(workcell_path / "assets");
+    assets_path = fs::current_path();
+  }
+  if (fs::exists(scenes_path)) {
+    change_directory(scenes_path);
+  }
   refresh_scenes(0);
 }
 void SceneSelect::on_add_scene_clicked()
 {
+  configure_startup_fallback_paths();
   change_directory(scenes_path);
 
   AddScene scene_window;
@@ -417,6 +466,7 @@ void SceneSelect::refresh_scenes(int latest_scene)
 }
 void SceneSelect::on_delete_scene_clicked()
 {
+  configure_startup_fallback_paths();
   ReplaceWarning replace_window;
   replace_window.setWindowTitle("Edit Scene");
   replace_window.set_label("Warning: Scene folders with all files will be deleted. Continue?");
@@ -443,6 +493,7 @@ void SceneSelect::on_delete_scene_clicked()
 }
 void SceneSelect::on_edit_scene_clicked()
 {
+  configure_startup_fallback_paths();
   ui->error_workcell->clear();
   change_directory(scenes_path);
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
@@ -502,6 +553,7 @@ void SceneSelect::on_edit_scene_clicked()
 }
 void SceneSelect::on_generate_yaml_clicked()
 {
+  configure_startup_fallback_paths();
   ui->error_workcell->clear();
   change_directory(scenes_path);
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
@@ -552,6 +604,7 @@ void SceneSelect::on_generate_yaml_clicked()
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
 {
+  configure_startup_fallback_paths();
   change_directory(scenes_path);  // in scenes folder
   change_directory((ui->scene_list->currentText()).toStdString());
   if (!boost::filesystem::exists("environment.yaml")) {
@@ -597,6 +650,7 @@ bool SceneSelect::check_scene()
 }
 bool SceneSelect::check_files()
 {
+  configure_startup_fallback_paths();
   change_directory(scenes_path);  // in scenes folder
   change_directory((ui->scene_list->currentText()).toStdString());
   if (!boost::filesystem::exists("launch") || !boost::filesystem::exists("urdf") ||
@@ -682,6 +736,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
 }
 void SceneSelect::on_generate_files_clicked()
 {
+  configure_startup_fallback_paths();
   ui->error_workcell->clear();
   change_directory(scenes_path);   // Scene folder
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
@@ -710,6 +765,7 @@ void SceneSelect::on_generate_files_clicked()
 }
 bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 {
+  configure_startup_fallback_paths();
   change_directory(scenes_path);  // Go back to scene
   try {
     change_directory(input_scene->name);

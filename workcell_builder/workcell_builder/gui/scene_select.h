@@ -23,6 +23,7 @@
 
 #include "yaml-cpp/yaml.h"
 #include "attributes/workcell.h"
+#include "scene_select_paths.h"
 
 
 namespace Ui
@@ -78,6 +79,8 @@ private slots:
 private:
   Ui::SceneSelect * ui;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
+  void configure_startup_fallback_paths();
+  void show_invalid_workcell_error(const std::string & error_message);
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
