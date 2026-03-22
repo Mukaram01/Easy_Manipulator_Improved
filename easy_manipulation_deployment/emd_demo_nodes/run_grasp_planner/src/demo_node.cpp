@@ -44,6 +44,11 @@ int main(int argc, char * argv[])
   rclcpp::Node::SharedPtr node =
     rclcpp::Node::make_shared("grasp_planner_demo_node", "", node_options);
 
+  const auto point_cloud_topic =
+    get_parameter_or(node, "camera_parameters.point_cloud_topic", std::string("/camera/pointcloud"));
+
+  rclcpp::executors::MultiThreadedExecutor executor;
+  #if EPD_ENABLED == 1
   const auto epd_enabled =
     get_parameter_or(node, "easy_perception_deployment.epd_enabled", false);
   const auto detection_topic =
@@ -62,15 +67,10 @@ int main(int argc, char * argv[])
   const auto tracking_topic = get_parameter_or(
     node, "easy_perception_deployment.epd_tracking_topic",
     std::string("/processor/epd_tracking_output"));
-  const auto point_cloud_topic =
-    get_parameter_or(node, "camera_parameters.point_cloud_topic", std::string("/camera/pointcloud"));
   const auto camera_fx = get_parameter_or(node, "camera_parameters.fx", 610.3740844726562);
   const auto camera_fy = get_parameter_or(node, "camera_parameters.fy", 609.8685913085938);
   const auto camera_ppx = get_parameter_or(node, "camera_parameters.ppx", 323.3077697753906);
   const auto camera_ppy = get_parameter_or(node, "camera_parameters.ppy", 235.43516540527344);
-
-  rclcpp::executors::MultiThreadedExecutor executor;
-  #if EPD_ENABLED == 1
   if (epd_enabled) {
     std::shared_ptr<grasp_planner::EpdDetectionAdapter> adapter_node;
     if (!detection_topic.empty()) {
