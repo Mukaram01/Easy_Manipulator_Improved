@@ -95,6 +95,61 @@ TEST(WorkcellDirectoryInspection, MissingTopLevelDirectoriesStillUseSelectedSrcW
   EXPECT_EQ(inspection.root_status_suffix, " (using selected path/src as workcell root)");
 }
 
+TEST(WorkcellDirectoryInspection, DanglingTopLevelAssetsSymlinkFallsBackToSelectedSrc)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "scenes"));
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "assets"));
+
+  boost::system::error_code ec;
+  fs::create_symlink("missing-assets", selected_root / "assets", ec);
+  ASSERT_FALSE(ec) << ec.message();
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  ASSERT_TRUE(inspection.success);
+  EXPECT_TRUE(inspection.use_existing_root);
+  EXPECT_EQ(inspection.workcell_root, fs::weakly_canonical(selected_root / "src"));
+  EXPECT_EQ(inspection.root_status_suffix, " (using selected path/src as workcell root)");
+}
+
+TEST(WorkcellDirectoryInspection, DanglingTopLevelScenesSymlinkFallsBackToSelectedSrc)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "scenes"));
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "assets"));
+
+  boost::system::error_code ec;
+  fs::create_symlink("missing-scenes", selected_root / "scenes", ec);
+  ASSERT_FALSE(ec) << ec.message();
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  ASSERT_TRUE(inspection.success);
+  EXPECT_TRUE(inspection.use_existing_root);
+  EXPECT_EQ(inspection.workcell_root, fs::weakly_canonical(selected_root / "src"));
+  EXPECT_EQ(inspection.root_status_suffix, " (using selected path/src as workcell root)");
+}
+
+TEST(WorkcellDirectoryInspection, DanglingTopLevelSymlinkWithoutValidSrcStillReportsError)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  ASSERT_TRUE(fs::create_directories(selected_root / "src"));
+
+  boost::system::error_code ec;
+  fs::create_symlink("missing-assets", selected_root / "assets", ec);
+  ASSERT_FALSE(ec) << ec.message();
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  EXPECT_FALSE(inspection.success);
+  EXPECT_NE(inspection.error.find((selected_root / "assets").string()), std::string::npos);
+  EXPECT_NE(inspection.error.find("No such file or directory"), std::string::npos);
+}
+
 TEST(WorkcellDirectoryInspection, FilesystemErrorsDuringInspectionAreReported)
 {
   ScopedTestDirectory temp_dir;
