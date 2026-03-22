@@ -179,6 +179,10 @@ if(BUILD_TESTING)
   endif()
 
   if(TARGET workcell_scene_select_paths_test)
+    ament_target_dependencies(workcell_scene_select_paths_test
+      ament_index_cpp
+      rclcpp
+    )
     target_link_libraries(workcell_scene_select_paths_test
       ${Boost_LIBRARIES}
       yaml-cpp
