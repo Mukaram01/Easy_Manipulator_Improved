@@ -31,6 +31,7 @@
 #include "gui/scene_select.h"
 #include "attributes/scene.h"
 #include "include/default_asset_paths.h"
+#include "include/workcell_directory_inspection.h"
 
 namespace fs = boost::filesystem;
 
@@ -220,47 +221,15 @@ void MainWindow::on_load_workcell_clicked()
 
       report_progress(0, "Preparing directories...");
       boost::system::error_code ec;
-      const fs::path base_path(workcell_file.toStdString());
-      fs::path workcell_root;
-      QString root_status_suffix;
-      const auto has_workcell_root_directories = [&](const fs::path & candidate_root) {
-        ec.clear();
-        const bool has_scenes = fs::is_directory(candidate_root / "scenes", ec);
-        if (ec) {
-          return false;
-        }
-        ec.clear();
-        const bool has_assets = fs::is_directory(candidate_root / "assets", ec);
-        if (ec) {
-          return false;
-        }
-        return has_scenes || has_assets;
-      };
-
-      const bool base_has_root_dirs = has_workcell_root_directories(base_path);
-      if (ec) {
-        result.error = QString("Failed to inspect selected directory: %1")
-          .arg(QString::fromStdString(ec.message()));
+      const workcell_builder::WorkcellRootInspection inspection =
+        workcell_builder::inspect_selected_workcell_path(fs::path(workcell_file.toStdString()));
+      if (!inspection.success) {
+        result.error = QString::fromStdString(inspection.error);
         return result;
       }
 
-      const bool src_has_root_dirs = has_workcell_root_directories(base_path / "src");
-      if (ec) {
-        result.error = QString("Failed to inspect selected directory: %1")
-          .arg(QString::fromStdString(ec.message()));
-        return result;
-      }
-
-      if (base_has_root_dirs) {
-        workcell_root = base_path;
-        root_status_suffix = " (using selected path as workcell root)";
-      } else if (src_has_root_dirs) {
-        workcell_root = base_path / "src";
-        root_status_suffix = " (using selected path/src as workcell root)";
-      } else {
-        workcell_root = base_path / "src";
-        root_status_suffix = " (created selected path/src as workcell root)";
-      }
+      const fs::path workcell_root = inspection.workcell_root;
+      const QString root_status_suffix = QString::fromStdString(inspection.root_status_suffix);
 
       ec.clear();
       fs::create_directories(workcell_root, ec);
