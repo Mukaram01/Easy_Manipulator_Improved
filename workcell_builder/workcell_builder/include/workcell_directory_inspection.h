@@ -18,7 +18,6 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
-#include <boost/system/errc.hpp>
 #include <string>
 
 namespace workcell_builder
