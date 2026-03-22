@@ -424,6 +424,74 @@ ensure_cereal_cmake_config() {
   fi
 }
 
+apply_osqp_eigen_scope_fix() {
+  python3 - <<'PY'
+from pathlib import Path
+
+search_roots = []
+workspace_src = Path.cwd() / "src"
+if workspace_src.is_dir():
+    search_roots.append(workspace_src)
+search_roots.extend(
+    Path(path)
+    for path in (
+        "/usr/lib",
+        "/usr/local/lib",
+        "/usr/share",
+        "/usr/local/share",
+        "/opt/ros",
+    )
+    if Path(path).exists()
+)
+
+old = "  set(OSQP_EIGEN_OSQP_TARGET_TO_LINK ${OSQP_EIGEN_OSQP_TARGET_TO_LINK} PARENT_SCOPE)"
+replacement = """  # OsqpEigenDependencies is included directly from CMakeLists.txt, so a local
+  # set() already updates the caller-visible scope without triggering a
+  # top-level PARENT_SCOPE warning.
+  set(OSQP_EIGEN_OSQP_TARGET_TO_LINK ${OSQP_EIGEN_OSQP_TARGET_TO_LINK})"""
+
+patched_files = []
+for root in search_roots:
+    try:
+        matches = root.rglob("OsqpEigenDependencies.cmake")
+    except OSError:
+        continue
+
+    for dep_file in matches:
+        try:
+            text = dep_file.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        if old not in text:
+            continue
+
+        package_root = dep_file.parent.parent
+        cmake_lists = package_root / "CMakeLists.txt"
+        if not cmake_lists.is_file():
+            continue
+
+        try:
+            cmake_text = cmake_lists.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        if (
+            "include(OsqpEigenDependencies)" not in cmake_text
+            and "include(cmake/OsqpEigenDependencies.cmake)" not in cmake_text
+        ):
+            continue
+
+        dep_file.write_text(text.replace(old, replacement))
+        patched_files.append(str(dep_file))
+
+if patched_files:
+    print("Patched OsqpEigen dependency scope handling in:")
+    for path in patched_files:
+        print(f"  {path}")
+PY
+}
+
 apply_trajopt_ifopt_patch() {
   local planners_dir="$PWD/src/tesseract_planning/tesseract_motion_planners"
   local cmake_file="$planners_dir/CMakeLists.txt"
@@ -493,6 +561,7 @@ apply_legacy_ignore_workarounds() {
 "${SCRIPT_DIR}/scripts/ensure_rosdep_overrides.sh" taskflow
 "${SCRIPT_DIR}/scripts/install_system_deps.sh"
 ensure_cereal_cmake_config
+apply_osqp_eigen_scope_fix
 
 # Point CMake at the OSQP package configuration so find_package(osqp) succeeds
 # even on environments where the default prefix search path is trimmed down.
