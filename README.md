@@ -362,7 +362,16 @@ Recommended layout:
     └── ...
 ```
 
-Legacy compatibility symlinks can still exist in older workspaces, but the repository tree above is the source of truth.
+Legacy compatibility symlinks can still exist in older workspaces, but the repository tree above is the source of truth. Stale or dangling top-level links such as `~/workcell_ws/assets` or `~/workcell_ws/scenes` can cause the GUI to fail before it falls back to `src/`.
+
+If Workcell Builder exits with the exact pattern `Failed to inspect directory '<workspace>/assets': No such file or directory`, treat that as a workspace-layout issue instead of a missing package. Quick remediation checklist:
+
+- inspect whether `<workspace>/assets` is a broken symlink,
+- remove stale top-level links if the real layout now lives under `<workspace>/src`,
+- rerun `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh`,
+- rebuild/source the workspace if required.
+
+Use `./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh` as the supported verification step after cleanup.
 
 ## Components
 
@@ -411,11 +420,13 @@ Scene root resolution precedence:
 5. `$PWD/src/easy_manipulation_deployment`
 6. `$PWD/src`
 
-For deterministic behavior in multi-workspace setups:
+For deterministic behavior in multi-workspace setups, explicitly select the repository scene root:
 
 ```bash
 workcell_builder --scene-root ~/workcell_ws/src/easy_manipulation_deployment
 ```
+
+If you keep more than one workspace on disk, prefer the explicit `--scene-root` launch above even after running `./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh`.
 
 ```bash
 export WORKCELL_BUILDER_SCENE_ROOT=~/workcell_ws/src/easy_manipulation_deployment
