@@ -63,6 +63,55 @@ TEST(WorkcellDirectoryInspection, SrcOnlyWorkspaceCreatesInsideSrc)
   EXPECT_EQ(inspection.root_status_suffix, " (created selected path/src as workcell root)");
 }
 
+TEST(WorkcellDirectoryInspection, SrcRootDirectoriesUseSelectedSrc)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "scenes"));
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "assets"));
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  ASSERT_TRUE(inspection.success);
+  EXPECT_TRUE(inspection.use_existing_root);
+  EXPECT_EQ(inspection.workcell_root, fs::weakly_canonical(selected_root / "src"));
+  EXPECT_EQ(inspection.root_status_suffix, " (using selected path/src as workcell root)");
+}
+
+TEST(WorkcellDirectoryInspection, MissingTopLevelDirectoriesStillUseSelectedSrcWhenSrcHasRootDirs)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "scenes"));
+  ASSERT_TRUE(fs::create_directories(selected_root / "src" / "assets"));
+  EXPECT_FALSE(fs::exists(selected_root / "scenes"));
+  EXPECT_FALSE(fs::exists(selected_root / "assets"));
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  ASSERT_TRUE(inspection.success);
+  EXPECT_TRUE(inspection.use_existing_root);
+  EXPECT_EQ(inspection.workcell_root, fs::weakly_canonical(selected_root / "src"));
+  EXPECT_EQ(inspection.root_status_suffix, " (using selected path/src as workcell root)");
+}
+
+TEST(WorkcellDirectoryInspection, FilesystemErrorsDuringInspectionAreReported)
+{
+  ScopedTestDirectory temp_dir;
+  const fs::path selected_root = temp_dir.path() / "workspace";
+  const fs::path src_root = selected_root / "src";
+  ASSERT_TRUE(fs::create_directories(src_root));
+
+  boost::system::error_code ec;
+  fs::create_symlink("scenes", src_root / "scenes", ec);
+  ASSERT_FALSE(ec) << ec.message();
+
+  const auto inspection = workcell_builder::inspect_selected_workcell_path(selected_root);
+
+  EXPECT_FALSE(inspection.success);
+  EXPECT_NE(inspection.error.find((src_root / "scenes").string()), std::string::npos);
+}
+
 TEST(WorkcellDirectoryInspection, SymlinkedWorkspaceRootResolvesCanonicalPath)
 {
   ScopedTestDirectory temp_dir;

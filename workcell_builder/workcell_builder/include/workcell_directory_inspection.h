@@ -18,6 +18,7 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/system/errc.hpp>
 #include <string>
 
 namespace workcell_builder
@@ -40,35 +41,53 @@ inline bool has_workcell_root_directories(
   fs::path * failing_path,
   boost::system::error_code * error)
 {
-  boost::system::error_code local_error;
-  const fs::path scenes_path = candidate_root / "scenes";
-  const bool has_scenes = fs::is_directory(scenes_path, local_error);
-  if (local_error) {
-    if (failing_path != nullptr) {
-      *failing_path = scenes_path;
-    }
-    if (error != nullptr) {
-      *error = local_error;
-    }
-    return false;
-  }
+  auto clear_outputs = [&]() {
+      if (failing_path != nullptr) {
+        failing_path->clear();
+      }
+      if (error != nullptr) {
+        error->clear();
+      }
+    };
 
-  const fs::path assets_path = candidate_root / "assets";
-  const bool has_assets = fs::is_directory(assets_path, local_error);
-  if (local_error) {
-    if (failing_path != nullptr) {
-      *failing_path = assets_path;
-    }
-    if (error != nullptr) {
-      *error = local_error;
-    }
-    return false;
-  }
+  auto probe_directory = [&](const fs::path & directory_path) {
+      boost::system::error_code local_error;
+      const bool path_exists = fs::exists(directory_path, local_error);
+      if (local_error) {
+        if (failing_path != nullptr) {
+          *failing_path = directory_path;
+        }
+        if (error != nullptr) {
+          *error = local_error;
+        }
+        return false;
+      }
 
-  if (error != nullptr) {
-    error->clear();
-  }
-  return has_scenes || has_assets;
+      if (!path_exists) {
+        return false;
+      }
+
+      local_error.clear();
+      const bool is_directory = fs::is_directory(directory_path, local_error);
+      if (local_error || !is_directory) {
+        if (!local_error && !is_directory) {
+          local_error = boost::system::errc::make_error_code(boost::system::errc::not_a_directory);
+        }
+        if (failing_path != nullptr) {
+          *failing_path = directory_path;
+        }
+        if (error != nullptr) {
+          *error = local_error;
+        }
+        return false;
+      }
+
+      return true;
+    };
+
+  clear_outputs();
+  return probe_directory(candidate_root / "scenes") ||
+         probe_directory(candidate_root / "assets");
 }
 
 inline WorkcellRootInspection inspect_selected_workcell_path(const fs::path & selected_path)
