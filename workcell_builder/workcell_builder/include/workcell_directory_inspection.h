@@ -35,6 +35,63 @@ struct WorkcellRootInspection
   std::string error;
 };
 
+enum class WorkcellRootDirectoryProbeResult
+{
+  kMissing,
+  kValidDirectory,
+  kNonDirectoryCollision,
+  kInspectionError,
+};
+
+inline WorkcellRootDirectoryProbeResult probe_workcell_root_directory(
+  const fs::path & directory_path,
+  fs::path * failing_path,
+  boost::system::error_code * error)
+{
+  boost::system::error_code local_error;
+  const auto path_status = fs::symlink_status(directory_path, local_error);
+  if (local_error) {
+    if (failing_path != nullptr) {
+      *failing_path = directory_path;
+    }
+    if (error != nullptr) {
+      *error = local_error;
+    }
+    return WorkcellRootDirectoryProbeResult::kInspectionError;
+  }
+
+  if (!fs::exists(path_status)) {
+    return WorkcellRootDirectoryProbeResult::kMissing;
+  }
+
+  if (fs::is_symlink(path_status)) {
+    const auto target_status = fs::status(directory_path, local_error);
+    if (local_error) {
+      if (failing_path != nullptr) {
+        *failing_path = directory_path;
+      }
+      if (error != nullptr) {
+        *error = local_error;
+      }
+      return WorkcellRootDirectoryProbeResult::kInspectionError;
+    }
+
+    if (fs::is_directory(target_status)) {
+      return WorkcellRootDirectoryProbeResult::kValidDirectory;
+    }
+  } else if (fs::is_directory(path_status)) {
+    return WorkcellRootDirectoryProbeResult::kValidDirectory;
+  }
+
+  if (failing_path != nullptr) {
+    *failing_path = directory_path;
+  }
+  if (error != nullptr) {
+    *error = boost::system::errc::make_error_code(boost::system::errc::not_a_directory);
+  }
+  return WorkcellRootDirectoryProbeResult::kNonDirectoryCollision;
+}
+
 inline bool has_workcell_root_directories(
   const fs::path & candidate_root,
   fs::path * failing_path,
@@ -49,44 +106,20 @@ inline bool has_workcell_root_directories(
       }
     };
 
-  auto probe_directory = [&](const fs::path & directory_path) {
-      boost::system::error_code local_error;
-      const bool path_exists = fs::exists(directory_path, local_error);
-      if (local_error) {
-        if (failing_path != nullptr) {
-          *failing_path = directory_path;
-        }
-        if (error != nullptr) {
-          *error = local_error;
-        }
-        return false;
-      }
-
-      if (!path_exists) {
-        return false;
-      }
-
-      local_error.clear();
-      const bool is_directory = fs::is_directory(directory_path, local_error);
-      if (local_error || !is_directory) {
-        if (!local_error && !is_directory) {
-          local_error = boost::system::errc::make_error_code(boost::system::errc::not_a_directory);
-        }
-        if (failing_path != nullptr) {
-          *failing_path = directory_path;
-        }
-        if (error != nullptr) {
-          *error = local_error;
-        }
-        return false;
-      }
-
-      return true;
-    };
-
   clear_outputs();
-  return probe_directory(candidate_root / "scenes") ||
-         probe_directory(candidate_root / "assets");
+
+  const auto scenes_probe = probe_workcell_root_directory(candidate_root / "scenes", failing_path, error);
+  if (scenes_probe == WorkcellRootDirectoryProbeResult::kValidDirectory) {
+    return true;
+  }
+  if (scenes_probe == WorkcellRootDirectoryProbeResult::kNonDirectoryCollision ||
+    scenes_probe == WorkcellRootDirectoryProbeResult::kInspectionError)
+  {
+    return false;
+  }
+
+  const auto assets_probe = probe_workcell_root_directory(candidate_root / "assets", failing_path, error);
+  return assets_probe == WorkcellRootDirectoryProbeResult::kValidDirectory;
 }
 
 inline WorkcellRootInspection inspect_selected_workcell_path(const fs::path & selected_path)
@@ -129,15 +162,33 @@ inline WorkcellRootInspection inspect_selected_workcell_path(const fs::path & se
   fs::path failing_path;
   bool base_has_root_dirs = has_workcell_root_directories(
     inspection.canonical_selected_path, &failing_path, &ec);
-  if (ec) {
-    inspection.error = "Failed to inspect directory '" + failing_path.string() + "': " + ec.message();
+  const fs::path base_failing_path = failing_path;
+  const boost::system::error_code base_probe_error = ec;
+
+  const fs::path src_path = inspection.canonical_selected_path / "src";
+  failing_path.clear();
+  ec.clear();
+  bool src_has_root_dirs = has_workcell_root_directories(src_path, &failing_path, &ec);
+  const fs::path src_failing_path = failing_path;
+  const boost::system::error_code src_probe_error = ec;
+
+  if (base_probe_error && !src_has_root_dirs) {
+    inspection.error = "Failed to inspect directory '" + base_failing_path.string() + "': " +
+      base_probe_error.message();
+    if (src_probe_error) {
+      inspection.error += "; selected path/src was also unusable at '" +
+        src_failing_path.string() + "': " + src_probe_error.message();
+    }
     return inspection;
   }
 
-  const fs::path src_path = inspection.canonical_selected_path / "src";
-  bool src_has_root_dirs = has_workcell_root_directories(src_path, &failing_path, &ec);
-  if (ec) {
-    inspection.error = "Failed to inspect directory '" + failing_path.string() + "': " + ec.message();
+  if (src_probe_error && !base_has_root_dirs) {
+    inspection.error = "Failed to inspect directory '" + src_failing_path.string() + "': " +
+      src_probe_error.message();
+    if (base_probe_error) {
+      inspection.error += "; selected path was also unusable at '" +
+        base_failing_path.string() + "': " + base_probe_error.message();
+    }
     return inspection;
   }
 
