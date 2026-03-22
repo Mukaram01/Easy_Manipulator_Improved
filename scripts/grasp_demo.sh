@@ -12,10 +12,12 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM ERR EXIT
 
-# Build the workspace and source it
+# Expose hidden asset packages, build the workspace, and source it
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --symlink-install
 # shellcheck disable=SC1091
 source install/setup.bash
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 
 # Launch grasp planner and execution demos
 ros2 launch run_grasp_planner grasp_planner_3f_launch.py &
