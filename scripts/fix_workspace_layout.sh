@@ -23,6 +23,7 @@ WS="${WS:-$WORKSPACE_ROOT}"
 SRC_DIR="$WORKSPACE_ROOT/src"
 BACKUP_DIR="$WORKSPACE_ROOT/trajopt_DISABLED_BACKUP"
 ORIG_DIR="$BACKUP_DIR/original"
+EXPOSED_PACKAGES=()
 
 if [ ! -d "$SRC_DIR" ]; then
   exit 0
@@ -113,6 +114,7 @@ symlink_repo_package() {
 
   echo "Linking repository package ${pkg_name} -> ${pkg_path}"
   ln -s "$pkg_path" "$dest"
+  EXPOSED_PACKAGES+=("$pkg_name")
 }
 
 expose_repo_packages() {
@@ -195,6 +197,46 @@ done
 
 expose_repo_packages
 
+summarize_exposed_repo_packages() {
+  local total_assets=0
+  local package_groups=(
+    "ur5_moveit_config:UR5 MoveIt config"
+    "robotiq_85_moveit_config:Robotiq 85 MoveIt config"
+    "ur_description:Robot descriptions"
+    "robotiq_85_description:Robot descriptions"
+    "workbench_description:Robot descriptions"
+  )
+  local entry pkg_name label dest target
+
+  while IFS= read -r _; do
+    total_assets=$((total_assets + 1))
+  done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null)
+
+  echo
+  echo "Workspace layout summary"
+  echo "========================"
+  echo "Exposed ${#EXPOSED_PACKAGES[@]} package(s) into ${SRC_DIR} during this run; ${total_assets} asset package(s) are available from the repository."
+
+  if [ ${#EXPOSED_PACKAGES[@]} -gt 0 ]; then
+    printf '  New links created: %s\n' "$(printf '%s\n' "${EXPOSED_PACKAGES[@]}" | sort | paste -sd ', ' -)"
+  else
+    echo "  New links created: none (all expected workspace entries were already present)."
+  fi
+
+  echo "  Key package status:"
+  for entry in "${package_groups[@]}"; do
+    pkg_name="${entry%%:*}"
+    label="${entry#*:}"
+    dest="$SRC_DIR/$pkg_name"
+    if path_exists "$dest"; then
+      target="$(resolved_path_or_unresolved "$dest")"
+      printf '    - %-24s [%s]: %s\n' "$pkg_name" "$label" "$target"
+    else
+      printf '    - %-24s [%s]: MISSING from src/ (rerun scripts/fix_workspace_layout.sh)\n' "$pkg_name" "$label"
+    fi
+  done
+}
+
 verify_exposed_repo_package() {
   local pkg_name="$1"
   local expected_target="$2"
@@ -234,6 +276,8 @@ PY
   [ -n "$pkg_name" ] || continue
   verify_exposed_repo_package "$pkg_name" "$pkg_dir"
 done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
+
+summarize_exposed_repo_packages
 
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid

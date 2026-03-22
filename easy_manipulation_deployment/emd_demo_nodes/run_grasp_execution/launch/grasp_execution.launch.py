@@ -78,6 +78,15 @@ def load_yaml(package, file_path):
     return xacro.load_yaml(os.path.join(package_path, file_path))
 
 
+def resolve_required_package_share_dir(package_name, remediation_hint):
+    try:
+        return get_package_share_directory(package_name)
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            f"Required package '{package_name}' was not found in ament_index. {remediation_hint}"
+        ) from exc
+
+
 def resolve_scene_package_share_dir(scene_package):
     try:
         return get_package_share_directory(scene_package)
@@ -94,6 +103,11 @@ def launch_setup(context, *args, **kwargs):
     scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
     run_share = get_package_share_directory(PACKAGE_NAME)
     resolve_scene_package_share_dir(scene_package)
+    resolve_required_package_share_dir(
+        "ur5_moveit_config",
+        "Run ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh, rebuild the workspace, "
+        "and source install/setup.bash before launching UR5 demo scenes.",
+    )
 
     initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
     initial_position_mappings = {"initial_positions_file": initial_position_path}

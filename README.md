@@ -63,7 +63,7 @@ rosdep update
 rosdep resolve taskflow
 ```
 
-6. Expose the repository asset packages into `src/`.
+6. Expose the repository asset packages into `src/` **before every `colcon build` when this repository is checked out as a workspace source tree**.
 
 ```bash
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
@@ -76,9 +76,10 @@ test -L src/workbench_description -o -d src/workbench_description
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
 ```
 
-8. Build and source the workspace.
+8. Build and source the workspace. The layout helper is a required pre-build step for source checkouts because it exposes hidden asset packages from `assets/` into `src/`.
 
 ```bash
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --parallel-workers 2
 source install/setup.bash
 ```
@@ -118,6 +119,7 @@ sudo apt install -y \
 cd ~/workcell_ws/src
 vcs import < easy_manipulation_deployment/tesseract.repos
 cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --symlink-install --parallel-workers 2
 ```
 
@@ -135,6 +137,7 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 ```bash
 cd ~/workcell_ws
 rm -rf build install log
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --parallel-workers 2
 ```
 
@@ -149,6 +152,7 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 
 ```bash
 cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --packages-select emd_grasp_planner --parallel-workers 2
 ```
 
@@ -167,6 +171,7 @@ Dynamic safety is part of the grasp execution workflow.
 
 ```bash
 source ~/workcell_ws/install/setup.bash
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_test
 ```
 
@@ -183,6 +188,8 @@ colcon test-result --verbose
 The main supported quick-start path uses a plain build:
 
 ```bash
+cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --parallel-workers 2
 ```
 
@@ -190,6 +197,7 @@ If you are actively developing packages and want editable install behavior, use:
 
 ```bash
 cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --symlink-install --parallel-workers 2
 ```
 
@@ -208,6 +216,7 @@ unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
 source /opt/ros/humble/setup.bash
 cd ~/workcell_ws
 rm -rf build install log
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --parallel-workers 2
 ```
 
@@ -340,7 +349,7 @@ This repository is intended to live inside a larger ROS 2 workspace, typically a
 ~/workcell_ws/src/easy_manipulation_deployment
 ```
 
-The layout helper exposes repository asset packages into `src/` so `rosdep` and `colcon` can discover packages such as `workbench_description` without manually moving directories.
+The layout helper exposes repository asset packages into `src/` so `rosdep` and `colcon` can discover packages such as `workbench_description`, `ur5_moveit_config`, `robotiq_85_moveit_config`, and the robot description packages without manually moving directories. Run it before every `colcon build` in a source checkout workflow.
 
 Recommended layout:
 
@@ -378,8 +387,9 @@ MoveIt2-based grasp execution with real-time dynamic safety components.
 
 ```bash
 source ~/workcell_ws/install/setup.bash
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_test
-# or, after generating and building your own scene package:
+# or, after generating and rebuilding your own scene package (generated scene packages still depend on the exposed asset packages above):
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=my_generated_scene
 ```
 
@@ -419,11 +429,15 @@ Required external robot descriptions on ROS 2 Humble:
 
 ## Running demo scenes
 
+Before launching `ur5_*` demo scenes, verify that `ur5_moveit_config` resolves from the active workspace via `ament_index`. This catches the common case where asset packages are still hidden by `COLCON_IGNORE` markers because the workspace was built before running `fix_workspace_layout.sh`.
+
 ```bash
 source ~/workcell_ws/install/setup.bash
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
+ros2 pkg prefix ur5_moveit_config
 ros2 launch ur5_3f_test demo.launch.py
 ros2 launch ur5_2f_test demo.launch.py
-# after generating and building your own package:
+# after generating and rebuilding your own package (scene packages still depend on the asset packages above):
 ros2 launch my_generated_scene demo.launch.py
 ```
 
