@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OVERRIDES_FILE="${REPO_ROOT}/scripts/rosdep_overrides.yaml"
 ROSDEP_SOURCE_LIST="/etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list"
 ROSDEP_SOURCE_ENTRY="yaml file://${OVERRIDES_FILE}"
-VALIDATION_KEY="${1:-taskflow}"
+VALIDATION_KEY="${1:-cereal}"
 
 if [[ ! -f "$OVERRIDES_FILE" ]]; then
   echo "Rosdep overrides file is missing: $OVERRIDES_FILE" >&2

@@ -60,7 +60,7 @@ vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
-rosdep resolve taskflow
+rosdep resolve cereal
 ```
 
 6. Expose the repository asset packages into `src/` **before every `colcon build` when this repository is checked out as a workspace source tree**.
@@ -73,13 +73,15 @@ test -L src/workbench_description -o -d src/workbench_description
 7. Install package dependencies from the workspace source tree.
 
 ```bash
-rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 ```
 
 8. Build and source the workspace. The layout helper is a required pre-build step for source checkouts because it exposes hidden asset packages from `assets/` into `src/`.
 
 ```bash
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 colcon build --parallel-workers 2
 source install/setup.bash
 ```
@@ -235,11 +237,14 @@ colcon build --symlink-install --parallel-workers 2
 If you do not need Studio / Qt widgets, keep the default non-GUI path or temporarily skip the GUI-facing packages:
 
 ```bash
-touch ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE
-touch ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE
+for marker in \
+  ~/workcell_ws/src/tesseract_qt/COLCON_IGNORE \
+  ~/workcell_ws/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE \
+  ~/workcell_ws/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE \
+  ~/workcell_ws/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE \
+  ~/workcell_ws/src/tesseract_planning/tesseract_examples/COLCON_IGNORE; do
+  [ -d "$(dirname "$marker")" ] && touch "$marker"
+done
 ```
 
 ### `emd_dynamic_safety` / MoveIt / Ruckig mismatch on Humble
@@ -263,7 +268,8 @@ source /opt/ros/humble/setup.bash
 cd ~/workcell_ws
 rm -rf build install log
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 colcon build --parallel-workers 2
 ```
 

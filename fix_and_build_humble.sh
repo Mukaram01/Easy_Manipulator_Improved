@@ -558,7 +558,7 @@ apply_legacy_ignore_workarounds() {
 # container images omit them even though dpkg claims the packages are present,
 # preventing the "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
 # failure in trajopt_common.
-"${SCRIPT_DIR}/scripts/ensure_rosdep_overrides.sh" taskflow
+"${SCRIPT_DIR}/scripts/ensure_rosdep_overrides.sh" cereal
 "${SCRIPT_DIR}/scripts/install_system_deps.sh"
 ensure_cereal_cmake_config
 apply_osqp_eigen_scope_fix
@@ -947,6 +947,12 @@ fi
 
 set_gui_package_state
 detect_stale_ruckig_mismatch
+
+# Taskflow is a header-only upstream dependency imported as a plain git checkout,
+# so colcon does not install a TaskflowConfig.cmake for downstream
+# find_package(Taskflow) calls. Generate a lightweight config and export it
+# into the current shell before building the planning stack.
+eval "$("${SCRIPT_DIR}/scripts/ensure_taskflow_cmake_package.sh" --export)"
 
 FULL_BUILD_ARGS=()
 if [[ "$PROFILE" == "full" && "$WITH_GUI" -eq 0 ]]; then

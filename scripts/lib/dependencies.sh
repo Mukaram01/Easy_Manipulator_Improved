@@ -159,7 +159,7 @@ install_rosdeps() {
 
     local ensure_overrides="$REPO_ROOT/scripts/ensure_rosdep_overrides.sh"
     if [[ -x "$ensure_overrides" ]]; then
-        "$ensure_overrides" taskflow
+        "$ensure_overrides" cereal
     else
         die "Missing rosdep override helper: $ensure_overrides"
     fi
@@ -168,11 +168,19 @@ install_rosdeps() {
     local skip_keys=(
         rviz
         roslib
+        taskflow
         tesseract
+        tesseract_environment
+        tesseract_motion_planners
+        tesseract_motion_planners_core
+        tesseract_motion_planners_simple
         tesseract_process_planners
+        tesseract_task_composer
         trajopt_ifopt
+        trajopt_sco
         trajopt_sqp
         trajopt
+        osqp-eigen
         jsoncpp
         message_generation
     )
