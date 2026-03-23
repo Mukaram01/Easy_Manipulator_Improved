@@ -4,6 +4,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+WITH_GUI=${WITH_GUI:-0}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-gui|--with-tesseract-qt)
+      WITH_GUI=1
+      ;;
+    --without-gui)
+      WITH_GUI=0
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: scripts/fix_workspace_layout.sh [--with-gui]
+
+Synchronize the workspace layout for this repository and gate optional GUI
+packages by default. Pass --with-gui to remove COLCON_IGNORE markers from
+src/tesseract_qt and src/qtadvanceddocking when those checkouts are present.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 source "${SCRIPT_DIR}/lib/motion_planner_configs.sh"
 
 if [[ -n ${WORKSPACE_ROOT:-} ]]; then
@@ -187,6 +214,30 @@ ensure_colcon_ignore() {
   fi
 }
 
+set_gui_package_state() {
+  local marker
+  local gui_paths=(
+    "$SRC_DIR/tesseract_qt/COLCON_IGNORE"
+    "$SRC_DIR/qtadvanceddocking/COLCON_IGNORE"
+  )
+
+  if [[ $WITH_GUI -eq 1 ]]; then
+    for marker in "${gui_paths[@]}"; do
+      if [[ -f "$marker" ]]; then
+        echo "Removing GUI package ignore marker at $marker"
+        rm -f "$marker"
+      fi
+    done
+  else
+    for marker in "${gui_paths[@]}"; do
+      if [[ -d "$(dirname "$marker")" ]]; then
+        echo "Keeping optional GUI package disabled by default via $marker"
+        touch "$marker"
+      fi
+    done
+  fi
+}
+
 for duplicate in \
   "$SRC_DIR/trajopt" \
   "$SRC_DIR/trajopt/trajopt" \
@@ -196,6 +247,7 @@ for duplicate in \
 done
 
 expose_repo_packages
+set_gui_package_state
 
 summarize_exposed_repo_packages() {
   local total_assets=0
