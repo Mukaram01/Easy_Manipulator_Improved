@@ -119,7 +119,7 @@ sudo apt install -y \
   qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
 ```
 
-For the default manual/headless path, keep the GUI packages disabled so a plain `colcon build` does not try to compile `tesseract_qt` or `qtadvanceddocking`:
+For the default manual/headless path, keep the GUI packages disabled so a plain `colcon build` does not try to compile `tesseract_qt` or Qt ADS. The repository checkout is `qtadvanceddocking`, but the ROS/colcon package may be discovered as `QtADS`:
 
 ```bash
 cd ~/workcell_ws
@@ -127,7 +127,7 @@ cd ~/workcell_ws
 colcon build --symlink-install --parallel-workers 2
 ```
 
-`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt qtadvanceddocking` to `colcon build`.
+`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (or include both `qtadvanceddocking` and `QtADS` if you want the fallback to cover either naming convention).
 
 For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
 
@@ -146,7 +146,7 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 ./fix_and_build_humble.sh --profile full --with-gui
 ```
 
-`tesseract_qt` and `qtadvanceddocking` remain optional in this repository.
+`tesseract_qt` and the Qt ADS checkout (`qtadvanceddocking`, package name `QtADS`) remain optional in this repository. When skipping them manually with colcon, use the discovered package name `QtADS` and optionally also `qtadvanceddocking` as a compatibility fallback.
 
 ### Clean rebuild
 
@@ -358,7 +358,7 @@ Use it when you explicitly need the Tesseract/TrajOpt planning overlays from sou
 
 ### Optional GUI details
 
-- `tesseract_qt` and `qtadvanceddocking` are optional.
+- `tesseract_qt` and Qt ADS are optional. The repository checkout is `qtadvanceddocking`, while colcon may discover the package as `QtADS`; use `--packages-skip tesseract_qt QtADS` (optionally also `qtadvanceddocking`) for manual skips.
 - The default install path stays headless/non-GUI, and `scripts/fix_workspace_layout.sh` keeps those packages ignored unless you opt in.
 - Use `scripts/fix_workspace_layout.sh --with-gui` for the manual GUI-enabled path.
 - Use `fix_and_build_humble.sh --profile full --with-gui` for the helper-script GUI-enabled path.
