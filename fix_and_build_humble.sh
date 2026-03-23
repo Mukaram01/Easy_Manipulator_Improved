@@ -19,7 +19,7 @@ Usage: ./fix_and_build_humble.sh [options]
 Options:
   --profile minimal|full      Select bootstrap profile (default: minimal)
   --clean                     Remove build/, install/, and log/ before building
-  --with-gui                  Opt in to building optional Studio/Qt widgets / Qt ADS packages
+  --with-gui                  Opt in to building optional Studio/Qt widgets / Qt ADS (repo: qtadvanceddocking, package: QtADS)
   --sync-manifests            Reset manifest-managed repos to expected revisions when clean
   --legacy-workarounds        Enable legacy Humble patch/ignore behavior (opt-in)
   -h, --help                  Show this help message
@@ -955,9 +955,11 @@ detect_stale_ruckig_mismatch
 eval "$("${SCRIPT_DIR}/scripts/ensure_taskflow_cmake_package.sh" --export)"
 
 FULL_BUILD_ARGS=()
+# Keep the build-arg fallback resilient to either Qt ADS naming convention:
+# repository checkout directory `qtadvanceddocking`, colcon package `QtADS`.
 if [[ "$PROFILE" == "full" && "$WITH_GUI" -eq 0 ]]; then
-  echo "Full profile: skipping optional GUI packages (use --with-gui to enable Studio/Qt widgets)"
-  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking)
+  echo "Full profile: skipping optional GUI packages (use --with-gui to enable Studio/Qt widgets; Qt ADS repo checkout: qtadvanceddocking, colcon package: QtADS)"
+  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking QtADS)
 fi
 
 if [[ "$PROFILE" == "full" ]]; then
