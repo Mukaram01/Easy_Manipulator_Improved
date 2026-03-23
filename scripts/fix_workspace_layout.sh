@@ -258,7 +258,7 @@ summarize_exposed_repo_packages() {
     "robotiq_85_description:Robot descriptions"
     "workbench_description:Robot descriptions"
   )
-  local entry pkg_name label dest target
+  local entry pkg_name label dest target remediation
 
   while IFS= read -r _; do
     total_assets=$((total_assets + 1))
@@ -284,7 +284,12 @@ summarize_exposed_repo_packages() {
       target="$(resolved_path_or_unresolved "$dest")"
       printf '    - %-24s [%s]: %s\n' "$pkg_name" "$label" "$target"
     else
-      printf '    - %-24s [%s]: MISSING from src/ (rerun scripts/fix_workspace_layout.sh)\n' "$pkg_name" "$label"
+      if [ "$pkg_name" = "ur_description" ]; then
+        remediation="external dependency; install ros-humble-ur-description as documented in README.md step 1"
+      else
+        remediation="MISSING from src/ (rerun scripts/fix_workspace_layout.sh)"
+      fi
+      printf '    - %-24s [%s]: %s\n' "$pkg_name" "$label" "$remediation"
     fi
   done
 }
