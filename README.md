@@ -110,18 +110,32 @@ If you only want to confirm the workspace built successfully, `source install/se
 
 ### Build with GUI / Studio tools
 
-The default supported path is non-GUI. Only opt in if you need Tesseract Studio / Qt widgets.
+The default supported path is headless/non-GUI. Only opt in if you need Tesseract Studio / Qt widgets.
+
+Install the extra Qt/GUI system packages first:
 
 ```bash
 sudo apt install -y \
   qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
 ```
 
+For the default manual/headless path, keep the GUI packages disabled so a plain `colcon build` does not try to compile `tesseract_qt` or `qtadvanceddocking`:
+
+```bash
+cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+colcon build --symlink-install --parallel-workers 2
+```
+
+`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt qtadvanceddocking` to `colcon build`.
+
+For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
+
 ```bash
 cd ~/workcell_ws/src
 vcs import < easy_manipulation_deployment/tesseract.repos
 cd ~/workcell_ws
-./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui
 colcon build --symlink-install --parallel-workers 2
 ```
 
@@ -234,6 +248,8 @@ cd ~/workcell_ws
 colcon build --symlink-install --parallel-workers 2
 ```
 
+Qt ADS (`qtadvanceddocking`) may also require Qt private headers on some systems. If the build cannot find `qpa/qplatformnativeinterface.h`, install the distro package that provides the Qt private development headers for your Qt version before rebuilding.
+
 If you do not need Studio / Qt widgets, keep the default non-GUI path or temporarily skip the GUI-facing packages:
 
 ```bash
@@ -343,9 +359,12 @@ Use it when you explicitly need the Tesseract/TrajOpt planning overlays from sou
 ### Optional GUI details
 
 - `tesseract_qt` and `qtadvanceddocking` are optional.
-- The default install path stays headless/non-GUI.
-- Use `--with-gui` only when you want Studio / Qt widgets.
+- The default install path stays headless/non-GUI, and `scripts/fix_workspace_layout.sh` keeps those packages ignored unless you opt in.
+- Use `scripts/fix_workspace_layout.sh --with-gui` for the manual GUI-enabled path.
+- Use `fix_and_build_humble.sh --profile full --with-gui` for the helper-script GUI-enabled path.
+- Install the extra Qt development packages before GUI builds.
 - If Studio builds fail on Qt ADS targets, use `scripts/apply_upstream_patches.sh` and rebuild.
+- If Qt ADS cannot find `qpa/qplatformnativeinterface.h`, install the Qt private-header development package that matches your distro Qt version.
 
 ### Workspace layout notes
 
