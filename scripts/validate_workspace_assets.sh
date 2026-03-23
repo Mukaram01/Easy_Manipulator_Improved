@@ -25,6 +25,29 @@ REQUIRED_PACKAGES=(
   robotiq_85_description
   workbench_description
 )
+REPOSITORY_PACKAGES=(
+  ur5_moveit_config
+  robotiq_85_moveit_config
+  robotiq_85_description
+  workbench_description
+)
+EXTERNAL_PACKAGES=(
+  ur_description
+)
+
+package_in_list() {
+  local pkg="$1"
+  shift
+  local candidate
+
+  for candidate in "$@"; do
+    if [ "$candidate" = "$pkg" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
 
 path_exists() {
   local path="$1"
@@ -71,10 +94,17 @@ for pkg in "${REQUIRED_PACKAGES[@]}"; do
   fi
 done
 
+join_by_comma() {
+  if [ $# -eq 0 ]; then
+    return
+  fi
+  printf '%s\n' "$@" | paste -sd ', ' -
+}
+
 if [ ${#missing[@]} -eq 0 ] && [ ${#index_fail[@]} -eq 0 ]; then
   echo
   echo "Workspace asset validation passed."
-  echo "Required asset packages are exposed in src/ and resolvable through ament_index."
+  echo "Required repository asset packages are exposed in src/, and required external dependencies resolve through ament_index."
   exit 0
 fi
 
@@ -87,16 +117,57 @@ if [ ${#index_fail[@]} -gt 0 ]; then
   printf 'Not resolvable through ament_index: %s\n' "$(printf '%s\n' "${index_fail[@]}" | paste -sd ', ' -)" >&2
 fi
 
+repo_missing=()
+repo_index_fail=()
+external_missing=()
+external_index_fail=()
+
+for pkg in "${missing[@]}"; do
+  if package_in_list "$pkg" "${REPOSITORY_PACKAGES[@]}"; then
+    repo_missing+=("$pkg")
+  elif package_in_list "$pkg" "${EXTERNAL_PACKAGES[@]}"; then
+    external_missing+=("$pkg")
+  fi
+done
+
+for pkg in "${index_fail[@]}"; do
+  if package_in_list "$pkg" "${REPOSITORY_PACKAGES[@]}"; then
+    repo_index_fail+=("$pkg")
+  elif package_in_list "$pkg" "${EXTERNAL_PACKAGES[@]}"; then
+    external_index_fail+=("$pkg")
+  fi
+done
+
 cat >&2 <<EOF
 
 Remediation:
-  1. cd ${WORKSPACE_ROOT}
-  2. ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-  3. colcon build --symlink-install --parallel-workers 2
-  4. source install/setup.bash
-  5. rerun ${SCRIPT_DIR}/validate_workspace_assets.sh
-
-If the workspace uses this repository as a source checkout, those asset packages stay hidden until fix_workspace_layout.sh exposes them from assets/ into src/.
 EOF
+
+if [ ${#repo_missing[@]} -gt 0 ] || [ ${#repo_index_fail[@]} -gt 0 ]; then
+  cat >&2 <<EOF
+  Repository asset packages: $(join_by_comma "${repo_missing[@]}" "${repo_index_fail[@]}")
+    1. cd ${WORKSPACE_ROOT}
+    2. ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+    3. colcon build --symlink-install --parallel-workers 2
+    4. source install/setup.bash
+    5. rerun ${SCRIPT_DIR}/validate_workspace_assets.sh
+
+EOF
+fi
+
+if [ ${#external_missing[@]} -gt 0 ] || [ ${#external_index_fail[@]} -gt 0 ]; then
+  cat >&2 <<EOF
+  External ROS dependency: $(join_by_comma "${external_missing[@]}" "${external_index_fail[@]}")
+    - Install the required system package documented in README.md step 1, e.g. sudo apt install -y ros-humble-ur-description
+    - Rebuild/source the workspace if needed, then rerun ${SCRIPT_DIR}/validate_workspace_assets.sh
+
+EOF
+fi
+
+if [ ${#repo_missing[@]} -gt 0 ] || [ ${#repo_index_fail[@]} -gt 0 ]; then
+  cat >&2 <<EOF
+If the workspace uses this repository as a source checkout, those repository asset packages stay hidden until fix_workspace_layout.sh exposes them from assets/ into src/.
+EOF
+fi
 
 exit 1
