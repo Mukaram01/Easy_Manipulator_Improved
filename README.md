@@ -119,7 +119,7 @@ sudo apt install -y \
   qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5svg5-dev
 ```
 
-For the default manual/headless path, keep the GUI packages disabled so a plain `colcon build` does not try to compile `tesseract_qt` or Qt ADS. The repository checkout is `qtadvanceddocking`, but the ROS/colcon package may be discovered as `QtADS`:
+For the default manual/headless path, keep the GUI packages disabled so a plain `colcon build` does not try to compile `tesseract_qt` or Qt ADS. The checkout folder is `qtadvanceddocking`, but colcon may discover that package as `QtADS` in the workspace.
 
 ```bash
 cd ~/workcell_ws
@@ -127,7 +127,21 @@ cd ~/workcell_ws
 colcon build --symlink-install --parallel-workers 2
 ```
 
-`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (or include both `qtadvanceddocking` and `QtADS` if you want the fallback to cover either naming convention).
+If you want an explicit non-GUI full-workspace example that matches the Humble helper-script defaults from the logs, skip the GUI packages by their discovered names (with the checkout folder as an extra fallback) or use the helper script without `--with-gui`:
+
+```bash
+cd ~/workcell_ws
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-skip tesseract_qt QtADS qtadvanceddocking
+```
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh --profile full
+```
+
+`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (optionally also adding `qtadvanceddocking` as a compatibility fallback for folder-based troubleshooting notes). To opt into the GUI-enabled path instead, use `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui` for the manual flow or `./fix_and_build_humble.sh --profile full --with-gui` for the helper-script flow.
 
 For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
 

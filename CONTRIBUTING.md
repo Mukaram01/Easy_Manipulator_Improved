@@ -142,6 +142,7 @@ Some GUI-related packages are optional or mismatch the distro. Use
 `--packages-skip` or `COLCON_IGNORE` files when needed:
 
 - `tesseract_qt`
+- `QtADS` (checkout folder: `qtadvanceddocking`)
 - `tesseract_ros2/tesseract_rviz`
 - `tesseract_ros2/tesseract_ros_examples`
 - `tesseract_ros2/tesseract_planning_server`
@@ -150,7 +151,7 @@ Some GUI-related packages are optional or mismatch the distro. Use
 Example:
 
 ```bash
-colcon build --packages-skip tesseract_qt tesseract_rviz tesseract_ros_examples
+colcon build --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_ros_examples
 ```
 
 ## Code style
