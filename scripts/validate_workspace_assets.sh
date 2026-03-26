@@ -21,18 +21,26 @@ SRC_DIR="$WORKSPACE_ROOT/src"
 REQUIRED_PACKAGES=(
   ur5_moveit_config
   robotiq_85_moveit_config
+  single_suction_moveit_config
   ur_description
   robotiq_85_description
+  single_suction_description
   workbench_description
 )
 REPOSITORY_PACKAGES=(
   ur5_moveit_config
   robotiq_85_moveit_config
+  single_suction_moveit_config
   robotiq_85_description
+  single_suction_description
   workbench_description
 )
 EXTERNAL_PACKAGES=(
   ur_description
+)
+SUCTION_PACKAGES=(
+  single_suction_description
+  single_suction_moveit_config
 )
 
 package_in_list() {
@@ -98,7 +106,17 @@ join_by_comma() {
   if [ $# -eq 0 ]; then
     return
   fi
-  printf '%s\n' "$@" | paste -sd ', ' -
+  local first=1
+  local item
+  for item in "$@"; do
+    if [ $first -eq 1 ]; then
+      printf '%s' "$item"
+      first=0
+    else
+      printf ', %s' "$item"
+    fi
+  done
+  printf '\n'
 }
 
 if [ ${#missing[@]} -eq 0 ] && [ ${#index_fail[@]} -eq 0 ]; then
@@ -111,10 +129,30 @@ fi
 echo >&2
 echo "Workspace asset validation failed." >&2
 if [ ${#missing[@]} -gt 0 ]; then
-  printf 'Missing src/ entries: %s\n' "$(printf '%s\n' "${missing[@]}" | paste -sd ', ' -)" >&2
+  printf 'Missing src/ entries: %s\n' "$(join_by_comma "${missing[@]}")" >&2
 fi
 if [ ${#index_fail[@]} -gt 0 ]; then
-  printf 'Not resolvable through ament_index: %s\n' "$(printf '%s\n' "${index_fail[@]}" | paste -sd ', ' -)" >&2
+  printf 'Not resolvable through ament_index: %s\n' "$(join_by_comma "${index_fail[@]}")" >&2
+fi
+
+suction_missing=()
+suction_index_fail=()
+for pkg in "${missing[@]}"; do
+  if package_in_list "$pkg" "${SUCTION_PACKAGES[@]}"; then
+    suction_missing+=("$pkg")
+  fi
+done
+for pkg in "${index_fail[@]}"; do
+  if package_in_list "$pkg" "${SUCTION_PACKAGES[@]}"; then
+    suction_index_fail+=("$pkg")
+  fi
+done
+
+if [ ${#suction_missing[@]} -gt 0 ]; then
+  printf 'Suction packages missing from src/: %s\n' "$(join_by_comma "${suction_missing[@]}")" >&2
+fi
+if [ ${#suction_index_fail[@]} -gt 0 ]; then
+  printf 'Suction packages not resolvable through ament_index: %s\n' "$(join_by_comma "${suction_index_fail[@]}")" >&2
 fi
 
 repo_missing=()
@@ -146,6 +184,7 @@ EOF
 if [ ${#repo_missing[@]} -gt 0 ] || [ ${#repo_index_fail[@]} -gt 0 ]; then
   cat >&2 <<EOF
   Repository asset packages: $(join_by_comma "${repo_missing[@]}" "${repo_index_fail[@]}")
+  (including suction assets: single_suction_description, single_suction_moveit_config)
     1. cd ${WORKSPACE_ROOT}
     2. ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
     3. colcon build --symlink-install --parallel-workers 2
@@ -166,7 +205,7 @@ fi
 
 if [ ${#repo_missing[@]} -gt 0 ] || [ ${#repo_index_fail[@]} -gt 0 ]; then
   cat >&2 <<EOF
-If the workspace uses this repository as a source checkout, those repository asset packages stay hidden until fix_workspace_layout.sh exposes them from assets/ into src/.
+If the workspace uses this repository as a source checkout, those repository asset packages (including suction packages) stay hidden until fix_workspace_layout.sh exposes them from assets/ into src/.
 EOF
 fi
 
