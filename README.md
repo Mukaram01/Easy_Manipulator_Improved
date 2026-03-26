@@ -162,8 +162,11 @@ ros2 pkg prefix emd_msgs
 ```
 
 ```bash
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 ros2 launch suction_test demo.launch.py
 ```
+
+Run the validator before `suction_test` so missing `single_suction_description` / `single_suction_moveit_config` packages are reported with explicit remediation via `fix_workspace_layout.sh`.
 
 If you only want to confirm the workspace built successfully, `source install/setup.bash` plus a successful `ros2 pkg prefix emd_msgs` is the safest quick check.
 
@@ -472,6 +475,8 @@ If Workcell Builder exits with the exact pattern `Failed to inspect directory '<
 - rebuild/source the workspace if required.
 
 Use `./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh` as the supported verification step after cleanup.
+
+For `suction_test` verification and troubleshooting specifically, always run the validator first. The validator now explicitly reports `single_suction_description` and `single_suction_moveit_config` in missing/index-fail output, then points to `fix_workspace_layout.sh` for remediation when they are hidden in `assets/`.
 
 ## Components
 
