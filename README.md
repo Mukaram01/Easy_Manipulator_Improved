@@ -86,6 +86,67 @@ colcon build --parallel-workers 2
 source install/setup.bash
 ```
 
+## Straightforward manual setup (no repo helper scripts)
+
+If you prefer not to use `fix_workspace_layout.sh` or other repository helper scripts, use the commands below.
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+cd ~/workcell_ws
+vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+
+source /opt/ros/humble/setup.bash
+
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
+rosdep update
+
+# Expose repo asset packages manually (equivalent to layout helper behavior)
+for d in src/easy_manipulation_deployment/assets/*; do
+  [ -d "$d" ] || continue
+  pkg="$(basename "$d")"
+  [ -e "src/$pkg" ] || ln -s "$d" "src/$pkg"
+done
+
+# Optional GUI packages are disabled in this simple/headless path
+mkdir -p src/tesseract_qt src/qtadvanceddocking src/ruckig
+touch src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE src/ruckig/COLCON_IGNORE
+
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
+  --skip-keys "tesseract_visualization taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
+source install/setup.bash
+```
+
+If `workbench_description` is still unresolved in an existing workspace, relink it to your actual checkout location. For example:
+
+```bash
+cd ~/workcell_ws
+rm -f src/workbench_description
+ln -s ~/workcell_ws/src/assets/environment/workbench_description src/workbench_description
+test -e src/workbench_description && echo OK_workbench
+```
+
+## Build profiles (simple)
+
+- **Headless / simplest (recommended):**
+
+  ```bash
+  cd ~/workcell_ws
+  source /opt/ros/humble/setup.bash
+  colcon build --symlink-install --parallel-workers 2 \
+    --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
+  ```
+
+- **GUI / Studio enabled (advanced):**
+  - Remove `COLCON_IGNORE` from `src/tesseract_qt` and `src/qtadvanceddocking`.
+  - Install GUI dependencies (Qt + ADS).
+  - Build without skipping `tesseract_qt` / `QtADS` / `tesseract_rviz`.
+
 ## First run / verification
 
 Source the workspace in each new shell:
