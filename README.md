@@ -147,6 +147,52 @@ test -e src/workbench_description && echo OK_workbench
   - Install GUI dependencies (Qt + ADS).
   - Build without skipping `tesseract_qt` / `QtADS` / `tesseract_rviz`.
 
+
+## Skip list for missing Tesseract Qt packages (simple)
+
+From your build log, the failure is caused by `tesseract_rviz` requiring `tesseract_qt`.
+
+Use this minimal skip list:
+
+- `tesseract_rviz` (required if `tesseract_qt` is not installed)
+
+Optional defensive skips (only if those packages are present in your workspace and you want to force a headless build):
+
+- `tesseract_qt`
+- `QtADS` (sometimes appears as checkout folder `qtadvanceddocking`)
+
+### 1) Easiest one-liner (`--packages-skip`)
+
+```bash
+colcon build --symlink-install --packages-skip tesseract_rviz
+```
+
+Headless defensive variant:
+
+```bash
+colcon build --symlink-install --packages-skip tesseract_rviz tesseract_qt QtADS qtadvanceddocking
+```
+
+### 2) Persistent skip with `COLCON_IGNORE`
+
+```bash
+touch src/tesseract_rviz/COLCON_IGNORE
+colcon build --symlink-install
+```
+
+Headless defensive variant:
+
+```bash
+touch src/tesseract_rviz/COLCON_IGNORE src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE
+colcon build --symlink-install
+```
+
+### 3) Remove the persistent ignore later
+
+```bash
+rm -f src/tesseract_rviz/COLCON_IGNORE src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE
+```
+
 ## First run / verification
 
 Source the workspace in each new shell:
