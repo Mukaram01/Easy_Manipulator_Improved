@@ -12,14 +12,56 @@ Modular ROS 2 manipulation packages for grasp planning, grasp execution, and wor
 
 This package was tested with [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment), but any perception system publishing compatible ROS 2 messages will work.
 
+## Contents
+
+- [Supported platform](#supported-platform)
+- [Quick start (recommended path)](#quick-start-recommended-path)
+- [Step-by-step install](#step-by-step-install)
+- [First run / verification](#first-run--verification)
+- [Common scenarios](#common-scenarios)
+- [Troubleshooting](#troubleshooting)
+- [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
+
 ## Supported platform
 
 - **Supported/tested:** Ubuntu 22.04 + ROS 2 Humble
 - Other platforms and experimental combinations are listed later in [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
 
+## Quick start (recommended path)
+
+If you want the shortest known-good flow on Ubuntu 22.04 + ROS 2 Humble:
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+cd ~/workcell_ws
+
+# One-time rosdep override registration
+echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
+  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
+
+# Repeat before each build in source-checkout workflows
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+
+# Build
+eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
+colcon build --parallel-workers 2
+source install/setup.bash
+```
+
+Then verify:
+
+```bash
+ros2 pkg prefix emd_msgs
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
+```
+
+---
+
 ## Step-by-step install
 
-Use this for the normal, supported, non-GUI Humble path.
+Use this for the complete, supported, non-GUI Humble path.
 
 1. Install system dependencies.
 
