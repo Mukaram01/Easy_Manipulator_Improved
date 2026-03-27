@@ -252,10 +252,13 @@ set_gui_package_state
 summarize_exposed_repo_packages() {
   local total_assets=0
   local package_groups=(
+    "table_description:Table scene assets"
     "ur5_moveit_config:UR5 MoveIt config"
     "robotiq_85_moveit_config:Robotiq 85 MoveIt config"
+    "single_suction_moveit_config:Single suction MoveIt config"
     "ur_description:Robot descriptions"
     "robotiq_85_description:Robot descriptions"
+    "single_suction_description:Single suction description"
     "workbench_description:Robot descriptions"
   )
   local entry pkg_name label dest target remediation

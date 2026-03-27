@@ -19,6 +19,7 @@ fi
 
 SRC_DIR="$WORKSPACE_ROOT/src"
 REQUIRED_PACKAGES=(
+  table_description
   ur5_moveit_config
   robotiq_85_moveit_config
   single_suction_moveit_config
@@ -28,6 +29,7 @@ REQUIRED_PACKAGES=(
   workbench_description
 )
 REPOSITORY_PACKAGES=(
+  table_description
   ur5_moveit_config
   robotiq_85_moveit_config
   single_suction_moveit_config

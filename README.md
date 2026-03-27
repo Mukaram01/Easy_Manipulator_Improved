@@ -103,12 +103,15 @@ echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/ros
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
 
-# Expose repo asset packages manually (equivalent to layout helper behavior)
-for d in src/easy_manipulation_deployment/assets/*; do
-  [ -d "$d" ] || continue
-  pkg="$(basename "$d")"
-  [ -e "src/$pkg" ] || ln -s "$d" "src/$pkg"
-done
+# Expose repo asset packages manually (equivalent to layout helper behavior).
+# IMPORTANT: create links in src/ to actual package directories that contain package.xml.
+ln -sfn easy_manipulation_deployment/assets/environment/table_description src/table_description
+ln -sfn easy_manipulation_deployment/assets/environment/workbench_description src/workbench_description
+ln -sfn easy_manipulation_deployment/assets/robots/universal_robot/ur5_moveit_config src/ur5_moveit_config
+ln -sfn easy_manipulation_deployment/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config src/robotiq_85_moveit_config
+ln -sfn easy_manipulation_deployment/assets/end_effectors/robotiq_85_gripper/robotiq_85_description src/robotiq_85_description
+ln -sfn easy_manipulation_deployment/assets/end_effectors/single_suction_gripper/single_suction_moveit_config src/single_suction_moveit_config
+ln -sfn easy_manipulation_deployment/assets/end_effectors/single_suction_gripper/single_suction_description src/single_suction_description
 
 # Optional GUI packages are disabled in this simple/headless path
 mkdir -p src/tesseract_qt src/qtadvanceddocking src/ruckig
@@ -122,13 +125,15 @@ colcon build --symlink-install --parallel-workers 2 \
 source install/setup.bash
 ```
 
-If `workbench_description` is still unresolved in an existing workspace, relink it to your actual checkout location. For example:
+If scene/robot packages are still unresolved in an existing workspace, relink them to your actual checkout location. For example:
 
 ```bash
 cd ~/workcell_ws
-rm -f src/workbench_description
-ln -s ~/workcell_ws/src/assets/environment/workbench_description src/workbench_description
-test -e src/workbench_description && echo OK_workbench
+rm -f src/table_description src/workbench_description src/ur5_moveit_config
+ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets/environment/table_description src/table_description
+ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets/environment/workbench_description src/workbench_description
+ln -s ~/workcell_ws/src/easy_manipulation_deployment/assets/robots/universal_robot/ur5_moveit_config src/ur5_moveit_config
+test -e src/table_description && test -e src/workbench_description && test -e src/ur5_moveit_config && echo OK_scene_assets
 ```
 
 ## Build profiles (simple)
