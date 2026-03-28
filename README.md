@@ -35,6 +35,8 @@ If you want the shortest known-good flow on Ubuntu 22.04 + ROS 2 Humble:
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
 
 # One-time rosdep override registration
@@ -87,6 +89,8 @@ rosdep update
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
 ```
 
 4. Import the source dependencies.
@@ -136,6 +140,8 @@ If you prefer not to use `fix_workspace_layout.sh` or other repository helper sc
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+mv easy_manipulation_deployment/assets/ .
+mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
 vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
