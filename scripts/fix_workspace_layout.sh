@@ -455,9 +455,11 @@ fi
 link_from_backup() {
   local pkg="$1"
   local target=""
+  local repo_pkg_match=""
 
   # Skip linking if the repository already provides this package.
-  if find "${REPO_DIR}" -path "*/${pkg}/package.xml" -print -quit >/dev/null 2>&1; then
+  repo_pkg_match="$(find "${REPO_DIR}" -path "*/${pkg}/package.xml" -print -quit 2>/dev/null || true)"
+  if [ -n "$repo_pkg_match" ]; then
     return
   fi
 
