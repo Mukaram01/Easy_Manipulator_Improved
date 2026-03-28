@@ -5,6 +5,7 @@ repositories:
   tesseract_ros2:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_ros2.git
+    version: 0.33.0
   tesseract_planning:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_planning.git
@@ -46,4 +47,4 @@ repositories:
   ruckig:
     type: git
     url: https://github.com/pantor/ruckig.git
-    version: 37b6e7a  # v0.15.3; keep Humble/Jammy builds on the C++17-era baseline (no <format> dependency)
+    version: 37b6e7a

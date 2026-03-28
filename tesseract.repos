@@ -1,50 +1,51 @@
-# External dependencies - use official repos (ROS2 Humble compatible)
+# External dependencies mirror dependencies/emd_epd_ws.repos
 repositories:
-  ros_industrial_cmake_boilerplate:
+  tesseract:
     type: git
-    url: https://github.com/ros-industrial/ros_industrial_cmake_boilerplate
-    version: master
-  tesseract_external:
+    url: https://github.com/tesseract-robotics/tesseract.git
+  tesseract_ros2:
     type: git
-    url: https://github.com/ros-industrial-consortium/tesseract_ext
-    version: master
-  descartes_light:
+    url: https://github.com/tesseract-robotics/tesseract_ros2.git
+    version: 0.33.0
+  tesseract_planning:
     type: git
-    url: https://github.com/swri-robotics/descartes_light
-    version: master
-  opw_kinematics:
+    url: https://github.com/tesseract-robotics/tesseract_planning.git
+  tesseract_qt:
     type: git
-    url: https://github.com/Jmeyer1292/opw_kinematics
-    version: master
+    url: https://github.com/tesseract-robotics/tesseract_qt.git
+    version: 0.33.0
+  trajopt:
+    type: git
+    url: https://github.com/tesseract-robotics/trajopt.git
+  taskflow:
+    type: git
+    url: https://github.com/taskflow/taskflow.git
+  octomap:
+    type: git
+    url: https://github.com/OctoMap/octomap.git
+  cereal:
+    type: git
+    url: https://github.com/USCiLab/cereal.git
+  qtadvanceddocking:
+    type: git
+    url: https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System.git
   ifopt:
     type: git
-    url: https://github.com/ethz-adrl/ifopt
-    version: master
+    url: https://github.com/ethz-adrl/ifopt.git
+  descartes_light:
+    type: git
+    url: https://github.com/swri-robotics/descartes_light.git
   boost_plugin_loader:
     type: git
-    url: https://github.com/tesseract-robotics/boost_plugin_loader
+    url: https://github.com/tesseract-robotics/boost_plugin_loader.git
     version: 0.4.3
+  opw_kinematics:
+    type: git
+    url: https://github.com/Jmeyer1292/opw_kinematics.git
+  ros_industrial_cmake_boilerplate:
+    type: git
+    url: https://github.com/ros-industrial/ros_industrial_cmake_boilerplate.git
   ruckig:
     type: git
     url: https://github.com/pantor/ruckig.git
-    version: 37b6e7a  # v0.15.3; keep Humble/Jammy builds on the C++17-era baseline (no <format> dependency)
-  tesseract:
-    type: git
-    url: https://github.com/tesseract-robotics/tesseract
-    version: master
-  tesseract_planning:
-    type: git
-    url: https://github.com/tesseract-robotics/tesseract_planning
-    version: master
-  trajopt:
-    type: git
-    url: https://github.com/tesseract-robotics/trajopt
-    version: master
-  tesseract_ros2:
-    type: git
-    url: https://github.com/tesseract-robotics/tesseract_ros2
-    version: master
-  tesseract_qt:
-    type: git
-    url: https://github.com/tesseract-robotics/tesseract_qt
-    version: master
+    version: 37b6e7a
