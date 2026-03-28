@@ -411,6 +411,50 @@ ensure_symlink_target() {
   ln -s "$target" "$dest"
 }
 
+workspace_has_required_packages() {
+  local -n _missing_ref="$1"
+  local -a workspace_packages=()
+
+  if command -v colcon >/dev/null 2>&1; then
+    mapfile -t workspace_packages < <(colcon list --base-paths "$SRC_DIR" --names-only 2>/dev/null || true)
+  fi
+
+  if [[ ${#workspace_packages[@]} -eq 0 ]]; then
+    mapfile -t workspace_packages < <(
+      find "$SRC_DIR" -name package.xml -print0 2>/dev/null \
+        | xargs -0 -n1 python3 - <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+pkg = Path(sys.argv[1])
+try:
+    name = ET.parse(pkg).getroot().findtext("name")
+except Exception:
+    name = None
+if name:
+    print(name.strip())
+PY
+    )
+  fi
+
+  local -A present=()
+  local pkg
+  for pkg in "${workspace_packages[@]}"; do
+    present["$pkg"]=1
+  done
+
+  local required=(trajopt trajopt_common trajopt_sco)
+  _missing_ref=()
+  for pkg in "${required[@]}"; do
+    if [[ -z ${present[$pkg]:-} ]]; then
+      _missing_ref+=("$pkg")
+    fi
+  done
+
+  [[ ${#_missing_ref[@]} -eq 0 ]]
+}
+
 # Ensure symlink for trajopt_sco pointing to nested package
 ensure_symlink_target \
   "${SRC_DIR}/trajopt_sco" \
@@ -615,3 +659,29 @@ if command -v colcon >/dev/null 2>&1; then
 fi
 
 ensure_motion_planners_component_configs "$WORKSPACE_ROOT"
+
+required_missing=()
+if ! workspace_has_required_packages required_missing; then
+  trajopt_path="$SRC_DIR/trajopt"
+  trajopt_common_path="$SRC_DIR/trajopt_common"
+  trajopt_sco_path="$SRC_DIR/trajopt_sco"
+
+  echo
+  echo "Workspace layout summary"
+  echo "========================"
+  echo "Required package preflight: FAILED"
+  printf 'Missing package(s): %s\n' "${required_missing[*]}"
+  echo "  Path checks:"
+  printf '    - %-24s exists=%s type=%s resolved=%s\n' "$trajopt_path" "$(path_exists "$trajopt_path" && echo yes || echo no)" "$(path_type "$trajopt_path")" "$(resolved_path_or_unresolved "$trajopt_path")"
+  printf '    - %-24s exists=%s type=%s resolved=%s\n' "$trajopt_common_path" "$(path_exists "$trajopt_common_path" && echo yes || echo no)" "$(path_type "$trajopt_common_path")" "$(resolved_path_or_unresolved "$trajopt_common_path")"
+  printf '    - %-24s exists=%s type=%s resolved=%s\n' "$trajopt_sco_path" "$(path_exists "$trajopt_sco_path" && echo yes || echo no)" "$(path_type "$trajopt_sco_path")" "$(resolved_path_or_unresolved "$trajopt_sco_path")"
+  echo
+  echo "Remediation:"
+  echo "  1) Import repositories from tesseract.repos into src/ if not already imported:"
+  echo "       vcs import --recursive --skip-existing src < tesseract.repos"
+  echo "  2) Rerun workspace layout fix:"
+  echo "       ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh"
+  echo "  3) Rebuild with foundation-first flow (or equivalent helper script):"
+  echo "       colcon build --packages-up-to trajopt_sco"
+  exit 1
+fi
