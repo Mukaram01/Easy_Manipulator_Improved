@@ -409,6 +409,21 @@ colcon build --parallel-workers 2
 
 Do **not** remove `ros-humble-ruckig` just to build this repository; that can remove unrelated MoveIt packages.
 
+### Missing `trajoptConfig.cmake` during configure
+
+`scripts/fix_workspace_layout.sh` does **not** generate synthetic TrajOpt package config files. The supported path is to make sure the real TrajOpt packages are discoverable in your workspace (or installed in an underlay), then rerun the layout helper and rebuild.
+
+Recommended recovery:
+
+```bash
+cd ~/workcell_ws
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/tesseract.repos
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+colcon build --packages-up-to trajopt_sco
+```
+
+If `trajoptConfig.cmake` is still missing, verify `src/trajopt`, `src/trajopt_common`, and `src/trajopt_sco` exist and that your active underlay/overlay environment is sourced correctly before running a full build.
+
 ### Optional GUI package issues
 
 If `tesseract_qt` fails to link because the ADS target name differs on your system, apply the included patch and rebuild:
