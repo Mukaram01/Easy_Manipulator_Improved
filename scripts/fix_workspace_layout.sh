@@ -618,7 +618,6 @@ fi
 link_from_backup trajopt_common
 link_from_backup trajopt
 
-# Generate a minimal CMake package configuration for
 # Remove duplicate packages that collide with the overlays bundled inside the
 # easy_manipulation_deployment repository. Keeping the patched overlays and
 # discarding the external checkouts prevents rosdep from aborting with runtime
