@@ -304,7 +304,7 @@ For an explicit GUI-enabled manual build, remove those markers by opting into GU
 
 ```bash
 cd ~/workcell_ws/src
-vcs import < easy_manipulation_deployment/tesseract.repos
+vcs import < easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui
 colcon build --symlink-install --parallel-workers 2
@@ -417,7 +417,7 @@ Recommended recovery:
 
 ```bash
 cd ~/workcell_ws
-vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/tesseract.repos
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon build --packages-up-to trajopt_sco
 ```
@@ -678,7 +678,7 @@ ros2 launch my_generated_scene demo.launch.py
 
 ## Architecture
 
-This package uses the following external dependencies (fetched via `tesseract.repos`):
+This package uses the following external dependencies (fetched via `dependencies/emd_epd_ws.repos` by default):
 
 | Package | Description |
 |---------|-------------|
