@@ -214,6 +214,82 @@ ensure_colcon_ignore() {
   fi
 }
 
+package_name_from_xml() {
+  local pkg_xml="$1"
+  PKG_XML="$pkg_xml" python3 - <<'PY'
+import os
+import xml.etree.ElementTree as ET
+
+pkg_xml = os.environ["PKG_XML"]
+try:
+    print((ET.parse(pkg_xml).getroot().findtext("name") or "").strip())
+except Exception:
+    print("")
+PY
+}
+
+alternate_package_exists() {
+  local pkg_name="$1"
+  local excluded_root="$2"
+  local search_root="$3"
+  local pkg_xml pkg_dir other_name
+
+  while IFS= read -r pkg_xml; do
+    pkg_dir="$(dirname "$pkg_xml")"
+    if [[ "$pkg_dir" == "$excluded_root" || "$pkg_dir" == "$excluded_root/"* ]]; then
+      continue
+    fi
+    other_name="$(package_name_from_xml "$pkg_xml")"
+    if [[ "$other_name" == "$pkg_name" ]]; then
+      return 0
+    fi
+  done < <(find "$search_root" -name package.xml -print 2>/dev/null)
+
+  return 1
+}
+
+can_ignore_external_trajopt_path() {
+  local dir="$1"
+  local pkg_xml pkg_name
+  local -a missing_replacements=()
+
+  [ -d "$dir" ] || return 1
+  while IFS= read -r pkg_xml; do
+    pkg_name="$(package_name_from_xml "$pkg_xml")"
+    [ -n "$pkg_name" ] || continue
+    if ! alternate_package_exists "$pkg_name" "$dir" "$SRC_DIR"; then
+      missing_replacements+=("$pkg_name")
+    fi
+  done < <(find "$dir" -name package.xml -print 2>/dev/null)
+
+  if [[ ${#missing_replacements[@]} -gt 0 ]]; then
+    echo "Skipping COLCON_IGNORE for $dir: no equivalent package replacement found in $SRC_DIR for ${missing_replacements[*]}"
+    return 1
+  fi
+
+  if command -v colcon >/dev/null 2>&1; then
+    local discovered_elsewhere=1
+    local colcon_pkg_path
+    while IFS= read -r pkg_xml; do
+      pkg_name="$(package_name_from_xml "$pkg_xml")"
+      [ -n "$pkg_name" ] || continue
+      colcon_pkg_path="$(colcon list --base-paths "$SRC_DIR" 2>/dev/null | awk -v name="$pkg_name" '$1 == name {print $2; exit}' || true)"
+      if [[ -n "$colcon_pkg_path" && "$colcon_pkg_path" != "$dir" && "$colcon_pkg_path" != "$dir/"* ]]; then
+        continue
+      fi
+      discovered_elsewhere=0
+      break
+    done < <(find "$dir" -name package.xml -print 2>/dev/null)
+
+    if [[ $discovered_elsewhere -eq 0 ]]; then
+      echo "Skipping COLCON_IGNORE for $dir: colcon could not confirm alternate discoverable package paths under $SRC_DIR"
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
 set_gui_package_state() {
   local marker
   local gui_paths=(
@@ -243,7 +319,9 @@ for duplicate in \
   "$SRC_DIR/trajopt/trajopt" \
   "$SRC_DIR/trajopt/trajopt_common" \
   "$SRC_DIR/trajopt/trajopt_sco"; do
-  ensure_colcon_ignore "$duplicate"
+  if can_ignore_external_trajopt_path "$duplicate"; then
+    ensure_colcon_ignore "$duplicate"
+  fi
 done
 
 expose_repo_packages
