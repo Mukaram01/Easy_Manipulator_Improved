@@ -1,2 +1,0 @@
-# Prevent ROS package discovery in this compatibility asset mirror.
-# Canonical package sources live under src/assets for workspace builds.
