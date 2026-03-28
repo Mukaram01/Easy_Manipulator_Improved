@@ -491,6 +491,34 @@ ensure_symlink_target() {
   ln -s "$target" "$dest"
 }
 
+resolve_trajopt_sco_target() {
+  local preferred_target="$1"
+  local -a candidate_targets=(
+    "$preferred_target"
+    "${SRC_DIR}/trajopt/trajopt_sco"
+    "${BACKUP_DIR}/trajopt_sco"
+    "${ORIG_DIR}/trajopt_sco"
+    "${BACKUP_DIR}/trajopt/trajopt_sco"
+    "${ORIG_DIR}/trajopt/trajopt_sco"
+  )
+  local candidate
+
+  for candidate in "${candidate_targets[@]}"; do
+    if [ -d "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  echo "Error: Cannot link ${SRC_DIR}/trajopt_sco because no valid source directory exists." >&2
+  echo "Expected locations checked:" >&2
+  for candidate in "${candidate_targets[@]}"; do
+    echo "  - ${candidate}" >&2
+  done
+  echo "Remediation: restore trajopt_sco in one of the listed paths (for example via 'vcs import --recursive --skip-existing src < tesseract.repos' or by recovering backup/original snapshots), then rerun scripts/fix_workspace_layout.sh." >&2
+  exit 1
+}
+
 workspace_has_required_packages() {
   local -n _missing_ref="$1"
   local -a workspace_packages=()
@@ -535,10 +563,11 @@ PY
   [[ ${#_missing_ref[@]} -eq 0 ]]
 }
 
-# Ensure symlink for trajopt_sco pointing to nested package
+# Ensure symlink for trajopt_sco points to a valid package source.
+trajopt_sco_target="$(resolve_trajopt_sco_target "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco")"
 ensure_symlink_target \
   "${SRC_DIR}/trajopt_sco" \
-  "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco"
+  "${trajopt_sco_target}"
 
 # Ensure trajopt_common declares all dependencies it links against. Some
 # upstream snapshots omit find_package() calls for tinyxml2, Boost graph, and
