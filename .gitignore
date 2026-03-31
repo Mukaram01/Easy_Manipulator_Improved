@@ -37,6 +37,9 @@ src/trajopt/
 boost_plugin_loader/
 ros_industrial_cmake_boilerplate/
 tesseract*/
+# Allow the first-party Tesseract backend sources that live inside the package.
+!easy_manipulation_deployment/emd_dynamic_safety/src/tesseract/
+!easy_manipulation_deployment/emd_dynamic_safety/src/tesseract/*
 trajopt*/
 ifopt/
 opw_kinematics/
