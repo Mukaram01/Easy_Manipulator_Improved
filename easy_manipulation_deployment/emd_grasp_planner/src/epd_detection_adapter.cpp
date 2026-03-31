@@ -29,6 +29,9 @@
 namespace grasp_planner
 {
 
+// Conversion factor: raw 16-bit depth value (millimetres) → metres.
+static constexpr float kDepthMmToMeters = 0.001F;
+
 EpdDetectionAdapter::EpdDetectionAdapter(const rclcpp::NodeOptions & options)
 : rclcpp::Node("epd_detection_adapter", options)
 {
@@ -140,7 +143,7 @@ bool EpdDetectionAdapter::get_depth_value(
     if (depth_raw == 0U) {
       return false;
     }
-    depth_m = static_cast<float>(depth_raw) * 0.001F;
+    depth_m = static_cast<float>(depth_raw) * kDepthMmToMeters;
     return std::isfinite(depth_m) && depth_m > 0.0F;
   }
 

@@ -1,4 +1,4 @@
-name: Humble CI
+name: Jazzy CI
 
 on:
   push:
@@ -6,16 +6,16 @@ on:
   pull_request:
 
 jobs:
-  humble-ci:
-    runs-on: ubuntu-22.04
+  jazzy-ci:
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up ROS 2 Humble
+      - name: Set up ROS 2 Jazzy
         uses: ros-tooling/setup-ros@v0.7
         with:
-          required-ros-distributions: humble
+          required-ros-distributions: jazzy
 
       - name: Create workspace
         run: |
@@ -26,9 +26,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ros/rosdep
-          key: rosdep-humble-${{ hashFiles('**/package.xml') }}
+          key: rosdep-jazzy-${{ hashFiles('**/package.xml') }}
           restore-keys: |
-            rosdep-humble-
+            rosdep-jazzy-
 
       - name: Validate shell scripts and embedded Python
         run: |
@@ -39,15 +39,15 @@ jobs:
         working-directory: ws
         run: |
           rosdep update
-          rosdep install --from-paths src --ignore-src -yr --rosdistro humble
+          rosdep install --from-paths src --ignore-src -yr --rosdistro jazzy
 
       - name: Cache colcon build artifacts
         uses: actions/cache@v4
         with:
           path: ws/build
-          key: colcon-humble-${{ hashFiles('**/package.xml', '**/CMakeLists.txt') }}
+          key: colcon-jazzy-${{ hashFiles('**/package.xml', '**/CMakeLists.txt') }}
           restore-keys: |
-            colcon-humble-
+            colcon-jazzy-
 
       - name: Build
         working-directory: ws

@@ -237,35 +237,66 @@ void MoveitReplannerContext::run(
   const trajectory_msgs::msg::JointTrajectoryPoint & end_point,
   trajectory_msgs::msg::JointTrajectory & plan)
 {
-  // TODO(anyone): This is still a bit unsafe, not thread safe
-  // Nothing I can think of to solve this right now
-  // Lock scene
-  std::lock_guard<std::mutex> lk(scene_mtx_);
-  auto & start_state = scene_->getCurrentStateNonConst();
-  moveit::core::RobotState end_state = scene_->getCurrentState();
-
-  // Update state
-  for (size_t i = 0; i < joint_names.size(); i++) {
-    // TODO(anyone): multi-axis joint
-    start_state.setJointPositions(joint_names[i], {start_point.positions[i]});
-    end_state.setJointPositions(joint_names[i], {end_point.positions[i]});
+  // Take a lightweight diff-snapshot of the scene so the mutex can be released
+  // before the potentially long solve() call, allowing update() to keep the
+  // parent scene current while planning is in progress.
+  planning_scene::PlanningScenePtr scene_snapshot;
+  planning_interface::MotionPlanRequest request;
+  {
+    std::lock_guard<std::mutex> lk(scene_mtx_);
+    scene_snapshot = scene_->diff();
+    request = planning_request_;
   }
-  moveit::core::robotStateToRobotStateMsg(start_state, planning_request_.start_state);
-  planning_request_.goal_constraints = {
+
+  auto & start_state = scene_snapshot->getCurrentStateNonConst();
+  moveit::core::RobotState end_state = scene_snapshot->getCurrentState();
+
+  // Update state — use a separate position index to correctly handle multi-axis
+  // joints whose variable count may be greater than one.
+  size_t pos_idx = 0;
+  for (size_t i = 0;
+    i < joint_names.size() && pos_idx < start_point.positions.size();
+    i++)
+  {
+    const moveit::core::JointModel * jm = start_state.getJointModel(joint_names[i]);
+    if (!jm) {
+      // The joint_names / positions arrays are parallel (position[i] belongs to
+      // joint_names[i]).  An unknown joint name still occupies one position slot
+      // so we must advance pos_idx to keep subsequent joints correctly aligned.
+      ++pos_idx;
+      continue;
+    }
+    const size_t var_count = jm->getVariableCount();
+    if (pos_idx + var_count > start_point.positions.size() ||
+      pos_idx + var_count > end_point.positions.size())
+    {
+      RCLCPP_WARN(
+        LOGGER,
+        "Not enough positions for joint '%s' (need %zu, have %zu); skipping",
+        joint_names[i].c_str(), var_count,
+        start_point.positions.size() - pos_idx);
+      break;
+    }
+    start_state.setJointPositions(joint_names[i], &start_point.positions[pos_idx]);
+    end_state.setJointPositions(joint_names[i], &end_point.positions[pos_idx]);
+    pos_idx += var_count;
+  }
+
+  moveit::core::robotStateToRobotStateMsg(start_state, request.start_state);
+  request.goal_constraints = {
     kinematic_constraints::constructGoalConstraints(
       end_state,
-      scene_->getRobotModel()->getJointModelGroup(
-        planning_request_.group_name))
+      scene_snapshot->getRobotModel()->getJointModelGroup(
+        request.group_name))
   };
 
   planning_interface::MotionPlanResponse planning_response;
 
   auto context =
     planning_manager_->getPlanningContext(
-    scene_, planning_request_, planning_response.error_code_);
+    scene_snapshot, request, planning_response.error_code_);
   if (context) {
     context->solve(planning_response);
-    // This will make it much less likely to timeout
     if (planning_response.error_code_.val == planning_response.error_code_.SUCCESS) {
       moveit_msgs::msg::RobotTrajectory moveit_traj_msg;
       planning_response.trajectory_->getRobotTrajectoryMsg(moveit_traj_msg);
@@ -283,11 +314,15 @@ void MoveitReplannerContext::update(
 {
   if (scene_mtx_.try_lock()) {
     auto & current_state = scene_->getCurrentStateNonConst();
-    // Update state
-    for (size_t i = 0; i < joint_states.name.size(); i++) {
-      // TODO(anyone): multi-axis joint
-      if (current_state.getJointModel(joint_states.name[i])) {
-        current_state.setJointPositions(joint_states.name[i], {joint_states.position[i]});
+    // JointState messages carry per-variable (not per-joint) entries, so use
+    // setVariablePosition for a correct 1-to-1 variable update that handles
+    // both single-axis and multi-axis joints.
+    for (size_t i = 0;
+      i < joint_states.name.size() && i < joint_states.position.size();
+      i++)
+    {
+      if (current_state.getRobotModel()->hasVariableIndex(joint_states.name[i])) {
+        current_state.setVariablePosition(joint_states.name[i], joint_states.position[i]);
       }
     }
     scene_mtx_.unlock();

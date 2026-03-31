@@ -194,8 +194,11 @@ void NextPointPublisher::_next_point()
   if (time_point_ < traj_->getDuration()) {
     traj_->getStateAtDurationFromStart(time_point_ + period_ * scale_, point_);
   } else {
+    // Trajectory complete: clamp to the final state so the last published
+    // command always reflects the exact end-point of the trajectory.
+    traj_->getLastWayPoint(*point_);
+    RCLCPP_INFO_ONCE(LOGGER, "Trajectory complete (duration %.3f s)", traj_->getDuration());
     status_ = SUCCEEDED;
-    // TODO(Briancbn): validate ending condition;
   }
 }
 

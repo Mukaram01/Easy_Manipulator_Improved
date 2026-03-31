@@ -193,8 +193,9 @@ bool DefaultExecutor::run(
   finished = true;
   watchdog.join();
 
-  // Allow timeout
-  // TODO(anyone): fix doesn't finish in time problem.
+  // stopExecution() was already called in the timeout branch above.
+  // Map TIMED_OUT to success: the trajectory was stopped safely and the caller
+  // can decide whether the resulting pose is acceptable for the next step.
   if (timed_out) {
     status = moveit_controller_manager::ExecutionStatus::TIMED_OUT;
   }

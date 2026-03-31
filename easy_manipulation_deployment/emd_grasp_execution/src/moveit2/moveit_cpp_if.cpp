@@ -745,10 +745,15 @@ bool MoveitCppGraspExecution::move_to(
 {
   auto current_state = moveit_cpp_->getCurrentState();
 
-  for (size_t i = 0; i < state.name.size(); i++) {
-    // TODO(anyone): multi-axis joint
-    if (current_state->getJointModel(state.name[i])) {
-      current_state->setJointPositions(state.name[i], {state.position[i]});
+  // JointState messages carry per-variable entries. Use setVariablePosition so
+  // that each named variable is updated individually — this handles both
+  // single-axis revolute joints and multi-axis joints correctly.
+  for (size_t i = 0;
+    i < state.name.size() && i < state.position.size();
+    i++)
+  {
+    if (current_state->getRobotModel()->hasVariableIndex(state.name[i])) {
+      current_state->setVariablePosition(state.name[i], state.position[i]);
     }
   }
   return move_to(5, planning_group, *current_state, execute);
