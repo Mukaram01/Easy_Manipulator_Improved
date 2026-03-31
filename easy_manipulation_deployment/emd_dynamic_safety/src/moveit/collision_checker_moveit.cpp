@@ -23,7 +23,7 @@
 #include "moveit/collision_detection_fcl/collision_detector_allocator_fcl.h"
 
 // Commented out due to library confliction with tesseract
-#ifndef END_DYNAMIC_SAFETY_TESSERACT
+#ifndef EMD_DYNAMIC_SAFETY_TESSERACT
 #include "moveit/collision_detection_bullet/collision_detector_allocator_bullet.h"
 #endif
 

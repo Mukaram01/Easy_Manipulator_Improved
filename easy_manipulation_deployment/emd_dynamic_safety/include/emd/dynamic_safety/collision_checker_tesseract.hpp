@@ -77,9 +77,6 @@ protected:
   rclcpp::Clock::SharedPtr clock_;
 };
 
-tesseract_environment::Environment::Ptr TesseractCollisionCheckerContext::env;
-int TesseractCollisionCheckerContext::instances = 0;
-
 }  // namespace dynamic_safety_tesseract
 
 #endif  // EMD__DYNAMIC_SAFETY__COLLISION_CHECKER_TESSERACT_HPP_
