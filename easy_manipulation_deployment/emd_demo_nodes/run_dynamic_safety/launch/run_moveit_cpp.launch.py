@@ -1,8 +1,9 @@
 import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.actions import ExecuteProcess, DeclareLaunchArgument, TimerAction
+from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
 import xacro
 
@@ -98,19 +99,32 @@ def generate_launch_description():
         )
     }
 
-    # MoveItCpp demo executable
+    # MoveItCpp demo executable — plain variant (default)
     run_moveit_cpp_node = Node(
         name="run_moveit_cpp",
         package="run_dynamic_safety",
-        prefix=PythonExpression(
-            [
-                "'xterm -e gdb --args' if '",
-                LaunchConfiguration('debug'),
-                "' == 'true' else ''",
-            ]
-        ),
         executable="run_moveit_cpp",
         output="screen",
+        condition=UnlessCondition(LaunchConfiguration('debug')),
+        parameters=[
+            moveit_cpp_yaml_file_name,
+            robot_description,
+            robot_description_semantic,
+            robot_description_kinematics,
+            ompl_planning_pipeline_config,
+            moveit_controllers,
+            joint_limits_yaml,
+        ],
+    )
+
+    # MoveItCpp demo executable — gdb variant (only when debug:=true)
+    run_moveit_cpp_node_debug = Node(
+        name="run_moveit_cpp",
+        package="run_dynamic_safety",
+        prefix="xterm -e gdb --args",
+        executable="run_moveit_cpp",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration('debug')),
         parameters=[
             moveit_cpp_yaml_file_name,
             robot_description,
@@ -179,27 +193,38 @@ def generate_launch_description():
         },
     )
 
-    # Load controllers
+    # Load controllers — wrap in TimerAction so the controller_manager has time
+    # to start up before the spawner connects.  A 2-second delay matches the
+    # pattern used in the grasp_execution launch file.
     load_controllers = []
+    spawn_delay = 2.0
     for controller in [
+        "joint_state_broadcaster",
         "panda_arm_controller",
         "panda_hand_controller",
-        "joint_state_broadcaster",
     ]:
-        load_controllers += [
-            ExecuteProcess(
-                cmd=[
-                    "ros2",
-                    "run",
-                    "controller_manager",
-                    "spawner",
-                    controller,
-                    "--controller-manager",
-                    "/controller_manager",
+        load_controllers.append(
+            TimerAction(
+                period=spawn_delay,
+                actions=[
+                    ExecuteProcess(
+                        cmd=[
+                            "ros2",
+                            "run",
+                            "controller_manager",
+                            "spawner",
+                            controller,
+                            "--controller-manager",
+                            "/controller_manager",
+                        ],
+                        output="screen",
+                    )
                 ],
-                output="screen",
             )
-        ]
+        )
+        # Stagger subsequent controllers by an additional 0.5 s so they don't
+        # all race to connect at the same instant.
+        spawn_delay += 0.5
 
     return LaunchDescription(
         [
@@ -208,6 +233,7 @@ def generate_launch_description():
             robot_state_publisher,
             rviz_node,
             run_moveit_cpp_node,
+            run_moveit_cpp_node_debug,
             ros2_control_node,
         ]
         + load_controllers

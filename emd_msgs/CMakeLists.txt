@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 project(emd_msgs)
 
 # This package defines ROS interfaces.  When the necessary ROS tooling is not

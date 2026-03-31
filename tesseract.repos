@@ -1,8 +1,11 @@
 # External dependencies mirror dependencies/emd_epd_ws.repos
+# All versions are pinned to the set compatible with tesseract_ros2 0.33.0.
+# See: https://github.com/tesseract-robotics/tesseract_ros2/blob/0.33.0/dependencies.repos
 repositories:
   tesseract:
     type: git
     url: https://github.com/tesseract-robotics/tesseract.git
+    version: 0.33.0
   tesseract_ros2:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_ros2.git
@@ -10,6 +13,7 @@ repositories:
   tesseract_planning:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_planning.git
+    version: 0.33.0
   tesseract_qt:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_qt.git
@@ -17,24 +21,31 @@ repositories:
   trajopt:
     type: git
     url: https://github.com/tesseract-robotics/trajopt.git
+    version: 0.33.0
   taskflow:
     type: git
     url: https://github.com/taskflow/taskflow.git
+    version: v3.5.0
   octomap:
     type: git
     url: https://github.com/OctoMap/octomap.git
+    version: v1.9.6
   cereal:
     type: git
     url: https://github.com/USCiLab/cereal.git
+    version: v1.3.2
   qtadvanceddocking:
     type: git
     url: https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System.git
+    version: 4.1.1
   ifopt:
     type: git
     url: https://github.com/ethz-adrl/ifopt.git
+    version: 2.1.4
   descartes_light:
     type: git
     url: https://github.com/swri-robotics/descartes_light.git
+    version: 0.4.9
   boost_plugin_loader:
     type: git
     url: https://github.com/tesseract-robotics/boost_plugin_loader.git
@@ -42,10 +53,12 @@ repositories:
   opw_kinematics:
     type: git
     url: https://github.com/Jmeyer1292/opw_kinematics.git
+    version: 0.5.2
   ros_industrial_cmake_boilerplate:
     type: git
     url: https://github.com/ros-industrial/ros_industrial_cmake_boilerplate.git
+    version: 0.7.4
   ruckig:
     type: git
-    url: https://github.com/pantor/ruckig.git
-    version: 37b6e7a
+    url: https://github.com/Levi-Armstrong/ruckig.git
+    version: cpack-v0.9.2
