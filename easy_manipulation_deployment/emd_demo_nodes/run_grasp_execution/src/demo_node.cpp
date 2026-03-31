@@ -61,6 +61,11 @@ public:
     int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
     ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
 
+    // Configurable release pose: x-offset from the current EE position and
+    // optional z-height override. Defaults preserve the original behaviour.
+    release_x_offset_ = node_->declare_parameter<double>("release_x_offset", -0.3);
+    release_use_grasp_z_ = node_->declare_parameter<bool>("release_use_grasp_z", true);
+
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
       [ = ](emd_msgs::msg::GraspTask::UniquePtr msg) {
@@ -272,11 +277,15 @@ public:
 
     prompt_job_end(node_->get_logger(), true);
 
-    // TODO(Briancbn): Configurable release pose
+    // Apply configurable release pose offsets. The x_offset is applied to the
+    // current EE position. Optionally the z-height is aligned to the grasp
+    // pose so the object clears any surface obstacle on approach.
     geometry_msgs::msg::PoseStamped base_grasp_pose;
     to_frame(*selected_grasp_pose, base_grasp_pose, this->robot_frame_);
-    release_pose.pose.position.x -= 0.3;
-    release_pose.pose.position.z = base_grasp_pose.pose.position.z;
+    release_pose.pose.position.x += release_x_offset_;
+    if (release_use_grasp_z_) {
+      release_pose.pose.position.z = base_grasp_pose.pose.position.z;
+    }
     release_pose.pose.orientation = base_grasp_pose.pose.orientation;
 
     if(!this->plan_and_execute_job(
@@ -331,6 +340,8 @@ private:
   emd::EndEffectorExecutionContext ee_context_;
   rclcpp::Subscription<emd_msgs::msg::GraspTask>::SharedPtr grasp_task_sub_;
   rclcpp::Service<emd_msgs::srv::GraspRequest>::SharedPtr grasp_req_service_;
+  double release_x_offset_{-0.3};
+  bool release_use_grasp_z_{true};
 };
 
 }  // namespace grasp_execution

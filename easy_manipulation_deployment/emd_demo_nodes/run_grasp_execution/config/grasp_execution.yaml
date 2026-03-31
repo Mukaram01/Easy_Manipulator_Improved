@@ -30,3 +30,13 @@ grasp_execution_node:
       planning_pipeline: ompl
       max_velocity_scaling_factor: 1.0
       max_acceleration_scaling_factor: 1.0
+
+    # --- Release pose configuration ---
+    # x-axis offset (metres) applied to the current end-effector position to
+    # determine the drop-off point. Negative values move the arm in the
+    # negative x direction (away from the workspace centre by default).
+    release_x_offset: -0.3
+
+    # When true the release pose z-height is aligned to the grasped object's
+    # z-height so the arm clears any surface on the return move.
+    release_use_grasp_z: true
