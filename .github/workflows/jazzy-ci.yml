@@ -21,6 +21,9 @@ jobs:
         run: |
           mkdir -p ws/src
           ln -s "${GITHUB_WORKSPACE}" ws/src/easy_manipulation_deployment
+          # Prevent rosdep/colcon from following the symlink back into the
+          # workspace directory and creating an infinite recursion loop.
+          touch ws/COLCON_IGNORE ws/AMENT_IGNORE
 
       - name: Cache rosdep database
         uses: actions/cache@v4

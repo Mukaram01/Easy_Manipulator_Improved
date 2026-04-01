@@ -325,6 +325,8 @@ set_gui_package_state() {
   local gui_paths=(
     "$PWD/src/tesseract_qt/COLCON_IGNORE"
     "$PWD/src/qtadvanceddocking/COLCON_IGNORE"
+    # tesseract_rviz depends on tesseract_qt widgets; exclude it when GUI is off
+    "$PWD/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE"
   )
 
   if [[ $WITH_GUI -eq 1 ]]; then
@@ -948,6 +950,16 @@ fi
 set_gui_package_state
 detect_stale_ruckig_mismatch
 
+# When building with GUI support, patch tesseract_qt/studio/CMakeLists.txt to
+# handle all possible Qt Advanced Docking System target names before the build
+# starts.  The patch is idempotent (apply_upstream_patches.sh detects already-
+# applied state and skips re-application).
+if [[ "$WITH_GUI" -eq 1 && -d "$PWD/src/tesseract_qt" ]]; then
+  echo "Applying tesseract_qt Qt ADS target fix patch"
+  "${SCRIPT_DIR}/scripts/apply_upstream_patches.sh" || \
+    echo "WARNING: Failed to apply tesseract_qt Qt ADS target fix; build may fail if the installed QtADS package uses a non-standard target name" >&2
+fi
+
 # Taskflow is a header-only upstream dependency imported as a plain git checkout,
 # so colcon does not install a TaskflowConfig.cmake for downstream
 # find_package(Taskflow) calls. Generate a lightweight config and export it
@@ -959,7 +971,8 @@ FULL_BUILD_ARGS=()
 # repository checkout directory `qtadvanceddocking`, colcon package `QtADS`.
 if [[ "$PROFILE" == "full" && "$WITH_GUI" -eq 0 ]]; then
   echo "Full profile: skipping optional GUI packages (use --with-gui to enable Studio/Qt widgets; Qt ADS repo checkout: qtadvanceddocking, colcon package: QtADS)"
-  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking QtADS)
+  # tesseract_rviz depends on tesseract_qt widgets; skip it together with the Qt packages.
+  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz)
 fi
 
 if [[ "$PROFILE" == "full" ]]; then
