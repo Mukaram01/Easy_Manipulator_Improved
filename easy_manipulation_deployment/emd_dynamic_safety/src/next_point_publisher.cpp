@@ -174,12 +174,14 @@ void NextPointPublisher::run_once()
 
 const double & NextPointPublisher::current_point()
 {
-  time_point_ =
-    static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-      (clock::now() - scale_time_) * scale_ +
-      (scale_time_ - start_time_))
-    .count()) /
-    1e9;
+  // Compute the scaled elapsed time using std::chrono::duration<double> throughout
+  // to avoid the precision loss that arises from casting a large nanosecond count
+  // to double and then dividing by 1e9.
+  auto elapsed_after_scale =
+    std::chrono::duration<double>(clock::now() - scale_time_) * scale_;
+  auto elapsed_before_scale =
+    std::chrono::duration<double>(scale_time_ - start_time_);
+  time_point_ = (elapsed_after_scale + elapsed_before_scale).count();
   return time_point_;
 }
 
@@ -251,8 +253,8 @@ void NextPointPublisher::_send_command()
 
 void NextPointPublisher::_scale_impl(double scale)
 {
-  start_time_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-    (clock::now() - scale_time_) * (1.0 - scale_));
+  start_time_ += std::chrono::duration_cast<clock::duration>(
+    std::chrono::duration<double>(clock::now() - scale_time_) * (1.0 - scale_));
   scale_ = scale;
   scale_time_ = clock::now();
 }

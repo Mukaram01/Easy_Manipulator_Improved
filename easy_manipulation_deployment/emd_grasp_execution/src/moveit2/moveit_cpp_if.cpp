@@ -122,8 +122,13 @@ bool MoveitCppGraspExecution::init(const std::string & planning_group)
   // Check if planner is already registered
   if (arms_.find(planning_group) == arms_.end()) {
     // Print out basic planning group info for debugging
+    static constexpr double kCurrentStateTimeoutS = 1.0;
     moveit::core::RobotStatePtr state;
-    moveit_cpp_->getCurrentState(state, 0);
+    if (!moveit_cpp_->getCurrentState(state, kCurrentStateTimeoutS)) {
+      RCLCPP_ERROR(LOGGER, "Timed out waiting for current robot state");
+      prompt_job_end(LOGGER, false);
+      return false;
+    }
     auto robot_model = state->getRobotModel();
     auto joint_model_group = robot_model->getJointModelGroup(planning_group);
     size_t dof = joint_model_group->getVariableCount();
@@ -479,17 +484,22 @@ geometry_msgs::msg::Pose MoveitCppGraspExecution::get_object_pose(
 
 moveit::core::RobotStatePtr MoveitCppGraspExecution::get_curr_state() const
 {
-  // Get home state
+  static constexpr double kCurrentStateTimeoutS = 1.0;
   moveit::core::RobotStatePtr curr_state;
-  moveit_cpp_->getCurrentState(curr_state, 0);
+  if (!moveit_cpp_->getCurrentState(curr_state, kCurrentStateTimeoutS)) {
+    RCLCPP_WARN(LOGGER, "Timed out waiting for current robot state in get_curr_state()");
+  }
   return curr_state;
 }
 
 geometry_msgs::msg::PoseStamped MoveitCppGraspExecution::get_curr_pose(
   const std::string & link_name) const
 {
+  static constexpr double kCurrentStateTimeoutS = 1.0;
   moveit::core::RobotStatePtr state;
-  moveit_cpp_->getCurrentState(state, 0);
+  if (!moveit_cpp_->getCurrentState(state, kCurrentStateTimeoutS)) {
+    RCLCPP_WARN(LOGGER, "Timed out waiting for current robot state in get_curr_pose()");
+  }
   const auto & transform = state->getGlobalLinkTransform(link_name);
   ASSERT_ISOMETRY(transform);  // unsanitized input, could contain a non-isometry
 

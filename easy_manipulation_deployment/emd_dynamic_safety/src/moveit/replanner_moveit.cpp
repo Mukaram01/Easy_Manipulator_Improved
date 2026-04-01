@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 #include <stdexcept>
@@ -206,7 +208,7 @@ MoveitReplannerContext::MoveitReplannerContext(
         RCLCPP_ERROR(
           LOGGER, "dynamic_safety is waiting for planner_configs");
       }
-      usleep(100000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     auto f = parameters_client->get_parameters(planner_config.names);

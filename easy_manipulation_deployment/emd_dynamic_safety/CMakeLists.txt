@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 project(emd_dynamic_safety)
 
 # Default to C++17
@@ -271,7 +271,7 @@ if(NOT target_options STREQUAL "target_options-NOTFOUND")
   set_property(TARGET ${PROJECT_NAME}_controller PROPERTY COMPILE_OPTIONS ${target_options})
 endif()
 
-target_compile_definitions(${PROJECT_NAME}_controller PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_compile_definitions(${PROJECT_NAME}_controller PRIVATE "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 pluginlib_export_plugin_description_file(controller_interface controller_plugins.xml)
 
 # ------------------------------------------------------------------------------

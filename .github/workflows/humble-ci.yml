@@ -30,6 +30,16 @@ jobs:
           restore-keys: |
             rosdep-humble-
 
+      - name: Cache colcon build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ws/build
+            ws/install
+          key: colcon-humble-${{ hashFiles('**/CMakeLists.txt', '**/package.xml', '**/setup.py') }}
+          restore-keys: |
+            colcon-humble-
+
       - name: Validate shell scripts and embedded Python
         run: |
           bash -n fix_and_build_humble.sh scripts/fix_workspace_layout.sh

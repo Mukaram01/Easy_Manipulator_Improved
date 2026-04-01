@@ -12,18 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <unistd.h>
 #include <algorithm>
+#include <chrono>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 #include <stdexcept>
-#include <chrono>
-#include <future>
-#include <thread>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
 #include <rclcpp/parameter_client.hpp>
@@ -101,7 +100,7 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
           LOGGER, "dynamic_safety is waiting for model"
           " URDF in parameter [robot_description] on the ROS param server.");
       }
-      usleep(100000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     RCLCPP_INFO(
       LOGGER, "Received urdf & srdf from param server, parsing...");

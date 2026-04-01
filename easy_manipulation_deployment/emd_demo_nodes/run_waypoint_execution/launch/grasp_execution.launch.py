@@ -31,6 +31,7 @@ package_name = 'run_waypoint_execution'
 
 def to_urdf(xacro_path, urdf_path=None, mappings=None):
     """Convert the given xacro file to a URDF file."""
+    import atexit
 
     xacro_path = str(xacro_path)
 
@@ -39,6 +40,8 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
             prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
         )
         os.close(fd)
+        # Register cleanup so the temp file is removed when the launch process exits.
+        atexit.register(lambda p=urdf_path: Path(p).unlink(missing_ok=True))
     else:
         urdf_path = Path(urdf_path)
         if not urdf_path.name or urdf_path.name in {".", ".."}:
@@ -48,9 +51,12 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
         if directory:
             os.makedirs(directory, exist_ok=True)
 
+    # Use xacro's own toxml() serialiser instead of toprettyxml() to avoid
+    # whitespace artefacts (extra text nodes in <joint>/<link> elements) and
+    # the mandatory XML declaration that toprettyxml() injects.
     doc = xacro.process_file(xacro_path, mappings=mappings)
-    with xacro.open_output(urdf_path) as out:
-        out.write(doc.toprettyxml(indent='  '))
+    with open(urdf_path, "w", encoding="utf-8") as out:
+        out.write(doc.toxml())
 
     return urdf_path
 
