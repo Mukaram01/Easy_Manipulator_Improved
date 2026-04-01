@@ -29,43 +29,63 @@ template<typename T>
 struct has_camera_info<T, std::void_t<decltype(std::declval<T>().camera_info)>> : std::true_type
 {
 };
+
+// Conversion factor: raw 16-bit depth value (millimetres) → metres.
+constexpr double kDepthMmToMeters = 0.001;
 }  // namespace
 
 template<typename T>
 void grasp_planner::GraspScene<T>::send_to_execution(
   const emd_msgs::msg::GraspTask & grasp_task)
 {
-  if (grasp_task.grasp_targets.size() > 0) {
-    RCLCPP_INFO(LOGGER, "Sending Grasp Request to grasp execution module");
-    auto req = std::make_shared<emd_msgs::srv::GraspRequest::Request>();
-    req->grasp_targets = grasp_task.grasp_targets;
-    RCLCPP_INFO(LOGGER, "Waiting for grasp execution service");
-    while (!output_client->wait_for_service(std::chrono::seconds(1))) {
-      if (!rclcpp::ok()) {
-        RCLCPP_WARN(
-          node->get_logger(), "Grasp execution service wait interrupted. Skipping request.");
-        return;
-      }
-      RCLCPP_WARN(LOGGER, "Grasp execution service unavailable, waiting...");
-    }
-    if (!this->result_future.valid()) {
-      RCLCPP_INFO(LOGGER, "Client Not started");
-      auto request = output_client->async_send_request(req);
-      this->result_future = request.future.share();
-    } else if (this->result_future.wait_for(std::chrono::nanoseconds(0)) ==
-      std::future_status::timeout)
-    {
-      RCLCPP_INFO(LOGGER, "Grasp Execution still Ongoing");
-    } else {
-      auto result = this->result_future.get();
-      RCLCPP_INFO(
-        LOGGER, "Grasp Execution completed! STATUS: %s!!",
-        (result->success) ? "SUCCESS" : "FAILURE");
-      auto request = output_client->async_send_request(req);
-      this->result_future = request.future.share();
-    }
-  } else {
+  if (grasp_task.grasp_targets.empty()) {
     RCLCPP_ERROR(LOGGER, "No grasp tasks generated, Skipping request to grasp execution...");
+    this->grasp_objects.clear();
+    return;
+  }
+
+  RCLCPP_INFO(LOGGER, "Sending Grasp Request to grasp execution module");
+  auto req = std::make_shared<emd_msgs::srv::GraspRequest::Request>();
+  req->grasp_targets = grasp_task.grasp_targets;
+  RCLCPP_INFO(LOGGER, "Waiting for grasp execution service");
+
+  constexpr int kMaxWaitAttempts = 5;
+  int attempts = 0;
+  while (!output_client->wait_for_service(std::chrono::seconds(1))) {
+    if (!rclcpp::ok()) {
+      RCLCPP_WARN(
+        node->get_logger(), "Grasp execution service wait interrupted. Skipping request.");
+      this->grasp_objects.clear();
+      return;
+    }
+    if (++attempts >= kMaxWaitAttempts) {
+      RCLCPP_ERROR(
+        LOGGER,
+        "Grasp execution service unavailable after %d attempts. Dropping task.",
+        kMaxWaitAttempts);
+      this->grasp_objects.clear();
+      return;
+    }
+    RCLCPP_WARN(
+      LOGGER, "Grasp execution service unavailable, retrying (%d/%d)...",
+      attempts, kMaxWaitAttempts);
+  }
+
+  if (!this->result_future.valid()) {
+    RCLCPP_INFO(LOGGER, "Client Not started");
+    auto request = output_client->async_send_request(req);
+    this->result_future = request.future.share();
+  } else if (this->result_future.wait_for(std::chrono::nanoseconds(0)) ==
+    std::future_status::timeout)
+  {
+    RCLCPP_INFO(LOGGER, "Grasp Execution still Ongoing");
+  } else {
+    auto result = this->result_future.get();
+    RCLCPP_INFO(
+      LOGGER, "Grasp Execution completed! STATUS: %s!!",
+      (result->success) ? "SUCCESS" : "FAILURE");
+    auto request = output_client->async_send_request(req);
+    this->result_future = request.future.share();
   }
   this->grasp_objects.clear();
 }
@@ -355,11 +375,11 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
   int normal_estimation_threads = node->get_parameter(
     "point_cloud_params.normal_estimation_threads").as_int();
 
-  for (auto raw_object : objects) {
+  for (const auto & raw_object : objects) {
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr objectCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
-    pcl::PCLPointCloud2 * pcl_pc2(new pcl::PCLPointCloud2);
-    PCLFunctions::sensor_msg_to_pcl_pointcloud2((raw_object.segmented_pcl), *pcl_pc2);
-    pcl::fromPCLPointCloud2(*pcl_pc2, *(objectCloud));
+    pcl::PCLPointCloud2 pcl_pc2;
+    PCLFunctions::sensor_msg_to_pcl_pointcloud2((raw_object.segmented_pcl), pcl_pc2);
+    pcl::fromPCLPointCloud2(pcl_pc2, *(objectCloud));
     PCLFunctions::remove_statistical_outlier(objectCloud, 0.5);
 
     objectCloud->width = objectCloud->points.size();
@@ -454,13 +474,31 @@ void grasp_planner::GraspScene<T>::create_world_collision(
     fy = static_cast<float>(node->get_parameter("camera_parameters.fy").as_double());
   }
   cv_bridge::CvImagePtr cv_ptr;
-  cv_ptr = cv_bridge::toCvCopy(msg->depth_image, sensor_msgs::image_encodings::TYPE_16UC1);
-  cv::Mat depth_img = cv_ptr->image;
+  cv::Mat depth_img;
+  const std::string & depth_encoding = msg->depth_image.encoding;
+  if (depth_encoding == sensor_msgs::image_encodings::TYPE_16UC1) {
+    cv_ptr = cv_bridge::toCvCopy(msg->depth_image, sensor_msgs::image_encodings::TYPE_16UC1);
+    depth_img = cv_ptr->image;
+  } else if (depth_encoding == sensor_msgs::image_encodings::TYPE_32FC1) {
+    cv_ptr = cv_bridge::toCvCopy(msg->depth_image, sensor_msgs::image_encodings::TYPE_32FC1);
+    depth_img = cv_ptr->image;
+  } else {
+    RCLCPP_ERROR(
+      LOGGER,
+      "Unsupported depth encoding '%s' in create_world_collision. Skipping.",
+      depth_encoding.c_str());
+    return;
+  }
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr scene_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
   for (size_t i = 0; i < msg->depth_image.width; i++) {
     for (size_t j = 0; j < msg->depth_image.height; j++) {
       pcl::PointXYZRGB temp_point;
-      auto depth = depth_img.at<ushort>(j, i) * 0.001;    // NOLINT
+      double depth = 0.0;
+      if (depth_encoding == sensor_msgs::image_encodings::TYPE_16UC1) {
+        depth = depth_img.at<uint16_t>(j, i) * kDepthMmToMeters;
+      } else {
+        depth = static_cast<double>(depth_img.at<float>(j, i));
+      }
       temp_point.x = (i - ppx) / fx * depth;
       temp_point.y = (j - ppy) / fy * depth;
       temp_point.z = depth;
@@ -508,9 +546,9 @@ void grasp_planner::GraspScene<T>::process_pointcloud(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
   RCLCPP_INFO(LOGGER, "Processing Point Cloud... ");
-  pcl::PCLPointCloud2 * pcl_pc2(new pcl::PCLPointCloud2);
-  PCLFunctions::sensor_msg_to_pcl_pointcloud2(*msg, *pcl_pc2);
-  pcl::fromPCLPointCloud2(*pcl_pc2, *(this->cloud));
+  pcl::PCLPointCloud2 pcl_pc2;
+  PCLFunctions::sensor_msg_to_pcl_pointcloud2(*msg, pcl_pc2);
+  pcl::fromPCLPointCloud2(pcl_pc2, *(this->cloud));
   RCLCPP_INFO(LOGGER, "Applying Passthrough filters");
   PCLFunctions::passthrough_filter(
     this->cloud,

@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <utility>
 
 #include <cv_bridge/cv_bridge.h>
@@ -302,7 +301,14 @@ void EpdDetectionAdapter::detection_callback(
   }
 
   epd_msgs::msg::EPDObjectLocalization output;
-  output.header = msg->header;
+  output.header.stamp = msg->header.stamp;
+  output.header.frame_id = depth_frame_id;
+  output.ppx = static_cast<double>(intrinsics.ppx);
+  output.ppy = static_cast<double>(intrinsics.ppy);
+  output.fx = static_cast<double>(intrinsics.fx);
+  output.fy = static_cast<double>(intrinsics.fy);
+  output.frame_width = static_cast<uint32_t>(depth_image.cols);
+  output.frame_height = static_cast<uint32_t>(depth_image.rows);
 
   for (const auto & detection : msg->detections) {
     epd_msgs::msg::LocalizedObject object;
