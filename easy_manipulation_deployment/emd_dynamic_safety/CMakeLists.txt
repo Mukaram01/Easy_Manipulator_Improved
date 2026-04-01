@@ -116,7 +116,8 @@ foreach(_f IN LISTS EMD_TESSERACT_SRC)
   endif()
 endforeach()
 
-if(tesseract_environment_FOUND AND tesseract_task_composer_FOUND AND NOT EMD_TESSERACT_SRC_MISSING)
+if(tesseract_environment_FOUND AND tesseract_task_composer_FOUND AND NOT EMD_TESSERACT_SRC_MISSING
+    AND TARGET tesseract::tesseract_environment_core)
   message(STATUS "Tesseract Found!! (and backend sources present)")
 
   if(NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
@@ -136,7 +137,9 @@ if(tesseract_environment_FOUND AND tesseract_task_composer_FOUND AND NOT EMD_TES
     $<INSTALL_INTERFACE:include>
   )
 
-  set(EMD_DYNAMIC_SAFETY_TESSERACT_LIBS
+  set(EMD_DYNAMIC_SAFETY_TESSERACT_LIBS "")
+
+  foreach(_tgt IN ITEMS
     tesseract::tesseract_environment_core
     tesseract::tesseract_environment_kdl
     tesseract::tesseract_environment_ofkt
@@ -149,17 +152,16 @@ if(tesseract_environment_FOUND AND tesseract_task_composer_FOUND AND NOT EMD_TES
     tesseract::tesseract_motion_planners_core
     tesseract::tesseract_motion_planners_ompl
     tesseract::tesseract_motion_planners_trajopt
+    tesseract::tesseract_motion_planners_trajopt_ifopt
     tesseract::tesseract_time_parameterization
     tesseract::tesseract_rosutils
   )
-
-  if(TARGET tesseract::tesseract_motion_planners_trajopt_ifopt)
-    list(APPEND EMD_DYNAMIC_SAFETY_TESSERACT_LIBS
-      tesseract::tesseract_motion_planners_trajopt_ifopt
-    )
-  else()
-    message(WARNING "Skipping tesseract::tesseract_motion_planners_trajopt_ifopt (target not found).")
-  endif()
+    if(TARGET ${_tgt})
+      list(APPEND EMD_DYNAMIC_SAFETY_TESSERACT_LIBS ${_tgt})
+    else()
+      message(WARNING "Skipping ${_tgt} (target not found).")
+    endif()
+  endforeach()
 
   target_link_libraries(${PROJECT_NAME}_tesseract
     ${EMD_DYNAMIC_SAFETY_TESSERACT_LIBS}
