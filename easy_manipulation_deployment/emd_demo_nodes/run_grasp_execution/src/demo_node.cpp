@@ -63,8 +63,12 @@ public:
 
     // Configurable release pose: x-offset from the current EE position and
     // optional z-height override. Defaults preserve the original behaviour.
-    release_x_offset_ = node_->declare_parameter<double>("release_x_offset", -0.3);
-    release_use_grasp_z_ = node_->declare_parameter<bool>("release_use_grasp_z", true);
+    // Use declare_or_get_param to avoid ParameterAlreadyDeclaredException when
+    // these parameters are pre-declared by automatically_declare_parameters_from_overrides.
+    grasp_execution::declare_or_get_param<double>(
+      release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
+    grasp_execution::declare_or_get_param<bool>(
+      release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
@@ -168,6 +172,10 @@ public:
   {
     // Get home state
     moveit::core::RobotStatePtr home_state(get_curr_state());
+    if (!home_state) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to get current robot state for target %s", target_id.c_str());
+      return false;
+    }
 
     // Select grasp method based on end effector availability
     double clearance = 0.0;
@@ -224,7 +232,14 @@ public:
       RCLCPP_ERROR(node_->get_logger(), "End effector brand: %s", ee_brand.c_str());
     }
 
-    auto release_pose = get_curr_pose(ee_link);
+    geometry_msgs::msg::PoseStamped release_pose;
+    try {
+      release_pose = get_curr_pose(ee_link);
+    } catch (const std::exception & ex) {
+      RCLCPP_ERROR(node_->get_logger(), "Failed to get current pose for target %s: %s",
+        target_id.c_str(), ex.what());
+      return false;
+    }
 
     if (grasp_method.grasp_poses.empty()) {
       RCLCPP_ERROR(
@@ -365,23 +380,32 @@ public:
     // required, so we construct a new node that shares the same name and
     // namespace. Parameters are automatically declared from overrides to mirror
     // the lifecycle node behaviour.
-    rclcpp::NodeOptions base_options;
-    base_options.automatically_declare_parameters_from_overrides(true);
-    auto base_node = std::make_shared<rclcpp::Node>(
-      this->get_name(), this->get_namespace(), base_options);
-    demo_ = std::make_shared<grasp_execution::Demo>(
-      base_node, grasp_execution::GRASP_EXECUTION_PACKAGE,
-      grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
-    std::string workcell_context_filepath =
-      this->get_parameter("workcell_context").as_string();
-    if (!std::filesystem::path(workcell_context_filepath).is_absolute()) {
-      workcell_context_filepath =
-        (std::filesystem::path(
-           ament_index_cpp::get_package_share_directory("run_grasp_execution")) /
-         workcell_context_filepath)
-          .string();
+    try {
+      rclcpp::NodeOptions base_options;
+      base_options.automatically_declare_parameters_from_overrides(true);
+      base_node_ = std::make_shared<rclcpp::Node>(
+        this->get_name(), this->get_namespace(), base_options);
+      demo_ = std::make_shared<grasp_execution::Demo>(
+        base_node_, grasp_execution::GRASP_EXECUTION_PACKAGE,
+        grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
+      std::string workcell_context_filepath =
+        this->get_parameter("workcell_context").as_string();
+      if (!std::filesystem::path(workcell_context_filepath).is_absolute()) {
+        workcell_context_filepath =
+          (std::filesystem::path(
+             ament_index_cpp::get_package_share_directory("run_grasp_execution")) /
+           workcell_context_filepath)
+            .string();
+      }
+      if (!demo_->init_from_yaml(workcell_context_filepath)) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to initialize workcell context from '%s'",
+          workcell_context_filepath.c_str());
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+      }
+    } catch (const std::exception & ex) {
+      RCLCPP_ERROR(this->get_logger(), "Exception during configure: %s", ex.what());
+      return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
     }
-    demo_->init_from_yaml(workcell_context_filepath);
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
   }
 
@@ -401,11 +425,18 @@ public:
     const rclcpp_lifecycle::State &)
   {
     demo_.reset();
+    base_node_.reset();
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  }
+
+  rclcpp::Node::SharedPtr get_base_node() const
+  {
+    return base_node_;
   }
 
 private:
   std::shared_ptr<grasp_execution::Demo> demo_;
+  rclcpp::Node::SharedPtr base_node_;
 };
 
 int main(int argc, char ** argv)
@@ -420,6 +451,11 @@ int main(int argc, char ** argv)
 
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(node->get_node_base_interface());
+  // Also spin the internal ROS node used by the Demo so that grasp task
+  // subscriptions and service callbacks are actually processed.
+  if (auto base_node = node->get_base_node()) {
+    executor.add_node(base_node->get_node_base_interface());
+  }
   executor.spin();
 
   rclcpp::shutdown();
