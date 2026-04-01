@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <stdexcept>
@@ -319,11 +320,13 @@ void MoveitReplannerContext::update(
     // JointState messages carry per-variable (not per-joint) entries, so use
     // setVariablePosition for a correct 1-to-1 variable update that handles
     // both single-axis and multi-axis joints.
+    const auto & var_names_vec = current_state.getRobotModel()->getVariableNames();
+    const std::unordered_set<std::string> var_names(var_names_vec.begin(), var_names_vec.end());
     for (size_t i = 0;
       i < joint_states.name.size() && i < joint_states.position.size();
       i++)
     {
-      if (current_state.getRobotModel()->hasVariableIndex(joint_states.name[i])) {
+      if (var_names.count(joint_states.name[i])) {
         current_state.setVariablePosition(joint_states.name[i], joint_states.position[i]);
       }
     }
