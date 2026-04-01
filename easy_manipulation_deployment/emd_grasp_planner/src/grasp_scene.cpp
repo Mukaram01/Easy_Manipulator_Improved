@@ -105,11 +105,11 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
       std::chrono::steady_clock::time_point grasp_begin = std::chrono::steady_clock::now();
 
       emd_msgs::msg::GraspMethod grasp_method;
-      grasp_method.ee_id = gripper.get_id();
+      grasp_method.ee_id = gripper->get_id();
       grasp_method.grasp_ranks.insert(
         grasp_method.grasp_ranks.begin(), std::numeric_limits<float>::lowest());
 
-      gripper.plan_grasps(
+      gripper->plan_grasps(
         object, grasp_method, world_collision_object,
         node->get_parameter("camera_parameters.camera_frame").as_string());
       grasp_method.grasp_ranks.pop_back();
@@ -119,7 +119,7 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
       } else {
         RCLCPP_ERROR_STREAM(
           LOGGER, "For Object " << object.grasp_target.target_type.c_str() <<
-            ", no grasp methods can be found with end effector " << gripper.get_id());
+            ", no grasp methods can be found with end effector " << gripper->get_id());
         // continue;
       }
 
@@ -132,7 +132,7 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
           " [ms] ");
 
       if (node->get_parameter("visualization_params.point_cloud_visualization").as_bool()) {
-        gripper.visualize_grasps(viewer, object);
+        gripper->visualize_grasps(viewer, object);
         std::cout << "Point Cloud Viewer Visualization" << std::endl;
       }
     }
@@ -234,7 +234,7 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
           "end_effectors." + end_effector +
           ".gripper_coordinate_system.grasp_approach_direction").as_string()
       );
-      this->end_effectors.push_back(gripper);
+      this->end_effectors.push_back(std::make_shared<FingerGripper>(std::move(gripper)));
     } else if (end_effector_type.compare("suction") == 0) {
       SuctionGripper gripper(
         end_effector,
@@ -278,7 +278,7 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
           "end_effectors." + end_effector +
           ".gripper_coordinate_system.grasp_approach_direction").as_string());
 
-      this->end_effectors.push_back(gripper);
+      this->end_effectors.push_back(std::make_shared<SuctionGripper>(std::move(gripper)));
     }
   }
   RCLCPP_INFO(LOGGER, "All End Effectors Loaded");
