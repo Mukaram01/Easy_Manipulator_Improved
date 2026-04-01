@@ -16,6 +16,7 @@
 #include <chrono>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -498,8 +499,10 @@ geometry_msgs::msg::PoseStamped MoveitCppGraspExecution::get_curr_pose(
 {
   static constexpr double kCurrentStateTimeoutS = 1.0;
   moveit::core::RobotStatePtr state;
-  if (!moveit_cpp_->getCurrentState(state, kCurrentStateTimeoutS)) {
-    RCLCPP_WARN(LOGGER, "Timed out waiting for current robot state in get_curr_pose()");
+  if (!moveit_cpp_->getCurrentState(state, kCurrentStateTimeoutS) || !state) {
+    throw std::runtime_error(
+      "Failed to retrieve current robot state (timeout or null state) in get_curr_pose() for link '" +
+      link_name + "'");
   }
   const auto & transform = state->getGlobalLinkTransform(link_name);
   ASSERT_ISOMETRY(transform);  // unsanitized input, could contain a non-isometry
