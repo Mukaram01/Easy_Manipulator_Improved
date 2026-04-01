@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <memory>
@@ -758,11 +759,12 @@ bool MoveitCppGraspExecution::move_to(
   // JointState messages carry per-variable entries. Use setVariablePosition so
   // that each named variable is updated individually — this handles both
   // single-axis revolute joints and multi-axis joints correctly.
+  const auto & var_names = current_state->getRobotModel()->getVariableNames();
   for (size_t i = 0;
     i < state.name.size() && i < state.position.size();
     i++)
   {
-    if (current_state->getRobotModel()->hasVariableIndex(state.name[i])) {
+    if (std::find(var_names.begin(), var_names.end(), state.name[i]) != var_names.end()) {
       current_state->setVariablePosition(state.name[i], state.position[i]);
     }
   }
