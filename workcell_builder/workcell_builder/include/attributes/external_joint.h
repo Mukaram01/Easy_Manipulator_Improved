@@ -39,6 +39,7 @@ public:
     parent_obj_pos = -1;
     parent_link_pos = -1;
     child_link_pos = -1;
+    type = "fixed";
   }
 };
 

@@ -396,8 +396,9 @@ void SceneSelect::generate_scene_files(Scene scene)
     return;
   }
   // generate environment.urdf.xacro
-  change_directory(workcell_path / "scenes" / scene.name / "urdf");
-  generate_scene_xacro(scene);
+  fs::path urdf_dir = workcell_path / "scenes" / scene.name / "urdf";
+  change_directory(urdf_dir);
+  generate_scene_xacro(scene, (urdf_dir / "scene.urdf.xacro").string());
   if (scene.robot_loaded && scene.ee_loaded) {
     generate_armhand_xacro(scene.robot_vector[0], scene.ee_vector[0], scene.name);
   }
@@ -864,11 +865,21 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
         if (in_ext_joint_it->first.as<std::string>().compare("child_link") == 0) {
           // Get Child Link pos
           std::string child_link = in_ext_joint_it->second.as<std::string>();
+          bool found_child_link = false;
           for (int i = 0; i < static_cast<int>(temp_object.link_vector.size()); i++) {
             if (child_link.compare(temp_object.link_vector[i].name) == 0) {
               temp_object.ext_joint.child_link_pos = i;
+              found_child_link = true;
               break;
             }
+          }
+          if (!found_child_link) {
+            ui->error_workcell->append(
+              "<font color='orange'>Warning: child_link '" +
+              QString::fromStdString(child_link) +
+              "' not found in object '" +
+              QString::fromStdString(temp_object.name) +
+              "'. child_link_pos left unset.</font>");
           }
         }
       }
@@ -890,10 +901,20 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
           if (parent_object.compare("world") == 0) {       // if world pos is -1
             input_scene->object_vector[counter].ext_joint.parent_obj_pos = -1;
           } else {
+            bool found_parent_obj = false;
             for (int i = 0; i < static_cast<int>(input_scene->object_vector.size()); i++) {
               if (parent_object.compare(input_scene->object_vector[i].name) == 0) {
                 input_scene->object_vector[counter].ext_joint.parent_obj_pos = i;
+                found_parent_obj = true;
+                break;
               }
+            }
+            if (!found_parent_obj) {
+              ui->error_workcell->append(
+                "<font color='orange'>Warning: parent object '" +
+                QString::fromStdString(parent_object) +
+                "' not found. Defaulting to world.</font>");
+              input_scene->object_vector[counter].ext_joint.parent_obj_pos = -1;
             }
           }
         }
@@ -902,6 +923,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
           std::string parent_link = in_ext_joints_it->second.as<std::string>();
           int parent_obj_pos = input_scene->object_vector[counter].ext_joint.parent_obj_pos;
           if (parent_obj_pos >= 0) {
+            bool found_parent_link = false;
             for (int i = 0;
               i < static_cast<int>(input_scene->object_vector[parent_obj_pos].link_vector.size());
               i++)
@@ -913,8 +935,16 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
                 0)
               {
                 input_scene->object_vector[counter].ext_joint.parent_link_pos = i;
+                found_parent_link = true;
                 break;
               }
+            }
+            if (!found_parent_link) {
+              input_scene->object_vector[counter].ext_joint.parent_link_pos = -1;
+              ui->error_workcell->append(
+                "<font color='orange'>Warning: parent link '" +
+                QString::fromStdString(parent_link) +
+                "' not found in parent object. parent_link_pos left unset.</font>");
             }
           }
         }

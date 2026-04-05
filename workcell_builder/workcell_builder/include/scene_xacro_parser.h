@@ -126,9 +126,14 @@ std::string resolve_ee_xacro_macro(const EndEffector & ee)
 }  // namespace
 
 
-void generate_scene_xacro(Scene scene)
+void generate_scene_xacro(Scene scene, const std::string & output_path)
 {
-  std::ofstream MyFile("scene.urdf.xacro");
+  std::ofstream MyFile(output_path);
+  if (!MyFile.is_open()) {
+    std::cerr << "ERROR: Failed to open '" << output_path <<
+      "' for writing scene xacro.\n";
+    return;
+  }
   MyFile << "<?xml version=\"1.0\" ?> \n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" +
     scene.name + "\">\n\n";  // Change it if you are generating multiple robots
