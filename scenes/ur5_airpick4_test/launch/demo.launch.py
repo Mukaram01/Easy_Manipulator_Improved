@@ -6,6 +6,7 @@ import xacro
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -34,14 +35,14 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(file) or {}
 
 
-def generate_launch_description():
+def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
 
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
-        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware},
+        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware.perform(context)},
     )
     robot_description = {"robot_description": robot_description_config}
 
@@ -107,6 +108,11 @@ def generate_launch_description():
         "publish_transforms_updates": True,
     }
 
+    # Disable octomap sensor updates — no depth topic is published in this demo.
+    occupancy_map_monitor_params = {
+        "sensors": [],
+    }
+
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -158,6 +164,7 @@ def generate_launch_description():
             planning_pipelines_config,
             ompl_planning_pipeline_config,
             planning_scene_monitor_params,
+            occupancy_map_monitor_params,
             trajectory_execution,
             moveit_controller_manager,
             moveit_simple_controller_manager,
@@ -179,14 +186,18 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(
-        [
-            DeclareLaunchArgument("use_sim_time", default_value="false"),
-            DeclareLaunchArgument("use_fake_hardware", default_value="true"),
-            static_tf,
-            robot_state_publisher,
-            joint_state_publisher,
-            move_group,
-            rviz_node,
-        ]
-    )
+    return [
+        static_tf,
+        robot_state_publisher,
+        joint_state_publisher,
+        move_group,
+        rviz_node,
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument("use_fake_hardware", default_value="true"),
+        OpaqueFunction(function=_launch_setup),
+    ])

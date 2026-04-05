@@ -119,6 +119,11 @@ def _launch_setup(context):
         "publish_transforms_updates": True,
     }
 
+    # Disable octomap sensor updates — no depth topic is published in this demo.
+    occupancy_map_monitor_params = {
+        "sensors": [],
+    }
+
     # --- Nodes ---
     static_tf = Node(
         package="tf2_ros",
@@ -160,6 +165,7 @@ def _launch_setup(context):
             planning_pipelines_config,
             ompl_planning_pipeline_config,
             planning_scene_monitor_params,
+            occupancy_map_monitor_params,
             trajectory_execution,
             moveit_controller_manager,
             moveit_simple_controller_manager,

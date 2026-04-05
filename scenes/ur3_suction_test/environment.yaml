@@ -1,5 +1,5 @@
 robot:
-  name: ur5
+  name: ur3
   brand: universal_robot
   filepath: ""
   base_link: base_link
@@ -15,34 +15,41 @@ robot:
     - base
     - tool0
 end_effector:
-  name: onrobot_airpick4
-  brand: onrobot_airpick4_description
-  filepath: assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description
-  base_link: gripper_base_link
+  name: single_suction
+  brand: single_suction_gripper
+  filepath: assets/end_effectors/single_suction_gripper/single_suction_description
+  base_link: wrist_fixture
   robot_link: tool0
   ee_type: suction
   attributes:
-    array_width: 4
-    array_height: 1
+    array_width: 1
+    array_height: -1
   links:
-    - gripper_base_link
+    - wrist_fixture
+    - suction_cup_link
 objects:
   table:
     child_link: table
     links:
       table:
         visual:
-          name: table
+          name: None
           geometry:
             filepath: assets/environment/table_description/meshes/visual/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001
               scale_z: 0.001
+          material:
+            name: aluminum
+            r: 0.549
+            g: 0.557
+            b: 0.529
+            a: 1
         collision:
           name: None
           geometry:
-            filepath: assets/environment/table_description/meshes/visual/table.stl
+            filepath: assets/environment/table_description/meshes/collision/table.stl
             scale:
               scale_x: 0.001
               scale_y: 0.001

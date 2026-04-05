@@ -20,4 +20,8 @@ install(DIRECTORY launch
 install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
+
+install(FILES environment.yaml
+  DESTINATION share/${PROJECT_NAME}
+)
 ament_package()

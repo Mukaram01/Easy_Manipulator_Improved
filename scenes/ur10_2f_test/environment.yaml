@@ -1,5 +1,5 @@
 robot:
-  name: ur5
+  name: ur10
   brand: universal_robot
   filepath: ""
   base_link: base_link
@@ -15,17 +15,31 @@ robot:
     - base
     - tool0
 end_effector:
-  name: onrobot_airpick4
-  brand: onrobot_airpick4_description
-  filepath: assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description
+  name: robotiq_85
+  brand: robotiq_85_gripper
+  filepath: assets/end_effectors/robotiq_85_gripper/robotiq_85_description
   base_link: gripper_base_link
   robot_link: tool0
-  ee_type: suction
+  ee_type: finger
   attributes:
-    array_width: 4
-    array_height: 1
+    fingers: 2
+  origin:
+    x: 0
+    y: 0
+    z: 0
+    roll: 0
+    pitch: -1.5707
+    yaw: 0
   links:
     - gripper_base_link
+    - gripper_finger1_knuckle_link
+    - gripper_finger2_knuckle_link
+    - gripper_finger1_finger_link
+    - gripper_finger2_finger_link
+    - gripper_finger1_inner_knuckle_link
+    - gripper_finger2_inner_knuckle_link
+    - gripper_finger1_finger_tip_link
+    - gripper_finger2_finger_tip_link
 objects:
   table:
     child_link: table
