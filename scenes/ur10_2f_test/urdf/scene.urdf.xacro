@@ -1,0 +1,63 @@
+<?xml version="1.0" ?> 
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur10_2f_test">
+
+ <xacro:arg name="ur_type" default="ur10"/>
+ <xacro:arg name="name" default="$(arg ur_type)"/>
+ <xacro:arg name="tf_prefix" default=""/>
+ <xacro:arg name="use_fake_hardware" default="true"/>
+
+ <link name="world"/>
+
+<xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+<xacro:ur_robot
+  name="$(arg name)"
+  tf_prefix="$(arg tf_prefix)"
+  parent="world"
+  safety_limits="true"
+  joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
+  kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
+  physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
+  visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml">
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</xacro:ur_robot>
+
+ <!-- Import ur10 ros2_control description -->
+ <xacro:include filename="$(find ur10_moveit_config)/config/ur10.ros2_control.xacro" />
+
+ <xacro:arg name="initial_positions_file" default="$(find ur10_moveit_config)/config/initial_positions.yaml" />
+ <xacro:if value="$(arg use_fake_hardware)">
+  <xacro:ur10_ros2_control name="UR10FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+ </xacro:if>
+
+ <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
+ <xacro:robotiq_85_gripper prefix="" parent="tool0">
+	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
+ </xacro:robotiq_85_gripper>
+
+ <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
+ <xacro:table prefix="" parent="world">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:table>
+
+ <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+ <xacro:arg name="use_nominal_extrinsics" default="true" />
+ <xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+    <origin xyz="-0.58 0.12 0.655" rpy="0 1.57079506 0"/>
+ </xacro:sensor_d435i>
+
+ <link name="camera_frame" />
+ <joint name="d435i_to_camera" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_frame"/>
+    <origin xyz="0 0 0" rpy="1.57079506 0 1.57079506"/>
+ </joint>
+
+ <link name="ee_palm" />
+ <joint name="base_to_palm" type="fixed">
+    <parent link="tool0"/>
+    <child link="ee_palm"/>
+    <origin xyz="0 0 0.14" rpy="0 0 0"/>
+ </joint>
+
+</robot>

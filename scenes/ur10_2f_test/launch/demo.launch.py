@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import os
 import yaml
 import xacro
@@ -11,9 +10,9 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-scene_pkg = "ur5_2f_test"
+scene_pkg = "ur10_2f_test"
 robot_base_link = "base_link"
-robot_moveit_pkg = "ur5_moveit_config"
+robot_moveit_pkg = "ur10_moveit_config"
 
 
 def load_xacro(package_name, rel_path, mappings=None):
@@ -43,8 +42,8 @@ def _launch_setup(context):
         scene_pkg,
         "urdf/scene.urdf.xacro",
         mappings={
-            "ur_type": "ur5",
-            "name": "ur5",
+            "ur_type": "ur10",
+            "name": "ur10",
             "tf_prefix": "",
             "use_fake_hardware": use_fake_hardware.perform(context),
         },
@@ -86,8 +85,8 @@ def _launch_setup(context):
 
     moveit_simple_controller_manager = {
         "moveit_simple_controller_manager": {
-            "controller_names": ["fake_ur5_controller"],
-            "fake_ur5_controller": {
+            "controller_names": ["fake_ur10_controller"],
+            "fake_ur10_controller": {
                 "action_ns": "follow_joint_trajectory",
                 "type": "FollowJointTrajectory",
                 "default": True,
@@ -115,8 +114,7 @@ def _launch_setup(context):
         "publish_transforms_updates": True,
     }
 
-    # No depth sensor is configured for this scene, so explicitly disable
-    # occupancy map sensor plugins to avoid octomap updater errors.
+    # Disable octomap sensor updates — no depth topic is published in this demo.
     occupancy_map_monitor_params = {
         "sensors": [],
     }

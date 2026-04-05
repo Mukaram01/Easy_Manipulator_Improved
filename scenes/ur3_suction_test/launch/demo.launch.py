@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import os
 import yaml
 import xacro
@@ -11,9 +10,9 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-scene_pkg = "ur5_2f_test"
+scene_pkg = "ur3_suction_test"
 robot_base_link = "base_link"
-robot_moveit_pkg = "ur5_moveit_config"
+robot_moveit_pkg = "ur3_moveit_config"
 
 
 def load_xacro(package_name, rel_path, mappings=None):
@@ -31,20 +30,21 @@ def load_yaml(package_name, rel_path):
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         return {}
-    with open(abs_path, "r") as file:
-        return yaml.safe_load(file) or {}
+    with open(abs_path, "r") as f:
+        return yaml.safe_load(f) or {}
 
 
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
 
+    # --- Robot descriptions ---
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
         mappings={
-            "ur_type": "ur5",
-            "name": "ur5",
+            "ur_type": "ur3",
+            "name": "ur3",
             "tf_prefix": "",
             "use_fake_hardware": use_fake_hardware.perform(context),
         },
@@ -54,6 +54,7 @@ def _launch_setup(context):
     robot_description_semantic_config = load_xacro(scene_pkg, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
 
+    # --- MoveIt configs ---
     kinematics_yaml = load_yaml(robot_moveit_pkg, "config/kinematics.yaml")
     robot_description_kinematics = {"robot_description_kinematics": kinematics_yaml} if kinematics_yaml else {}
 
@@ -80,17 +81,16 @@ def _launch_setup(context):
     if isinstance(ompl_planning_yaml, dict):
         ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
+    # --- Controller manager ---
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
     }
 
     moveit_simple_controller_manager = {
         "moveit_simple_controller_manager": {
-            "controller_names": ["fake_ur5_controller"],
-            "fake_ur5_controller": {
-                "action_ns": "follow_joint_trajectory",
+            "controller_names": ["fake_ur3_controller"],
+            "fake_ur3_controller": {
                 "type": "FollowJointTrajectory",
-                "default": True,
                 "joints": [
                     "shoulder_pan_joint",
                     "shoulder_lift_joint",
@@ -115,34 +115,22 @@ def _launch_setup(context):
         "publish_transforms_updates": True,
     }
 
-    # No depth sensor is configured for this scene, so explicitly disable
-    # occupancy map sensor plugins to avoid octomap updater errors.
+    # Disable octomap sensor updates — no depth topic is published in this demo.
     occupancy_map_monitor_params = {
         "sensors": [],
     }
 
+    # --- Nodes ---
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="static_transform_publisher",
         output="screen",
         arguments=[
-            "--x",
-            "0.0",
-            "--y",
-            "0.0",
-            "--z",
-            "0.0",
-            "--roll",
-            "0.0",
-            "--pitch",
-            "0.0",
-            "--yaw",
-            "0.0",
-            "--frame-id",
-            "world",
-            "--child-frame-id",
-            robot_base_link,
+            "--x", "0.0", "--y", "0.0", "--z", "0.0",
+            "--roll", "0.0", "--pitch", "0.0", "--yaw", "0.0",
+            "--frame-id", "world",
+            "--child-frame-id", robot_base_link,
         ],
     )
 
