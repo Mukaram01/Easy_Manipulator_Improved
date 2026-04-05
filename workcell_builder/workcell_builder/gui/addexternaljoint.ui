@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Dialog</string>
+   <string>Add External Joint</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_9">
    <item>

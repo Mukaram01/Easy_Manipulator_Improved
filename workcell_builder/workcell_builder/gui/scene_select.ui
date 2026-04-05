@@ -11,13 +11,16 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Dialog</string>
+   <string>Scene Selection</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
     <layout class="QVBoxLayout" name="verticalLayout">
      <item>
       <widget class="QPushButton" name="add_scene">
+       <property name="toolTip">
+        <string>Create a new scene configuration</string>
+       </property>
        <property name="text">
         <string>Add New Scene</string>
        </property>
@@ -34,6 +37,9 @@
           <layout class="QVBoxLayout" name="verticalLayout_2">
            <item>
             <widget class="QPushButton" name="edit_scene">
+             <property name="toolTip">
+              <string>Modify the selected scene</string>
+             </property>
              <property name="text">
               <string>Edit Scene</string>
              </property>
@@ -41,6 +47,9 @@
            </item>
            <item>
             <widget class="QPushButton" name="delete_scene">
+             <property name="toolTip">
+              <string>Delete the selected scene</string>
+             </property>
              <property name="text">
               <string>Delete Scene</string>
              </property>
@@ -57,6 +66,9 @@
      </item>
      <item>
       <widget class="QPushButton" name="generate_yaml">
+       <property name="toolTip">
+        <string>Generate a YAML configuration file for all scenes</string>
+       </property>
        <property name="text">
         <string>Generate yaml file for scenes</string>
        </property>
@@ -64,6 +76,9 @@
      </item>
      <item>
       <widget class="QPushButton" name="generate_files">
+       <property name="toolTip">
+        <string>Generate ROS 2 package files from the YAML configuration</string>
+       </property>
        <property name="text">
         <string>Generate Files from yaml</string>
        </property>
@@ -76,6 +91,9 @@
       <layout class="QHBoxLayout" name="horizontalLayout_4">
        <item>
         <widget class="QPushButton" name="back">
+         <property name="toolTip">
+          <string>Return to workspace selection</string>
+         </property>
          <property name="text">
           <string>Back</string>
          </property>
@@ -83,6 +101,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="exit">
+         <property name="toolTip">
+          <string>Close the application</string>
+         </property>
          <property name="text">
           <string>Exit</string>
          </property>
