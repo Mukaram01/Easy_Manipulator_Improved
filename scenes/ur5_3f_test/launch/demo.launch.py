@@ -198,6 +198,15 @@ def _launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
-        DeclareLaunchArgument("use_fake_hardware", default_value="true"),
+        DeclareLaunchArgument(
+            "use_fake_hardware",
+            default_value="true",
+            description=(
+                "Use simulated (fake) hardware instead of a real robot. "
+                "Default: true (safe for development/testing without a physical robot). "
+                "Set to false only when connected to a real robot via ur_robot_driver "
+                "and after setting the robot_ip in the driver launch."
+            ),
+        ),
         OpaqueFunction(function=_launch_setup),
     ])

@@ -18,6 +18,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - [Quick start (recommended path)](#quick-start-recommended-path)
 - [Step-by-step install](#step-by-step-install)
 - [First run / verification](#first-run--verification)
+- [Fake hardware vs real hardware](#fake-hardware-vs-real-hardware)
 - [Common scenarios](#common-scenarios)
 - [Troubleshooting](#troubleshooting)
 - [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
@@ -268,6 +269,62 @@ ros2 launch suction_test demo.launch.py
 Run the validator before `suction_test` so missing `single_suction_description` / `single_suction_moveit_config` packages are reported with explicit remediation via `fix_workspace_layout.sh`.
 
 If you only want to confirm the workspace built successfully, `source install/setup.bash` plus a successful `ros2 pkg prefix emd_msgs` is the safest quick check.
+
+## Fake hardware vs real hardware
+
+All scene launch files default to **simulated (fake) hardware** so you can develop, test, and visualise motions without a physical robot.
+
+| Mode | `use_fake_hardware` | Hardware interface used |
+|------|-------------------|------------------------|
+| Fake / simulated (default) | `true` | `fake_components/GenericSystem` via ros2_control |
+| Real robot | `false` | Physical driver (e.g. `ur_robot_driver`) |
+
+### Default: fake hardware (no robot required)
+
+```bash
+# All scene launch files use use_fake_hardware:=true by default.
+# The argument can be omitted – both lines below are equivalent:
+ros2 launch ur5_2f_test demo.launch.py
+ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true
+```
+
+The same applies to every other scene package:
+
+```bash
+ros2 launch ur3_suction_test  demo.launch.py
+ros2 launch ur5_3f_test       demo.launch.py
+ros2 launch ur5_airpick4_test demo.launch.py
+ros2 launch ur10_2f_test      demo.launch.py
+ros2 launch suction_test      demo.launch.py
+```
+
+### Switching to a real UR robot
+
+1. **Install and start `ur_robot_driver`** (ships separately from this repository):
+
+   ```bash
+   sudo apt install -y ros-humble-ur
+   ```
+
+2. **Launch the UR driver** with your robot's IP address *before* starting the scene launch:
+
+   ```bash
+   ros2 launch ur_robot_driver ur_control.launch.py \
+     ur_type:=ur5 \
+     robot_ip:=192.168.1.102
+   ```
+
+   Replace `ur5` with your robot model (`ur3`, `ur10`, …) and `192.168.1.102` with the actual IP shown on the teach pendant.
+
+3. **Launch the scene** with `use_fake_hardware:=false`:
+
+   ```bash
+   ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=false
+   ```
+
+   The scene URDF skips the simulated `fake_components/GenericSystem` block when this flag is `false`, so ros2_control picks up the real hardware interface provided by the driver.
+
+> **Safety reminder:** always verify E-stop and speed limits on the teach pendant before enabling real-hardware mode.
 
 ## Common scenarios
 
