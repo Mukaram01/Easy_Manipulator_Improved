@@ -12,6 +12,7 @@
   <exec_depend>ur_description</exec_depend>
   <exec_depend>ur5_moveit_config</exec_depend>
   <exec_depend>robotiq_85_description</exec_depend>
+  <exec_depend>robotiq_85_moveit_config</exec_depend>
   <exec_depend>realsense2_description</exec_depend>
   <exec_depend>workbench_description</exec_depend>
   <exec_depend>xacro</exec_depend>
