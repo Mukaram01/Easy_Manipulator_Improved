@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Dialog</string>
+   <string>Add Robot</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_7">
    <item>
@@ -403,6 +403,9 @@
           <layout class="QHBoxLayout" name="horizontalLayout_40">
            <item>
             <widget class="QPushButton" name="ok_2">
+             <property name="toolTip">
+              <string>Save robot configuration</string>
+             </property>
              <property name="text">
               <string>Ok</string>
              </property>
@@ -410,6 +413,9 @@
            </item>
            <item>
             <widget class="QPushButton" name="exit_2">
+             <property name="toolTip">
+              <string>Discard changes and close</string>
+             </property>
              <property name="text">
               <string>Exit</string>
              </property>

@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Dialog</string>
+   <string>Add End Effector</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_7">
    <item>
@@ -316,7 +316,7 @@
               <enum>QFrame::NoFrame</enum>
              </property>
              <property name="text">
-              <string>Attrribute 2</string>
+              <string>Attribute 2</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignCenter</set>
@@ -451,6 +451,9 @@
           <layout class="QHBoxLayout" name="horizontalLayout_40">
            <item>
             <widget class="QPushButton" name="ok">
+             <property name="toolTip">
+              <string>Save end effector configuration</string>
+             </property>
              <property name="text">
               <string>Ok</string>
              </property>
@@ -458,6 +461,9 @@
            </item>
            <item>
             <widget class="QPushButton" name="exit">
+             <property name="toolTip">
+              <string>Discard changes and close</string>
+             </property>
              <property name="text">
               <string>Exit</string>
              </property>

@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Dialog</string>
+   <string>Configure Scene</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_6">
    <item>
@@ -37,6 +37,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="add_object">
+         <property name="toolTip">
+          <string>Create a new custom environmental object</string>
+         </property>
          <property name="text">
           <string>Add Object</string>
          </property>
@@ -44,6 +47,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="load_object">
+         <property name="toolTip">
+          <string>Load an existing object from the assets folder</string>
+         </property>
          <property name="text">
           <string>Load Existing Object</string>
          </property>
@@ -51,6 +57,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="delete_object">
+         <property name="toolTip">
+          <string>Remove the selected object from the list</string>
+         </property>
          <property name="text">
           <string>Delete</string>
          </property>
@@ -133,6 +142,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="add_robot">
+         <property name="toolTip">
+          <string>Configure and add a robot to this scene</string>
+         </property>
          <property name="text">
           <string>Add Robot</string>
          </property>
@@ -142,6 +154,9 @@
         <layout class="QHBoxLayout" name="horizontalLayout_6">
          <item>
           <widget class="QPushButton" name="remove_robot">
+           <property name="toolTip">
+            <string>Remove the robot from this scene</string>
+           </property>
            <property name="text">
             <string>Remove Robot</string>
            </property>
@@ -236,6 +251,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="add_ee">
+         <property name="toolTip">
+          <string>Configure and add an end effector to the robot</string>
+         </property>
          <property name="text">
           <string>Add End Effector</string>
          </property>
@@ -245,6 +263,9 @@
         <layout class="QHBoxLayout" name="horizontalLayout_5">
          <item>
           <widget class="QPushButton" name="remove_ee">
+           <property name="toolTip">
+            <string>Remove the end effector from the robot</string>
+           </property>
            <property name="text">
             <string>Remove End Effector</string>
            </property>
@@ -408,6 +429,9 @@
       <layout class="QHBoxLayout" name="horizontalLayout_8">
        <item>
         <widget class="QPushButton" name="ok">
+         <property name="toolTip">
+          <string>Save scene configuration</string>
+         </property>
          <property name="text">
           <string>Ok</string>
          </property>
@@ -415,6 +439,9 @@
        </item>
        <item>
         <widget class="QPushButton" name="exit">
+         <property name="toolTip">
+          <string>Discard changes and close</string>
+         </property>
          <property name="text">
           <string>Exit</string>
          </property>
