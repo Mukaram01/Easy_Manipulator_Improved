@@ -879,9 +879,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
               QString::fromStdString(child_link) +
               "' not found in object '" +
               QString::fromStdString(temp_object.name) +
-              "'. Defaulting to first link.</font>");
-            temp_object.ext_joint.child_link_pos =
-              temp_object.link_vector.empty() ? -1 : 0;
+              "'. child_link_pos left unset.</font>");
           }
         }
       }
@@ -942,10 +940,11 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
               }
             }
             if (!found_parent_link) {
+              input_scene->object_vector[counter].ext_joint.parent_link_pos = -1;
               ui->error_workcell->append(
                 "<font color='orange'>Warning: parent link '" +
                 QString::fromStdString(parent_link) +
-                "' not found in parent object. Parent link index left unset.</font>");
+                "' not found in parent object. parent_link_pos left unset.</font>");
             }
           }
         }
