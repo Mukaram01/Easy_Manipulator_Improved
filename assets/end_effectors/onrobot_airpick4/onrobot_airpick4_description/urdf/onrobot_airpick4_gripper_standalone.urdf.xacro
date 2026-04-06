@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<robot name="airpick_4_vacuum_gripper" xmlns:xacro="http://ros.org/wiki/xacro">
+<robot name="onrobot_airpick4_gripper" xmlns:xacro="http://ros.org/wiki/xacro">
   <xacro:include filename="onrobot_airpick4_gripper.urdf.xacro"/>
 
   <xacro:arg name="prefix" default=""/>
@@ -7,7 +7,7 @@
 
   <link name="base_link"/>
 
-  <xacro:airpick_4_vacuum_gripper prefix="$(arg prefix)" parent="$(arg parent)">
+  <xacro:onrobot_airpick4_gripper prefix="$(arg prefix)" parent="$(arg parent)">
     <origin xyz="0 0 0" rpy="0 0 0"/>
-  </xacro:airpick_4_vacuum_gripper>
+  </xacro:onrobot_airpick4_gripper>
 </robot>
