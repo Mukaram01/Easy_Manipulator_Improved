@@ -1,15 +1,28 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="onrobot_airpick4">
-  <link name="onrobot_airpick4_base_link">
-    <visual>
-      <geometry>
-        <box size="0.1 0.1 0.05"/>
-      </geometry>
-    </visual>
-    <collision>
-      <geometry>
-        <box size="0.1 0.1 0.05"/>
-      </geometry>
-    </collision>
-  </link>
+
+
+<robot name="onrobot_airpick4_gripper" xmlns:xacro="http://ros.org/wiki/xacro">
+    
+    <xacro:macro name="onrobot_airpick4_gripper" params="prefix parent *origin">
+
+        <joint name="${prefix}gripper_base_joint" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${prefix}gripper_base_link"/>
+            <xacro:insert_block name="origin"/>
+        </joint>
+
+       <link name="${prefix}gripper_base_link">
+            <visual>
+                <geometry>
+                    <mesh filename="package://onrobot_airpick4_description/meshes/airpick4.stl" scale="0.001000 0.001000 0.001000"/>
+                </geometry>
+            </visual>
+            <!--collision>
+                <geometry>
+                    <mesh filename="package://onrobot_airpick4_description/meshes/airpick4.stl" scale="0.001000 0.001000 0.001000"/>
+                </geometry>
+            </collision-->
+        </link>
+
+</xacro:macro>
 </robot>
