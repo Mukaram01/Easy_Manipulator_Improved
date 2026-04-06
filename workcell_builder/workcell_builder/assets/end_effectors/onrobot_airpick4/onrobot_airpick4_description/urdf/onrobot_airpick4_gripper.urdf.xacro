@@ -11,7 +11,7 @@
             <xacro:insert_block name="origin"/>
         </joint>
 
-       <link name="${prefix}gripper_base_link">
+        <link name="${prefix}gripper_base_link">
             <visual>
                 <geometry>
                     <mesh filename="package://onrobot_airpick4_description/meshes/airpick4.stl" scale="0.001000 0.001000 0.001000"/>
