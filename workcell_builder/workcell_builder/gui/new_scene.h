@@ -44,7 +44,7 @@ public:
 
 private slots:
   std::vector < std::string > GetLinks(std::string filename);
-  int ErrorCheckOrigin(int robot_or_ee);
+  int ErrorCheckOrigin(int robot_or_ee, bool strict_validation = false);
   void on_add_object_clicked();
   void add_desc_links(QString OutputFolder, int ee_or_robot);
   void on_object_list_itemDoubleClicked(QListWidgetItem * item);
