@@ -254,8 +254,13 @@ void NewScene::on_load_robot_desc_clicked()
     QDir::currentPath());
   if (!OutputFolder.isEmpty()) {
     ui->robot_desc_filepath->setText(OutputFolder);
-    gui_environment.environment.robot_vector[0].filepath = OutputFolder.toStdString();
     add_desc_links(OutputFolder, 0);
+    if (!gui_environment.environment.robot_vector.empty()) {
+      gui_environment.environment.robot_vector[0].filepath = OutputFolder.toStdString();
+    } else {
+      ui->robot_desc_error->setText(
+        "<font color='red'>Error: Failed to parse robot description from the selected folder</font>");
+    }
   }
 }
 
@@ -267,8 +272,13 @@ void NewScene::on_load_ee_desc_clicked()
     QDir::currentPath());
   if (!OutputFolder.isEmpty()) {
     ui->ee_desc_filepath->setText(OutputFolder);
-    gui_environment.environment.ee_vector[0].filepath = OutputFolder.toStdString();
     add_desc_links(OutputFolder, 1);
+    if (!gui_environment.environment.ee_vector.empty()) {
+      gui_environment.environment.ee_vector[0].filepath = OutputFolder.toStdString();
+    } else {
+      ui->ee_desc_error->setText(
+        "<font color='red'>Error: Failed to parse end effector description from the selected folder</font>");
+    }
   }
 }
 
