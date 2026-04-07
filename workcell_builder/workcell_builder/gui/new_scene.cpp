@@ -425,10 +425,20 @@ void NewScene::on_del_ext_joint_clicked()
   }
 }
 
-int NewScene::ErrorCheckOrigin(int robot_or_ee)
+int NewScene::ErrorCheckOrigin(int robot_or_ee, bool strict_validation)
 {
   int num_errors = 0;
   if (robot_or_ee == 0) {
+    if (!gui_environment.robot_loaded || gui_environment.environment.robot_vector.empty()) {
+      if (strict_validation) {
+        ui->robot_desc_error->setText(
+          " <font color='red'>Error: Robot description must be loaded before setting origin.</font>");
+        return 1;
+      }
+      ui->robot_desc_error->setText(" <font color='gray'> Robot origin check skipped. </font>");
+      return 0;
+    }
+
     if (ui->robot_x->text().isEmpty() || ui->robot_y->text().isEmpty() ||
       ui->robot_z->text().isEmpty() || ui->robot_roll->text().isEmpty() ||
       ui->robot_pitch->text().isEmpty() || ui->robot_yaw->text().isEmpty())
@@ -458,6 +468,16 @@ int NewScene::ErrorCheckOrigin(int robot_or_ee)
       ui->robot_desc_error->setText(" <font color='green'> No Errors </font>");
     }
   } else {
+    if (!gui_environment.ee_loaded || gui_environment.environment.ee_vector.empty()) {
+      if (strict_validation) {
+        ui->ee_desc_error->setText(
+          " <font color='red'>Error: End Effector description must be loaded before setting origin.</font>");
+        return 1;
+      }
+      ui->ee_desc_error->setText(" <font color='gray'> End Effector origin check skipped. </font>");
+      return 0;
+    }
+
     if (ui->ee_x->text().isEmpty() || ui->ee_y->text().isEmpty() || ui->ee_z->text().isEmpty() ||
       ui->ee_roll->text().isEmpty() || ui->ee_pitch->text().isEmpty() ||
       ui->ee_yaw->text().isEmpty())
@@ -624,13 +644,13 @@ void NewScene::on_create_environment_clicked()
   int errors = 0;
   ui->errorlist->clear();
   if (gui_environment.robot_loaded) {
-    if (ErrorCheckOrigin(0) != 0) {
+    if (ErrorCheckOrigin(0, true) != 0) {
       ui->errorlist->append("Robot Origin error: Cannot Generate YAML file");
       errors++;
     }
   }
   if (gui_environment.ee_loaded) {
-    if (ErrorCheckOrigin(1) != 0) {
+    if (ErrorCheckOrigin(1, true) != 0) {
       ui->errorlist->append("End Effector Origin error: Cannot Generate YAML file");
       errors++;
     }
