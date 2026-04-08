@@ -48,6 +48,11 @@ install(TARGETS
 
 install(DIRECTORY
   launch
+  DESTINATION share/${PROJECT_NAME}
+  FILES_MATCHING PATTERN "*.launch.py" PATTERN "*.launch.xml"
+)
+
+install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
 )
