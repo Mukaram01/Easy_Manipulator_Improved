@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -84,6 +85,37 @@ def load_yaml(package, file_path):
     return xacro.load_yaml(os.path.join(package_path, file_path))
 
 
+def _extract_scene_xacro_args(xacro_file_path):
+    text = Path(xacro_file_path).read_text(encoding="utf-8")
+    return set(re.findall(r"<xacro:arg\\s+name=['\\\"]([^'\\\"]+)['\\\"]", text))
+
+
+def _extract_ur_robot_macro_params():
+    try:
+        ur_macro_path = Path(get_package_share_directory("ur_description")) / "urdf" / "ur_macro.xacro"
+    except PackageNotFoundError:
+        return set()
+
+    if not ur_macro_path.exists():
+        return set()
+
+    text = ur_macro_path.read_text(encoding="utf-8")
+    call_start = text.find("<xacro:macro")
+    if call_start == -1:
+        return set()
+
+    ur_robot_block_start = text.find('name="ur_robot"', call_start)
+    if ur_robot_block_start == -1:
+        return set()
+
+    params_match = re.search(r'params\\s*=\\s*["\\\']([^"\\\']+)["\\\']', text[ur_robot_block_start:])
+    if not params_match:
+        return set()
+
+    raw_params = params_match.group(1).split()
+    return {token.lstrip("*") for token in raw_params if token and ":=" not in token}
+
+
 def resolve_required_package_share_dir(package_name, remediation_hint):
     try:
         return get_package_share_directory(package_name)
@@ -115,8 +147,14 @@ def launch_setup(context, *args, **kwargs):
         "and source install/setup.bash before launching UR5 demo scenes.",
     )
 
-    initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
-    initial_position_mappings = {"initial_positions_file": initial_position_path}
+    scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
+    scene_args = _extract_scene_xacro_args(scene_xacro_path)
+    ur_robot_args = _extract_ur_robot_macro_params()
+
+    initial_position_mappings = {}
+    if "initial_positions_file" in scene_args and "initial_positions_file" in ur_robot_args:
+        initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
+        initial_position_mappings["initial_positions_file"] = initial_position_path
 
     robot_description_config = load_file(scene_package, "urdf/scene.urdf.xacro", initial_position_mappings)
     robot_description = {"robot_description": robot_description_config}
