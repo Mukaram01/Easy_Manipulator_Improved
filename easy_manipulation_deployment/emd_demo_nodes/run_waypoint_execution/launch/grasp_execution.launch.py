@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import os
+import re
 import tempfile
 from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess, DeclareLaunchArgument
@@ -90,6 +91,36 @@ def load_yaml(package_name, file_path):
     return xacro.load_yaml(absolute_file_path)
 
 
+def _extract_scene_xacro_args(xacro_file_path):
+    text = Path(xacro_file_path).read_text(encoding="utf-8")
+    return set(re.findall(r"<xacro:arg\\s+name=['\\\"]([^'\\\"]+)['\\\"]", text))
+
+
+def _extract_ur_robot_macro_params():
+    try:
+        ur_macro_path = Path(get_package_share_directory("ur_description")) / "urdf" / "ur_macro.xacro"
+    except PackageNotFoundError:
+        return set()
+    if not ur_macro_path.exists():
+        return set()
+
+    text = ur_macro_path.read_text(encoding="utf-8")
+    call_start = text.find("<xacro:macro")
+    if call_start == -1:
+        return set()
+
+    ur_robot_block_start = text.find('name="ur_robot"', call_start)
+    if ur_robot_block_start == -1:
+        return set()
+
+    params_match = re.search(r'params\\s*=\\s*["\\\']([^"\\\']+)["\\\']', text[ur_robot_block_start:])
+    if not params_match:
+        return set()
+
+    raw_params = params_match.group(1).split()
+    return {token.lstrip("*") for token in raw_params if token and ":=" not in token}
+
+
 def generate_launch_description():
     # moveit_cpp.yaml is passed by filename for now since it's node specific
     grasp_execution_yaml_file_name = (
@@ -100,11 +131,17 @@ def generate_launch_description():
         'debug', default_value='false', description='Launch in debug mode'
     )
 
-    # Initial position mapping
-    initial_position_path = (get_package_share_directory(package_name) +
-                             '/config/start_positions.yaml')
-    initial_position_mappings = {
-        'initial_positions_file': initial_position_path}
+    # Keep compatibility across UR package updates by only forwarding mappings
+    # accepted by both the scene xacro and ur_description's ur_robot macro.
+    scene_xacro_path = Path(get_package_share_directory(scene_pkg)) / 'urdf' / 'scene.urdf.xacro'
+    scene_args = _extract_scene_xacro_args(scene_xacro_path)
+    ur_robot_args = _extract_ur_robot_macro_params()
+    initial_position_mappings = {}
+    if 'initial_positions_file' in scene_args and 'initial_positions_file' in ur_robot_args:
+        initial_position_path = (
+            get_package_share_directory(package_name) + '/config/start_positions.yaml'
+        )
+        initial_position_mappings['initial_positions_file'] = initial_position_path
 
     # Component yaml files are grouped in separate namespaces
     robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro',
