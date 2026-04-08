@@ -133,8 +133,18 @@ MainWindow::MainWindow(QWidget * parent)
   std::sort(ros_dist.begin(), ros_dist.end());
   ros_dist.erase(std::unique(ros_dist.begin(), ros_dist.end()), ros_dist.end());
 
-  for (const auto & supported_distro : ros_dist) {
-    ui->ros_distro->addItem(QString::fromStdString(supported_distro));
+  if (!ros_dist.empty()) {
+    ui->ros_distro->addItem("Select ROS distro...", "");
+    for (const auto & supported_distro : ros_dist) {
+      ui->ros_distro->addItem(
+        QString::fromStdString(supported_distro),
+        QString::fromStdString(supported_distro));
+    }
+  } else {
+    ui->ros_distro->setDisabled(true);
+    ui->error_label->setText(
+      "<font color='red'>No ROS 2 installation detected. Install ROS 2 under /opt/ros, then reopen "
+      "Workcell Builder.</font>");
   }
 
   if (distro != nullptr) {
@@ -146,6 +156,22 @@ MainWindow::MainWindow(QWidget * parent)
       }
     }
   }
+
+  connect(
+    ui->ros_distro,
+    qOverload<int>(&QComboBox::currentIndexChanged),
+    this,
+    [this](int) {
+      update_next_button_state();
+      if (success && !has_selected_ros_distro()) {
+        ui->error_label->setText(
+          "<font color='red'>Workcell loaded. Please select a ROS distro to continue.</font>");
+      } else if (success) {
+        ui->error_label->setText("<font color='green'>Workcell loaded</font>");
+      }
+    });
+
+  update_next_button_state();
 }
 
 MainWindow::~MainWindow()
@@ -340,21 +366,27 @@ void MainWindow::on_load_workcell_clicked()
     if (result.success) {
       workcell = result.workcell;
       workcell_path = result.workcell_path;
-      ui->error_label->setText(
-        QString("<font color='green'>Workcell loaded%1</font>").arg(result.workcell_root_label));
-      ui->next->setDisabled(false);
+      if (has_selected_ros_distro()) {
+        ui->error_label->setText(
+          QString("<font color='green'>Workcell loaded%1</font>").arg(result.workcell_root_label));
+      } else {
+        ui->error_label->setText(
+          "<font color='red'>Workcell loaded, but no ROS distro is selected. Select a ROS distro "
+          "to continue.</font>");
+      }
       ui->load_workcell->setDisabled(true);
       ui->change_workcell->setDisabled(false);
       success = true;
       ui->filepath->setText(result.workcell_file);
+      update_next_button_state();
     } else {
       const QString error_text = result.cancelled ? "Workcell load cancelled" :
         QString("Failed to load workcell: %1").arg(result.error);
       ui->error_label->setText(QString("<font color='red'>%1</font>").arg(error_text));
-      ui->next->setDisabled(true);
       ui->load_workcell->setDisabled(false);
       ui->change_workcell->setDisabled(true);
       success = false;
+      update_next_button_state();
     }
   });
 
@@ -363,6 +395,16 @@ void MainWindow::on_load_workcell_clicked()
 
 void MainWindow::on_next_clicked()
 {
+  if (!success) {
+    ui->error_label->setText("<font color='red'>Please load a workcell before continuing.</font>");
+    return;
+  }
+  if (!has_selected_ros_distro()) {
+    ui->error_label->setText(
+      "<font color='red'>Please select a ROS distro before continuing.</font>");
+    update_next_button_state();
+    return;
+  }
   boost::filesystem::path before_scene_select(boost::filesystem::current_path());
   workcell.ros_ver = 2;
   workcell.ros_distro = ui->ros_distro->currentText().toStdString();
@@ -376,10 +418,21 @@ void MainWindow::on_next_clicked()
 
 void MainWindow::on_change_workcell_clicked()
 {
-  ui->next->setDisabled(true);
   ui->load_workcell->setDisabled(false);
   ui->change_workcell->setDisabled(true);
   ui->filepath->clear();
+  success = false;
+  update_next_button_state();
+}
+
+bool MainWindow::has_selected_ros_distro() const
+{
+  return !ui->ros_distro->currentData().toString().trimmed().isEmpty();
+}
+
+void MainWindow::update_next_button_state()
+{
+  ui->next->setDisabled(!(success && has_selected_ros_distro()));
 }
 bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::string scene_name)
 {
