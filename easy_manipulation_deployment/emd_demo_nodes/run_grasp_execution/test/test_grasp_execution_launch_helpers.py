@@ -1,8 +1,8 @@
-"""Tests for the grasp_execution launch utilities.
+"""Unit tests for ``grasp_execution.launch.py`` helper functions.
 
-These tests focus on the helper functions defined in
-``grasp_execution.launch.py``. They intentionally stub out ROS specific
-modules so they can run in a plain Python environment.
+This module is a pytest unit-test helper and **not** a ROS launch entrypoint.
+It intentionally stubs ROS-specific modules so the tests can run in a plain
+Python environment.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def import_launch_module(path: Path):
 
 @pytest.fixture()
 def grasp_launch_module():
-    module_path = Path(__file__).resolve().parent / "grasp_execution.launch.py"
+    module_path = Path(__file__).resolve().parent.parent / "launch" / "grasp_execution.launch.py"
     return import_launch_module(module_path)
 
 
@@ -118,7 +118,7 @@ def test_resolve_scene_package_share_dir_reports_missing_scene(grasp_launch_modu
 @pytest.mark.parametrize(
     "module_path",
     [
-        Path(__file__).resolve().parent / "grasp_execution.launch.py",
+        Path(__file__).resolve().parent.parent / "launch" / "grasp_execution.launch.py",
         Path(__file__).resolve()
         .parents[2]
         .joinpath("run_waypoint_execution", "launch", "grasp_execution.launch.py"),
