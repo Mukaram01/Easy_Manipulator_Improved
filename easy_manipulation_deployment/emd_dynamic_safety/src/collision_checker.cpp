@@ -402,7 +402,7 @@ void CollisionChecker::run_once(double current_time, double look_ahead_time,
 
 double CollisionChecker::polling(double look_ahead_time, int sample_size) {
   if (sample_size <= 0) {
-    RCLCPP_WARN(LOGGER, "Invalid sample_size %d, returning 0", sample_size);
+    RCLCPP_WARN(LOGGER, "Invalid sample_size %d, returning 0.0", sample_size);
     return 0.0;
   }
   std::vector<double> sample_time_points;

@@ -478,7 +478,7 @@ std::string MoveitCppGraspExecution::register_target_object_mesh(
 geometry_msgs::msg::Pose MoveitCppGraspExecution::get_object_pose(
   const std::string & object_id) const
 {
-  geometry_msgs::msg::Pose object_pose;
+  geometry_msgs::msg::Pose object_pose{};
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
     collision_detection::World::ObjectConstPtr object = scene->getWorld()->getObject(object_id);
