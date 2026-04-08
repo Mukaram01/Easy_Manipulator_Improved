@@ -6,6 +6,7 @@
  <xacro:arg name="name" default="$(arg ur_type)"/>
  <xacro:arg name="tf_prefix" default=""/>
  <xacro:arg name="use_fake_hardware" default="true"/>
+ <xacro:arg name="initial_positions_file" default="$(find ur3_moveit_config)/config/initial_positions.yaml"/>
 
  <link name="world"/>
 
@@ -20,6 +21,7 @@
   kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
   physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
+  initial_positions_file="$(arg initial_positions_file)"
   use_fake_hardware="$(arg use_fake_hardware)">
   <origin xyz="0 0 0" rpy="0 0 0"/>
 </xacro:ur_robot>
