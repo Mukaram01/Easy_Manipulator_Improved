@@ -55,6 +55,8 @@ private slots:
   void on_change_workcell_clicked();
 
 private:
+  bool has_selected_ros_distro() const;
+  void update_next_button_state();
   Ui::MainWindow * ui;
   struct WorkcellLoadResult
   {

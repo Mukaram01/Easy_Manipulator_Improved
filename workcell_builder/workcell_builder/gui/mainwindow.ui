@@ -75,7 +75,11 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="ros_distro"/>
+         <widget class="QComboBox" name="ros_distro">
+          <property name="toolTip">
+           <string>Select the ROS 2 distribution for this workcell (required)</string>
+          </property>
+         </widget>
         </item>
        </layout>
       </item>
