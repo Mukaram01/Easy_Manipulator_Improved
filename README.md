@@ -298,6 +298,34 @@ ros2 launch ur10_2f_test      demo.launch.py
 ros2 launch suction_test      demo.launch.py
 ```
 
+### Launch **any** scene package (including Workcell Builder generated scenes)
+
+If a scene package contains `launch/demo.launch.py`, you can launch it with the same pattern:
+
+```bash
+ros2 launch <scene_package> demo.launch.py [use_fake_hardware:=true|false]
+```
+
+Examples:
+
+```bash
+# Existing scene package from this repo (fake hardware)
+ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=true
+
+# Existing scene package on a real robot
+ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=false
+
+# New scene generated with Workcell Builder
+ros2 launch my_generated_scene demo.launch.py use_fake_hardware:=true
+ros2 launch my_generated_scene demo.launch.py use_fake_hardware:=false
+```
+
+Tip: you can verify a scene package exists before launch:
+
+```bash
+ros2 pkg prefix <scene_package>
+```
+
 ### Switching to a real UR robot
 
 1. **Install and start `ur_robot_driver`** (ships separately from this repository):
@@ -726,6 +754,16 @@ ros2 launch ur5_3f_test demo.launch.py
 ros2 launch ur5_2f_test demo.launch.py
 # after generating and rebuilding your own package (scene packages still depend on the asset packages above):
 ros2 launch my_generated_scene demo.launch.py
+```
+
+For scripted/CI workflows where you want one reusable launcher command for **any** scene:
+
+```bash
+SCENE_PKG=my_generated_scene
+USE_FAKE=true   # set to false for real hardware
+
+ros2 pkg prefix "${SCENE_PKG}"
+ros2 launch "${SCENE_PKG}" demo.launch.py use_fake_hardware:="${USE_FAKE}"
 ```
 
 ## Checks
