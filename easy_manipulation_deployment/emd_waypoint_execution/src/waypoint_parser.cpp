@@ -65,6 +65,8 @@ bool emd::WayPointParser::load_waypoints(
   JSONCPP_STRING errs;
   if (!parseFromStream(builder, ifs, &root, &errs)) {
     RCLCPP_ERROR_STREAM(LOGGER_WAYPOINT, errs);
+    ifs.close();
+    return false;
   }
   Json::Value action_name_obj = root.get("actions", "default");
   std::vector<std::string> action_names;
