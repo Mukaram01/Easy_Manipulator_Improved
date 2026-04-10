@@ -90,8 +90,8 @@ std::vector<boost::filesystem::path> robot_description_candidates(
   const std::string & robot_name)
 {
   return {
-    urdf_path / (robot_name + ".urdf.xacro"),
-    urdf_path / (robot_name + ".urdf")
+    urdf_path / (robot_name + ".urdf"),
+    urdf_path / (robot_name + ".urdf.xacro")
   };
 }
 
@@ -313,8 +313,19 @@ Robot AddRobot::LoadRobot(
   temp_robot.name = file.erase(file.length() - 12);
   const boost::filesystem::path urdf_path = resolved_description_path / "urdf";
   const auto candidates = robot_description_candidates(urdf_path, temp_robot.name);
-  const boost::filesystem::path urdf_file = select_existing_description_file(candidates);
-  temp_robot.robot_links = GetLinks(urdf_file.string());
+  for (const auto & candidate : candidates) {
+    if (!boost::filesystem::exists(candidate)) {
+      continue;
+    }
+    temp_robot.robot_links = GetLinks(candidate.string());
+    if (!temp_robot.robot_links.empty()) {
+      break;
+    }
+  }
+  if (temp_robot.robot_links.empty()) {
+    const boost::filesystem::path urdf_file = select_existing_description_file(candidates);
+    temp_robot.robot_links = GetLinks(urdf_file.string());
+  }
   return temp_robot;
 }
 
