@@ -60,16 +60,28 @@ public:
   Workflow::Status cancel_workflow(
     const std::string & workflow_id);
 
+  /// \brief Wait for every currently-tracked worker future to complete.
+  /// \details Thread-safe. The function snapshots worker futures while holding
+  /// internal metadata locks, then waits after releasing the lock.
   void wait_till_all_complete() const;
 
+  /// \brief Wait for a specific workflow to complete and return its result.
+  /// \details Thread-safe. Metadata lookups are performed while holding the
+  /// internal metadata mutex, and any selected shared_future is copied before
+  /// releasing the lock and waiting.
   Workflow::Status wait_till_complete(
     const std::string & workflow_id,
     result_t & result) const;
 
+  /// \brief Get current workflow status.
+  /// \details Thread-safe. Status lookup is guarded by the internal metadata
+  /// mutex.
   Workflow::Status get_status(
     const std::string & workflow_id) const;
 
-  const result_t & get_result(const std::string & workflow_id) const;
+  /// \brief Return a snapshot copy of a completed workflow result.
+  /// \details Thread-safe. Access is guarded by the internal metadata mutex.
+  result_t get_result(const std::string & workflow_id) const;
 
   class Impl;
 
