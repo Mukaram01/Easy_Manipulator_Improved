@@ -706,6 +706,29 @@ ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=my_generated_scene
 ```
 
+### Fake hardware workflow with `grasp_execution.launch.py` and grasp planner launchers
+
+If you want to run the full demo stack without a physical robot, start the scene in fake-hardware mode first, then launch the planner and execution nodes against the same scene package.
+
+```bash
+# Terminal 1: start the scene with fake ros2_control hardware
+source ~/workcell_ws/install/setup.bash
+ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=true
+
+# Terminal 2: start the grasp planner
+source ~/workcell_ws/install/setup.bash
+ros2 launch run_grasp_planner grasp_planner_3f_launch.py
+
+# Terminal 3: start grasp execution for the same scene package
+source ~/workcell_ws/install/setup.bash
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_3f_test
+```
+
+Notes:
+- `grasp_execution.launch.py` selects the robot/workcell through `scene_package:=...`; keep this value aligned with the scene you launched in Terminal 1.
+- The fake-vs-real hardware switch is controlled by each scene launcher (`demo.launch.py`) via `use_fake_hardware:=true|false`.
+- The same pattern works for generated scenes, for example `scene_package:=my_generated_scene`.
+
 ### 3. Workcell Builder
 
 GUI-based tool for generating robotic workcell simulations on ROS 2 Humble.
