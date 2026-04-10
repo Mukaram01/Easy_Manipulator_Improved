@@ -213,46 +213,52 @@ void Scheduler::Impl::execution_ending_cb(
   std::promise<void> & _sig,
   result_t result)
 {
-  WorkflowImplT workflow;
-  std::string new_workflow_id;
-  bool queue = false;
-  {    // Lock scheduler metadata
-    std::lock_guard<std::mutex> guard(metadata_mutex);
+  std::string current_workflow_id = workflow_id;
+  std::promise<result_t> * current_workflow_sig = &workflow_sig;
+  result_t current_result = result;
 
-    workflow_sig.set_value(result);
+  while (true) {
+    WorkflowImplT next_workflow;
+    std::string next_workflow_id;
+    bool has_next_workflow = false;
+    {
+      // Lock scheduler metadata only while moving lifecycle states:
+      // ongoing -> finished for the current workflow,
+      // queued -> ongoing for the next workflow (if any).
+      std::lock_guard<std::mutex> guard(metadata_mutex);
 
-    // Add workflow id and the respecting result to the finished task map
-    finished_task_map[workflow_id] = result;
+      // Fulfill the current workflow promise with its execution result.
+      current_workflow_sig->set_value(current_result);
 
-    // Remove workflow id from the ongoing task map
-    ongoing_task_map.erase(workflow_id);
+      // Mark current workflow as finished.
+      finished_task_map[current_workflow_id] = current_result;
+      ongoing_task_map.erase(current_workflow_id);
 
-    if (!id_queue.empty()) {
-      queue = true;
+      if (!id_queue.empty()) {
+        has_next_workflow = true;
 
-      // TODO(anyone): setting workflow prerequisite, (DAG)?
-      // Select the first workflow and workflow_id in queue
-      new_workflow_id = std::move(id_queue.front());
-      id_queue.pop_front();
-      workflow = std::move(workflow_queue.front());
-      workflow_queue.pop_front();
+        // TODO(anyone): setting workflow prerequisite, (DAG)?
+        // Pull the next queued workflow and move it to ongoing.
+        next_workflow_id = std::move(id_queue.front());
+        id_queue.pop_front();
+        next_workflow = std::move(workflow_queue.front());
+        workflow_queue.pop_front();
+        ongoing_task_map[next_workflow_id] = std::move(queued_task_map[next_workflow_id]);
+        queued_task_map.erase(next_workflow_id);
+      } else {
+        // No more queued work: signal the worker chain completion.
+        _sig.set_value();
+        return;
+      }
+    }  // Unlock scheduler metadata before executing the next workflow.
 
-      // Add workflow id into the ongoing task map
-      ongoing_task_map[new_workflow_id] = std::move(queued_task_map[new_workflow_id]);
-      queued_task_map.erase(new_workflow_id);
-    } else {
-      // workflow done, expose result end recursive function
-      _sig.set_value();
+    if (!has_next_workflow) {
       return;
     }
-  }    // Unlock scheduler metadata
 
-  if (queue) {
-    // Start the next workflow
-    result_t next_result = workflow.workflow(new_workflow_id);
-
-    // Start recursive callback with the actual result
-    execution_ending_cb(new_workflow_id, workflow.sig, _sig, next_result);
+    current_result = next_workflow.workflow(next_workflow_id);
+    current_workflow_id = std::move(next_workflow_id);
+    current_workflow_sig = &next_workflow.sig;
   }
 }
 
