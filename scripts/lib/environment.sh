@@ -27,17 +27,18 @@ detect_workspace() {
 detect_ros_distro() {
     if [[ -n ${ROS_DISTRO:-} ]]; then
         [[ -f "/opt/ros/$ROS_DISTRO/setup.bash" ]] || die "ROS_DISTRO is set to '$ROS_DISTRO' but /opt/ros/$ROS_DISTRO/setup.bash is missing"
+        [[ "$ROS_DISTRO" == "humble" ]] || die "This repository is currently supported via helper scripts on ROS 2 Humble only (received ROS_DISTRO='$ROS_DISTRO')"
         return
     fi
 
-    for distro in humble jazzy; do
+    for distro in humble; do
         if [[ -f "/opt/ros/$distro/setup.bash" ]]; then
             ROS_DISTRO="$distro"
             return
         fi
     done
 
-    die "No supported ROS distro found (expected humble or jazzy under /opt/ros)"
+    die "No supported ROS distro found (expected humble under /opt/ros)"
 }
 
 source_ros() {

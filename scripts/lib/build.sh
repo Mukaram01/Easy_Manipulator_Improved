@@ -14,8 +14,13 @@ BASE_CMAKE_ARGS=(
 )
 
 reset_colcon_environment() {
-    local ros_setup="/opt/ros/humble/setup.bash"
+    local ros_distro="${ROS_DISTRO:-humble}"
+    local ros_setup="/opt/ros/${ros_distro}/setup.bash"
     local local_setup="$WORKSPACE_ROOT/install/local_setup.bash"
+
+    if [[ "$ros_distro" != "humble" ]]; then
+        die "Unsupported ROS_DISTRO='${ros_distro}' for this build helper (expected humble)"
+    fi
 
     unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
 
