@@ -37,7 +37,7 @@ namespace core
 struct Worker
 {
   std::shared_ptr<std::thread> execution_thread;
-  std::future<void> execution_future;
+  std::shared_future<void> execution_future;
 };
 
 class WorkflowImplT
@@ -156,7 +156,7 @@ int Scheduler::Impl::get_available_worker() const
 }
 
 
-const result_t & Scheduler::get_result(const std::string & workflow_id) const
+result_t Scheduler::get_result(const std::string & workflow_id) const
 {
   // Lock scheduler metadata
   std::lock_guard<std::mutex> guard(impl_->metadata_mutex);
@@ -186,7 +186,7 @@ void Scheduler::Impl::start_worker(
   auto sig = std::promise<void>();
 
   // Register future for monitoring signal
-  workers[worker_id].execution_future = sig.get_future();
+  workers[worker_id].execution_future = sig.get_future().share();
 
   // Add workflow id into the ongoing task map
   WorkflowImplT workflow_impl(workflow);
@@ -344,10 +344,19 @@ Workflow::Status Scheduler::cancel_workflow(
 
 void Scheduler::wait_till_all_complete() const
 {
-  for (auto & worker : impl_->workers) {
-    if (worker.execution_future.valid()) {
-      worker.execution_future.wait();
+  std::vector<std::shared_future<void>> worker_futures;
+  {
+    std::lock_guard<std::mutex> guard(impl_->metadata_mutex);
+    worker_futures.reserve(impl_->workers.size());
+    for (const auto & worker : impl_->workers) {
+      if (worker.execution_future.valid()) {
+        worker_futures.emplace_back(worker.execution_future);
+      }
     }
+  }
+
+  for (auto & worker_future : worker_futures) {
+    worker_future.wait();
   }
 }
 
@@ -357,23 +366,29 @@ Workflow::Status Scheduler::wait_till_complete(
   result_t & result) const
 {
   std::shared_future<result_t> future;
-  switch (get_status(workflow_id)) {
-    case Workflow::Status::COMPLETED:
-      result = impl_->finished_task_map[workflow_id];
-      break;
-    case Workflow::Status::ONGOING:
-      future = impl_->ongoing_task_map[workflow_id];
-      future.wait();
-      result = get_result(workflow_id);
-      break;
-    case Workflow::Status::QUEUED:
-      future = impl_->queued_task_map[workflow_id];
-      future.wait();
-      result = get_result(workflow_id);
-      break;
-    default:
-      return Workflow::Status::INVALID;
+  {
+    std::lock_guard<std::mutex> guard(impl_->metadata_mutex);
+
+    auto finished_it = impl_->finished_task_map.find(workflow_id);
+    if (finished_it != impl_->finished_task_map.end()) {
+      result = finished_it->second;
+      return Workflow::Status::COMPLETED;
+    }
+
+    auto ongoing_it = impl_->ongoing_task_map.find(workflow_id);
+    if (ongoing_it != impl_->ongoing_task_map.end()) {
+      future = ongoing_it->second;
+    } else {
+      auto queued_it = impl_->queued_task_map.find(workflow_id);
+      if (queued_it == impl_->queued_task_map.end()) {
+        return Workflow::Status::INVALID;
+      }
+      future = queued_it->second;
+    }
   }
+
+  future.wait();
+  result = get_result(workflow_id);
   return Workflow::Status::COMPLETED;
 }
 
