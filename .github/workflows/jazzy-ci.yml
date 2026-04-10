@@ -47,6 +47,7 @@ jobs:
         run: |
           bash -n fix_and_build_humble.sh scripts/fix_workspace_layout.sh
           python3 scripts/check_python_heredocs.py fix_and_build_humble.sh scripts/fix_workspace_layout.sh
+          ./scripts/check_disallowed_artifact_names.sh
 
       - name: Install dependencies
         working-directory: ws
