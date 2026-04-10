@@ -15,6 +15,7 @@
 
 #include "gui/mainwindow.h"
 #include <QFileDialog>
+#include <QStatusBar>
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
@@ -110,7 +111,10 @@ MainWindow::MainWindow(QWidget * parent)
   ui->change_workcell->setDisabled(true);
   success = false;
   ui->error_label->setWordWrap(true);
-  ui->error_label->setText("<font color='red'>Workcell not available</font>");
+  ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
+  ui->filepath->setToolTip("Selected ROS workspace root (contains assets/ and scenes/)");
+  ui->ros_distro->setToolTip("Choose the ROS 2 distro that will be used for generated launch/config files");
+  statusBar()->showMessage("Select a workspace directory to begin.");
 
   // Detect available ROS 2 distributions from /opt/ros.
   const boost::filesystem::path ros_root("/opt/ros");
@@ -143,8 +147,9 @@ MainWindow::MainWindow(QWidget * parent)
   } else {
     ui->ros_distro->setDisabled(true);
     ui->error_label->setText(
-      "<font color='red'>No ROS 2 installation detected. Install ROS 2 under /opt/ros, then reopen "
+      "<font color='#C0392B'>No ROS 2 installation detected. Install ROS 2 under /opt/ros, then reopen "
       "Workcell Builder.</font>");
+    statusBar()->showMessage("ROS 2 not detected in /opt/ros.");
   }
 
   if (distro != nullptr) {
@@ -165,9 +170,11 @@ MainWindow::MainWindow(QWidget * parent)
       update_next_button_state();
       if (success && !has_selected_ros_distro()) {
         ui->error_label->setText(
-          "<font color='red'>Workcell loaded. Please select a ROS distro to continue.</font>");
+          "<font color='#C0392B'>Workcell loaded. Please select a ROS distro to continue.</font>");
+        statusBar()->showMessage("Select a ROS distro to enable the Next step.");
       } else if (success) {
-        ui->error_label->setText("<font color='green'>Workcell loaded</font>");
+        ui->error_label->setText("<font color='#27AE60'>Workcell loaded</font>");
+        statusBar()->showMessage("Ready: open scene setup.");
       }
     });
 
@@ -195,7 +202,8 @@ void MainWindow::on_load_workcell_clicked()
   ui->next->setDisabled(true);
   ui->load_workcell->setDisabled(true);
   ui->change_workcell->setDisabled(true);
-  ui->error_label->setText("<font color='blue'>Loading workcell...</font>");
+  ui->error_label->setText("<font color='#2E86C1'>Loading workcell...</font>");
+  statusBar()->showMessage("Loading workspace. Please wait...");
 
   if (progress_dialog_) {
     progress_dialog_->deleteLater();
@@ -368,11 +376,13 @@ void MainWindow::on_load_workcell_clicked()
       workcell_path = result.workcell_path;
       if (has_selected_ros_distro()) {
         ui->error_label->setText(
-          QString("<font color='green'>Workcell loaded%1</font>").arg(result.workcell_root_label));
+          QString("<font color='#27AE60'>Workcell loaded%1</font>").arg(result.workcell_root_label));
+        statusBar()->showMessage("Ready: open scene setup.");
       } else {
         ui->error_label->setText(
-          "<font color='red'>Workcell loaded, but no ROS distro is selected. Select a ROS distro "
+          "<font color='#C0392B'>Workcell loaded, but no ROS distro is selected. Select a ROS distro "
           "to continue.</font>");
+        statusBar()->showMessage("Workspace loaded. Select a ROS distro.");
       }
       ui->load_workcell->setDisabled(true);
       ui->change_workcell->setDisabled(false);
@@ -382,7 +392,8 @@ void MainWindow::on_load_workcell_clicked()
     } else {
       const QString error_text = result.cancelled ? "Workcell load cancelled" :
         QString("Failed to load workcell: %1").arg(result.error);
-      ui->error_label->setText(QString("<font color='red'>%1</font>").arg(error_text));
+      ui->error_label->setText(QString("<font color='#C0392B'>%1</font>").arg(error_text));
+      statusBar()->showMessage(error_text);
       ui->load_workcell->setDisabled(false);
       ui->change_workcell->setDisabled(true);
       success = false;
@@ -396,12 +407,14 @@ void MainWindow::on_load_workcell_clicked()
 void MainWindow::on_next_clicked()
 {
   if (!success) {
-    ui->error_label->setText("<font color='red'>Please load a workcell before continuing.</font>");
+    ui->error_label->setText("<font color='#C0392B'>Please load a workcell before continuing.</font>");
+    statusBar()->showMessage("Load a workspace before continuing.");
     return;
   }
   if (!has_selected_ros_distro()) {
     ui->error_label->setText(
-      "<font color='red'>Please select a ROS distro before continuing.</font>");
+      "<font color='#C0392B'>Please select a ROS distro before continuing.</font>");
+    statusBar()->showMessage("Select a ROS distro before continuing.");
     update_next_button_state();
     return;
   }
@@ -422,6 +435,8 @@ void MainWindow::on_change_workcell_clicked()
   ui->change_workcell->setDisabled(true);
   ui->filepath->clear();
   success = false;
+  ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
+  statusBar()->showMessage("Select a new workspace directory.");
   update_next_button_state();
 }
 
