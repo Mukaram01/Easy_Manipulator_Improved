@@ -187,13 +187,24 @@ public:
         int parent_object_pos = scene.object_vector[i].ext_joint.parent_obj_pos;
         int parent_link_pos = scene.object_vector[i].ext_joint.parent_link_pos;
 
-        if (parent_object_pos >= 0 && parent_link_pos >= 0) {
+        if (
+          parent_object_pos >= 0 &&
+          parent_object_pos < static_cast<int>(scene.object_vector.size()) &&
+          parent_link_pos >= 0 &&
+          parent_link_pos < static_cast<int>(
+            scene.object_vector[parent_object_pos].link_vector.size()))
+        {
           ExternalJointParser::generate_ext_joints(
             &out, scene.object_vector[i].ext_joint,
             scene.object_vector[parent_object_pos].name,
             scene.object_vector[parent_object_pos].link_vector[
               parent_link_pos].name);
         } else {
+          std::cerr <<
+            "Warning: invalid external joint parent indices for object '" <<
+            scene.object_vector[i].name << "' (parent_obj_pos=" <<
+            parent_object_pos << ", parent_link_pos=" << parent_link_pos <<
+            "). Falling back to world/world." << std::endl;
           ExternalJointParser::generate_ext_joints(
             &out, scene.object_vector[i].ext_joint, "world",
             "world");
