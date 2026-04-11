@@ -59,3 +59,11 @@ ament_add_gtest(test_goal_time_tolerance_utils
 target_link_libraries(test_goal_time_tolerance_utils
   ${PROJECT_NAME}
 )
+
+
+ament_add_gtest(test_replanner_flatten_utils
+  test_replanner_flatten_utils.cpp
+)
+target_link_libraries(test_replanner_flatten_utils
+  ${PROJECT_NAME}
+)
