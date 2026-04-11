@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
+#include <sstream>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
 #include <rclcpp/parameter_client.hpp>
@@ -210,6 +211,51 @@ const Option & Option::load(const std::shared_ptr<NodeT> & node)
     collision_checker_options.thread_count,
     "dynamic_safety.collision_checker.thread_count",
     node, LOGGER);
+
+  emd::declare_or_get_param<double>(
+    zone_policy.min_replan_interval,
+    "dynamic_safety.policy.min_replan_interval",
+    node, LOGGER, zone_policy.min_replan_interval);
+  emd::declare_or_get_param<double>(
+    zone_policy.emergency_hysteresis,
+    "dynamic_safety.policy.hysteresis.emergency",
+    node, LOGGER, zone_policy.emergency_hysteresis);
+  emd::declare_or_get_param<double>(
+    zone_policy.slowdown_hysteresis,
+    "dynamic_safety.policy.hysteresis.slowdown",
+    node, LOGGER, zone_policy.slowdown_hysteresis);
+  emd::declare_or_get_param<double>(
+    zone_policy.replan_hysteresis,
+    "dynamic_safety.policy.hysteresis.replan",
+    node, LOGGER, zone_policy.replan_hysteresis);
+  emd::declare_or_get_param<double>(
+    zone_policy.safe_hysteresis,
+    "dynamic_safety.policy.hysteresis.safe",
+    node, LOGGER, zone_policy.safe_hysteresis);
+  emd::declare_or_get_param<double>(
+    zone_policy.scale_floor,
+    "dynamic_safety.policy.scale.floor",
+    node, LOGGER, zone_policy.scale_floor);
+  emd::declare_or_get_param<double>(
+    zone_policy.scale_ceiling,
+    "dynamic_safety.policy.scale.ceiling",
+    node, LOGGER, zone_policy.scale_ceiling);
+  emd::declare_or_get_param<double>(
+    zone_policy.scale_ramp_down_rate,
+    "dynamic_safety.policy.scale.ramp_down_rate",
+    node, LOGGER, zone_policy.scale_ramp_down_rate);
+  emd::declare_or_get_param<double>(
+    zone_policy.scale_ramp_up_rate,
+    "dynamic_safety.policy.scale.ramp_up_rate",
+    node, LOGGER, zone_policy.scale_ramp_up_rate);
+  emd::declare_or_get_param<double>(
+    zone_policy.collision_persistence_window,
+    "dynamic_safety.policy.collision_persistence_window",
+    node, LOGGER, zone_policy.collision_persistence_window);
+  emd::declare_or_get_param<double>(
+    zone_policy.replan_start_time_epsilon,
+    "dynamic_safety.policy.replan_start_time_epsilon",
+    node, LOGGER, zone_policy.replan_start_time_epsilon);
 
   // -------------- Static parameters -------------------
   if (!dynamic_parameterization) {
@@ -490,6 +536,7 @@ protected:
     double target_scale);
 
   void _handle_replanner(double start_state_time);
+  static const char * _zone_to_str(uint8_t zone);
 
   // Temporary functions to be moved into collision checker
   double _back_track_last_collision();
@@ -538,6 +585,7 @@ private:
   realtime_tools::RealtimeBuffer<CurrentState> current_state_cache_;
   realtime_tools::RealtimeBuffer<double> current_time_cache_;
   realtime_tools::RealtimeBuffer<double> scale_cache_;
+  ZoneDecisionPolicy zone_decision_policy_{option_.zone_policy};
   // realtime_tools::RealtimeBuffer<octomap::OcTree> env_state_cache_;
 };
 
@@ -606,6 +654,7 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
   }
 
   benchmark_stats.clear();
+  zone_decision_policy_.reset();
 
   // Reset Cache
   env_state_cache_.initRT(sensor_msgs::msg::JointState());
@@ -688,6 +737,7 @@ void DynamicSafety::Impl::add_trajectory(
     replanner_.add_trajectory(rt);
   }
   activated_ = true;
+  zone_decision_policy_.reset();
 }
 
 
@@ -865,94 +915,68 @@ void DynamicSafety::Impl::_main_loop()
     }
   }
 
-  // Collision Happens in the future
-  if (collision_time_point_ >= current_time_point) {
-    double scale_step = 0;
-    if (option_.safety_zone_options.slow_down_time <= 0 && option_.dynamic_parameterization) {
-      // Dynamically adjust slow down time
-      double slow_down_time =
-        _cal_scale_time(*current_state_cache_.readFromRT(), scale, 0.0001);
+  const bool collision_detected = collision_time_point_ >= current_time_point;
+  const uint8_t raw_zone = collision_detected ?
+    safety_zone_.get_zone(collision_time_point_ - current_time_point) : SafetyZone::SAFE;
+  const auto replanner_status = option_.allow_replan ? replanner_.get_status() : ReplannerStatus::IDLE;
+  const ZoneDecision decision = zone_decision_policy_.decide(
+    ZoneDecisionInput{
+      *current_time_cache_.readFromRT(),
+      1.0 / option_.rate,
+      current_time_point,
+      full_duration_,
+      collision_time_point_,
+      raw_zone,
+      collision_detected,
+      option_.allow_replan,
+      scale,
+      safety_zone_.get_zone_limit(SafetyZone::EMERGENCY),
+      safety_zone_.get_zone_limit(SafetyZone::SLOWDOWN),
+      replanner_status
+    });
 
-      scale_step = (scale - 0.0001) * (1.0 / option_.rate) / slow_down_time;
-      scale_step = 2 * option_.rate;
-    } else {
-      // Static Scale step
-      scale_step = 1 * (1.0 / option_.rate) / option_.safety_zone_options.slow_down_time;
-    }
-    uint8_t zone = safety_zone_.get_zone(collision_time_point_ - current_time_point);
+  if (decision.zone != raw_zone || decision.action != "none" ||
+    std::fabs(decision.next_scale - scale) > 1e-6)
+  {
+    RCLCPP_INFO_STREAM(
+      LOGGER,
+      "zone_transition raw=" << _zone_to_str(raw_zone) <<
+        " effective=" << _zone_to_str(decision.zone) <<
+        " action=" << decision.action <<
+        " start_state_time=" << decision.start_state_time <<
+        " collision_time=" << collision_time_point_ <<
+        " scale:" << scale << "->" << decision.next_scale);
+  }
 
-    if (!option_.allow_replan) {
-      // No replanning
-      if (zone <= SafetyZone::EMERGENCY) {
-        // Emergency stop
-        RCLCPP_ERROR_ONCE(
-          LOGGER,
-          "Emergency stop!!");
-        scale = 0.0001;
-      } else {
-        // Slow down
-        RCLCPP_WARN_ONCE(
-          LOGGER,
-          "Slowing down!!");
-        scale -= scale_step;
-        scale = std::max<double>(scale, 0.0001);
-      }
-    } else {
-      // Replanning
-      double current_time = *current_time_cache_.readFromRT();
-      if (zone <= SafetyZone::EMERGENCY) {
-        // Emergency stop
-        RCLCPP_ERROR_ONCE(
-          LOGGER,
-          "Emergency stop!!");
-        scale = 0.0001;
-      } else if (zone == SafetyZone::SLOWDOWN) {
-        // TODO(anyone): Better Heuristic
-        scale -= scale_step;
-        double start_state_time =
-          (current_time + safety_zone_.get_zone_limit(SafetyZone::EMERGENCY) +
-          collision_time_point_) / 2;
-        _handle_replanner(start_state_time);
-      } else if (zone == SafetyZone::REPLAN) {
-        double start_state_time =
-          (current_time + safety_zone_.get_zone_limit(SafetyZone::SLOWDOWN) +
-          collision_time_point_) / 2;
-        _handle_replanner(start_state_time);
-      } else if (zone == SafetyZone::SAFE) {
-        auto status = replanner_.get_status();
-        if (status == ReplannerStatus::IDLE) {
-          // Replanner Starte
-          // Nothing to do here
-        } else if (status == ReplannerStatus::ONGOING) {
-          replanner_.terminate_async();
-        } else if (status == ReplannerStatus::TIMEOUT) {
-          replanner_.terminate_async();
-        } else if (status == ReplannerStatus::SUCCEED) {
-          // stop it regularly
-          replanner_.get_result();
-        }
-      }
+  scale = decision.next_scale;
+  if (option_.allow_replan) {
+    if (decision.start_replanner) {
+      _handle_replanner(decision.start_state_time);
     }
-  } else {
-    // No Collision
-    if (scale < 1.0) {
-      // Gradually rescale back to 1
-      double scale_time;
-      if (option_.safety_zone_options.slow_down_time <= 0 && option_.dynamic_parameterization) {
-        scale_time = _cal_scale_time(*current_state_cache_.readFromRT(), scale, 1.0);
-        scale += (1.0 - scale) * (1.0 / option_.rate) / scale_time;
-      } else {
-        scale_time = option_.safety_zone_options.slow_down_time;
-        scale += 1.0 * (1.0 / option_.rate) / scale_time;
-      }
-      scale = std::min<double>(scale, 1);
-      RCLCPP_WARN_ONCE(LOGGER, "Speeding up");
+    if (decision.terminate_replanner) {
+      replanner_.terminate_async();
+    }
+    if (decision.consume_replan_result) {
+      replanner_.get_result();
     }
   }
+
   scale_cache_.writeFromNonRT(scale);
 
   if (option_.visualize) {
     visualizer_.update(current_time_point, collision_time_point_);
+  }
+}
+
+const char * DynamicSafety::Impl::_zone_to_str(uint8_t zone)
+{
+  switch (zone) {
+    case SafetyZone::BLIND: return "BLIND";
+    case SafetyZone::EMERGENCY: return "EMERGENCY";
+    case SafetyZone::SLOWDOWN: return "SLOWDOWN";
+    case SafetyZone::REPLAN: return "REPLAN";
+    case SafetyZone::SAFE: return "SAFE";
+    default: return "UNKNOWN";
   }
 }
 
@@ -1001,6 +1025,7 @@ double DynamicSafety::Impl::_cal_scale_time(
 
 void DynamicSafety::Impl::_handle_replanner(double start_state_time)
 {
+  start_state_time = std::clamp(start_state_time, *current_time_cache_.readFromRT(), full_duration_);
   // Replanner not started
   auto status = replanner_.get_status();
   if (status == ReplannerStatus::IDLE) {

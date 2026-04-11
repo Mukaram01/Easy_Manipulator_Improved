@@ -32,6 +32,7 @@
 // #include "emd/dynamic_safety/next_point_publisher.hpp"
 #include "emd/dynamic_safety/replanner.hpp"
 #include "emd/dynamic_safety/visualizer.hpp"
+#include "emd/dynamic_safety/zone_decision_policy.hpp"
 #include "emd/profiler.hpp"
 #include "realtime_tools/realtime_buffer.hpp"
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
@@ -76,6 +77,8 @@ struct Option
   ReplannerOption replanner_options;
 
   Visualizer::Option visualizer_options;
+
+  ZonePolicyParameters zone_policy;
 
     template<typename NodeT>
     const Option & load(const std::shared_ptr<NodeT> & node);
