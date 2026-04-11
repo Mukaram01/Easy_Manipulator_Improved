@@ -4,8 +4,8 @@
   <name>ur3_suction_test</name>
   <version>2.0.0</version>
   <description>UR3 robot with single suction gripper scene for Easy Manipulation Deployment</description>
-  <maintainer email="example@gmail.com">name</maintainer>
-  <license>Apache License 2.0</license>
+  <maintainer email="">Mukaram01</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
