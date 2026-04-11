@@ -314,7 +314,7 @@ public:
    * \return average collision checking duration
    */
   void plan_grasps(
-    GraspObject & object,
+    const GraspObject & object,
     emd_msgs::msg::GraspMethod & grasp_method,
     std::shared_ptr<CollisionObject> world_collision_object,
     const std::string & camera_frame) override;
