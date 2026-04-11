@@ -960,7 +960,7 @@ void DynamicSafety::Impl::_main_loop()
   const bool collision_detected = collision_time_point_ >= current_time_point;
   const uint8_t raw_zone = collision_detected ?
     safety_zone_.get_zone(collision_time_point_ - current_time_point) : SafetyZone::SAFE;
-  const auto replanner_status = option_.allow_replan ? replanner_.get_status() : ReplannerStatus::IDLE;
+  const uint8_t replanner_status = option_.allow_replan ? replanner_.get_status() : static_cast<uint8_t>(ReplannerStatus::IDLE);
   const ZoneDecision decision = zone_decision_policy_.decide(
     ZoneDecisionInput{
       *current_time_cache_.readFromRT(),
