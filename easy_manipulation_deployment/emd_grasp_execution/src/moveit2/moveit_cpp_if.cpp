@@ -254,6 +254,10 @@ bool MoveitCppGraspExecution::load_execution_method(
   if (execution_method != "default" && !execution_method.empty()) {
     auto customized_executor = std::unique_ptr<grasp_execution::moveit2::Executor>(
       executor_loader_->createUnmanagedInstance(execution_plugin));
+    if (!customized_executor) {
+      RCLCPP_ERROR(LOGGER, "Failed to load executor plugin: %s", execution_plugin.c_str());
+      return false;
+    }
     customized_executor->load(moveit_cpp_, execution_controller);
     arms_[group_name].executors[execution_method] = std::move(customized_executor);
   }
@@ -287,6 +291,10 @@ bool MoveitCppGraspExecution::load_ee(
   // Initialize customized execution method
   auto gripper_driver = std::unique_ptr<gripper::GripperDriver>(
     gripper_driver_loader_->createUnmanagedInstance(ee_driver_plugin));
+  if (!gripper_driver) {
+    RCLCPP_ERROR(LOGGER, "Failed to load gripper driver plugin: %s", ee_driver_plugin.c_str());
+    return false;
+  }
   if (gripper_driver->load(ee_driver_controller) != gripper::GripperDriver::Result::SUCCESS) {
     RCLCPP_ERROR(LOGGER, "Failed to load gripper driver for %s", ee_brand.c_str());
     return false;
@@ -406,6 +414,10 @@ std::string MoveitCppGraspExecution::register_target_object_mesh(
   temp_collision_object.operation = temp_collision_object.ADD;
 
   shapes::Mesh * m = shapes::createMeshFromResource(mesh_filepath);
+  if (!m) {
+    RCLCPP_ERROR(LOGGER, "Failed to load mesh from resource: %s", mesh_filepath.c_str());
+    return "";
+  }
   shape_msgs::msg::Mesh obj_mesh;
   shapes::ShapeMsg obj_mesh_msg;
   shapes::constructMsgFromShape(m, obj_mesh_msg);
@@ -466,10 +478,14 @@ std::string MoveitCppGraspExecution::register_target_object_mesh(
 geometry_msgs::msg::Pose MoveitCppGraspExecution::get_object_pose(
   const std::string & object_id) const
 {
-  geometry_msgs::msg::Pose object_pose;
+  geometry_msgs::msg::Pose object_pose{};
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
     collision_detection::World::ObjectConstPtr object = scene->getWorld()->getObject(object_id);
+    if (!object) {
+      RCLCPP_ERROR(LOGGER, "Object with id '%s' not found in planning scene", object_id.c_str());
+      return object_pose;
+    }
     auto poses = (*object).shape_poses_[0];
     Eigen::Quaterniond q(poses.linear());
     object_pose.position.x = poses.translation().x();

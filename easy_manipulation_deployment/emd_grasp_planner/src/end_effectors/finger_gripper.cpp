@@ -678,6 +678,9 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_gripper_
 {
   std::vector<std::shared_ptr<MultiFingerGripper>> valid_open_gripper_configs;
   // Query the gripping points at the center cutting plane
+  if (this->grasp_samples.empty()) {
+    return valid_open_gripper_configs;
+  }
   if (this->grasp_samples[0]->plane_intersects_object) {
     for (auto & finger_sample_1 : this->grasp_samples[0]->sample_side_1->finger_samples) {
       for (auto & finger_sample_2 : this->grasp_samples[0]->sample_side_2->finger_samples) {
