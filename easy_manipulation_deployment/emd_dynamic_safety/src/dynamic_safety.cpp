@@ -24,6 +24,8 @@
 #include <vector>
 #include <stdexcept>
 #include <sstream>
+#include <limits>
+#include <cstdint>
 
 #include "emd/dynamic_safety/dynamic_safety.hpp"
 #include <rclcpp/parameter_client.hpp>
@@ -586,6 +588,20 @@ private:
   realtime_tools::RealtimeBuffer<double> current_time_cache_;
   realtime_tools::RealtimeBuffer<double> scale_cache_;
   ZoneDecisionPolicy zone_decision_policy_{option_.zone_policy};
+  std::atomic<uint64_t> timeout_count_{0};
+  std::atomic<uint64_t> terminate_count_{0};
+  std::atomic<uint64_t> retry_count_{0};
+  std::atomic<uint64_t> success_after_retry_count_{0};
+  size_t max_retries_per_window_{3};
+  double retry_cooldown_s_{0.5};
+  size_t retries_in_window_{0};
+  double last_retry_time_{-std::numeric_limits<double>::infinity()};
+  bool retry_pending_{false};
+  double pending_retry_start_state_time_{0.0};
+  bool timeout_episode_active_{false};
+  bool terminate_requested_for_timeout_episode_{false};
+  bool last_attempt_was_retry_{false};
+  bool conservative_fallback_active_{false};
   // realtime_tools::RealtimeBuffer<octomap::OcTree> env_state_cache_;
 };
 
@@ -655,6 +671,17 @@ void DynamicSafety::Impl::configure_common(const NodePtrT & node)
 
   benchmark_stats.clear();
   zone_decision_policy_.reset();
+  timeout_count_ = 0;
+  terminate_count_ = 0;
+  retry_count_ = 0;
+  success_after_retry_count_ = 0;
+  retries_in_window_ = 0;
+  last_retry_time_ = -std::numeric_limits<double>::infinity();
+  retry_pending_ = false;
+  timeout_episode_active_ = false;
+  terminate_requested_for_timeout_episode_ = false;
+  last_attempt_was_retry_ = false;
+  conservative_fallback_active_ = false;
 
   // Reset Cache
   env_state_cache_.initRT(sensor_msgs::msg::JointState());
@@ -735,6 +762,13 @@ void DynamicSafety::Impl::add_trajectory(
   }
   if (option_.allow_replan) {
     replanner_.add_trajectory(rt);
+    retries_in_window_ = 0;
+    last_retry_time_ = -std::numeric_limits<double>::infinity();
+    retry_pending_ = false;
+    timeout_episode_active_ = false;
+    terminate_requested_for_timeout_episode_ = false;
+    last_attempt_was_retry_ = false;
+    conservative_fallback_active_ = false;
   }
   activated_ = true;
   zone_decision_policy_.reset();
@@ -829,6 +863,14 @@ void DynamicSafety::Impl::stop()
       delete pf_;
     }
   }
+  RCLCPP_INFO(
+    LOGGER,
+    "dynamic_safety_metrics timeout_count=%lu terminate_count=%lu retry_count=%lu "
+    "success_after_retry_count=%lu",
+    timeout_count_.load(),
+    terminate_count_.load(),
+    retry_count_.load(),
+    success_after_retry_count_.load());
   sig_.set_value();
 }
 
@@ -960,6 +1002,9 @@ void DynamicSafety::Impl::_main_loop()
       replanner_.get_result();
     }
   }
+  if (conservative_fallback_active_) {
+    scale = std::min(scale, 0.0001);
+  }
 
   scale_cache_.writeFromNonRT(scale);
 
@@ -1026,9 +1071,38 @@ double DynamicSafety::Impl::_cal_scale_time(
 void DynamicSafety::Impl::_handle_replanner(double start_state_time)
 {
   start_state_time = std::clamp(start_state_time, *current_time_cache_.readFromRT(), full_duration_);
+  const double now = *current_time_cache_.readFromRT();
+  auto maybe_retry = [&](double restart_time) {
+      if (retries_in_window_ >= max_retries_per_window_) {
+        return false;
+      }
+      if (now - last_retry_time_ < retry_cooldown_s_) {
+        return false;
+      }
+      double end_state_time = _back_track_last_collision();
+      replanner_.run_async(restart_time, end_state_time);
+      retries_in_window_++;
+      retry_count_++;
+      last_retry_time_ = now;
+      last_attempt_was_retry_ = true;
+      retry_pending_ = false;
+      conservative_fallback_active_ = false;
+      RCLCPP_WARN(
+        LOGGER, "Retrying replanner (%zu/%zu)", retries_in_window_, max_retries_per_window_);
+      return true;
+    };
   // Replanner not started
   auto status = replanner_.get_status();
   if (status == ReplannerStatus::IDLE) {
+    if (retry_pending_) {
+      if (!maybe_retry(pending_retry_start_state_time_)) {
+        RCLCPP_ERROR(
+          LOGGER,
+          "Retry budget exhausted or cooldown active; entering conservative emergency behavior");
+        conservative_fallback_active_ = true;
+      }
+      return;
+    }
     // Replanner Started
     RCLCPP_WARN_ONCE(
       LOGGER,
@@ -1036,24 +1110,40 @@ void DynamicSafety::Impl::_handle_replanner(double start_state_time)
       option_.replanner_options.planner.c_str());
     double end_state_time = _back_track_last_collision();
     replanner_.run_async(start_state_time, end_state_time);
+    last_attempt_was_retry_ = false;
 
-  } else if (status == ReplannerStatus::ONGOING) {
+  } else if (status == ReplannerStatus::RUNNING) {
     // Just let it run baby.
     // TODO(anyone): Better handling?
   } else if (status == ReplannerStatus::TIMEOUT) {
-    // TODO(anyone): Better termination handling?
-    // There is probably nothing we can do here.
-    // async_terminate() function trigger a detached termination thread
-    // to quietly shut down the process.
-    // Once that is done status would become idle;
-    replanner_.terminate_async();
+    if (!timeout_episode_active_) {
+      timeout_episode_active_ = true;
+      timeout_count_++;
+    }
+    if (!terminate_requested_for_timeout_episode_) {
+      replanner_.terminate_async();
+      terminate_count_++;
+      terminate_requested_for_timeout_episode_ = true;
+      retry_pending_ = true;
+      pending_retry_start_state_time_ = start_state_time;
+    }
+  } else if (status == ReplannerStatus::TERMINATING) {
+    // Wait until replanner reaches IDLE after termination.
+  } else if (status == ReplannerStatus::FAILED) {
+    retry_pending_ = true;
+    pending_retry_start_state_time_ = start_state_time;
   } else if (status == ReplannerStatus::SUCCEED) {
     // Let's see if you really finished, or just failed and gaveup
     auto result = replanner_.get_result();
     if (result->points.empty()) {
-      // Gosh you failure, let's restart
-      double end_state_time = _back_track_last_collision();
-      replanner_.run_async(start_state_time, end_state_time);
+      retry_pending_ = true;
+      pending_retry_start_state_time_ = start_state_time;
+      if (!maybe_retry(start_state_time)) {
+        RCLCPP_ERROR(
+          LOGGER,
+          "Retry budget exhausted or cooldown active; entering conservative emergency behavior");
+        conservative_fallback_active_ = true;
+      }
     } else {
       // Good job replanner, let's add a starting point and
       // do time_parameterization.
@@ -1064,6 +1154,14 @@ void DynamicSafety::Impl::_handle_replanner(double start_state_time)
       auto new_traj = replanner_.flatten_result(current_time, joint_names, current_state);
       if (!new_traj->points.empty()) {
         NewTrajectoryCB(new_traj);
+        if (last_attempt_was_retry_) {
+          success_after_retry_count_++;
+          last_attempt_was_retry_ = false;
+        }
+        timeout_episode_active_ = false;
+        terminate_requested_for_timeout_episode_ = false;
+        retry_pending_ = false;
+        conservative_fallback_active_ = false;
       }
     }
   }

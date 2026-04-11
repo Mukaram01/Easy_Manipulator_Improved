@@ -20,6 +20,9 @@
 #include <vector>
 #include <future>
 #include <chrono>
+#include <atomic>
+#include <mutex>
+#include <exception>
 
 #include "emd/dynamic_safety/replanner.hpp"
 #include "emd/interpolate.hpp"
@@ -40,6 +43,16 @@ class Replanner::Impl
 public:
   Impl() = default;
   virtual ~Impl() = default;
+
+  enum class LifecycleState : uint8_t
+  {
+    IDLE = ReplannerStatus::IDLE,
+    RUNNING = ReplannerStatus::RUNNING,
+    SUCCEEDED = ReplannerStatus::SUCCEED,
+    FAILED = ReplannerStatus::FAILED,
+    TIMED_OUT = ReplannerStatus::TIMEOUT,
+    TERMINATING = ReplannerStatus::TERMINATING
+  };
 
   void configure(
     const ReplannerOption & option,
@@ -66,6 +79,11 @@ public:
     const trajectory_msgs::msg::JointTrajectoryPoint & start_point,
     const trajectory_msgs::msg::JointTrajectoryPoint & end_point)
   {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    cleanup_terminate_future_locked();
+    termination_requested_for_episode_ = false;
+    future_owned_by_terminator_ = false;
+    lifecycle_state_.store(LifecycleState::RUNNING);
     start_time_ = std::chrono::steady_clock::now();
     plan_future_ = std::async(
       std::launch::async, &Impl::_run, this,
@@ -74,15 +92,18 @@ public:
 
   void terminate_async()
   {
-    if (!terminate_future_.valid()) {
-      _start_async_termination_thread();
-    } else {
-      auto status = terminate_future_.wait_for(std::chrono::nanoseconds(0));
-      if (status == std::future_status::ready) {
-        terminate_future_.get();
-        terminate_future_ = std::future<void>();
-      }
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    cleanup_terminate_future_locked();
+    const LifecycleState state = lifecycle_state_.load();
+    if ((state != LifecycleState::TIMED_OUT && state != LifecycleState::FAILED &&
+      state != LifecycleState::SUCCEEDED && state != LifecycleState::RUNNING) ||
+      termination_requested_for_episode_)
+    {
+      return;
     }
+    termination_requested_for_episode_ = true;
+    lifecycle_state_.store(LifecycleState::TERMINATING);
+    _start_async_termination_thread_locked();
   }
 
   void add_trajectory(
@@ -268,33 +289,63 @@ public:
 
   uint8_t get_status() const
   {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (lifecycle_state_.load() == LifecycleState::TERMINATING) {
+      return ReplannerStatus::TERMINATING;
+    }
     if (plan_future_.valid()) {
       auto status = plan_future_.wait_for(std::chrono::nanoseconds(0));
       double time_passed = std::chrono::duration<double, std::ratio<1>>(
         std::chrono::steady_clock::now() - start_time_).count();
       switch (status) {
         case std::future_status::deferred:
+          lifecycle_state_.store(LifecycleState::IDLE);
           return ReplannerStatus::IDLE;
         case std::future_status::ready:
+          if (lifecycle_state_.load() == LifecycleState::RUNNING) {
+            lifecycle_state_.store(LifecycleState::SUCCEEDED);
+          }
           return ReplannerStatus::SUCCEED;
         case std::future_status::timeout:
-          return (time_passed > deadline_) ? ReplannerStatus::TIMEOUT : ReplannerStatus::ONGOING;
+          if (time_passed > deadline_) {
+            lifecycle_state_.store(LifecycleState::TIMED_OUT);
+            return ReplannerStatus::TIMEOUT;
+          }
+          lifecycle_state_.store(LifecycleState::RUNNING);
+          return ReplannerStatus::RUNNING;
         default:
+          lifecycle_state_.store(LifecycleState::IDLE);
           return ReplannerStatus::IDLE;
       }
     } else {
+      lifecycle_state_.store(LifecycleState::IDLE);
       return ReplannerStatus::IDLE;
     }
   }
 
   trajectory_msgs::msg::JointTrajectory::SharedPtr get_result()
   {
-    if (!plan_future_.valid()) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!plan_future_.valid() || future_owned_by_terminator_) {
       return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
     }
-    plan_ = plan_future_.get();
-    // Reset shared future
+    lifecycle_state_.store(LifecycleState::TERMINATING);
+    try {
+      plan_ = plan_future_.get();
+      lifecycle_state_.store(LifecycleState::SUCCEEDED);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(LOGGER, "Replanner future failed: %s", e.what());
+      plan_ = trajectory_msgs::msg::JointTrajectory();
+      lifecycle_state_.store(LifecycleState::FAILED);
+    } catch (...) {
+      RCLCPP_ERROR(LOGGER, "Replanner future failed with unknown exception");
+      plan_ = trajectory_msgs::msg::JointTrajectory();
+      lifecycle_state_.store(LifecycleState::FAILED);
+    }
     plan_future_ = std::shared_future<trajectory_msgs::msg::JointTrajectory>();
+    future_owned_by_terminator_ = false;
+    termination_requested_for_episode_ = false;
+    lifecycle_state_.store(LifecycleState::IDLE);
     RCLCPP_INFO(
       LOGGER,
       "Total time take: %.5fs",
@@ -329,23 +380,53 @@ private:
 
   // Calling blocking get in a new async until it ended
   // This will result the future to invalid
-  void _start_async_termination_thread()
+  void _start_async_termination_thread_locked()
   {
+    if (!plan_future_.valid()) {
+      lifecycle_state_.store(LifecycleState::IDLE);
+      termination_requested_for_episode_ = false;
+      return;
+    }
+    future_owned_by_terminator_ = true;
+    auto plan_future = plan_future_;
+    plan_future_ = std::shared_future<trajectory_msgs::msg::JointTrajectory>();
     terminate_future_ = std::async(
-      [this]() -> void {
-        plan_future_.get();
+      [this, plan_future]() mutable -> void {
+        try {
+          plan_future.get();
+        } catch (...) {
+          // best effort termination
+        }
         RCLCPP_ERROR(
           LOGGER,
           "Unfortunately, Total time take: %.5fs",
           std::chrono::duration<double, std::ratio<1>>(
             std::chrono::steady_clock::now() - start_time_).count());
-        // Make it invalid;
-        plan_future_ = std::shared_future<trajectory_msgs::msg::JointTrajectory>();
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        future_owned_by_terminator_ = false;
+        termination_requested_for_episode_ = false;
+        lifecycle_state_.store(LifecycleState::IDLE);
       });
   }
+  void cleanup_terminate_future_locked()
+  {
+    if (!terminate_future_.valid()) {
+      return;
+    }
+    auto status = terminate_future_.wait_for(std::chrono::nanoseconds(0));
+    if (status == std::future_status::ready) {
+      terminate_future_.get();
+      terminate_future_ = std::future<void>();
+    }
+  }
+
   std::unique_ptr<ReplannerContext> context_;
   std::shared_future<trajectory_msgs::msg::JointTrajectory> plan_future_;
   std::future<void> terminate_future_;
+  mutable std::mutex state_mutex_;
+  std::atomic<LifecycleState> lifecycle_state_{LifecycleState::IDLE};
+  bool termination_requested_for_episode_{false};
+  bool future_owned_by_terminator_{false};
 
   // Specialized planning feature
   trajectory_msgs::msg::JointTrajectory reference_trajectory_;
