@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import yaml
+import re
 import xacro
 
 from launch import LaunchDescription
@@ -21,8 +22,20 @@ def load_xacro(package_name, rel_path, mappings=None):
     if not os.path.exists(abs_path):
         raise FileNotFoundError(f"Missing file: {abs_path}")
 
-    doc = xacro.process_file(abs_path, mappings=mappings or {})
-    return doc.toprettyxml(indent="  ")
+    effective_mappings = dict(mappings or {})
+    while True:
+        try:
+            doc = xacro.process_file(abs_path, mappings=effective_mappings)
+            return doc.toprettyxml(indent="  ")
+        except Exception as exc:
+            match = re.search(r'Invalid parameter "([^"]+)"', str(exc))
+            if not match:
+                raise
+
+            invalid_param = match.group(1)
+            if invalid_param not in effective_mappings:
+                raise
+            effective_mappings.pop(invalid_param)
 
 
 def load_yaml(package_name, rel_path):

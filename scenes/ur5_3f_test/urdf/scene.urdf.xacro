@@ -6,7 +6,7 @@
  <xacro:arg name="name" default="$(arg ur_type)"/>
  <xacro:arg name="tf_prefix" default=""/>
  <xacro:arg name="use_fake_hardware" default="true"/>
- <xacro:arg name="initial_positions_file" default="$(find-pkg-share ur5_moveit_config)/config/initial_positions.yaml"/>
+ <xacro:arg name="initial_positions_file" default="$(find ur5_moveit_config)/config/initial_positions.yaml"/>
 
  <link name="world"/>
 
