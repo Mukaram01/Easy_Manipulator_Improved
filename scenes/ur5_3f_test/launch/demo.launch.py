@@ -58,6 +58,18 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(file) or {}
 
 
+
+
+def _normalize_ros_param(value, path="root"):
+    if isinstance(value, dict):
+        return {key: _normalize_ros_param(item, f"{path}.{key}") for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_ros_param(item, f"{path}[{index}]") for index, item in enumerate(value)]
+    if isinstance(value, tuple):
+        return [_normalize_ros_param(item, f"{path}[{index}]") for index, item in enumerate(value)]
+    return value
+
+
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
@@ -138,6 +150,19 @@ def _launch_setup(context):
         "sensors": [],
     }
 
+
+    normalized_use_sim_time = _normalize_ros_param({"use_sim_time": use_sim_time}, "use_sim_time")
+    normalized_robot_description = _normalize_ros_param(robot_description, "robot_description")
+    normalized_robot_description_semantic = _normalize_ros_param(robot_description_semantic, "robot_description_semantic")
+    normalized_robot_description_kinematics = _normalize_ros_param(robot_description_kinematics, "robot_description_kinematics")
+    normalized_planning_pipelines_config = _normalize_ros_param(planning_pipelines_config, "planning_pipelines_config")
+    normalized_ompl_planning_pipeline_config = _normalize_ros_param(ompl_planning_pipeline_config, "ompl_planning_pipeline_config")
+    normalized_planning_scene_monitor_params = _normalize_ros_param(planning_scene_monitor_params, "planning_scene_monitor_params")
+    normalized_occupancy_map_monitor_params = _normalize_ros_param(occupancy_map_monitor_params, "occupancy_map_monitor_params")
+    normalized_trajectory_execution = _normalize_ros_param(trajectory_execution, "trajectory_execution")
+    normalized_moveit_controller_manager = _normalize_ros_param(moveit_controller_manager, "moveit_controller_manager")
+    normalized_moveit_simple_controller_manager = _normalize_ros_param(moveit_simple_controller_manager, "moveit_simple_controller_manager")
+
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -167,14 +192,14 @@ def _launch_setup(context):
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="screen",
-        parameters=[{"use_sim_time": use_sim_time}, robot_description],
+        parameters=[normalized_use_sim_time, normalized_robot_description],
     )
 
     joint_state_publisher = Node(
         package="joint_state_publisher",
         executable="joint_state_publisher",
         output="screen",
-        parameters=[{"use_sim_time": use_sim_time}, robot_description],
+        parameters=[normalized_use_sim_time, normalized_robot_description],
     )
 
     move_group = Node(
@@ -182,17 +207,17 @@ def _launch_setup(context):
         executable="move_group",
         output="screen",
         parameters=[
-            {"use_sim_time": use_sim_time},
-            robot_description,
-            robot_description_semantic,
-            robot_description_kinematics,
-            planning_pipelines_config,
-            ompl_planning_pipeline_config,
-            planning_scene_monitor_params,
-            occupancy_map_monitor_params,
-            trajectory_execution,
-            moveit_controller_manager,
-            moveit_simple_controller_manager,
+            normalized_use_sim_time,
+            normalized_robot_description,
+            normalized_robot_description_semantic,
+            normalized_robot_description_kinematics,
+            normalized_planning_pipelines_config,
+            normalized_ompl_planning_pipeline_config,
+            normalized_planning_scene_monitor_params,
+            normalized_occupancy_map_monitor_params,
+            normalized_trajectory_execution,
+            normalized_moveit_controller_manager,
+            normalized_moveit_simple_controller_manager,
         ],
     )
 
@@ -204,10 +229,10 @@ def _launch_setup(context):
         output="screen",
         arguments=["-d", rviz_config_file] if os.path.exists(rviz_config_file) else [],
         parameters=[
-            {"use_sim_time": use_sim_time},
-            robot_description,
-            robot_description_semantic,
-            robot_description_kinematics,
+            normalized_use_sim_time,
+            normalized_robot_description,
+            normalized_robot_description_semantic,
+            normalized_robot_description_kinematics,
         ],
     )
 
