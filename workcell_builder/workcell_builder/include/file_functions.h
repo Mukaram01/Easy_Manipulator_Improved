@@ -206,7 +206,7 @@ void generate_package_xml(
         "  <name>%s</name>\n"
         "  <version>2.0.0</version>\n"
         "  <description>%s description</description>\n"
-        "  <maintainer email=\"example@gmail.com\">name</maintainer>\n"
+        "  <maintainer email=\"\">Mukaram01</maintainer>\n"
         "  <license>Apache-2.0</license>\n"
         "\n"
         "  <buildtool_depend>ament_cmake</buildtool_depend>\n"
