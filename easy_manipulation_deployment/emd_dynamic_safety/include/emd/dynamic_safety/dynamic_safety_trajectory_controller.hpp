@@ -71,6 +71,8 @@ private:
   // Atomic vs realtime buffer?
   realtime_tools::RealtimeBuffer<double> scaling_factor_;
   realtime_tools::RealtimeBuffer<TimeData> time_data_;
+  rclcpp::Time execution_window_wall_start_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time execution_window_effective_start_{0, 0, RCL_ROS_TIME};
 
   // Dynamic Safety
   DynamicSafety::UniquePtr safety_officer_;

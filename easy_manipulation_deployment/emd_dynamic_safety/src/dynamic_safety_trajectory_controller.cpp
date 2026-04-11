@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "emd/dynamic_safety/dynamic_safety_trajectory_controller.hpp"
+#include "emd/dynamic_safety/goal_time_tolerance_utils.hpp"
 #include "rclcpp_action/create_server.hpp"
 #include "rclcpp_action/server_goal_handle.hpp"
 #include <rclcpp/node.hpp>
@@ -28,6 +29,9 @@ namespace dynamic_safety
 {
 namespace
 {
+constexpr double kStrictGoalToleranceMinScale = 0.05;
+constexpr double kMinimumAverageScale = 1e-3;
+
 static bool check_state_tolerance_per_joint(
   const trajectory_msgs::msg::JointTrajectoryPoint & error,
   size_t index,
@@ -138,6 +142,8 @@ DynamicSafetyTrajectoryController::on_activate(const rclcpp_lifecycle::State & s
   time_data.uptime = node->now();
   this->time_data_.initRT(time_data);
   scaling_factor_.initRT(1.0);
+  execution_window_wall_start_ = time_data.time;
+  execution_window_effective_start_ = time_data.uptime;
   return JointTrajectoryController::on_activate(state);
 }
 
@@ -248,6 +254,8 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
     // if sampling the first time, set the point before you sample
     if (!this->traj_external_point_ptr_->is_sampled_already()) {
       this->traj_external_point_ptr_->set_point_before_trajectory_msg(traj_time, state_current);
+      execution_window_wall_start_ = time_data.time;
+      execution_window_effective_start_ = traj_time;
       safety_officer_->start();
     }
     double current_time =
@@ -340,23 +348,40 @@ controller_interface::return_type DynamicSafetyTrajectoryController::update(
 
             RCLCPP_INFO(node->get_logger(), "Goal reached, success!");
           } else if (this->default_tolerances_.goal_time_tolerance != 0.0) {
-            // if we exceed goal_time_toleralance set it to aborted
+            // if we exceed goal_time_tolerance set it to aborted
             const rclcpp::Time traj_start =
               this->traj_external_point_ptr_->time_from_start();
             const rclcpp::Time traj_end = traj_start + start_segment_itr->time_from_start;
-
-            // TODO(anyone): This will break in speed scaling we have to discuss
-            // how to handle the goal time when the robot scales itself down.
-            const double difference = node->now().seconds() - traj_end.seconds();
-            if (difference > this->default_tolerances_.goal_time_tolerance) {
+            const double difference = (traj_time - traj_end).seconds();
+            const bool enforce_strict_tolerance =
+              goal_time_tolerance::should_enforce_strict_tolerance(
+              *scaling_factor_.readFromRT(), kStrictGoalToleranceMinScale);
+            const double elapsed_wall = (time_data.time - execution_window_wall_start_).seconds();
+            const double elapsed_effective =
+              (traj_time - execution_window_effective_start_).seconds();
+            const double average_scale =
+              elapsed_wall > 0.0 ? elapsed_effective / elapsed_wall : *scaling_factor_.readFromRT();
+            const double adjusted_goal_time_tolerance =
+              goal_time_tolerance::inflated_tolerance_from_average_scale(
+              this->default_tolerances_.goal_time_tolerance, average_scale,
+              kMinimumAverageScale);
+            if (enforce_strict_tolerance && difference > adjusted_goal_time_tolerance) {
               auto result = std::make_shared<FollowJTrajAction::Result>();
               result->set__error_code(FollowJTrajAction::Result::GOAL_TOLERANCE_VIOLATED);
               safety_officer_->stop();
               active_goal->setAborted(result);
               this->rt_active_goal_.writeFromNonRT(RealtimeGoalHandlePtr());
               RCLCPP_WARN(
-                node->get_logger(), "Aborted due goal_time_tolerance exceeding by %f seconds",
-                difference);
+                node->get_logger(),
+                "Aborted due goal_time_tolerance exceeding by %f seconds (allowed %f, "
+                "avg_scale %f, strict_scale %f)",
+                difference, adjusted_goal_time_tolerance, average_scale,
+                *scaling_factor_.readFromRT());
+            } else if (!enforce_strict_tolerance) {
+              RCLCPP_DEBUG(
+                node->get_logger(),
+                "Skipping strict goal_time_tolerance check at low scale (%f < %f).",
+                *scaling_factor_.readFromRT(), kStrictGoalToleranceMinScale);
             }
           }
         }

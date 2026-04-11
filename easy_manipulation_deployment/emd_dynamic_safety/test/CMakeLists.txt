@@ -52,3 +52,10 @@ ament_add_gtest(test_zone_decision_policy
 target_link_libraries(test_zone_decision_policy
   ${PROJECT_NAME}
 )
+
+ament_add_gtest(test_goal_time_tolerance_utils
+  test_goal_time_tolerance_utils.cpp
+)
+target_link_libraries(test_goal_time_tolerance_utils
+  ${PROJECT_NAME}
+)
