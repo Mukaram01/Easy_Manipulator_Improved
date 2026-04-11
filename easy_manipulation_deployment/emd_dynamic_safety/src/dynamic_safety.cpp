@@ -468,7 +468,7 @@ class DynamicSafety::Impl
 public:
   Impl();
   explicit Impl(const Option & option)
-  : option_(option), activated_(false), min_distance_(-1.0)
+  : option_(option), min_distance_(-1.0), activated_(false)
   {
     // Reset Cache
     env_state_cache_.initRT(sensor_msgs::msg::JointState());
