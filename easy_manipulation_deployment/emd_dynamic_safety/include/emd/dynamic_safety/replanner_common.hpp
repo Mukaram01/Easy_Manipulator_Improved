@@ -65,17 +65,16 @@ struct ReplannerOption
 };
 
 /// Flags for status
-namespace ReplannerStatus
+enum ReplannerStatus : uint8_t
 {
-static const uint8_t
   IDLE = 0,
   RUNNING = 1,
   ONGOING = RUNNING,  // backwards compatible alias
   SUCCEED = 2,
   TIMEOUT = 3,
   FAILED = 4,
-  TERMINATING = 5;
-}  // ReplannerStatus
+  TERMINATING = 5
+};
 
 /// Collision checking context to-be-inherited.
 class ReplannerContext
