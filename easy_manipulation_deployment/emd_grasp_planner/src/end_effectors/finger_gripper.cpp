@@ -21,7 +21,7 @@
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("FingerGripper");
 
 FingerGripper::FingerGripper(
-  std::string id_,
+  const std::string & id_,
   const int & num_fingers_side_1_,
   const int & num_fingers_side_2_,
   const float & distance_between_fingers_1_,
@@ -41,9 +41,9 @@ FingerGripper::FingerGripper(
   const float & worldXAngleThreshold_,
   const float & worldYAngleThreshold_,
   const float & worldZAngleThreshold_,
-  std::string grasp_stroke_direction_,
-  std::string grasp_stroke_normal_direction_,
-  std::string grasp_approach_direction_)
+  const std::string & grasp_stroke_direction_,
+  const std::string & grasp_stroke_normal_direction_,
+  const std::string & grasp_approach_direction_)
 : id(id_),
   num_fingers_side_1(num_fingers_side_1_),
   num_fingers_side_2(num_fingers_side_2_),
@@ -149,7 +149,7 @@ void FingerGripper::plan_grasps(
   GraspObject & object,
   emd_msgs::msg::GraspMethod & grasp_method,
   std::shared_ptr<CollisionObject> world_collision_object,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
   get_center_cutting_plane(object);
   get_cutting_planes(object);
@@ -674,7 +674,7 @@ void FingerGripper::get_gripper_clusters()
 std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_gripper_configs(
   const GraspObject & object,
   const std::shared_ptr<CollisionObject> & world_collision_object,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
   std::vector<std::shared_ptr<MultiFingerGripper>> valid_open_gripper_configs;
   // Query the gripping points at the center cutting plane
@@ -751,10 +751,9 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   const Eigen::Vector3f & open_center_finger_2,
   const Eigen::Vector3f & plane_normal,
   const Eigen::Vector3f & grasp_direction,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
   // Create an instance of the multifinger gripper.
-  MultiFingerGripper gripper(
     closed_center_finger_1,
     closed_center_finger_2,
     grasp_direction,
@@ -964,8 +963,8 @@ bool FingerGripper::check_finger_collision(
   const Eigen::Vector3f & finger_point,
   const std::shared_ptr<CollisionObject> & world_collision_object)
 {
-  grasp_planner::collision::Sphere * finger_shape =
-    new grasp_planner::collision::Sphere(this->finger_thickness / 2);
+  auto finger_shape =
+    std::make_shared<grasp_planner::collision::Sphere>(this->finger_thickness / 2);
 
   grasp_planner::collision::Transform finger_transform;
   finger_transform.setIdentity();
@@ -976,8 +975,7 @@ bool FingerGripper::check_finger_collision(
   finger_transform.setTranslation(
     grasp_planner::collision::Vector(finger_point(0), finger_point(1), finger_point(2)));
 #endif
-  CollisionObject finger(
-    std::shared_ptr<grasp_planner::collision::CollisionGeometry>(finger_shape), finger_transform);
+  CollisionObject finger(finger_shape, finger_transform);
   std::shared_ptr<CollisionObject> finger_ptr =
     std::make_shared<CollisionObject>(finger);
 

@@ -278,7 +278,7 @@ public:
    * \param[in] grasp_approach_direction_ Axis in which the gripper approaches the object
    */
   FingerGripper(
-    std::string id_,
+    const std::string & id_,
     const int & num_fingers_side_1_,
     const int & num_fingers_side_2_,
     const float & distance_between_fingers_1_,
@@ -298,9 +298,9 @@ public:
     const float & worldXAngleThreshold_,
     const float & worldYAngleThreshold_,
     const float & worldZAngleThreshold_,
-    std::string grasp_stroke_direction_,
-    std::string grasp_stroke_normal_direction_,
-    std::string grasp_approach_direction_);
+    const std::string & grasp_stroke_direction_,
+    const std::string & grasp_stroke_normal_direction_,
+    const std::string & grasp_approach_direction_);
 
 
   /// Get the derived gripper attributes that will be used in the grasp samples generation
@@ -317,7 +317,7 @@ public:
     GraspObject & object,
     emd_msgs::msg::GraspMethod & grasp_method,
     std::shared_ptr<CollisionObject> world_collision_object,
-    std::string camera_frame);
+    const std::string & camera_frame) override;
 
   /// Reset Gripper Variables
   void reset_variables();
@@ -329,9 +329,9 @@ public:
    */
   void visualize_grasps(
     pcl::visualization::PCLVisualizer::Ptr viewer,
-    const GraspObject & object);
+    const GraspObject & object) override;
 
-  std::string get_id() {return id;}
+  const std::string & get_id() override {return id;}
 
   /*! \brief Gripper ID*/
   std::string id;
@@ -563,7 +563,7 @@ protected:
     const Eigen::Vector3f & open_center_finger_2,
     const Eigen::Vector3f & plane_normal_normalized,
     const Eigen::Vector3f & grasp_direction,
-    std::string camera_frame);
+    const std::string & camera_frame);
 
   /**
    * Function to check the finger collision with the world
@@ -664,7 +664,7 @@ protected:
   std::vector<std::shared_ptr<MultiFingerGripper>> get_all_gripper_configs(
     const GraspObject & object,
     const std::shared_ptr<CollisionObject> & world_collision_object,
-    std::string camera_frame);
+    const std::string & camera_frame);
 
   /**
    * Function that gets the maximum and minimum values of certain grasp ranking attributes within

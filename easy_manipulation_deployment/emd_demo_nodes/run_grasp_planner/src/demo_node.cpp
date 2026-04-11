@@ -124,6 +124,6 @@ int main(int argc, char * argv[])
   #endif
 
   rclcpp::shutdown();
-  std::cout << "Shutting Down" << std::endl;
+  RCLCPP_INFO(LOGGER_DEMO, "Shutting Down");
   return 0;
 }

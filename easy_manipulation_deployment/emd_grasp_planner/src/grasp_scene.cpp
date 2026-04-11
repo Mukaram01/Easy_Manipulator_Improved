@@ -133,7 +133,7 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
 
       if (node->get_parameter("visualization_params.point_cloud_visualization").as_bool()) {
         gripper->visualize_grasps(viewer, object);
-        std::cout << "Point Cloud Viewer Visualization" << std::endl;
+        RCLCPP_INFO(LOGGER, "Point Cloud Viewer Visualization");
       }
     }
 
@@ -376,11 +376,14 @@ void grasp_planner::GraspScene<T>::extract_objects_epd(
     "point_cloud_params.normal_estimation_threads").as_int();
 
   for (const auto & raw_object : objects) {
+    // Standard deviation multiplier threshold for statistical outlier removal.
+    static constexpr float kStatOutlierStddevThreshold = 0.5f;
+
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr objectCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
     pcl::PCLPointCloud2 pcl_pc2;
     PCLFunctions::sensor_msg_to_pcl_pointcloud2((raw_object.segmented_pcl), pcl_pc2);
     pcl::fromPCLPointCloud2(pcl_pc2, *(objectCloud));
-    PCLFunctions::remove_statistical_outlier(objectCloud, 0.5);
+    PCLFunctions::remove_statistical_outlier(objectCloud, kStatOutlierStddevThreshold);
 
     objectCloud->width = objectCloud->points.size();
     objectCloud->height = 1;
@@ -787,30 +790,32 @@ template<typename T>
 void grasp_planner::GraspScene<T>::print_pose(
   const geometry_msgs::msg::Pose & _pose)
 {
-  std::cout << "Position:" << std::endl;
+  RCLCPP_DEBUG(LOGGER, "Position:");
+  RCLCPP_DEBUG(LOGGER, "X: %f", _pose.position.x);
+  RCLCPP_DEBUG(LOGGER, "Y: %f", _pose.position.y);
+  RCLCPP_DEBUG(LOGGER, "Z: %f", _pose.position.z);
 
-  std::cout << "X: " << _pose.position.x << std::endl;
-  std::cout << "Y: " << _pose.position.y << std::endl;
-  std::cout << "Z: " << _pose.position.z << std::endl << std::endl;
-
-  std::cout << "X: " << _pose.orientation.x << std::endl;
-  std::cout << "Y: " << _pose.orientation.y << std::endl;
-  std::cout << "Z: " << _pose.orientation.z << std::endl;
-  std::cout << "W: " << _pose.orientation.w << std::endl << std::endl;
-
-  std::cout << "Orientation:" << std::endl;
+  RCLCPP_DEBUG(LOGGER, "Orientation:");
+  RCLCPP_DEBUG(LOGGER, "X: %f", _pose.orientation.x);
+  RCLCPP_DEBUG(LOGGER, "Y: %f", _pose.orientation.y);
+  RCLCPP_DEBUG(LOGGER, "Z: %f", _pose.orientation.z);
+  RCLCPP_DEBUG(LOGGER, "W: %f", _pose.orientation.w);
 }
 
 template<typename T>
 void grasp_planner::GraspScene<T>::print_pose(const geometry_msgs::msg::PoseStamped & _pose)
 {
-  std::cout << "Frame ID: " << _pose.header.frame_id << std::endl;
+  RCLCPP_DEBUG(LOGGER, "Frame ID: %s", _pose.header.frame_id.c_str());
   print_pose(_pose.pose);
 }
 
 template<typename T>
 void grasp_planner::GraspScene<T>::get_camera_position()
 {
+  // Minimum cosine of the angle between the table normal and world-Z axis
+  // to classify the camera as being in a top-view configuration.
+  static constexpr float kTopViewCosThreshold = 0.9f;
+
   Eigen::Vector3f worldZVector(0, 0, 1);
   Eigen::Vector3f table_normal_vector(this->table_coeff->values[0],
     this->table_coeff->values[1],
@@ -820,14 +825,15 @@ void grasp_planner::GraspScene<T>::get_camera_position()
     (table_normal_vector.dot(worldZVector)) /
     (table_normal_vector.norm() * worldZVector.norm()));
 
-  std::cout << table_normal_vector(0) << " , " << table_normal_vector(1) << " , " <<
-    table_normal_vector(2) << std::endl;
+  RCLCPP_DEBUG(
+    LOGGER, "Table normal: [%f, %f, %f]",
+    table_normal_vector(0), table_normal_vector(1), table_normal_vector(2));
 
   // Compute initial points accordingly
-  if (cos_world_table > 0.9) {
-    std::cout << "Camera in top view\n";
+  if (cos_world_table > kTopViewCosThreshold) {
+    RCLCPP_DEBUG(LOGGER, "Camera in top view");
   } else {
-    std::cout << "Camera in side view\n";
+    RCLCPP_DEBUG(LOGGER, "Camera in side view");
   }
 }
 

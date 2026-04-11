@@ -163,7 +163,7 @@ public:
  * \param[in] grasp_approach_direction_ Axis in which the gripper approaches the object
  ******/
   SuctionGripper(
-    std::string id_,
+    const std::string & id_,
     const int & num_cups_length_,
     const int & num_cups_breadth_,
     const float & dist_between_cups_length_,
@@ -177,9 +177,9 @@ public:
     const float & curvature_weight_,
     const float & grasp_center_distance_weight_,
     const float & num_contact_points_weight_,
-    std::string length_direction_,
-    std::string breadth_direction_,
-    std::string grasp_approach_direction_);
+    const std::string & length_direction_,
+    const std::string & breadth_direction_,
+    const std::string & grasp_approach_direction_);
 
 /**
  * Method that generates the relevant gripper attributes before grasp planning
@@ -198,9 +198,9 @@ public:
     const GraspObject & object,
     emd_msgs::msg::GraspMethod & grasp_method,
     std::shared_ptr<CollisionObject> world_collision_object,
-    std::string camera_frame);
+    const std::string & camera_frame) override;
 
-  std::string get_id() {return id;}
+  const std::string & get_id() override {return id;}
 
 /**
  * Inherited method that visualizes the required grasps
@@ -210,7 +210,7 @@ public:
  */
   void visualize_grasps(
     pcl::visualization::PCLVisualizer::Ptr viewer,
-    const GraspObject & object);
+    const GraspObject & object) override;
 
   /*! \brief Gripper ID */
   std::string id;
@@ -320,7 +320,7 @@ protected:
     const GraspObject & object,
     const pcl::PointXYZ & object_center,
     const pcl::PointXYZRGB & top_point,
-    std::string camera_frame);
+    const std::string & camera_frame);
 
 
   /**
@@ -517,7 +517,7 @@ protected:
     const Eigen::Vector3f & grasp_direction,
     const Eigen::Vector3f & object_direction,
     const float & object_max_dim,
-    std::string camera_frame);
+    const std::string & camera_frame);
 
   /**
    * Method that calculates the weighted value of the number of contact points
