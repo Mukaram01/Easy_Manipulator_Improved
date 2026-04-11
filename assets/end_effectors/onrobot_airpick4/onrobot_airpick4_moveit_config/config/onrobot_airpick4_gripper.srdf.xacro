@@ -4,7 +4,7 @@
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robotiq-3f-gripper_articulated">
-<xacro:macro name="onrobot_airpick4" params="parent_group:=manipulator">
+<xacro:macro name="onrobot_airpick4_gripper" params="parent_group:=manipulator">
     <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
     <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
     <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
@@ -18,5 +18,8 @@
     <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="gripper_base_link" />
     <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
+</xacro:macro>
+<xacro:macro name="onrobot_airpick4" params="parent_group:=manipulator">
+    <xacro:onrobot_airpick4_gripper parent_group="${parent_group}" />
 </xacro:macro>
 </robot>
