@@ -35,6 +35,8 @@ class EndEffector
 public:
   using CollisionObject = grasp_planner::collision::CollisionObject;
 
+  virtual ~EndEffector() = default;
+
   /**
    * Generic method used to plan grasps
    *
@@ -47,7 +49,7 @@ public:
     const GraspObject & object,
     emd_msgs::msg::GraspMethod & grasp_method,
     std::shared_ptr<CollisionObject> world_collision_object,
-    std::string camera_frame)
+    const std::string & camera_frame)
   {
     UNUSED(object);
     UNUSED(grasp_method);
@@ -72,7 +74,7 @@ public:
   /**
    * Generic method to return end effector ID
    */
-  virtual std::string get_id() {return id;}
+  virtual const std::string & get_id() {return id;}
 
 protected:
   std::string id;

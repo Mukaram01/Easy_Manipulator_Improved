@@ -17,6 +17,7 @@
 #include "emd/common/pcl_functions.hpp"
 
 #include <thread>
+#include "rclcpp/rclcpp.hpp"
 
 bool PCLFunctions::passthrough_filter(
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
@@ -77,8 +78,16 @@ void PCLFunctions::sensor_msg_to_pcl_pointcloud2(
     pcl_pc2.is_dense = pc2.is_dense;
 
     pcl_pc2.data = pc2.data;
+  } catch (const std::exception & ex) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("PCLFunctions"),
+      "sensor_msg_to_pcl_pointcloud2 failed: %s", ex.what());
+    throw;
   } catch (...) {
-    std::cout << "ERROR" << std::endl;
+    RCLCPP_ERROR(
+      rclcpp::get_logger("PCLFunctions"),
+      "sensor_msg_to_pcl_pointcloud2 failed: unknown exception");
+    throw;
   }
 }
 

@@ -18,10 +18,10 @@
 
 #include "emd/grasp_planner/end_effectors/suction_gripper.hpp"
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("EMD::SuctionGripper");
-#define PI 3.14159265
+static constexpr double PI = M_PI;
 
 SuctionGripper::SuctionGripper(
-  std::string id_,
+  const std::string & id_,
   const int & num_cups_length_,
   const int & num_cups_breadth_,
   const float & dist_between_cups_length_,
@@ -35,9 +35,9 @@ SuctionGripper::SuctionGripper(
   const float & curvature_weight_,
   const float & grasp_center_distance_weight_,
   const float & num_contact_points_weight_,
-  std::string length_direction_,
-  std::string breadth_direction_,
-  std::string grasp_approach_direction_)
+  const std::string & length_direction_,
+  const std::string & breadth_direction_,
+  const std::string & grasp_approach_direction_)
 : id(id_),
   num_cups_length(num_cups_length_),
   num_cups_breadth(num_cups_breadth_),
@@ -156,7 +156,7 @@ void SuctionGripper::plan_grasps(
   const GraspObject & object,
   emd_msgs::msg::GraspMethod & grasp_method,
   std::shared_ptr<CollisionObject> world_collision_object,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
   // RCLCPP_INFO(LOGGER, "Generate Gripper Attributes");
   generate_gripper_attributes();
@@ -180,14 +180,14 @@ void SuctionGripper::get_all_possible_grasps(
   const GraspObject & object,
   const pcl::PointXYZ & object_center,
   const pcl::PointXYZRGB & top_point,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
   auto get_best_grasps1 = [this](
     int i,
     float slice_limit,
     const GraspObject & object,
     const pcl::PointXYZ & object_center,
-    std::string camera_frame,
+    const std::string & camera_frame,
     pcl::ModelCoefficients::Ptr & plane
     ) -> void
     {
@@ -560,7 +560,7 @@ SuctionCupArray SuctionGripper::generate_grasp_sample(
   const Eigen::Vector3f & row_direction,
   const Eigen::Vector3f & col_direction,
   const float & object_max_dim,
-  std::string camera_frame)
+  const std::string & camera_frame)
 {
 
   SuctionCupArray grasp_sample(sample_gripper_center, row_direction, col_direction);

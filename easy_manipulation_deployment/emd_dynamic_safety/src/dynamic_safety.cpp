@@ -1048,6 +1048,12 @@ double DynamicSafety::Impl::_back_track_last_collision()
   // Use collision checker to backtrack collision
   // This is not nearly as efficient right now to be improved.
   // TODO(anyone): Enable this in collision checker
+
+  // Extra time buffer (seconds) added when using Tesseract, which does not handle
+  // very short trajectory segments well. Keeps the returned time point safely
+  // ahead of the detected collision point.
+  static constexpr double kTesseractShortSegmentBuffer = 0.8;
+
   double time_from_start = full_duration_;
   double step = option_.collision_checker_options.step;
   double collision_time = -1;
@@ -1057,7 +1063,7 @@ double DynamicSafety::Impl::_back_track_last_collision()
     if (collision_time > 0) {
       // Tesseract doesn't see to work well with short segment
       if (option_.replanner_options.framework == "tesseract") {
-        return std::min<double>(time_from_start + 0.8, full_duration_);
+        return std::min<double>(time_from_start + kTesseractShortSegmentBuffer, full_duration_);
       }
       return time_from_start + step;
     }

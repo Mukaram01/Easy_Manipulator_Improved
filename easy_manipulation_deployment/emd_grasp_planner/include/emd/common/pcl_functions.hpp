@@ -53,13 +53,12 @@
 #include <pcl/features/normal_3d_omp.h>
 
 // ROS2 Libraries
-// #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 // Other Libraries
 #include <stdlib.h>
 #include <math.h>
-#include <iostream>
 #include <cmath>
 #include <memory>
 #include <future>
@@ -67,8 +66,6 @@
 #include <vector>
 
 // EMD Libraries
-// #include "grasp_object.h"
-
 
 namespace PCLFunctions
 {
@@ -243,12 +240,5 @@ std::vector<pcl::PointIndices> extract_pointcloud_clusters(
   float cluster_tolerance,
   int min_cluster_size);
 }  // namespace PCLFunctions
-
-
-// float point_to_plane(Eigen::Vector4f & plane, pcl::PointXYZRGB const & point);
-
-// float point_to_plane(Eigen::Vector4f & plane, pcl::PointNormal const & point);
-
-// float point_to_plane(Eigen::Vector3f & plane, pcl::PointNormal const & point);
 
 #endif  // EMD__GRASP_PLANNER__COMMON__PCL_FUNCTIONS_HPP_
