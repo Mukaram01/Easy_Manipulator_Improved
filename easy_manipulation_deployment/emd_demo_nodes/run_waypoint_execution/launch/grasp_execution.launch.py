@@ -93,7 +93,7 @@ def load_yaml(package_name, file_path):
 
 def _extract_scene_xacro_args(xacro_file_path):
     text = Path(xacro_file_path).read_text(encoding="utf-8")
-    return set(re.findall(r"<xacro:arg\\s+name=['\\\"]([^'\\\"]+)['\\\"]", text))
+    return set(re.findall(r"<xacro:arg\s+name=['\"]([^'\"]+)['\"]", text))
 
 
 def _extract_ur_robot_macro_params():
@@ -113,7 +113,7 @@ def _extract_ur_robot_macro_params():
     if ur_robot_block_start == -1:
         return set()
 
-    params_match = re.search(r'params\\s*=\\s*["\\\']([^"\\\']+)["\\\']', text[ur_robot_block_start:])
+    params_match = re.search(r'params\s*=\s*["\'](.*?)["\']', text[ur_robot_block_start:], re.DOTALL)
     if not params_match:
         return set()
 
@@ -137,7 +137,7 @@ def generate_launch_description():
     scene_args = _extract_scene_xacro_args(scene_xacro_path)
     ur_robot_args = _extract_ur_robot_macro_params()
     initial_position_mappings = {}
-    if 'initial_positions_file' in scene_args and 'initial_positions_file' in ur_robot_args:
+    if 'initial_positions_file' in ur_robot_args:
         initial_position_path = (
             get_package_share_directory(package_name) + '/config/start_positions.yaml'
         )
