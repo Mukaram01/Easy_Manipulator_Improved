@@ -4,7 +4,7 @@
   <name>workbench_description</name>
   <version>2.0.0</version>
   <description>Workbench model and related launch assets for Easy Manipulation Deployment scenes</description>
-  <maintainer email="">Mukaram01</maintainer>
+  <maintainer email="Mukaram01@gmail.com">Mukaram01</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
