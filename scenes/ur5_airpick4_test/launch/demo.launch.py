@@ -3,7 +3,7 @@
 import os
 import yaml
 import re
-import xacro
+import subprocess
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -25,17 +25,26 @@ def load_xacro(package_name, rel_path, mappings=None):
 
     effective_mappings = dict(mappings or {})
     while True:
+        cmd = ["xacro", abs_path]
+        cmd.extend(f"{key}:={value}" for key, value in effective_mappings.items())
         try:
-            doc = xacro.process_file(abs_path, mappings=effective_mappings)
-            return doc.toprettyxml(indent="  ")
-        except Exception as exc:
-            match = re.search(r'Invalid parameter "([^"]+)"', str(exc))
+            completed = subprocess.run(cmd, check=True, text=True, capture_output=True, timeout=30)
+            return completed.stdout
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Timed out while expanding xacro file '{abs_path}'. "
+                "This usually means a dependency package is missing from the sourced workspace "
+                "or the xacro include graph is blocking."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr or ""
+            match = re.search(r'Invalid parameter "([^"]+)"', stderr)
             if not match:
-                raise
+                raise RuntimeError(f"Failed to expand xacro file '{abs_path}':\n{stderr}") from exc
 
             invalid_param = match.group(1)
             if invalid_param not in effective_mappings:
-                raise
+                raise RuntimeError(f"Failed to expand xacro file '{abs_path}':\n{stderr}") from exc
             effective_mappings.pop(invalid_param)
 
 
