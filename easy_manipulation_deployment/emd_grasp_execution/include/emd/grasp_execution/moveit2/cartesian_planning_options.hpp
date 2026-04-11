@@ -20,7 +20,7 @@
 #include <limits>
 #include <string>
 
-#include "moveit/core/utils.h"
+#include "moveit/utils/message_checks.h"
 #include "moveit_msgs/msg/constraints.hpp"
 
 namespace grasp_execution
