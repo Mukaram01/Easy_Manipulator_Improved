@@ -754,6 +754,7 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   const std::string & camera_frame)
 {
   // Create an instance of the multifinger gripper.
+  MultiFingerGripper gripper(
     closed_center_finger_1,
     closed_center_finger_2,
     grasp_direction,

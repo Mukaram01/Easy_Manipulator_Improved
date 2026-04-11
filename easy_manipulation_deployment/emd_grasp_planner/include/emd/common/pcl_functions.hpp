@@ -65,7 +65,7 @@
 #include <string>
 #include <vector>
 
-// EMD Libraries (reserved for future use)
+// EMD Libraries
 
 namespace PCLFunctions
 {
