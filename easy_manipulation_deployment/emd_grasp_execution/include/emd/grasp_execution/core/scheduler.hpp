@@ -21,6 +21,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 
 namespace grasp_execution
 {
@@ -37,9 +38,11 @@ enum class Status : uint8_t
 {
   COMPLETED = 1,
   QUEUED = 2,
-  ONGOING = 3,
-  CANCELLED = 4,
-  INVALID = 5
+  RUNNABLE = 3,
+  ONGOING = 4,
+  FAILED = 5,
+  CANCELLED = 6,
+  INVALID = 7
 };
 
 }  // namespace Workflow
@@ -56,6 +59,17 @@ public:
   Workflow::Status add_workflow(
     const std::string & workflow_id,
     WorkflowT workflow);
+
+  Workflow::Status add_workflow(
+    const std::string & workflow_id,
+    WorkflowT workflow,
+    const std::vector<std::string> & prerequisites,
+    bool allow_if_prerequisite_failed = false);
+
+  Workflow::Status add_workflows(
+    const std::unordered_map<std::string, WorkflowT> & workflows,
+    const std::unordered_map<std::string, std::vector<std::string>> & prerequisites,
+    bool allow_if_prerequisite_failed = false);
 
   Workflow::Status cancel_workflow(
     const std::string & workflow_id);
