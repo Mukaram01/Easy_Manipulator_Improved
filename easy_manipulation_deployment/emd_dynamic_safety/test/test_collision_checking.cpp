@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <cmath>
+#include <stdexcept>
 
 #include "test_hardware.hpp"
 #include "emd/dynamic_safety/collision_checker.hpp"
@@ -140,6 +141,31 @@ TEST_F(CollisionCheckingTest, MoveitDiscreteFCL)
   // Check the whole trajectory at once
   collision_checker_.run_once(0, 2, collision_time);
   EXPECT_NEAR(collision_time, 1.66, 0.0001);
+}
+
+TEST_F(CollisionCheckingTest, MoveItPluginSelectionIsCaseInsensitive)
+{
+  option_.collision_checking_plugin = "FCL";
+  EXPECT_NO_THROW(
+    collision_checker_.configure(
+      option_,
+      robot_.get_urdf(),
+      robot_.get_srdf()));
+}
+
+TEST_F(CollisionCheckingTest, MoveItUnknownPluginThrowsHelpfulError)
+{
+  option_.collision_checking_plugin = "unknown_plugin";
+  try {
+    collision_checker_.configure(
+      option_,
+      robot_.get_urdf(),
+      robot_.get_srdf());
+    FAIL() << "Expected runtime_error for unknown plugin";
+  } catch (const std::runtime_error & ex) {
+    EXPECT_NE(std::string(ex.what()).find("unknown_plugin"), std::string::npos);
+    EXPECT_NE(std::string(ex.what()).find("Accepted identifiers"), std::string::npos);
+  }
 }
 
 #ifndef EMD_DYNAMIC_SAFETY_TESSERACT

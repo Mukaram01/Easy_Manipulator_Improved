@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <cctype>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 #include <stdexcept>
+#include <sstream>
 
 #include "emd/dynamic_safety/collision_checker_moveit.hpp"
 #include "moveit/collision_detection_fcl/collision_detector_allocator_fcl.h"
@@ -34,6 +37,66 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("dynamic_safety_moveit.c
 
 namespace
 {
+using CollisionAllocatorFactory = std::function<void(planning_scene::PlanningScene &)>;
+
+std::string to_ascii_lower(std::string input)
+{
+  std::transform(
+    input.begin(), input.end(), input.begin(),
+    [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+  return input;
+}
+
+std::unordered_map<std::string, std::string> plugin_aliases()
+{
+  std::unordered_map<std::string, std::string> aliases{
+    {"fcl", "fcl"},
+    {"collision_detection_fcl/collisiondetectorallocatorfcl", "fcl"},
+  };
+#ifndef EMD_DYNAMIC_SAFETY_TESSERACT
+  aliases.emplace("bullet", "bullet");
+  aliases.emplace("collision_detection_bullet/collisiondetectorallocatorbullet", "bullet");
+#endif
+  return aliases;
+}
+
+std::unordered_map<std::string, CollisionAllocatorFactory> plugin_allocators()
+{
+  std::unordered_map<std::string, CollisionAllocatorFactory> allocators{
+    {
+      "fcl",
+      [](planning_scene::PlanningScene & scene) {
+        scene.allocateCollisionDetector(collision_detection::CollisionDetectorAllocatorFCL::create());
+      }
+    },
+  };
+#ifndef EMD_DYNAMIC_SAFETY_TESSERACT
+  allocators.emplace(
+    "bullet",
+    [](planning_scene::PlanningScene & scene) {
+      scene.allocateCollisionDetector(collision_detection::CollisionDetectorAllocatorBullet::create());
+    });
+#endif
+  return allocators;
+}
+
+std::string available_plugin_list()
+{
+  const auto allocators = plugin_allocators();
+  std::ostringstream stream;
+  bool first = true;
+  for (const auto & plugin : allocators) {
+    if (!first) {
+      stream << ", ";
+    }
+    stream << plugin.first;
+    first = false;
+  }
+  return stream.str();
+}
+
 bool state_has_variable(const moveit::core::RobotState & state, const std::string & name)
 {
   const auto & variable_names = state.getVariableNames();
@@ -161,25 +224,27 @@ MoveitCollisionCheckerContext::MoveitCollisionCheckerContext(
   // TODO(anyone): use the mapping file
   // auto loader = pluginlib::ClassLoader<collision_detection::CollisionPlugin>(
   //     "moveit_core", "collision_detection::CollisionPlugin");
-  auto to_all_lower = [](std::string in) -> std::string {
-      std::transform(in.begin(), in.end(), in.begin(), ::tolower);
-      return in;
-    };
+  const auto aliases = plugin_aliases();
+  const auto allocators = plugin_allocators();
+  const std::string plugin_key = to_ascii_lower(collision_checking_plugin);
 
-  std::string plugin_name;
-  // TODO(anyone): use plugin loader after release of fix
-  //               https://github.com/ros-planning/moveit2/pull/658
-  if (to_all_lower(collision_checking_plugin) == "fcl") {
-    scene_->allocateCollisionDetector(
-      collision_detection::CollisionDetectorAllocatorFCL::create()
-    );
-  } else if (to_all_lower(collision_checking_plugin) == "bullet") {
-#ifndef EMD_DYNAMIC_SAFETY_TESSERACT
-    scene_->allocateCollisionDetector(
-      collision_detection::CollisionDetectorAllocatorBullet::create()
-    );
-#endif
+  const auto alias = aliases.find(plugin_key);
+  if (alias == aliases.end()) {
+    const std::string error_message =
+      "Unknown MoveIt collision checking plugin '" + collision_checking_plugin +
+      "'. Accepted identifiers: " + available_plugin_list();
+    RCLCPP_ERROR(LOGGER, "%s", error_message.c_str());
+    throw std::runtime_error(error_message);
   }
+
+  const auto allocator = allocators.find(alias->second);
+  if (allocator == allocators.end()) {
+    const std::string error_message =
+      "MoveIt collision checking plugin '" + alias->second + "' is not available in this build.";
+    RCLCPP_ERROR(LOGGER, "%s", error_message.c_str());
+    throw std::runtime_error(error_message);
+  }
+  allocator->second(*scene_);
 }
 
 void MoveitCollisionCheckerContext::configure(
