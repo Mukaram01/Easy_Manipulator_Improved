@@ -64,8 +64,7 @@ def _launch_setup(context):
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
-        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware.perform(context),
-                  "initial_positions_file": os.path.join(get_package_share_directory(robot_moveit_pkg), "config", "initial_positions.yaml")},
+        mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware.perform(context)},
     )
     robot_description = {"robot_description": robot_description_config}
 
