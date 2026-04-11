@@ -40,7 +40,7 @@ struct ZoneDecisionInput
   double current_scale{1.0};
   double emergency_zone_limit{0.0};
   double slowdown_zone_limit{0.0};
-  ReplannerStatus replanner_status{ReplannerStatus::IDLE};
+  uint8_t replanner_status{ReplannerStatus::IDLE};
 };
 
 struct ZoneDecision

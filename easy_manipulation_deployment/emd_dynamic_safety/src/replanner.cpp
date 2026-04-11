@@ -436,7 +436,7 @@ private:
   std::shared_future<trajectory_msgs::msg::JointTrajectory> plan_future_;
   std::future<void> terminate_future_;
   mutable std::mutex state_mutex_;
-  std::atomic<LifecycleState> lifecycle_state_{LifecycleState::IDLE};
+  mutable std::atomic<LifecycleState> lifecycle_state_{LifecycleState::IDLE};
   bool termination_requested_for_episode_{false};
   bool future_owned_by_terminator_{false};
 
