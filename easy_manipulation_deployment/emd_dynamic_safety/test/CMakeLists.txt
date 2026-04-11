@@ -45,3 +45,10 @@ target_link_libraries(test_replanner_tesseract
   test_hardware
   ${PROJECT_NAME}
 )
+
+ament_add_gtest(test_zone_decision_policy
+  test_zone_decision_policy.cpp
+)
+target_link_libraries(test_zone_decision_policy
+  ${PROJECT_NAME}
+)
