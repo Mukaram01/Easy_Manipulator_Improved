@@ -70,7 +70,7 @@ def load_yaml(package_name, rel_path):
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         return {}
-    with open(abs_path, "r") as file:
+    with open(abs_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file) or {}
 
 
