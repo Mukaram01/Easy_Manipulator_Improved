@@ -25,6 +25,7 @@
 #include <exception>
 
 #include "emd/dynamic_safety/replanner.hpp"
+#include "emd/dynamic_safety/replanner_flatten_utils.hpp"
 #include "emd/interpolate.hpp"
 #ifdef EMD_DYNAMIC_SAFETY_MOVEIT
 #include "emd/dynamic_safety/replanner_moveit.hpp"
@@ -182,82 +183,52 @@ public:
   trajectory_msgs::msg::JointTrajectory::SharedPtr flatten_result(
     double current_time,
     const std::vector<std::string> & joint_names,
-    const trajectory_msgs::msg::JointTrajectoryPoint & /*current_state*/)
+    const trajectory_msgs::msg::JointTrajectoryPoint & current_state)
   {
-    // Sort current state to plan joint_names
-    // gather current name ordering of plan joint name
-    // O(n^2) vs O(n) -> current algo
-    auto reorder_joint = [](
-      const std::vector<std::string> & reference_joint_order,
-      std::vector<std::string> & current_joint_order,
-      trajectory_msgs::msg::JointTrajectoryPoint & state) {
-        std::unordered_map<std::string, size_t> ref_joint_idx_map;
-        std::vector<size_t> joint_permutation;
-        for (size_t i = 0; i < reference_joint_order.size(); i++) {
-          ref_joint_idx_map[reference_joint_order[i]] = i;
-        }
-        // check the order that joint names is in
-        for (auto & joint_name : current_joint_order) {
-          joint_permutation.push_back(ref_joint_idx_map[joint_name]);
-        }
-        // Apply permutation order
-        for (size_t i = 0; i < current_joint_order.size(); i++) {
-          while (joint_permutation[i] != i) {
-            std::swap(current_joint_order[joint_permutation[i]], current_joint_order[i]);
-            if (!state.positions.empty()) {
-              std::swap(
-                state.positions[joint_permutation[i]],
-                state.positions[i]);
-            }
-            if (!state.velocities.empty()) {
-              std::swap(
-                state.velocities[joint_permutation[i]],
-                state.velocities[i]);
-            }
-            if (!state.accelerations.empty()) {
-              std::swap(
-                state.accelerations[joint_permutation[i]],
-                state.accelerations[i]);
-            }
-            std::swap(joint_permutation[joint_permutation[i]], joint_permutation[i]);
-          }
-        }
-      };
+    if (!have_same_joint_names(plan_.joint_names, joint_names)) {
+      RCLCPP_ERROR(LOGGER, "flatten_result joint name mismatch against plan joint names");
+      return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
+    }
+
     size_t i = 0;
     size_t num_points = reference_trajectory_.points.size();
     std::vector<trajectory_msgs::msg::JointTrajectoryPoint> start_segment;
     std::vector<std::string> sorted_joint_names = joint_names;
-
-    // TODO(Briancbn): add current state
-    /*
     trajectory_msgs::msg::JointTrajectoryPoint sorted_current_states = current_state;
-    if (plan_.joint_names != joint_names) {
-      reorder_joint(plan_.joint_names, sorted_joint_names, sorted_current_states);
+    if (plan_.joint_names != joint_names &&
+      !reorder_joint(plan_.joint_names, sorted_joint_names, sorted_current_states))
+    {
+      RCLCPP_ERROR(LOGGER, "Failed to reorder current state to plan joint order");
+      return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
     }
-    */
+
     if (current_time < start_state_time_) {
       for (; i < num_points; i++) {
         double time_from_start =
           rclcpp::Duration(reference_trajectory_.points[i].time_from_start).seconds();
         if (current_time <= time_from_start && start_state_time_ > time_from_start) {
           if (reference_trajectory_.joint_names != plan_.joint_names) {
-            // Re-order joint if necessary
             std::vector<std::string> sorted_ref_joint_names = reference_trajectory_.joint_names;
             trajectory_msgs::msg::JointTrajectoryPoint sorted_point =
               reference_trajectory_.points[i];
-            reorder_joint(plan_.joint_names, sorted_ref_joint_names, sorted_point);
+            if (!reorder_joint(plan_.joint_names, sorted_ref_joint_names, sorted_point)) {
+              RCLCPP_ERROR(LOGGER, "Failed to reorder start segment point to plan joint order");
+              return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
+            }
             start_segment.push_back(sorted_point);
           } else {
             start_segment.push_back(reference_trajectory_.points[i]);
           }
-          // Clear time
           start_segment.back().time_from_start = rclcpp::Duration::from_seconds(0.0);
         } else if (time_from_start >= start_state_time_) {
           break;
         }
       }
-      plan_.points.insert(plan_.points.begin(), start_segment.begin(), start_segment.end());
     }
+
+    sorted_current_states.time_from_start = rclcpp::Duration::from_seconds(0.0);
+    start_segment.push_back(sorted_current_states);
+    plan_.points.insert(plan_.points.begin(), start_segment.begin(), start_segment.end());
 
     std::vector<trajectory_msgs::msg::JointTrajectoryPoint> end_segment;
     for (; i < num_points; i++) {
@@ -265,27 +236,68 @@ public:
         rclcpp::Duration(reference_trajectory_.points[i].time_from_start).seconds();
       if (time_from_start > end_state_time_) {
         if (reference_trajectory_.joint_names != plan_.joint_names) {
-          // Re-order joint if necessary
           std::vector<std::string> sorted_ref_joint_names = reference_trajectory_.joint_names;
           trajectory_msgs::msg::JointTrajectoryPoint sorted_point = reference_trajectory_.points[i];
-          reorder_joint(plan_.joint_names, sorted_ref_joint_names, sorted_point);
+          if (!reorder_joint(plan_.joint_names, sorted_ref_joint_names, sorted_point)) {
+            RCLCPP_ERROR(LOGGER, "Failed to reorder end segment point to plan joint order");
+            return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
+          }
           end_segment.push_back(sorted_point);
         } else {
           end_segment.push_back(reference_trajectory_.points[i]);
         }
-        // Clear time
         end_segment.back().time_from_start = rclcpp::Duration::from_seconds(0.0);
       }
     }
     plan_.points.insert(plan_.points.end(), end_segment.begin(), end_segment.end());
 
-    // TODO(anyone): Update start state speed
-    if (context_->time_parameterize(plan_)) {
-      return std::make_shared<trajectory_msgs::msg::JointTrajectory>(plan_);
-    } else {
+    if (plan_.points.empty()) {
+      RCLCPP_ERROR(LOGGER, "Flattened plan contains no points before time parameterization");
       return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
     }
+
+    set_start_kinematics(plan_.points.front(), sorted_current_states);
+
+    if (!start_segment.empty() && plan_.points.size() > start_segment.size()) {
+      const size_t first_replan_idx = start_segment.size();
+      if (plan_.points[first_replan_idx].velocities.size() == plan_.points.front().positions.size()) {
+        plan_.points.front().velocities = plan_.points[first_replan_idx].velocities;
+      }
+      if (
+        plan_.points[first_replan_idx].accelerations.size() ==
+        plan_.points.front().positions.size())
+      {
+        plan_.points.front().accelerations = plan_.points[first_replan_idx].accelerations;
+      }
+    }
+
+    if (!end_segment.empty()) {
+      const size_t first_end_idx = plan_.points.size() - end_segment.size();
+      if (first_end_idx > 0) {
+        const size_t last_replan_idx = first_end_idx - 1;
+        if (plan_.points[last_replan_idx].velocities.size() == plan_.points[first_end_idx].positions.size()) {
+          plan_.points[first_end_idx].velocities = plan_.points[last_replan_idx].velocities;
+        }
+        if (
+          plan_.points[last_replan_idx].accelerations.size() ==
+          plan_.points[first_end_idx].positions.size())
+        {
+          plan_.points[first_end_idx].accelerations = plan_.points[last_replan_idx].accelerations;
+        }
+      }
+    }
+
+    if (context_->time_parameterize(plan_)) {
+      if (!has_monotonic_timestamps(plan_.points)) {
+        RCLCPP_ERROR(LOGGER, "Flattened plan has non-monotonic timestamps after insertion");
+        return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
+      }
+      return std::make_shared<trajectory_msgs::msg::JointTrajectory>(plan_);
+    }
+
+    return std::make_shared<trajectory_msgs::msg::JointTrajectory>();
   }
+
 
   uint8_t get_status() const
   {
