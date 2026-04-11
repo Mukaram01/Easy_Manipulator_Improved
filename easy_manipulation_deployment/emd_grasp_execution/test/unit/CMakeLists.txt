@@ -25,3 +25,14 @@ target_link_libraries(test_context
 target_compile_features(test_context
   PRIVATE cxx_std_17
 )
+
+# Cartesian planning options unit tests
+ament_add_gtest(test_cartesian_planning_options
+  test_cartesian_planning_options.cpp
+)
+target_link_libraries(test_cartesian_planning_options
+  moveit_cpp_grasp_execution_interface
+)
+target_compile_features(test_cartesian_planning_options
+  PRIVATE cxx_std_17
+)

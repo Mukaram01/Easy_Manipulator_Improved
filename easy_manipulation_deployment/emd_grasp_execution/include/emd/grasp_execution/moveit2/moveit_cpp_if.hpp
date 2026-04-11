@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "emd/grasp_execution/grasp_execution.hpp"
+#include "emd/grasp_execution/moveit2/cartesian_planning_options.hpp"
 #include "emd/grasp_execution/moveit2/executor.hpp"
 
 #include "moveit/moveit_cpp/moveit_cpp.h"
@@ -181,13 +182,21 @@ public:
     moveit::core::RobotState & start_state,
     const std::vector<geometry_msgs::msg::Pose> & _waypoints,
     robot_trajectory::RobotTrajectoryPtr & traj,
-    const std::string & _link, double step, double jump_threshold = 0);
+    const std::string & _link, double step, double jump_threshold = 0,
+    const CartesianPlanningOptions & options = CartesianPlanningOptions());
 
   bool cartesian_to(
     const std::string & planning_group,
     const std::vector<geometry_msgs::msg::Pose> & _waypoints,
     const std::string & _link, double step, double jump_threshold = 0,
     bool execute = true) override;
+
+  bool cartesian_to(
+    const std::string & planning_group,
+    const std::vector<geometry_msgs::msg::Pose> & _waypoints,
+    const std::string & _link, double step, double jump_threshold,
+    const CartesianPlanningOptions & options,
+    bool execute = true);
 
   bool move_until_before_collide(
     const std::string & planning_group,
