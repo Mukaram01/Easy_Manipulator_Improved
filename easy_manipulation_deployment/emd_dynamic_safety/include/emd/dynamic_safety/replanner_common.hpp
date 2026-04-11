@@ -69,9 +69,12 @@ namespace ReplannerStatus
 {
 static const uint8_t
   IDLE = 0,
-  ONGOING = 1,
+  RUNNING = 1,
+  ONGOING = RUNNING,  // backwards compatible alias
   SUCCEED = 2,
-  TIMEOUT = 3;    // Not used at the moment
+  TIMEOUT = 3,
+  FAILED = 4,
+  TERMINATING = 5;
 }  // ReplannerStatus
 
 /// Collision checking context to-be-inherited.
