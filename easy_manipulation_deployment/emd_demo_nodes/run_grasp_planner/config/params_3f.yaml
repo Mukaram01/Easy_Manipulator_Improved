@@ -61,4 +61,4 @@ grasp_planning_node:
           world_y_angle_threshold: 0.65
           world_z_angle_threshold: 0.35
     visualization_params:
-      point_cloud_visualization: true
+      point_cloud_visualization: false  # Enable only for debugging/profiling sessions.
