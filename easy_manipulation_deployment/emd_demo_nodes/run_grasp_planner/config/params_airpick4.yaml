@@ -19,6 +19,7 @@ grasp_planning_node:
       camera_frame: "camera_color_optical_frame"
       # Larger queue sizes trade memory/latency for fewer TF filter drops.
       tf_filter_queue_size: 20
+      robot_base_frame: "base_link"
       fx: 610.3740844726562
       fy: 609.8685913085938
       ppx: 323.3077697753906

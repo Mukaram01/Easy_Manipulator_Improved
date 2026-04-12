@@ -57,8 +57,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 // Other Libraries
-#include <stdlib.h>
-#include <math.h>
+#include <cstdlib>
 #include <cmath>
 #include <memory>
 #include <future>

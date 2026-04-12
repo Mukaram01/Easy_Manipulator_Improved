@@ -101,7 +101,6 @@ public:
       node->get_node_timers_interface());
 
     this->buffer_->setCreateTimerInterface(create_timer_interface);
-    // setup(topic_name);
   }
 
 /*! \brief GraspScene Destructor */
@@ -183,8 +182,6 @@ protected:
 
   #if EPD_ENABLED == 1
 
-  /*! \brief */
-
 /**
  * Function that processes the Objects detected by EPD and outputs a vector
  * of GraspObjects. Method to extract grasp objects from Point Clouds for EPD-EMD workflow
@@ -215,11 +212,6 @@ protected:
   /*! \brief Grasp object pose rectification due to Point Cloud limitations */
   void object_pose_rectification(emd_msgs::msg::GraspTask & grasp_task);
 
-/**
- * Not used
- */
-  void get_camera_position();
-
   /*! \brief Subscriber that subscribes to perception output */
   std::shared_ptr<message_filters::Subscriber<T>> perception_sub;
   /*! \brief Message filter for perception output */
@@ -228,7 +220,7 @@ protected:
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud;
   /*! \brief Input cloud without the plane */
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_plane_removed;
-  /*! \brief  */
+  /*! \brief Voxelized copy of the input cloud used for world collision object construction */
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr org_cloud;
   /*! \brief Point cloud representing the surface on which the object is placed on */
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_table;
