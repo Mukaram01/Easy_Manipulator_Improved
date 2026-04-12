@@ -138,8 +138,10 @@ protected:
  * Includes Conversion to PCL Pointcloud2 type, undergoing passthrough filtering,
  * Removing statistical outlier, downsampling and plane segmentation.
  * \param[in] msg Pointcloud input
+ * \return true if the processed cloud is non-empty and ready for further processing,
+ *         false if the cloud is empty after filtering (pipeline should be skipped)
  */
-  void process_pointcloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg);
+  bool process_pointcloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg);
 
 /**
  * Function that converts a sensor_msg pointcloud2 message into an FCL compatible
