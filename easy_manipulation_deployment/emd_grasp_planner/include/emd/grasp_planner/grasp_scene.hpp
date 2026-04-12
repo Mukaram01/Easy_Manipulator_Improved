@@ -54,6 +54,7 @@
 // EndTemp
 
 #include <chrono>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -263,6 +264,11 @@ protected:
   rclcpp::Time next_epd_trigger_time;
   /*! \brief Vector of objects in the scene to be picked */
   #endif
+
+  /*! \brief True while direct point-cloud planning is running */
+  std::atomic_bool planning_in_progress{false};
+  /*! \brief Last accepted direct point-cloud frame timestamp (steady clock nanoseconds) */
+  std::atomic<int64_t> last_processed_time_ns{0};
 
   /*! \brief Vector of Grasp Objects available */
   std::vector<GraspObject> grasp_objects;
