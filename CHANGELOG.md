@@ -33,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in time" TODO and documented that `TIMED_OUT` intentionally maps to success
   after `stopExecution()` has been called
   (`emd_grasp_execution/src/moveit2/executor/default_executor.cpp`).
+- **`load_end_effectors()` missing error handling** — each end-effector is now
+  loaded inside a try/catch for `ParameterNotDeclaredException` and
+  `std::invalid_argument`; a misconfigured entry is logged and skipped instead of
+  crashing the planning node.  Unknown end-effector types are also logged
+  (`emd_grasp_planner/src/grasp_scene.cpp`).
+- **Hardcoded `"base_link"` TF frame** — the robot base frame used by the TF
+  message filter and world-collision transform lookups is now read from the
+  `camera_parameters.robot_base_frame` ROS parameter (default `"base_link"` in
+  all demo config files), making the planner portable across workcells with
+  non-standard base frame names
+  (`emd_grasp_planner/src/grasp_scene.cpp`,
+  `emd_demo_nodes/run_grasp_planner/config/params*.yaml`).
 
 ### Added
 - **Configurable release pose** in grasp execution demo — two new ROS parameters
@@ -51,6 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   number in the depth-to-metres conversion with
   `static constexpr float kDepthMmToMeters = 0.001F`
   (`emd_grasp_planner/src/epd_detection_adapter.cpp`).
+- **C-style headers replaced** — `<stdlib.h>` and `<math.h>` replaced with
+  `<cstdlib>` and `<cmath>` in `grasp_object.hpp` and `pcl_functions.hpp`.
+- **Dead code removed** — removed the unused `get_camera_position()` declaration
+  and definition, stale commented-out constructor assignments in `grasp_object.cpp`,
+  the stale `// setup(topic_name);` constructor comment in `grasp_scene.hpp`, the
+  empty `/*! \brief */` Doxygen comment in the EPD section, and the superseded
+  commented-out install/export block in `emd_grasp_planner/CMakeLists.txt`.
+- **`org_cloud` field documented** — replaced empty `/*! \brief  */` with a
+  descriptive comment in `grasp_scene.hpp`.
 
 ## [0.1.0] - 2026-01-08
 ### Added

@@ -30,9 +30,6 @@ GraspObject::GraspObject(
 {
   cloud = cloud_;
   this->grasp_target.target_type = "unknown_object";
-  // centerpoint = centerpoint_;
-  // max_grasp_samples = 1;
-  // object_name = "unknown_object";
 }
 
 GraspObject::GraspObject(
@@ -49,9 +46,6 @@ GraspObject::GraspObject(
 {
   cloud = cloud_;
   grasp_target.target_type = object_name_;
-  // centerpoint = centerpoint_;
-  // max_grasp_samples = 1;
-  // object_name = object_name_;
 }
 
 void GraspObject::get_object_bb()

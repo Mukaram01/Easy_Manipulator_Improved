@@ -219,25 +219,6 @@ install(
   DESTINATION include
 )
 
-# install(
-#   TARGETS
-#   grasp_planning_interface
-#   RUNTIME DESTINATION bin
-#   ARCHIVE DESTINATION lib
-#   LIBRARY DESTINATION lib)
-
-# ament_export_include_directories(
-#   include
-# )
-
-# ament_export_libraries(
-#   grasp_planning_interface
-# )
-
-# add_subdirectory(
-#   example
-# )
-
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_gtest REQUIRED)

@@ -167,119 +167,136 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
   std::vector<std::string> end_effector_array = node->get_parameter(
     "end_effectors.end_effector_names").as_string_array();
   for (std::string end_effector : end_effector_array) {
-    std::string end_effector_type =
-      node->get_parameter("end_effectors." + end_effector + ".type").as_string();
-    RCLCPP_INFO_STREAM(LOGGER, "Loading " << end_effector_type << " gripper " << end_effector);
-    if (end_effector_type.compare("finger") == 0) {
-      FingerGripper gripper(
-        end_effector,
-        node->get_parameter("end_effectors." + end_effector + ".num_fingers_side_1").as_int(),
-        node->get_parameter("end_effectors." + end_effector + ".num_fingers_side_2").as_int(),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".distance_between_fingers_1").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".distance_between_fingers_2").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".finger_thickness").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_stroke").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.voxel_size").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.grasp_rank_weight_1").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.grasp_rank_weight_2").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.centroid_dist_penalty_weight").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.wrist_rotation_penalty_weight").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.preferred_wrist_roll").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.preferred_wrist_pitch").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.preferred_wrist_yaw").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.grasp_plane_dist_limit").as_double()),
-        static_cast<float>(node->get_parameter(
-          "point_cloud_params.cloud_normal_radius").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.world_x_angle_threshold").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.world_y_angle_threshold").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.world_z_angle_threshold").as_double()),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.grasp_stroke_direction").as_string(),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.grasp_stroke_normal_direction").as_string(),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.grasp_approach_direction").as_string()
-      );
-      this->end_effectors.push_back(std::make_shared<FingerGripper>(std::move(gripper)));
-    } else if (end_effector_type.compare("suction") == 0) {
-      SuctionGripper gripper(
-        end_effector,
-        node->get_parameter("end_effectors." + end_effector + ".num_cups_length").as_int(),
-        node->get_parameter("end_effectors." + end_effector + ".num_cups_breadth").as_int(),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector + ".dist_between_cups_length").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector + ".dist_between_cups_breadth").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector + ".cup_radius").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector + ".cup_height").as_double()),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.num_sample_along_axis").as_int(),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.search_resolution").as_double()),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.search_angle_resolution").as_int(),
-        static_cast<float>(node->get_parameter(
-          "point_cloud_params.cloud_normal_radius").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.weights.curvature").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.weights.grasp_distance_to_center").as_double()),
-        static_cast<float>(node->get_parameter(
-          "end_effectors." + end_effector +
-          ".grasp_planning_params.weights.number_contact_points").as_double()),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.length_direction").as_string(),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.breadth_direction").as_string(),
-        node->get_parameter(
-          "end_effectors." + end_effector +
-          ".gripper_coordinate_system.grasp_approach_direction").as_string());
+    try {
+      std::string end_effector_type =
+        node->get_parameter("end_effectors." + end_effector + ".type").as_string();
+      RCLCPP_INFO_STREAM(LOGGER, "Loading " << end_effector_type << " gripper " << end_effector);
+      if (end_effector_type.compare("finger") == 0) {
+        FingerGripper gripper(
+          end_effector,
+          node->get_parameter("end_effectors." + end_effector + ".num_fingers_side_1").as_int(),
+          node->get_parameter("end_effectors." + end_effector + ".num_fingers_side_2").as_int(),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".distance_between_fingers_1").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".distance_between_fingers_2").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".finger_thickness").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_stroke").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.voxel_size").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.grasp_rank_weight_1").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.grasp_rank_weight_2").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.centroid_dist_penalty_weight").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.wrist_rotation_penalty_weight").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.preferred_wrist_roll").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.preferred_wrist_pitch").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.preferred_wrist_yaw").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.grasp_plane_dist_limit").as_double()),
+          static_cast<float>(node->get_parameter(
+            "point_cloud_params.cloud_normal_radius").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.world_x_angle_threshold").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.world_y_angle_threshold").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.world_z_angle_threshold").as_double()),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.grasp_stroke_direction").as_string(),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.grasp_stroke_normal_direction").as_string(),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.grasp_approach_direction").as_string()
+        );
+        this->end_effectors.push_back(std::make_shared<FingerGripper>(std::move(gripper)));
+      } else if (end_effector_type.compare("suction") == 0) {
+        SuctionGripper gripper(
+          end_effector,
+          node->get_parameter("end_effectors." + end_effector + ".num_cups_length").as_int(),
+          node->get_parameter("end_effectors." + end_effector + ".num_cups_breadth").as_int(),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector + ".dist_between_cups_length").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector + ".dist_between_cups_breadth").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector + ".cup_radius").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector + ".cup_height").as_double()),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.num_sample_along_axis").as_int(),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.search_resolution").as_double()),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.search_angle_resolution").as_int(),
+          static_cast<float>(node->get_parameter(
+            "point_cloud_params.cloud_normal_radius").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.weights.curvature").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.weights.grasp_distance_to_center").as_double()),
+          static_cast<float>(node->get_parameter(
+            "end_effectors." + end_effector +
+            ".grasp_planning_params.weights.number_contact_points").as_double()),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.length_direction").as_string(),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.breadth_direction").as_string(),
+          node->get_parameter(
+            "end_effectors." + end_effector +
+            ".gripper_coordinate_system.grasp_approach_direction").as_string());
 
-      this->end_effectors.push_back(std::make_shared<SuctionGripper>(std::move(gripper)));
+        this->end_effectors.push_back(std::make_shared<SuctionGripper>(std::move(gripper)));
+      } else {
+        RCLCPP_ERROR_STREAM(
+          LOGGER,
+          "Unknown end effector type '" << end_effector_type << "' for end effector '"
+                                        << end_effector << "'. Skipping.");
+      }
+    } catch (const rclcpp::exceptions::ParameterNotDeclaredException & ex) {
+      RCLCPP_ERROR(
+        LOGGER,
+        "Missing parameter while loading end effector '%s': %s. Skipping.",
+        end_effector.c_str(), ex.what());
+    } catch (const std::invalid_argument & ex) {
+      RCLCPP_ERROR(
+        LOGGER,
+        "Invalid configuration for end effector '%s': %s. Skipping.",
+        end_effector.c_str(), ex.what());
     }
   }
   RCLCPP_INFO(LOGGER, "All End Effectors Loaded");
@@ -445,9 +462,11 @@ template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::create_world_collision(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
+  const std::string robot_base_frame =
+    node->get_parameter("camera_parameters.robot_base_frame").as_string();
   geometry_msgs::msg::TransformStamped sensorToWorldTf =
     this->buffer_->lookupTransform(
-    "base_link", msg->header.frame_id,
+    robot_base_frame, msg->header.frame_id,
     msg->header.stamp);
   octomap::point3d sensor_origin = octomap::point_tf_to_octomap(
     sensorToWorldTf.transform.translation);
@@ -528,7 +547,8 @@ void grasp_planner::GraspScene<T>::create_world_collision(
 
   geometry_msgs::msg::TransformStamped sensorToWorldTf =
     this->buffer_->lookupTransform(
-    "base_link", msg->header.frame_id,
+    node->get_parameter("camera_parameters.robot_base_frame").as_string(),
+    msg->header.frame_id,
     msg->header.stamp);
   octomap::point3d sensor_origin = octomap::point_tf_to_octomap(
     sensorToWorldTf.transform.translation);
@@ -670,6 +690,8 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
 {
   const int tf_filter_queue_size = std::max(
     1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+  const std::string robot_base_frame =
+    node->get_parameter("camera_parameters.robot_base_frame").as_string();
 
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
@@ -682,7 +704,7 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
 
   this->tf_perception_sub =
     std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
-    *buffer_, "base_link", tf_filter_queue_size,
+    *buffer_, robot_base_frame, tf_filter_queue_size,
     node->get_node_logging_interface(),
     node->get_node_clock_interface(),
     std::chrono::seconds(1));
@@ -701,6 +723,8 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 {
   const int tf_filter_queue_size = std::max(
     1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+  const std::string robot_base_frame =
+    node->get_parameter("camera_parameters.robot_base_frame").as_string();
 
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
@@ -709,7 +733,6 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
   this->epd_client =
     this->node->create_client<epd_msgs::srv::Perception>(
     this->node->get_parameter("easy_perception_deployment.epd_service").as_string());
-  //this->node->get_parameter("epd_service").as_string());
 
   RCLCPP_INFO(
     LOGGER,
@@ -720,7 +743,7 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
     node, topic_name);
 
   this->tf_perception_sub = std::make_shared<tf2_ros::MessageFilter<T>>(
-    *buffer_, "base_link", tf_filter_queue_size,
+    *buffer_, robot_base_frame, tf_filter_queue_size,
     node->get_node_logging_interface(),
     node->get_node_clock_interface(),
     std::chrono::seconds(1));
@@ -862,34 +885,6 @@ void grasp_planner::GraspScene<T>::print_pose(const geometry_msgs::msg::PoseStam
 {
   RCLCPP_DEBUG(LOGGER, "Frame ID: %s", _pose.header.frame_id.c_str());
   print_pose(_pose.pose);
-}
-
-template<typename T>
-void grasp_planner::GraspScene<T>::get_camera_position()
-{
-  // Minimum cosine of the angle between the table normal and world-Z axis
-  // to classify the camera as being in a top-view configuration.
-  static constexpr float kTopViewCosThreshold = 0.9f;
-
-  Eigen::Vector3f worldZVector(0, 0, 1);
-  Eigen::Vector3f table_normal_vector(this->table_coeff->values[0],
-    this->table_coeff->values[1],
-    this->table_coeff->values[2]);
-
-  float cos_world_table = std::abs(
-    (table_normal_vector.dot(worldZVector)) /
-    (table_normal_vector.norm() * worldZVector.norm()));
-
-  RCLCPP_DEBUG(
-    LOGGER, "Table normal: [%f, %f, %f]",
-    table_normal_vector(0), table_normal_vector(1), table_normal_vector(2));
-
-  // Compute initial points accordingly
-  if (cos_world_table > kTopViewCosThreshold) {
-    RCLCPP_DEBUG(LOGGER, "Camera in top view");
-  } else {
-    RCLCPP_DEBUG(LOGGER, "Camera in side view");
-  }
 }
 
 template<typename T>
