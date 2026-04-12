@@ -15,6 +15,7 @@
 
 // Main PCL files
 #include "emd/grasp_planner/grasp_scene.hpp"
+#include <algorithm>
 #include <type_traits>
 #include <utility>
 
@@ -628,6 +629,9 @@ void grasp_planner::GraspScene<T>::start_planning(const typename T::ConstSharedP
 template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string topic_name)
 {
+  const int tf_filter_queue_size = std::max(
+    1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
     this->node->get_parameter("grasp_output_service").as_string());
@@ -639,7 +643,7 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
 
   this->tf_perception_sub =
     std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
-    *buffer_, "base_link", 5,
+    *buffer_, "base_link", tf_filter_queue_size,
     node->get_node_logging_interface(),
     node->get_node_clock_interface(),
     std::chrono::seconds(1));
@@ -656,6 +660,9 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
 template<typename T>
 void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 {
+  const int tf_filter_queue_size = std::max(
+    1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
     this->node->get_parameter("grasp_output_service").as_string());
@@ -674,7 +681,7 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
     node, topic_name);
 
   this->tf_perception_sub = std::make_shared<tf2_ros::MessageFilter<T>>(
-    *buffer_, "base_link", 5,
+    *buffer_, "base_link", tf_filter_queue_size,
     node->get_node_logging_interface(),
     node->get_node_clock_interface(),
     std::chrono::seconds(1));
