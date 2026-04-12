@@ -597,9 +597,47 @@ template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
+  if (planning_in_progress.exchange(true, std::memory_order_acq_rel)) {
+    RCLCPP_WARN_THROTTLE(
+      LOGGER,
+      *node->get_clock(),
+      2000,
+      "Skipping incoming point cloud frame because grasp planning is still in progress.");
+    return;
+  }
+
+  int min_processing_period_ms = 0;
+  node->get_parameter_or(
+    "point_cloud_params.min_processing_period_ms",
+    min_processing_period_ms,
+    0);
+
+  const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::steady_clock::now().time_since_epoch()).count();
+  const auto last_processed_ns = last_processed_time_ns.load(std::memory_order_acquire);
+
+  if (min_processing_period_ms > 0 && last_processed_ns > 0) {
+    const auto min_period_ns = static_cast<int64_t>(min_processing_period_ms) * 1000000LL;
+    const auto elapsed_ns = now_ns - last_processed_ns;
+    if (elapsed_ns >= 0 && elapsed_ns < min_period_ns) {
+      RCLCPP_WARN_THROTTLE(
+        LOGGER,
+        *node->get_clock(),
+        2000,
+        "Skipping incoming point cloud frame due to minimum processing period (%d ms, elapsed %ld ms).",
+        min_processing_period_ms,
+        elapsed_ns / 1000000LL);
+      planning_in_progress.store(false, std::memory_order_release);
+      return;
+    }
+  }
+
+  last_processed_time_ns.store(now_ns, std::memory_order_release);
+
   RCLCPP_INFO(LOGGER, "Perception input received!");
   if (!process_pointcloud(msg)) {
     RCLCPP_INFO(LOGGER, "Grasp planning skipped: point cloud was empty after filtering.");
+    planning_in_progress.store(false, std::memory_order_release);
     return;
   }
   create_world_collision(msg);
@@ -608,6 +646,7 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
   emd_msgs::msg::GraspTask grasp_task = generate_grasp_task();
   send_to_execution(grasp_task);
   RCLCPP_INFO(LOGGER, "Grasp Planning complete.");
+  planning_in_progress.store(false, std::memory_order_release);
 }
 
 #if EPD_ENABLED == 1
