@@ -4,7 +4,7 @@ grasp_planning_node:
     table_to_camera_height: 0.65
     easy_perception_deployment:
       epd_enabled: false
-      tracking_enabled: true
+      tracking_enabled: false
       # Default matches EPD output namespace; remap if using a different deployment namespace.
       epd_localization_topic: "/easy_perception_deployment/epd_localize_output"
       epd_tracking_topic: "/processor/epd_tracking_output"
@@ -15,7 +15,7 @@ grasp_planning_node:
       epd_msg_timeout_s: 5.0
       epd_service_wait_timeout_s: 1.0
     camera_parameters:
-      point_cloud_topic: "/camera/pointcloud"
+      point_cloud_topic: "/camera/camera/depth/color/points"
       camera_frame: "camera_color_optical_frame"
       fx: 610.3740844726562
       fy: 609.8685913085938
