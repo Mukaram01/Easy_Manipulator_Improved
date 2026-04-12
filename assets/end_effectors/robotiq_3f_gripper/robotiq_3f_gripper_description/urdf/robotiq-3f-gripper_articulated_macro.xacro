@@ -36,7 +36,7 @@ there are multiple hands then a prefix followed by an "_" is needed.
         <inertial>
             <origin xyz="0 0 0" rpy="0 0 0"/>
             <mass value="1.3"/>
-            <inertia ixx="0.006012" ixy="0.000079" ixz="-0.00024" iyy="0.012892" iyz="0" izz="0.002435" />
+            <inertia ixx="0.006012" ixy="0.000079" ixz="-0.00024" iyy="0.008" iyz="0" izz="0.002435" />
         </inertial>
 		<!-- end of link list -->
 		<!-- joint list -->
