@@ -15,7 +15,7 @@ grasp_planning_node:
       epd_msg_timeout_s: 5.0
       epd_service_wait_timeout_s: 1.0
     camera_parameters:
-      point_cloud_topic: "/camera/pointcloud"
+      point_cloud_topic: "/camera/camera/depth/color/points"
       camera_frame: "camera_color_optical_frame"
       fx: 610.3740844726562
       fy: 609.8685913085938
