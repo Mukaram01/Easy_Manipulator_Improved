@@ -545,7 +545,7 @@ void grasp_planner::GraspScene<T>::create_world_collision(
 }
 
 template<typename T>
-void grasp_planner::GraspScene<T>::process_pointcloud(
+bool grasp_planner::GraspScene<T>::process_pointcloud(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
   RCLCPP_INFO(LOGGER, "Processing Point Cloud... ");
@@ -567,6 +567,11 @@ void grasp_planner::GraspScene<T>::process_pointcloud(
     as_double_array()[1]),
     static_cast<float>(node->get_parameter("point_cloud_params.passthrough_filter_limits_z").
     as_double_array()[0]));
+  if (this->cloud->empty()) {
+    RCLCPP_WARN(LOGGER, "Point cloud is empty after passthrough filtering. "
+      "Check passthrough_filter_limits in config or verify the point cloud source.");
+    return false;
+  }
   RCLCPP_INFO(LOGGER, "Removing Statistical Outlier");
   PCLFunctions::remove_statistical_outlier(this->cloud, 1.0);
   RCLCPP_INFO(LOGGER, "Downsampling Point Cloud");
@@ -584,6 +589,7 @@ void grasp_planner::GraspScene<T>::process_pointcloud(
     static_cast<float>(node->get_parameter(
       "point_cloud_params.segmentation_distance_threshold").as_double()));
   RCLCPP_INFO(LOGGER, "Point cloud successfully processed!");
+  return true;
 }
 
 template<>
@@ -591,7 +597,10 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
   RCLCPP_INFO(LOGGER, "Perception input received!");
-  process_pointcloud(msg);
+  if (!process_pointcloud(msg)) {
+    RCLCPP_INFO(LOGGER, "Grasp planning skipped: point cloud was empty after filtering.");
+    return;
+  }
   create_world_collision(msg);
   extract_objects(msg);
   // load_end_effectors();
