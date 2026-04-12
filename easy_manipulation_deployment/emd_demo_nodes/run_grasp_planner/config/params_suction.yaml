@@ -4,7 +4,7 @@ grasp_planning_node:
     table_to_camera_height: 0.65
     easy_perception_deployment:
       epd_enabled: false
-      tracking_enabled: true
+      tracking_enabled: false
       # Default matches EPD output namespace; remap if using a different deployment namespace.
       epd_localization_topic: "/easy_perception_deployment/epd_localize_output"
       epd_tracking_topic: "/processor/epd_tracking_output"
@@ -24,7 +24,7 @@ grasp_planning_node:
     point_cloud_params:
       passthrough_filter_limits_x: [-0.50, 0.50]
       passthrough_filter_limits_y: [-0.15, 0.10]
-      passthrough_filter_limits_z: [0.01, 0.70]  
+      passthrough_filter_limits_z: [0.01, 0.70]
       segmentation_max_iterations: 80
       segmentation_distance_threshold: 0.008
       cluster_tolerance: 0.008
@@ -57,4 +57,3 @@ grasp_planning_node:
             number_contact_points: 1.3
     visualization_params:
       point_cloud_visualization: false
-      
