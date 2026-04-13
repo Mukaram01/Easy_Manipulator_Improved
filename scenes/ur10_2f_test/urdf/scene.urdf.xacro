@@ -29,6 +29,23 @@
 	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
  </xacro:robotiq_85_gripper>
 
+ <xacro:if value="$(arg use_fake_hardware)">
+   <ros2_control name="RobotiqGripperHardware" type="system">
+     <hardware>
+       <plugin>mock_components/GenericSystem</plugin>
+     </hardware>
+     <joint name="gripper_finger1_joint">
+       <command_interface name="position" />
+       <state_interface name="position">
+         <param name="initial_value">0.0</param>
+       </state_interface>
+       <state_interface name="velocity">
+         <param name="initial_value">0.0</param>
+       </state_interface>
+     </joint>
+   </ros2_control>
+ </xacro:if>
+
  <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
  <xacro:table prefix="" parent="world">
 	<origin xyz="0 0 0" rpy="0 0 0"/>
