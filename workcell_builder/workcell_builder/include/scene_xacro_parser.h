@@ -137,6 +137,7 @@ void generate_scene_xacro(Scene scene, const std::string & output_path)
   MyFile << "<?xml version=\"1.0\" ?> \n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" +
     scene.name + "\">\n\n";  // Change it if you are generating multiple robots
+  MyFile << " <xacro:arg name=\"use_fake_hardware\" default=\"true\"/>\n\n";
   MyFile << " <link name=\"world\"/>\n\n";  // Declare world joint
 
   if (scene.robot_loaded) {
@@ -158,7 +159,8 @@ void generate_scene_xacro(Scene scene, const std::string & output_path)
         MyFile << "   joint_limits_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml\"\n";
         MyFile << "   kinematics_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml\"\n";
         MyFile << "   physical_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml\"\n";
-        MyFile << "   visual_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml\">\n";
+        MyFile << "   visual_parameters_file=\"$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml\"\n";
+        MyFile << "   use_fake_hardware=\"$(arg use_fake_hardware)\">\n";
         if (scene.robot_vector[i].origin.is_origin) {
           MyFile << "   <origin xyz=\"" + std::to_string(scene.robot_vector[i].origin.x) + " " +
             std::to_string(scene.robot_vector[i].origin.y) + " " + std::to_string(
@@ -219,6 +221,25 @@ void generate_scene_xacro(Scene scene, const std::string & output_path)
         MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
       }
       MyFile << " </xacro:" + ee_macro + ">\n\n";
+
+      if (scene.ee_vector[i].brand == "robotiq_85_gripper") {
+        MyFile << " <xacro:if value=\"$(arg use_fake_hardware)\">\n";
+        MyFile << "   <ros2_control name=\"RobotiqGripperHardware\" type=\"system\">\n";
+        MyFile << "     <hardware>\n";
+        MyFile << "       <plugin>mock_components/GenericSystem</plugin>\n";
+        MyFile << "     </hardware>\n";
+        MyFile << "     <joint name=\"gripper_finger1_joint\">\n";
+        MyFile << "       <command_interface name=\"position\" />\n";
+        MyFile << "       <state_interface name=\"position\">\n";
+        MyFile << "         <param name=\"initial_value\">0.0</param>\n";
+        MyFile << "       </state_interface>\n";
+        MyFile << "       <state_interface name=\"velocity\">\n";
+        MyFile << "         <param name=\"initial_value\">0.0</param>\n";
+        MyFile << "       </state_interface>\n";
+        MyFile << "     </joint>\n";
+        MyFile << "   </ros2_control>\n";
+        MyFile << " </xacro:if>\n\n";
+      }
     }
   }
 
