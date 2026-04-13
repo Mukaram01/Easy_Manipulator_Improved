@@ -19,7 +19,6 @@
   <disable_collisions link1="gripper_base_link" link2="wrist_3_link" reason="Never" />
   <disable_collisions link1="gripper_base_link" link2="tool0" reason="Never" />
   <disable_collisions link1="gripper_base_link" link2="base" reason="Never" />
-  <disable_collisions link1="gripper_base_link" link2="tool0" reason="Never" />
 
 
 </robot>
