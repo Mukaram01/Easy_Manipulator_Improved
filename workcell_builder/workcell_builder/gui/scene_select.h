@@ -78,6 +78,7 @@ private slots:
 
 private:
   Ui::SceneSelect * ui;
+  boost::filesystem::path scene_dir_for_current_selection() const;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
