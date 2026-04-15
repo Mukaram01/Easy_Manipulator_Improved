@@ -76,7 +76,24 @@ private slots:
 
   void on_exit_clicked();
 
+  void on_clear_logs_clicked();
+
 private:
+  enum class MessageLevel
+  {
+    Info,
+    Warning,
+    Error,
+    Success
+  };
+
+  void append_message(MessageLevel level, const std::string & message);
+  void append_info(const std::string & message);
+  void append_warning(const std::string & message);
+  void append_error(const std::string & message);
+  void append_success(const std::string & message);
+  void clear_messages();
+
   Ui::SceneSelect * ui;
   boost::filesystem::path scene_dir_for_current_selection() const;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
