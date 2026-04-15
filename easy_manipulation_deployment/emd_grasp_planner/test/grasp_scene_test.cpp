@@ -81,6 +81,7 @@ public:
 
   int trigger_count{0};
   bool service_available{true};
+  std::shared_ptr<epd_msgs::srv::Perception::Request> last_request;
 
 protected:
   bool wait_for_epd_service(const std::chrono::duration<double> &) override
@@ -90,9 +91,10 @@ protected:
 
   std::shared_future<rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>
   send_epd_trigger_request(
-    const std::shared_ptr<epd_msgs::srv::Perception::Request> &) override
+    const std::shared_ptr<epd_msgs::srv::Perception::Request> & request) override
   {
     ++trigger_count;
+    last_request = request;
     auto promise = std::make_shared<std::promise<
       rclcpp::Client<epd_msgs::srv::Perception>::SharedResponse>>();
     auto response = std::make_shared<epd_msgs::srv::Perception::Response>();
@@ -114,6 +116,7 @@ TEST_F(GraspSceneTest, EpdWatchdogTriggersOncePerTimeoutAndUpdatesTimestamp)
 
   scene.evaluate_watchdog(start + rclcpp::Duration::from_seconds(1.2), 1.0);
   EXPECT_EQ(scene.trigger_count, 1);
+  EXPECT_NE(scene.last_request, nullptr);
   EXPECT_DOUBLE_EQ(scene.get_last_epd_msg_time().seconds(), 2.2);
   EXPECT_DOUBLE_EQ(scene.get_next_epd_trigger_time().seconds(), 3.2);
 

@@ -32,6 +32,51 @@ struct has_camera_info<T, std::void_t<decltype(std::declval<T>().camera_info)>> 
 {
 };
 
+template<typename RequestT, typename = void>
+struct has_ready_flag : std::false_type
+{
+};
+
+template<typename RequestT>
+struct has_ready_flag<RequestT, std::void_t<decltype(std::declval<RequestT &>().ready)>>
+  : std::true_type
+{
+};
+
+template<typename RequestT, typename = void>
+struct has_start_flag : std::false_type
+{
+};
+
+template<typename RequestT>
+struct has_start_flag<RequestT, std::void_t<decltype(std::declval<RequestT &>().start)>>
+  : std::true_type
+{
+};
+
+template<typename RequestT, typename = void>
+struct has_trigger_flag : std::false_type
+{
+};
+
+template<typename RequestT>
+struct has_trigger_flag<RequestT, std::void_t<decltype(std::declval<RequestT &>().trigger)>>
+  : std::true_type
+{
+};
+
+template<typename RequestT>
+void set_epd_trigger_flag_if_available(RequestT & request)
+{
+  if constexpr (has_ready_flag<RequestT>::value) {
+    request.ready = true;
+  } else if constexpr (has_start_flag<RequestT>::value) {
+    request.start = true;
+  } else if constexpr (has_trigger_flag<RequestT>::value) {
+    request.trigger = true;
+  }
+}
+
 // Conversion factor: raw 16-bit depth value (millimetres) → metres.
 constexpr double kDepthMmToMeters = 0.001;
 }  // namespace
@@ -796,7 +841,7 @@ void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
   }
 
   auto req = std::make_shared<epd_msgs::srv::Perception::Request>();
-  req->ready = true;
+  set_epd_trigger_flag_if_available(*req);
 
   if (!this->epd_result_future.valid()) {
     RCLCPP_INFO(LOGGER, "Sending EPD trigger request (first request).");
