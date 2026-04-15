@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -86,6 +87,30 @@ TEST_F(ReplannerTest, MoveItOMPLReplannerTimeout)
 
   replanner_.run_async(joint_names_, start_point, end_point);
   EXPECT_EQ(replanner_.get_status(), dynamic_safety::ReplannerStatus::TIMEOUT);
+}
+
+// cppcheck-suppress syntaxError
+TEST_F(ReplannerTest, MoveItUnsupportedPlannerFailsPredictably)
+{
+  auto replanner_node = std::make_shared<rclcpp::Node>("test_replanner_unsupported_planner");
+
+  option_.framework = "moveit";
+  option_.planner = "unsupported_planner";
+  option_.ompl_planner_id = "RRTConnectkConfigDefault";
+  option_.group = "panda_arm";
+  option_.deadline = 1.0;
+
+  try {
+    replanner_.configure(option_, replanner_node, robot_.get_urdf(), robot_.get_srdf());
+    FAIL() << "Expected std::invalid_argument for unsupported planner option";
+  } catch (const std::invalid_argument & e) {
+    const std::string message = e.what();
+    EXPECT_NE(message.find("Unsupported MoveIt planner"), std::string::npos);
+    EXPECT_NE(message.find("unsupported_planner"), std::string::npos);
+    EXPECT_NE(message.find("Supported values: [ompl]"), std::string::npos);
+  } catch (const std::exception & e) {
+    FAIL() << "Expected std::invalid_argument but got: " << e.what();
+  }
 }
 
 #endif
