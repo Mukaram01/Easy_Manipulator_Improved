@@ -10,6 +10,31 @@ build/test flow used in CI and helper scripts.
 - **Compiler/dependency baseline**: keep workspace changes compatible with the repository's C++17-era Humble/Jammy toolchain expectations; do not assume newer `ruckig` / `std::format` requirements unless the baseline docs and CI are updated together.
 - **Jazzy (Ubuntu 24.04)**: experimental (no CI coverage).
 
+
+## CI security and reproducibility policy
+
+Our GitHub Actions workflows follow a security-first baseline:
+
+- **Pin third-party actions by commit SHA** (not floating tags).
+- **Use least-privilege `permissions`** (`contents: read` by default, elevate only when a job requires it).
+- **Enable `concurrency` cancellation** to stop superseded runs on the same branch/PR.
+- **Keep a lightweight security gate** in CI (script lint + dependency-manifest validation) before full build/test jobs.
+
+### Updating pinned action SHAs
+
+Rotate pinned SHAs on a regular cadence (recommended: **monthly**, or immediately for high/critical CVEs):
+
+1. Identify the action tag/version you intend to track (for example `v4.2.2`).
+2. Resolve the commit SHA from the action upstream:
+   ```bash
+   git ls-remote https://github.com/actions/checkout.git refs/tags/v4.2.2
+   ```
+3. Update workflow `uses:` references to `owner/repo@<commit_sha>` and keep an inline comment with the semantic version.
+4. Run local workflow lint checks (or open a PR and verify CI passes).
+5. Merge via PR so SHA rotations are reviewed and auditable.
+
+If a pinned SHA is compromised or revoked, rotate immediately in all workflow files and reference the incident/CVE in the PR description.
+
 ## Workspace layout
 
 Use a ROS 2 workspace that mirrors the layout in the README and helper scripts:
