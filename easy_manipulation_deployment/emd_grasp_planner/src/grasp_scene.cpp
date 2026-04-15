@@ -16,6 +16,7 @@
 // Main PCL files
 #include "emd/grasp_planner/grasp_scene.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -688,8 +689,10 @@ void grasp_planner::GraspScene<T>::start_planning(const typename T::ConstSharedP
 template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string topic_name)
 {
-  const int tf_filter_queue_size = std::max(
-    1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+  const int64_t raw_queue_size =
+    node->get_parameter("camera_parameters.tf_filter_queue_size").as_int();
+  const int64_t bounded_queue_size = std::max<int64_t>(1, raw_queue_size);
+  const uint32_t tf_filter_queue_size = static_cast<uint32_t>(bounded_queue_size);
   const std::string robot_base_frame =
     node->get_parameter("camera_parameters.robot_base_frame").as_string();
 
@@ -721,8 +724,10 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
 template<typename T>
 void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 {
-  const int tf_filter_queue_size = std::max(
-    1, node->get_parameter("camera_parameters.tf_filter_queue_size").as_int());
+  const int64_t raw_queue_size =
+    node->get_parameter("camera_parameters.tf_filter_queue_size").as_int();
+  const int64_t bounded_queue_size = std::max<int64_t>(1, raw_queue_size);
+  const uint32_t tf_filter_queue_size = static_cast<uint32_t>(bounded_queue_size);
   const std::string robot_base_frame =
     node->get_parameter("camera_parameters.robot_base_frame").as_string();
 
