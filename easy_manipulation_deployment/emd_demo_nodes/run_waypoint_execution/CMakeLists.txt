@@ -21,6 +21,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 
 add_library(target_validation src/target_validation.cpp)
 ament_target_dependencies(target_validation
+  emd_grasp_execution
   emd_msgs
   geometry_msgs
   rclcpp
@@ -75,6 +76,7 @@ if(BUILD_TESTING)
     target_link_libraries(test_target_validation target_validation)
     target_include_directories(test_target_validation PRIVATE include)
     ament_target_dependencies(test_target_validation
+      emd_grasp_execution
       emd_msgs
       geometry_msgs
       rclcpp
