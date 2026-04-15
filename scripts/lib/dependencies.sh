@@ -2,16 +2,36 @@
 # Dependency management helpers
 
 clone_repositories() {
-    if [[ ! -f "$REPO_ROOT/tesseract.repos" ]]; then
-        log_warn "No tesseract.repos file found; skipping repository import"
+    local manifest
+    manifest="$(resolve_dependency_manifest)"
+    if [[ -z "$manifest" ]]; then
+        log_warn "No dependency manifest found (checked dependencies/emd_epd_ws.repos, tesseract.repos); skipping repository import"
         return
     fi
 
-    log_info "Importing repositories from tesseract.repos"
+    log_info "Importing repositories from ${manifest#$REPO_ROOT/}"
     local import_cmd=(vcs import --recursive --skip-existing "$SRC_DIR")
-    if ! GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0} "${import_cmd[@]}" <"$REPO_ROOT/tesseract.repos"; then
+    if ! GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0} "${import_cmd[@]}" <"$manifest"; then
         die "vcs import failed; set GIT_TERMINAL_PROMPT=1 or configure credentials to continue"
     fi
+}
+
+resolve_dependency_manifest() {
+    local canonical="$REPO_ROOT/dependencies/emd_epd_ws.repos"
+    local legacy="$REPO_ROOT/tesseract.repos"
+
+    if [[ -f "$canonical" ]]; then
+        echo "$canonical"
+        return 0
+    fi
+
+    if [[ -f "$legacy" ]]; then
+        log_warn "Using legacy manifest tesseract.repos; prefer dependencies/emd_epd_ws.repos"
+        echo "$legacy"
+        return 0
+    fi
+
+    return 1
 }
 
 fix_workspace_layout() {

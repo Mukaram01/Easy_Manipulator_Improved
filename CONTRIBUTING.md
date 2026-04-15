@@ -72,8 +72,8 @@ ln -s ~/workcell_ws/src/easy_manipulation_deployment/scenes ~/workcell_ws/src/sc
 ### 3) Import dependencies
 
 ```bash
-cd ~/workcell_ws/src
-vcs import < easy_manipulation_deployment/tesseract.repos
+cd ~/workcell_ws
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ```
 
 ### 4) Apply Humble fixes/skips (from README + scripts)

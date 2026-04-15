@@ -201,7 +201,7 @@ PY
   fi
 }
 
-# Ensure external trajopt checkouts fetched via tesseract.repos are ignored
+# Ensure external trajopt checkouts fetched via dependency manifests are ignored
 # before invoking colcon. Some upstream snapshots ship a COLCON_IGNORE.repo
 # marker instead of the expected COLCON_IGNORE file, which causes colcon to
 # discover duplicate packages alongside the patched overlays in
@@ -515,7 +515,7 @@ resolve_trajopt_sco_target() {
   for candidate in "${candidate_targets[@]}"; do
     echo "  - ${candidate}" >&2
   done
-  echo "Remediation: restore trajopt_sco in one of the listed paths (for example via 'vcs import --recursive --skip-existing src < tesseract.repos' or by recovering backup/original snapshots), then rerun scripts/fix_workspace_layout.sh." >&2
+  echo "Remediation: restore trajopt_sco in one of the listed paths (for example via 'vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos' or by recovering backup/original snapshots), then rerun scripts/fix_workspace_layout.sh." >&2
   exit 1
 }
 
@@ -785,8 +785,8 @@ if ! workspace_has_required_packages required_missing; then
   printf '    - %-24s exists=%s type=%s resolved=%s\n' "$trajopt_sco_path" "$(path_exists "$trajopt_sco_path" && echo yes || echo no)" "$(path_type "$trajopt_sco_path")" "$(resolved_path_or_unresolved "$trajopt_sco_path")"
   echo
   echo "Remediation:"
-  echo "  1) Import repositories from tesseract.repos into src/ if not already imported:"
-  echo "       vcs import --recursive --skip-existing src < tesseract.repos"
+  echo "  1) Import repositories from dependencies/emd_epd_ws.repos into src/ if not already imported:"
+  echo "       vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos"
   echo "  2) Rerun workspace layout fix:"
   echo "       ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh"
   echo "  3) Rebuild with foundation-first flow (or equivalent helper script):"

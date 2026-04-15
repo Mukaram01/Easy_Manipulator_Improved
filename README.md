@@ -98,7 +98,7 @@ mv easy_manipulation_deployment/scenes/ .
 
 ```bash
 cd ~/workcell_ws
-vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ```
 
 5. Register the repo-local `rosdep` overrides.
@@ -144,7 +144,7 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 mv easy_manipulation_deployment/assets/ .
 mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
-vcs import src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
 source /opt/ros/humble/setup.bash
 
@@ -394,9 +394,8 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
 
 ```bash
-cd ~/workcell_ws/src
-vcs import < easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 cd ~/workcell_ws
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui
 colcon build --symlink-install --parallel-workers 2
 ```
@@ -480,6 +479,20 @@ colcon build --symlink-install --parallel-workers 2
 ```
 
 Some helper scripts and source-overlay workflows still use `--symlink-install`, especially for full-profile development workspaces.
+
+
+## Dependency manifests
+
+- Canonical manifest: `dependencies/emd_epd_ws.repos`.
+- Legacy compatibility manifest: `tesseract.repos` (root-level).
+- Canonical import command:
+
+```bash
+cd ~/workcell_ws
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+```
+
+Repository scripts now resolve manifests in this order: canonical first, then legacy with a warning so existing workspaces keep working during migration.
 
 ## Troubleshooting
 
@@ -618,7 +631,7 @@ sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include 
 - **Supported baseline:** Ubuntu 22.04 + ROS 2 Humble + a C++17/libstdc++ baseline.
 - **Experimental:** Ubuntu 24.04 + ROS 2 Jazzy is not the main supported path for this repository.
 - `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17` for the supported baseline.
-- `dependencies/emd_epd_ws.repos` and `tesseract.repos` pin `ruckig` to `v0.15.3` (`37b6e7a`) so source builds stay on the pre-`std::format` line that still works with the Humble/Jammy toolchain.
+- `dependencies/emd_epd_ws.repos` (canonical manifest) pins `ruckig` to `v0.15.3` (`37b6e7a`) so source builds stay on the pre-`std::format` line that still works with the Humble/Jammy toolchain. The legacy root-level `tesseract.repos` is retained as a compatibility fallback in scripts.
 - `fix_and_build_humble.sh` reads that pinned revision during preflight so its guardrails match the documented baseline.
 - If you move to a newer `ruckig` release that requires `std::format`, you are also moving beyond the documented Humble/Jammy support envelope.
 
