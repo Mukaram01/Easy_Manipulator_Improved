@@ -60,6 +60,42 @@ namespace grasp_execution
 namespace moveit2
 {
 
+namespace detail
+{
+
+geometry_msgs::msg::Pose get_object_pose_from_world_object(
+  const collision_detection::World::ObjectConstPtr & object,
+  const std::string & object_id,
+  const rclcpp::Logger & logger)
+{
+  geometry_msgs::msg::Pose object_pose{};
+  if (!object) {
+    RCLCPP_ERROR(logger, "Object with id '%s' not found in planning scene", object_id.c_str());
+    return object_pose;
+  }
+
+  if (object->shape_poses_.empty()) {
+    RCLCPP_ERROR(
+      logger,
+      "Object with id '%s' has no shape poses in planning scene",
+      object_id.c_str());
+    return object_pose;
+  }
+
+  const auto & pose = object->shape_poses_.front();
+  Eigen::Quaterniond q(pose.linear());
+  object_pose.position.x = pose.translation().x();
+  object_pose.position.y = pose.translation().y();
+  object_pose.position.z = pose.translation().z();
+  object_pose.orientation.x = q.x();
+  object_pose.orientation.y = q.y();
+  object_pose.orientation.z = q.z();
+  object_pose.orientation.w = q.w();
+  return object_pose;
+}
+
+}  // namespace detail
+
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("grasp_execution");
 
 MoveitCppGraspExecution::MoveitCppGraspExecution(
@@ -480,26 +516,11 @@ std::string MoveitCppGraspExecution::register_target_object_mesh(
 geometry_msgs::msg::Pose MoveitCppGraspExecution::get_object_pose(
   const std::string & object_id) const
 {
-  geometry_msgs::msg::Pose object_pose{};
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
-    collision_detection::World::ObjectConstPtr object = scene->getWorld()->getObject(object_id);
-    if (!object) {
-      RCLCPP_ERROR(LOGGER, "Object with id '%s' not found in planning scene", object_id.c_str());
-      return object_pose;
-    }
-    auto poses = (*object).shape_poses_[0];
-    Eigen::Quaterniond q(poses.linear());
-    object_pose.position.x = poses.translation().x();
-    object_pose.position.y = poses.translation().y();
-    object_pose.position.z = poses.translation().z();
-    object_pose.orientation.x = q.x();
-    object_pose.orientation.y = q.y();
-    object_pose.orientation.z = q.z();
-    object_pose.orientation.w = q.w();
+    return detail::get_object_pose_from_world_object(
+      scene->getWorld()->getObject(object_id), object_id, LOGGER);
   }    // Unlock PlanningScene
-
-  return object_pose;
 }
 
 moveit::core::RobotStatePtr MoveitCppGraspExecution::get_curr_state() const

@@ -31,6 +31,7 @@
 #include "moveit/moveit_cpp/planning_component.h"
 #include "moveit/trajectory_processing/iterative_time_parameterization.h"
 #include "moveit/trajectory_processing/time_optimal_trajectory_generation.h"
+#include "moveit/collision_detection/world.h"
 
 #include "moveit_msgs/msg/attached_collision_object.hpp"
 #include "moveit_msgs/msg/collision_object.hpp"
@@ -42,6 +43,16 @@ namespace grasp_execution
 
 namespace moveit2
 {
+
+namespace detail
+{
+
+geometry_msgs::msg::Pose get_object_pose_from_world_object(
+  const collision_detection::World::ObjectConstPtr & object,
+  const std::string & object_id,
+  const rclcpp::Logger & logger);
+
+}  // namespace detail
 
 struct JmgContext
 {

@@ -36,3 +36,14 @@ target_link_libraries(test_cartesian_planning_options
 target_compile_features(test_cartesian_planning_options
   PRIVATE cxx_std_17
 )
+
+# MoveIt object pose utility unit tests
+ament_add_gtest(test_moveit_object_pose_utils
+  test_moveit_object_pose_utils.cpp
+)
+target_link_libraries(test_moveit_object_pose_utils
+  moveit_cpp_grasp_execution_interface
+)
+target_compile_features(test_moveit_object_pose_utils
+  PRIVATE cxx_std_17
+)
