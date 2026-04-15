@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build script for easy_manipulation_deployment workspace
 # Supports: ROS 2 Humble on Ubuntu 22.04
-# Usage examples (sanitation always runs first):
+# Usage examples:
 #   ./scripts/fix_and_build.sh
 #   ./scripts/fix_and_build.sh --clean
+#   ./scripts/fix_and_build.sh --clean --yes
 #   ./scripts/fix_and_build.sh --packages my_package
 set -euo pipefail
 
@@ -146,7 +147,8 @@ Usage: ./fix_and_build.sh [OPTIONS]
 
 Options:
     -h, --help          Show this help message
-    -c, --clean         Clean build artifacts and re-apply patches
+    -c, --clean         Delete workspace build/install/log directories, then re-apply patches
+    -y, --yes           Skip cleanup confirmation prompts (required for non-interactive --clean)
     -j, --jobs N        Number of parallel jobs (default: nproc)
     -v, --verbose       Verbose output
     --skip-deps         Skip dependency installation
@@ -156,8 +158,35 @@ Options:
 USAGE
 }
 
+confirm_cleanup() {
+    local workspace_root="$1"
+    local state_dir="$2"
+
+    if [[ ! -t 0 ]]; then
+        die "--clean requested in non-interactive mode. Re-run with --yes to allow deletion."
+    fi
+
+    echo "About to delete:"
+    echo "  - $workspace_root/build"
+    echo "  - $workspace_root/install"
+    echo "  - $workspace_root/log"
+    echo "  - $state_dir"
+    printf "Proceed? [y/N]: "
+    read -r reply
+
+    case "$reply" in
+        y|Y|yes|YES)
+            return 0
+            ;;
+        *)
+            die "Cleanup aborted by user"
+            ;;
+    esac
+}
+
 main() {
     local CLEAN=0
+    local ASSUME_YES=0
     local JOBS
     JOBS="$(nproc 2>/dev/null || echo 1)"
     local VERBOSE=0
@@ -166,11 +195,6 @@ main() {
     local LIGHTWEIGHT=0
     local SHOW_HELP=0
     PACKAGES=()
-
-    detect_workspace
-    validate_workspace_root
-    cd "$WORKSPACE_ROOT"
-    sanitize_workspace
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -187,6 +211,9 @@ main() {
                 ;;
             -v|--verbose)
                 VERBOSE=1
+                ;;
+            -y|--yes)
+                ASSUME_YES=1
                 ;;
             --skip-deps)
                 SKIP_DEPS=1
@@ -219,6 +246,10 @@ main() {
         return 0
     fi
 
+    detect_workspace
+    validate_workspace_root
+    cd "$WORKSPACE_ROOT"
+
     log_info "Starting build process"
 
     # Apply targeted ros_industrial_cmake_boilerplate patches as early as possible
@@ -228,6 +259,11 @@ main() {
     setup_environment
 
     if [[ $CLEAN -eq 1 ]]; then
+        log_warn "Cleanup requested. Paths to be removed: $WORKSPACE_ROOT/build $WORKSPACE_ROOT/install $WORKSPACE_ROOT/log $STATE_DIR"
+        if [[ $ASSUME_YES -ne 1 ]]; then
+            confirm_cleanup "$WORKSPACE_ROOT" "$STATE_DIR"
+        fi
+        sanitize_workspace
         revert_patches || true
         clean_build_artifacts
         rm -rf "$STATE_DIR"
