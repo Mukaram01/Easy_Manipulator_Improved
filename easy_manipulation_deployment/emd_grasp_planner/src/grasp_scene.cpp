@@ -690,9 +690,9 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
         LOGGER,
         *node->get_clock(),
         2000,
-        "Skipping incoming point cloud frame due to minimum processing period (%d ms, elapsed %ld ms).",
+        "Skipping incoming point cloud frame due to minimum processing period (%d ms, elapsed %lld ms).",
         min_processing_period_ms,
-        elapsed_ns / 1000000LL);
+        static_cast<long long>(elapsed_ns / 1000000LL));
       planning_in_progress.store(false, std::memory_order_release);
       return;
     }
