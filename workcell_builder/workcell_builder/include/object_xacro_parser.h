@@ -21,6 +21,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <boost/filesystem.hpp>
 
 #include "attributes/workcell.h"
 
@@ -42,6 +43,14 @@ void EndXacro(std::ofstream * MyFile);
 void make_object_xacro(Object object)  // Assumes that we are currently in the urdf folders
 {
   std::ofstream MyFile(object.name + ".urdf.xacro");
+  NewObject(&MyFile, object);
+}
+
+void make_object_xacro(const Object & object, const std::string & output_dir)
+{
+  const boost::filesystem::path output_path = boost::filesystem::path(output_dir) /
+    (object.name + ".urdf.xacro");
+  std::ofstream MyFile(output_path.string());
   NewObject(&MyFile, object);
 }
 
