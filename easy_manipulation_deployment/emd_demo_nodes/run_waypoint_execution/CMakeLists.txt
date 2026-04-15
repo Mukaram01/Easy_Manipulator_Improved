@@ -12,13 +12,27 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(emd_grasp_execution REQUIRED)
 find_package(emd_waypoint_execution REQUIRED)
 find_package(emd_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
+add_library(target_validation src/target_validation.cpp)
+ament_target_dependencies(target_validation
+  emd_msgs
+  geometry_msgs
+  rclcpp
+)
+target_include_directories(target_validation PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 add_executable(demo_node src/demo_node.cpp)
+target_link_libraries(demo_node target_validation)
+target_include_directories(demo_node PRIVATE include)
 
 ament_target_dependencies(demo_node
   emd_grasp_execution
@@ -37,6 +51,7 @@ ament_target_dependencies(fake_grasp_pose_publisher
 )
 
 install(TARGETS
+  target_validation
   demo_node
   fake_grasp_pose_publisher
   EXPORT export_${PROJECT_NAME}
@@ -49,7 +64,23 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY include/
+  DESTINATION include
+)
+
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_target_validation test/test_target_validation.cpp)
+  if(TARGET test_target_validation)
+    target_link_libraries(test_target_validation target_validation)
+    target_include_directories(test_target_validation PRIVATE include)
+    ament_target_dependencies(test_target_validation
+      emd_msgs
+      geometry_msgs
+      rclcpp
+    )
+  endif()
+
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
