@@ -5,15 +5,75 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  jazzy-ci:
+  security-checks:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate shell scripts and embedded Python
+        run: |
+          bash -n fix_and_build_humble.sh scripts/fix_workspace_layout.sh
+          python3 scripts/check_python_heredocs.py fix_and_build_humble.sh scripts/fix_workspace_layout.sh
+          ./scripts/check_disallowed_artifact_names.sh
+
+      - name: Validate dependency manifests
+        run: |
+          ruby - <<'RUBY'
+          require 'yaml'
+
+          manifest = 'dependencies/emd_epd_ws.repos'
+          data = YAML.load_file(manifest)
+          repos = data.is_a?(Hash) ? data['repositories'] : nil
+
+          abort("#{manifest} must contain a top-level 'repositories' mapping") unless repos.is_a?(Hash)
+          abort("#{manifest} has no repository entries") if repos.empty?
+
+          required_fields = %w[type url]
+          missing = {}
+
+          repos.each do |name, info|
+            unless info.is_a?(Hash)
+              missing[name] = required_fields
+              next
+            end
+
+            absent = required_fields.select do |field|
+              value = info[field]
+              value.nil? || value.to_s.strip.empty?
+            end
+            missing[name] = absent unless absent.empty?
+          end
+
+          unless missing.empty?
+            missing.each { |repo, fields| warn("#{repo}: missing required fields #{fields.join(', ')}") }
+            abort('Dependency manifest validation failed')
+          end
+
+          puts "Validated #{repos.length} dependency entries in #{manifest}"
+          RUBY
+
+  jazzy-ci:
+    needs: security-checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up ROS 2 Jazzy
-        uses: ros-tooling/setup-ros@v0.7
+        uses: ros-tooling/setup-ros@2b7b7e10fd30ff131dfb33248ddd71c5ba31dd30 # v0.7
         with:
           required-ros-distributions: jazzy
 
@@ -26,7 +86,7 @@ jobs:
           touch ws/COLCON_IGNORE ws/AMENT_IGNORE
 
       - name: Cache rosdep database
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: ~/.ros/rosdep
           key: rosdep-jazzy-${{ hashFiles('**/package.xml') }}
@@ -34,7 +94,7 @@ jobs:
             rosdep-jazzy-
 
       - name: Cache colcon build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             ws/build
@@ -42,12 +102,6 @@ jobs:
           key: colcon-jazzy-${{ hashFiles('**/CMakeLists.txt', '**/package.xml', '**/setup.py') }}
           restore-keys: |
             colcon-jazzy-
-
-      - name: Validate shell scripts and embedded Python
-        run: |
-          bash -n fix_and_build_humble.sh scripts/fix_workspace_layout.sh
-          python3 scripts/check_python_heredocs.py fix_and_build_humble.sh scripts/fix_workspace_layout.sh
-          ./scripts/check_disallowed_artifact_names.sh
 
       - name: Install dependencies
         working-directory: ws
