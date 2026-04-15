@@ -257,6 +257,7 @@ void MainWindow::on_load_workcell_clicked()
       boost::system::error_code ec;
       const workcell_builder::WorkcellRootInspection inspection =
         workcell_builder::inspect_selected_workcell_path(fs::path(workcell_file.toStdString()));
+      // Fail fast on invalid workspace; continue otherwise.
       if (!inspection.success) {
         result.error = QString::fromStdString(inspection.error);
         return result;
