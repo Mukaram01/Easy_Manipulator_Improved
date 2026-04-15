@@ -30,6 +30,8 @@
 
 #include "moveit/macros/console_colors.h"
 
+#include "run_waypoint_execution/target_validation.hpp"
+
 
 namespace grasp_execution
 {
@@ -164,8 +166,15 @@ public:
     double clearance;
     std::string ee_link = "";
     std::string planning_group = "";
-    auto & grasp_method = target->grasp_methods[0];
-    const std::string & ee_brand = grasp_method.ee_id;
+    const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
+    const geometry_msgs::msg::PoseStamped * grasp_pose = nullptr;
+    if (!run_waypoint_execution::validate_grasp_target_selection(
+        node_->get_logger(), target, target_id, grasp_method, grasp_pose))
+    {
+      return false;
+    }
+
+    const std::string & ee_brand = grasp_method->ee_id;
 
     // Select the group based on ee brand name
     for (auto & group : get_workcell_context().groups) {
@@ -202,16 +211,13 @@ public:
 
     auto release_pose = get_curr_pose(ee_link);
 
-    // TODO(Briancbn): iterate to find the valid grasp_pose within grasp_method
-    const auto & grasp_pose = grasp_method.grasp_poses[0];
-
     bool result;
 
     if (!this->plan_and_execute_job(
         options,
         "Grasp location",
         target_id,
-        grasp_pose))
+        *grasp_pose))
     {
       return false;
     }
