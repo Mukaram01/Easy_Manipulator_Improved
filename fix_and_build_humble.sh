@@ -1,58 +1,260 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Bootstrap + build script for ROS 2 Humble/Jazzy workspaces.
-# Usage: ./fix_and_build_humble.sh [--profile minimal|full] [--clean] [--with-gui] [--sync-manifests] [--legacy-workarounds]
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-mkdir -p ~/workcell_ws/src
-cd ~/workcell_ws
 
 PROFILE="minimal"
-ENABLE_LEGACY_WORKAROUNDS=0
 WITH_GUI=0
 CLEAN_BUILD=0
-SYNC_MANIFESTS=0
+WORKSPACE=""
+DRY_RUN=0
+CHECK_PREREQS=0
+INSTALL_PREREQS=0
+BUILD_WORKSPACE=0
+
+MUTATING_ACTIONS=()
+PACKAGES_INSTALLED=()
+PIP_PACKAGES_INSTALLED=()
+REPOS_IMPORTED=()
+FILES_TOUCHED=()
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage: ./fix_and_build_humble.sh [options]
 
-Options:
-  --profile minimal|full      Select bootstrap profile (default: minimal)
-  --clean                     Remove build/, install/, and log/ before building
-  --with-gui                  Opt in to building optional Studio/Qt widgets / Qt ADS (repo: qtadvanceddocking, package: QtADS)
-  --sync-manifests            Reset manifest-managed repos to expected revisions when clean
-  --legacy-workarounds        Enable legacy Humble patch/ignore behavior (opt-in)
-  -h, --help                  Show this help message
+Phase options (choose one or more):
+  --check-prereqs            Read-only checks. Verifies tooling and ROS prerequisites.
+  --install-prereqs          Mutating phase. Installs missing apt/pip prerequisites.
+  --build                    Build phase only. Runs colcon build in the workspace.
 
-Profiles:
-  minimal   Headless-friendly path that uses released apt packages and skips
-            importing the tesseract/trajopt source overlays.
-  full      Imports tesseract.repos overlays for planning/dev workflows.
-            By default this skips optional tesseract_qt / Qt ADS packages; pass
-            --with-gui to build Studio/Qt widgets.
-EOF
+General options:
+  --workspace <path>         Workspace root (default: current working directory)
+  --profile minimal|full     Build profile (default: minimal)
+  --with-gui                 Build optional GUI packages in full profile
+  --clean                    Remove build/, install/, and log/ before build
+  --dry-run                  Print commands without executing
+  -h, --help                 Show this help message
+
+Examples:
+  # Local dev: validate, install missing tools, then build
+  ./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --install-prereqs --build --profile full
+
+  # Locked-down enterprise host: read-only preflight only (no apt/pip mutation)
+  ./fix_and_build_humble.sh --workspace /opt/workcell_ws --check-prereqs
+
+  # CI runner: deterministic build from pre-provisioned image
+  ./fix_and_build_humble.sh --workspace "$GITHUB_WORKSPACE" --check-prereqs --build --profile minimal --clean
+USAGE
+}
+
+log_change() {
+  MUTATING_ACTIONS+=("$1")
+}
+
+run_cmd() {
+  local cmd="$*"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    printf '[dry-run] %s\n' "$cmd"
+    return 0
+  fi
+  eval "$cmd"
+}
+
+append_unique() {
+  local -n arr_ref=$1
+  local value="$2"
+  local existing
+  for existing in "${arr_ref[@]:-}"; do
+    [[ "$existing" == "$value" ]] && return 0
+  done
+  arr_ref+=("$value")
+}
+
+emit_summary() {
+  local summary_file="$WORKSPACE/fix_and_build_summary.json"
+  local mut_json pkg_json pip_json repo_json file_json
+
+  mut_json=$(printf '%s\n' "${MUTATING_ACTIONS[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  pkg_json=$(printf '%s\n' "${PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  pip_json=$(printf '%s\n' "${PIP_PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  repo_json=$(printf '%s\n' "${REPOS_IMPORTED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  file_json=$(printf '%s\n' "${FILES_TOUCHED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+
+  local json
+  json=$(cat <<JSON
+{
+  "workspace": "${WORKSPACE}",
+  "dry_run": ${DRY_RUN},
+  "phases": {
+    "check_prereqs": ${CHECK_PREREQS},
+    "install_prereqs": ${INSTALL_PREREQS},
+    "build": ${BUILD_WORKSPACE}
+  },
+  "profile": "${PROFILE}",
+  "with_gui": ${WITH_GUI},
+  "clean_build": ${CLEAN_BUILD},
+  "mutating_actions": ${mut_json},
+  "packages_installed": ${pkg_json},
+  "pip_packages_installed": ${pip_json},
+  "repos_imported": ${repo_json},
+  "files_touched": ${file_json}
+}
+JSON
+)
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    printf '%s\n' "$json"
+  else
+    printf '%s\n' "$json" > "$summary_file"
+    echo "Wrote summary: $summary_file"
+  fi
+}
+
+need_command() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    return 1
+  fi
+}
+
+apt_install_package() {
+  local pkg="$1"
+  local apt_prefix=""
+  if command -v sudo >/dev/null 2>&1; then
+    apt_prefix="sudo "
+  elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    echo "Cannot install '$pkg': requires root or sudo. Re-run with sudo access or preinstall package manually." >&2
+    exit 1
+  fi
+
+  run_cmd "${apt_prefix}apt-get update -y"
+  run_cmd "${apt_prefix}apt-get install -y $pkg"
+  append_unique PACKAGES_INSTALLED "$pkg"
+  log_change "apt install $pkg"
+}
+
+install_prereqs_phase() {
+  local missing_tools=()
+
+  need_command git || missing_tools+=(git)
+  need_command vcs || missing_tools+=(python3-vcstool)
+  need_command rosdep || missing_tools+=(python3-rosdep)
+
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import yaml  # noqa: F401
+PY
+  then
+    missing_tools+=(python3-yaml)
+  fi
+
+  local pkg
+  for pkg in "${missing_tools[@]:-}"; do
+    apt_install_package "$pkg"
+  done
+
+  if ! need_command colcon; then
+    if ! need_command pip3; then
+      apt_install_package python3-pip
+    fi
+    run_cmd "python3 -m pip install -U colcon-common-extensions"
+    append_unique PIP_PACKAGES_INSTALLED "colcon-common-extensions"
+    log_change "pip install colcon-common-extensions"
+  fi
+
+  if need_command rosdep; then
+    run_cmd "rosdep init || true"
+    log_change "rosdep init"
+  fi
+}
+
+check_prereqs_phase() {
+  local missing=()
+  local ros_setup="/opt/ros/humble/setup.bash"
+
+  [[ -d "$WORKSPACE" ]] || missing+=("workspace directory '$WORKSPACE' does not exist")
+  [[ -d "$WORKSPACE/src" ]] || missing+=("workspace is missing src/ directory at '$WORKSPACE/src'")
+  [[ -f "$ros_setup" ]] || missing+=("missing ROS setup: $ros_setup")
+
+  need_command git || missing+=("missing command: git (install package: git)")
+  need_command vcs || missing+=("missing command: vcs (install package: python3-vcstool)")
+  need_command rosdep || missing+=("missing command: rosdep (install package: python3-rosdep)")
+  need_command colcon || missing+=("missing command: colcon (install via pip: colcon-common-extensions)")
+
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import yaml  # noqa: F401
+PY
+  then
+    missing+=("missing Python module: yaml (install package: python3-yaml)")
+  fi
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "Prerequisite check failed. Missing requirements:" >&2
+    printf '  - %s\n' "${missing[@]}" >&2
+    echo "Action: run --install-prereqs to allow this script to install missing tools, or install them manually." >&2
+    exit 1
+  fi
+
+  echo "Prerequisite check passed for workspace: $WORKSPACE"
+}
+
+build_phase() {
+  cd "$WORKSPACE"
+
+  if [[ $CLEAN_BUILD -eq 1 ]]; then
+    run_cmd "rm -rf build install log"
+    append_unique FILES_TOUCHED "$WORKSPACE/build"
+    append_unique FILES_TOUCHED "$WORKSPACE/install"
+    append_unique FILES_TOUCHED "$WORKSPACE/log"
+    log_change "removed build/install/log"
+  fi
+
+  local ros_setup="/opt/ros/humble/setup.bash"
+  local build_cmd
+
+  if [[ "$PROFILE" == "full" && $WITH_GUI -eq 0 ]]; then
+    build_cmd="source '$ros_setup' && colcon build --symlink-install --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz"
+  else
+    build_cmd="source '$ros_setup' && colcon build --symlink-install"
+  fi
+
+  run_cmd "$build_cmd"
+  append_unique FILES_TOUCHED "$WORKSPACE/build"
+  append_unique FILES_TOUCHED "$WORKSPACE/install"
+  append_unique FILES_TOUCHED "$WORKSPACE/log"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --check-prereqs)
+      CHECK_PREREQS=1
+      shift
+      ;;
+    --install-prereqs)
+      INSTALL_PREREQS=1
+      shift
+      ;;
+    --build)
+      BUILD_WORKSPACE=1
+      shift
+      ;;
+    --workspace)
+      WORKSPACE="${2:-}"
+      shift 2
+      ;;
     --profile)
       PROFILE="${2:-}"
       shift 2
-      ;;
-    --clean)
-      CLEAN_BUILD=1
-      shift
       ;;
     --with-gui|--with-tesseract-qt)
       WITH_GUI=1
       shift
       ;;
-    --sync-manifests)
-      SYNC_MANIFESTS=1
+    --clean)
+      CLEAN_BUILD=1
       shift
       ;;
-    --legacy-workarounds)
-      ENABLE_LEGACY_WORKAROUNDS=1
+    --dry-run)
+      DRY_RUN=1
       shift
       ;;
     -h|--help)
@@ -67,943 +269,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$WORKSPACE" ]]; then
+  WORKSPACE="$PWD"
+fi
+WORKSPACE="$(cd "$WORKSPACE" && pwd 2>/dev/null || printf '%s' "$WORKSPACE")"
+
 if [[ "$PROFILE" != "minimal" && "$PROFILE" != "full" ]]; then
   echo "Invalid --profile value: '$PROFILE' (expected: minimal or full)" >&2
   exit 1
 fi
 
-APT_GET_CMD="apt-get"
-if command -v sudo >/dev/null 2>&1; then
-  APT_GET_CMD="sudo apt-get"
+if [[ $CHECK_PREREQS -eq 0 && $INSTALL_PREREQS -eq 0 && $BUILD_WORKSPACE -eq 0 ]]; then
+  echo "No phase selected. Choose at least one of --check-prereqs, --install-prereqs, --build." >&2
+  usage
+  exit 1
 fi
 
-# 0) Reset overlays and source only the intended base underlay (Humble)
-reset_colcon_environment() {
-  local ros_setup="/opt/ros/humble/setup.bash"
-  local local_setup="$PWD/install/local_setup.bash"
-
-  unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
-
-  if [[ ! -f "$ros_setup" ]]; then
-    echo "Expected ROS setup is missing: $ros_setup" >&2
-    exit 1
-  fi
-
-  set +u
-  : "${AMENT_TRACE_SETUP_FILES:=}"
-  # shellcheck source=/dev/null
-  source "$ros_setup"
-  if [[ -f "$local_setup" && -d "$PWD/build" && -d "$PWD/install" && -d "$PWD/log" ]]; then
-    # shellcheck source=/dev/null
-    source "$local_setup"
-  fi
-  set -u
-}
-
-ROS_DISTRO=humble
-reset_colcon_environment
-
-# Ensure required tools are available (install common ones if missing)
-MISSING_APT_PACKAGES=()
-INSTALL_ROSDEP=0
-
-for cmd in git colcon rosdep vcs; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    case "$cmd" in
-      git)
-        MISSING_APT_PACKAGES+=(git)
-        ;;
-      colcon)
-        MISSING_COLCON=1
-        ;;
-      rosdep)
-        MISSING_APT_PACKAGES+=(python3-rosdep)
-        INSTALL_ROSDEP=1
-        ;;
-      vcs)
-        MISSING_APT_PACKAGES+=(python3-vcstool)
-        ;;
-      *)
-        echo "Required tool '$cmd' is not installed." >&2
-        exit 1
-        ;;
-    esac
-  fi
-done
-
-if [[ ${#MISSING_APT_PACKAGES[@]} -gt 0 ]]; then
-  ${APT_GET_CMD} update -y
-  ${APT_GET_CMD} install -y "${MISSING_APT_PACKAGES[@]}" >/dev/null 2>&1
+if [[ $INSTALL_PREREQS -eq 1 ]]; then
+  install_prereqs_phase
 fi
 
-if [[ ${MISSING_COLCON:-0} -eq 1 ]]; then
-  python3 -m pip install -U colcon-common-extensions >/dev/null 2>&1 || {
-    echo "Failed to install colcon" >&2
-    exit 1
-  }
+if [[ $CHECK_PREREQS -eq 1 ]]; then
+  check_prereqs_phase
 fi
 
-if [[ $INSTALL_ROSDEP -eq 1 ]]; then
-  rosdep init >/dev/null 2>&1 || true
+if [[ $BUILD_WORKSPACE -eq 1 ]]; then
+  check_prereqs_phase
+  build_phase
 fi
 
-ensure_pyyaml() {
-  if python3 - <<'PY'
-import yaml  # noqa: F401
-PY
-  then
-    return
-  fi
-
-  echo "Installing python3-yaml for repos processing"
-  ${APT_GET_CMD} install -y python3-yaml >/dev/null 2>&1
-}
-
-load_repo_baselines() {
-  local repos_file="$SCRIPT_DIR/tesseract.repos"
-
-  ensure_pyyaml
-
-  mapfile -t _repo_meta < <(REPOS_FILE="$repos_file" python3 - <<'PY'
-import os
-import sys
-
-import yaml
-
-repos_file = os.environ["REPOS_FILE"]
-with open(repos_file, "r", encoding="utf-8") as handle:
-    data = yaml.safe_load(handle) or {}
-
-repos = data.get("repositories") or {}
-for name in ("ruckig", "tesseract", "tesseract_planning"):
-    repo = repos.get(name) or {}
-    version = (repo.get("version") or "").strip()
-    url = (repo.get("url") or "").strip()
-    if not version or not url:
-        sys.exit(f"{repos_file} is missing the expected {name} entry")
-    print(name)
-    print(version)
-    print(url)
-PY
-  )
-
-  if [[ ${#_repo_meta[@]} -lt 9 ]]; then
-    echo "Failed to load the documented repo baselines from $repos_file" >&2
-    exit 1
-  fi
-
-  declare -gA EXPECTED_REPO_VERSION EXPECTED_REPO_URL
-  local i=0
-  while [[ $i -lt ${#_repo_meta[@]} ]]; do
-    local name="${_repo_meta[$i]}"
-    EXPECTED_REPO_VERSION["$name"]="${_repo_meta[$((i + 1))]}"
-    EXPECTED_REPO_URL["$name"]="${_repo_meta[$((i + 2))]}"
-    i=$((i + 3))
-  done
-
-  RUCKIG_PINNED_REVISION="${EXPECTED_REPO_VERSION[ruckig]}"
-  RUCKIG_REMOTE_URL="${EXPECTED_REPO_URL[ruckig]}"
-}
-
-normalize_git_remote() {
-  local url="$1"
-  url="${url%.git}"
-  url="${url#git@github.com:}"
-  url="${url#https://github.com/}"
-  printf '%s' "$url"
-}
-
-validate_manifest_repo() {
-  local name="$1"
-  local repo_dir="$PWD/src/$name"
-  local expected_version="${EXPECTED_REPO_VERSION[$name]:-}"
-  local expected_url="${EXPECTED_REPO_URL[$name]:-}"
-
-  if [[ -z "$expected_version" || ! -d "$repo_dir/.git" ]]; then
-    return
-  fi
-
-  local actual_head actual_branch actual_remote normalized_expected normalized_actual
-  actual_head=$(git -C "$repo_dir" rev-parse --short=12 HEAD)
-  actual_branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD)
-  actual_remote=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)
-  normalized_expected=$(normalize_git_remote "$expected_url")
-  normalized_actual=$(normalize_git_remote "$actual_remote")
-
-  local mismatch=0
-  if [[ -n "$normalized_expected" && -n "$normalized_actual" && "$normalized_expected" != "$normalized_actual" ]]; then
-    mismatch=1
-  fi
-  if ! git -C "$repo_dir" merge-base --is-ancestor "$expected_version" HEAD >/dev/null 2>&1 && \
-     ! git -C "$repo_dir" merge-base --is-ancestor HEAD "$expected_version" >/dev/null 2>&1; then
-    mismatch=1
-  fi
-
-  if [[ $mismatch -eq 1 ]]; then
-    cat >&2 <<EOF
-Warning: src/$name does not match the manifest expectation.
-  current branch: $actual_branch
-  current head:   $actual_head
-  current remote: ${actual_remote:-<none>}
-  expected rev:   $expected_version
-  expected remote:${expected_url:-<none>}
-
-This can leave the workspace in a mixed state. Use --sync-manifests only if you
-want this script to reset manifest-managed repos without preserving divergent
-checkout state. Local changes are never reset automatically.
-EOF
-  fi
-}
-
-sync_manifest_repo() {
-  local name="$1"
-  local repo_dir="$PWD/src/$name"
-  local expected_version="${EXPECTED_REPO_VERSION[$name]:-}"
-
-  if [[ -z "$expected_version" || ! -d "$repo_dir/.git" ]]; then
-    return
-  fi
-  if [[ -n "$(git -C "$repo_dir" status --short)" ]]; then
-    echo "Skipping manifest sync for src/$name because it has local changes" >&2
-    return
-  fi
-
-  echo "Resetting src/$name to manifest revision $expected_version"
-  git -C "$repo_dir" fetch --tags --all --prune >/dev/null 2>&1
-  git -C "$repo_dir" checkout "$expected_version" >/dev/null 2>&1
-}
-
-clean_workspace_artifacts() {
-  echo "Cleaning workspace artifacts under $PWD"
-  rm -rf build install log
-  find src -mindepth 2 \( -name build -o -name install -o -name log \) -prune -print0 | xargs -0 -r rm -rf
-}
-
-apply_tesseract_planning_ruckig_include_fix() {
-  local cmake_file="$PWD/src/tesseract_planning/time_parameterization/ruckig/CMakeLists.txt"
-
-  if [[ ! -f "$cmake_file" ]]; then
-    return
-  fi
-
-  CMAKE_FILE="$cmake_file" python3 - <<'PY'
-import os
-from pathlib import Path
-
-cmake = Path(os.environ["CMAKE_FILE"])
-text = cmake.read_text()
-
-if "target_include_directories(time_parameterization_ruckig BEFORE PUBLIC ${RUCKIG_INCLUDE_DIRS})" in text:
-    raise SystemExit(0)
-
-find_package_line = "find_package(ruckig REQUIRED)"
-include_block = """target_include_directories(time_parameterization_ruckig PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                               "$<INSTALL_INTERFACE:include>")"""
-replacement = """# Prefer workspace/source-built Ruckig headers over older ROS-installed headers in /opt/ros/humble/include.
-target_include_directories(time_parameterization_ruckig BEFORE PUBLIC ${RUCKIG_INCLUDE_DIRS})
-target_include_directories(time_parameterization_ruckig PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                                                               "$<INSTALL_INTERFACE:include>")"""
-
-if find_package_line not in text:
-    raise SystemExit("find_package(ruckig REQUIRED) not found in tesseract_planning Ruckig CMakeLists.txt")
-
-if include_block not in text:
-    raise SystemExit("time_parameterization_ruckig include block not found in tesseract_planning Ruckig CMakeLists.txt")
-
-text = text.replace(
-    find_package_line,
-    find_package_line + "\nget_target_property(RUCKIG_INCLUDE_DIRS ruckig::ruckig INTERFACE_INCLUDE_DIRECTORIES)",
-    1,
-)
-text = text.replace(include_block, replacement, 1)
-cmake.write_text(text)
-PY
-}
-
-set_gui_package_state() {
-  local marker
-  local gui_paths=(
-    "$PWD/src/tesseract_qt/COLCON_IGNORE"
-    "$PWD/src/qtadvanceddocking/COLCON_IGNORE"
-    # tesseract_rviz depends on tesseract_qt widgets; exclude it when GUI is off
-    "$PWD/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE"
-  )
-
-  if [[ $WITH_GUI -eq 1 ]]; then
-    for marker in "${gui_paths[@]}"; do
-      if [[ -f "$marker" ]]; then
-        rm -f "$marker"
-      fi
-    done
-  else
-    for marker in "${gui_paths[@]}"; do
-      if [[ -d "$(dirname "$marker")" ]]; then
-        touch "$marker"
-      fi
-    done
-  fi
-}
-
-detect_stale_ruckig_mismatch() {
-  local old_linker_hits
-  old_linker_hits=""
-
-  if [[ ! -d /opt/ros/humble/include/ruckig || ! -d "$PWD/install/ruckig" ]]; then
-    return
-  fi
-
-  if command -v rg >/dev/null 2>&1 && [[ -d log || -d build ]]; then
-    old_linker_hits=$(rg -n -g '*stderr.log' -g '*stdout.log' -g '*.log' \
-      "tesseract_planning|PositionStep1|PositionStep2|VelocityStep1|VelocityStep2" log build 2>/dev/null || true)
-  fi
-
-  if [[ -n "$old_linker_hits" ]] && [[ "$old_linker_hits" == *"tesseract_planning"* ]] && \
-     [[ "$old_linker_hits" =~ PositionStep1|PositionStep2|VelocityStep1|VelocityStep2 ]]; then
-    cat >&2 <<EOF
-Detected a likely Ruckig header/library mismatch on Humble:
-  - older ROS-installed Ruckig headers exist in /opt/ros/humble/include/ruckig
-  - a workspace-built Ruckig install exists in $PWD/install/ruckig
-  - recent tesseract_planning build logs reference old symbols such as PositionStep1/VelocityStep2
-
-This usually happens when older ROS-installed Ruckig headers are picked before the
-workspace/source-built Ruckig headers. This repository includes a fix that
-prioritizes the workspace Ruckig include directories for tesseract_planning.
-Do not remove ros-humble-ruckig just to build this repo; that can remove other
-unrelated MoveIt packages from the system.
-EOF
-  fi
-}
-
-check_ruckig_preflight() {
-  local repo_dir="$PWD/src/ruckig"
-
-  if [[ ! -d "$repo_dir/.git" ]]; then
-    return
-  fi
-
-  local head_revision
-  head_revision=$(git -C "$repo_dir" rev-parse HEAD)
-
-  if [[ "$head_revision" == "$RUCKIG_PINNED_REVISION" ]]; then
-    return
-  fi
-
-  if git -C "$repo_dir" merge-base --is-ancestor "$RUCKIG_PINNED_REVISION" "$head_revision"; then
-    cat >&2 <<EOF
-Unsupported ruckig checkout detected at src/ruckig.
-  checked out: $head_revision
-  supported:   $RUCKIG_PINNED_REVISION ($RUCKIG_REMOTE_URL)
-
-This workspace is documented and CI-tested for Ubuntu 22.04 + ROS 2 Humble + GCC 11
-with the pre-<format> ruckig line. A newer ruckig revision that includes <format>
-(or otherwise requires std::format/C++20) is not supported on the default Jammy/Humble
-libstdc++ baseline.
-
-Fix it by re-importing the pinned manifest entry from dependencies/emd_epd_ws.repos /
-tesseract.repos, or remove src/ruckig and rely on the distro libruckig-dev package.
-EOF
-    exit 1
-  fi
-}
-
-load_repo_baselines
-
-ensure_cereal_cmake_config() {
-  local cereal_config="/usr/lib/x86_64-linux-gnu/cmake/cereal/cerealConfig.cmake"
-  local cereal_source="/usr/share/cmake/cereal"
-
-  if [[ -f "$cereal_config" || ! -d "$cereal_source" ]]; then
-    return
-  fi
-
-  echo "Fixing cereal CMake package path"
-  if command -v sudo >/dev/null 2>&1; then
-    sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
-    sudo ln -sf "$cereal_source" /usr/lib/x86_64-linux-gnu/cmake/cereal
-  else
-    mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
-    ln -sf "$cereal_source" /usr/lib/x86_64-linux-gnu/cmake/cereal
-  fi
-}
-
-apply_osqp_eigen_scope_fix() {
-  python3 - <<'PY'
-from pathlib import Path
-
-search_roots = []
-workspace_src = Path.cwd() / "src"
-if workspace_src.is_dir():
-    search_roots.append(workspace_src)
-search_roots.extend(
-    Path(path)
-    for path in (
-        "/usr/lib",
-        "/usr/local/lib",
-        "/usr/share",
-        "/usr/local/share",
-        "/opt/ros",
-    )
-    if Path(path).exists()
-)
-
-old = "  set(OSQP_EIGEN_OSQP_TARGET_TO_LINK ${OSQP_EIGEN_OSQP_TARGET_TO_LINK} PARENT_SCOPE)"
-replacement = """  # OsqpEigenDependencies is included directly from CMakeLists.txt, so a local
-  # set() already updates the caller-visible scope without triggering a
-  # top-level PARENT_SCOPE warning.
-  set(OSQP_EIGEN_OSQP_TARGET_TO_LINK ${OSQP_EIGEN_OSQP_TARGET_TO_LINK})"""
-
-patched_files = []
-for root in search_roots:
-    try:
-        matches = root.rglob("OsqpEigenDependencies.cmake")
-    except OSError:
-        continue
-
-    for dep_file in matches:
-        try:
-            text = dep_file.read_text()
-        except (OSError, UnicodeDecodeError):
-            continue
-
-        if old not in text:
-            continue
-
-        package_root = dep_file.parent.parent
-        cmake_lists = package_root / "CMakeLists.txt"
-        if not cmake_lists.is_file():
-            continue
-
-        try:
-            cmake_text = cmake_lists.read_text()
-        except (OSError, UnicodeDecodeError):
-            continue
-
-        if (
-            "include(OsqpEigenDependencies)" not in cmake_text
-            and "include(cmake/OsqpEigenDependencies.cmake)" not in cmake_text
-        ):
-            continue
-
-        dep_file.write_text(text.replace(old, replacement))
-        patched_files.append(str(dep_file))
-
-if patched_files:
-    print("Patched OsqpEigen dependency scope handling in:")
-    for path in patched_files:
-        print(f"  {path}")
-PY
-}
-
-apply_trajopt_ifopt_patch() {
-  local planners_dir="$PWD/src/tesseract_planning/tesseract_motion_planners"
-  local cmake_file="$planners_dir/CMakeLists.txt"
-
-  if [[ ! -d "$planners_dir" ]]; then
-    return
-  fi
-
-  if [[ -d "$planners_dir/trajopt_ifopt" ]]; then
-    echo "Removing incompatible trajopt_ifopt planner from workspace"
-    rm -rf "$planners_dir/trajopt_ifopt"
-  fi
-
-  if [[ -f "$cmake_file" ]]; then
-    CMAKE_FILE="$cmake_file" python3 - <<'PY'
-import os
-from pathlib import Path
-
-cmake_file = Path(os.environ["CMAKE_FILE"])
-lines = cmake_file.read_text().splitlines()
-new_lines = []
-changed = False
-
-for line in lines:
-    stripped = line.lstrip()
-    if "add_subdirectory(trajopt_ifopt)" in line and not stripped.startswith("#"):
-        new_lines.append(f"# {line}")
-        changed = True
-        continue
-    if (
-        "list(APPEND SUPPORTED_COMPONENTS trajopt_ifopt)" in line
-        and not stripped.startswith("#")
-    ):
-        new_lines.append(f"# {line}")
-        changed = True
-        continue
-    new_lines.append(line)
-
-if changed:
-    cmake_file.write_text("\n".join(new_lines) + "\n")
-PY
-  fi
-}
-
-apply_legacy_ignore_workarounds() {
-  local ignore_paths=(
-    "$PWD/src/tesseract_qt/COLCON_IGNORE"
-    "$PWD/src/tesseract_ros2/tesseract_rviz/COLCON_IGNORE"
-    "$PWD/src/tesseract_ros2/tesseract_ros_examples/COLCON_IGNORE"
-    "$PWD/src/tesseract_ros2/tesseract_planning_server/COLCON_IGNORE"
-    "$PWD/src/tesseract_planning/tesseract_examples/COLCON_IGNORE"
-  )
-
-  for marker in "${ignore_paths[@]}"; do
-    if [[ -d "$(dirname "$marker")" ]]; then
-      echo "Applying legacy ignore marker: $marker"
-      touch "$marker"
-    fi
-  done
-}
-
-# Install core system dependencies (Boost + TinyXML2) using the shared helper so
-# all setup paths stay in sync. The helper also reinstalls Boost headers when
-# container images omit them even though dpkg claims the packages are present,
-# preventing the "Could NOT find Boost (missing: Boost_INCLUDE_DIR graph)"
-# failure in trajopt_common.
-"${SCRIPT_DIR}/scripts/ensure_rosdep_overrides.sh" cereal
-"${SCRIPT_DIR}/scripts/install_system_deps.sh"
-ensure_cereal_cmake_config
-apply_osqp_eigen_scope_fix
-
-# Point CMake at the OSQP package configuration so find_package(osqp) succeeds
-# even on environments where the default prefix search path is trimmed down.
-if [[ -z ${OSQP_DIR:-} ]]; then
-  for candidate in /usr/lib/x86_64-linux-gnu/cmake/osqp /usr/lib/cmake/osqp; do
-    if [[ -f "${candidate}/osqpConfig.cmake" ]]; then
-      export OSQP_DIR="$candidate"
-      export CMAKE_PREFIX_PATH="${candidate}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
-      break
-    fi
-  done
-fi
-
-# 0.5) Install missing build tools and dependencies
-if [ ! -f "/opt/ros/${ROS_DISTRO}/share/ament_cmake/package.xml" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    sudo apt-get update -y
-    sudo apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
-  else
-    apt-get update -y
-    apt-get install -y "ros-${ROS_DISTRO}-ament-cmake"
-  fi
-fi
-
-REPO_FILE="$SCRIPT_DIR/tesseract.repos"
-if [[ "$PROFILE" == "full" && -f "$REPO_FILE" ]]; then
-  echo "Profile 'full': importing source overlays from tesseract.repos"
-  ensure_pyyaml
-
-  mapfile -t MISSING_REPOS < <(REPOS_FILE="$REPO_FILE" SRC="$PWD/src" python3 - <<'PY'
-import os
-import sys
-
-try:
-    import yaml
-except ImportError:
-    sys.exit("PyYAML is required to process tesseract.repos")
-
-repos_file = os.environ["REPOS_FILE"]
-src = os.environ["SRC"]
-
-with open(repos_file, "r", encoding="utf-8") as handle:
-    data = yaml.safe_load(handle) or {}
-
-for name in (data.get("repositories") or {}):
-    if not os.path.isdir(os.path.join(src, name)):
-        print(name)
-PY
-  )
-
-  if [[ ${#MISSING_REPOS[@]} -gt 0 ]]; then
-    FILTERED_MISSING=()
-    for repo in "${MISSING_REPOS[@]}"; do
-      if [[ $repo == "trajopt_ifopt" ]]; then
-        if apt-cache show "ros-$ROS_DISTRO-trajopt-ifopt" >/dev/null 2>&1; then
-          echo "Installing ros-$ROS_DISTRO-trajopt-ifopt from apt instead of cloning"
-          ${APT_GET_CMD} install -y "ros-$ROS_DISTRO-trajopt-ifopt" >/dev/null 2>&1
-          continue
-        else
-          echo "ros-$ROS_DISTRO-trajopt-ifopt not available via apt; will attempt to clone" >&2
-        fi
-      fi
-      FILTERED_MISSING+=("$repo")
-    done
-
-    if [[ ${#FILTERED_MISSING[@]} -gt 0 ]]; then
-      FILTERED_REPOS=$(mktemp)
-      REPOS_FILE="$REPO_FILE" MISSING="${FILTERED_MISSING[*]}" python3 - <<'PY' >"$FILTERED_REPOS"
-import os
-import sys
-
-try:
-    import yaml
-except ImportError:
-    sys.exit("PyYAML is required to process the repos file")
-
-repos_file = os.environ["REPOS_FILE"]
-missing = {item for item in os.environ.get("MISSING", "").split() if item}
-
-with open(repos_file, "r", encoding="utf-8") as handle:
-    data = yaml.safe_load(handle) or {}
-
-repos = data.get("repositories") or {}
-selected = {name: repos[name] for name in repos if name in missing}
-
-yaml.safe_dump({"repositories": selected}, sys.stdout)
-PY
-      vcs import --recursive src < "$FILTERED_REPOS"
-      rm -f "$FILTERED_REPOS"
-    fi
-  fi
-
-  for overlay in tesseract trajopt; do
-    if [ -d "$SCRIPT_DIR/$overlay" ]; then
-      mkdir -p "src/$overlay"
-      cp -a "$SCRIPT_DIR/$overlay/." "src/$overlay/"
-      # Immediately rename ignore markers shipped with overlays so colcon can discover the packages
-      while IFS= read -r -d '' marker; do
-        echo "Renaming ignore marker $marker"
-        mv -f "$marker" "$marker.repo"
-      done < <(find "src/$overlay" -maxdepth 2 \( -name 'COLCON_IGNORE' -o -name 'AMENT_IGNORE' \) -print0)
-    fi
-  done
-fi
-
-# Repair the workspace layout (symlinks, overlay locations, and missing upstream
-# dependencies) so subsequent colcon builds can locate generated CMake package
-# files such as tesseract_motion_planners_coreConfig.cmake. The helper now
-# fails fast if workbench_description is still missing, which aborts this build
-# before rosdep update/install can proceed with a broken workspace layout.
-WS=~/workcell_ws "$SCRIPT_DIR/scripts/fix_workspace_layout.sh"
-for repo in ruckig tesseract tesseract_planning; do
-  validate_manifest_repo "$repo"
-  if [[ $SYNC_MANIFESTS -eq 1 ]]; then
-    sync_manifest_repo "$repo"
-  fi
-done
-check_ruckig_preflight
-apply_tesseract_planning_ruckig_include_fix
-if [[ "$PROFILE" == "full" && $ENABLE_LEGACY_WORKAROUNDS -eq 1 ]]; then
-  echo "Applying legacy trajopt_ifopt and COLCON_IGNORE workarounds"
-  apply_trajopt_ifopt_patch
-  apply_legacy_ignore_workarounds
-fi
-
-ROSDEP_OVERRIDES="$SCRIPT_DIR/scripts/rosdep_overrides.yaml"
-if [[ -f "$ROSDEP_OVERRIDES" ]]; then
-  export ROSDEP_ADDITIONAL_SOURCES_PATHS="$ROSDEP_OVERRIDES${ROSDEP_ADDITIONAL_SOURCES_PATHS:+:$ROSDEP_ADDITIONAL_SOURCES_PATHS}"
-  echo "Using rosdep overrides from $ROSDEP_OVERRIDES" >&2
-fi
-
-rosdep update
-
-# Ensure trajopt_common declares all dependencies it links against. Some upstream
-# snapshots omit find_package() calls for tinyxml2, Boost graph, and the KDL
-# state solver, which results in CMake configure errors such as missing
-# tinyxml2::tinyxml2 or tesseract::tesseract_state_solver_kdl targets.
-TRAJOPT_COMMON_CMAKE=$(find "$PWD/src" -path "*/trajopt_common/CMakeLists.txt" -print -quit 2>/dev/null || true)
-if [[ -n "$TRAJOPT_COMMON_CMAKE" && -f "$TRAJOPT_COMMON_CMAKE" ]]; then
-  echo "Ensuring required find_package() entries exist in $TRAJOPT_COMMON_CMAKE"
-  TRAJOPT_COMMON_CMAKE="$TRAJOPT_COMMON_CMAKE" python3 - <<'PY'
-import os
-from pathlib import Path
-
-cmake = Path(os.environ["TRAJOPT_COMMON_CMAKE"])
-lines = cmake.read_text().splitlines()
-
-
-def ensure_find_package(statement: str) -> None:
-    if any(statement in line for line in lines):
-        return
-    try:
-        insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("find_package"))
-    except StopIteration:
-        try:
-            insert_at = next(i for i, line in enumerate(lines) if line.strip().startswith("project")) + 1
-        except StopIteration:
-            insert_at = 0
-    lines.insert(insert_at, statement)
-
-
-ensure_find_package("find_package(tinyxml2 CONFIG REQUIRED)")
-ensure_find_package("find_package(Boost COMPONENTS graph REQUIRED)")
-ensure_find_package("find_package(tesseract_state_solver COMPONENTS kdl REQUIRED)")
-
-cmake.write_text("\n".join(lines) + "\n")
-PY
-fi
-
-# Ensure the tesseract_plugins package can locate the collision backends it
-# links against.  Some snapshots omit the necessary find_package() calls,
-# which leaves the tesseract::tesseract_collision_* targets undefined and
-# causes CMake configuration to fail before colcon can build anything else.
-TESSERACT_PLUGINS_CMAKE=$(find "$PWD/src" -path "*/tesseract_plugins/CMakeLists.txt" -print -quit 2>/dev/null || true)
-if [[ -n "$TESSERACT_PLUGINS_CMAKE" && -f "$TESSERACT_PLUGINS_CMAKE" ]]; then
-  echo "Ensuring tesseract_plugins declares collision backend dependencies"
-  TESSERACT_PLUGINS_CMAKE="$TESSERACT_PLUGINS_CMAKE" python3 - <<'PY'
-import os
-from pathlib import Path
-
-cmake = Path(os.environ["TESSERACT_PLUGINS_CMAKE"])
-lines = cmake.read_text().splitlines()
-
-
-def insert_find_package(statement: str) -> None:
-    """Add a find_package() statement if it is missing."""
-
-    if any(statement in line for line in lines):
-        return
-
-    try:
-        insert_at = next(
-            i for i, line in enumerate(lines) if line.strip().startswith("find_package")
-        )
-    except StopIteration:
-        try:
-            insert_at = next(
-                i for i, line in enumerate(lines) if line.strip().startswith("project")
-            ) + 1
-        except StopIteration:
-            insert_at = 0
-
-    lines.insert(insert_at, statement)
-
-
-def upsert_bullet_find_package(required: bool) -> None:
-    """Insert or upgrade the Bullet find_package() directive."""
-
-    required_stmt = "find_package(tesseract_collision_bullet CONFIG REQUIRED)"
-    quiet_stmt = "find_package(tesseract_collision_bullet CONFIG QUIET)"
-    desired_stmt = required_stmt if required else quiet_stmt
-
-    for idx, line in enumerate(lines):
-        if line.strip().startswith("find_package(tesseract_collision_bullet"):
-            lines[idx] = desired_stmt
-            return
-
-    insert_find_package(desired_stmt)
-
-
-insert_find_package("find_package(tesseract_collision CONFIG REQUIRED)")
-insert_find_package("find_package(tesseract_collision_fcl CONFIG QUIET)")
-
-has_bullet_plugin = any("tesseract_collision_bullet" in line for line in lines)
-bullet_guarded = any(
-    "tesseract_collision_bullet_FOUND" in line
-    or "ENABLE_BULLET" in line.upper()
-    or ("if(" in line and "BULLET" in line.upper())
-    for line in lines
-)
-
-upsert_bullet_find_package(required=has_bullet_plugin and not bullet_guarded)
-
-cmake.write_text("\n".join(lines) + "\n")
-PY
-fi
-
-# Remove any duplicate ROS packages before resolving dependencies to prevent
-# rosdep and colcon build failures. Keep the first occurrence of a package
-# name and discard subsequent duplicates.
-declare -A pkg_seen
-while read -r name path _; do
-  if [[ -n "${pkg_seen[$name]:-}" ]]; then
-    echo "Removing duplicate package '$name' from $path (keeping ${pkg_seen[$name]})"
-    rm -rf "$path"
-  else
-    pkg_seen[$name]="$path"
-  fi
-done < <(colcon list --base-paths src)
-
-# Skip rosdep keys for packages that are either intentionally source-only on
-# Humble/Jammy or are supplied by the imported overlay workspaces. This avoids
-# asking rosdep/apt for binary packages when the source checkout is the intended
-# provider and also covers keys that still look unresolved to rosdep even though
-# colcon can build them from the overlay (for example tesseract_visualization
-# from the tesseract_qt source tree).
-mapfile -t WORKSPACE_PACKAGES < <(colcon list --base-paths src --names-only)
-declare -A WORKSPACE_PRESENT
-for pkg in "${WORKSPACE_PACKAGES[@]}"; do
-  WORKSPACE_PRESENT["$pkg"]=1
-done
-
-# Humble/Jammy full-profile overlays intentionally provide the planning stack
-# from source. Keep this list aligned with the rosdep keys used by the upstream
-# Tesseract/TrajOpt manifests so manual rosdep retries can reproduce the same
-# bootstrap behavior.
-SOURCE_OVERLAY_SKIP_KEYS=(
-  boost_plugin_loader
-  descartes_light
-  opw_kinematics
-  qt_advanced_docking
-  taskflow
-  tesseract
-  tesseract_collision
-  tesseract_command_language
-  tesseract_environment
-  tesseract_kinematics
-  tesseract_motion_planners
-  tesseract_motion_planners_core
-  tesseract_motion_planners_simple
-  tesseract_msgs
-  tesseract_process_managers
-  tesseract_rosutils
-  tesseract_task_composer
-  tesseract_visualization
-  trajopt
-  trajopt_ifopt
-  trajopt_sco
-  trajopt_sqp
-)
-
-# Some keys still appear in Humble dependency resolution but do not have a
-# supported binary bootstrap path for this workflow. Treat them as source-only.
-SOURCE_ONLY_SKIP_KEYS=(
-  qt_advanced_docking
-  taskflow
-  tesseract_visualization
-)
-
-add_skip_key() {
-  local key="$1"
-  local existing
-  for existing in "${SKIP_KEYS[@]:-}"; do
-    if [[ "$existing" == "$key" ]]; then
-      return
-    fi
-  done
-  SKIP_KEYS+=("$key")
-}
-
-SKIP_KEYS=()
-if [[ "$PROFILE" == "minimal" ]]; then
-  SKIP_KEYS=(
-    qt_advanced_docking
-    taskflow
-    tesseract_environment
-    tesseract_motion_planners
-    tesseract_motion_planners_core
-    tesseract_motion_planners_simple
-    tesseract_task_composer
-    tesseract_visualization
-    trajopt
-    trajopt_ifopt
-    trajopt_sco
-    trajopt_sqp
-  )
-else
-  for key in "${SOURCE_OVERLAY_SKIP_KEYS[@]}"; do
-    if [[ -n ${WORKSPACE_PRESENT[$key]:-} ]]; then
-      add_skip_key "$key"
-      continue
-    fi
-
-    case "$key" in
-      tesseract_visualization)
-        if [[ -d "$PWD/src/tesseract_qt" ]]; then
-          add_skip_key "$key"
-        fi
-        ;;
-      qt_advanced_docking|taskflow)
-        if [[ -d "$PWD/src/tesseract_qt" || -d "$PWD/src/tesseract_planning" ]]; then
-          add_skip_key "$key"
-        fi
-        ;;
-    esac
-  done
-fi
-
-if [[ "$PROFILE" == "full" ]]; then
-  for key in "${SOURCE_ONLY_SKIP_KEYS[@]}"; do
-    add_skip_key "$key"
-  done
-fi
-
-if [[ ${#SKIP_KEYS[@]} -gt 0 ]]; then
-  printf "rosdep preflight (%s profile): skipping keys: %s\n" \
-    "$PROFILE" "$(IFS=', '; echo "${SKIP_KEYS[*]}")"
-else
-  printf "rosdep preflight (%s profile): no profile-specific skip keys\n" "$PROFILE"
-fi
-
-SKIP_KEYS_ARG=$(IFS=","; echo "${SKIP_KEYS[*]}")
-if [[ -n "$SKIP_KEYS_ARG" ]]; then
-  echo "rosdep skip-keys: $SKIP_KEYS_ARG"
-fi
-
-rosdep install --from-paths src --ignore-src -yr --rosdistro "${ROS_DISTRO}" \
-  --skip-keys "$SKIP_KEYS_ARG"
-
-# Consolidate CMake arguments to enforce C++17 and position independent code so
-# static libraries can link cleanly into shared objects.
-CMAKE_ARGS=(
-  -DCMAKE_CXX_STANDARD=17
-  -DCMAKE_CXX_STANDARD_REQUIRED=ON
-  -DCMAKE_CXX_EXTENSIONS=OFF
-  -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-)
-
-if [[ $CLEAN_BUILD -eq 1 ]]; then
-  clean_workspace_artifacts
-  reset_colcon_environment
-fi
-
-set_gui_package_state
-detect_stale_ruckig_mismatch
-
-# When building with GUI support, patch tesseract_qt/studio/CMakeLists.txt to
-# handle all possible Qt Advanced Docking System target names before the build
-# starts.  The patch is idempotent (apply_upstream_patches.sh detects already-
-# applied state and skips re-application).
-if [[ "$WITH_GUI" -eq 1 && -d "$PWD/src/tesseract_qt" ]]; then
-  echo "Applying tesseract_qt Qt ADS target fix patch"
-  "${SCRIPT_DIR}/scripts/apply_upstream_patches.sh" || \
-    echo "WARNING: Failed to apply tesseract_qt Qt ADS target fix; build may fail if the installed QtADS package uses a non-standard target name" >&2
-fi
-
-# Taskflow is a header-only upstream dependency imported as a plain git checkout,
-# so colcon does not install a TaskflowConfig.cmake for downstream
-# find_package(Taskflow) calls. Generate a lightweight config and export it
-# into the current shell before building the planning stack.
-eval "$("${SCRIPT_DIR}/scripts/ensure_taskflow_cmake_package.sh" --export)"
-
-FULL_BUILD_ARGS=()
-# Keep the build-arg fallback resilient to either Qt ADS naming convention:
-# repository checkout directory `qtadvanceddocking`, colcon package `QtADS`.
-if [[ "$PROFILE" == "full" && "$WITH_GUI" -eq 0 ]]; then
-  echo "Full profile: skipping optional GUI packages (use --with-gui to enable Studio/Qt widgets; Qt ADS repo checkout: qtadvanceddocking, colcon package: QtADS)"
-  # tesseract_rviz depends on tesseract_qt widgets; skip it together with the Qt packages.
-  FULL_BUILD_ARGS+=(--packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz)
-fi
-
-if [[ "$PROFILE" == "full" ]]; then
-  # 1) Ensure boost_plugin_loader exists
-  if [ ! -d src/boost_plugin_loader ]; then
-    git -C src clone https://github.com/tesseract-robotics/boost_plugin_loader.git
-  fi
-
-  # 3) Stage 1: infrastructure vendors first
-  reset_colcon_environment
-  colcon build --symlink-install --packages-select \
-    ros_industrial_cmake_boilerplate eigen boost_plugin_loader
-
-  # 4) Stage 2: up to tesseract/tesseract_msgs with C++17
-  reset_colcon_environment
-  colcon build --symlink-install --packages-up-to tesseract tesseract_msgs \
-    --cmake-args "${CMAKE_ARGS[@]}"
-
-  # 4.5) Stage 2.5: ensure tesseract_state_solver is installed before downstream packages.
-  # Build its dependency chain as well so the workspace has the expected environment
-  # hooks available when colcon sources it during later stages.
-  reset_colcon_environment
-  colcon build --symlink-install --packages-up-to tesseract_state_solver \
-    --cmake-args "${CMAKE_ARGS[@]}"
-
-  # 5) Stage 3: full workspace
-  reset_colcon_environment
-  colcon build --symlink-install "${FULL_BUILD_ARGS[@]}" \
-    --cmake-args "${CMAKE_ARGS[@]}"
-else
-  echo "Profile 'minimal': skipping source overlays and running a single workspace build"
-  reset_colcon_environment
-  colcon build --symlink-install --cmake-args "${CMAKE_ARGS[@]}"
-fi
+emit_summary
