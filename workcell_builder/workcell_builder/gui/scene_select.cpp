@@ -257,8 +257,8 @@ fs::path select_scene_root(const fs::path & cwd)
 
   RCLCPP_WARN(
     rclcpp::get_logger("workcell_builder"),
-    "Unable to locate a valid 'scenes' directory from %s. Checked default locations plus optional "
-    "--scene-root and %s overrides.",
+    "Unable to locate a valid 'scenes' directory from %s. Checked default locations. "
+    "You can override with --scene-root or %s.",
     cwd.string().c_str(), kSceneRootEnvVar);
   for (const auto & candidate : candidates) {
     RCLCPP_INFO(
