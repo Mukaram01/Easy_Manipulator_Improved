@@ -386,10 +386,10 @@ colcon build --symlink-install --parallel-workers 2 \
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh --profile full
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full
 ```
 
-`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (optionally also adding `qtadvanceddocking` as a compatibility fallback for folder-based troubleshooting notes). To opt into the GUI-enabled path instead, use `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui` for the manual flow or `./fix_and_build_humble.sh --profile full --with-gui` for the helper-script flow.
+`fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (optionally also adding `qtadvanceddocking` as a compatibility fallback for folder-based troubleshooting notes). To opt into the GUI-enabled path instead, use `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui` for the manual flow or `./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full --with-gui` for the helper-script flow.
 
 For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
 
@@ -404,7 +404,7 @@ If you use the helper script instead, the equivalent GUI-enabled path is:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh --profile full --with-gui
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full --with-gui
 ```
 
 `tesseract_qt` and the Qt ADS checkout (`qtadvanceddocking`, package name `QtADS`) remain optional in this repository. When skipping them manually with colcon, use the discovered package name `QtADS` and optionally also `qtadvanceddocking` as a compatibility fallback.
@@ -422,7 +422,51 @@ Helper-script equivalent:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh --clean
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --clean
+```
+
+### Helper-script phase model (opt-in mutation)
+
+`fix_and_build_humble.sh` now separates execution into explicit phases:
+
+- `--check-prereqs`: read-only validation.
+- `--install-prereqs`: mutating apt/pip installation.
+- `--build`: workspace build only (`colcon build`).
+
+The script also supports `--dry-run` and writes a machine-readable summary to
+`<workspace>/fix_and_build_summary.json` (or prints JSON in dry-run mode).
+
+**Local development (copy/paste):**
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh \
+  --workspace ~/workcell_ws \
+  --check-prereqs \
+  --install-prereqs \
+  --build \
+  --profile full
+```
+
+**Locked-down enterprise host (no machine mutation):**
+
+```bash
+cd /opt/workcell_ws/src/easy_manipulation_deployment
+./fix_and_build_humble.sh \
+  --workspace /opt/workcell_ws \
+  --check-prereqs \
+  --dry-run
+```
+
+**CI runner (pre-provisioned image):**
+
+```bash
+./fix_and_build_humble.sh \
+  --workspace "$GITHUB_WORKSPACE" \
+  --check-prereqs \
+  --build \
+  --profile minimal \
+  --clean
 ```
 
 ### Rebuild only one package
@@ -557,11 +601,11 @@ done
 
 On Humble, test-only or overlay builds can expose a mismatch between the MoveIt-provided Ruckig headers and a newer source-built Ruckig library. Start from a clean shell, source only `/opt/ros/humble/setup.bash`, and rebuild the workspace before rerunning dynamic safety or grasp execution tests.
 
-If you need the full source-overlay workflow, prefer the repository helper so its preflight checks stay aligned with the pinned dependency set:
+If you need the full source-overlay workflow, prefer the repository helper so its preflight checks run before building:
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh --profile full --clean
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full --clean
 ```
 
 ### Clean shell / clean workspace recovery
@@ -632,7 +676,7 @@ sudo sed -i '/#include <boost\/serialization\/item_version_type.hpp>/a #include 
 - **Experimental:** Ubuntu 24.04 + ROS 2 Jazzy is not the main supported path for this repository.
 - `scripts/lib/build.sh` intentionally keeps `-DCMAKE_CXX_STANDARD=17` for the supported baseline.
 - `dependencies/emd_epd_ws.repos` (canonical manifest) pins `ruckig` to `v0.15.3` (`37b6e7a`) so source builds stay on the pre-`std::format` line that still works with the Humble/Jammy toolchain. The legacy root-level `tesseract.repos` is retained as a compatibility fallback in scripts.
-- `fix_and_build_humble.sh` reads that pinned revision during preflight so its guardrails match the documented baseline.
+- `fix_and_build_humble.sh` supports explicit `--check-prereqs`, `--install-prereqs`, and `--build` phases for deterministic workflows.
 - If you move to a newer `ruckig` release that requires `std::format`, you are also moving beyond the documented Humble/Jammy support envelope.
 
 ### Full-profile and helper-script notes
@@ -641,7 +685,7 @@ The repository helper remains the canonical bootstrap for full planning/developm
 
 ```bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
-./fix_and_build_humble.sh --profile full
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full
 ```
 
 Use it when you explicitly need the Tesseract/TrajOpt planning overlays from source, overlay-aware `rosdep` skip keys, or the repo's additional preflight checks.
@@ -651,7 +695,7 @@ Use it when you explicitly need the Tesseract/TrajOpt planning overlays from sou
 - `tesseract_qt` and Qt ADS are optional. The repository checkout is `qtadvanceddocking`, while colcon may discover the package as `QtADS`; use `--packages-skip tesseract_qt QtADS` (optionally also `qtadvanceddocking`) for manual skips.
 - The default install path stays headless/non-GUI, and `scripts/fix_workspace_layout.sh` keeps those packages ignored unless you opt in.
 - Use `scripts/fix_workspace_layout.sh --with-gui` for the manual GUI-enabled path.
-- Use `fix_and_build_humble.sh --profile full --with-gui` for the helper-script GUI-enabled path.
+- Use `fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full --with-gui` for the helper-script GUI-enabled path.
 - Install the extra Qt development packages before GUI builds.
 - If Studio builds fail on Qt ADS targets, use `scripts/apply_upstream_patches.sh` and rebuild.
 - If Qt ADS cannot find `qpa/qplatformnativeinterface.h`, install the Qt private-header development package that matches your distro Qt version.
