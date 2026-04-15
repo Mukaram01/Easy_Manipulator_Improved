@@ -45,4 +45,34 @@ bool validate_grasp_target_selection(
   return true;
 }
 
+bool resolve_end_effector_mapping(
+  const grasp_execution::WorkcellContext & workcell_context,
+  const std::string & ee_brand,
+  std::string & planning_group,
+  std::string & ee_link,
+  double & clearance)
+{
+  planning_group.clear();
+  ee_link.clear();
+  clearance = 0.0;
+
+  bool found_end_effector = false;
+  for (const auto & group : workcell_context.groups) {
+    for (const auto & ee : group.second.end_effectors) {
+      if (ee.second.brand == ee_brand) {
+        planning_group = group.first;
+        ee_link = ee.second.link;
+        clearance = ee.second.clearance;
+        found_end_effector = true;
+        break;
+      }
+    }
+    if (found_end_effector) {
+      break;
+    }
+  }
+
+  return found_end_effector && !planning_group.empty() && !ee_link.empty();
+}
+
 }  // namespace run_waypoint_execution

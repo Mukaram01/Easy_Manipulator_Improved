@@ -163,7 +163,7 @@ public:
     moveit::core::RobotStatePtr home_state(get_curr_state());
 
     // TODO(Briancbn): select grasp method based on end effector availability
-    double clearance;
+    double clearance = 0.0;
     std::string ee_link = "";
     std::string planning_group = "";
     const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
@@ -176,18 +176,16 @@ public:
 
     const std::string & ee_brand = grasp_method->ee_id;
 
-    // Select the group based on ee brand name
-    for (auto & group : get_workcell_context().groups) {
-      for (auto & ee : group.second.end_effectors) {
-        if (ee.second.brand == ee_brand) {
-          ee_link = ee.second.link;
-          clearance = ee.second.clearance;
-          planning_group = group.first;
-          break;
-        }
-      }
+    // Exit if brand name not found.
+    if (!run_waypoint_execution::resolve_end_effector_mapping(
+        get_workcell_context(), ee_brand, planning_group, ee_link, clearance))
+    {
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "Failed to map end effector brand '%s' for target '%s' to a planning group and ee link.",
+        ee_brand.c_str(), target_id.c_str());
+      return false;
     }
-
 
     this->options.world_frame = "world";
     this->options.planning_group = planning_group;
@@ -203,11 +201,6 @@ public:
     this->options.non_deterministic_max_attempts = node_->get_parameter(
       "planning_strategy.non_deterministic.max_planning_tries").as_int();
     this->options.clearance = clearance;
-
-    // Exit if brand name not found.
-    if (ee_link.empty()) {
-      RCLCPP_ERROR(node_->get_logger(), "End effector brand: %s", ee_brand.c_str());
-    }
 
     auto release_pose = get_curr_pose(ee_link);
 

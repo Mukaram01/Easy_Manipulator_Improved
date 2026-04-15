@@ -5,6 +5,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 
+#include "emd/grasp_execution/context.hpp"
 #include "emd_msgs/msg/grasp_method.hpp"
 #include "emd_msgs/msg/grasp_target.hpp"
 #include "run_waypoint_execution/target_validation.hpp"
@@ -82,6 +83,24 @@ TEST(TargetValidation, AcceptsValidFirstSelection)
   ASSERT_NE(grasp_method, nullptr);
   ASSERT_NE(grasp_pose, nullptr);
   EXPECT_EQ(grasp_method->ee_id, "test-ee");
+}
+
+TEST(TargetValidation, RejectsUnknownEndEffectorMapping)
+{
+  grasp_execution::WorkcellContext workcell_context;
+  workcell_context.load_ee(
+    "manipulator_a", "known_ee", "known-brand", "known_link", 0.01, "driver_plugin",
+    "driver_controller");
+
+  std::string planning_group = "stale_group";
+  std::string ee_link = "stale_link";
+  double clearance = 0.42;
+
+  EXPECT_FALSE(run_waypoint_execution::resolve_end_effector_mapping(
+      workcell_context, "unknown-ee-id", planning_group, ee_link, clearance));
+  EXPECT_TRUE(planning_group.empty());
+  EXPECT_TRUE(ee_link.empty());
+  EXPECT_DOUBLE_EQ(clearance, 0.0);
 }
 
 }  // namespace
