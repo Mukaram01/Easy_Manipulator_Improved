@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -58,6 +60,16 @@ public:
       "ee_wait_for_completion", false);
     int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
     ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
+
+    constexpr int kPostReleaseDelayDefaultMs = 500;
+    constexpr int kPostReleaseDelayMinMs = 0;
+    constexpr int kPostReleaseDelayMaxMs = 60 * 1000;
+    const int configured_post_release_delay_ms = node_->declare_parameter<int>(
+      "post_release_delay_ms", kPostReleaseDelayDefaultMs);
+    post_release_delay_ms_ = std::clamp(
+      configured_post_release_delay_ms,
+      kPostReleaseDelayMinMs,
+      kPostReleaseDelayMaxMs);
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
@@ -254,7 +266,7 @@ public:
     }
 
 
-    sleep(500000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(post_release_delay_ms_));
 
     // ------------------ Remove Object from world -------------------
 
@@ -304,6 +316,7 @@ private:
   grasp_execution::GraspExecutionContext options;
   std::shared_ptr<emd::EndEffectorExecutioninterface> end_effector_interface;
   emd::EndEffectorExecutionContext ee_context_;
+  int post_release_delay_ms_;
   rclcpp::Subscription<emd_msgs::msg::GraspTask>::SharedPtr grasp_task_sub_;
   rclcpp::Service<emd_msgs::srv::GraspRequest>::SharedPtr grasp_req_service_;
 };
