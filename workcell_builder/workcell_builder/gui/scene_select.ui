@@ -70,7 +70,7 @@
         <string>Generate a YAML configuration file for all scenes</string>
        </property>
        <property name="text">
-        <string>Generate yaml file for scenes</string>
+        <string>Generate YAML File for Scenes</string>
        </property>
       </widget>
      </item>
@@ -80,7 +80,17 @@
         <string>Generate ROS 2 package files from the YAML configuration</string>
        </property>
        <property name="text">
-        <string>Generate Files from yaml</string>
+        <string>Generate Files from YAML</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="clear_logs">
+       <property name="toolTip">
+        <string>Clear the message log</string>
+       </property>
+       <property name="text">
+        <string>Clear Messages</string>
        </property>
       </widget>
      </item>

@@ -285,6 +285,60 @@ SceneSelect::~SceneSelect()
 {
   delete ui;
 }
+
+void SceneSelect::append_message(MessageLevel level, const std::string & message)
+{
+  QString color;
+  QString prefix;
+  switch (level) {
+    case MessageLevel::Info:
+      color = "#1F4B99";
+      prefix = "[INFO]";
+      break;
+    case MessageLevel::Warning:
+      color = "#B45309";
+      prefix = "[WARNING]";
+      break;
+    case MessageLevel::Error:
+      color = "#B91C1C";
+      prefix = "[ERROR]";
+      break;
+    case MessageLevel::Success:
+      color = "#166534";
+      prefix = "[SUCCESS]";
+      break;
+  }
+
+  const QString escaped = QString::fromStdString(message).toHtmlEscaped();
+  ui->error_workcell->append(
+    QString("<span style='color:%1;'>%2 %3</span>").arg(color, prefix, escaped));
+}
+
+void SceneSelect::append_info(const std::string & message)
+{
+  append_message(MessageLevel::Info, message);
+}
+
+void SceneSelect::append_warning(const std::string & message)
+{
+  append_message(MessageLevel::Warning, message);
+}
+
+void SceneSelect::append_error(const std::string & message)
+{
+  append_message(MessageLevel::Error, message);
+}
+
+void SceneSelect::append_success(const std::string & message)
+{
+  append_message(MessageLevel::Success, message);
+}
+
+void SceneSelect::clear_messages()
+{
+  ui->error_workcell->clear();
+}
+
 void SceneSelect::configure_startup_fallback_paths()
 {
   if (!workcell_path.empty()) {
@@ -310,8 +364,8 @@ void SceneSelect::show_invalid_workcell_error(const std::string & error_message)
   ui->generate_files->setDisabled(true);
   ui->edit_scene->setDisabled(true);
   ui->delete_scene->setDisabled(true);
-  ui->error_workcell->setText(
-    QString::fromStdString("<font color='red'>" + error_message + "</font>"));
+  clear_messages();
+  append_error(error_message);
   ui->scene_list->blockSignals(oldState);
 }
 
@@ -374,9 +428,7 @@ void SceneSelect::generate_scene_package(
 void SceneSelect::generate_scene_files(Scene scene)
 {
   if (!validate_description_xacros(scene, "ERROR:")) {
-    ui->error_workcell->append(
-      "<font color='red'>ERROR: Scene file generation blocked due to missing description files."
-      "</font>");
+    append_error("Scene file generation blocked due to missing description files.");
     return;
   }
   // generate environment.urdf.xacro
@@ -395,8 +447,7 @@ void SceneSelect::generate_scene_files(Scene scene)
   fs::path srdf_path =
     workcell_path / "scenes" / scene.name / "urdf" / "arm_hand.srdf.xacro";
   if (!boost::filesystem::exists(srdf_path)) {
-    ui->error_workcell->append(
-      "<font color='red'>ERROR: Failed to generate urdf/arm_hand.srdf.xacro.</font>");
+    append_error("Failed to generate urdf/arm_hand.srdf.xacro.");
     return;
   }
   fs::path base_template_path = templates_path / ("ros" + std::to_string(workcell.ros_ver));
@@ -429,7 +480,6 @@ void SceneSelect::generate_scene_files(Scene scene)
 void SceneSelect::refresh_scenes(int latest_scene)
 {
   if (latest_scene < 0) {latest_scene = 0;}
-  ui->error_workcell->clear();
   bool oldState = ui->scene_list->blockSignals(true);
   ui->scene_list->clear();  // Clear the dropdown menu
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
@@ -449,7 +499,7 @@ void SceneSelect::refresh_scenes(int latest_scene)
     ui->generate_files->setDisabled(true);
     ui->edit_scene->setDisabled(true);
     ui->delete_scene->setDisabled(true);
-    ui->error_workcell->setText("<font color='red'> No scenes available. </font>");
+    append_warning("No scenes available. Add a scene to continue.");
   }
   ui->scene_list->blockSignals(oldState);
 }
@@ -463,8 +513,6 @@ void SceneSelect::on_delete_scene_clicked()
   replace_window.exec();
 
   if (replace_window.decision) {  // user allows for scene folder deletion
-    ui->error_workcell->clear();
-
     if (ui->scene_list->currentIndex() >= 0) {
       bool oldState = ui->scene_list->blockSignals(true);
       delete_folder(scenes_path, workcell.scene_vector[ui->scene_list->currentIndex()].name);
@@ -476,20 +524,19 @@ void SceneSelect::on_delete_scene_clicked()
       }
       ui->scene_list->blockSignals(oldState);
     } else {
-      ui->error_workcell->append("<font color='red'> No scene to delete! </font>");
+      append_error("No scene selected to delete.");
     }
   }
 }
 void SceneSelect::on_edit_scene_clicked()
 {
   configure_startup_fallback_paths();
-  ui->error_workcell->clear();
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
         // if scene.loaded is not true, generate scene from yaml
-        ui->error_workcell->append("<font color='red'> Could not load scene from YAML </font>");
+        append_error("Could not load scene from environment.yaml.");
         return;
       }
     }
@@ -523,22 +570,20 @@ void SceneSelect::on_edit_scene_clicked()
           generate_scene_files(scene_window.scene);
         }
         workcell.scene_vector[ui->scene_list->currentIndex()] = scene_window.scene;
-        ui->error_workcell->append(
-          "<font color='orange'> Warning: Scene has been edited. Previous yaml file removed."
-          " Click \" Generate YAML \" again to Generate YAML. </font>");
+        append_warning(
+          "Scene edits were applied. Regenerate environment.yaml to save the latest scene state.");
         refresh_scenes(ui->scene_list->currentIndex());
       }
     } else {
       refresh_scenes(ui->scene_list->currentIndex());
     }
   } else {
-    ui->error_workcell->append("<font color='red'> No scene to edit! </font>");
+    append_error("No scene selected to edit.");
   }
 }
 void SceneSelect::on_generate_yaml_clicked()
 {
   configure_startup_fallback_paths();
-  ui->error_workcell->clear();
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     const fs::path scene_yaml_path =
       scenes_path / workcell.scene_vector[ui->scene_list->currentIndex()].name;
@@ -546,14 +591,11 @@ void SceneSelect::on_generate_yaml_clicked()
     if (!target_scene.loaded) {  // No scene currently loaded
       if (check_yaml()) {    // If yaml file is in folder,
                              // it might get replaced by new scene configuration
-        ui->error_workcell->append(
-          "<font color='orange'> ERROR: No changes were made to existing scene, "
-          "so environment yaml remains the same </font>");
+        append_info("No unsaved scene edits detected; existing environment.yaml kept.");
         return;
       } else {   // No yaml in scene folder, no loaded scene from created
-        ui->error_workcell->append(
-          "<font color='red'> ERROR: No Existing YAML file found, "
-          "and no new scene generated. </font>");
+        append_error(
+          "No existing environment.yaml found and no unsaved scene edits are available to export.");
         return;
       }
     } else {
@@ -569,19 +611,17 @@ void SceneSelect::on_generate_yaml_clicked()
           GenerateYAML::generate_yaml(
             target_scene,
             scene_yaml_path.string(), scenes_path, assets_path);
-          ui->error_workcell->clear();
-          ui->error_workcell->append("<font color='green'> YAML Generated. </font>");
+          append_success("environment.yaml generated successfully.");
         }
       } else {   // currently no yaml file, add one to scene folder
         GenerateYAML::generate_yaml(
           target_scene, scene_yaml_path.string(), scenes_path,
           assets_path);
-        ui->error_workcell->clear();
-        ui->error_workcell->append("<font color='green'> YAML Generated. </font>");
+        append_success("environment.yaml generated successfully.");
       }
     }
   } else {
-    ui->error_workcell->append("<font color='red'> No scene to generate yaml file </font>");
+    append_error("No scene selected to generate environment.yaml.");
   }
   check_scene();
 }
@@ -598,33 +638,24 @@ bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use
 }
 bool SceneSelect::check_scene()
 {
-  ui->error_workcell->clear();
-
   bool has_yaml = check_yaml();
   bool files_loaded_proper = check_files();
   if (has_yaml) {
-    ui->error_workcell->append(
-      "<font color='green'>[Scene Status] "
-      "Environment YAML present </font>");
+    append_success("Scene status: environment.yaml found.");
   } else {
-    ui->error_workcell->append(
-      "<font color='orange'>[Scene Status] Environment YAML not present </font>");
+    append_warning("Scene status: environment.yaml not found. Save the scene to enable future edits.");
   }
 
   if (files_loaded_proper) {
-    ui->error_workcell->append(
-      "<font color='green'>[Scene Status] All files generated properly </font>");
+    append_success("Scene status: required files are present.");
   }
 
   if (has_yaml && files_loaded_proper) {
-    ui->error_workcell->append(
-      "<font color='green'>[Scene Status] Scene generation complete."
-      " You may exit this application </font>");
+    append_success("Scene generation complete. You may exit this application.");
   }
   if (!has_yaml && files_loaded_proper) {
-    ui->error_workcell->append(
-      "<font color='orange'>[Scene Status] Scene generation complete,"
-      " but without environment yaml you cannot edit this scene after exit. </font>");
+    append_warning(
+      "Scene files were generated, but without environment.yaml this scene cannot be edited after exit.");
   }
   ui->exit->setDisabled(false);
   return true;
@@ -634,8 +665,7 @@ bool SceneSelect::check_files()
   configure_startup_fallback_paths();
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) {
-    ui->error_workcell->append(
-      "<font color='red'>[Scene Status] ERROR: No scene selected </font>");
+    append_error("Scene status: no scene selected.");
     return false;
   }
   const fs::path launch_dir = scene_dir / "launch";
@@ -646,39 +676,31 @@ bool SceneSelect::check_files()
   if (!boost::filesystem::exists(launch_dir) || !boost::filesystem::exists(urdf_dir) ||
     !boost::filesystem::exists(cmake_file) || !boost::filesystem::exists(package_file))
   {
-    ui->error_workcell->append(
-      "<font color='red'>[Scene Status] ERROR: Files not generated properly </font>");
+    append_error("Scene status: required files are missing.");
 
     if (!boost::filesystem::exists(launch_dir)) {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: launch folder missing </font>");
+      append_error("Scene status: launch folder missing.");
     }
     if (!boost::filesystem::exists(urdf_dir)) {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: urdf folder missing </font>");
+      append_error("Scene status: urdf folder missing.");
     }
     if (!boost::filesystem::exists(cmake_file)) {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: CMakeLists.txt missing </font>");
+      append_error("Scene status: CMakeLists.txt missing.");
     }
     if (!boost::filesystem::exists(package_file)) {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: Package.xml missing </font>");
+      append_error("Scene status: package.xml missing.");
     }
     return false;
   } else {
     if (!boost::filesystem::exists(launch_dir / "demo.rviz") ||
       !boost::filesystem::exists(launch_dir / "demo.launch.py"))
     {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: Files not generated properly </font>");
+      append_error("Scene status: required launch files are missing.");
       if (!boost::filesystem::exists(launch_dir / "demo.rviz")) {
-        ui->error_workcell->append(
-          "<font color='red'>[Scene Status] ERROR: demo.rviz missing </font>");
+        append_error("Scene status: demo.rviz missing.");
       }
       if (!boost::filesystem::exists(launch_dir / "demo.launch.py")) {
-        ui->error_workcell->append(
-          "<font color='red'>[Scene Status] ERROR: demo.launch.py missing </font>");
+        append_error("Scene status: demo.launch.py missing.");
       }
       return false;
     }
@@ -686,15 +708,12 @@ bool SceneSelect::check_files()
     if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro") ||
       !boost::filesystem::exists(urdf_dir / "scene.urdf.xacro"))
     {
-      ui->error_workcell->append(
-        "<font color='red'>[Scene Status] ERROR: Files not generated properly </font>");
+      append_error("Scene status: required URDF files are missing.");
       if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
-        ui->error_workcell->append(
-          "<font color='red'>[Scene Status] ERROR: arm_hand.srdf.xacro missing </font>");
+        append_error("Scene status: arm_hand.srdf.xacro missing.");
       }
       if (!boost::filesystem::exists(urdf_dir / "scene.urdf.xacro")) {
-        ui->error_workcell->append(
-          "<font color='red'>[Scene Status] ERROR: scene.urdf.xacro missing </font>");
+        append_error("Scene status: scene.urdf.xacro missing.");
       }
       return false;
     }
@@ -703,8 +722,7 @@ bool SceneSelect::check_files()
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
-        ui->error_workcell->append(
-          "<font color='red'>[Scene Status] ERROR: Unable to load scene metadata</font>");
+        append_error("Scene status: unable to load scene metadata from environment.yaml.");
         return false;
       }
     }
@@ -717,18 +735,16 @@ bool SceneSelect::check_files()
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
   (void)index;
-  ui->error_workcell->clear();
   check_scene();
 }
 void SceneSelect::on_generate_files_clicked()
 {
   configure_startup_fallback_paths();
-  ui->error_workcell->clear();
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
-        ui->error_workcell->append("<font color='red'> Could not load scene from YAML </font>");
+        append_error("Could not load scene from environment.yaml.");
         return;
       }
     }
@@ -743,7 +759,7 @@ void SceneSelect::on_generate_files_clicked()
     }
     generate_scene_files(curr_scene);
   } else {
-    ui->error_workcell->append("<font color='red'> No scene to generate files from </font>");
+    append_error("No scene selected to generate files from.");
   }
   check_scene();
 }
@@ -764,9 +780,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     //    if (f.is_open())
     //        std::cout << f.rdbuf() << std::endl;
   } catch (YAML::BadFile & error) {
-    ui->error_workcell->append(
-      "<font color='red'> Something went wrong with the yaml file."
-      " Please Generate it again </font>");
+    append_error("Failed to read environment.yaml. Regenerate the file and try again.");
     return false;
   }
   YAML::Node objects;
@@ -809,8 +823,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
       Object temp_object;
       temp_object.name = objects_it->first.as<std::string>();
       if (object_names.find(temp_object.name) != object_names.end()) {
-        ui->error_workcell->append(
-          "<font color='red'> Error: Duplicate object name detected in YAML.</font>");
+        append_error("Duplicate object name detected in environment.yaml.");
         return false;
       }
       object_names.insert(temp_object.name);
@@ -856,12 +869,9 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
             }
           }
           if (!found_child_link) {
-            ui->error_workcell->append(
-              "<font color='orange'>Warning: child_link '" +
-              QString::fromStdString(child_link) +
-              "' not found in object '" +
-              QString::fromStdString(temp_object.name) +
-              "'. child_link_pos left unset.</font>");
+            append_warning(
+              "child_link '" + child_link + "' not found in object '" +
+              temp_object.name + "'; child_link_pos left unset.");
           }
         }
       }
@@ -892,10 +902,8 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
               }
             }
             if (!found_parent_obj) {
-              ui->error_workcell->append(
-                "<font color='orange'>Warning: parent object '" +
-                QString::fromStdString(parent_object) +
-                "' not found. Defaulting to world.</font>");
+              append_warning(
+                "parent object '" + parent_object + "' not found; defaulting to world.");
               input_scene->object_vector[counter].ext_joint.parent_obj_pos = -1;
             }
           }
@@ -923,10 +931,9 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
             }
             if (!found_parent_link) {
               input_scene->object_vector[counter].ext_joint.parent_link_pos = -1;
-              ui->error_workcell->append(
-                "<font color='orange'>Warning: parent link '" +
-                QString::fromStdString(parent_link) +
-                "' not found in parent object. parent_link_pos left unset.</font>");
+              append_warning(
+                "parent link '" + parent_link +
+                "' not found in parent object; parent_link_pos left unset.");
             }
           }
         }
@@ -970,8 +977,7 @@ bool SceneSelect::validate_description_xacros(
   bool ok = true;
   const std::string prefix = context_label.empty() ? "" : context_label + " ";
   auto report_error = [&](const std::string & message) {
-      ui->error_workcell->append(
-        QString::fromStdString("<font color='red'>" + prefix + message + "</font>"));
+      append_error(prefix + message);
     };
   auto check_xacro = [&](const std::string & package_name,
       const std::vector<std::string> & filenames,
@@ -1166,4 +1172,10 @@ void SceneSelect::keyPressEvent(QKeyEvent * e)
 void SceneSelect::on_exit_clicked()
 {
   QApplication::quit();
+}
+
+void SceneSelect::on_clear_logs_clicked()
+{
+  clear_messages();
+  append_info("Message log cleared.");
 }
