@@ -13,11 +13,11 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <stdexcept>
@@ -121,13 +121,43 @@ MoveitReplannerContext::MoveitReplannerContext(
 
   std::string planner_name = to_all_lower(option.planner);
   std::string plugin_name("");
+  static constexpr std::array<const char *, 1> kSupportedPlanners = {"ompl"};
   if (planner_name == "ompl") {
     plugin_name = "ompl_interface/OMPLPlanner";
     planning_request_.planner_id = option.ompl_planner_id;
   }
   // TODO(anyone): Add in other planning methods.
 
-  planning_manager_ = planner_plugin_loader->createUniqueInstance(plugin_name);
+  if (plugin_name.empty()) {
+    std::string supported_planners;
+    for (size_t i = 0; i < kSupportedPlanners.size(); ++i) {
+      supported_planners += kSupportedPlanners[i];
+      if (i + 1 < kSupportedPlanners.size()) {
+        supported_planners += ", ";
+      }
+    }
+    const std::string error =
+      "Unsupported MoveIt planner '" + option.planner +
+      "'. Supported values: [" + supported_planners + "].";
+    RCLCPP_ERROR(LOGGER, "%s", error.c_str());
+    throw std::invalid_argument(error);
+  }
+
+  try {
+    planning_manager_ = planner_plugin_loader->createUniqueInstance(plugin_name);
+  } catch (const pluginlib::PluginlibException & e) {
+    const std::string error =
+      "Failed to create MoveIt planner plugin '" + plugin_name +
+      "' for planner option '" + option.planner + "': " + e.what();
+    RCLCPP_ERROR(LOGGER, "%s", error.c_str());
+    throw std::runtime_error(error);
+  } catch (const std::exception & e) {
+    const std::string error =
+      "Unexpected error while creating MoveIt planner plugin '" + plugin_name +
+      "': " + e.what();
+    RCLCPP_ERROR(LOGGER, "%s", error.c_str());
+    throw std::runtime_error(error);
+  }
 
   // new node for planning config parameter loading
   auto planner_config_loader_node = std::make_shared<rclcpp::Node>(
@@ -217,11 +247,24 @@ MoveitReplannerContext::MoveitReplannerContext(
     declare_and_set_planner_parameters(f.get());
   }
 
-  if (!planning_manager_->initialize(
-      scene_->getRobotModel(),
-      planner_config_loader_node, option.planner_parameter_namespace))
-  {
-    throw std::runtime_error("Unable to initialize planning plugin");
+  try {
+    if (!planning_manager_->initialize(
+        scene_->getRobotModel(),
+        planner_config_loader_node, option.planner_parameter_namespace))
+    {
+      const std::string error =
+        "Unable to initialize planning plugin '" + plugin_name +
+        "' using parameter namespace '" + option.planner_parameter_namespace + "'.";
+      RCLCPP_ERROR(LOGGER, "%s", error.c_str());
+      throw std::runtime_error(error);
+    }
+  } catch (const std::exception & e) {
+    const std::string error =
+      "Exception while initializing planning plugin '" + plugin_name +
+      "' with namespace '" + option.planner_parameter_namespace +
+      "': " + e.what();
+    RCLCPP_ERROR(LOGGER, "%s", error.c_str());
+    throw std::runtime_error(error);
   }
 
   planning_request_.group_name = option.group;
