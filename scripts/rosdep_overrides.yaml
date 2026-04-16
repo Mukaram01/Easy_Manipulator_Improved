@@ -3,7 +3,8 @@
 # Note: the full Humble bootstrap profile intentionally skips several planning/
 # Qt rosdep keys when their provider is an imported source overlay. That skip
 # list includes source-only Humble workflow keys such as `tesseract_visualization`,
-# `qt_advanced_docking`, and the TrajOpt/Tesseract planning stack, so the
+# `tesseract_support`, `tesseract_examples`, `qt_advanced_docking`, and the
+# TrajOpt/Tesseract planning stack, so the
 # overrides below focus on keys that should still resolve to OS/ROS packages.
 cereal:
   ubuntu: [libcereal-dev]
@@ -146,6 +147,18 @@ tesseract_task_composer:
   ubuntu:
     jammy: [ros-humble-tesseract-task-composer]
     noble: [ros-jazzy-tesseract-task-composer]
+
+# Source-overlay-only keys on Humble/Jammy. Keep these explicit no-op mappings
+# so `rosdep install --from-paths src --ignore-src` does not fail when the
+# corresponding packages are expected to come from the imported workspace.
+tesseract_visualization:
+  ubuntu: []
+
+tesseract_support:
+  ubuntu: []
+
+tesseract_examples:
+  ubuntu: []
 
 
 gz-common5:

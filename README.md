@@ -130,7 +130,7 @@ test -L src/workbench_description -o -d src/workbench_description
 
 ```bash
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization tesseract_support tesseract_examples trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 ```
 
 For scripted workflows, `./scripts/fix_and_build.sh` now runs the same preflight automatically before its rosdep phase and appends fallback skip-keys (for example `qt_advanced_docking`, `tesseract_visualization`) when binary packages are unavailable.
@@ -181,7 +181,7 @@ mkdir -p src/tesseract_qt src/qtadvanceddocking src/ruckig
 touch src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE src/ruckig/COLCON_IGNORE
 
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "tesseract_visualization taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "tesseract_visualization tesseract_support tesseract_examples taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 
 colcon build --symlink-install --parallel-workers 2 \
   --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
@@ -633,7 +633,7 @@ cd ~/workcell_ws
 rm -rf build install log
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization tesseract_support tesseract_examples trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 colcon build --parallel-workers 2
 ```
 

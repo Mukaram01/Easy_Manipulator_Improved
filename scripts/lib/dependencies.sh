@@ -196,6 +196,9 @@ install_rosdeps() {
         tesseract_motion_planners_simple
         tesseract_process_planners
         tesseract_task_composer
+        tesseract_visualization
+        tesseract_support
+        tesseract_examples
         trajopt_ifopt
         trajopt_sco
         trajopt_sqp
