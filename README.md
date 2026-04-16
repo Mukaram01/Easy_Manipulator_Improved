@@ -405,14 +405,33 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 
 `fix_workspace_layout.sh` creates `COLCON_IGNORE` markers for `src/tesseract_qt` and `src/qtadvanceddocking` unless you explicitly opt into GUI support. If you prefer to manage that manually, either leave those markers in place or pass `--packages-skip tesseract_qt QtADS` to `colcon build` (optionally also adding `qtadvanceddocking` as a compatibility fallback for folder-based troubleshooting notes). To opt into the GUI-enabled path instead, use `./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui` for the manual flow or `./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full --with-gui` for the helper-script flow.
 
-For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout:
+For an explicit GUI-enabled manual build, remove those markers by opting into GUI mode when syncing the workspace layout. Build in stages so `tesseract_commonConfig.cmake` is exported before `tesseract_qt` configures:
 
 ```bash
 cd ~/workcell_ws
 vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui
-colcon build --symlink-install --parallel-workers 2
+
+# 1) Build/install the core package set that exports tesseract_commonConfig.cmake
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-skip tesseract_qt QtADS qtadvanceddocking tesseract_rviz tesseract_planning_server
+
+# 2) Refresh the overlay environment from the staged install
+source install/setup.bash
+
+# 3) Build tesseract_qt and remaining downstream GUI packages
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-up-to tesseract_qt tesseract_rviz tesseract_planning_server
 ```
+
+Before step (3), verify `tesseract_qt` metadata declares a dependency on the package that exports `tesseract_common` so colcon ordering is deterministic:
+
+```bash
+grep -nE "<(depend|build_depend|exec_depend)>tesseract_common</(depend|build_depend|exec_depend)>" \
+  ~/workcell_ws/src/tesseract_qt/package.xml
+```
+
+If that check is empty, run `./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh` from the workspace root to apply compatibility updates and inject the dependency declaration.
 
 If you use the helper script instead, the equivalent GUI-enabled path is:
 
@@ -588,12 +607,16 @@ If `trajoptConfig.cmake` is still missing, verify `src/trajopt`, `src/trajopt_co
 
 ### Optional GUI package issues
 
-If `tesseract_qt` fails to link because the ADS target name differs on your system, apply the included patch and rebuild:
+If `tesseract_qt` fails to link because the ADS target name differs on your system, apply the included patch, verify metadata, and rebuild in stages:
 
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-skip tesseract_qt QtADS qtadvanceddocking tesseract_rviz tesseract_planning_server
+source install/setup.bash
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-up-to tesseract_qt tesseract_rviz tesseract_planning_server
 ```
 
 Qt ADS (`qtadvanceddocking`) may also require Qt private headers on some systems. If the build cannot find `qpa/qplatformnativeinterface.h`, install the distro package that provides the Qt private development headers for your Qt version before rebuilding.
