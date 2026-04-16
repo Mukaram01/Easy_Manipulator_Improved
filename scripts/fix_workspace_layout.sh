@@ -314,6 +314,28 @@ set_gui_package_state() {
   fi
 }
 
+ensure_repo_asset_tree_ignored() {
+  local assets_root="$REPO_DIR/assets"
+  local marker
+
+  # When this repository is checked out under workspace/src, rosdep/colcon
+  # traversing from src can see packages twice:
+  #   1) under easy_manipulation_deployment/assets/*
+  #   2) as symlinks exposed directly in src/*
+  # Mark the in-repo assets tree as ignored so tooling only discovers the
+  # exposed src/* entries.
+  if [[ ! -d "$assets_root" ]]; then
+    return
+  fi
+
+  for marker in COLCON_IGNORE AMENT_IGNORE; do
+    if [[ ! -e "$assets_root/$marker" ]]; then
+      echo "Hiding in-repo assets tree from package discovery via $assets_root/$marker"
+      touch "$assets_root/$marker"
+    fi
+  done
+}
+
 for duplicate in \
   "$SRC_DIR/trajopt" \
   "$SRC_DIR/trajopt/trajopt" \
@@ -326,6 +348,7 @@ done
 
 expose_repo_packages
 set_gui_package_state
+ensure_repo_asset_tree_ignored
 
 summarize_exposed_repo_packages() {
   local total_assets=0

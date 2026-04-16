@@ -211,10 +211,13 @@ build_phase() {
   local ros_setup="/opt/ros/humble/setup.bash"
   local build_cmd
 
+  # Some ROS setup scripts reference AMENT_TRACE_SETUP_FILES directly, which can
+  # trip "unbound variable" failures when this script runs with `set -u`.
+  # Temporarily relax nounset while sourcing ROS and provide a default.
   if [[ "$PROFILE" == "full" && $WITH_GUI -eq 0 ]]; then
-    build_cmd="source '$ros_setup' && colcon build --symlink-install --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz"
+    build_cmd="set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u; colcon build --symlink-install --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz"
   else
-    build_cmd="source '$ros_setup' && colcon build --symlink-install"
+    build_cmd="set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u; colcon build --symlink-install"
   fi
 
   run_cmd "$build_cmd"
