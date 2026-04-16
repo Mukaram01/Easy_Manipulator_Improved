@@ -117,16 +117,25 @@ rosdep resolve cereal
 test -L src/workbench_description -o -d src/workbench_description
 ```
 
-7. Install package dependencies from the workspace source tree.
+7. Run an APT preflight check before `rosdep` so you know whether binary Tesseract/QtADS providers are available.
+
+```bash
+./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble
+```
+
+- If the check passes, `apt-cache policy` can discover `ros-humble-tesseract-*` packages and QtADS-related providers.
+- If the check reports missing packages, use the supported source-overlay fallback route (already included by `vcs import` from `dependencies/emd_epd_ws.repos`), and let the helper script inject additional rosdep `--skip-keys` automatically.
+
+8. Install package dependencies from the workspace source tree.
 
 ```bash
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
   --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization tesseract_support tesseract_examples trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 ```
 
-`tesseract_visualization`, `tesseract_support`, and `tesseract_examples` are intentionally treated as source-overlay dependencies in the Humble flow. Keep them in the default `--skip-keys` list unless you explicitly provide equivalent binary packages in your underlay.
+For scripted workflows, `./scripts/fix_and_build.sh` now runs the same preflight automatically before its rosdep phase and appends fallback skip-keys (for example `qt_advanced_docking`, `tesseract_visualization`) when binary packages are unavailable.
 
-8. Build and source the workspace. The layout helper is a required pre-build step for source checkouts because it exposes hidden asset packages from `assets/` into `src/`.
+9. Build and source the workspace. The layout helper is a required pre-build step for source checkouts because it exposes hidden asset packages from `assets/` into `src/`.
 
 ```bash
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
@@ -153,6 +162,9 @@ source /opt/ros/humble/setup.bash
 echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
   sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
 rosdep update
+
+# Optional preflight visibility check (same logic used by scripted builds)
+./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble
 
 # Expose repo asset packages manually (equivalent to layout helper behavior).
 # IMPORTANT: create links in src/ to actual package directories that contain package.xml.

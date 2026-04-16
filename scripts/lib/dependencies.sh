@@ -207,6 +207,34 @@ install_rosdeps() {
         jsoncpp
         message_generation
     )
+
+    local preflight_helper="$REPO_ROOT/scripts/preflight_tesseract_apt.sh"
+    if [[ -x "$preflight_helper" ]]; then
+        local fallback_skip_csv=""
+        local preflight_status=0
+        if fallback_skip_csv="$(ROS_DISTRO="$ROS_DISTRO" "$preflight_helper" --print-rosdep-skip-keys)"; then
+            log_info "APT preflight found binary ROS Tesseract + QtADS providers"
+        else
+            preflight_status=$?
+            if [[ $preflight_status -eq 2 ]]; then
+                log_warn "APT preflight selected source-overlay fallback path for Tesseract/QtADS"
+            else
+                die "APT preflight check failed unexpectedly (exit=$preflight_status)"
+            fi
+        fi
+
+        if [[ -n "$fallback_skip_csv" ]]; then
+            IFS=',' read -r -a fallback_skip_keys <<<"$fallback_skip_csv"
+            local key
+            for key in "${fallback_skip_keys[@]}"; do
+                [[ -n "$key" ]] || continue
+                skip_keys+=("$key")
+            done
+        fi
+    else
+        log_warn "APT preflight helper missing or not executable: $preflight_helper"
+    fi
+
     local skip_arg
     skip_arg=$(IFS=,; echo "${skip_keys[*]}")
 
