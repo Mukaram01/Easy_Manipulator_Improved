@@ -29,7 +29,7 @@ namespace
 
 TEST(MoveitObjectPoseUtilsTest, ReturnsDefaultPoseWhenObjectHasNoShapePoses)
 {
-  auto object = std::make_shared<collision_detection::World::Object>();
+  auto object = std::make_shared<collision_detection::World::Object>("object_without_pose");
 
   EXPECT_TRUE(object->shape_poses_.empty());
 
@@ -47,7 +47,7 @@ TEST(MoveitObjectPoseUtilsTest, ReturnsDefaultPoseWhenObjectHasNoShapePoses)
 
 TEST(MoveitObjectPoseUtilsTest, ConvertsFirstShapePoseWhenAvailable)
 {
-  auto object = std::make_shared<collision_detection::World::Object>();
+  auto object = std::make_shared<collision_detection::World::Object>("object_with_pose");
   Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
   transform.translation().x() = 0.1;
   transform.translation().y() = -0.2;
