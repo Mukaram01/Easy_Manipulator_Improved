@@ -30,7 +30,24 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 ## Quick start (recommended path)
 
-If you want the shortest known-good flow on Ubuntu 22.04 + ROS 2 Humble:
+If you want the shortest known-good flow on Ubuntu 22.04 + ROS 2 Humble, use the helper script:
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+cd easy_manipulation_deployment
+./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full
+```
+
+Then verify:
+
+```bash
+ros2 pkg prefix emd_msgs
+./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
+```
+
+If you prefer the explicit manual flow (same intent, no helper wrapper), this is the minimal supported sequence:
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -39,25 +56,14 @@ git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipu
 mv easy_manipulation_deployment/assets/ .
 mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
-
-# One-time rosdep override registration
-echo "yaml file://$HOME/workcell_ws/src/easy_manipulation_deployment/scripts/rosdep_overrides.yaml" | \
-  sudo tee /etc/ros/rosdep/sources.list.d/10-easy-manipulator-overrides.list >/dev/null
-
-# Repeat before each build in source-checkout workflows
+source /opt/ros/humble/setup.bash
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-
-# Build
+rosdep install --from-paths src --ignore-src -r -y --rosdistro "${ROS_DISTRO}"
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 colcon build --parallel-workers 2
 source install/setup.bash
-```
-
-Then verify:
-
-```bash
-ros2 pkg prefix emd_msgs
-./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 ```
 
 ---
