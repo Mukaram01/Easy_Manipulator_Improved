@@ -106,12 +106,21 @@ jobs:
       - name: Install dependencies
         working-directory: ws
         run: |
+          ./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
+          ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
           rosdep update
-          rosdep install --from-paths src --ignore-src -yr --rosdistro humble
+          rosdep install --from-paths src --ignore-src -yr --rosdistro humble \
+            --skip-keys "qt_advanced_docking tesseract_visualization"
+
+      - name: Reproducibility guard (workspace discovery)
+        working-directory: ws
+        run: ./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
 
       - name: Build
         working-directory: ws
-        run: colcon build --symlink-install
+        run: |
+          colcon build --symlink-install \
+            --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 
       - name: Test
         working-directory: ws
