@@ -44,6 +44,12 @@ verify_workspace_packages() {
     if ! colcon list --base-paths "$SRC_DIR" >/dev/null; then
         log_warn "colcon list failed (possibly due to cyclic dependencies); continuing"
     fi
+
+    if colcon list --base-paths "$SRC_DIR" --names-only 2>/dev/null | grep -E '^tesseract_motion_planners($|_)' >/dev/null; then
+        log_info "Verified tesseract motion planner source packages are present in workspace"
+    else
+        log_warn "No tesseract_motion_planners* packages discovered in workspace package list"
+    fi
 }
 
 install_system_packages() {
@@ -186,26 +192,8 @@ install_rosdeps() {
 
 
     local skip_keys=(
-        rviz
-        roslib
-        taskflow
-        tesseract
-        tesseract_environment
-        tesseract_motion_planners
-        tesseract_motion_planners_core
-        tesseract_motion_planners_simple
-        tesseract_process_planners
-        tesseract_task_composer
         tesseract_visualization
-        tesseract_support
-        tesseract_examples
-        trajopt_ifopt
-        trajopt_sco
-        trajopt_sqp
-        trajopt
-        osqp-eigen
-        jsoncpp
-        message_generation
+        qt_advanced_docking
     )
 
     local preflight_helper="$REPO_ROOT/scripts/preflight_tesseract_apt.sh"
