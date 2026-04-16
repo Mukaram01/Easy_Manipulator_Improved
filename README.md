@@ -177,8 +177,8 @@ ln -sfn easy_manipulation_deployment/assets/end_effectors/single_suction_gripper
 ln -sfn easy_manipulation_deployment/assets/end_effectors/single_suction_gripper/single_suction_description src/single_suction_description
 
 # Optional GUI packages are disabled in this simple/headless path
-mkdir -p src/tesseract_qt src/qtadvanceddocking src/ruckig
-touch src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE src/ruckig/COLCON_IGNORE
+mkdir -p src/tesseract_qt src/qtadvanceddocking
+touch src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE
 
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
   --skip-keys "tesseract_visualization tesseract_support tesseract_examples taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
