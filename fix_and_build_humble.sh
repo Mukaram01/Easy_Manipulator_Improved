@@ -25,7 +25,7 @@ Usage: ./fix_and_build_humble.sh [options]
 Phase options (choose one or more):
   --check-prereqs            Read-only checks. Verifies tooling and ROS prerequisites.
   --install-prereqs          Mutating phase. Installs missing apt/pip prerequisites.
-  --build                    Build phase only. Runs colcon build in the workspace.
+  --build                    Bootstrap + build phase in the workspace.
 
 General options:
   --workspace <path>         Workspace root (default: current working directory)
@@ -209,18 +209,36 @@ build_phase() {
   fi
 
   local ros_setup="/opt/ros/humble/setup.bash"
-  local build_cmd
+  local skip_keys="qt_advanced_docking,tesseract_visualization"
+  local build_skip="tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server"
 
-  # Some ROS setup scripts reference AMENT_TRACE_SETUP_FILES directly, which can
-  # trip "unbound variable" failures when this script runs with `set -u`.
-  # Temporarily relax nounset while sourcing ROS and provide a default.
-  if [[ "$PROFILE" == "full" && $WITH_GUI -eq 0 ]]; then
-    build_cmd="set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u; colcon build --symlink-install --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz"
-  else
-    build_cmd="set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u; colcon build --symlink-install"
+  run_cmd "unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH"
+  run_cmd "set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u"
+  run_cmd "vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos"
+  append_unique REPOS_IMPORTED "dependencies/emd_epd_ws.repos"
+
+  run_cmd "./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh"
+  run_cmd "./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh"
+  run_cmd "./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble || true"
+
+  local fallback_keys=""
+  if fallback_keys=$(./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble --print-rosdep-skip-keys 2>/dev/null); then
+    true
+  fi
+  if [[ -n "$fallback_keys" ]]; then
+    skip_keys+=",$fallback_keys"
   fi
 
-  run_cmd "$build_cmd"
+  run_cmd "rosdep install --from-paths src --ignore-src -r -y --rosdistro humble --skip-keys '$skip_keys'"
+  run_cmd "eval \"\$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)\""
+  run_cmd "./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh"
+
+  if [[ "$PROFILE" == "full" && $WITH_GUI -eq 1 ]]; then
+    run_cmd "colcon build --symlink-install --parallel-workers 2"
+  else
+    run_cmd "colcon build --symlink-install --parallel-workers 2 --packages-skip $build_skip"
+  fi
+
   append_unique FILES_TOUCHED "$WORKSPACE/build"
   append_unique FILES_TOUCHED "$WORKSPACE/install"
   append_unique FILES_TOUCHED "$WORKSPACE/log"

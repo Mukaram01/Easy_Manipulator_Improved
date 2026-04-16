@@ -2,13 +2,15 @@ repositories:
   tesseract:
     type: git
     url: https://github.com/tesseract-robotics/tesseract.git
+    version: a3984dc75f4e492682f1fd7107e355f1776daf35
   tesseract_ros2:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_ros2.git
-    version: 0.33.0
+    version: 3c1a583725cb37a8bcfafb0103766f4b66ccd5fb
   tesseract_planning:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_planning.git
+    version: 54a4737a371d0ff1f28522b1b9e2f99c34e211c5
   tesseract_qt:
     type: git
     url: https://github.com/tesseract-robotics/tesseract_qt.git
@@ -16,9 +18,11 @@ repositories:
   trajopt:
     type: git
     url: https://github.com/tesseract-robotics/trajopt.git
+    version: 884e6177c4a220fc20a0c43100a0473c180a3bec
   taskflow:
     type: git
     url: https://github.com/taskflow/taskflow.git
+    version: 97aa6eaca3605e16c254eb766e9425d013b05423
   octomap:
     type: git
     url: https://github.com/OctoMap/octomap.git
@@ -31,13 +35,14 @@ repositories:
   ifopt:
     type: git
     url: https://github.com/ethz-adrl/ifopt.git
+    version: 4d6267bfefbaaa97e079c9aa163ebd477fce064d
   descartes_light:
     type: git
     url: https://github.com/swri-robotics/descartes_light.git
   boost_plugin_loader:
     type: git
     url: https://github.com/tesseract-robotics/boost_plugin_loader.git
-    version: 0.4.3
+    version: 742e0de95e6520baa2c3fe208e5040531b4d497e
   opw_kinematics:
     type: git
     url: https://github.com/Jmeyer1292/opw_kinematics.git
@@ -47,4 +52,4 @@ repositories:
   ruckig:
     type: git
     url: https://github.com/pantor/ruckig.git
-    version: 37b6e7a
+    version: 6f73b03f4e155cf931263709eabe6add6afab618

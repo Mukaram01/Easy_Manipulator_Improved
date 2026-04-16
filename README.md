@@ -28,6 +28,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - **Supported/tested:** Ubuntu 22.04 + ROS 2 Humble
 - Other platforms and experimental combinations are listed later in [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
 
+> Reproducibility expectation: run bootstrap/build from a clean shell that only sources `/opt/ros/humble/setup.bash`. Do not rely on pre-sourced overlays from other workspaces.
+
 ## Quick start (recommended path)
 
 If you want the shortest known-good flow on Ubuntu 22.04 + ROS 2 Humble, use the helper script:
@@ -47,22 +49,25 @@ ros2 pkg prefix emd_msgs
 ./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh
 ```
 
-If you prefer the explicit manual flow (same intent, no helper wrapper), this is the minimal supported sequence:
+If you prefer an explicit manual flow, use this **canonical clean-room sequence** (same behavior as the helper script):
 
 ```bash
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
 source /opt/ros/humble/setup.bash
 vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-rosdep install --from-paths src --ignore-src -r -y --rosdistro "${ROS_DISTRO}"
+./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble || true
+rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
+  --skip-keys "qt_advanced_docking tesseract_visualization"
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
-colcon build --parallel-workers 2
+./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
+colcon build --symlink-install --parallel-workers 2 \
+  --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
 
@@ -96,8 +101,6 @@ rosdep update
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
 ```
 
 4. Import the source dependencies.
@@ -147,7 +150,7 @@ For scripted workflows, `./scripts/fix_and_build.sh` now runs the same preflight
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
-colcon build --parallel-workers 2
+colcon build --symlink-install --parallel-workers 2 --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
 
@@ -159,8 +162,6 @@ If you prefer not to use `fix_workspace_layout.sh` or other repository helper sc
 mkdir -p ~/workcell_ws/src
 cd ~/workcell_ws/src
 git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
-mv easy_manipulation_deployment/assets/ .
-mv easy_manipulation_deployment/scenes/ .
 cd ~/workcell_ws
 vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
