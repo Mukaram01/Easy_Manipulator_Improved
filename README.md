@@ -121,8 +121,10 @@ test -L src/workbench_description -o -d src/workbench_description
 
 ```bash
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization tesseract_support tesseract_examples trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 ```
+
+`tesseract_visualization`, `tesseract_support`, and `tesseract_examples` are intentionally treated as source-overlay dependencies in the Humble flow. Keep them in the default `--skip-keys` list unless you explicitly provide equivalent binary packages in your underlay.
 
 8. Build and source the workspace. The layout helper is a required pre-build step for source checkouts because it exposes hidden asset packages from `assets/` into `src/`.
 
@@ -167,7 +169,7 @@ mkdir -p src/tesseract_qt src/qtadvanceddocking src/ruckig
 touch src/tesseract_qt/COLCON_IGNORE src/qtadvanceddocking/COLCON_IGNORE src/ruckig/COLCON_IGNORE
 
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "tesseract_visualization taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "tesseract_visualization tesseract_support tesseract_examples taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 
 colcon build --symlink-install --parallel-workers 2 \
   --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
@@ -619,7 +621,7 @@ cd ~/workcell_ws
 rm -rf build install log
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
-  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
+  --skip-keys "taskflow osqp-eigen tesseract_environment tesseract_motion_planners tesseract_motion_planners_core tesseract_motion_planners_simple tesseract_task_composer tesseract_visualization tesseract_support tesseract_examples trajopt trajopt_ifopt trajopt_sco trajopt_sqp"
 colcon build --parallel-workers 2
 ```
 
