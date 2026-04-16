@@ -48,6 +48,54 @@ if [[ ! -d "${TESSERACT_QT_DIR}" ]]; then
   exit 1
 fi
 
+resolve_tesseract_qt_package_xml() {
+  local candidates=(
+    "${TESSERACT_QT_DIR}/package.xml"
+    "${TESSERACT_QT_DIR}/tesseract_qt/package.xml"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "${candidate}" ]]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ensure_tesseract_common_manifest_dependency() {
+  local package_xml="$1"
+  if grep -Eq "<(build_depend|buildtool_depend|exec_depend|depend)>[[:space:]]*tesseract_common[[:space:]]*</(build_depend|buildtool_depend|exec_depend|depend)>" "${package_xml}"; then
+    echo "INFO: ${package_xml} already declares a dependency on tesseract_common."
+    return 0
+  fi
+
+  python3 - "${package_xml}" <<'PY'
+import sys
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+package_xml = Path(sys.argv[1])
+tree = ET.parse(package_xml)
+root = tree.getroot()
+
+depend = ET.Element("depend")
+depend.text = "tesseract_common"
+
+insert_idx = len(root)
+for idx, child in enumerate(list(root)):
+    if child.tag == "export":
+        insert_idx = idx
+        break
+
+root.insert(insert_idx, depend)
+ET.indent(tree, space="  ")
+tree.write(package_xml, encoding="utf-8", xml_declaration=True)
+PY
+
+  echo "SUCCESS: Added '<depend>tesseract_common</depend>' to ${package_xml}."
+}
+
 echo "Workspace root: ${WORKSPACE_ROOT}"
 echo "Applying patch: ${PATCH_FILE}"
 
@@ -60,4 +108,11 @@ else
   echo "ERROR: Patch could not be applied cleanly." >&2
   echo "Inspect local changes in ${TESSERACT_QT_DIR} and apply manually if required." >&2
   exit 1
+fi
+
+PACKAGE_XML="$(resolve_tesseract_qt_package_xml || true)"
+if [[ -z "${PACKAGE_XML}" ]]; then
+  echo "WARNING: Could not find tesseract_qt package.xml to verify tesseract_common dependency." >&2
+else
+  ensure_tesseract_common_manifest_dependency "${PACKAGE_XML}"
 fi
