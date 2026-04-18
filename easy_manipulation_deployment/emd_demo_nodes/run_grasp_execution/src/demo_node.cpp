@@ -555,14 +555,15 @@ public:
   {
     // Create a standard rclcpp::Node to interface with MoveIt and other ROS 2 APIs.
     // The lifecycle node itself cannot be directly used where a rclcpp::Node is
-    // required, so we construct a new node that shares the same name and
+    // required, so we construct a new node with a unique name in the same
     // namespace. Parameters are automatically declared from overrides to mirror
     // the lifecycle node behaviour.
     try {
       rclcpp::NodeOptions base_options;
       base_options.automatically_declare_parameters_from_overrides(true);
+      const auto base_node_name = std::string(this->get_name()) + "_worker";
       base_node_ = std::make_shared<rclcpp::Node>(
-        this->get_name(), this->get_namespace(), base_options);
+        base_node_name, this->get_namespace(), base_options);
       demo_ = std::make_shared<grasp_execution::Demo>(
         base_node_, grasp_execution::GRASP_EXECUTION_PACKAGE,
         grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
