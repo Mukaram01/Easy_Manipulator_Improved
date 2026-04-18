@@ -42,7 +42,7 @@ public:
 
     std::string interface = "topic";
     std::string frame_id = "base_link";
-    std::string ee_id = "robotiq_2f";
+    std::string ee_id = "ur_tool0";
 
     std::vector<double> grasp_pose_vector{-0.1, 0.4, 0.07, M_PI, 0, 0};
     std::vector<double> object_pose_vector{-0.1, 0.4, 0.05, 0, 0, 0};

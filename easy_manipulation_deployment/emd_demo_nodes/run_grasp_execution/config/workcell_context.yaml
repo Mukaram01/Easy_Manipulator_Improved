@@ -3,10 +3,10 @@ workcell:
     groups: [manipulator]
     groups.manipulator.executors: [default]
     groups.manipulator.executors.default.plugin: grasp_execution/DefaultExecutor
-    groups.manipulator.end_effectors: [robotiq_2f0]
-    groups.manipulator.end_effectors.robotiq_2f0.brand: robotiq_2f
-    groups.manipulator.end_effectors.robotiq_2f0.link: ee_palm
-    groups.manipulator.end_effectors.robotiq_2f0.clearance: 0.1
-    groups.manipulator.end_effectors.robotiq_2f0.driver.plugin:
+    groups.manipulator.end_effectors: [tool0_ee]
+    groups.manipulator.end_effectors.tool0_ee.brand: ur_tool0
+    groups.manipulator.end_effectors.tool0_ee.link: tool0
+    groups.manipulator.end_effectors.tool0_ee.clearance: 0.1
+    groups.manipulator.end_effectors.tool0_ee.driver.plugin:
       grasp_execution/DummyGripperDriver
-    groups.manipulator.end_effectors.robotiq_2f0.driver.controller: ""
+    groups.manipulator.end_effectors.tool0_ee.driver.controller: ""
