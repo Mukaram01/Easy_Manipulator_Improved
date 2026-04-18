@@ -24,15 +24,7 @@
   <origin xyz="0 0 0" rpy="0 0 0"/>
 </xacro:ur_robot>
    
- <!--xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
- <xacro:robotiq_85_gripper prefix="" parent="tool0">
-	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
- </xacro:robotiq_85_gripper-->
- 
- <xacro:include filename="$(find robotiq_3f_gripper_description)/urdf/robotiq-3f-gripper_articulated.urdf.xacro"/>
- <xacro:robotiq-3f-gripper_articulated prefix="" parent="tool0" >
-	<origin xyz="0 0 0.0" rpy="1.5707 0 0"/>
- </xacro:robotiq-3f-gripper_articulated>
+ <!-- Arm-only hardware variant: no physical gripper attached to tool0. -->
 
  <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
  <xacro:table prefix="" parent="world">

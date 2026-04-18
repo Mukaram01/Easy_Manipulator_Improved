@@ -15,6 +15,7 @@ import xacro
 DEFAULT_SCENE_PACKAGE_CANDIDATES = ("ur5_3f_test", "ur5_2f_test", "ur5_airpick4_test", "suction_test")
 PACKAGE_NAME = "run_grasp_execution"
 SCENE_PACKAGE_ARGUMENT = "scene_package"
+MOVEIT_CONFIG_PACKAGE_ARGUMENT = "moveit_config_package"
 
 
 def find_default_scene_package():
@@ -139,12 +140,13 @@ def resolve_scene_package_share_dir(scene_package):
 
 def launch_setup(context, *args, **kwargs):
     scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
+    moveit_config_package = LaunchConfiguration(MOVEIT_CONFIG_PACKAGE_ARGUMENT).perform(context)
     run_share = get_package_share_directory(PACKAGE_NAME)
     resolve_scene_package_share_dir(scene_package)
     resolve_required_package_share_dir(
-        "ur5_moveit_config",
-        "Run ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh, rebuild the workspace, "
-        "and source install/setup.bash before launching UR5 demo scenes.",
+        moveit_config_package,
+        "Build/source your selected MoveIt config package and pass it with "
+        f"'{MOVEIT_CONFIG_PACKAGE_ARGUMENT}:=<package_name>' if it is not 'ur5_moveit_config'.",
     )
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
@@ -162,8 +164,8 @@ def launch_setup(context, *args, **kwargs):
     robot_description_semantic_config = load_file(scene_package, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
 
-    kinematics_yaml = {"robot_description_kinematics": load_yaml("ur5_moveit_config", "config/kinematics.yaml")}
-    joint_limits_yaml = load_yaml("ur5_moveit_config", "config/joint_limits.yaml")
+    kinematics_yaml = {"robot_description_kinematics": load_yaml(moveit_config_package, "config/kinematics.yaml")}
+    joint_limits_yaml = load_yaml(moveit_config_package, "config/joint_limits.yaml")
     joint_limits = {"robot_description_planning": joint_limits_yaml}
 
     ompl_planning_pipeline_config = {
@@ -179,7 +181,7 @@ def launch_setup(context, *args, **kwargs):
             "start_state_max_bounds_error": 0.1,
         }
     }
-    ompl_planning_yaml = load_yaml("ur5_moveit_config", "config/ompl_planning.yaml")
+    ompl_planning_yaml = load_yaml(moveit_config_package, "config/ompl_planning.yaml")
     ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
     trajectory_execution = {
@@ -291,6 +293,11 @@ def generate_launch_description():
         [
             debug_arg,
             DeclareLaunchArgument(SCENE_PACKAGE_ARGUMENT, **scene_arg_kwargs),
+            DeclareLaunchArgument(
+                MOVEIT_CONFIG_PACKAGE_ARGUMENT,
+                default_value="ur5_moveit_config",
+                description="MoveIt config package containing config/{kinematics,joint_limits,ompl_planning}.yaml",
+            ),
             OpaqueFunction(function=launch_setup),
         ]
     )
