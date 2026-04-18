@@ -15,9 +15,25 @@ import launch_testing.actions
 from launch_testing_ros.wait_for_topics import WaitForTopics
 import pytest
 import rclpy
+from sensor_msgs.msg import JointState
 
 
 SCENE_PACKAGE = "ur5_3f_test"
+
+
+REQUIRED_FINGER_JOINTS = {
+    "palm_finger_1_joint",
+    "finger_1_joint_1",
+    "finger_1_joint_2",
+    "finger_1_joint_3",
+    "palm_finger_2_joint",
+    "finger_2_joint_1",
+    "finger_2_joint_2",
+    "finger_2_joint_3",
+    "finger_middle_joint_1",
+    "finger_middle_joint_2",
+    "finger_middle_joint_3",
+}
 
 try:
     get_package_share_directory(SCENE_PACKAGE)
@@ -97,6 +113,16 @@ class TestGraspExecutionLaunch(unittest.TestCase):
     def test_required_nodes(self):
         for node_name in ["grasp_execution_node", "robot_state_publisher"]:
             self.assertTrue(self._wait_for(lambda: self._node_available(node_name)))
+
+    def test_joint_state_contains_finger_joints(self):
+        observed_joint_names = set()
+
+        def callback(msg):
+            observed_joint_names.update(msg.name)
+
+        subscription = self.node.create_subscription(JointState, "/joint_states", callback, 10)
+        self.assertTrue(self._wait_for(lambda: REQUIRED_FINGER_JOINTS.issubset(observed_joint_names)))
+        self.node.destroy_subscription(subscription)
 
 
 @launch_testing.post_shutdown_test()

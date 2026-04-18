@@ -269,8 +269,18 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
+    gripper_spawner = ExecuteProcess(
+        cmd=[
+            "ros2", "run", "controller_manager", "spawner",
+            "ur5_gripper_controller",
+            "--controller-manager", "/controller_manager",
+        ],
+        output="screen",
+    )
+
     spawn_joint_state = TimerAction(period=2.0, actions=[joint_state_spawner])
     spawn_arm = TimerAction(period=2.5, actions=[arm_spawner])
+    spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
 
     return [
         robot_state_publisher,
@@ -278,6 +288,7 @@ def launch_setup(context, *args, **kwargs):
         ros2_control_node,
         spawn_joint_state,
         spawn_arm,
+        spawn_gripper,
         grasp_execution_demo_node,
     ]
 

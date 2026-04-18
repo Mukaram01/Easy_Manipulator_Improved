@@ -19,6 +19,9 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
+#include <sstream>
+#include <thread>
+#include <set>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -33,6 +36,7 @@
 #include "emd_msgs/srv/grasp_request.hpp"
 
 #include "moveit/macros/console_colors.h"
+#include "sensor_msgs/msg/joint_state.hpp"
 
 
 namespace grasp_execution
@@ -43,6 +47,65 @@ static const char GRASP_TASK_TOPIC[] = "grasp_tasks";
 static const char GRASP_REQUEST_TOPIC[] = "grasp_requests";
 
 static const char GRASP_EXECUTION_PACKAGE[] = "emd_grasp_execution";
+
+
+static const std::vector<std::string> REQUIRED_FINGER_JOINTS = {
+  "palm_finger_1_joint",
+  "finger_1_joint_1",
+  "finger_1_joint_2",
+  "finger_1_joint_3",
+  "palm_finger_2_joint",
+  "finger_2_joint_1",
+  "finger_2_joint_2",
+  "finger_2_joint_3",
+  "finger_middle_joint_1",
+  "finger_middle_joint_2",
+  "finger_middle_joint_3",
+};
+
+bool wait_for_required_finger_joint_states(
+  const rclcpp::Node::SharedPtr & node,
+  std::chrono::seconds timeout = std::chrono::seconds(15))
+{
+  std::set<std::string> missing_joints(REQUIRED_FINGER_JOINTS.begin(), REQUIRED_FINGER_JOINTS.end());
+
+  auto joint_state_sub = node->create_subscription<sensor_msgs::msg::JointState>(
+    "/joint_states", rclcpp::QoS(10),
+    [&missing_joints](const sensor_msgs::msg::JointState::SharedPtr msg) {
+      for (const auto & joint_name : msg->name) {
+        missing_joints.erase(joint_name);
+      }
+    });
+
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+
+  const auto end_time = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < end_time) {
+    executor.spin_some();
+    if (missing_joints.empty()) {
+      RCLCPP_INFO(node->get_logger(),
+        "Verified /joint_states includes all required finger joints before grasp execution.");
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  std::ostringstream missing;
+  bool first = true;
+  for (const auto & joint_name : missing_joints) {
+    if (!first) {
+      missing << ", ";
+    }
+    missing << joint_name;
+    first = false;
+  }
+  RCLCPP_ERROR(
+    node->get_logger(),
+    "Timed out waiting for finger joints on /joint_states. Missing joints: [%s]",
+    missing.str().c_str());
+  return false;
+}
 
 class Demo : public moveit2::MoveitCppGraspExecution
 {
@@ -400,6 +463,11 @@ public:
       if (!demo_->init_from_yaml(workcell_context_filepath)) {
         RCLCPP_ERROR(this->get_logger(), "Failed to initialize workcell context from '%s'",
           workcell_context_filepath.c_str());
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+      }
+      if (!grasp_execution::wait_for_required_finger_joint_states(base_node_)) {
+        RCLCPP_ERROR(this->get_logger(),
+          "Required finger joints were not observed on /joint_states; aborting configure.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
     } catch (const std::exception & ex) {
