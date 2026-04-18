@@ -451,6 +451,8 @@ void SceneSelect::generate_scene_files(Scene scene)
   fs::path srdf_path = armhand_srdf_path;
   if (!boost::filesystem::exists(srdf_path)) {
     append_error("Failed to generate urdf/arm_hand.srdf.xacro.");
+    append_error("Expected SRDF at: " + srdf_path.string());
+    append_error("Current working directory: " + fs::current_path().string());
     return;
   }
   fs::path base_template_path = templates_path / ("ros" + std::to_string(workcell.ros_ver));
@@ -686,6 +688,10 @@ bool SceneSelect::check_files()
 
     if (!boost::filesystem::exists(launch_dir)) {
       append_error("Scene status: launch folder missing.");
+      if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
+        append_error(
+          "Scene status: launch not generated because SRDF generation failed earlier.");
+      }
     }
     if (!boost::filesystem::exists(urdf_dir)) {
       append_error("Scene status: urdf folder missing.");
