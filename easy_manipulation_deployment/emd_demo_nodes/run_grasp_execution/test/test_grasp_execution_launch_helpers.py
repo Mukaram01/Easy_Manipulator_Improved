@@ -142,3 +142,45 @@ def test_load_file_returns_none_on_xacro_error(module_path, tmp_path, monkeypatc
             module.load_file("pkg", bad_xacro.name)
     else:
         assert module.load_file("pkg", bad_xacro.name) is None
+
+
+def test_align_gripper_controller_joints_normalizes_null_controller_names(grasp_launch_module):
+    controllers_yaml = {"controller_names": None}
+    ros2_controllers_yaml = {"controller_manager": {"ros__parameters": {}}}
+
+    grasp_launch_module.align_gripper_controller_joints(
+        controllers_yaml=controllers_yaml,
+        ros2_controllers_yaml=ros2_controllers_yaml,
+        gripper_controller_joints=("gripper_finger1_joint",),
+        enable_gripper_controller=True,
+    )
+
+    assert controllers_yaml["controller_names"] == ["ur5_gripper_controller"]
+    assert controllers_yaml["ur5_gripper_controller"]["joints"] == ["gripper_finger1_joint"]
+
+
+@pytest.mark.parametrize(
+    ("controllers_yaml", "ros2_controllers_yaml", "expected_error"),
+    [
+        (
+            {"controller_names": "ur5_gripper_controller"},
+            {"controller_manager": {"ros__parameters": {}}},
+            r"'controller_names' must be a YAML sequence",
+        ),
+        (
+            {"controller_names": []},
+            {"controller_manager": {"ros__parameters": "not_a_mapping"}},
+            r"'controller_manager\.ros__parameters' must be a YAML mapping",
+        ),
+    ],
+)
+def test_align_gripper_controller_joints_rejects_invalid_schema_types(
+    grasp_launch_module, controllers_yaml, ros2_controllers_yaml, expected_error
+):
+    with pytest.raises(RuntimeError, match=expected_error):
+        grasp_launch_module.align_gripper_controller_joints(
+            controllers_yaml=controllers_yaml,
+            ros2_controllers_yaml=ros2_controllers_yaml,
+            gripper_controller_joints=("gripper_finger1_joint",),
+            enable_gripper_controller=True,
+        )

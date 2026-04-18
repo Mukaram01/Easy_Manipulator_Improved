@@ -63,9 +63,34 @@ def align_gripper_controller_joints(
     controllers_yaml, ros2_controllers_yaml, gripper_controller_joints, enable_gripper_controller
 ):
     controller_names = controllers_yaml.setdefault("controller_names", [])
-    controller_manager_ros_params = ros2_controllers_yaml.setdefault("controller_manager", {}).setdefault(
-        "ros__parameters", {}
-    )
+    if controller_names is None:
+        controller_names = []
+        controllers_yaml["controller_names"] = controller_names
+    elif not isinstance(controller_names, list):
+        raise RuntimeError(
+            "Invalid controllers schema: 'controller_names' must be a YAML sequence (list), "
+            f"got {type(controller_names).__name__}."
+        )
+
+    controller_manager = ros2_controllers_yaml.setdefault("controller_manager", {})
+    if controller_manager is None:
+        controller_manager = {}
+        ros2_controllers_yaml["controller_manager"] = controller_manager
+    elif not isinstance(controller_manager, dict):
+        raise RuntimeError(
+            "Invalid ros2 controllers schema: 'controller_manager' must be a YAML mapping (dict), "
+            f"got {type(controller_manager).__name__}."
+        )
+
+    controller_manager_ros_params = controller_manager.setdefault("ros__parameters", {})
+    if controller_manager_ros_params is None:
+        controller_manager_ros_params = {}
+        controller_manager["ros__parameters"] = controller_manager_ros_params
+    elif not isinstance(controller_manager_ros_params, dict):
+        raise RuntimeError(
+            "Invalid ros2 controllers schema: 'controller_manager.ros__parameters' must be a YAML "
+            f"mapping (dict), got {type(controller_manager_ros_params).__name__}."
+        )
 
     if gripper_controller_joints and enable_gripper_controller:
         gripper_joints = list(gripper_controller_joints)
