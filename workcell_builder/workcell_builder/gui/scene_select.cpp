@@ -389,7 +389,7 @@ void SceneSelect::load_workcell(Workcell workcell_input)
   if (assets_path.empty()) {
     assets_path = workcell_path / "assets";
   }
-  refresh_scenes(0);
+  refresh_scenes(0, false);
 }
 void SceneSelect::on_add_scene_clicked()
 {
@@ -406,7 +406,7 @@ void SceneSelect::on_add_scene_clicked()
     workcell.scene_vector.push_back(scene_window.scene);
     generate_scene_package(
       scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
-    refresh_scenes(workcell.scene_vector.size() - 1);
+    refresh_scenes(workcell.scene_vector.size() - 1, true);
   }
 }
 
@@ -482,9 +482,10 @@ void SceneSelect::generate_scene_files(Scene scene)
     (target_path / "demo.launch.py").string(), "moveit_config_name",
     moveit_config_name);
 }
-void SceneSelect::refresh_scenes(int latest_scene)
+void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
 {
   if (latest_scene < 0) {latest_scene = 0;}
+  scaffold_scene_index_ = scaffold_only_status ? latest_scene : -1;
   bool oldState = ui->scene_list->blockSignals(true);
   ui->scene_list->clear();  // Clear the dropdown menu
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
@@ -523,9 +524,9 @@ void SceneSelect::on_delete_scene_clicked()
       delete_folder(scenes_path, workcell.scene_vector[ui->scene_list->currentIndex()].name);
       workcell.scene_vector.erase(workcell.scene_vector.begin() + ui->scene_list->currentIndex());
       if (workcell.scene_vector.size() > 0) {
-        refresh_scenes(0);
+        refresh_scenes(0, false);
       } else {
-        refresh_scenes(-1);
+        refresh_scenes(-1, false);
       }
       ui->scene_list->blockSignals(oldState);
     } else {
@@ -556,7 +557,7 @@ void SceneSelect::on_edit_scene_clicked()
     scene_window.exec();
     if (scene_window.success) {
       if (CheckSceneEqual(scene_window.scene, curr_scene)) {
-        refresh_scenes(ui->scene_list->currentIndex());
+        refresh_scenes(ui->scene_list->currentIndex(), false);
       } else {  // Scene was edited
         const fs::path scene_yaml_path = scenes_path / scene_window.scene.name;
         if (boost::filesystem::exists(scene_yaml_path)) {     // Scene name nvr change
@@ -592,10 +593,10 @@ void SceneSelect::on_edit_scene_clicked()
         workcell.scene_vector[ui->scene_list->currentIndex()] = scene_window.scene;
         append_warning(
           "Scene edits were applied. Regenerate environment.yaml to save the latest scene state.");
-        refresh_scenes(ui->scene_list->currentIndex());
+        refresh_scenes(ui->scene_list->currentIndex(), false);
       }
     } else {
-      refresh_scenes(ui->scene_list->currentIndex());
+      refresh_scenes(ui->scene_list->currentIndex(), false);
     }
   } else {
     append_error("No scene selected to edit.");
@@ -655,7 +656,8 @@ void SceneSelect::on_generate_yaml_clicked()
   } else {
     append_error("No scene selected to generate environment.yaml.");
   }
-  check_scene();
+  scaffold_scene_index_ = -1;
+  check_scene(true);
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
 {
@@ -668,10 +670,10 @@ bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use
   }
   return true;
 }
-bool SceneSelect::check_scene()
+bool SceneSelect::check_scene(bool strict)
 {
   bool has_yaml = check_yaml();
-  bool files_loaded_proper = check_files();
+  bool files_loaded_proper = check_files(strict);
   if (has_yaml) {
     append_success("Scene status: environment.yaml found.");
   } else {
@@ -679,20 +681,29 @@ bool SceneSelect::check_scene()
   }
 
   if (files_loaded_proper) {
-    append_success("Scene status: required files are present.");
+    if (strict) {
+      append_success("Scene status: required files are present.");
+    } else {
+      append_info(
+        "Scene status: scaffold created (scene package skeleton is ready). Generate files to create launch and SRDF assets.");
+    }
   }
 
-  if (has_yaml && files_loaded_proper) {
+  if (strict && has_yaml && files_loaded_proper) {
     append_success("Scene generation complete. You may exit this application.");
   }
-  if (!has_yaml && files_loaded_proper) {
+  if (strict && !has_yaml && files_loaded_proper) {
     append_warning(
       "Scene files were generated, but without environment.yaml this scene cannot be edited after exit.");
+  }
+  if (!strict && files_loaded_proper) {
+    append_warning(
+      "Scene status: launch/SRDF files are not generated yet. Use Generate Files when ready.");
   }
   ui->exit->setDisabled(false);
   return true;
 }
-bool SceneSelect::check_files()
+bool SceneSelect::check_files(bool strict)
 {
   configure_startup_fallback_paths();
   const fs::path scene_dir = scene_dir_for_current_selection();
@@ -705,18 +716,10 @@ bool SceneSelect::check_files()
   const fs::path cmake_file = scene_dir / "CMakeLists.txt";
   const fs::path package_file = scene_dir / "package.xml";
 
-  if (!boost::filesystem::exists(launch_dir) || !boost::filesystem::exists(urdf_dir) ||
-    !boost::filesystem::exists(cmake_file) || !boost::filesystem::exists(package_file))
+  if (!boost::filesystem::exists(urdf_dir) || !boost::filesystem::exists(cmake_file) ||
+    !boost::filesystem::exists(package_file))
   {
-    append_error("Scene status: required files are missing.");
-
-    if (!boost::filesystem::exists(launch_dir)) {
-      append_error("Scene status: launch folder missing.");
-      if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
-        append_error(
-          "Scene status: launch not generated because SRDF generation failed earlier.");
-      }
-    }
+    append_error("Scene status: required scene package skeleton files are missing.");
     if (!boost::filesystem::exists(urdf_dir)) {
       append_error("Scene status: urdf folder missing.");
     }
@@ -727,32 +730,46 @@ bool SceneSelect::check_files()
       append_error("Scene status: package.xml missing.");
     }
     return false;
-  } else {
-    if (!boost::filesystem::exists(launch_dir / "demo.rviz") ||
-      !boost::filesystem::exists(launch_dir / "demo.launch.py"))
-    {
-      append_error("Scene status: required launch files are missing.");
-      if (!boost::filesystem::exists(launch_dir / "demo.rviz")) {
-        append_error("Scene status: demo.rviz missing.");
-      }
-      if (!boost::filesystem::exists(launch_dir / "demo.launch.py")) {
-        append_error("Scene status: demo.launch.py missing.");
-      }
-      return false;
-    }
+  }
 
-    if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro") ||
-      !boost::filesystem::exists(urdf_dir / "scene.urdf.xacro"))
-    {
-      append_error("Scene status: required URDF files are missing.");
-      if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
-        append_error("Scene status: arm_hand.srdf.xacro missing.");
-      }
-      if (!boost::filesystem::exists(urdf_dir / "scene.urdf.xacro")) {
-        append_error("Scene status: scene.urdf.xacro missing.");
-      }
-      return false;
+  if (!strict) {
+    return true;
+  }
+
+  if (!boost::filesystem::exists(launch_dir)) {
+    append_error("Scene status: required files are missing.");
+    append_error("Scene status: launch folder missing.");
+    if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
+      append_error(
+        "Scene status: launch not generated because SRDF generation failed earlier.");
     }
+    return false;
+  }
+
+  if (!boost::filesystem::exists(launch_dir / "demo.rviz") ||
+    !boost::filesystem::exists(launch_dir / "demo.launch.py"))
+  {
+    append_error("Scene status: required launch files are missing.");
+    if (!boost::filesystem::exists(launch_dir / "demo.rviz")) {
+      append_error("Scene status: demo.rviz missing.");
+    }
+    if (!boost::filesystem::exists(launch_dir / "demo.launch.py")) {
+      append_error("Scene status: demo.launch.py missing.");
+    }
+    return false;
+  }
+
+  if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro") ||
+    !boost::filesystem::exists(urdf_dir / "scene.urdf.xacro"))
+  {
+    append_error("Scene status: required URDF files are missing.");
+    if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
+      append_error("Scene status: arm_hand.srdf.xacro missing.");
+    }
+    if (!boost::filesystem::exists(urdf_dir / "scene.urdf.xacro")) {
+      append_error("Scene status: scene.urdf.xacro missing.");
+    }
+    return false;
   }
   if (ui->scene_list->currentIndex() >= 0) {
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
@@ -770,8 +787,7 @@ bool SceneSelect::check_files()
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
-  (void)index;
-  check_scene();
+  check_scene(index != scaffold_scene_index_);
 }
 void SceneSelect::on_generate_files_clicked()
 {
@@ -797,7 +813,8 @@ void SceneSelect::on_generate_files_clicked()
   } else {
     append_error("No scene selected to generate files from.");
   }
-  check_scene();
+  scaffold_scene_index_ = -1;
+  check_scene(true);
 }
 bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 {
