@@ -615,6 +615,33 @@ colcon build --packages-up-to trajopt_sco
 
 If `trajoptConfig.cmake` is still missing, verify `src/trajopt`, `src/trajopt_common`, and `src/trajopt_sco` exist and that your active underlay/overlay environment is sourced correctly before running a full build.
 
+### Missing `tesseract_motion_plannersConfig.cmake` while building `tesseract_rosutils`
+
+If `colcon build` stops in `tesseract_rosutils` with an error that CMake cannot find `tesseract_motion_plannersConfig.cmake` (or `tesseract_motion_planners-config.cmake`), your active environment does not expose the CMake config package exported by Tesseract motion planners.
+
+> Important: `tesseract_motion_planners` is often a **CMake package name**, not always a direct colcon package name. A command like `colcon build --packages-up-to tesseract_motion_planners` can fail with “package not found” even when the dependency is valid.
+
+Recommended recovery (source-overlay path):
+
+```bash
+cd ~/workcell_ws
+vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
+./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+colcon list | grep tesseract_motion_planners
+colcon build --symlink-install --parallel-workers 2 --packages-up-to tesseract_rosutils
+```
+
+If `colcon list` shows planner component packages (for example `tesseract_motion_planners_core`, `tesseract_motion_planners_simple`, `tesseract_motion_planners_ompl`, `tesseract_motion_planners_descartes`, `tesseract_motion_planners_trajopt`), build those first and then rebuild `tesseract_rosutils`.
+
+Then source the rebuilt overlay and continue with a full workspace build:
+
+```bash
+source ~/workcell_ws/install/setup.bash
+colcon build --symlink-install --parallel-workers 2
+```
+
+Binary-package path: install/verify `ros-${ROS_DISTRO}-tesseract-motion-planners`, open a fresh shell, source `/opt/ros/${ROS_DISTRO}/setup.bash`, and rebuild `tesseract_rosutils`.
+
 ### Optional GUI package issues
 
 If `tesseract_qt` fails to link because the ADS target name differs on your system, apply the included patch, verify metadata, and rebuild in stages:
