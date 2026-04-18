@@ -175,6 +175,13 @@ def launch_setup(context, *args, **kwargs):
         initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
         initial_position_mappings["initial_positions_file"] = initial_position_path
 
+    if "mock_sensor_commands" in ur_robot_args:
+        initial_position_mappings["mock_sensor_commands"] = "true"
+    elif "fake_sensor_commands" in ur_robot_args:
+        # Backward compatibility for older ur_description versions.
+        initial_position_mappings["fake_sensor_commands"] = "true"
+
+
     robot_description_config = load_file(scene_package, "urdf/scene.urdf.xacro", initial_position_mappings)
     robot_description = {"robot_description": robot_description_config}
 
@@ -266,7 +273,8 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="ros2_control_node",
         output={"stdout": "screen", "stderr": "screen"},
-        parameters=[robot_description, ros2_controllers_path],
+        parameters=[ros2_controllers_path],
+        remappings=[("~/robot_description", "/robot_description")],
     )
 
     joint_state_spawner = ExecuteProcess(
