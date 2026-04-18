@@ -15,6 +15,7 @@
 import os
 import re
 import subprocess
+import xml.etree.ElementTree as ET
 import yaml
 
 from launch import LaunchDescription
@@ -106,6 +107,33 @@ def _validate_ros_param_types(value, path="root"):
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
 
 
+def _extract_controller_joints(robot_description_semantic_config):
+    try:
+        srdf_root = ET.fromstring(robot_description_semantic_config)
+    except ET.ParseError:
+        return "arm", []
+
+    preferred_group_names = {"manipulator", "arm"}
+    first_group_with_joints = None
+
+    for group in srdf_root.findall(".//group"):
+        joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
+        if not joints:
+            continue
+
+        group_name = group.get("name") or "arm"
+        if group_name in preferred_group_names:
+            return group_name, joints
+
+        if first_group_with_joints is None:
+            first_group_with_joints = (group_name, joints)
+
+    if first_group_with_joints:
+        return first_group_with_joints
+
+    return "arm", []
+
+
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
@@ -150,6 +178,27 @@ def _launch_setup(context):
     if isinstance(ompl_planning_yaml, dict):
         ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
+    controller_group_name, controller_joints = _extract_controller_joints(
+        robot_description_semantic_config
+    )
+    controller_name = f"fake_{controller_group_name}_controller"
+
+    moveit_controller_manager = {
+        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
+    }
+
+    moveit_simple_controller_manager = {
+        "moveit_simple_controller_manager": {
+            "controller_names": [controller_name],
+            controller_name: {
+                "action_ns": "follow_joint_trajectory",
+                "type": "FollowJointTrajectory",
+                "default": True,
+                "joints": controller_joints,
+            },
+        }
+    }
+
     trajectory_execution = {
         "allow_trajectory_execution": False,
         "moveit_manage_controllers": False,
@@ -171,6 +220,8 @@ def _launch_setup(context):
         validated_ompl_planning_pipeline_config = _normalize_ros_param_types(ompl_planning_pipeline_config)
         validated_planning_scene_monitor_params = _normalize_ros_param_types(planning_scene_monitor_params)
         validated_trajectory_execution = _normalize_ros_param_types(trajectory_execution)
+        validated_moveit_controller_manager = _normalize_ros_param_types(moveit_controller_manager)
+        validated_moveit_simple_controller_manager = _normalize_ros_param_types(moveit_simple_controller_manager)
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -180,6 +231,8 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_ompl_planning_pipeline_config, "ompl_planning_pipeline_config")
         _validate_ros_param_types(validated_planning_scene_monitor_params, "planning_scene_monitor_params")
         _validate_ros_param_types(validated_trajectory_execution, "trajectory_execution")
+        _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
+        _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 
@@ -227,6 +280,8 @@ def _launch_setup(context):
             validated_ompl_planning_pipeline_config,
             validated_planning_scene_monitor_params,
             validated_trajectory_execution,
+            validated_moveit_controller_manager,
+            validated_moveit_simple_controller_manager,
         ],
     )
 
