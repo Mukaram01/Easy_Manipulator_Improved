@@ -64,17 +64,16 @@ void find_replace(
 
   // This searches the file for the first occurence of the morn string.
   auto pos = file_contents.find(current_text);
-  int counter = 0;
   // std::cout<<file_contents<<std::endl;
   while (pos != std::string::npos) {
     file_contents.replace(pos, current_text.length(), replaced_text);
-    pos = file_contents.find(current_text);
-    std::cout << "position: " << pos << std::endl;
-    counter++;
-    if (counter > 100) {
-      break;
-    }
+    const auto next_search_pos = pos + replaced_text.length();
+    pos = file_contents.find(current_text, next_search_pos);
   }
+  RCLCPP_DEBUG(
+    rclcpp::get_logger("workcell_builder"),
+    "find_replace: no more matches found for '%s'",
+    current_text.c_str());
   fileout << file_contents;
   std::remove(example_text.c_str());
 }
