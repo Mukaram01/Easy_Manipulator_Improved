@@ -561,10 +561,16 @@ void SceneSelect::on_edit_scene_clicked()
         const fs::path scene_yaml_path = scenes_path / scene_window.scene.name;
         if (boost::filesystem::exists(scene_yaml_path)) {     // Scene name nvr change
           // Replace the current environment yaml
-          GenerateYAML::generate_yaml(
-            scene_window.scene,
-            scene_yaml_path.string(), scenes_path, assets_path);
-          generate_scene_files(scene_window.scene);
+          if (GenerateYAML::generate_yaml(
+              scene_window.scene,
+              scene_yaml_path.string(), scenes_path, assets_path))
+          {
+            generate_scene_files(scene_window.scene);
+          } else {
+            append_error(
+              "Failed to generate environment.yaml: invalid external joint parent configuration.");
+            return;
+          }
 
         } else {
           // Delete previous scene folder
@@ -572,10 +578,16 @@ void SceneSelect::on_edit_scene_clicked()
           // Generate new folder
           generate_scene_package(
             scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
-          GenerateYAML::generate_yaml(
-            scene_window.scene,
-            scene_yaml_path.string(), scenes_path, assets_path);
-          generate_scene_files(scene_window.scene);
+          if (GenerateYAML::generate_yaml(
+              scene_window.scene,
+              scene_yaml_path.string(), scenes_path, assets_path))
+          {
+            generate_scene_files(scene_window.scene);
+          } else {
+            append_error(
+              "Failed to generate environment.yaml: invalid external joint parent configuration.");
+            return;
+          }
         }
         workcell.scene_vector[ui->scene_list->currentIndex()] = scene_window.scene;
         append_warning(
@@ -616,16 +628,28 @@ void SceneSelect::on_generate_yaml_clicked()
         replace_window.setModal(true);
         replace_window.exec();
         if (replace_window.decision) {      // user allows for replacing of current yaml file
-          GenerateYAML::generate_yaml(
-            target_scene,
-            scene_yaml_path.string(), scenes_path, assets_path);
-          append_success("environment.yaml generated successfully.");
+          if (GenerateYAML::generate_yaml(
+              target_scene,
+              scene_yaml_path.string(), scenes_path, assets_path))
+          {
+            append_success("environment.yaml generated successfully.");
+          } else {
+            append_error(
+              "environment.yaml generation failed: invalid external joint parent configuration.");
+            return;
+          }
         }
       } else {   // currently no yaml file, add one to scene folder
-        GenerateYAML::generate_yaml(
-          target_scene, scene_yaml_path.string(), scenes_path,
-          assets_path);
-        append_success("environment.yaml generated successfully.");
+        if (GenerateYAML::generate_yaml(
+            target_scene, scene_yaml_path.string(), scenes_path,
+            assets_path))
+        {
+          append_success("environment.yaml generated successfully.");
+        } else {
+          append_error(
+            "environment.yaml generation failed: invalid external joint parent configuration.");
+          return;
+        }
       }
     }
   } else {

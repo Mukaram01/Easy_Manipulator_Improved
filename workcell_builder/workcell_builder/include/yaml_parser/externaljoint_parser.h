@@ -18,7 +18,7 @@
 #define YAML_PARSER__EXTERNALJOINT_PARSER_H_
 
 #include <string>
-#include <iostream>
+#include "rclcpp/rclcpp.hpp"
 
 #include "attributes/external_joint.h"
 #include "attributes/object.h"
@@ -34,13 +34,19 @@ public:
     YAML::Emitter * out, ExternalJoint ext_joint,
     std::string parent_object, std::string parent_link)
   {
-    std::cout << "Populate the ext joint" << std::endl;
+    RCLCPP_DEBUG(
+      rclcpp::get_logger("workcell_builder"),
+      "Generating external joint for child object '%s'.",
+      ext_joint.child_object.c_str());
     *out << YAML::Key << ext_joint.child_object;
     *out << YAML::Value;
     *out << YAML::BeginMap;
 //        *out<<YAML::Key << "type";
 //        *out<<YAML::Value << ext_joint.type;
-    std::cout << "Populate the parent link" << std::endl;
+    RCLCPP_DEBUG(
+      rclcpp::get_logger("workcell_builder"),
+      "Using parent context parent object='%s', parent link='%s'.",
+      parent_object.c_str(), parent_link.c_str());
     *out << YAML::Key << "parent object";
     *out << YAML::Value << parent_object;
     *out << YAML::Key << "parent link";
@@ -48,14 +54,23 @@ public:
 //        *out<<YAML::Key << "child";
 //        *out<<YAML::Value << object_vector[ext_joint.child_link_pos];
     if (ext_joint.origin.is_origin) {
-      std::cout << "Populate the Origin" << std::endl;
+      RCLCPP_DEBUG(
+        rclcpp::get_logger("workcell_builder"),
+        "Serializing external joint origin for child object '%s'.",
+        ext_joint.child_object.c_str());
       OriginParser::generate_origin(&out, ext_joint.origin);
     }
     if (ext_joint.axis.is_axis) {
-      std::cout << "Populate the ext joint" << std::endl;
+      RCLCPP_DEBUG(
+        rclcpp::get_logger("workcell_builder"),
+        "Serializing external joint axis for child object '%s'.",
+        ext_joint.child_object.c_str());
       AxisParser::generate_axis(&out, ext_joint.axis);
     }
-    std::cout << "Done populating" << std::endl;
+    RCLCPP_DEBUG(
+      rclcpp::get_logger("workcell_builder"),
+      "Finished generating external joint for child object '%s'.",
+      ext_joint.child_object.c_str());
     *out << YAML::EndMap;
   }
 };

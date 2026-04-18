@@ -25,11 +25,13 @@
 // General
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
 // For Yaml parsing
 #include "yaml-cpp/yaml.h"
+#include "rclcpp/rclcpp.hpp"
 
 #include "attributes/scene.h"
 #include "attributes/environment.h"
@@ -72,7 +74,7 @@ std::vector<std::string> normalize_robot_links(const Robot & robot)
 class GenerateYAML
 {
 public:
-  static void generate_yaml(
+  static bool generate_yaml(
     Scene scene, std::string filepath,
     boost::filesystem::path scene_filepath,
     boost::filesystem::path assets_filepath)
@@ -185,30 +187,63 @@ public:
       out << YAML::Key << "external joints";
       out << YAML::Value << YAML::BeginMap;
       for (int i = 0; i < static_cast < int > (scene.object_vector.size()); i++) {
-        int parent_object_pos = scene.object_vector[i].ext_joint.parent_obj_pos;
-        int parent_link_pos = scene.object_vector[i].ext_joint.parent_link_pos;
+        const int parent_object_pos = scene.object_vector[i].ext_joint.parent_obj_pos;
+        const int parent_link_pos = scene.object_vector[i].ext_joint.parent_link_pos;
+        const std::string & object_name = scene.object_vector[i].name;
+        const bool parent_object_unset = parent_object_pos == -1;
+        const bool parent_link_unset = parent_link_pos == -1;
+        const bool explicitly_free_standing = parent_object_unset && parent_link_unset;
+        const bool expects_parent_attachment = !explicitly_free_standing;
 
-        if (
-          parent_object_pos >= 0 &&
+        if (parent_object_pos >= 0 &&
           parent_object_pos < static_cast<int>(scene.object_vector.size()) &&
           parent_link_pos >= 0 &&
-          parent_link_pos < static_cast<int>(
-            scene.object_vector[parent_object_pos].link_vector.size()))
+          parent_link_pos < static_cast<int>(scene.object_vector[parent_object_pos].link_vector.size()))
         {
           ExternalJointParser::generate_ext_joints(
             &out, scene.object_vector[i].ext_joint,
             scene.object_vector[parent_object_pos].name,
             scene.object_vector[parent_object_pos].link_vector[
               parent_link_pos].name);
-        } else {
-          std::cerr <<
-            "Warning: invalid external joint parent indices for object '" <<
-            scene.object_vector[i].name << "' (parent_obj_pos=" <<
-            parent_object_pos << ", parent_link_pos=" << parent_link_pos <<
-            "). Falling back to world/world." << std::endl;
+        } else if (explicitly_free_standing) {
+          RCLCPP_DEBUG(
+            rclcpp::get_logger("workcell_builder"),
+            "Object '%s' is configured as free-standing (parent object/link unset); using world/world "
+            "fallback.",
+            object_name.c_str());
           ExternalJointParser::generate_ext_joints(
             &out, scene.object_vector[i].ext_joint, "world",
             "world");
+        } else {
+          std::stringstream error_stream;
+          error_stream <<
+            "Cannot generate external joint for object '" << object_name <<
+            "': invalid parent selection context. Expected an attached parent "
+            "(choose a concrete parent object and parent link in Add External Joint). "
+            "Received parent_obj_pos=" << parent_object_pos <<
+            ", parent_link_pos=" << parent_link_pos << ". ";
+
+          if (expects_parent_attachment && (parent_object_unset || parent_link_unset)) {
+            error_stream <<
+              "Parent indices are unset; this means the attachment target was not fully selected. "
+              "If this object should be attached, re-open Add External Joint and set both parent "
+              "object and parent link. If the object should be free-standing, explicitly select "
+              "'Connect to world' so both indices are -1.";
+          } else if (parent_object_pos < 0 ||
+            parent_object_pos >= static_cast<int>(scene.object_vector.size()))
+          {
+            error_stream <<
+              "parent_obj_pos is out of range. Valid range is [0, " <<
+              static_cast<int>(scene.object_vector.size()) - 1 << "].";
+          } else {
+            error_stream <<
+              "parent_link_pos is out of range for parent object '" <<
+              scene.object_vector[parent_object_pos].name << "'. Valid range is [0, " <<
+              static_cast<int>(scene.object_vector[parent_object_pos].link_vector.size()) - 1 << "].";
+          }
+
+          RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", error_stream.str().c_str());
+          return false;
         }
       }
       out << YAML::EndMap;
@@ -221,6 +256,7 @@ public:
     std::ofstream myfile(environment_yaml_path.string());
     myfile << out.c_str();
     myfile.close();
+    return true;
   }
 };
 
