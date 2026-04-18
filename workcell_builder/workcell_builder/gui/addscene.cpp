@@ -15,6 +15,7 @@
 
 #include <QFileDialog>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <iostream>
 #include <algorithm>
 #include <string>
@@ -38,12 +39,6 @@ AddScene::AddScene(QWidget * parent)
   on_include_ee_stateChanged(0);
   on_include_robot_stateChanged(0);
   success = false;
-
-  scenes_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(scenes_path.branch_path());
-  boost::filesystem::current_path("assets");
-  assets_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(scenes_path);
 }
 
 AddScene::~AddScene()
@@ -53,6 +48,10 @@ AddScene::~AddScene()
 
 void AddScene::on_add_object_clicked()
 {
+  if (!resolve_directory_paths() || !validate_directory(workcell_path, "workcell")) {
+    return;
+  }
+
   AddObject object_window;
   object_window.setWindowTitle("Add New Environmental Object");
   object_window.setModal(true);
@@ -66,11 +65,14 @@ void AddScene::on_add_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(object_window.object);
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
 {
+  if (!resolve_directory_paths() || !validate_directory(workcell_path, "workcell")) {
+    return;
+  }
+
   int pos = ui->object_list->row(item);
   AddObject object_window;
   object_window.setModal(true);
@@ -92,7 +94,6 @@ void AddScene::on_object_list_itemDoubleClicked(QListWidgetItem * item)
     item->setText(QString::fromStdString(object_window.object.name));
     ui->object_list_2->item(pos)->setText(QString::fromStdString(object_window.object.name));
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_include_robot_stateChanged(int arg1)
@@ -271,7 +272,6 @@ void AddScene::on_object_list_2_itemDoubleClicked(QListWidgetItem * item)
       ui->parent_link->item(pos)->setText(QString::fromStdString("world"));
     }
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_delete_object_clicked()
@@ -306,11 +306,15 @@ void AddScene::on_delete_object_clicked()
     delete ui->parent_link->takeItem(ui->object_list->row(item));
     delete ui->object_list->takeItem(ui->object_list->row(item));
   }
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_add_robot_clicked()
 {
+  if (!resolve_directory_paths() || !validate_directory(scenes_path, "scenes")) {
+    return;
+  }
+
+  const boost::filesystem::path previous_path = boost::filesystem::current_path();
   boost::filesystem::current_path(scenes_path);
   AddRobot robot_window;
   int num_robots_loaded = robot_window.LoadAvailableRobots();
@@ -347,11 +351,15 @@ void AddScene::on_add_robot_clicked()
       }
     }
   }
-  boost::filesystem::current_path(scenes_path);
+  boost::filesystem::current_path(previous_path);
 }
 
 void AddScene::on_add_ee_clicked()
 {
+  if (!resolve_directory_paths() || !validate_directory(assets_path, "assets")) {
+    return;
+  }
+
   AddEndEffector ee_window;
   int num_ee = ee_window.LoadAvailableEE(scene.robot_vector[0], assets_path / "end_effectors");
   if (num_ee <= 0) {
@@ -381,9 +389,6 @@ void AddScene::on_add_ee_clicked()
       ui->add_ee->setText(QString::fromStdString("Edit End Effector"));
     }
   }
-
-
-  boost::filesystem::current_path(scenes_path);
 }
 
 void AddScene::on_remove_robot_clicked()
@@ -443,7 +448,6 @@ bool AddScene::CheckRobot()
     ui->scene_errors->append("<font color='red'> No Robot Loaded.</font>");
     return false;
   }
-  boost::filesystem::current_path(scenes_path);
   return true;
 }
 
@@ -469,7 +473,6 @@ bool AddScene::CheckEE()
     scene.ee_loaded = false;
     scene.ee_vector.clear();
   }
-  boost::filesystem::current_path(scenes_path);
   return true;
 }
 
@@ -515,7 +518,10 @@ bool AddScene::CheckSceneName()
 
 void AddScene::LoadScene(Scene scene_input)
 {
-  boost::filesystem::current_path(scenes_path);
+  if (!resolve_directory_paths()) {
+    return;
+  }
+
   scene = scene_input;
   // Load Scene Name
   ui->scene_name->setText(QString::fromStdString(scene.name));
@@ -588,11 +594,16 @@ void AddScene::keyPressEvent(QKeyEvent * e)
 
 void AddScene::on_load_object_clicked()
 {
+  if (!resolve_directory_paths() || !validate_directory(assets_path, "assets")) {
+    return;
+  }
+
   std::vector<std::string> available_object_names;
   for (int i = 0; i < static_cast<int>(scene.object_vector.size()); i++) {
     available_object_names.push_back(scene.object_vector[i].name);
   }
 
+  const boost::filesystem::path previous_path = boost::filesystem::current_path();
   boost::filesystem::current_path(assets_path);
   LoadObjects load_obj_window;
   load_obj_window.current_object_names = available_object_names;
@@ -606,5 +617,50 @@ void AddScene::on_load_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(load_obj_window.chosen_object);
   }
-  boost::filesystem::current_path(scenes_path);
+  boost::filesystem::current_path(previous_path);
+}
+
+void AddScene::append_path_error(const std::string & message)
+{
+  if (ui != nullptr && ui->scene_errors != nullptr) {
+    ui->scene_errors->append(QString::fromStdString("<font color='red'>" + message + "</font>"));
+  }
+  QMessageBox::warning(this, "Invalid workcell path", QString::fromStdString(message));
+}
+
+bool AddScene::validate_directory(const boost::filesystem::path & path, const std::string & label)
+{
+  if (path.empty()) {
+    append_path_error("Unable to resolve " + label + " directory.");
+    return false;
+  }
+  boost::system::error_code ec;
+  if (!boost::filesystem::exists(path, ec) || ec) {
+    append_path_error(
+      "Required " + label + " directory does not exist: " + path.string());
+    return false;
+  }
+  if (!boost::filesystem::is_directory(path, ec) || ec) {
+    append_path_error("Required " + label + " path is not a directory: " + path.string());
+    return false;
+  }
+  return true;
+}
+
+bool AddScene::resolve_directory_paths()
+{
+  if (workcell_path.empty()) {
+    append_path_error("Workcell path was not provided by Scene Select.");
+    return false;
+  }
+  if (scenes_path.empty()) {
+    scenes_path = workcell_path / "scenes";
+  }
+  if (assets_path.empty()) {
+    assets_path = workcell_path / "assets";
+  }
+
+  return validate_directory(workcell_path, "workcell") &&
+         validate_directory(scenes_path, "scenes") &&
+         validate_directory(assets_path, "assets");
 }

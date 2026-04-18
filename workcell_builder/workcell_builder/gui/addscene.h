@@ -19,6 +19,7 @@
 #include <QDialog>
 #include <QListWidgetItem>
 #include <boost/filesystem.hpp>
+#include <string>
 
 #include "attributes/scene.h"
 
@@ -83,6 +84,11 @@ private slots:
   void on_load_object_clicked();
 
 private:
+  bool resolve_directory_paths();
+  bool validate_directory(
+    const boost::filesystem::path & path,
+    const std::string & label);
+  void append_path_error(const std::string & message);
   Ui::AddScene * ui;
 };
 
