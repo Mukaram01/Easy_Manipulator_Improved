@@ -59,13 +59,15 @@ def resolve_gripper_controller_joints(scene_package):
     return ()
 
 
-def align_gripper_controller_joints(controllers_yaml, ros2_controllers_yaml, gripper_controller_joints):
+def align_gripper_controller_joints(
+    controllers_yaml, ros2_controllers_yaml, gripper_controller_joints, enable_gripper_controller
+):
     controller_names = controllers_yaml.setdefault("controller_names", [])
     controller_manager_ros_params = ros2_controllers_yaml.setdefault("controller_manager", {}).setdefault(
         "ros__parameters", {}
     )
 
-    if gripper_controller_joints:
+    if gripper_controller_joints and enable_gripper_controller:
         gripper_joints = list(gripper_controller_joints)
         controllers_yaml.setdefault("ur5_gripper_controller", {})["joints"] = gripper_joints
         ros2_controllers_yaml.setdefault("ur5_gripper_controller", {}).setdefault("ros__parameters", {})[
@@ -270,7 +272,17 @@ def launch_setup(context, *args, **kwargs):
 
     controllers_yaml = load_yaml(PACKAGE_NAME, "config/controllers.yaml")
     ros2_controllers_yaml = load_yaml(PACKAGE_NAME, "config/ur5_ros_controllers.yaml")
-    align_gripper_controller_joints(controllers_yaml, ros2_controllers_yaml, gripper_controller_joints)
+    scene_supports_gripper_controller = bool(
+        gripper_controller_joints
+        and scene_exposes_gripper_position_interfaces(robot_description_config, gripper_controller_joints)
+    )
+
+    align_gripper_controller_joints(
+        controllers_yaml,
+        ros2_controllers_yaml,
+        gripper_controller_joints,
+        scene_supports_gripper_controller,
+    )
     moveit_controller = {
         "moveit_simple_controller_manager": controllers_yaml,
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
@@ -370,9 +382,7 @@ def launch_setup(context, *args, **kwargs):
         grasp_execution_demo_node,
     ]
 
-    if gripper_controller_joints and scene_exposes_gripper_position_interfaces(
-        robot_description_config, gripper_controller_joints
-    ):
+    if scene_supports_gripper_controller:
         spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
         launch_actions.insert(-1, spawn_gripper)
     else:
