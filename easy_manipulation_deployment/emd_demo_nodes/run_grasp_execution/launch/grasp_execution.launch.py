@@ -19,6 +19,29 @@ MOVEIT_CONFIG_PACKAGE_ARGUMENT = "moveit_config_package"
 PLANNING_FRAME_ARGUMENT = "planning_frame"
 
 
+
+GRIPPER_CONTROLLER_JOINTS = (
+    "palm_finger_1_joint",
+    "finger_1_joint_1",
+    "finger_1_joint_2",
+    "finger_1_joint_3",
+    "palm_finger_2_joint",
+    "finger_2_joint_1",
+    "finger_2_joint_2",
+    "finger_2_joint_3",
+    "finger_middle_joint_1",
+    "finger_middle_joint_2",
+    "finger_middle_joint_3",
+)
+
+
+def scene_exposes_gripper_position_interfaces(robot_description_xml):
+    for joint_name in GRIPPER_CONTROLLER_JOINTS:
+        joint_tag = f'<joint name="{joint_name}">'
+        if joint_tag not in robot_description_xml:
+            return False
+    return True
+
 def find_default_scene_package():
     for package_name in DEFAULT_SCENE_PACKAGE_CANDIDATES:
         try:
@@ -287,17 +310,26 @@ def launch_setup(context, *args, **kwargs):
 
     spawn_joint_state = TimerAction(period=2.0, actions=[joint_state_spawner])
     spawn_arm = TimerAction(period=2.5, actions=[arm_spawner])
-    spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
 
-    return [
+    launch_actions = [
         robot_state_publisher,
         rviz_node,
         ros2_control_node,
         spawn_joint_state,
         spawn_arm,
-        spawn_gripper,
         grasp_execution_demo_node,
     ]
+
+    if scene_exposes_gripper_position_interfaces(robot_description_config):
+        spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
+        launch_actions.insert(-1, spawn_gripper)
+    else:
+        get_logger(__name__).warning(
+            "Skipping ur5_gripper_controller spawner: scene does not export gripper joints/interfaces; "
+            "dummy gripper driver remains responsible for gripper actions."
+        )
+
+    return launch_actions
 
 
 def generate_launch_description():
