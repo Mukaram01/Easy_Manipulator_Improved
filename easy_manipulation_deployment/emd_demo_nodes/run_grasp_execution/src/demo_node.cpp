@@ -22,6 +22,9 @@
 #include <sstream>
 #include <thread>
 #include <set>
+#include <regex>
+#include <stdexcept>
+#include <unordered_set>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -82,8 +85,15 @@ static const std::vector<std::string> REQUIRED_FINGER_LINK_FRAMES = {
 
 bool wait_for_required_grasp_readiness(
   const rclcpp::Node::SharedPtr & node,
+  const std::string & planning_frame,
   std::chrono::seconds timeout = std::chrono::seconds(15))
 {
+  const std::string normalized_planning_frame = grasp_execution::sanitize_frame_id(planning_frame);
+  if (normalized_planning_frame.empty()) {
+    RCLCPP_ERROR(node->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
+    return false;
+  }
+
   std::set<std::string> missing_joints(REQUIRED_FINGER_JOINTS.begin(), REQUIRED_FINGER_JOINTS.end());
   std::set<std::string> missing_frames(
     REQUIRED_FINGER_LINK_FRAMES.begin(), REQUIRED_FINGER_LINK_FRAMES.end());
@@ -108,7 +118,7 @@ bool wait_for_required_grasp_readiness(
     executor.spin_some();
 
     for (auto it = missing_frames.begin(); it != missing_frames.end();) {
-      if (tf_buffer.canTransform("world", *it, tf2::TimePointZero)) {
+      if (tf_buffer.canTransform(normalized_planning_frame, *it, tf2::TimePointZero)) {
         it = missing_frames.erase(it);
       } else {
         ++it;
@@ -117,7 +127,8 @@ bool wait_for_required_grasp_readiness(
 
     if (missing_joints.empty() && missing_frames.empty()) {
       RCLCPP_INFO(node->get_logger(),
-        "Readiness checks passed: all required finger joints and world->finger_*_link_* TF frames are available.");
+        "Readiness checks passed: all required finger joints and %s->finger_*_link_* TF frames are available.",
+        normalized_planning_frame.c_str());
       return true;
     }
 
@@ -152,11 +163,56 @@ bool wait_for_required_grasp_readiness(
   RCLCPP_ERROR(
     node->get_logger(),
     "Timed out waiting for grasp readiness after %.1f s. Missing joints on /joint_states: [%s]. "
-    "Missing TF transforms from world->finger_*_link_*: [%s].",
+    "Missing TF transforms from %s->finger_*_link_*: [%s].",
     std::chrono::duration<double>(timeout).count(),
     missing_joint_stream.str().c_str(),
+    normalized_planning_frame.c_str(),
     missing_frame_stream.str().c_str());
   return false;
+}
+
+bool validate_required_finger_link_frames_in_robot_description(const rclcpp::Node::SharedPtr & node)
+{
+  std::string robot_description;
+  if (!node->get_parameter("robot_description", robot_description) || robot_description.empty()) {
+    RCLCPP_ERROR(node->get_logger(), "robot_description parameter is missing; cannot validate finger link names.");
+    return false;
+  }
+
+  std::unordered_set<std::string> urdf_links;
+  static const std::regex link_regex(R"(<link\s+name\s*=\s*['"]([^'"]+)['"])", std::regex::icase);
+  for (std::sregex_iterator it(robot_description.begin(), robot_description.end(), link_regex), end;
+    it != end; ++it)
+  {
+    urdf_links.insert((*it)[1].str());
+  }
+
+  std::vector<std::string> missing_links;
+  for (const auto & required_frame : REQUIRED_FINGER_LINK_FRAMES) {
+    if (!urdf_links.count(required_frame)) {
+      missing_links.push_back(required_frame);
+    }
+  }
+
+  if (!missing_links.empty()) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < missing_links.size(); ++i) {
+      if (i > 0) {
+        oss << ", ";
+      }
+      oss << missing_links[i];
+    }
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "Finger link frame mismatch detected. Required frames missing from URDF: [%s].",
+      oss.str().c_str());
+    return false;
+  }
+
+  RCLCPP_INFO(
+    node->get_logger(),
+    "Finger link frame names match URDF links for the configured gripper model.");
+  return true;
 }
 
 class Demo : public moveit2::MoveitCppGraspExecution
@@ -175,6 +231,12 @@ public:
       "ee_wait_for_completion", false);
     int delay_ms = node_->declare_parameter<int>("ee_post_command_delay_ms", 0);
     ee_context_.post_command_delay = std::chrono::milliseconds(delay_ms);
+    grasp_execution::declare_or_get_param<std::string>(
+      planning_frame_, "planning_frame", node, node->get_logger(), "world");
+    planning_frame_ = grasp_execution::sanitize_frame_id(planning_frame_);
+    if (planning_frame_.empty()) {
+      throw std::runtime_error("Parameter 'planning_frame' is empty after trimming whitespace.");
+    }
 
     // Configurable release pose: x-offset from the current EE position and
     // optional z-height override. Defaults preserve the original behaviour.
@@ -327,7 +389,7 @@ public:
     const std::string & ee_brand = grasp_method.ee_id;
 
     grasp_execution::GraspExecutionContext options;
-    options.world_frame = "world";
+    options.world_frame = planning_frame_;
     options.planning_group = planning_group;
     options.ee_link = ee_link;
     options.move_to_collide_step_size = node_->get_parameter(
@@ -470,6 +532,7 @@ private:
   emd::EndEffectorExecutionContext ee_context_;
   rclcpp::Subscription<emd_msgs::msg::GraspTask>::SharedPtr grasp_task_sub_;
   rclcpp::Service<emd_msgs::srv::GraspRequest>::SharedPtr grasp_req_service_;
+  std::string planning_frame_;
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
 };
@@ -517,9 +580,22 @@ public:
           workcell_context_filepath.c_str());
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
+      const auto configured_planning_frame = this->declare_parameter<std::string>("planning_frame", "world");
+      const auto planning_frame = grasp_execution::sanitize_frame_id(configured_planning_frame);
+      if (planning_frame.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+      }
+      base_node_->set_parameter(rclcpp::Parameter("planning_frame", planning_frame));
+
+      if (!grasp_execution::validate_required_finger_link_frames_in_robot_description(base_node_)) {
+        RCLCPP_ERROR(this->get_logger(),
+          "URDF finger link validation failed; frame names must exactly match the installed gripper model.");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+      }
       const auto readiness_timeout_s = this->declare_parameter<int>("startup_readiness_timeout_s", 15);
       if (!grasp_execution::wait_for_required_grasp_readiness(
-          base_node_, std::chrono::seconds(readiness_timeout_s)))
+          base_node_, planning_frame, std::chrono::seconds(readiness_timeout_s)))
       {
         RCLCPP_ERROR(this->get_logger(),
           "Startup readiness checks failed; aborting configure before enabling octomap/shape masking.");

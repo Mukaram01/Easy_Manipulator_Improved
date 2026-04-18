@@ -16,6 +16,7 @@ DEFAULT_SCENE_PACKAGE_CANDIDATES = ("ur5_3f_test", "ur5_2f_test", "ur5_airpick4_
 PACKAGE_NAME = "run_grasp_execution"
 SCENE_PACKAGE_ARGUMENT = "scene_package"
 MOVEIT_CONFIG_PACKAGE_ARGUMENT = "moveit_config_package"
+PLANNING_FRAME_ARGUMENT = "planning_frame"
 
 
 def find_default_scene_package():
@@ -141,6 +142,11 @@ def resolve_scene_package_share_dir(scene_package):
 def launch_setup(context, *args, **kwargs):
     scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
     moveit_config_package = LaunchConfiguration(MOVEIT_CONFIG_PACKAGE_ARGUMENT).perform(context)
+    planning_frame = LaunchConfiguration(PLANNING_FRAME_ARGUMENT).perform(context).strip()
+    if not planning_frame:
+        raise RuntimeError(
+            f"Launch argument '{PLANNING_FRAME_ARGUMENT}' resolved to an empty frame after trimming whitespace."
+        )
     run_share = get_package_share_directory(PACKAGE_NAME)
     resolve_scene_package_share_dir(scene_package)
     resolve_required_package_share_dir(
@@ -216,6 +222,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             grasp_execution_yaml,
             sensors_yaml,
+            {"planning_frame": planning_frame, "octomap_frame": planning_frame},
             robot_description,
             robot_description_semantic,
             joint_limits,
@@ -308,6 +315,11 @@ def generate_launch_description():
                 MOVEIT_CONFIG_PACKAGE_ARGUMENT,
                 default_value="ur5_moveit_config",
                 description="MoveIt config package containing config/{kinematics,joint_limits,ompl_planning}.yaml",
+            ),
+            DeclareLaunchArgument(
+                PLANNING_FRAME_ARGUMENT,
+                default_value="world",
+                description="Canonical planning/reference frame shared by grasp execution and octomap.",
             ),
             OpaqueFunction(function=launch_setup),
         ]

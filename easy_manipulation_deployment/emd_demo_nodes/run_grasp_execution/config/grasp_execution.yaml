@@ -1,5 +1,6 @@
 grasp_execution_node:
   ros__parameters:
+    planning_frame: "world"
     workcell_context: config/workcell_context.yaml
     planning_scene_monitor_options:
       name: "planning_scene_monitor"
