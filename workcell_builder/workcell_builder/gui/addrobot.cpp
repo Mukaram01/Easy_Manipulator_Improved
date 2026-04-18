@@ -23,6 +23,7 @@
 #include <iostream>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -33,6 +34,34 @@
 
 namespace
 {
+class ScopedCurrentPath
+{
+public:
+  explicit ScopedCurrentPath(const boost::filesystem::path & destination)
+  : original_path_(boost::filesystem::current_path()),
+    active_(false)
+  {
+    if (!boost::filesystem::exists(destination) || !boost::filesystem::is_directory(destination)) {
+      throw boost::filesystem::filesystem_error(
+              "ScopedCurrentPath destination is invalid", destination,
+              boost::system::error_code());
+    }
+    boost::filesystem::current_path(destination);
+    active_ = true;
+  }
+
+  ~ScopedCurrentPath()
+  {
+    if (active_) {
+      boost::filesystem::current_path(original_path_);
+    }
+  }
+
+private:
+  boost::filesystem::path original_path_;
+  bool active_;
+};
+
 constexpr const char * kMissingUrdfLabel = "Missing URDF";
 const std::unordered_map<std::string, std::vector<std::string>> kDescriptionPackagesByBrand = {
   {"fanuc", {"moveit_resources_fanuc_description", "fanuc_description"}},
@@ -118,7 +147,6 @@ AddRobot::AddRobot(QWidget * parent)
 
 AddRobot::~AddRobot()
 {
-  boost::filesystem::current_path(original_path);
   delete ui;
 }
 void AddRobot::LoadExistingRobot(Robot robot_input)
@@ -166,118 +194,78 @@ void AddRobot::LoadExistingRobot(Robot robot_input)
 
 int AddRobot::LoadAvailableRobots()
 {
-  original_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path());  //
-  boost::filesystem::current_path("assets");
-  boost::filesystem::current_path("robots");
+  ui->robot_brand->clear();
+  ui->robot_model->clear();
+  ui->robot_links->clear();
+  ui->robot_ee_link->clear();
   available_brands.clear();
   available_robots.clear();
-  if (boost::filesystem::is_empty(boost::filesystem::current_path())) {
-    return 0;
-  } else {
-    boost::filesystem::path temp_path(boost::filesystem::current_path());
-    for (auto & filepath :
-      boost::filesystem::directory_iterator(boost::filesystem::current_path()))
-    {
-      std::string temp_brand;
+  try {
+    const boost::filesystem::path resolved_assets_path = assets_path.empty() ?
+      (workcell_path / "assets") : assets_path;
+    const boost::filesystem::path robots_path = resolved_assets_path / "robots";
+    if (!boost::filesystem::exists(robots_path) || !boost::filesystem::is_directory(robots_path)) {
+      QMessageBox::warning(
+        this, "Robot Assets Missing",
+        QString("Robot assets directory does not exist:\n%1")
+        .arg(QString::fromStdString(robots_path.string())));
+      return 0;
+    }
+    if (boost::filesystem::is_empty(robots_path)) {
+      return 0;
+    }
+
+    for (const auto & filepath : boost::filesystem::directory_iterator(robots_path)) {
+      if (!boost::filesystem::is_directory(filepath.path())) {
+        continue;
+      }
+      const boost::filesystem::path brand_path = filepath.path();
+      const std::string temp_brand = brand_path.filename().string();
       std::vector<Robot> brand_robot_vector;
-      for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-        ++it)
-      {
-        if (*it != '/') {
-          temp_brand = std::string(1, *it) + temp_brand;
-        } else {
-          boost::filesystem::current_path(temp_brand);
-          if (temp_brand.compare("universal_robot") == 0) {
-            std::vector<std::string> valid_robots;
-            for (auto & filepath :
-              boost::filesystem::directory_iterator(boost::filesystem::current_path()))
-            {
-              std::string temp_model;
-              bool is_moveit = false;
-              int char_count = 0;
-              for (auto it = filepath.path().string().crbegin();
-                it != filepath.path().string().crend(); ++it)
-              {
-                if (*it != '/') {
-                  temp_model = std::string(1, *it) + temp_model;
-                  char_count++;
-                  if (char_count == 13) {
-                    if (temp_model.compare("moveit_config") == 0) {
-                      is_moveit = true;
-                    }
-                  }
-                }
-                if (*it == '/') {
-                  break;
-                }
-              }
-              if (is_moveit) {
-                valid_robots.push_back(temp_model.substr(0, temp_model.size() - 14));
-              }
-            }
-            brand_robot_vector = LoadUR(valid_robots);
-          } else {
-            std::vector<std::string> moveit_configs;
-            const boost::filesystem::path brand_path = boost::filesystem::current_path();
-            for (auto & filepath :
-              boost::filesystem::directory_iterator(boost::filesystem::current_path()))
-            {
-              bool is_moveit = false;
 
-              std::string temp_model;
-              int char_count = 0;
-              for (auto it = filepath.path().string().crbegin();
-                it != filepath.path().string().crend(); ++it)
-              {
-                if (*it != '/') {
-                  temp_model = std::string(1, *it) + temp_model;
-                  char_count++;
-                  if (char_count == 13) {
-                    if (temp_model.compare("moveit_config") == 0) {
-                      is_moveit = true;
-                    }
-                  }
-                } else {
-                  break;
-                }
-              }
-
-              if (is_moveit) {
-                moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
-              }
-            }
-            boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
-
-            for (const auto & moveit_config : moveit_configs) {
-              const std::string description_folder = moveit_config + "_description";
-              boost::filesystem::path description_path = brand_path / description_folder;
-              if (!boost::filesystem::exists(description_path)) {
-                description_path = resolve_description_package_path(temp_brand);
-              }
-              if (description_path.empty()) {
-                std::cerr
-                  << "No description folder found for " << moveit_config
-                  << " under assets/robots/" << temp_brand
-                  << " and no matching ROS 2 description package is installed."
-                  << std::endl;
-                continue;
-              }
-              brand_robot_vector.push_back(
-                LoadRobot(
-                  description_folder,
-                  temp_brand,
-                  description_path));
-            }
+      if (temp_brand.compare("universal_robot") == 0) {
+        std::vector<std::string> valid_robots;
+        for (const auto & model_path : boost::filesystem::directory_iterator(brand_path)) {
+          std::string temp_model = model_path.path().filename().string();
+          if (temp_model.size() > 14 && temp_model.substr(temp_model.size() - 14) == "_moveit_config") {
+            valid_robots.push_back(temp_model.substr(0, temp_model.size() - 14));
           }
-          break;
+        }
+        brand_robot_vector = LoadUR(valid_robots);
+      } else {
+        std::vector<std::string> moveit_configs;
+        for (const auto & model_path : boost::filesystem::directory_iterator(brand_path)) {
+          std::string temp_model = model_path.path().filename().string();
+          if (temp_model.size() > 14 && temp_model.substr(temp_model.size() - 14) == "_moveit_config") {
+            moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
+          }
+        }
+
+        for (const auto & moveit_config : moveit_configs) {
+          const std::string description_folder = moveit_config + "_description";
+          boost::filesystem::path description_path = brand_path / description_folder;
+          if (!boost::filesystem::exists(description_path)) {
+            description_path = resolve_description_package_path(temp_brand);
+          }
+          if (description_path.empty()) {
+            std::cerr
+              << "No description folder found for " << moveit_config
+              << " under assets/robots/" << temp_brand
+              << " and no matching ROS 2 description package is installed."
+              << std::endl;
+            continue;
+          }
+          brand_robot_vector.push_back(
+            LoadRobot(
+              description_folder,
+              temp_brand,
+              description_path));
         }
       }
       if (!brand_robot_vector.empty()) {
         available_robots.push_back(brand_robot_vector);
         available_brands.push_back(temp_brand);
       }
-      boost::filesystem::current_path(temp_path);
     }
     for (int i3 = 0; i3 < static_cast<int>(available_brands.size()); i3++) {
       ui->robot_brand->addItem(QString::fromStdString(available_brands[i3]));
@@ -296,6 +284,16 @@ int AddRobot::LoadAvailableRobots()
       }
     }
     return total_count;
+  } catch (const boost::filesystem::filesystem_error & error) {
+    QMessageBox::warning(
+      this, "Robot Discovery Error",
+      QString("Filesystem error while loading robots:\n%1")
+      .arg(QString::fromStdString(error.what())));
+  } catch (const std::exception & error) {
+    QMessageBox::warning(
+      this, "Robot Discovery Error",
+      QString("Error while loading robots:\n%1")
+      .arg(QString::fromStdString(error.what())));
   }
   return 0;
 }
@@ -306,8 +304,10 @@ Robot AddRobot::LoadRobot(
   const boost::filesystem::path & description_path)
 {
   Robot temp_robot;
+  const boost::filesystem::path robots_root = assets_path.empty() ?
+    (workcell_path / "assets" / "robots") : (assets_path / "robots");
   const boost::filesystem::path resolved_description_path = description_path.empty() ?
-    (boost::filesystem::current_path() / brand / file) : description_path;
+    (robots_root / brand / file) : description_path;
   temp_robot.filepath = resolved_description_path.string();
   temp_robot.brand = brand;
   temp_robot.name = file.erase(file.length() - 12);
@@ -332,7 +332,9 @@ Robot AddRobot::LoadRobot(
 std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
 // load ur robots based on the way it is structured
 {
-  const boost::filesystem::path base_path = boost::filesystem::current_path();
+  const boost::filesystem::path base_path = assets_path.empty() ?
+    (workcell_path / "assets" / "robots" / "universal_robot") :
+    (assets_path / "robots" / "universal_robot");
   const boost::filesystem::path ur_description_path = base_path / "ur_description";
   boost::filesystem::path resolved_ur_description_path = ur_description_path;
   if (!boost::filesystem::exists(ur_description_path)) {
@@ -348,7 +350,6 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
           << "Resolved ur_description via package share directory: "
           << share_path.string() << std::endl;
         resolved_ur_description_path = share_path;
-        boost::filesystem::current_path(share_path);
         resolved_package = true;
       }
     } catch (const std::exception & e) {
@@ -368,17 +369,28 @@ std::vector<Robot> AddRobot::LoadUR(std::vector<std::string> robot_list)
       return {};
     }
   } else {
-    boost::filesystem::current_path(ur_description_path);
+    resolved_ur_description_path = ur_description_path;
   }
-  boost::filesystem::current_path("urdf");
 
   std::vector<Robot> ur_robot_vector;
+  const boost::filesystem::path urdf_path = resolved_ur_description_path / "urdf";
+  if (!boost::filesystem::exists(urdf_path) || !boost::filesystem::is_directory(urdf_path)) {
+    QMessageBox::warning(
+      this,
+      "UR Description Missing",
+      QString("URDF folder not found under ur_description:\n%1")
+      .arg(QString::fromStdString(urdf_path.string())));
+    return {};
+  }
   for (int i = 0; i < static_cast<int>(robot_list.size()); i++) {
     Robot temp_robot;
     temp_robot.brand = "universal_robot";
     temp_robot.name = robot_list[i];
+    const boost::filesystem::path resolved_xacro =
+      urdf_path / resolve_universal_robot_xacro_filename(
+      resolved_ur_description_path, temp_robot.name);
     temp_robot.robot_links = GetLinks(
-      resolve_universal_robot_xacro_filename(resolved_ur_description_path, temp_robot.name),
+      resolved_xacro.string(),
       {
         "ur_type:=" + temp_robot.name,
         "name:=" + temp_robot.name
@@ -393,7 +405,17 @@ std::vector<std::string> AddRobot::GetLinks(
   const std::vector<std::string> & xacro_arguments)
 {
   std::vector<std::string> links;
-  const boost::filesystem::path file_path = boost::filesystem::absolute(filename);
+  boost::filesystem::path file_path;
+  try {
+    file_path = boost::filesystem::absolute(filename);
+  } catch (const boost::filesystem::filesystem_error & error) {
+    QMessageBox::warning(
+      this,
+      "URDF Path Error",
+      QString("Failed to resolve URDF/xacro path:\n%1")
+      .arg(QString::fromStdString(error.what())));
+    return links;
+  }
   if (!boost::filesystem::exists(file_path)) {
     std::cerr << "URDF/xacro file not found: " << file_path.string() << std::endl;
     QMessageBox::warning(
@@ -401,6 +423,17 @@ std::vector<std::string> AddRobot::GetLinks(
       "URDF Missing",
       QString("URDF/xacro file not found:\n%1")
       .arg(QString::fromStdString(file_path.string())));
+    return links;
+  }
+  std::unique_ptr<ScopedCurrentPath> path_guard;
+  try {
+    path_guard = std::make_unique<ScopedCurrentPath>(file_path.parent_path());
+  } catch (const boost::filesystem::filesystem_error & error) {
+    QMessageBox::warning(
+      this,
+      "URDF Path Error",
+      QString("Cannot switch to URDF directory:\n%1")
+      .arg(QString::fromStdString(error.what())));
     return links;
   }
 

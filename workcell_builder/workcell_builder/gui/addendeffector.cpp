@@ -16,6 +16,7 @@
 #include "gui/addendeffector.h"
 #include <QString>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTemporaryFile>
@@ -24,6 +25,7 @@
 #include <iostream>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -32,6 +34,37 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
 #include "attributes/robot.h"
+
+namespace
+{
+class ScopedCurrentPath
+{
+public:
+  explicit ScopedCurrentPath(const boost::filesystem::path & destination)
+  : original_path_(boost::filesystem::current_path()),
+    active_(false)
+  {
+    if (!boost::filesystem::exists(destination) || !boost::filesystem::is_directory(destination)) {
+      throw boost::filesystem::filesystem_error(
+              "ScopedCurrentPath destination is invalid", destination,
+              boost::system::error_code());
+    }
+    boost::filesystem::current_path(destination);
+    active_ = true;
+  }
+
+  ~ScopedCurrentPath()
+  {
+    if (active_) {
+      boost::filesystem::current_path(original_path_);
+    }
+  }
+
+private:
+  boost::filesystem::path original_path_;
+  bool active_;
+};
+}  // namespace
 
 AddEndEffector::AddEndEffector(QWidget * parent)
 : QDialog(parent),
@@ -48,95 +81,69 @@ AddEndEffector::AddEndEffector(QWidget * parent)
 
 int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path & end_effector_path)
 {
-  original_path = boost::filesystem::current_path();
   ui->parent_object->setText(QString::fromStdString(robot.name));
   ui->parent_link->setText(QString::fromStdString(robot.ee_link));
-  boost::filesystem::path ee_path = end_effector_path;
-  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
-    const auto share =
-      ament_index_cpp::get_package_share_directory("workcell_builder");
-    ee_path = boost::filesystem::path(share) / "assets" / "end_effectors";
-  }
+  const boost::filesystem::path resolved_assets_path = assets_path.empty() ?
+    (workcell_path / "assets") : assets_path;
+  boost::filesystem::path ee_path = end_effector_path.empty() ?
+    (resolved_assets_path / "end_effectors") : end_effector_path;
+  ui->ee_brand->clear();
+  ui->ee_model->clear();
+  ui->ee_links->clear();
   available_brands.clear();
   available_ee.clear();
-  if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
-    return 0;
-  } else {
-    boost::filesystem::current_path(ee_path);
-    for (auto & filepath :
-      boost::filesystem::directory_iterator(ee_path))
-    {
-      std::string temp_brand;
+  try {
+    if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
+      const auto share =
+        ament_index_cpp::get_package_share_directory("workcell_builder");
+      ee_path = boost::filesystem::path(share) / "assets" / "end_effectors";
+    }
+    if (!boost::filesystem::exists(ee_path) || boost::filesystem::is_empty(ee_path)) {
+      return 0;
+    }
+
+    for (const auto & filepath : boost::filesystem::directory_iterator(ee_path)) {
+      if (!boost::filesystem::is_directory(filepath.path())) {
+        continue;
+      }
+      const boost::filesystem::path brand_path = filepath.path();
+      const std::string temp_brand = brand_path.filename().string();
       std::vector<EndEffector> brand_ee_vector;
 
-      // Iterate brand
-      for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-        ++it)
-      {
-        if (*it != '/') {
-          temp_brand = std::string(1, *it) + temp_brand;
-        } else {
-          boost::filesystem::current_path(temp_brand);
-          std::vector<std::string> moveit_configs;
-          std::vector<std::string> descriptions;
-          for (auto & filepath_model :
-            boost::filesystem::directory_iterator(boost::filesystem::current_path()))
-          {
-            bool is_moveit_config = false;
-            bool is_description = false;
-            std::string temp_model;
-            int char_count = 0;
-
-            for (auto it = filepath_model.path().string().crbegin();
-              it != filepath_model.path().string().crend(); ++it)
-            {
-              if (*it != '/') {
-                temp_model = std::string(1, *it) + temp_model;
-                char_count++;
-                if (char_count == 11) {
-                  if (temp_model.compare("description") == 0) {
-                    is_description = true;
-                  }
-                }
-                if (char_count == 13) {
-                  if (temp_model.compare("moveit_config") == 0) {
-                    is_moveit_config = true;
-                  }
-                }
-              } else {
-                break;
-              }
-            }
-            if (is_description) {
-              descriptions.push_back(temp_model.substr(0, temp_model.size() - 12));
-            }
-            if (is_moveit_config) {
-              moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
-            }
-          }
-          if (moveit_configs.size() < descriptions.size()) {
-            for (int i = 0; i < static_cast<int>(descriptions.size()); i++) {
-              if (std::find(
-                  moveit_configs.begin(), moveit_configs.end(),
-                  descriptions[i]) != moveit_configs.end())
-              {
-                brand_ee_vector.push_back(LoadEE(descriptions[i] + "_description", temp_brand));
-              }
-            }
-          } else {
-            for (int i = 0; i < static_cast<int>(moveit_configs.size()); i++) {
-              if (std::find(
-                  descriptions.begin(), descriptions.end(),
-                  moveit_configs[i]) != descriptions.end())
-              {
-                brand_ee_vector.push_back(LoadEE(moveit_configs[i] + "_description", temp_brand));
-              }
-            }
-          }
-          boost::filesystem::current_path(boost::filesystem::current_path().branch_path());
-          break;
+      std::vector<std::string> moveit_configs;
+      std::vector<std::string> descriptions;
+      for (const auto & filepath_model : boost::filesystem::directory_iterator(brand_path)) {
+        const std::string temp_model = filepath_model.path().filename().string();
+        if (temp_model.size() > 12 && temp_model.substr(temp_model.size() - 12) == "_description") {
+          descriptions.push_back(temp_model.substr(0, temp_model.size() - 12));
+        }
+        if (temp_model.size() > 14 && temp_model.substr(temp_model.size() - 14) == "_moveit_config") {
+          moveit_configs.push_back(temp_model.substr(0, temp_model.size() - 14));
         }
       }
+
+      if (moveit_configs.size() < descriptions.size()) {
+        for (int i = 0; i < static_cast<int>(descriptions.size()); i++) {
+          if (std::find(
+              moveit_configs.begin(), moveit_configs.end(),
+              descriptions[i]) != moveit_configs.end())
+          {
+            brand_ee_vector.push_back(
+              LoadEE((brand_path / (descriptions[i] + "_description")), temp_brand));
+          }
+        }
+      } else {
+        for (int i = 0; i < static_cast<int>(moveit_configs.size()); i++) {
+          if (std::find(
+              descriptions.begin(), descriptions.end(),
+              moveit_configs[i]) != descriptions.end())
+          {
+            brand_ee_vector.push_back(
+              LoadEE((brand_path / (moveit_configs[i] + "_description")), temp_brand));
+          }
+        }
+      }
+
       if (!brand_ee_vector.empty()) {
         available_ee.push_back(brand_ee_vector);
         available_brands.push_back(temp_brand);
@@ -160,6 +167,18 @@ int AddEndEffector::LoadAvailableEE(Robot robot, const boost::filesystem::path &
     on_ee_model_currentIndexChanged(0);
     ui->ee_links->setCurrentIndex(0);
     return total_ee;
+  } catch (const boost::filesystem::filesystem_error & error) {
+    QMessageBox::warning(
+      this,
+      "End Effector Discovery Error",
+      QString("Filesystem error while loading end effectors:\n%1")
+      .arg(QString::fromStdString(error.what())));
+  } catch (const std::exception & error) {
+    QMessageBox::warning(
+      this,
+      "End Effector Discovery Error",
+      QString("Error while loading end effectors:\n%1")
+      .arg(QString::fromStdString(error.what())));
   }
   return 0;
 }
@@ -266,22 +285,23 @@ void AddEndEffector::on_ee_type_currentIndexChanged(int index)
   ui->attribute_2->blockSignals(oldState2);
 }
 
-EndEffector AddEndEffector::LoadEE(std::string file, std::string brand)
+EndEffector AddEndEffector::LoadEE(const boost::filesystem::path & description_path, std::string brand)
 {
   EndEffector temp_ee;
-  temp_ee.filepath = boost::filesystem::current_path().string() + "/" + file;
-  boost::filesystem::current_path(file);
-  boost::filesystem::current_path("urdf");
+  temp_ee.filepath = description_path.string();
   temp_ee.brand = brand;
-  temp_ee.name = file.erase(file.length() - 12);
+  temp_ee.name = description_path.filename().string();
+  if (temp_ee.name.size() > 12 && temp_ee.name.substr(temp_ee.name.size() - 12) == "_description") {
+    temp_ee.name.erase(temp_ee.name.length() - 12);
+  }
+  const boost::filesystem::path urdf_dir = description_path / "urdf";
   const std::string macro_filename = temp_ee.name + "_gripper.urdf.xacro";
   const std::string standalone_filename = temp_ee.name + "_gripper_standalone.urdf.xacro";
-  if (boost::filesystem::exists(standalone_filename)) {
-    temp_ee.ee_links = GetLinks(standalone_filename);
+  if (boost::filesystem::exists(urdf_dir / standalone_filename)) {
+    temp_ee.ee_links = GetLinks((urdf_dir / standalone_filename).string());
   } else {
-    temp_ee.ee_links = GetLinks(macro_filename);
+    temp_ee.ee_links = GetLinks((urdf_dir / macro_filename).string());
   }
-  boost::filesystem::current_path(boost::filesystem::current_path().branch_path().branch_path());
   return temp_ee;
 }
 namespace
@@ -316,10 +336,21 @@ std::vector<std::string> AddEndEffector::GetLinks(
   const std::vector<std::string> & xacro_arguments)
 {
   std::vector<std::string> links;
-  if (!boost::filesystem::exists(filename)) {
+  const boost::filesystem::path file_path = boost::filesystem::absolute(filename);
+  if (!boost::filesystem::exists(file_path)) {
     ui->errorlist->append(
       QString::fromStdString(
-        "<font color='red'> End effector xacro file not found: " + filename + " </font>"));
+        "<font color='red'> End effector xacro file not found: " + file_path.string() + " </font>"));
+    return links;
+  }
+  std::unique_ptr<ScopedCurrentPath> path_guard;
+  try {
+    path_guard = std::make_unique<ScopedCurrentPath>(file_path.parent_path());
+  } catch (const boost::filesystem::filesystem_error & error) {
+    ui->errorlist->append(
+      QString::fromStdString(
+        "<font color='red'> Cannot open end-effector directory: " + std::string(error.what()) +
+        " </font>"));
     return links;
   }
 
@@ -349,8 +380,7 @@ std::vector<std::string> AddEndEffector::GetLinks(
     return false;
   };
 
-  const QString xacro_filename =
-    QString::fromStdString(boost::filesystem::absolute(filename).string());
+  const QString xacro_filename = QString::fromStdString(file_path.string());
   QString xacro_stderr;
   if (!run_xacro(build_xacro_args(xacro_filename), &urdf_xml, &xacro_stderr)) {
     QString error_message =
@@ -617,7 +647,6 @@ int AddEndEffector::ErrorCheckOrigin()
 
 AddEndEffector::~AddEndEffector()
 {
-  boost::filesystem::current_path(original_path);
   delete ui;
 }
 

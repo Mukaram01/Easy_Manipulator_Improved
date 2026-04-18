@@ -15,6 +15,7 @@
 
 #include "gui/loadobjects.h"
 #include <boost/filesystem.hpp>
+#include <QMessageBox>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -27,21 +28,7 @@ LoadObjects::LoadObjects(QWidget * parent)
   ui(new Ui::LoadObjects)
 {
   ui->setupUi(this);
-  boost::filesystem::current_path("environment");
-  get_all_objects();
-  if (available_objects.size() <= 0) {
-    ui->object_name->setDisabled(true);
-    ui->available_objects->setDisabled(true);
-    ui->ok->setDisabled(true);
-    ui->error_message->append(
-      "<font color='red'> Error: No object to be loaded."
-      " Is the object initially created with the Workcell Builder? </font>");
-  } else {
-    for (int i = 0; i < static_cast<int>(available_objects.size()); i++) {
-      ui->available_objects->addItem(QString::fromStdString(available_objects[i]));
-    }
-    ui->object_name->setText(ui->available_objects->currentText());
-  }
+  success = false;
 }
 
 LoadObjects::~LoadObjects()
@@ -75,41 +62,85 @@ void LoadObjects::on_exit_clicked()
   this->close();
 }
 
-void LoadObjects::get_all_objects()
+void LoadObjects::refresh_available_objects()
 {
-  boost::filesystem::path temp_path(boost::filesystem::current_path());
-  for (auto & filepath : boost::filesystem::directory_iterator(boost::filesystem::current_path())) {
-    boost::filesystem::current_path(filepath.path());
-    std::string temp_name;
-    for (auto it = filepath.path().string().crbegin(); it != filepath.path().string().crend();
-      ++it)
-    {
-      if (*it != '/') {
-        temp_name = std::string(1, *it) + temp_name;
-      } else {
-        temp_name = temp_name.substr(0, temp_name.size() - 12);
-        break;
-      }
-    }
+  ui->available_objects->clear();
+  get_all_objects();
+  const bool has_objects = !available_objects.empty();
+  ui->object_name->setDisabled(!has_objects);
+  ui->available_objects->setDisabled(!has_objects);
+  ui->ok->setDisabled(!has_objects);
 
-    if (boost::filesystem::exists(temp_name + ".yaml")) {
-      available_objects.push_back(temp_name);
-    }
+  if (!has_objects) {
+    ui->error_message->append(
+      "<font color='red'> Error: No object to be loaded."
+      " Is the object initially created with the Workcell Builder? </font>");
+    return;
   }
-  boost::filesystem::current_path(temp_path);
+
+  for (const auto & available_object : available_objects) {
+    ui->available_objects->addItem(QString::fromStdString(available_object));
+  }
+  ui->object_name->setText(ui->available_objects->currentText());
 }
 
-// Assumes you are at the environment directory
+void LoadObjects::get_all_objects()
+{
+  available_objects.clear();
+  try {
+    const boost::filesystem::path resolved_assets_path = assets_path.empty() ?
+      (workcell_path / "assets") : assets_path;
+    const boost::filesystem::path environment_path = resolved_assets_path / "environment";
+    if (!boost::filesystem::exists(environment_path) ||
+      !boost::filesystem::is_directory(environment_path))
+    {
+      append_error(
+        "Environment assets folder not found: " + environment_path.string());
+      return;
+    }
+
+    for (const auto & filepath : boost::filesystem::directory_iterator(environment_path)) {
+      if (!boost::filesystem::is_directory(filepath.path())) {
+        continue;
+      }
+      std::string temp_name = filepath.path().filename().string();
+      if (temp_name.size() <= 12 || temp_name.substr(temp_name.size() - 12) != "_description") {
+        continue;
+      }
+      temp_name = temp_name.substr(0, temp_name.size() - 12);
+      if (boost::filesystem::exists(filepath.path() / (temp_name + ".yaml"))) {
+        available_objects.push_back(temp_name);
+      }
+    }
+  } catch (const boost::filesystem::filesystem_error & error) {
+    append_error("Filesystem error while enumerating objects: " + std::string(error.what()));
+  } catch (const std::exception & error) {
+    append_error("Error while enumerating objects: " + std::string(error.what()));
+  }
+}
+
 bool LoadObjects::load_object_from_yaml(std::string object_name)
 {
-  boost::filesystem::path temp_path(boost::filesystem::current_path());
-  boost::filesystem::current_path(object_name + "_description");
   Object temp_object;
   YAML::Node yaml;
-  // Load Yaml File.
+  const boost::filesystem::path resolved_assets_path = assets_path.empty() ?
+    (workcell_path / "assets") : assets_path;
+  const boost::filesystem::path object_directory =
+    resolved_assets_path / "environment" / (object_name + "_description");
+  const boost::filesystem::path yaml_path = object_directory / (object_name + ".yaml");
+
+  if (!boost::filesystem::exists(yaml_path)) {
+    append_error("Object YAML file not found: " + yaml_path.string());
+    return false;
+  }
+
   try {
-    yaml = YAML::LoadFile(object_name + ".yaml");
+    yaml = YAML::LoadFile(yaml_path.string());
   } catch (YAML::BadFile & error) {
+    append_error("Cannot load object YAML file: " + yaml_path.string());
+    return false;
+  } catch (const std::exception & error) {
+    append_error("Error parsing object YAML file: " + std::string(error.what()));
     return false;
   }
 
@@ -159,7 +190,6 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
     }
   }
 
-  boost::filesystem::current_path(temp_path);
   chosen_object = temp_object;
   chosen_object.name = ui->object_name->text().toStdString();
   return true;
@@ -168,5 +198,13 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
 
 void LoadObjects::on_available_objects_currentIndexChanged(int index)
 {
-  ui->object_name->setText(QString::fromStdString(available_objects[index]));
+  if (index >= 0 && index < static_cast<int>(available_objects.size())) {
+    ui->object_name->setText(QString::fromStdString(available_objects[index]));
+  }
+}
+
+void LoadObjects::append_error(const std::string & message)
+{
+  ui->error_message->append(QString::fromStdString("<font color='red'> " + message + " </font>"));
+  QMessageBox::warning(this, "Load Object Error", QString::fromStdString(message));
 }

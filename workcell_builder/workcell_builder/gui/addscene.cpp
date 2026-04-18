@@ -310,13 +310,13 @@ void AddScene::on_delete_object_clicked()
 
 void AddScene::on_add_robot_clicked()
 {
-  if (!resolve_directory_paths() || !validate_directory(scenes_path, "scenes")) {
+  if (!resolve_directory_paths() || !validate_directory(assets_path, "assets")) {
     return;
   }
 
-  const boost::filesystem::path previous_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(scenes_path);
   AddRobot robot_window;
+  robot_window.workcell_path = workcell_path;
+  robot_window.assets_path = assets_path;
   int num_robots_loaded = robot_window.LoadAvailableRobots();
   if (num_robots_loaded <= 0) {
     ui->robot_brand->setText(
@@ -351,7 +351,6 @@ void AddScene::on_add_robot_clicked()
       }
     }
   }
-  boost::filesystem::current_path(previous_path);
 }
 
 void AddScene::on_add_ee_clicked()
@@ -361,6 +360,8 @@ void AddScene::on_add_ee_clicked()
   }
 
   AddEndEffector ee_window;
+  ee_window.workcell_path = workcell_path;
+  ee_window.assets_path = assets_path;
   int num_ee = ee_window.LoadAvailableEE(scene.robot_vector[0], assets_path / "end_effectors");
   if (num_ee <= 0) {
     ui->ee_brand->setText(
@@ -603,9 +604,10 @@ void AddScene::on_load_object_clicked()
     available_object_names.push_back(scene.object_vector[i].name);
   }
 
-  const boost::filesystem::path previous_path = boost::filesystem::current_path();
-  boost::filesystem::current_path(assets_path);
   LoadObjects load_obj_window;
+  load_obj_window.workcell_path = workcell_path;
+  load_obj_window.assets_path = assets_path;
+  load_obj_window.refresh_available_objects();
   load_obj_window.current_object_names = available_object_names;
   load_obj_window.setWindowTitle("Load Existing Objects");
   load_obj_window.setModal(true);
@@ -617,7 +619,6 @@ void AddScene::on_load_object_clicked()
     ui->parent_link->addItem("");
     scene.object_vector.push_back(load_obj_window.chosen_object);
   }
-  boost::filesystem::current_path(previous_path);
 }
 
 void AddScene::append_path_error(const std::string & message)
