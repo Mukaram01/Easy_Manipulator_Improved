@@ -44,6 +44,72 @@
                 <state_interface name="position"/>
                 <state_interface name="velocity"/>
             </joint>
+            <joint name="palm_finger_1_joint">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_1_joint_1">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_1_joint_2">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_1_joint_3">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="palm_finger_2_joint">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_2_joint_1">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_2_joint_2">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_2_joint_3">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_middle_joint_1">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_middle_joint_2">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+            <joint name="finger_middle_joint_3">
+                <param name="initial_position">0.0</param>
+                <command_interface name="position" />
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
         </ros2_control>
 
     </xacro:macro>
