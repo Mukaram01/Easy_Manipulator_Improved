@@ -544,6 +544,9 @@ void SceneSelect::on_edit_scene_clicked()
     }
     // Scene loaded
     AddScene scene_window;
+    scene_window.scenes_path = scenes_path;
+    scene_window.assets_path = assets_path;
+    scene_window.workcell_path = workcell_path;
     scene_window.LoadScene(curr_scene);
     scene_window.setWindowTitle("Edit Scene");
     scene_window.setModal(true);

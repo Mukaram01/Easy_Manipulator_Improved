@@ -35,7 +35,8 @@ class AddRobot: public QDialog
 public:
   std::vector < std::vector < Robot >> available_robots;
   std::vector < std::string > available_brands;
-  boost::filesystem::path original_path;
+  boost::filesystem::path workcell_path;
+  boost::filesystem::path assets_path;
   Robot robot;
   bool success;
   bool editing_mode = false;
