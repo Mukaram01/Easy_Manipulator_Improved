@@ -15,6 +15,7 @@
 
 #include <QKeyEvent>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
@@ -339,6 +340,15 @@ void SceneSelect::clear_messages()
   ui->error_workcell->clear();
 }
 
+void SceneSelect::refresh_scene_status(bool strict, const std::string & trigger)
+{
+  clear_messages();
+  const std::string timestamp =
+    QDateTime::currentDateTime().toString(Qt::ISODate).toStdString();
+  append_info("Status snapshot [" + trigger + "] @ " + timestamp);
+  check_scene(strict);
+}
+
 void SceneSelect::configure_startup_fallback_paths()
 {
   if (!workcell_path.empty()) {
@@ -657,7 +667,7 @@ void SceneSelect::on_generate_yaml_clicked()
     append_error("No scene selected to generate environment.yaml.");
   }
   scaffold_scene_index_ = -1;
-  check_scene(true);
+  refresh_scene_status(true, "Generate YAML");
 }
 bool SceneSelect::check_yaml()  // Check if scene package has a yaml file to use.
 {
@@ -697,7 +707,7 @@ bool SceneSelect::check_scene(bool strict)
       "Scene files were generated, but without environment.yaml this scene cannot be edited after exit.");
   }
   if (!strict && files_loaded_proper) {
-    append_warning(
+    append_info(
       "Scene status: launch/SRDF files are not generated yet. Use Generate Files when ready.");
   }
   ui->exit->setDisabled(false);
@@ -787,7 +797,7 @@ bool SceneSelect::check_files(bool strict)
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
-  check_scene(index != scaffold_scene_index_);
+  refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
 }
 void SceneSelect::on_generate_files_clicked()
 {
@@ -814,7 +824,7 @@ void SceneSelect::on_generate_files_clicked()
     append_error("No scene selected to generate files from.");
   }
   scaffold_scene_index_ = -1;
-  check_scene(true);
+  refresh_scene_status(true, "Generate Files");
 }
 bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 {

@@ -93,6 +93,7 @@ private:
   void append_error(const std::string & message);
   void append_success(const std::string & message);
   void clear_messages();
+  void refresh_scene_status(bool strict, const std::string & trigger);
 
   Ui::SceneSelect * ui;
   boost::filesystem::path scene_dir_for_current_selection() const;
