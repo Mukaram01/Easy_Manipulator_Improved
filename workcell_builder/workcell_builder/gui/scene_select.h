@@ -47,11 +47,11 @@ public:
     int ros_ver, const std::string & ros_distro);
   void generate_scene_files(Scene scene);
   bool check_yaml();
-  bool check_files();
-  bool check_scene();
+  bool check_files(bool strict = true);
+  bool check_scene(bool strict = true);
   void load_workcell(Workcell workcell);
   bool load_scene_from_yaml(Scene * input_scene);
-  void refresh_scenes(int latest_scene);
+  void refresh_scenes(int latest_scene, bool scaffold_only_status = false);
   void keyPressEvent(QKeyEvent * e);
 
   // void GeneratePackageXML(std::string target_filepath ,std::string package_name,int ros_ver);
@@ -99,6 +99,8 @@ private:
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
+
+  int scaffold_scene_index_ = -1;
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
