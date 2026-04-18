@@ -115,6 +115,50 @@ def test_resolve_scene_package_share_dir_reports_missing_scene(grasp_launch_modu
     assert "scene_package:=ur5_3f_test" in str(exc_info.value)
 
 
+def test_generate_launch_description_uses_safe_default_when_no_scene_is_discovered(grasp_launch_module, monkeypatch):
+    captured_arguments = []
+
+    class FakeDeclareLaunchArgument:
+        def __init__(self, name, **kwargs):
+            captured_arguments.append((name, kwargs))
+            self.name = name
+            self.kwargs = kwargs
+
+    class FakeLaunchDescription:
+        def __init__(self, entities):
+            self.entities = entities
+
+    monkeypatch.setattr(grasp_launch_module, "DeclareLaunchArgument", FakeDeclareLaunchArgument)
+    monkeypatch.setattr(grasp_launch_module, "LaunchDescription", FakeLaunchDescription)
+    monkeypatch.setattr(grasp_launch_module, "OpaqueFunction", lambda function: ("opaque", function))
+    monkeypatch.setattr(grasp_launch_module, "DEFAULT_SCENE_PACKAGE", None)
+
+    launch_description = grasp_launch_module.generate_launch_description()
+
+    assert isinstance(launch_description, FakeLaunchDescription)
+    scene_arguments = [kwargs for name, kwargs in captured_arguments if name == grasp_launch_module.SCENE_PACKAGE_ARGUMENT]
+    assert len(scene_arguments) == 1
+    assert scene_arguments[0]["default_value"] == "ur5_3f_test"
+
+
+def test_launch_setup_rejects_empty_scene_package_with_deterministic_error(grasp_launch_module, monkeypatch):
+    class FakeLaunchConfiguration:
+        def __init__(self, name):
+            self.name = name
+
+        def perform(self, context):
+            return context.get(self.name)
+
+    monkeypatch.setattr(grasp_launch_module, "LaunchConfiguration", FakeLaunchConfiguration)
+
+    with pytest.raises(RuntimeError, match=r"Launch argument 'scene_package' was empty") as exc_info:
+        grasp_launch_module.launch_setup({grasp_launch_module.SCENE_PACKAGE_ARGUMENT: ""})
+
+    error_text = str(exc_info.value)
+    assert "scene_package:=ur5_3f_test" in error_text
+    assert "build/source your generated scene package first" in error_text
+
+
 @pytest.mark.parametrize(
     "module_path",
     [

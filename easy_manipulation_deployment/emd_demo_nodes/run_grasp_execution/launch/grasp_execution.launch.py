@@ -231,6 +231,13 @@ def resolve_scene_package_share_dir(scene_package):
 
 def launch_setup(context, *args, **kwargs):
     scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
+    if not scene_package:
+        available = ", ".join(DEFAULT_SCENE_PACKAGE_CANDIDATES)
+        raise RuntimeError(
+            f"Launch argument '{SCENE_PACKAGE_ARGUMENT}' was empty. Pass a valid '{SCENE_PACKAGE_ARGUMENT}' "
+            f"launch argument, for example '{SCENE_PACKAGE_ARGUMENT}:={available.split(', ')[0]}', or build/source "
+            "your generated scene package first."
+        )
     moveit_config_package = LaunchConfiguration(MOVEIT_CONFIG_PACKAGE_ARGUMENT).perform(context)
     planning_frame = LaunchConfiguration(PLANNING_FRAME_ARGUMENT).perform(context).strip()
     if not planning_frame:
@@ -422,9 +429,10 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Launch in debug mode")
     scene_description = "Scene package containing urdf/scene.urdf.xacro and urdf/arm_hand.srdf.xacro"
-    scene_arg_kwargs = {"description": scene_description}
-    if DEFAULT_SCENE_PACKAGE is not None:
-        scene_arg_kwargs["default_value"] = DEFAULT_SCENE_PACKAGE
+    scene_arg_kwargs = {
+        "description": scene_description,
+        "default_value": DEFAULT_SCENE_PACKAGE if DEFAULT_SCENE_PACKAGE is not None else "ur5_3f_test",
+    }
 
     return LaunchDescription(
         [
