@@ -19,16 +19,68 @@ MOVEIT_CONFIG_PACKAGE_ARGUMENT = "moveit_config_package"
 PLANNING_FRAME_ARGUMENT = "planning_frame"
 
 
+GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR = {
+    "robotiq_3f": (
+        "palm_finger_1_joint",
+        "finger_1_joint_1",
+        "finger_1_joint_2",
+        "finger_1_joint_3",
+        "palm_finger_2_joint",
+        "finger_2_joint_1",
+        "finger_2_joint_2",
+        "finger_2_joint_3",
+        "finger_middle_joint_1",
+        "finger_middle_joint_2",
+        "finger_middle_joint_3",
+    ),
+    "robotiq_2f": ("gripper_finger1_joint",),
+}
 
-GRIPPER_CONTROLLER_JOINTS = ("gripper_finger1_joint",)
 
-
-def scene_exposes_gripper_position_interfaces(robot_description_xml):
-    for joint_name in GRIPPER_CONTROLLER_JOINTS:
+def scene_exposes_gripper_position_interfaces(robot_description_xml, gripper_controller_joints):
+    for joint_name in gripper_controller_joints:
         joint_tag = f'<joint name="{joint_name}">'
         if joint_tag not in robot_description_xml:
             return False
     return True
+
+
+def resolve_gripper_controller_joints(scene_package):
+    scene_metadata = load_yaml(scene_package, "environment.yaml")
+    end_effector = scene_metadata.get("end_effector", {})
+    ee_name = str(end_effector.get("name", "")).lower()
+    ee_brand = str(end_effector.get("brand", "")).lower()
+    ee_fingers = end_effector.get("attributes", {}).get("fingers")
+
+    if "robotiq_3f" in ee_name or "robotiq_3f" in ee_brand or ee_fingers == 3:
+        return GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR["robotiq_3f"]
+    if "robotiq_85" in ee_name or "robotiq_85" in ee_brand or ee_fingers == 2:
+        return GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR["robotiq_2f"]
+    return ()
+
+
+def align_gripper_controller_joints(controllers_yaml, ros2_controllers_yaml, gripper_controller_joints):
+    controller_names = controllers_yaml.setdefault("controller_names", [])
+    controller_manager_ros_params = ros2_controllers_yaml.setdefault("controller_manager", {}).setdefault(
+        "ros__parameters", {}
+    )
+
+    if gripper_controller_joints:
+        gripper_joints = list(gripper_controller_joints)
+        controllers_yaml.setdefault("ur5_gripper_controller", {})["joints"] = gripper_joints
+        ros2_controllers_yaml.setdefault("ur5_gripper_controller", {}).setdefault("ros__parameters", {})[
+            "joints"
+        ] = gripper_joints
+        if "ur5_gripper_controller" not in controller_names:
+            controller_names.append("ur5_gripper_controller")
+        controller_manager_ros_params.setdefault(
+            "ur5_gripper_controller", {"type": "joint_trajectory_controller/JointTrajectoryController"}
+        )
+    else:
+        controller_names[:] = [name for name in controller_names if name != "ur5_gripper_controller"]
+        controllers_yaml.pop("ur5_gripper_controller", None)
+        ros2_controllers_yaml.pop("ur5_gripper_controller", None)
+        controller_manager_ros_params.pop("ur5_gripper_controller", None)
 
 def find_default_scene_package():
     for package_name in DEFAULT_SCENE_PACKAGE_CANDIDATES:
@@ -165,6 +217,7 @@ def launch_setup(context, *args, **kwargs):
         "Build/source your selected MoveIt config package and pass it with "
         f"'{MOVEIT_CONFIG_PACKAGE_ARGUMENT}:=<package_name>' if it is not 'ur5_moveit_config'.",
     )
+    gripper_controller_joints = resolve_gripper_controller_joints(scene_package)
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
     scene_args = _extract_scene_xacro_args(scene_xacro_path)
@@ -216,6 +269,8 @@ def launch_setup(context, *args, **kwargs):
     }
 
     controllers_yaml = load_yaml(PACKAGE_NAME, "config/controllers.yaml")
+    ros2_controllers_yaml = load_yaml(PACKAGE_NAME, "config/ur5_ros_controllers.yaml")
+    align_gripper_controller_joints(controllers_yaml, ros2_controllers_yaml, gripper_controller_joints)
     moveit_controller = {
         "moveit_simple_controller_manager": controllers_yaml,
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
@@ -268,12 +323,11 @@ def launch_setup(context, *args, **kwargs):
         parameters=[robot_description],
     )
 
-    ros2_controllers_path = os.path.join(run_share, "config", "ur5_ros_controllers.yaml")
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
         output={"stdout": "screen", "stderr": "screen"},
-        parameters=[ros2_controllers_path],
+        parameters=[ros2_controllers_yaml],
         remappings=[("~/robot_description", "/robot_description")],
     )
 
@@ -316,13 +370,15 @@ def launch_setup(context, *args, **kwargs):
         grasp_execution_demo_node,
     ]
 
-    if scene_exposes_gripper_position_interfaces(robot_description_config):
+    if gripper_controller_joints and scene_exposes_gripper_position_interfaces(
+        robot_description_config, gripper_controller_joints
+    ):
         spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
         launch_actions.insert(-1, spawn_gripper)
     else:
         get_logger(__name__).warning(
-            "Skipping ur5_gripper_controller spawner: scene does not export gripper joints/interfaces; "
-            "dummy gripper driver remains responsible for gripper actions."
+            "Skipping ur5_gripper_controller spawner: scene metadata and robot description do not agree on "
+            "gripper controller joints/interfaces; dummy gripper driver remains responsible for gripper actions."
         )
 
     return launch_actions
