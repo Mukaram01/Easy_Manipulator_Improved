@@ -24,9 +24,10 @@
 #include "attributes/workcell.h"
 
 
-void generate_armhand_xacro(Robot robot, EndEffector ee, std::string scene_name)
+void generate_armhand_xacro(
+  Robot robot, EndEffector ee, std::string scene_name, const std::string & output_path)
 {
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile(output_path);
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "  <xacro:include filename=\"$(find " + robot.name +
@@ -47,9 +48,10 @@ void generate_armhand_xacro(Robot robot, EndEffector ee, std::string scene_name)
   MyFile << "\n\n</robot>";
 }
 
-void generate_armhand_xacro(Robot robot, std::string scene_name)
+void generate_armhand_xacro(
+  Robot robot, std::string scene_name, const std::string & output_path)
 {
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile(output_path);
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "  <xacro:include filename=\"$(find " + robot.name +
@@ -59,10 +61,10 @@ void generate_armhand_xacro(Robot robot, std::string scene_name)
   MyFile << "\n\n</robot>";
 }
 
-void generate_armhand_xacro(std::string scene_name)
+void generate_armhand_xacro(std::string scene_name, const std::string & output_path)
 {
   std::cout << "No robot or hand" << std::endl;
-  std::ofstream MyFile("arm_hand.srdf.xacro");
+  std::ofstream MyFile(output_path);
   MyFile << "<?xml version=\"1.0\" ?>\n\n";
   MyFile << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" + scene_name + "\">\n\n";
   MyFile << "\n\n</robot>";

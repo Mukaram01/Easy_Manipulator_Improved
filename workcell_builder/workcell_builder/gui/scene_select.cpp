@@ -436,18 +436,19 @@ void SceneSelect::generate_scene_files(Scene scene)
   // generate environment.urdf.xacro
   const fs::path scene_dir = scenes_path / scene.name;
   const fs::path urdf_dir = scene_dir / "urdf";
+  const fs::path armhand_srdf_path = urdf_dir / "arm_hand.srdf.xacro";
   generate_scene_xacro(scene, (urdf_dir / "scene.urdf.xacro").string());
   if (scene.robot_loaded && scene.ee_loaded) {
-    generate_armhand_xacro(scene.robot_vector[0], scene.ee_vector[0], scene.name);
+    generate_armhand_xacro(
+      scene.robot_vector[0], scene.ee_vector[0], scene.name, armhand_srdf_path.string());
   }
   if (scene.robot_loaded && !scene.ee_loaded) {  // no ee
-    generate_armhand_xacro(scene.robot_vector[0], scene.name);
+    generate_armhand_xacro(scene.robot_vector[0], scene.name, armhand_srdf_path.string());
   }
   if (!scene.robot_loaded && !scene.ee_loaded) {  // no robot and ee
-    generate_armhand_xacro(scene.name);
+    generate_armhand_xacro(scene.name, armhand_srdf_path.string());
   }
-  fs::path srdf_path =
-    workcell_path / "scenes" / scene.name / "urdf" / "arm_hand.srdf.xacro";
+  fs::path srdf_path = armhand_srdf_path;
   if (!boost::filesystem::exists(srdf_path)) {
     append_error("Failed to generate urdf/arm_hand.srdf.xacro.");
     return;
