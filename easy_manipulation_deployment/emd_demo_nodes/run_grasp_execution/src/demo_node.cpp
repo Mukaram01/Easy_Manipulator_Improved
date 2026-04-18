@@ -27,6 +27,8 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "lifecycle_msgs/msg/transition.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 #include "emd/grasp_execution/utils.hpp"
@@ -63,11 +65,28 @@ static const std::vector<std::string> REQUIRED_FINGER_JOINTS = {
   "finger_middle_joint_3",
 };
 
-bool wait_for_required_finger_joint_states(
+static const std::vector<std::string> REQUIRED_FINGER_LINK_FRAMES = {
+  "finger_1_link_0",
+  "finger_1_link_1",
+  "finger_1_link_2",
+  "finger_1_link_3",
+  "finger_2_link_0",
+  "finger_2_link_1",
+  "finger_2_link_2",
+  "finger_2_link_3",
+  "finger_middle_link_0",
+  "finger_middle_link_1",
+  "finger_middle_link_2",
+  "finger_middle_link_3",
+};
+
+bool wait_for_required_grasp_readiness(
   const rclcpp::Node::SharedPtr & node,
   std::chrono::seconds timeout = std::chrono::seconds(15))
 {
   std::set<std::string> missing_joints(REQUIRED_FINGER_JOINTS.begin(), REQUIRED_FINGER_JOINTS.end());
+  std::set<std::string> missing_frames(
+    REQUIRED_FINGER_LINK_FRAMES.begin(), REQUIRED_FINGER_LINK_FRAMES.end());
 
   auto joint_state_sub = node->create_subscription<sensor_msgs::msg::JointState>(
     "/joint_states", rclcpp::QoS(10),
@@ -77,33 +96,66 @@ bool wait_for_required_finger_joint_states(
       }
     });
 
+  tf2_ros::Buffer tf_buffer(node->get_clock());
+  tf2_ros::TransformListener tf_listener(tf_buffer, node, false);
+
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node);
 
   const auto end_time = std::chrono::steady_clock::now() + timeout;
+  auto next_progress_log = std::chrono::steady_clock::now() + std::chrono::seconds(1);
   while (std::chrono::steady_clock::now() < end_time) {
     executor.spin_some();
-    if (missing_joints.empty()) {
+
+    for (auto it = missing_frames.begin(); it != missing_frames.end();) {
+      if (tf_buffer.canTransform("world", *it, tf2::TimePointZero)) {
+        it = missing_frames.erase(it);
+      } else {
+        ++it;
+      }
+    }
+
+    if (missing_joints.empty() && missing_frames.empty()) {
       RCLCPP_INFO(node->get_logger(),
-        "Verified /joint_states includes all required finger joints before grasp execution.");
+        "Readiness checks passed: all required finger joints and world->finger_*_link_* TF frames are available.");
       return true;
+    }
+
+    if (std::chrono::steady_clock::now() >= next_progress_log) {
+      RCLCPP_WARN(
+        node->get_logger(),
+        "Waiting for grasp readiness: missing_joints=%zu, missing_frames=%zu",
+        missing_joints.size(), missing_frames.size());
+      next_progress_log += std::chrono::seconds(1);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  std::ostringstream missing;
+  std::ostringstream missing_joint_stream;
   bool first = true;
   for (const auto & joint_name : missing_joints) {
     if (!first) {
-      missing << ", ";
+      missing_joint_stream << ", ";
     }
-    missing << joint_name;
+    missing_joint_stream << joint_name;
+    first = false;
+  }
+  std::ostringstream missing_frame_stream;
+  first = true;
+  for (const auto & frame_name : missing_frames) {
+    if (!first) {
+      missing_frame_stream << ", ";
+    }
+    missing_frame_stream << frame_name;
     first = false;
   }
   RCLCPP_ERROR(
     node->get_logger(),
-    "Timed out waiting for finger joints on /joint_states. Missing joints: [%s]",
-    missing.str().c_str());
+    "Timed out waiting for grasp readiness after %.1f s. Missing joints on /joint_states: [%s]. "
+    "Missing TF transforms from world->finger_*_link_*: [%s].",
+    std::chrono::duration<double>(timeout).count(),
+    missing_joint_stream.str().c_str(),
+    missing_frame_stream.str().c_str());
   return false;
 }
 
@@ -465,9 +517,17 @@ public:
           workcell_context_filepath.c_str());
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
-      if (!grasp_execution::wait_for_required_finger_joint_states(base_node_)) {
+      const auto readiness_timeout_s = this->declare_parameter<int>("startup_readiness_timeout_s", 15);
+      if (!grasp_execution::wait_for_required_grasp_readiness(
+          base_node_, std::chrono::seconds(readiness_timeout_s)))
+      {
         RCLCPP_ERROR(this->get_logger(),
-          "Required finger joints were not observed on /joint_states; aborting configure.");
+          "Startup readiness checks failed; aborting configure before enabling octomap/shape masking.");
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+      }
+      if (!demo_->start_world_geometry_monitor()) {
+        RCLCPP_ERROR(this->get_logger(),
+          "Failed to start world geometry monitor after readiness checks.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
     } catch (const std::exception & ex) {

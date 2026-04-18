@@ -249,6 +249,9 @@ public:
     const std::string & method = "default",
     const double velocity = 1.0) override;
 
+  /// Start world-geometry monitoring (octomap/shape-mask pipeline) when enabled by params.
+  bool start_world_geometry_monitor();
+
 protected:
   void squash_trajectories(
     const std::string & planning_group,
@@ -277,6 +280,8 @@ protected:
 
   std::shared_ptr<pluginlib::ClassLoader<
       grasp_execution::moveit2::Executor>> executor_loader_;
+  bool load_octomap_requested_{false};
+  bool world_geometry_monitor_started_{false};
 };
 }  // namespace moveit2
 
