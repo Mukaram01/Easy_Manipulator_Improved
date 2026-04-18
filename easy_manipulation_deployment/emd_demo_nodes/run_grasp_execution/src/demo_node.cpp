@@ -25,6 +25,7 @@
 #include <regex>
 #include <stdexcept>
 #include <unordered_set>
+#include <cctype>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -83,11 +84,88 @@ static const std::vector<std::string> REQUIRED_FINGER_LINK_FRAMES = {
   "finger_middle_link_3",
 };
 
+struct GraspReadinessProfile
+{
+  bool require_robotiq_3f_checks{false};
+  std::string description{"arm-only/non-finger"};
+};
+
+std::string to_lower_copy(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return value;
+}
+
+bool is_robotiq_3f_end_effector(
+  const std::string & ee_name,
+  const grasp_execution::WorkcellContext::Gripper & ee)
+{
+  const std::string ee_name_lower = to_lower_copy(ee_name);
+  const std::string ee_brand_lower = to_lower_copy(ee.brand);
+
+  return ee_name_lower.find("robotiq_3f") != std::string::npos ||
+         ee_brand_lower.find("robotiq_3f") != std::string::npos ||
+         ee_brand_lower.find("3f_gripper") != std::string::npos;
+}
+
+GraspReadinessProfile detect_grasp_readiness_profile(
+  const grasp_execution::WorkcellContext & workcell_context)
+{
+  std::vector<std::string> declared_ees;
+  std::vector<std::string> robotiq_3f_ees;
+  for (const auto & group : workcell_context.groups) {
+    for (const auto & ee : group.second.end_effectors) {
+      declared_ees.push_back(
+        group.first + "/" + ee.first + " (brand=" + ee.second.brand +
+        ", link=" + ee.second.link + ")");
+      if (is_robotiq_3f_end_effector(ee.first, ee.second)) {
+        robotiq_3f_ees.push_back(group.first + "/" + ee.first);
+      }
+    }
+  }
+
+  if (!robotiq_3f_ees.empty()) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < robotiq_3f_ees.size(); ++i) {
+      if (i > 0) {
+        oss << ", ";
+      }
+      oss << robotiq_3f_ees[i];
+    }
+    return {true, "robotiq-3f finger (" + oss.str() + ")"};
+  }
+
+  if (declared_ees.empty()) {
+    return {false, "arm-only/no declared end-effector"};
+  }
+
+  std::ostringstream oss;
+  for (size_t i = 0; i < declared_ees.size(); ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << declared_ees[i];
+  }
+  return {false, "non-3f end-effector(s): " + oss.str()};
+}
+
 bool wait_for_required_grasp_readiness(
   const rclcpp::Node::SharedPtr & node,
   const std::string & planning_frame,
+  bool require_robotiq_3f_checks,
+  const std::string & readiness_profile_description,
   std::chrono::seconds timeout = std::chrono::seconds(15))
 {
+  if (!require_robotiq_3f_checks) {
+    RCLCPP_INFO(
+      node->get_logger(),
+      "Skipping Robotiq 3F startup readiness checks. Active readiness profile: %s.",
+      readiness_profile_description.c_str());
+    return true;
+  }
+
   const std::string normalized_planning_frame = grasp_execution::sanitize_frame_id(planning_frame);
   if (normalized_planning_frame.empty()) {
     RCLCPP_ERROR(node->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
@@ -171,8 +249,19 @@ bool wait_for_required_grasp_readiness(
   return false;
 }
 
-bool validate_required_finger_link_frames_in_robot_description(const rclcpp::Node::SharedPtr & node)
+bool validate_required_finger_link_frames_in_robot_description(
+  const rclcpp::Node::SharedPtr & node,
+  bool require_robotiq_3f_checks,
+  const std::string & readiness_profile_description)
 {
+  if (!require_robotiq_3f_checks) {
+    RCLCPP_INFO(
+      node->get_logger(),
+      "Skipping URDF Robotiq 3F finger-frame validation. Active readiness profile: %s.",
+      readiness_profile_description.c_str());
+    return true;
+  }
+
   std::string robot_description;
   if (!node->get_parameter("robot_description", robot_description) || robot_description.empty()) {
     RCLCPP_ERROR(node->get_logger(), "robot_description parameter is missing; cannot validate finger link names.");
@@ -594,14 +683,24 @@ public:
       }
       base_node_->set_parameter(rclcpp::Parameter("planning_frame", planning_frame));
 
-      if (!grasp_execution::validate_required_finger_link_frames_in_robot_description(base_node_)) {
+      const auto readiness_profile =
+        grasp_execution::detect_grasp_readiness_profile(demo_->get_workcell_context());
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Startup readiness profile selected from workcell context: %s.",
+        readiness_profile.description.c_str());
+
+      if (!grasp_execution::validate_required_finger_link_frames_in_robot_description(
+          base_node_, readiness_profile.require_robotiq_3f_checks, readiness_profile.description))
+      {
         RCLCPP_ERROR(this->get_logger(),
           "URDF finger link validation failed; frame names must exactly match the installed gripper model.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
       const auto readiness_timeout_s = this->declare_parameter<int>("startup_readiness_timeout_s", 15);
       if (!grasp_execution::wait_for_required_grasp_readiness(
-          base_node_, planning_frame, std::chrono::seconds(readiness_timeout_s)))
+          base_node_, planning_frame, readiness_profile.require_robotiq_3f_checks,
+          readiness_profile.description, std::chrono::seconds(readiness_timeout_s)))
       {
         RCLCPP_ERROR(this->get_logger(),
           "Startup readiness checks failed; aborting configure before enabling octomap/shape masking.");
