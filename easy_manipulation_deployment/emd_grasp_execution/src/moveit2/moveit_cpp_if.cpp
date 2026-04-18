@@ -129,13 +129,8 @@ MoveitCppGraspExecution::MoveitCppGraspExecution(
   default_executor_->load(moveit_cpp_, "");
 
   // Initialized octomap if specified
-  bool load_octomap;
   grasp_execution::declare_or_get_param<bool>(
-    load_octomap, "load_octomap", node, node->get_logger(), false);
-  if (load_octomap) {
-    moveit_cpp_->getPlanningSceneMonitor()->startWorldGeometryMonitor(
-      "/collision_object", "/planning_scene_world", load_octomap);
-  }
+    load_octomap_requested_, "load_octomap", node, node->get_logger(), false);
 }
 
 MoveitCppGraspExecution::~MoveitCppGraspExecution()
@@ -148,6 +143,24 @@ MoveitCppGraspExecution::~MoveitCppGraspExecution()
     arm.second.executors.clear();
   }
   moveit_cpp_.reset();
+}
+
+bool MoveitCppGraspExecution::start_world_geometry_monitor()
+{
+  if (!load_octomap_requested_) {
+    RCLCPP_INFO(LOGGER, "World geometry monitor not started (load_octomap is false).");
+    return true;
+  }
+  if (world_geometry_monitor_started_) {
+    RCLCPP_INFO(LOGGER, "World geometry monitor already started.");
+    return true;
+  }
+
+  moveit_cpp_->getPlanningSceneMonitor()->startWorldGeometryMonitor(
+    "/collision_object", "/planning_scene_world", load_octomap_requested_);
+  world_geometry_monitor_started_ = true;
+  RCLCPP_INFO(LOGGER, "Started world geometry monitor (octomap + shape mask).");
+  return true;
 }
 
 bool MoveitCppGraspExecution::init(const std::string & planning_group)
