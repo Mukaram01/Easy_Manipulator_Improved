@@ -580,7 +580,12 @@ public:
           workcell_context_filepath.c_str());
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
-      const auto configured_planning_frame = this->declare_parameter<std::string>("planning_frame", "world");
+      std::string configured_planning_frame;
+      if (this->has_parameter("planning_frame")) {
+        this->get_parameter_or<std::string>("planning_frame", configured_planning_frame, "world");
+      } else {
+        configured_planning_frame = this->declare_parameter<std::string>("planning_frame", "world");
+      }
       const auto planning_frame = grasp_execution::sanitize_frame_id(configured_planning_frame);
       if (planning_frame.empty()) {
         RCLCPP_ERROR(this->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
