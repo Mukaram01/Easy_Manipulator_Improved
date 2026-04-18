@@ -10,8 +10,6 @@
 
   <xacro:robotiq_85_gripper/>
 
-  <end_effector name="robotiq_2f" parent_link="tool0" group="gripper" parent_group="manipulator" />
-
   <disable_collisions link1="gripper_base_link" link2="base_link" reason="Never" />
   <disable_collisions link1="gripper_base_link" link2="shoulder_link" reason="Never" />
   <disable_collisions link1="gripper_base_link" link2="upper_arm_link" reason="Never" />
