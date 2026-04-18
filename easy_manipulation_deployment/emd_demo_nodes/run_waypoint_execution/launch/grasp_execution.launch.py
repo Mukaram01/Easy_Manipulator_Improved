@@ -143,6 +143,12 @@ def generate_launch_description():
         )
         initial_position_mappings['initial_positions_file'] = initial_position_path
 
+    if 'mock_sensor_commands' in ur_robot_args:
+        initial_position_mappings['mock_sensor_commands'] = 'true'
+    elif 'fake_sensor_commands' in ur_robot_args:
+        # Backward compatibility for older ur_description versions.
+        initial_position_mappings['fake_sensor_commands'] = 'true'
+
     # Component yaml files are grouped in separate namespaces
     robot_description_config = load_file(scene_pkg, 'urdf/scene.urdf.xacro',
                                          initial_position_mappings)
@@ -151,7 +157,7 @@ def generate_launch_description():
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic': robot_description_semantic_config}
 
-    kinematics_yaml = load_yaml('ur5_moveit_config', 'config/kinematics.yaml')
+    kinematics_yaml = {'robot_description_kinematics': load_yaml('ur5_moveit_config', 'config/kinematics.yaml')}
 
     ompl_planning_pipeline_config = {
         'ompl': {
@@ -243,7 +249,8 @@ def generate_launch_description():
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[robot_description, ros2_controllers_path],
+        parameters=[ros2_controllers_path],
+        remappings=[("~/robot_description", "/robot_description")],
         output={
             "stdout": "screen",
             "stderr": "screen",

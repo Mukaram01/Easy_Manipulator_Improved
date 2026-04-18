@@ -19,6 +19,7 @@ ur5_arm_controller:
     state_interfaces:
       - position
       - velocity
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - shoulder_pan_joint
       - shoulder_lift_joint
@@ -34,5 +35,6 @@ ur5_gripper_controller:
     state_interfaces:
       - position
       - velocity
+    allow_nonzero_velocity_at_trajectory_end: false
     joints:
       - gripper_finger1_joint
