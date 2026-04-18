@@ -20,19 +20,7 @@ PLANNING_FRAME_ARGUMENT = "planning_frame"
 
 
 
-GRIPPER_CONTROLLER_JOINTS = (
-    "palm_finger_1_joint",
-    "finger_1_joint_1",
-    "finger_1_joint_2",
-    "finger_1_joint_3",
-    "palm_finger_2_joint",
-    "finger_2_joint_1",
-    "finger_2_joint_2",
-    "finger_2_joint_3",
-    "finger_middle_joint_1",
-    "finger_middle_joint_2",
-    "finger_middle_joint_3",
-)
+GRIPPER_CONTROLLER_JOINTS = ("gripper_finger1_joint",)
 
 
 def scene_exposes_gripper_position_interfaces(robot_description_xml):

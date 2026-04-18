@@ -144,8 +144,8 @@ def _launch_setup(context):
 
     moveit_simple_controller_manager = {
         "moveit_simple_controller_manager": {
-            "controller_names": ["fake_ur5_controller"],
-            "fake_ur5_controller": {
+            "controller_names": ["ur5_arm_controller", "ur5_gripper_controller"],
+            "ur5_arm_controller": {
                 "action_ns": "follow_joint_trajectory",
                 "type": "FollowJointTrajectory",
                 "default": True,
@@ -157,6 +157,12 @@ def _launch_setup(context):
                     "wrist_2_joint",
                     "wrist_3_joint",
                 ],
+            },
+            "ur5_gripper_controller": {
+                "action_ns": "follow_joint_trajectory",
+                "type": "FollowJointTrajectory",
+                "default": False,
+                "joints": ["gripper_finger1_joint"],
             },
         }
     }
