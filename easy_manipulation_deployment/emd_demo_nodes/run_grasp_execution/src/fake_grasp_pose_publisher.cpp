@@ -65,6 +65,11 @@ public:
     get_parameter("object_dimensions", object_dimensions);
     get_parameter("ee_id", ee_id);
     get_parameter("delay", delay);
+    frame_id = sanitize_frame_id(frame_id);
+    if (frame_id.empty()) {
+      RCLCPP_ERROR(this->get_logger(), "Parameter 'frame_id' is empty after trimming whitespace.");
+      return;
+    }
 
     if (!parse_pose_vector(grasp_pose_vector, grasp_pose.pose)) {
       RCLCPP_ERROR(

@@ -17,6 +17,8 @@
 
 #include <iostream>
 #include <sstream>
+#include <cctype>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,26 @@
 
 namespace grasp_execution
 {
+
+inline std::string trim_ascii_whitespace(const std::string & input)
+{
+  size_t begin = 0;
+  while (begin < input.size() && std::isspace(static_cast<unsigned char>(input[begin]))) {
+    ++begin;
+  }
+
+  size_t end = input.size();
+  while (end > begin && std::isspace(static_cast<unsigned char>(input[end - 1]))) {
+    --end;
+  }
+
+  return input.substr(begin, end - begin);
+}
+
+inline std::string sanitize_frame_id(const std::string & frame_id)
+{
+  return trim_ascii_whitespace(frame_id);
+}
 
 /// Generate UUID
 /// \return UUID in string
@@ -120,10 +142,19 @@ inline void to_frame(
   const std::string & _target_frame,
   const tf2_ros::Buffer & _buffer)
 {
-  auto base_frame2target_frame = _buffer.lookupTransform(
-    _target_frame, in_.header.frame_id, rclcpp::Time());
+  const std::string target_frame = sanitize_frame_id(_target_frame);
+  const std::string source_frame = sanitize_frame_id(in_.header.frame_id);
+  if (target_frame.empty() || source_frame.empty()) {
+    throw std::runtime_error("Pose transform requires non-empty source and target frame IDs.");
+  }
 
-  tf2::doTransform(in_, out_, base_frame2target_frame);
+  auto sanitized_in = in_;
+  sanitized_in.header.frame_id = source_frame;
+
+  auto base_frame2target_frame = _buffer.lookupTransform(
+    target_frame, source_frame, rclcpp::Time());
+
+  tf2::doTransform(sanitized_in, out_, base_frame2target_frame);
 }
 
 /// Parse vector with 6 or 7 variables to a pose
