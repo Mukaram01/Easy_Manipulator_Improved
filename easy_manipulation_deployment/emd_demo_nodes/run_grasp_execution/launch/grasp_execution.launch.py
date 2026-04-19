@@ -47,6 +47,12 @@ def scene_exposes_gripper_position_interfaces(robot_description_xml, gripper_con
 
 def resolve_gripper_controller_joints(scene_package):
     scene_metadata = load_yaml(scene_package, "environment.yaml")
+    if not isinstance(scene_metadata, dict):
+        raise RuntimeError(
+            "Invalid scene metadata schema in 'environment.yaml': expected a YAML mapping (dict) at the root, "
+            f"got {type(scene_metadata).__name__}. Check '{SCENE_PACKAGE_ARGUMENT}' points to a valid generated "
+            "scene package with a proper environment.yaml structure."
+        )
     end_effector = scene_metadata.get("end_effector", {})
     ee_name = str(end_effector.get("name", "")).lower()
     ee_brand = str(end_effector.get("brand", "")).lower()
@@ -177,6 +183,15 @@ def load_yaml(package, file_path):
     return xacro.load_yaml(os.path.join(package_path, file_path))
 
 
+def require_yaml_mapping(data, field_name, package_name, file_name):
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Invalid YAML schema for package '{package_name}', file '{file_name}': '{field_name}' must be a "
+            f"YAML mapping (dict), got {type(data).__name__}. Please verify the file content and launch arguments."
+        )
+    return data
+
+
 def _extract_scene_xacro_args(xacro_file_path):
     text = Path(xacro_file_path).read_text(encoding="utf-8")
     return set(re.findall(r"<xacro:arg\s+name=['\"]([^'\"]+)['\"]", text))
@@ -251,7 +266,17 @@ def launch_setup(context, *args, **kwargs):
         "Build/source your selected MoveIt config package and pass it with "
         f"'{MOVEIT_CONFIG_PACKAGE_ARGUMENT}:=<package_name>' if it is not 'ur5_moveit_config'.",
     )
-    gripper_controller_joints = resolve_gripper_controller_joints(scene_package)
+    try:
+        gripper_controller_joints = resolve_gripper_controller_joints(scene_package)
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed while parsing scene metadata for grasp execution launch. "
+            f"package='{scene_package}', file='environment.yaml', args: "
+            f"{SCENE_PACKAGE_ARGUMENT}='{scene_package}', "
+            f"{MOVEIT_CONFIG_PACKAGE_ARGUMENT}='{moveit_config_package}', "
+            f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
+            "Please verify that the selected scene package contains a valid environment.yaml."
+        ) from exc
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
     scene_args = _extract_scene_xacro_args(scene_xacro_path)
@@ -269,15 +294,21 @@ def launch_setup(context, *args, **kwargs):
         initial_position_mappings["fake_sensor_commands"] = "true"
 
 
-    robot_description_config = load_file(scene_package, "urdf/scene.urdf.xacro", initial_position_mappings)
+    try:
+        robot_description_config = load_file(scene_package, "urdf/scene.urdf.xacro", initial_position_mappings)
+        robot_description_semantic_config = load_file(scene_package, "urdf/arm_hand.srdf.xacro")
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed while loading robot description files for grasp execution launch. "
+            f"package='{scene_package}', files='urdf/scene.urdf.xacro, urdf/arm_hand.srdf.xacro', args: "
+            f"{SCENE_PACKAGE_ARGUMENT}='{scene_package}', "
+            f"{MOVEIT_CONFIG_PACKAGE_ARGUMENT}='{moveit_config_package}', "
+            f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
+            "Ensure both URDF/SRDF xacro files exist and are valid."
+        ) from exc
+
     robot_description = {"robot_description": robot_description_config}
-
-    robot_description_semantic_config = load_file(scene_package, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
-
-    kinematics_yaml = {"robot_description_kinematics": load_yaml(moveit_config_package, "config/kinematics.yaml")}
-    joint_limits_yaml = load_yaml(moveit_config_package, "config/joint_limits.yaml")
-    joint_limits = {"robot_description_planning": joint_limits_yaml}
 
     ompl_planning_pipeline_config = {
         "ompl": {
@@ -292,7 +323,48 @@ def launch_setup(context, *args, **kwargs):
             "start_state_max_bounds_error": 0.1,
         }
     }
-    ompl_planning_yaml = load_yaml(moveit_config_package, "config/ompl_planning.yaml")
+    try:
+        kinematics_data = require_yaml_mapping(
+            load_yaml(moveit_config_package, "config/kinematics.yaml"),
+            "robot_description_kinematics",
+            moveit_config_package,
+            "config/kinematics.yaml",
+        )
+        joint_limits_yaml = require_yaml_mapping(
+            load_yaml(moveit_config_package, "config/joint_limits.yaml"),
+            "robot_description_planning",
+            moveit_config_package,
+            "config/joint_limits.yaml",
+        )
+        ompl_planning_yaml = require_yaml_mapping(
+            load_yaml(moveit_config_package, "config/ompl_planning.yaml"),
+            "ompl",
+            moveit_config_package,
+            "config/ompl_planning.yaml",
+        )
+        controllers_yaml = require_yaml_mapping(
+            load_yaml(PACKAGE_NAME, "config/controllers.yaml"),
+            "moveit_simple_controller_manager",
+            PACKAGE_NAME,
+            "config/controllers.yaml",
+        )
+        ros2_controllers_yaml = require_yaml_mapping(
+            load_yaml(PACKAGE_NAME, "config/ur5_ros_controllers.yaml"),
+            "controller_manager",
+            PACKAGE_NAME,
+            "config/ur5_ros_controllers.yaml",
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed while parsing YAML configuration for grasp execution launch. "
+            f"args: {SCENE_PACKAGE_ARGUMENT}='{scene_package}', "
+            f"{MOVEIT_CONFIG_PACKAGE_ARGUMENT}='{moveit_config_package}', "
+            f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
+            "Check YAML schemas in MoveIt and run_grasp_execution config files."
+        ) from exc
+
+    kinematics_yaml = {"robot_description_kinematics": kinematics_data}
+    joint_limits = {"robot_description_planning": joint_limits_yaml}
     ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
     trajectory_execution = {
@@ -302,8 +374,6 @@ def launch_setup(context, *args, **kwargs):
         "trajectory_execution.allowed_start_tolerance": 0.01,
     }
 
-    controllers_yaml = load_yaml(PACKAGE_NAME, "config/controllers.yaml")
-    ros2_controllers_yaml = load_yaml(PACKAGE_NAME, "config/ur5_ros_controllers.yaml")
     scene_supports_gripper_controller = bool(
         gripper_controller_joints
         and scene_exposes_gripper_position_interfaces(robot_description_config, gripper_controller_joints)
