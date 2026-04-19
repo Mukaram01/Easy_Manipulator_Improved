@@ -228,3 +228,65 @@ def test_align_gripper_controller_joints_rejects_invalid_schema_types(
             gripper_controller_joints=("gripper_finger1_joint",),
             enable_gripper_controller=True,
         )
+
+
+def test_resolve_gripper_controller_joints_rejects_non_mapping_scene_metadata(grasp_launch_module, monkeypatch):
+    monkeypatch.setattr(grasp_launch_module, "load_yaml", lambda package, file_path: ["not", "a", "mapping"])
+
+    with pytest.raises(RuntimeError, match=r"Invalid scene metadata schema in 'environment\.yaml'") as exc_info:
+        grasp_launch_module.resolve_gripper_controller_joints("bad_scene_pkg")
+
+    message = str(exc_info.value)
+    assert "expected a YAML mapping (dict) at the root" in message
+    assert "scene_package" in message
+
+
+def test_require_yaml_mapping_reports_package_and_file(grasp_launch_module):
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Invalid YAML schema for package 'ur5_moveit_config', file 'config/kinematics\.yaml': "
+            r"'robot_description_kinematics' must be a YAML mapping \(dict\), got list"
+        ),
+    ):
+        grasp_launch_module.require_yaml_mapping(
+            ["invalid"],
+            "robot_description_kinematics",
+            "ur5_moveit_config",
+            "config/kinematics.yaml",
+        )
+
+
+def test_launch_setup_wraps_scene_metadata_parse_errors_with_argument_context(grasp_launch_module, monkeypatch):
+    class FakeLaunchConfiguration:
+        def __init__(self, name):
+            self.name = name
+
+        def perform(self, context):
+            return context[self.name]
+
+    monkeypatch.setattr(grasp_launch_module, "LaunchConfiguration", FakeLaunchConfiguration)
+    monkeypatch.setattr(grasp_launch_module, "get_package_share_directory", lambda _package: "/tmp/fake_share")
+    monkeypatch.setattr(grasp_launch_module, "resolve_scene_package_share_dir", lambda _scene_package: "/tmp/fake")
+    monkeypatch.setattr(grasp_launch_module, "resolve_required_package_share_dir", lambda *_args, **_kwargs: "/tmp/fake")
+    monkeypatch.setattr(
+        grasp_launch_module,
+        "resolve_gripper_controller_joints",
+        lambda _scene_package: (_ for _ in ()).throw(RuntimeError("bad environment yaml")),
+    )
+
+    with pytest.raises(RuntimeError, match=r"Failed while parsing scene metadata for grasp execution launch") as exc_info:
+        grasp_launch_module.launch_setup(
+            {
+                grasp_launch_module.SCENE_PACKAGE_ARGUMENT: "scene_pkg",
+                grasp_launch_module.MOVEIT_CONFIG_PACKAGE_ARGUMENT: "moveit_pkg",
+                grasp_launch_module.PLANNING_FRAME_ARGUMENT: "world",
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "package='scene_pkg'" in message
+    assert "file='environment.yaml'" in message
+    assert "scene_package='scene_pkg'" in message
+    assert "moveit_config_package='moveit_pkg'" in message
+    assert "planning_frame='world'" in message
