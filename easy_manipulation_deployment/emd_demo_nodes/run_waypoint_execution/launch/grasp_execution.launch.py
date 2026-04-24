@@ -64,7 +64,6 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 
 def load_file(package_name, file_path, mappings=None):
     """Load a robot description file, converting xacro sources to URDF."""
-
     package_path = Path(get_package_share_directory(package_name))
     target = Path(file_path)
     absolute_file_path = (package_path / target) if not target.is_absolute() else target

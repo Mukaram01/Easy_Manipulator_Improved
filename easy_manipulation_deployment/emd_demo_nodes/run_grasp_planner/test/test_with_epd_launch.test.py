@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
+# Copyright 2020 ROS Industrial Consortium Asia Pacific
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 import time
 import unittest
+from pathlib import Path
 
-from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+from ament_index_python.packages import (
+    PackageNotFoundError,
+    get_package_prefix,
+    get_package_share_directory,
+)
 import launch
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -19,6 +37,22 @@ for pkg in ('run_grasp_planner', 'easy_perception_deployment'):
         get_package_share_directory(pkg)
     except PackageNotFoundError:
         pytest.skip(f'{pkg} package not available', allow_module_level=True)
+
+epd_prefix = Path(get_package_prefix('easy_perception_deployment'))
+epd_executable = epd_prefix / 'lib' / 'easy_perception_deployment' / 'easy_perception_deployment'
+if not epd_executable.exists():
+    pytest.skip('easy_perception_deployment executable not available', allow_module_level=True)
+
+model_candidates = [
+    Path.cwd() / 'data' / 'model' / 'MaskRCNN-10.onnx',
+    epd_prefix / 'data' / 'model' / 'MaskRCNN-10.onnx',
+    epd_prefix / 'share' / 'easy_perception_deployment' / 'data' / 'model' / 'MaskRCNN-10.onnx',
+]
+if not any(model.exists() for model in model_candidates):
+    pytest.skip(
+        'MaskRCNN-10.onnx not available for EPD integration test',
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.launch_test
