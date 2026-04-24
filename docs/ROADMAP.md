@@ -9,10 +9,8 @@ The following items are pending implementation:
 5. Scheduler workflow prerequisites and queue robustness
 6. MoveIt-based execution improvements for multi-axis joints and path constraints.
 7. Context loading via `rcl_yaml_param_parser` with schema validation.
-8. Demo node lifecycle conversion.
-9. Default executor watchdog and graceful shutdown.
-10. Finger-gripper sampling strategies for multi-finger configurations.
-11. Additional testing, CI workflows, documentation, and Docker support.
+8. Finger-gripper sampling strategies for multi-finger configurations.
+9. Additional testing, CI workflows, documentation, and Docker support.
 
 These tasks are outlined for future contributions.
 

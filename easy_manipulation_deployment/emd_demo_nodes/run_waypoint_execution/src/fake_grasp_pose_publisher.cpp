@@ -142,12 +142,25 @@ int main(int argc, char * argv[])
     auto client = node->create_client<emd_msgs::srv::GraspRequest>("grasp_requests");
 
     // Waiting for service to appear.
+    constexpr int kMaxWaitAttempts = 10;
+    int wait_attempts = 0;
     while (!client->wait_for_service(std::chrono::seconds(1))) {
       if (!rclcpp::ok()) {
         RCLCPP_ERROR(node->get_logger(), "client interrupted while waiting for service to appear.");
         return 1;
       }
-      RCLCPP_INFO(node->get_logger(), "waiting for service to appear...");
+      ++wait_attempts;
+      if (wait_attempts >= kMaxWaitAttempts) {
+        RCLCPP_ERROR(
+          node->get_logger(),
+          "grasp_requests service not available after %d attempts, exiting.",
+          kMaxWaitAttempts);
+        return 1;
+      }
+      RCLCPP_WARN(
+        node->get_logger(),
+        "waiting for grasp_requests service to appear... (%d/%d)",
+        wait_attempts, kMaxWaitAttempts);
     }
 
     auto req = std::make_shared<emd_msgs::srv::GraspRequest::Request>();
