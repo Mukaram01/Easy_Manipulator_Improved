@@ -178,6 +178,13 @@ def _launch_setup(context):
         "publish_transforms_updates": True,
     }
 
+    # No depth sensor plugin is configured in this fake-hardware demo.
+    # Disable occupancy map sensor plugins to suppress octomap warnings.
+    occupancy_map_monitor_params = {
+        "octomap_resolution": 0.025,
+        "sensors": [],
+    }
+
     # --- Nodes ---
 
     try:
@@ -189,6 +196,7 @@ def _launch_setup(context):
         validated_ompl_planning_pipeline_config = _normalize_ros_param_types(ompl_planning_pipeline_config)
         validated_planning_scene_monitor_params = _normalize_ros_param_types(planning_scene_monitor_params)
         validated_trajectory_execution = _normalize_ros_param_types(trajectory_execution)
+        validated_occupancy_map_monitor_params = _normalize_ros_param_types(occupancy_map_monitor_params)
         validated_moveit_controller_manager = _normalize_ros_param_types(moveit_controller_manager)
         validated_moveit_simple_controller_manager = _normalize_ros_param_types(moveit_simple_controller_manager)
 
@@ -200,6 +208,7 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_ompl_planning_pipeline_config, "ompl_planning_pipeline_config")
         _validate_ros_param_types(validated_planning_scene_monitor_params, "planning_scene_monitor_params")
         _validate_ros_param_types(validated_trajectory_execution, "trajectory_execution")
+        _validate_ros_param_types(validated_occupancy_map_monitor_params, "occupancy_map_monitor_params")
         _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
         _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
     except TypeError as exc:
@@ -245,6 +254,7 @@ def _launch_setup(context):
             validated_planning_pipelines_config,
             validated_ompl_planning_pipeline_config,
             validated_planning_scene_monitor_params,
+            validated_occupancy_map_monitor_params,
             validated_trajectory_execution,
             validated_moveit_controller_manager,
             validated_moveit_simple_controller_manager,
