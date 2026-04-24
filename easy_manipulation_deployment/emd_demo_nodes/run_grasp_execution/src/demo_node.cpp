@@ -168,11 +168,14 @@ bool wait_for_required_grasp_readiness(
 
   const std::string normalized_planning_frame = grasp_execution::sanitize_frame_id(planning_frame);
   if (normalized_planning_frame.empty()) {
-    RCLCPP_ERROR(node->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "Configured planning_frame is empty after trimming whitespace.");
     return false;
   }
 
-  std::set<std::string> missing_joints(REQUIRED_FINGER_JOINTS.begin(), REQUIRED_FINGER_JOINTS.end());
+  std::set<std::string> missing_joints(
+    REQUIRED_FINGER_JOINTS.begin(), REQUIRED_FINGER_JOINTS.end());
   std::set<std::string> missing_frames(
     REQUIRED_FINGER_LINK_FRAMES.begin(), REQUIRED_FINGER_LINK_FRAMES.end());
 
@@ -264,7 +267,9 @@ bool validate_required_finger_link_frames_in_robot_description(
 
   std::string robot_description;
   if (!node->get_parameter("robot_description", robot_description) || robot_description.empty()) {
-    RCLCPP_ERROR(node->get_logger(), "robot_description parameter is missing; cannot validate finger link names.");
+    RCLCPP_ERROR(
+      node->get_logger(),
+      "robot_description parameter is missing; cannot validate finger link names.");
     return false;
   }
 
@@ -439,7 +444,10 @@ public:
     // Get home state
     moveit::core::RobotStatePtr home_state(get_curr_state());
     if (!home_state) {
-      RCLCPP_ERROR(node_->get_logger(), "Failed to get current robot state for target %s", target_id.c_str());
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "Failed to get current robot state for target %s",
+        target_id.c_str());
       return false;
     }
 
@@ -470,7 +478,10 @@ public:
     }
 
     if (!selected_method) {
-      RCLCPP_ERROR(node_->get_logger(), "No valid end effector found for target %s", target_id.c_str());
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "No valid end effector found for target %s",
+        target_id.c_str());
       return false;
     }
 
@@ -678,7 +689,9 @@ public:
       }
       const auto planning_frame = grasp_execution::sanitize_frame_id(configured_planning_frame);
       if (planning_frame.empty()) {
-        RCLCPP_ERROR(this->get_logger(), "Configured planning_frame is empty after trimming whitespace.");
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Configured planning_frame is empty after trimming whitespace.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
       base_node_->set_parameter(rclcpp::Parameter("planning_frame", planning_frame));
@@ -697,7 +710,8 @@ public:
           "URDF finger link validation failed; frame names must exactly match the installed gripper model.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
-      const auto readiness_timeout_s = this->declare_parameter<int>("startup_readiness_timeout_s", 15);
+      const auto readiness_timeout_s = this->declare_parameter<int>(
+        "startup_readiness_timeout_s", 15);
       if (!grasp_execution::wait_for_required_grasp_readiness(
           base_node_, planning_frame, readiness_profile.require_robotiq_3f_checks,
           readiness_profile.description, std::chrono::seconds(readiness_timeout_s)))

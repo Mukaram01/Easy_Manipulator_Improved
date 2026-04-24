@@ -1,4 +1,18 @@
-"""Unit tests for ``grasp_execution.launch.py`` helper functions.
+# Copyright 2020 ROS Industrial Consortium Asia Pacific
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Unit tests for ``grasp_execution.launch.py`` helper functions.
 
 This module is a pytest unit-test helper and **not** a ROS launch entrypoint.
 It intentionally stubs ROS-specific modules so the tests can run in a plain
@@ -37,7 +51,9 @@ launch_substitutions_mod.LaunchConfiguration = object
 launch_substitutions_mod.PythonExpression = object
 sys.modules.setdefault("launch.substitutions", launch_substitutions_mod)
 launch_logging_mod = types.ModuleType("launch.logging")
-launch_logging_mod.get_logger = lambda _name: types.SimpleNamespace(error=lambda *_args, **_kwargs: None)
+launch_logging_mod.get_logger = (
+    lambda _name: types.SimpleNamespace(error=lambda *_args, **_kwargs: None)
+)
 sys.modules.setdefault("launch.logging", launch_logging_mod)
 launch_ros_mod = types.ModuleType("launch_ros")
 actions_mod = types.ModuleType("launch_ros.actions")
@@ -136,7 +152,11 @@ def test_generate_launch_description_uses_safe_default_when_no_scene_is_discover
     launch_description = grasp_launch_module.generate_launch_description()
 
     assert isinstance(launch_description, FakeLaunchDescription)
-    scene_arguments = [kwargs for name, kwargs in captured_arguments if name == grasp_launch_module.SCENE_PACKAGE_ARGUMENT]
+    scene_arguments = [
+        kwargs
+        for name, kwargs in captured_arguments
+        if name == grasp_launch_module.SCENE_PACKAGE_ARGUMENT
+    ]
     assert len(scene_arguments) == 1
     assert scene_arguments[0]["default_value"] == "ur5_3f_test"
 
@@ -219,7 +239,10 @@ def test_align_gripper_controller_joints_normalizes_null_controller_names(grasp_
     ],
 )
 def test_align_gripper_controller_joints_rejects_invalid_schema_types(
-    grasp_launch_module, controllers_yaml, ros2_controllers_yaml, expected_error
+    grasp_launch_module,
+    controllers_yaml,
+    ros2_controllers_yaml,
+    expected_error,
 ):
     with pytest.raises(RuntimeError, match=expected_error):
         grasp_launch_module.align_gripper_controller_joints(
@@ -231,7 +254,11 @@ def test_align_gripper_controller_joints_rejects_invalid_schema_types(
 
 
 def test_resolve_gripper_controller_joints_rejects_non_mapping_scene_metadata(grasp_launch_module, monkeypatch):
-    monkeypatch.setattr(grasp_launch_module, "load_yaml", lambda package, file_path: ["not", "a", "mapping"])
+    monkeypatch.setattr(
+        grasp_launch_module,
+        "load_yaml",
+        lambda package, file_path: ["not", "a", "mapping"],
+    )
 
     with pytest.raises(RuntimeError, match=r"Invalid scene metadata schema in 'environment\.yaml'") as exc_info:
         grasp_launch_module.resolve_gripper_controller_joints("bad_scene_pkg")

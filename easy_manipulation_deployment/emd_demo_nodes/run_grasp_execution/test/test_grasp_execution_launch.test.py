@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright 2020 ROS Industrial Consortium Asia Pacific
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import importlib.util
 import os
@@ -12,7 +25,6 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 import launch_testing
 import launch_testing.actions
-from launch_testing_ros.wait_for_topics import WaitForTopics
 import pytest
 import rclpy
 from sensor_msgs.msg import JointState
@@ -72,9 +84,6 @@ def generate_test_description():
                     PythonLaunchDescriptionSource(launch_path),
                     launch_arguments={"scene_package": SCENE_PACKAGE}.items(),
                 ),
-                WaitForTopics([
-                    ("/joint_states", "sensor_msgs/msg/JointState"),
-                ]),
                 launch_testing.actions.ReadyToTest(),
             ]
         ),
@@ -113,6 +122,16 @@ class TestGraspExecutionLaunch(unittest.TestCase):
     def test_required_nodes(self):
         for node_name in ["grasp_execution_node", "robot_state_publisher"]:
             self.assertTrue(self._wait_for(lambda: self._node_available(node_name)))
+
+    def test_joint_states_topic_published(self):
+        self.assertTrue(
+            self._wait_for(
+                lambda: any(
+                    topic_name == "/joint_states"
+                    for topic_name, _types in self.node.get_topic_names_and_types()
+                )
+            )
+        )
 
     def test_joint_state_contains_finger_joints(self):
         observed_joint_names = set()

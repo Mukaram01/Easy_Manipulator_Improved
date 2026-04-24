@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <string>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_planner/grasp_scene.hpp"
@@ -34,6 +35,28 @@ ValueT get_parameter_or(
 }  // namespace
 
 static const rclcpp::Logger & LOGGER_DEMO = rclcpp::get_logger("DemoNode");
+
+template<typename SceneFactoryT, typename TopicT>
+void run_scene_with_executor(
+  rclcpp::executors::MultiThreadedExecutor & executor,
+  SceneFactoryT && scene_factory,
+  TopicT && topic)
+{
+  if (!rclcpp::ok()) {
+    RCLCPP_INFO(LOGGER_DEMO, "Shutdown requested before scene setup; skipping setup.");
+    return;
+  }
+
+  auto demo = scene_factory();
+  demo.setup(std::forward<TopicT>(topic));
+  if (!rclcpp::ok()) {
+    RCLCPP_INFO(LOGGER_DEMO, "Shutdown requested during scene setup; skipping spin.");
+    return;
+  }
+  executor.add_node(demo.node);
+  executor.spin();
+}
+
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
@@ -94,10 +117,12 @@ int main(int argc, char * argv[])
     RCLCPP_INFO(LOGGER_DEMO, "EPD Workflow Enabled");
     if (tracking_enabled && detection_topic.empty()) {
       RCLCPP_INFO(LOGGER_DEMO, "EPD Tracking Enabled");
-      grasp_planner::GraspScene<epd_msgs::msg::EPDObjectTracking> demo(node);
-      demo.setup(tracking_topic);
-      executor.add_node(demo.node);
-      executor.spin();
+      run_scene_with_executor(
+        executor,
+        [&node]() {
+          return grasp_planner::GraspScene<epd_msgs::msg::EPDObjectTracking>(node);
+        },
+        tracking_topic);
     } else {
       if (tracking_enabled && !detection_topic.empty()) {
         RCLCPP_WARN(
@@ -105,17 +130,21 @@ int main(int argc, char * argv[])
           "Detection adapter publishes localization data; falling back to localization workflow.");
       }
       RCLCPP_INFO(LOGGER_DEMO, "EPD Localization Enabled");
-      grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization> demo(node);
-      demo.setup(localization_topic);
-      executor.add_node(demo.node);
-      executor.spin();
+      run_scene_with_executor(
+        executor,
+        [&node]() {
+          return grasp_planner::GraspScene<epd_msgs::msg::EPDObjectLocalization>(node);
+        },
+        localization_topic);
     }
   } else {
     RCLCPP_INFO(LOGGER_DEMO, "Direct Workflow Enabled");
-    grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> demo(node);
-    demo.setup(point_cloud_topic);
-    executor.add_node(demo.node);
-    executor.spin();
+    run_scene_with_executor(
+      executor,
+      [&node]() {
+        return grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>(node);
+      },
+      point_cloud_topic);
   }
   #else
   const auto epd_enabled =
@@ -128,13 +157,17 @@ int main(int argc, char * argv[])
   } else {
     RCLCPP_INFO(LOGGER_DEMO, "epd_msgs not found, Direct Workflow Enabled");
   }
-  grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> demo(node);
-  demo.setup(point_cloud_topic);
-  executor.add_node(demo.node);
-  executor.spin();
+  run_scene_with_executor(
+    executor,
+    [&node]() {
+      return grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>(node);
+    },
+    point_cloud_topic);
   #endif
 
-  rclcpp::shutdown();
+  if (rclcpp::ok()) {
+    rclcpp::shutdown();
+  }
   RCLCPP_INFO(LOGGER_DEMO, "Shutting Down");
   return 0;
 }
