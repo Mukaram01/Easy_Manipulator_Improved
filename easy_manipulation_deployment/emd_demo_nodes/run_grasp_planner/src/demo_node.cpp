@@ -45,7 +45,9 @@ int main(int argc, char * argv[])
     rclcpp::Node::make_shared("grasp_planner_demo_node", "", node_options);
 
   const auto point_cloud_topic =
-    get_parameter_or(node, "camera_parameters.point_cloud_topic", std::string("/camera/pointcloud"));
+    get_parameter_or(
+      node, "camera_parameters.point_cloud_topic",
+      std::string("/camera/camera/depth/color/points"));
 
   rclcpp::executors::MultiThreadedExecutor executor;
   #if EPD_ENABLED == 1
@@ -61,7 +63,7 @@ int main(int argc, char * argv[])
     std::string("/camera/color/camera_info"));
   const auto localization_topic = get_parameter_or(
     node, "easy_perception_deployment.epd_localization_topic",
-    std::string("/processor/epd_localize_output"));
+    std::string("/easy_perception_deployment/epd_localize_output"));
   const auto tracking_enabled =
     get_parameter_or(node, "easy_perception_deployment.tracking_enabled", false);
   const auto tracking_topic = get_parameter_or(
@@ -116,7 +118,16 @@ int main(int argc, char * argv[])
     executor.spin();
   }
   #else
-  RCLCPP_INFO(LOGGER_DEMO, "epd_msgs not found, Direct Workflow Enabled");
+  const auto epd_enabled =
+    get_parameter_or(node, "easy_perception_deployment.epd_enabled", false);
+  if (epd_enabled) {
+    RCLCPP_ERROR(
+      LOGGER_DEMO,
+      "easy_perception_deployment.epd_enabled is true, but this binary was built without "
+      "epd_msgs support (EPD_ENABLED=0). Falling back to direct point cloud workflow.");
+  } else {
+    RCLCPP_INFO(LOGGER_DEMO, "epd_msgs not found, Direct Workflow Enabled");
+  }
   grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> demo(node);
   demo.setup(point_cloud_topic);
   executor.add_node(demo.node);
