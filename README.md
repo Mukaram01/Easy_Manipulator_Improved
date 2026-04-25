@@ -29,6 +29,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - Other platforms and experimental combinations are listed later in [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
 
 > Reproducibility expectation: run bootstrap/build from a clean shell that only sources `/opt/ros/humble/setup.bash`. Do not rely on pre-sourced overlays from other workspaces.
+>
+> Intentional overlay note: this workspace can intentionally override underlay packages (`ruckig`, `tesseract_monitoring`, `tesseract_msgs`, `tesseract_rosutils`) when using the source-overlay flow. Include `--allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils` in manual `colcon build` commands to avoid duplicate-package confusion and future hard errors.
 
 ## Quick start (recommended path)
 
@@ -67,6 +69,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 ./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
 colcon build --symlink-install --parallel-workers 2 \
+  --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils \
   --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
@@ -150,7 +153,7 @@ For scripted workflows, `./scripts/fix_and_build.sh` now runs the same preflight
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
-colcon build --symlink-install --parallel-workers 2 --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
+colcon build --symlink-install --parallel-workers 2 --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
 
@@ -194,6 +197,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
 
 colcon build --symlink-install --parallel-workers 2 \
+  --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils \
   --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
