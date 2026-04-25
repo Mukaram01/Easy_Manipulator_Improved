@@ -16,6 +16,7 @@
 // Main PCL files
 #include "emd/grasp_planner/grasp_scene.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -79,6 +80,36 @@ void set_epd_trigger_flag_if_available(RequestT & request)
 
 // Conversion factor: raw 16-bit depth value (millimetres) → metres.
 constexpr double kDepthMmToMeters = 0.001;
+
+std::string to_lower_copy(std::string value)
+{
+  std::transform(
+    value.begin(), value.end(), value.begin(),
+    [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
+  return value;
+}
+
+rclcpp::QoS build_perception_qos(
+  const rclcpp::Node::SharedPtr & node,
+  const std::string & reliability_parameter,
+  std::string & selected_reliability)
+{
+  node->get_parameter_or(reliability_parameter, selected_reliability, std::string("best_effort"));
+  selected_reliability = to_lower_copy(selected_reliability);
+
+  auto perception_qos = rclcpp::SensorDataQoS().keep_last(10);
+  if (selected_reliability == "reliable") {
+    perception_qos.reliable();
+    selected_reliability = "reliable";
+  } else {
+    perception_qos.best_effort();
+    selected_reliability = "best_effort";
+  }
+
+  return perception_qos;
+}
 }  // namespace
 
 template<typename T>
@@ -745,10 +776,21 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
     this->node->create_client<emd_msgs::srv::GraspRequest>(
     this->node->get_parameter("grasp_output_service").as_string());
 
+  std::string selected_reliability;
+  const auto perception_qos = build_perception_qos(
+    node,
+    "camera_parameters.point_cloud_subscription_reliability",
+    selected_reliability);
+
   RCLCPP_INFO_STREAM(LOGGER, "Listening to: " << topic_name << "...");
-  this->perception_sub = std::make_shared<
-    message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(
-    node, topic_name);
+  RCLCPP_INFO_STREAM(
+    LOGGER,
+    "Perception subscription QoS: reliability=" << selected_reliability <<
+      ", depth=10");
+
+  this->perception_sub =
+    std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>();
+  this->perception_sub->subscribe(node, topic_name, perception_qos.get_rmw_qos_profile());
 
   this->tf_perception_sub =
     std::make_shared<tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2>>(
@@ -784,13 +826,23 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
     this->node->create_client<epd_msgs::srv::Perception>(
     this->node->get_parameter("easy_perception_deployment.epd_service").as_string());
 
+  std::string selected_reliability;
+  const auto perception_qos = build_perception_qos(
+    node,
+    "easy_perception_deployment.epd_subscription_reliability",
+    selected_reliability);
+
   RCLCPP_INFO(
     LOGGER,
     "Listening to: %s...",
     topic_name.c_str());
-  this->perception_sub = std::make_shared<
-    message_filters::Subscriber<T>>(
-    node, topic_name);
+  RCLCPP_INFO(
+    LOGGER,
+    "Perception subscription QoS: reliability=%s, depth=10",
+    selected_reliability.c_str());
+
+  this->perception_sub = std::make_shared<message_filters::Subscriber<T>>();
+  this->perception_sub->subscribe(node, topic_name, perception_qos.get_rmw_qos_profile());
 
   this->tf_perception_sub = std::make_shared<tf2_ros::MessageFilter<T>>(
     *buffer_, robot_base_frame, tf_filter_queue_size,

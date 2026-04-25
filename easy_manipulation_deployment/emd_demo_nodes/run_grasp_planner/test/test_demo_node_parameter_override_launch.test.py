@@ -33,6 +33,8 @@ def generate_test_description():
         parameters=[
             params_file,
             {'easy_perception_deployment.epd_enabled': True},
+            {'easy_perception_deployment.epd_subscription_reliability': 'best_effort'},
+            {'camera_parameters.point_cloud_subscription_reliability': 'best_effort'},
         ],
     )
 
