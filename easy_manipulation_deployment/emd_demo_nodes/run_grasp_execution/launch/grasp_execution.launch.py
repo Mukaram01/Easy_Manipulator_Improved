@@ -15,6 +15,7 @@
 import os
 import re
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
@@ -333,6 +334,55 @@ def _extract_ur_robot_macro_params():
     return {token.lstrip("*") for token in raw_params if token and ":=" not in token}
 
 
+def _extract_link_names_from_urdf(robot_description_xml):
+    try:
+        root = ET.fromstring(robot_description_xml)
+    except ET.ParseError:
+        return set()
+    return {link.attrib.get("name") for link in root.findall("link") if link.attrib.get("name")}
+
+
+def _normalize_srdf_for_ur_base_inertia(robot_description_xml, srdf_xml, logger):
+    required_pairs = (("base_link", "base_link_inertia"), ("base_link_inertia", "shoulder_link"))
+    link_names = _extract_link_names_from_urdf(robot_description_xml)
+    required_links = {"base_link_inertia", "shoulder_link"}
+    if not required_links.issubset(link_names):
+        return srdf_xml
+
+    try:
+        root = ET.fromstring(srdf_xml)
+    except ET.ParseError as exc:
+        logger.warning(
+            f"Skipping UR base_link_inertia SRDF normalization due to parse error: {exc}"
+        )
+        return srdf_xml
+
+    existing_pairs = set()
+    for element in root.findall("disable_collisions"):
+        link1 = element.attrib.get("link1", "")
+        link2 = element.attrib.get("link2", "")
+        if link1 and link2:
+            existing_pairs.add(tuple(sorted((link1, link2))))
+
+    injected_pairs = []
+    for link1, link2 in required_pairs:
+        pair_key = tuple(sorted((link1, link2)))
+        if pair_key in existing_pairs:
+            continue
+        ET.SubElement(root, "disable_collisions", link1=link1, link2=link2, reason="Adjacent")
+        existing_pairs.add(pair_key)
+        injected_pairs.append(f"{link1}<->{link2}")
+
+    if injected_pairs:
+        logger.info(
+            "Injected SRDF disable_collisions pairs for UR base_link_inertia compatibility: "
+            + ", ".join(injected_pairs)
+        )
+        return ET.tostring(root, encoding="unicode")
+
+    return srdf_xml
+
+
 def resolve_required_package_share_dir(package_name, remediation_hint):
     try:
         return get_package_share_directory(package_name)
@@ -355,6 +405,7 @@ def resolve_scene_package_share_dir(scene_package):
 
 
 def launch_setup(context, *args, **kwargs):
+    logger = get_logger(__name__)
     scene_package = LaunchConfiguration(SCENE_PACKAGE_ARGUMENT).perform(context)
     if not scene_package:
         available = ", ".join(DEFAULT_SCENE_PACKAGE_CANDIDATES)
@@ -394,7 +445,7 @@ def launch_setup(context, *args, **kwargs):
             f"Original error: {exc}"
         ) from exc
     workcell_context_params_file = write_temp_yaml_params(scene_workcell_context, prefix="workcell_context_")
-    get_logger(__name__).info(
+    logger.info(
         f"Generated workcell context for scene '{scene_package}': ee={scene_ee_id} "
         f"brand={scene_ee_id} link={scene_ee_link} (file='{workcell_context_params_file}')"
     )
@@ -404,7 +455,7 @@ def launch_setup(context, *args, **kwargs):
     ur_robot_args = _extract_ur_robot_macro_params()
 
     initial_position_mappings = {}
-    if "initial_positions_file" in ur_robot_args:
+    if "initial_positions_file" in ur_robot_args or "initial_positions_file" in scene_args:
         initial_position_path = os.path.join(run_share, "config", "start_positions.yaml")
         initial_position_mappings["initial_positions_file"] = initial_position_path
 
@@ -427,6 +478,12 @@ def launch_setup(context, *args, **kwargs):
             f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
             "Ensure both URDF/SRDF xacro files exist and are valid."
         ) from exc
+
+    robot_description_semantic_config = _normalize_srdf_for_ur_base_inertia(
+        robot_description_config,
+        robot_description_semantic_config,
+        logger,
+    )
 
     robot_description = {"robot_description": robot_description_config}
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
@@ -507,7 +564,7 @@ def launch_setup(context, *args, **kwargs):
         scene_supports_gripper_controller,
     )
     ros2_controllers_params_file = write_temp_yaml_params(ros2_controllers_yaml)
-    get_logger(__name__).info(
+    logger.info(
         f"Generated temporary ROS 2 controllers params file at '{ros2_controllers_params_file}'."
     )
     moveit_controller = {
@@ -614,7 +671,7 @@ def launch_setup(context, *args, **kwargs):
         spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
         launch_actions.insert(-1, spawn_gripper)
     else:
-        get_logger(__name__).warning(
+        logger.warning(
             "Skipping ur5_gripper_controller spawner: scene metadata and robot description do not agree on "
             "gripper controller joints/interfaces; dummy gripper driver remains responsible for gripper actions."
         )
