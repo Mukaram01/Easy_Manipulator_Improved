@@ -26,7 +26,10 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <cctype>
+#include <cmath>
+#include <mutex>
 
+#include <Eigen/Geometry>
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "lifecycle_msgs/msg/transition.hpp"
@@ -43,6 +46,9 @@
 
 #include "moveit/macros/console_colors.h"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "moveit/collision_detection/collision_common.h"
+#include "planning_scene_monitor/planning_scene_monitor.h"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 
 namespace grasp_execution
@@ -333,6 +339,27 @@ bool pose_within_workspace(
          (p.z >= bounds.min_z && p.z <= bounds.max_z);
 }
 
+bool is_valid_finite(double value)
+{
+  return std::isfinite(value);
+}
+
+std::string format_pose_xyz_quat_rpy(const geometry_msgs::msg::Pose & pose)
+{
+  tf2::Quaternion q_tmp{
+    pose.orientation.x,
+    pose.orientation.y,
+    pose.orientation.z,
+    pose.orientation.w};
+  double yaw{0.0}, pitch{0.0}, roll{0.0};
+  tf2::impl::getEulerYPR(q_tmp, yaw, pitch, roll);
+  std::ostringstream oss;
+  oss << "xyz=[" << pose.position.x << ", " << pose.position.y << ", " << pose.position.z <<
+    "] quat=[" << pose.orientation.x << ", " << pose.orientation.y << ", " << pose.orientation.z <<
+    ", " << pose.orientation.w << "] rpy=[" << roll << ", " << pitch << ", " << yaw << "]";
+  return oss.str();
+}
+
 class Demo : public moveit2::MoveitCppGraspExecution
 {
 public:
@@ -398,7 +425,7 @@ public:
         task->grasp_targets = req->grasp_targets;
         const bool success = order_schedule(std::move(task), true);
         res->success = success;
-        res->message = success ? "Execution completed successfully." : "Execution failed.";
+        res->message = success ? "Execution completed successfully." : get_and_clear_last_failure_message();
       });
   }
 
@@ -495,7 +522,8 @@ public:
 
     // Select grasp method based on end effector availability
     double clearance = 0.0;
-    std::string ee_link = "";
+    std::string moveit_link = "";
+    std::string grasp_frame = "";
     std::string planning_group = "";
 
     const emd_msgs::msg::GraspMethod *selected_method = nullptr;
@@ -504,7 +532,8 @@ public:
         for (auto & ee : group.second.end_effectors) {
           if (ee.second.brand == method.ee_id) {
             selected_method = &method;
-            ee_link = ee.second.link;
+            moveit_link = ee.second.link;
+            grasp_frame = ee.second.grasp_frame.empty() ? ee.second.link : ee.second.grasp_frame;
             clearance = ee.second.clearance;
             planning_group = group.first;
             break;
@@ -533,7 +562,7 @@ public:
     grasp_execution::GraspExecutionContext options;
     options.world_frame = planning_frame_;
     options.planning_group = planning_group;
-    options.ee_link = ee_link;
+    options.ee_link = moveit_link;
     options.move_to_collide_step_size = node_->get_parameter(
       "planning_strategy.cartesian_planning.collide_step_length").as_double();
     options.cartesian_step_size = static_cast<float>(node_->get_parameter(
@@ -547,13 +576,13 @@ public:
     options.clearance = clearance;
 
     // Exit if brand name not found.
-    if (ee_link.empty()) {
+    if (moveit_link.empty()) {
       RCLCPP_ERROR(node_->get_logger(), "End effector brand: %s", ee_brand.c_str());
     }
 
     geometry_msgs::msg::PoseStamped release_pose;
     try {
-      release_pose = get_curr_pose(ee_link);
+      release_pose = get_curr_pose(moveit_link);
     } catch (const std::exception & ex) {
       RCLCPP_ERROR(node_->get_logger(), "Failed to get current pose for target %s: %s",
         target_id.c_str(), ex.what());
@@ -569,28 +598,31 @@ public:
     }
 
     bool result = false;
-    const geometry_msgs::msg::PoseStamped * selected_grasp_pose = nullptr;
+    geometry_msgs::msg::PoseStamped selected_moveit_grasp_pose;
+    bool selected_moveit_grasp_pose_valid = false;
+    bool any_candidate_passed_precheck = false;
 
     for (size_t pose_index = 0; pose_index < grasp_method.grasp_poses.size(); ++pose_index) {
+      if (!rclcpp::ok()) {
+        set_last_failure_message("Execution interrupted during candidate evaluation.");
+        return false;
+      }
       const auto & grasp_pose = grasp_method.grasp_poses[pose_index];
-      geometry_msgs::msg::PoseStamped grasp_pose_in_robot_frame;
-      to_frame(grasp_pose, grasp_pose_in_robot_frame, this->robot_frame_);
-      const auto & p = grasp_pose_in_robot_frame.pose.position;
-      const auto & q = grasp_pose_in_robot_frame.pose.orientation;
+      geometry_msgs::msg::PoseStamped moveit_goal_pose;
+      std::string rejection_reason;
+      const bool precheck_ok = precheck_and_prepare_grasp_candidate(
+        target_id, pose_index, grasp_method.grasp_poses.size(), planning_group, moveit_link, grasp_frame,
+        grasp_pose, moveit_goal_pose, rejection_reason);
+      if (!precheck_ok) {
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "Candidate %zu/%zu rejected for target %s: %s",
+          pose_index + 1, grasp_method.grasp_poses.size(), target_id.c_str(), rejection_reason.c_str());
+        continue;
+      }
+      any_candidate_passed_precheck = true;
 
-      RCLCPP_INFO(
-        node_->get_logger(),
-        "Grasp candidate %zu/%zu target=%s object_name=%s object_pose_frame=%s grasp_pose_frame=%s "
-        "target_xyz=[%.4f, %.4f, %.4f] target_quat=[%.5f, %.5f, %.5f, %.5f]",
-        pose_index + 1,
-        grasp_method.grasp_poses.size(),
-        target_id.c_str(),
-        target->target_type.c_str(),
-        target->target_pose.header.frame_id.c_str(),
-        grasp_pose.header.frame_id.c_str(),
-        p.x, p.y, p.z, q.x, q.y, q.z, q.w);
-
-      if (!pose_within_workspace(grasp_pose_in_robot_frame, workspace_bounds_)) {
+      if (!pose_within_workspace(moveit_goal_pose, workspace_bounds_)) {
         RCLCPP_WARN(
           node_->get_logger(),
           "Rejected candidate %zu/%zu for target %s: outside workspace bounds "
@@ -604,14 +636,19 @@ public:
         continue;
       }
 
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "Candidate %zu/%zu target=%s passed IK/collision precheck. Planning with moveit_link=%s.",
+        pose_index + 1, grasp_method.grasp_poses.size(), target_id.c_str(), moveit_link.c_str());
       result = this->plan_and_execute_job(
         options,
         "Grasp location",
         target_id,
-        grasp_pose);
+        moveit_goal_pose);
 
       if (result) {
-        selected_grasp_pose = &grasp_pose;
+        selected_moveit_grasp_pose = moveit_goal_pose;
+        selected_moveit_grasp_pose_valid = true;
         RCLCPP_INFO(
           node_->get_logger(),
           "Grasp planning/execution succeeded for target %s using candidate %zu/%zu.",
@@ -625,7 +662,17 @@ public:
         target_id.c_str(), pose_index + 1, grasp_method.grasp_poses.size());
     }
 
-    if (!selected_grasp_pose) {
+    if (!any_candidate_passed_precheck) {
+      set_last_failure_message("All grasp pose candidates failed IK/collision precheck.");
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "All %zu grasp pose candidates failed IK/collision precheck for target %s.",
+        grasp_method.grasp_poses.size(), target_id.c_str());
+      return false;
+    }
+
+    if (!selected_moveit_grasp_pose_valid) {
+      set_last_failure_message("Execution failed after candidate planning attempts.");
       RCLCPP_ERROR(
         node_->get_logger(),
         "All %zu grasp pose candidates failed for target %s.",
@@ -635,22 +682,20 @@ public:
     // ------------------- Attach grasp object to robot --------------------------
     prompt_job_start(
       node_->get_logger(), target_id,
-      "Attaching to robot ee frame: [" + ee_link + "]");
+      "Attaching to robot ee frame: [" + moveit_link + "]");
 
-    end_effector_interface_->grasp_object(this, ee_link, target_id, ee_context_);
+    end_effector_interface_->grasp_object(this, moveit_link, target_id, ee_context_);
 
     prompt_job_end(node_->get_logger(), true);
 
     // Apply configurable release pose offsets. The x_offset is applied to the
     // current EE position. Optionally the z-height is aligned to the grasp
     // pose so the object clears any surface obstacle on approach.
-    geometry_msgs::msg::PoseStamped base_grasp_pose;
-    to_frame(*selected_grasp_pose, base_grasp_pose, this->robot_frame_);
     release_pose.pose.position.x += release_x_offset_;
     if (release_use_grasp_z_) {
-      release_pose.pose.position.z = base_grasp_pose.pose.position.z;
+      release_pose.pose.position.z = selected_moveit_grasp_pose.pose.position.z;
     }
-    release_pose.pose.orientation = base_grasp_pose.pose.orientation;
+    release_pose.pose.orientation = selected_moveit_grasp_pose.pose.orientation;
 
     if(!this->plan_and_execute_job(
         options,
@@ -663,9 +708,9 @@ public:
     // ------------------- detach grasp object from robot --------------------------
     prompt_job_start(
       node_->get_logger(), target_id,
-      "Detaching from robot ee frame: [" + ee_link + "]");
+      "Detaching from robot ee frame: [" + moveit_link + "]");
 
-    end_effector_interface_->release_object(this, ee_link, target_id, ee_context_);
+    end_effector_interface_->release_object(this, moveit_link, target_id, ee_context_);
 
     prompt_job_end(node_->get_logger(), true);
 
@@ -699,6 +744,149 @@ public:
   }
 
 private:
+  void set_last_failure_message(const std::string & message)
+  {
+    std::lock_guard<std::mutex> lock(last_failure_mutex_);
+    last_failure_message_ = message;
+  }
+
+  std::string get_and_clear_last_failure_message()
+  {
+    std::lock_guard<std::mutex> lock(last_failure_mutex_);
+    const std::string message = last_failure_message_.empty() ? "Execution failed." : last_failure_message_;
+    last_failure_message_.clear();
+    return message;
+  }
+
+  bool precheck_and_prepare_grasp_candidate(
+    const std::string & target_id,
+    size_t candidate_index,
+    size_t candidate_total,
+    const std::string & planning_group,
+    const std::string & moveit_link,
+    const std::string & grasp_frame,
+    const geometry_msgs::msg::PoseStamped & original_candidate_pose,
+    geometry_msgs::msg::PoseStamped & out_moveit_goal_pose,
+    std::string & rejection_reason)
+  {
+    auto candidate_pose = original_candidate_pose;
+    if (!normalize_quaternion(candidate_pose.pose.orientation)) {
+      rejection_reason = "invalid candidate quaternion (NaN or zero length).";
+      return false;
+    }
+
+    geometry_msgs::msg::PoseStamped desired_grasp_frame_pose;
+    to_frame(candidate_pose, desired_grasp_frame_pose, this->robot_frame_);
+    out_moveit_goal_pose = desired_grasp_frame_pose;
+
+    auto current_state = get_curr_state();
+    if (!current_state) {
+      rejection_reason = "could not retrieve current robot state for IK precheck.";
+      return false;
+    }
+    const auto robot_model = current_state->getRobotModel();
+    const auto * jmg = robot_model->getJointModelGroup(planning_group);
+    if (!jmg) {
+      rejection_reason = "planning group not found in robot model.";
+      return false;
+    }
+
+    if (grasp_frame != moveit_link) {
+      const auto * moveit_link_model = robot_model->getLinkModel(moveit_link);
+      const auto * grasp_frame_model = robot_model->getLinkModel(grasp_frame);
+      if (!moveit_link_model || !grasp_frame_model) {
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "Candidate %zu/%zu target=%s: grasp frame conversion unavailable "
+          "(moveit_link='%s' exists=%s, grasp_frame='%s' exists=%s). Falling back to legacy behaviour.",
+          candidate_index + 1, candidate_total, target_id.c_str(),
+          moveit_link.c_str(), moveit_link_model ? "true" : "false",
+          grasp_frame.c_str(), grasp_frame_model ? "true" : "false");
+      } else {
+        const Eigen::Isometry3d world_moveit =
+          current_state->getGlobalLinkTransform(moveit_link);
+        const Eigen::Isometry3d world_grasp =
+          current_state->getGlobalLinkTransform(grasp_frame);
+        const Eigen::Isometry3d moveit_to_grasp = world_moveit.inverse() * world_grasp;
+        out_moveit_goal_pose.pose = convert_grasp_frame_pose_to_moveit_link_pose(
+          desired_grasp_frame_pose.pose, moveit_to_grasp);
+      }
+    }
+
+    if (!is_pose_finite(out_moveit_goal_pose.pose)) {
+      rejection_reason = "transformed moveit goal pose contains non-finite values.";
+      return false;
+    }
+
+    moveit::core::RobotState ik_state(robot_model);
+    ik_state.setToDefaultValues();
+    constexpr double kIkTimeoutS = 0.1;
+    const bool ik_ok = ik_state.setFromIK(jmg, out_moveit_goal_pose.pose, moveit_link, kIkTimeoutS);
+
+    geometry_msgs::msg::PoseStamped current_moveit_pose;
+    try {
+      current_moveit_pose = get_curr_pose(moveit_link);
+    } catch (const std::exception & ex) {
+      rejection_reason = std::string("failed to read current moveit link pose: ") + ex.what();
+      return false;
+    }
+    const double dx = out_moveit_goal_pose.pose.position.x - current_moveit_pose.pose.position.x;
+    const double dy = out_moveit_goal_pose.pose.position.y - current_moveit_pose.pose.position.y;
+    const double dz = out_moveit_goal_pose.pose.position.z - current_moveit_pose.pose.position.z;
+    const double translation_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Candidate diag target=%s idx=%zu/%zu original_frame=%s original_pose=%s moveit_link=%s "
+      "grasp_frame=%s transformed_moveit_pose=%s current_to_goal_distance=%.5f ik_ok=%s",
+      target_id.c_str(), candidate_index + 1, candidate_total,
+      original_candidate_pose.header.frame_id.c_str(),
+      format_pose_xyz_quat_rpy(desired_grasp_frame_pose.pose).c_str(),
+      moveit_link.c_str(), grasp_frame.c_str(),
+      format_pose_xyz_quat_rpy(out_moveit_goal_pose.pose).c_str(),
+      translation_distance, ik_ok ? "true" : "false");
+
+    if (!ik_ok) {
+      rejection_reason = "IK failed for transformed moveit goal.";
+      return false;
+    }
+
+    planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp_->getPlanningSceneMonitor());
+    collision_detection::CollisionRequest req;
+    req.contacts = true;
+    req.max_contacts = 20;
+    req.group_name = planning_group;
+    collision_detection::CollisionResult res;
+    scene->checkCollision(req, res, ik_state);
+    if (res.collision) {
+      std::ostringstream contact_links;
+      bool first = true;
+      for (const auto & contact_pair : res.contacts) {
+        if (!first) {
+          contact_links << ", ";
+        }
+        contact_links << contact_pair.first.first << "<->" << contact_pair.first.second;
+        first = false;
+      }
+      rejection_reason = "IK solution in collision: " + contact_links.str();
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Candidate %zu/%zu target=%s rejected: %s",
+        candidate_index + 1, candidate_total, target_id.c_str(), rejection_reason.c_str());
+      return false;
+    }
+
+    return true;
+  }
+
+  bool is_pose_finite(const geometry_msgs::msg::Pose & pose) const
+  {
+    return is_valid_finite(pose.position.x) && is_valid_finite(pose.position.y) &&
+           is_valid_finite(pose.position.z) && is_valid_finite(pose.orientation.x) &&
+           is_valid_finite(pose.orientation.y) && is_valid_finite(pose.orientation.z) &&
+           is_valid_finite(pose.orientation.w);
+  }
+
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<emd::EndEffectorExecutioninterface> end_effector_interface_;
   emd::EndEffectorExecutionContext ee_context_;
@@ -708,6 +896,8 @@ private:
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
   WorkspaceBounds workspace_bounds_;
+  std::mutex last_failure_mutex_;
+  std::string last_failure_message_;
 };
 
 }  // namespace grasp_execution

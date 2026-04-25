@@ -266,6 +266,8 @@ protected:
   rclcpp::Time last_epd_msg_time;
   /*! \brief Earliest time when EPD trigger retries are allowed */
   rclcpp::Time next_epd_trigger_time;
+  /*! \brief Pause EPD watchdog/trigger while grasp execution is still in progress */
+  bool pause_epd_triggers_while_execution_in_progress{true};
   /*! \brief Vector of objects in the scene to be picked */
   #endif
 

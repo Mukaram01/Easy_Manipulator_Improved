@@ -299,16 +299,16 @@ def test_load_scene_environment_supports_known_generated_scene_packages(grasp_la
 
 
 @pytest.mark.parametrize(
-    ("scene_package", "expected_brand", "expected_link"),
+    ("scene_package", "expected_brand", "expected_moveit_link", "expected_grasp_frame"),
     [
-        ("ur5_2f_test", "robotiq_2f", "gripper_base_link"),
-        ("ur5_3f_test", "robotiq_3f", "palm"),
-        ("suction_test", "suction_cup", "wrist_fixture"),
-        ("ur5_airpick4_test", "suction_cup", "gripper_base_link"),
+        ("ur5_2f_test", "robotiq_2f", "tool0", "gripper_base_link"),
+        ("ur5_3f_test", "robotiq_3f", "tool0", "palm"),
+        ("suction_test", "suction_cup", "tool0", "wrist_fixture"),
+        ("ur5_airpick4_test", "suction_cup", "tool0", "gripper_base_link"),
     ],
 )
 def test_build_workcell_context_maps_scene_end_effector_to_planner_brand_and_link(
-    grasp_launch_module, monkeypatch, scene_package, expected_brand, expected_link
+    grasp_launch_module, monkeypatch, scene_package, expected_brand, expected_moveit_link, expected_grasp_frame
 ):
     repo_root = Path(__file__).resolve().parents[4]
     scenes_root = repo_root / "scenes"
@@ -320,20 +320,22 @@ def test_build_workcell_context_maps_scene_end_effector_to_planner_brand_and_lin
     )
 
     scene_metadata = grasp_launch_module.load_scene_environment(scene_package)
-    workcell_context, ee_id, ee_link = grasp_launch_module.build_workcell_context_for_scene(
+    workcell_context, ee_id, ee_link, ee_grasp_frame = grasp_launch_module.build_workcell_context_for_scene(
         scene_package, scene_metadata
     )
 
     ros_params = workcell_context["workcell"]["ros__parameters"]
     assert ee_id == expected_brand
-    assert ee_link == expected_link
+    assert ee_link == expected_moveit_link
+    assert ee_grasp_frame == expected_grasp_frame
     assert ros_params["groups.manipulator.end_effectors"] == [expected_brand]
     assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.brand"] == expected_brand
-    assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.link"] == expected_link
+    assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.link"] == expected_moveit_link
+    assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.grasp_frame"] == expected_grasp_frame
 
 
 def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_end_effector(grasp_launch_module):
-    workcell_context, ee_id, ee_link = grasp_launch_module.build_workcell_context_for_scene(
+    workcell_context, ee_id, ee_link, ee_grasp_frame = grasp_launch_module.build_workcell_context_for_scene(
         "scene_without_ee",
         {"robot": {"name": "ur5"}},
     )
@@ -341,6 +343,7 @@ def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_en
     ros_params = workcell_context["workcell"]["ros__parameters"]
     assert ee_id == "ur_tool0"
     assert ee_link == "tool0"
+    assert ee_grasp_frame == "tool0"
     assert ros_params["groups.manipulator.end_effectors"] == ["ur_tool0"]
 
 

@@ -92,6 +92,7 @@ public:
     const std::string & ee_name,
     const std::string & ee_brand,
     const std::string & ee_link,
+    const std::string & ee_grasp_frame,
     double ee_clearance,
     const std::string & ee_driver_plugin,
     const std::string & ee_driver_controller = "") override;

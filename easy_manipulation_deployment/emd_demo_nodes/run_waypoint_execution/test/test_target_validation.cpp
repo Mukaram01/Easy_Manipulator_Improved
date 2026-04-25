@@ -103,7 +103,7 @@ TEST(TargetValidation, RejectsUnknownEndEffectorMapping)
 {
   grasp_execution::WorkcellContext workcell_context;
   workcell_context.load_ee(
-    "manipulator_a", "known_ee", "known-brand", "known_link", 0.01, "driver_plugin",
+    "manipulator_a", "known_ee", "known-brand", "known_link", "known_link", 0.01, "driver_plugin",
     "driver_controller");
 
   std::string planning_group = "stale_group";

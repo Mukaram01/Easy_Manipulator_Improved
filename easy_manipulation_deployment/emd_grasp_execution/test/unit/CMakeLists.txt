@@ -47,3 +47,13 @@ target_link_libraries(test_moveit_object_pose_utils
 target_compile_features(test_moveit_object_pose_utils
   PRIVATE cxx_std_17
 )
+
+ament_add_gtest(test_pose_transform_utils
+  test_pose_transform_utils.cpp
+)
+target_link_libraries(test_pose_transform_utils
+  grasp_execution_interface
+)
+target_compile_features(test_pose_transform_utils
+  PRIVATE cxx_std_17
+)
