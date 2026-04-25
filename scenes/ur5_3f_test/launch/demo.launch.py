@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import tempfile
 import yaml
 import re
 import xml.etree.ElementTree as ET
@@ -170,6 +171,18 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
         )
 
 
+
+
+def _write_robot_description_file(scene_name, robot_description_config):
+    path = os.path.join(
+        tempfile.gettempdir(),
+        f"{scene_name}_robot_description.urdf",
+    )
+    with open(path, "w", encoding="utf-8") as file:
+        file.write(robot_description_config)
+    return path
+
+
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
@@ -180,6 +193,11 @@ def _launch_setup(context):
         mappings={"ur_type": "ur5", "name": "ur5", "tf_prefix": "", "use_fake_hardware": use_fake_hardware.perform(context)},
     )
     robot_description = {"robot_description": robot_description_config}
+
+    robot_description_file = _write_robot_description_file(
+        scene_pkg,
+        robot_description_config,
+    )
 
     robot_description_semantic_config = load_xacro(scene_pkg, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
@@ -310,9 +328,9 @@ def _launch_setup(context):
         package="joint_state_publisher",
         executable="joint_state_publisher",
         output="screen",
+        arguments=[robot_description_file],
         parameters=_param_list(
             validated_use_sim_time,
-            validated_robot_description,
         ),
     )
 
