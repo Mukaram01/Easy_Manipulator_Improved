@@ -211,6 +211,7 @@ build_phase() {
   local ros_setup="/opt/ros/humble/setup.bash"
   local skip_keys="qt_advanced_docking,tesseract_visualization"
   local build_skip="tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server"
+  local allow_override="--allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils"
 
   run_cmd "unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH"
   run_cmd "set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u"
@@ -234,9 +235,9 @@ build_phase() {
   run_cmd "./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh"
 
   if [[ "$PROFILE" == "full" && $WITH_GUI -eq 1 ]]; then
-    run_cmd "colcon build --symlink-install --parallel-workers 2"
+    run_cmd "colcon build --symlink-install --parallel-workers 2 $allow_override"
   else
-    run_cmd "colcon build --symlink-install --parallel-workers 2 --packages-skip $build_skip"
+    run_cmd "colcon build --symlink-install --parallel-workers 2 $allow_override --packages-skip $build_skip"
   fi
 
   append_unique FILES_TOUCHED "$WORKSPACE/build"

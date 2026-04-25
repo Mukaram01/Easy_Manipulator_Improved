@@ -14,7 +14,7 @@ trap cleanup SIGINT SIGTERM ERR EXIT
 
 # Expose hidden asset packages, build the workspace, and source it
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --symlink-install
+colcon build --symlink-install --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils
 # shellcheck disable=SC1091
 source install/setup.bash
 ./src/easy_manipulation_deployment/scripts/validate_workspace_assets.sh

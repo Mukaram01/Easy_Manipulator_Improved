@@ -71,6 +71,22 @@ compose_cmake_args() {
     fi
 }
 
+
+colcon_override_args() {
+    # This workspace intentionally overlays source packages on top of the ROS underlay.
+    # Keep these explicit so duplicate-package warnings stay actionable and future
+    # colcon releases do not fail hard on intentional overrides.
+    local args=(
+        --allow-overriding
+        ruckig
+        tesseract_monitoring
+        tesseract_msgs
+        tesseract_rosutils
+    )
+    printf '%s
+' "${args[@]}"
+}
+
 colcon_base_args() {
     local args=(
         --symlink-install
@@ -153,7 +169,9 @@ build_workspace() {
     local foundation_marker="$STATE_DIR/foundation_built"
     local trajopt_setup="$WORKSPACE_ROOT/install/share/trajopt_sco/local_setup.bash"
     local args
+    local override_args
     mapfile -t args < <(colcon_base_args)
+    mapfile -t override_args < <(colcon_override_args)
 
     pushd "$WORKSPACE_ROOT" >/dev/null
 
@@ -165,7 +183,7 @@ build_workspace() {
     if [[ ! -f "$foundation_marker" ]]; then
         log_info "Building foundation packages (through trajopt_sco)"
         reset_colcon_environment
-        colcon build --base-paths "$SRC_DIR" "${args[@]}" \
+        colcon build --base-paths "$SRC_DIR" "${args[@]}" "${override_args[@]}" \
             --packages-up-to trajopt_sco --cmake-args "${CMAKE_ARGS[@]}"
         touch "$foundation_marker"
     else
@@ -182,7 +200,7 @@ build_workspace() {
 
     log_info "Building full workspace"
     reset_colcon_environment
-    colcon build --base-paths "$SRC_DIR" "${full_args[@]}" --cmake-args "${CMAKE_ARGS[@]}"
+    colcon build --base-paths "$SRC_DIR" "${full_args[@]}" "${override_args[@]}" --cmake-args "${CMAKE_ARGS[@]}"
 
     copy_motion_planner_configs
     ensure_motion_planners_component_configs "$WORKSPACE_ROOT"
