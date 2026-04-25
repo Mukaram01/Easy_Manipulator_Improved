@@ -133,7 +133,6 @@ def _launch_setup(context):
     # No depth sensor is configured for this scene, so explicitly disable
     # occupancy map sensor plugins to avoid octomap updater errors.
     occupancy_map_monitor_params = {
-        "sensors": [],
     }
 
     static_tf = Node(

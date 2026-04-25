@@ -75,26 +75,6 @@ def _normalize_ros_param_types(value):
 
 
 
-def _validate_no_empty_sequences(value, path="root"):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            _validate_no_empty_sequences(item, f"{path}.{key}")
-        return
-
-    if isinstance(value, tuple):
-        if len(value) == 0:
-            raise TypeError(f"Empty tuple values are not allowed in ROS params at {path}")
-        for index, item in enumerate(value):
-            _validate_no_empty_sequences(item, f"{path}[{index}]")
-        return
-
-    if isinstance(value, list):
-        if len(value) == 0:
-            raise TypeError(f"Empty list values are not allowed in ROS params at {path}")
-        for index, item in enumerate(value):
-            _validate_no_empty_sequences(item, f"{path}[{index}]")
-
-
 def _validate_ros_param_types(value, path="root"):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -209,17 +189,17 @@ def _launch_setup(context):
     # --- Nodes ---
 
     try:
-        validated_use_sim_time = _normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"})
-        validated_robot_description = _normalize_ros_param_types(robot_description)
-        validated_robot_description_semantic = _normalize_ros_param_types(robot_description_semantic)
-        validated_robot_description_kinematics = _normalize_ros_param_types(robot_description_kinematics)
-        validated_planning_pipelines_config = _normalize_ros_param_types(planning_pipelines_config)
-        validated_ompl_planning_pipeline_config = _normalize_ros_param_types(ompl_planning_pipeline_config)
-        validated_planning_scene_monitor_params = _normalize_ros_param_types(planning_scene_monitor_params)
-        validated_trajectory_execution = _normalize_ros_param_types(trajectory_execution)
-        validated_occupancy_map_monitor_params = _normalize_ros_param_types(occupancy_map_monitor_params)
-        validated_moveit_controller_manager = _normalize_ros_param_types(moveit_controller_manager)
-        validated_moveit_simple_controller_manager = _normalize_ros_param_types(moveit_simple_controller_manager)
+        validated_use_sim_time = _sanitize_ros_param_types(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"})) or {}
+        validated_robot_description = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description)) or {}
+        validated_robot_description_semantic = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_semantic)) or {}
+        validated_robot_description_kinematics = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_kinematics)) or {}
+        validated_planning_pipelines_config = _sanitize_ros_param_types(_normalize_ros_param_types(planning_pipelines_config)) or {}
+        validated_ompl_planning_pipeline_config = _sanitize_ros_param_types(_normalize_ros_param_types(ompl_planning_pipeline_config)) or {}
+        validated_planning_scene_monitor_params = _sanitize_ros_param_types(_normalize_ros_param_types(planning_scene_monitor_params)) or {}
+        validated_trajectory_execution = _sanitize_ros_param_types(_normalize_ros_param_types(trajectory_execution)) or {}
+        validated_occupancy_map_monitor_params = _sanitize_ros_param_types(_normalize_ros_param_types(occupancy_map_monitor_params)) or {}
+        validated_moveit_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_controller_manager)) or {}
+        validated_moveit_simple_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_simple_controller_manager)) or {}
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -232,14 +212,6 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_occupancy_map_monitor_params, "occupancy_map_monitor_params")
         _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
         _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
-
-        _validate_no_empty_sequences(validated_planning_pipelines_config, "planning_pipelines_config")
-        _validate_no_empty_sequences(validated_ompl_planning_pipeline_config, "ompl_planning_pipeline_config")
-        _validate_no_empty_sequences(validated_planning_scene_monitor_params, "planning_scene_monitor_params")
-        _validate_no_empty_sequences(validated_occupancy_map_monitor_params, "occupancy_map_monitor_params")
-        _validate_no_empty_sequences(validated_trajectory_execution, "trajectory_execution")
-        _validate_no_empty_sequences(validated_moveit_controller_manager, "moveit_controller_manager")
-        _validate_no_empty_sequences(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 

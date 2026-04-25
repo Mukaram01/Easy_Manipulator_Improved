@@ -73,6 +73,31 @@ def _normalize_ros_param_types(value):
     return value
 
 
+
+
+def _sanitize_ros_param_types(value):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            sanitized_item = _sanitize_ros_param_types(item)
+            if sanitized_item is None:
+                continue
+            sanitized[str(key)] = sanitized_item
+        return sanitized or None
+
+    if isinstance(value, tuple):
+        value = [_sanitize_ros_param_types(item) for item in value]
+        value = [item for item in value if item is not None]
+        return value or None
+
+    if isinstance(value, list):
+        value = [_sanitize_ros_param_types(item) for item in value]
+        value = [item for item in value if item is not None]
+        return value or None
+
+    return value
+
+
 def _validate_ros_param_types(value, path="root"):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -178,16 +203,16 @@ def _launch_setup(context):
     # --- Nodes ---
 
     try:
-        validated_use_sim_time = _normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"})
-        validated_robot_description = _normalize_ros_param_types(robot_description)
-        validated_robot_description_semantic = _normalize_ros_param_types(robot_description_semantic)
-        validated_robot_description_kinematics = _normalize_ros_param_types(robot_description_kinematics)
-        validated_planning_pipelines_config = _normalize_ros_param_types(planning_pipelines_config)
-        validated_ompl_planning_pipeline_config = _normalize_ros_param_types(ompl_planning_pipeline_config)
-        validated_planning_scene_monitor_params = _normalize_ros_param_types(planning_scene_monitor_params)
-        validated_trajectory_execution = _normalize_ros_param_types(trajectory_execution)
-        validated_moveit_controller_manager = _normalize_ros_param_types(moveit_controller_manager)
-        validated_moveit_simple_controller_manager = _normalize_ros_param_types(moveit_simple_controller_manager)
+        validated_use_sim_time = _sanitize_ros_param_types(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"})) or {}
+        validated_robot_description = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description)) or {}
+        validated_robot_description_semantic = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_semantic)) or {}
+        validated_robot_description_kinematics = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_kinematics)) or {}
+        validated_planning_pipelines_config = _sanitize_ros_param_types(_normalize_ros_param_types(planning_pipelines_config)) or {}
+        validated_ompl_planning_pipeline_config = _sanitize_ros_param_types(_normalize_ros_param_types(ompl_planning_pipeline_config)) or {}
+        validated_planning_scene_monitor_params = _sanitize_ros_param_types(_normalize_ros_param_types(planning_scene_monitor_params)) or {}
+        validated_trajectory_execution = _sanitize_ros_param_types(_normalize_ros_param_types(trajectory_execution)) or {}
+        validated_moveit_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_controller_manager)) or {}
+        validated_moveit_simple_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_simple_controller_manager)) or {}
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
