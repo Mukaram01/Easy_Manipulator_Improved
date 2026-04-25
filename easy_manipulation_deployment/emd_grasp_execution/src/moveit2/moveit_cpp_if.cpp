@@ -53,7 +53,7 @@
 #include "moveit_msgs/msg/collision_object.hpp"
 #include "moveit_msgs/msg/constraints.hpp"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
-#include "planning_scene_monitor/planning_scene_monitor.h"
+#include "moveit/planning_scene_monitor/planning_scene_monitor.h"
 
 namespace grasp_execution
 {

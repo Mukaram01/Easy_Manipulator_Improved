@@ -47,7 +47,7 @@
 #include "moveit/macros/console_colors.h"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "moveit/collision_detection/collision_common.h"
-#include "planning_scene_monitor/planning_scene_monitor.h"
+#include "moveit/planning_scene_monitor/planning_scene_monitor.h"
 #include "tf2_eigen/tf2_eigen.hpp"
 
 
