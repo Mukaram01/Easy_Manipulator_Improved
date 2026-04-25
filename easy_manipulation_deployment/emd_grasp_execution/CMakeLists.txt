@@ -70,6 +70,7 @@ target_link_libraries(moveit_cpp_grasp_execution_interface
 
 ament_target_dependencies(moveit_cpp_grasp_execution_interface
   moveit_core
+  moveit_ros_planning
   moveit_ros_planning_interface
   moveit_msgs
   trajectory_msgs
