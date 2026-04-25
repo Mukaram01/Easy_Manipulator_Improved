@@ -309,6 +309,30 @@ bool validate_required_finger_link_frames_in_robot_description(
   return true;
 }
 
+struct WorkspaceBounds
+{
+  bool enabled{false};
+  double min_x{-1.0};
+  double max_x{1.0};
+  double min_y{-1.0};
+  double max_y{1.0};
+  double min_z{0.0};
+  double max_z{1.5};
+};
+
+bool pose_within_workspace(
+  const geometry_msgs::msg::PoseStamped & pose,
+  const WorkspaceBounds & bounds)
+{
+  if (!bounds.enabled) {
+    return true;
+  }
+  const auto & p = pose.pose.position;
+  return (p.x >= bounds.min_x && p.x <= bounds.max_x) &&
+         (p.y >= bounds.min_y && p.y <= bounds.max_y) &&
+         (p.z >= bounds.min_z && p.z <= bounds.max_z);
+}
+
 class Demo : public moveit2::MoveitCppGraspExecution
 {
 public:
@@ -340,6 +364,20 @@ public:
       release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
+    workspace_bounds_.enabled = node_->declare_parameter<bool>(
+      "grasp_workspace_filter.enabled", false);
+    workspace_bounds_.min_x = node_->declare_parameter<double>(
+      "grasp_workspace_filter.min_x", -1.0);
+    workspace_bounds_.max_x = node_->declare_parameter<double>(
+      "grasp_workspace_filter.max_x", 1.0);
+    workspace_bounds_.min_y = node_->declare_parameter<double>(
+      "grasp_workspace_filter.min_y", -1.0);
+    workspace_bounds_.max_y = node_->declare_parameter<double>(
+      "grasp_workspace_filter.max_y", 1.0);
+    workspace_bounds_.min_z = node_->declare_parameter<double>(
+      "grasp_workspace_filter.min_z", 0.0);
+    workspace_bounds_.max_z = node_->declare_parameter<double>(
+      "grasp_workspace_filter.max_z", 1.5);
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
@@ -358,15 +396,17 @@ public:
         auto task = std::make_unique<emd_msgs::msg::GraspTask>();
         task->task_id = gen_uuid();
         task->grasp_targets = req->grasp_targets;
-        order_schedule(std::move(task), true);
-        res->success = true;
+        const bool success = order_schedule(std::move(task), true);
+        res->success = success;
+        res->message = success ? "Execution completed successfully." : "Execution failed.";
       });
   }
 
-  void order_schedule(
+  bool order_schedule(
     const emd_msgs::msg::GraspTask::SharedPtr & msg,
     bool blocking = false)
   {
+    bool all_targets_success = true;
     // target id will be "#<shape>-<task_id>-<target-index>"
 
     // ------------------- Prepare object for grasping --------------------------
@@ -398,10 +438,12 @@ public:
 
       if (blocking) {
         // Wait for the job to finish
-        bool result;
+        bool result = false;
         planning_scheduler.wait_till_complete(target_id, result);
+        all_targets_success = all_targets_success && result;
       }
     }
+    return all_targets_success;
   }
 
   void check_status(
@@ -531,6 +573,36 @@ public:
 
     for (size_t pose_index = 0; pose_index < grasp_method.grasp_poses.size(); ++pose_index) {
       const auto & grasp_pose = grasp_method.grasp_poses[pose_index];
+      geometry_msgs::msg::PoseStamped grasp_pose_in_robot_frame;
+      to_frame(grasp_pose, grasp_pose_in_robot_frame, this->robot_frame_);
+      const auto & p = grasp_pose_in_robot_frame.pose.position;
+      const auto & q = grasp_pose_in_robot_frame.pose.orientation;
+
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "Grasp candidate %zu/%zu target=%s object_name=%s object_pose_frame=%s grasp_pose_frame=%s "
+        "target_xyz=[%.4f, %.4f, %.4f] target_quat=[%.5f, %.5f, %.5f, %.5f]",
+        pose_index + 1,
+        grasp_method.grasp_poses.size(),
+        target_id.c_str(),
+        target->target_type.c_str(),
+        target->target_pose.header.frame_id.c_str(),
+        grasp_pose.header.frame_id.c_str(),
+        p.x, p.y, p.z, q.x, q.y, q.z, q.w);
+
+      if (!pose_within_workspace(grasp_pose_in_robot_frame, workspace_bounds_)) {
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "Rejected candidate %zu/%zu for target %s: outside workspace bounds "
+          "[x:(%.3f, %.3f) y:(%.3f, %.3f) z:(%.3f, %.3f)].",
+          pose_index + 1,
+          grasp_method.grasp_poses.size(),
+          target_id.c_str(),
+          workspace_bounds_.min_x, workspace_bounds_.max_x,
+          workspace_bounds_.min_y, workspace_bounds_.max_y,
+          workspace_bounds_.min_z, workspace_bounds_.max_z);
+        continue;
+      }
 
       result = this->plan_and_execute_job(
         options,
@@ -635,6 +707,7 @@ private:
   std::string planning_frame_;
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
+  WorkspaceBounds workspace_bounds_;
 };
 
 }  // namespace grasp_execution

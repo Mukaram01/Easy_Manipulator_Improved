@@ -122,14 +122,48 @@ void grasp_planner::GraspScene<T>::send_to_execution(
     return;
   }
 
-  RCLCPP_INFO(LOGGER, "Sending Grasp Request to grasp execution module");
+  if (execution_gate_enabled && execution_in_progress.load(std::memory_order_acquire)) {
+    RCLCPP_WARN(
+      LOGGER,
+      "Grasp execution still running; dropping new request with %zu targets due to "
+      "'execution_in_progress_gate_enabled'.",
+      grasp_task.grasp_targets.size());
+    this->grasp_objects.clear();
+    return;
+  }
+
+  if (result_future.valid()) {
+    const auto status = result_future.wait_for(std::chrono::nanoseconds(0));
+    if (status == std::future_status::ready) {
+      auto result = result_future.get();
+      const bool success = static_cast<bool>(result && result->success);
+      RCLCPP_INFO(
+        LOGGER,
+        "Previous grasp execution completed: success=%s message='%s'",
+        success ? "true" : "false",
+        result ? result->message.c_str() : "<null response>");
+      execution_in_progress.store(false, std::memory_order_release);
+    } else {
+      execution_in_progress.store(true, std::memory_order_release);
+      if (execution_gate_enabled) {
+        RCLCPP_INFO(LOGGER, "Previous grasp execution request still running; skipping send.");
+        this->grasp_objects.clear();
+        return;
+      }
+      RCLCPP_WARN(
+        LOGGER,
+        "Previous grasp execution request still running but gate disabled; sending another request.");
+    }
+  }
+
+  RCLCPP_INFO(LOGGER, "Sending grasp request to grasp execution module.");
   auto req = std::make_shared<emd_msgs::srv::GraspRequest::Request>();
   req->grasp_targets = grasp_task.grasp_targets;
-  RCLCPP_INFO(LOGGER, "Waiting for grasp execution service");
+  RCLCPP_INFO(LOGGER, "Waiting for grasp execution service.");
 
   constexpr int kMaxWaitAttempts = 5;
   int attempts = 0;
-  while (!output_client->wait_for_service(std::chrono::seconds(1))) {
+  while (!wait_for_output_service(std::chrono::seconds(1))) {
     if (!rclcpp::ok()) {
       RCLCPP_WARN(
         node->get_logger(), "Grasp execution service wait interrupted. Skipping request.");
@@ -149,23 +183,26 @@ void grasp_planner::GraspScene<T>::send_to_execution(
       attempts, kMaxWaitAttempts);
   }
 
-  if (!this->result_future.valid()) {
-    RCLCPP_INFO(LOGGER, "Client Not started");
-    auto request = output_client->async_send_request(req);
-    this->result_future = request.future.share();
-  } else if (this->result_future.wait_for(std::chrono::nanoseconds(0)) ==
-    std::future_status::timeout)
-  {
-    RCLCPP_INFO(LOGGER, "Grasp Execution still Ongoing");
-  } else {
-    auto result = this->result_future.get();
-    RCLCPP_INFO(
-      LOGGER, "Grasp Execution completed! STATUS: %s!!",
-      (result->success) ? "SUCCESS" : "FAILURE");
-    auto request = output_client->async_send_request(req);
-    this->result_future = request.future.share();
-  }
+  this->result_future = send_output_request(req);
+  execution_in_progress.store(true, std::memory_order_release);
+  RCLCPP_INFO(
+    LOGGER, "Grasp execution request accepted/sent (%zu targets).",
+    req->grasp_targets.size());
   this->grasp_objects.clear();
+}
+
+template<typename T>
+bool grasp_planner::GraspScene<T>::wait_for_output_service(const std::chrono::duration<double> & timeout)
+{
+  return output_client->wait_for_service(timeout);
+}
+
+template<typename T>
+std::shared_future<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>
+grasp_planner::GraspScene<T>::send_output_request(
+  const std::shared_ptr<emd_msgs::srv::GraspRequest::Request> & request)
+{
+  return output_client->async_send_request(request).future.share();
 }
 
 template<typename T>
@@ -775,6 +812,10 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
     this->node->get_parameter("grasp_output_service").as_string());
+  node->get_parameter_or(
+    "execution_in_progress_gate_enabled",
+    execution_gate_enabled,
+    true);
 
   std::string selected_reliability;
   const auto perception_qos = build_perception_qos(
@@ -821,6 +862,10 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
   this->output_client =
     this->node->create_client<emd_msgs::srv::GraspRequest>(
     this->node->get_parameter("grasp_output_service").as_string());
+  node->get_parameter_or(
+    "execution_in_progress_gate_enabled",
+    execution_gate_enabled,
+    true);
 
   this->epd_client =
     this->node->create_client<epd_msgs::srv::Perception>(

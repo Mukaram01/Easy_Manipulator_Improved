@@ -61,6 +61,7 @@
 #include <limits>
 #include <future>
 #include <algorithm>
+#include <chrono>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -180,6 +181,13 @@ protected:
  */
   void send_to_execution(const emd_msgs::msg::GraspTask & grasp_task);
 
+  /*! \brief Service wait wrapper to enable deterministic tests */
+  virtual bool wait_for_output_service(const std::chrono::duration<double> & timeout);
+
+  /*! \brief Service request wrapper to enable deterministic tests */
+  virtual std::shared_future<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>
+  send_output_request(const std::shared_ptr<emd_msgs::srv::GraspRequest::Request> & request);
+
   #if EPD_ENABLED == 1
 
 /**
@@ -242,6 +250,10 @@ protected:
   rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedPtr output_client;
   /*! \brief Futures for GraspRequest request */
   std::shared_future<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse> result_future;
+  /*! \brief True while a grasp execution request is in progress */
+  std::atomic_bool execution_in_progress{false};
+  /*! \brief Runtime gate to skip sending new execution requests while busy */
+  bool execution_gate_enabled{true};
 
   #if EPD_ENABLED == 1
   /*! \brief Client that triggers the EPD workflow */

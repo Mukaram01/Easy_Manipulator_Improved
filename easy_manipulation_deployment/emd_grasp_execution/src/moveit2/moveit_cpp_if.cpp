@@ -53,6 +53,7 @@
 #include "moveit_msgs/msg/collision_object.hpp"
 #include "moveit_msgs/msg/constraints.hpp"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
+#include "planning_scene_monitor/planning_scene_monitor.h"
 
 namespace grasp_execution
 {
@@ -97,6 +98,55 @@ geometry_msgs::msg::Pose get_object_pose_from_world_object(
 }  // namespace detail
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("grasp_execution");
+
+namespace
+{
+void log_goal_failure_diagnostics(
+  const rclcpp::Logger & logger,
+  moveit_cpp::MoveItCppPtr moveit_cpp,
+  const std::string & planning_group,
+  const std::string & ee_link,
+  const geometry_msgs::msg::PoseStamped & pose)
+{
+  auto robot_model = moveit_cpp->getRobotModel();
+  const auto * jmg = robot_model->getJointModelGroup(planning_group);
+  if (!jmg) {
+    RCLCPP_WARN(
+      logger,
+      "Failed candidate diagnosis: joint model group '%s' unavailable.",
+      planning_group.c_str());
+    return;
+  }
+
+  moveit::core::RobotState goal_state(robot_model);
+  goal_state.setToDefaultValues();
+  constexpr double kIkTimeoutS = 0.1;
+  const bool ik_ok = goal_state.setFromIK(jmg, pose.pose, ee_link, kIkTimeoutS);
+  if (!ik_ok) {
+    RCLCPP_WARN(
+      logger,
+      "Candidate diagnosis: IK failure for group='%s' ee_link='%s'.",
+      planning_group.c_str(),
+      ee_link.c_str());
+    return;
+  }
+
+  planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp->getPlanningSceneMonitor());
+  const bool in_collision = scene->isStateColliding(goal_state, planning_group);
+  if (in_collision) {
+    RCLCPP_WARN(
+      logger,
+      "Candidate diagnosis: IK solution exists but goal state is in collision for group='%s'.",
+      planning_group.c_str());
+    return;
+  }
+
+  RCLCPP_WARN(
+    logger,
+    "Candidate diagnosis: IK valid and collision-free; likely constraints/planner sampling/unreachable "
+    "goal (e.g., OMPL goal tree sampling failure).");
+}
+}  // namespace
 
 MoveitCppGraspExecution::MoveitCppGraspExecution(
   const rclcpp::Node::SharedPtr & node,
@@ -673,6 +723,7 @@ bool MoveitCppGraspExecution::move_to(
 
   // All strategies failed, exiting
   if (!result) {
+    log_goal_failure_diagnostics(LOGGER, moveit_cpp_, option.planning_group, ee_link, pose);
     return false;
   }
 
@@ -791,6 +842,7 @@ bool MoveitCppGraspExecution::move_to(
 
   // All strategies failed, exiting
   if (!result) {
+    log_goal_failure_diagnostics(LOGGER, moveit_cpp_, planning_group, ee_link, pose);
     return false;
   }
 
