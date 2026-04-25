@@ -228,6 +228,7 @@ def _write_robot_description_file(scene_name, robot_description_config):
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
     robot_description_config = load_xacro(
