@@ -21,7 +21,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <cmath>
 
+#include <Eigen/Geometry>
 #include "boost/uuid/uuid.hpp"
 #include "boost/uuid/random_generator.hpp"
 #include "boost/uuid/uuid_io.hpp"
@@ -32,6 +34,7 @@
 #include "tf2_ros/buffer.h"
 #include "tf2/impl/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2_eigen/tf2_eigen.hpp"
 
 namespace grasp_execution
 {
@@ -190,6 +193,32 @@ inline bool parse_pose_vector(
     // Location invalid
     return false;
   }
+}
+
+inline bool normalize_quaternion(geometry_msgs::msg::Quaternion & quat)
+{
+  const double norm_sq =
+    quat.x * quat.x + quat.y * quat.y + quat.z * quat.z + quat.w * quat.w;
+  if (!std::isfinite(norm_sq) || norm_sq <= 1e-12) {
+    return false;
+  }
+  const double norm = std::sqrt(norm_sq);
+  quat.x /= norm;
+  quat.y /= norm;
+  quat.z /= norm;
+  quat.w /= norm;
+  return true;
+}
+
+inline geometry_msgs::msg::Pose convert_grasp_frame_pose_to_moveit_link_pose(
+  const geometry_msgs::msg::Pose & desired_grasp_frame_pose,
+  const Eigen::Isometry3d & moveit_link_to_grasp_frame)
+{
+  Eigen::Isometry3d world_desired_grasp = Eigen::Isometry3d::Identity();
+  tf2::fromMsg(desired_grasp_frame_pose, world_desired_grasp);
+  const Eigen::Isometry3d world_moveit_goal =
+    world_desired_grasp * moveit_link_to_grasp_frame.inverse();
+  return tf2::toMsg(world_moveit_goal);
 }
 
 template<typename T>

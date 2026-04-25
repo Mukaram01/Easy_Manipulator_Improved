@@ -117,13 +117,18 @@ def derive_planner_end_effector_id(end_effector):
 
 
 def derive_workcell_end_effector_link(end_effector):
-    base_link = _normalize_text(end_effector.get("base_link"))
     robot_link = _normalize_text(end_effector.get("robot_link"))
-    if base_link:
-        return base_link
     if robot_link:
         return robot_link
     return "tool0"
+
+
+def derive_workcell_grasp_frame(end_effector):
+    for key in ("grasp_frame", "tcp_link", "physical_ee_link", "base_link", "link"):
+        value = _normalize_text(end_effector.get(key))
+        if value:
+            return value
+    return ""
 
 
 def build_workcell_context_for_scene(scene_package, scene_metadata):
@@ -138,6 +143,7 @@ def build_workcell_context_for_scene(scene_package, scene_metadata):
 
     ee_id = derive_planner_end_effector_id(end_effector)
     ee_link = derive_workcell_end_effector_link(end_effector)
+    ee_grasp_frame = derive_workcell_grasp_frame(end_effector) or ee_link
     return {
         "workcell": {
             "ros__parameters": {
@@ -147,12 +153,13 @@ def build_workcell_context_for_scene(scene_package, scene_metadata):
                 "groups.manipulator.end_effectors": [ee_id],
                 f"groups.manipulator.end_effectors.{ee_id}.brand": ee_id,
                 f"groups.manipulator.end_effectors.{ee_id}.link": ee_link,
+                f"groups.manipulator.end_effectors.{ee_id}.grasp_frame": ee_grasp_frame,
                 f"groups.manipulator.end_effectors.{ee_id}.clearance": 0.1,
                 f"groups.manipulator.end_effectors.{ee_id}.driver.plugin": "grasp_execution/DummyGripperDriver",
                 f"groups.manipulator.end_effectors.{ee_id}.driver.controller": "",
             }
         }
-    }, ee_id, ee_link
+    }, ee_id, ee_link, ee_grasp_frame
 
 
 def align_gripper_controller_joints(
@@ -430,7 +437,7 @@ def launch_setup(context, *args, **kwargs):
     try:
         scene_metadata = load_scene_environment(scene_package)
         gripper_controller_joints = resolve_gripper_controller_joints(scene_package, scene_metadata=scene_metadata)
-        scene_workcell_context, scene_ee_id, scene_ee_link = build_workcell_context_for_scene(
+        scene_workcell_context, scene_ee_id, scene_ee_link, scene_ee_grasp_frame = build_workcell_context_for_scene(
             scene_package, scene_metadata
         )
     except Exception as exc:
@@ -447,7 +454,8 @@ def launch_setup(context, *args, **kwargs):
     workcell_context_params_file = write_temp_yaml_params(scene_workcell_context, prefix="workcell_context_")
     logger.info(
         f"Generated workcell context for scene '{scene_package}': ee={scene_ee_id} "
-        f"brand={scene_ee_id} link={scene_ee_link} (file='{workcell_context_params_file}')"
+        f"brand={scene_ee_id} moveit_link={scene_ee_link} "
+        f"grasp_frame={scene_ee_grasp_frame} (file='{workcell_context_params_file}')"
     )
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"

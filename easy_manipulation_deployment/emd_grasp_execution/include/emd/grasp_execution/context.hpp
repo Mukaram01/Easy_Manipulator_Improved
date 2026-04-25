@@ -44,12 +44,18 @@ struct WorkcellContext
      */
     std::string brand;
 
-    /// gripper ee link.
+    /// MoveIt planning link / robot link used as IK target.
     /**
      * example: "ee_palm".
      * This will be used as the ee link for planning.
      */
     std::string link;
+
+    /// Physical grasp frame (TCP/gripper base) where grasp candidates are defined.
+    /**
+     * If empty, planning falls back to using `link`.
+     */
+    std::string grasp_frame;
 
     /// clearance needed for gripping action
     /**
@@ -164,6 +170,7 @@ struct WorkcellContext
     const std::string & ee_name,
     const std::string & ee_brand,
     const std::string & ee_link,
+    const std::string & ee_grasp_frame,
     double ee_clearance,
     const std::string & ee_driver_plugin,
     const std::string & ee_driver_controller)
@@ -177,6 +184,7 @@ struct WorkcellContext
       ees.emplace(ee_name, Gripper());
       ees[ee_name].brand = ee_brand;
       ees[ee_name].link = ee_link;
+      ees[ee_name].grasp_frame = ee_grasp_frame;
       ees[ee_name].clearance = ee_clearance;
       ees[ee_name].driver.plugin = ee_driver_plugin;
       ees[ee_name].driver.controller = ee_driver_controller;

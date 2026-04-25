@@ -186,12 +186,13 @@ public:
     const std::string & ee_name,
     const std::string & ee_brand,
     const std::string & ee_link,
+    const std::string & ee_grasp_frame,
     double ee_clearance,
     const std::string & ee_driver_plugin,
     const std::string & ee_driver_controller = "")
   {
     workcell_context_->load_ee(
-      group_name, ee_name, ee_brand, ee_link, ee_clearance,
+      group_name, ee_name, ee_brand, ee_link, ee_grasp_frame, ee_clearance,
       ee_driver_plugin, ee_driver_controller);
     return true;
   }

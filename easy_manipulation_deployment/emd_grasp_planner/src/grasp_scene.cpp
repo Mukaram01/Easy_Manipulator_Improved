@@ -731,6 +731,14 @@ template<>
 void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
 {
+  if (execution_gate_enabled && execution_in_progress.load(std::memory_order_acquire)) {
+    RCLCPP_WARN_THROTTLE(
+      LOGGER,
+      *node->get_clock(),
+      2000,
+      "Execution is in progress; skipping direct point-cloud planning callback.");
+    return;
+  }
   if (planning_in_progress.exchange(true, std::memory_order_acq_rel)) {
     RCLCPP_WARN_THROTTLE(
       LOGGER,
@@ -787,6 +795,14 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::start_planning(
 template<typename T>
 void grasp_planner::GraspScene<T>::start_planning(const typename T::ConstSharedPtr & msg)
 {
+  if (execution_gate_enabled && execution_in_progress.load(std::memory_order_acquire)) {
+    RCLCPP_WARN_THROTTLE(
+      LOGGER,
+      *node->get_clock(),
+      2000,
+      "Execution is in progress; skipping EPD planning callback.");
+    return;
+  }
   RCLCPP_INFO(LOGGER, "Perception input received!");
   last_epd_msg_time = node->get_clock()->now();
   create_world_collision(msg);
@@ -815,6 +831,10 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
   node->get_parameter_or(
     "execution_in_progress_gate_enabled",
     execution_gate_enabled,
+    true);
+  node->get_parameter_or(
+    "easy_perception_deployment.pause_epd_triggers_while_execution_in_progress",
+    pause_epd_triggers_while_execution_in_progress,
     true);
 
   std::string selected_reliability;
@@ -923,6 +943,19 @@ void grasp_planner::GraspScene<T>::setup(std::string topic_name)
 template<typename T>
 void grasp_planner::GraspScene<T>::trigger_epd_pipeline()
 {
+  if (
+    pause_epd_triggers_while_execution_in_progress &&
+    execution_gate_enabled &&
+    execution_in_progress.load(std::memory_order_acquire))
+  {
+    RCLCPP_INFO_THROTTLE(
+      LOGGER,
+      *node->get_clock(),
+      2000,
+      "Skipping EPD trigger while grasp execution is in progress.");
+    return;
+  }
+
   const double epd_service_wait_timeout_s = std::max(
     0.0, node->get_parameter("easy_perception_deployment.epd_service_wait_timeout_s").as_double());
   const auto wait_timeout = std::chrono::duration<double>(epd_service_wait_timeout_s);
@@ -967,6 +1000,13 @@ void grasp_planner::GraspScene<T>::evaluate_epd_watchdog(
   double epd_msg_timeout_s)
 {
   if (epd_msg_timeout_s <= 0.0) {
+    return;
+  }
+  if (
+    pause_epd_triggers_while_execution_in_progress &&
+    execution_gate_enabled &&
+    execution_in_progress.load(std::memory_order_acquire))
+  {
     return;
   }
   if (now < next_epd_trigger_time) {

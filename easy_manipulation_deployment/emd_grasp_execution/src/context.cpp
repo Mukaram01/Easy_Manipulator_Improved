@@ -189,6 +189,11 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
                                       group_name + ".end_effectors." +
                                           *ee_brand);
       }
+      const std::string ee_grasp_frame =
+        get_string_param(*node_params, ee_prefix + "grasp_frame")
+        .or_else([&]() {return get_string_param(*node_params, ee_prefix + "tcp_link");})
+        .or_else([&]() {return get_string_param(*node_params, ee_prefix + "physical_ee_link");})
+        .value_or(*ee_link);
 
       double ee_clearance =
           get_double_param(*node_params, ee_prefix + "clearance").value_or(
@@ -197,13 +202,14 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
       auto driver_plugin =
           get_string_param(*node_params, driver_prefix + "plugin");
       if (!driver_plugin) {
-        this->load_ee(group_name, ee_name, *ee_brand, *ee_link, ee_clearance,
+        this->load_ee(group_name, ee_name, *ee_brand, *ee_link, ee_grasp_frame, ee_clearance,
                       "grasp_execution/DummyGripperDriverPlugin", "");
       } else {
         std::string driver_controller =
             get_string_param(*node_params, driver_prefix + "controller")
                 .value_or("");
-        this->load_ee(group_name, ee_name, *ee_brand, *ee_link, ee_clearance,
+        this->load_ee(
+          group_name, ee_name, *ee_brand, *ee_link, ee_grasp_frame, ee_clearance,
                       *driver_plugin, driver_controller);
       }
     }

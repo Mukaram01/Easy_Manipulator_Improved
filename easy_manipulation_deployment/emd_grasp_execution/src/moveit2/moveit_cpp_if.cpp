@@ -321,7 +321,7 @@ bool MoveitCppGraspExecution::init_from_yaml(const std::string & path)
     for (auto & ee : group.end_effectors) {
       if (!this->load_ee(
           group_name, ee.first,
-          ee.second.brand, ee.second.link, ee.second.clearance,
+          ee.second.brand, ee.second.link, ee.second.grasp_frame, ee.second.clearance,
           ee.second.driver.plugin, ee.second.driver.controller))
       {
         return false;
@@ -370,12 +370,13 @@ bool MoveitCppGraspExecution::load_ee(
   const std::string & ee_name,
   const std::string & ee_brand,
   const std::string & ee_link,
+  const std::string & ee_grasp_frame,
   double ee_clearance,
   const std::string & ee_driver_plugin,
   const std::string & ee_driver_controller)
 {
   if (!GraspExecutionInterface::load_ee(
-      group_name, ee_name, ee_brand, ee_link, ee_clearance,
+      group_name, ee_name, ee_brand, ee_link, ee_grasp_frame, ee_clearance,
       ee_driver_plugin, ee_driver_controller))
   {
     return false;
@@ -671,7 +672,7 @@ bool MoveitCppGraspExecution::move_to(
     moveit_cpp::PlanningComponent::PlanSolution plan_solution;
     int count = 0;
 
-    while (!plan_solution && count < option.hybrid_max_attempts) {
+    while (rclcpp::ok() && !plan_solution && count < option.hybrid_max_attempts) {
       arm.planner->setGoal(pose, ee_link);
       plan_solution = arm.planner->plan();  // PlanningComponent::PlanSolution
       count++;
@@ -709,7 +710,7 @@ bool MoveitCppGraspExecution::move_to(
     moveit_cpp::PlanningComponent::PlanSolution plan_solution;
     int count = 0;
 
-    while (!plan_solution && count < option.non_deterministic_max_attempts) {
+    while (rclcpp::ok() && !plan_solution && count < option.non_deterministic_max_attempts) {
       arm.planner->setGoal(pose, ee_link);
       plan_solution = arm.planner->plan();  // PlanningComponent::PlanSolution
       count++;
@@ -790,7 +791,7 @@ bool MoveitCppGraspExecution::move_to(
     moveit_cpp::PlanningComponent::PlanSolution plan_solution;
     int count = 0;
 
-    while (!plan_solution && count < hybrid_max_attempts) {
+    while (rclcpp::ok() && !plan_solution && count < hybrid_max_attempts) {
       arm.planner->setGoal(pose, ee_link);
       plan_solution = arm.planner->plan();  // PlanningComponent::PlanSolution
       count++;
@@ -828,7 +829,7 @@ bool MoveitCppGraspExecution::move_to(
     moveit_cpp::PlanningComponent::PlanSolution plan_solution;
     int count = 0;
 
-    while (!plan_solution && count < non_deterministic_max_attempts) {
+    while (rclcpp::ok() && !plan_solution && count < non_deterministic_max_attempts) {
       arm.planner->setGoal(pose, ee_link);
       plan_solution = arm.planner->plan();  // PlanningComponent::PlanSolution
       count++;
@@ -899,7 +900,7 @@ bool MoveitCppGraspExecution::move_to(
   moveit_cpp::PlanningComponent::PlanSolution plan_solution;
   int count = 0;
 
-  while (!plan_solution && count < non_deterministic_max_attempts) {
+  while (rclcpp::ok() && !plan_solution && count < non_deterministic_max_attempts) {
     arm.planner->setGoal(state);
     plan_solution = arm.planner->plan();  // PlanningComponent::PlanSolution
     count++;
@@ -940,7 +941,7 @@ bool MoveitCppGraspExecution::move_to(
   moveit_cpp::PlanningComponent::PlanSolution plan_solution;
   int count = 0;
 
-  while (!plan_solution && count < non_deterministic_max_attempts) {
+  while (rclcpp::ok() && !plan_solution && count < non_deterministic_max_attempts) {
     arm.planner->setGoal(named_state);
     plan_solution = arm.planner->plan();
     count++;
