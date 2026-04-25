@@ -284,16 +284,19 @@ def _launch_setup(context):
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
+        name=f"{scene_pkg}_robot_state_publisher",
         output="screen",
         parameters=_param_list(validated_use_sim_time, validated_robot_description),
         remappings=[
             ("joint_states", joint_states_topic),
+            ("/joint_states", joint_states_topic),
         ],
     )
 
     joint_state_publisher = Node(
         package="joint_state_publisher",
         executable="joint_state_publisher",
+        name=f"{scene_pkg}_joint_state_publisher",
         output="screen",
         arguments=[robot_description_file],
         parameters=_param_list(
@@ -301,6 +304,7 @@ def _launch_setup(context):
         ),
         remappings=[
             ("joint_states", joint_states_topic),
+            ("/joint_states", joint_states_topic),
         ],
     )
 
