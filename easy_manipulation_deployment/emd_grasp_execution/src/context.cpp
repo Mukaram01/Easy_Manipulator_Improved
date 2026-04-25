@@ -189,11 +189,17 @@ void WorkcellContext::init_from_yaml(const std::string &path) {
                                       group_name + ".end_effectors." +
                                           *ee_brand);
       }
-      const std::string ee_grasp_frame =
-        get_string_param(*node_params, ee_prefix + "grasp_frame")
-        .or_else([&]() {return get_string_param(*node_params, ee_prefix + "tcp_link");})
-        .or_else([&]() {return get_string_param(*node_params, ee_prefix + "physical_ee_link");})
-        .value_or(*ee_link);
+      auto ee_grasp_frame_opt =
+        get_string_param(*node_params, ee_prefix + "grasp_frame");
+      if (!ee_grasp_frame_opt) {
+        ee_grasp_frame_opt =
+          get_string_param(*node_params, ee_prefix + "tcp_link");
+      }
+      if (!ee_grasp_frame_opt) {
+        ee_grasp_frame_opt =
+          get_string_param(*node_params, ee_prefix + "physical_ee_link");
+      }
+      const std::string ee_grasp_frame = ee_grasp_frame_opt.value_or(*ee_link);
 
       double ee_clearance =
           get_double_param(*node_params, ee_prefix + "clearance").value_or(
