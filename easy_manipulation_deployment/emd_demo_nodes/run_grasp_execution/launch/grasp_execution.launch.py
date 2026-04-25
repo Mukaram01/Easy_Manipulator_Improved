@@ -194,7 +194,17 @@ def load_file(package, file_path, mappings=None):
 
 def load_yaml(package, file_path):
     package_path = get_package_share_directory(package)
-    return xacro.load_yaml(os.path.join(package_path, file_path))
+    yaml_path = os.path.join(package_path, file_path)
+    try:
+        try:
+            return xacro.load_yaml(yaml_path, [])
+        except TypeError:
+            return xacro.load_yaml(yaml_path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load YAML from resolved path '{yaml_path}' (package='{package}', file='{file_path}'). "
+            f"Original error: {exc}"
+        ) from exc
 
 
 def require_yaml_mapping(data, field_name, package_name, file_name):
@@ -283,13 +293,15 @@ def launch_setup(context, *args, **kwargs):
     try:
         gripper_controller_joints = resolve_gripper_controller_joints(scene_package)
     except Exception as exc:
+        scene_package_path = get_package_share_directory(scene_package)
+        scene_yaml_path = os.path.join(scene_package_path, "environment.yaml")
         raise RuntimeError(
             "Failed while parsing scene metadata for grasp execution launch. "
-            f"package='{scene_package}', file='environment.yaml', args: "
+            f"package='{scene_package}', file='environment.yaml', resolved_path='{scene_yaml_path}', args: "
             f"{SCENE_PACKAGE_ARGUMENT}='{scene_package}', "
             f"{MOVEIT_CONFIG_PACKAGE_ARGUMENT}='{moveit_config_package}', "
             f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
-            "Please verify that the selected scene package contains a valid environment.yaml."
+            f"Original error: {exc}"
         ) from exc
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
