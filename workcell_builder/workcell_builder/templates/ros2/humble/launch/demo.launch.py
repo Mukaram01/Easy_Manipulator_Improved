@@ -185,6 +185,9 @@ def _extract_controller_joints(robot_description_semantic_config):
 
 
 def _validate_joint_state_configuration(robot_description_config, controller_joints):
+    if not controller_joints:
+        raise RuntimeError("Fake controller joints list is empty; unable to configure joint state publishing")
+
     try:
         urdf_root = ET.fromstring(robot_description_config)
     except ET.ParseError as exc:
@@ -207,35 +210,6 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
             "Controller joints are not present in robot_description: "
             + ", ".join(missing)
         )
-
-
-def _extract_dependent_joints(robot_description_config):
-    try:
-        urdf_root = ET.fromstring(robot_description_config)
-    except ET.ParseError as exc:
-        raise RuntimeError("Failed to parse robot_description while extracting mimic joints") from exc
-
-    dependent_joints = {}
-    for joint in urdf_root.findall(".//joint"):
-        joint_name = joint.get("name")
-        mimic = joint.find("mimic")
-        if not joint_name or mimic is None:
-            continue
-
-        mimic_joint = mimic.get("joint")
-        if not mimic_joint:
-            continue
-
-        dependent_joint = {"parent": mimic_joint}
-        multiplier = mimic.get("multiplier")
-        offset = mimic.get("offset")
-        if multiplier is not None:
-            dependent_joint["factor"] = float(multiplier)
-        if offset is not None:
-            dependent_joint["offset"] = float(offset)
-        dependent_joints[joint_name] = dependent_joint
-
-    return {"dependent_joints": dependent_joints}
 
 
 def _launch_setup(context):
@@ -291,7 +265,6 @@ def _launch_setup(context):
             "The generated fake controller cannot be created with an empty joints list."
         )
     _validate_joint_state_configuration(robot_description_config, controller_joints)
-    joint_state_dependent_joints = _extract_dependent_joints(robot_description_config)
     controller_name = f"fake_{controller_group_name}_controller"
 
     moveit_controller_manager = {
@@ -333,7 +306,6 @@ def _launch_setup(context):
         validated_trajectory_execution = _param_dict(_normalize_ros_param_types(trajectory_execution))
         validated_moveit_controller_manager = _param_dict(_normalize_ros_param_types(moveit_controller_manager))
         validated_moveit_simple_controller_manager = _param_dict(_normalize_ros_param_types(moveit_simple_controller_manager))
-        validated_joint_state_dependent_joints = _param_dict(_normalize_ros_param_types(joint_state_dependent_joints))
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -345,7 +317,6 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_trajectory_execution, "trajectory_execution")
         _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
         _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
-        _validate_ros_param_types(validated_joint_state_dependent_joints, "joint_state_dependent_joints")
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 
@@ -380,7 +351,6 @@ def _launch_setup(context):
         parameters=_param_list(
             validated_use_sim_time,
             validated_robot_description,
-            validated_joint_state_dependent_joints,
         ),
     )
 
