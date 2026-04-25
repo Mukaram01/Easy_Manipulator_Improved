@@ -268,6 +268,83 @@ def test_resolve_gripper_controller_joints_rejects_non_mapping_scene_metadata(gr
     assert "scene_package" in message
 
 
+@pytest.mark.parametrize(
+    "scene_package",
+    [
+        "ur5_2f_test",
+        "ur5_3f_test",
+        "suction_test",
+        "ur5_airpick4_test",
+        "ur3_suction_test",
+        "ur10_2f_test",
+    ],
+)
+def test_load_scene_environment_supports_known_generated_scene_packages(grasp_launch_module, monkeypatch, scene_package):
+    repo_root = Path(__file__).resolve().parents[4]
+    scenes_root = repo_root / "scenes"
+
+    def fake_get_package_share_directory(package_name):
+        candidate = scenes_root / package_name
+        if candidate.is_dir():
+            return str(candidate)
+        raise grasp_launch_module.PackageNotFoundError(package_name)
+
+    monkeypatch.setattr(grasp_launch_module, "get_package_share_directory", fake_get_package_share_directory)
+
+    scene_metadata = grasp_launch_module.load_scene_environment(scene_package)
+
+    assert isinstance(scene_metadata, dict)
+    assert isinstance(scene_metadata.get("robot"), dict)
+    assert isinstance(scene_metadata.get("end_effector"), dict)
+
+
+@pytest.mark.parametrize(
+    ("scene_package", "expected_brand", "expected_link"),
+    [
+        ("ur5_2f_test", "robotiq_2f", "gripper_base_link"),
+        ("ur5_3f_test", "robotiq_3f", "palm"),
+        ("suction_test", "suction_cup", "wrist_fixture"),
+        ("ur5_airpick4_test", "suction_cup", "gripper_base_link"),
+    ],
+)
+def test_build_workcell_context_maps_scene_end_effector_to_planner_brand_and_link(
+    grasp_launch_module, monkeypatch, scene_package, expected_brand, expected_link
+):
+    repo_root = Path(__file__).resolve().parents[4]
+    scenes_root = repo_root / "scenes"
+
+    monkeypatch.setattr(
+        grasp_launch_module,
+        "get_package_share_directory",
+        lambda package_name: str(scenes_root / package_name),
+    )
+
+    scene_metadata = grasp_launch_module.load_scene_environment(scene_package)
+    workcell_context, ee_id, ee_link = grasp_launch_module.build_workcell_context_for_scene(
+        scene_package, scene_metadata
+    )
+
+    ros_params = workcell_context["workcell"]["ros__parameters"]
+    assert ee_id == expected_brand
+    assert ee_link == expected_link
+    assert ros_params["groups.manipulator.end_effectors"] == [expected_brand]
+    assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.brand"] == expected_brand
+    assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.link"] == expected_link
+
+
+def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_end_effector(grasp_launch_module):
+    workcell_context, ee_id, ee_link = grasp_launch_module.build_workcell_context_for_scene(
+        "scene_without_ee",
+        {"robot": {"name": "ur5"}},
+    )
+
+    ros_params = workcell_context["workcell"]["ros__parameters"]
+    assert ee_id == "ur_tool0"
+    assert ee_link == "tool0"
+    assert ros_params["groups.manipulator.end_effectors"] == ["ur_tool0"]
+
+
+
 def test_require_yaml_mapping_reports_package_and_file(grasp_launch_module):
     with pytest.raises(
         RuntimeError,
