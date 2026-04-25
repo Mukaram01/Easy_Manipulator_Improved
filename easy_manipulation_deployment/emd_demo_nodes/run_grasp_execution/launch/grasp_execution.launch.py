@@ -25,6 +25,7 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 import xacro
+import yaml
 
 DEFAULT_SCENE_PACKAGE_CANDIDATES = ("ur5_3f_test", "ur5_2f_test", "ur5_airpick4_test", "suction_test")
 PACKAGE_NAME = "run_grasp_execution"
@@ -195,15 +196,15 @@ def load_file(package, file_path, mappings=None):
 def load_yaml(package, file_path):
     package_path = get_package_share_directory(package)
     yaml_path = os.path.join(package_path, file_path)
+
     try:
-        try:
-            return xacro.load_yaml(yaml_path, [])
-        except TypeError:
-            return xacro.load_yaml(yaml_path)
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data if data is not None else {}
     except Exception as exc:
         raise RuntimeError(
-            f"Failed to load YAML from resolved path '{yaml_path}' (package='{package}', file='{file_path}'). "
-            f"Original error: {exc}"
+            f"Failed to load YAML from resolved path '{yaml_path}' "
+            f"(package='{package}', file='{file_path}'). Original error: {exc}"
         ) from exc
 
 
