@@ -155,6 +155,7 @@ def _write_robot_description_file(scene_name, robot_description_config):
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    joint_states_topic = f"/{scene_pkg}/joint_states"
 
     # --- Robot descriptions ---
     robot_description_config = load_xacro(
@@ -285,6 +286,9 @@ def _launch_setup(context):
         executable="robot_state_publisher",
         output="screen",
         parameters=_param_list(validated_use_sim_time, validated_robot_description),
+        remappings=[
+            ("joint_states", joint_states_topic),
+        ],
     )
 
     joint_state_publisher = Node(
@@ -295,6 +299,9 @@ def _launch_setup(context):
         parameters=_param_list(
             validated_use_sim_time,
         ),
+        remappings=[
+            ("joint_states", joint_states_topic),
+        ],
     )
 
     move_group = Node(
@@ -313,6 +320,10 @@ def _launch_setup(context):
             validated_moveit_controller_manager,
             validated_moveit_simple_controller_manager,
         ),
+        remappings=[
+            ("joint_states", joint_states_topic),
+            ("/joint_states", joint_states_topic),
+        ],
     )
 
     rviz_config_file = os.path.join(get_package_share_directory(scene_pkg), "launch", "demo.rviz")
@@ -328,6 +339,10 @@ def _launch_setup(context):
             validated_robot_description_semantic,
             validated_robot_description_kinematics,
         ),
+        remappings=[
+            ("joint_states", joint_states_topic),
+            ("/joint_states", joint_states_topic),
+        ],
     )
 
     return [
