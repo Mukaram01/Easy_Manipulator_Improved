@@ -208,6 +208,17 @@ def load_yaml(package, file_path):
         ) from exc
 
 
+def write_temp_yaml_params(data, prefix="ros2_controllers_"):
+    import atexit
+
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".yaml")
+    os.close(fd)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+    atexit.register(lambda p=path: Path(p).unlink(missing_ok=True))
+    return path
+
+
 def require_yaml_mapping(data, field_name, package_name, file_name):
     if not isinstance(data, dict):
         raise RuntimeError(
@@ -412,6 +423,10 @@ def launch_setup(context, *args, **kwargs):
         gripper_controller_joints,
         scene_supports_gripper_controller,
     )
+    ros2_controllers_params_file = write_temp_yaml_params(ros2_controllers_yaml)
+    get_logger(__name__).info(
+        f"Generated temporary ROS 2 controllers params file at '{ros2_controllers_params_file}'."
+    )
     moveit_controller = {
         "moveit_simple_controller_manager": controllers_yaml,
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
@@ -468,7 +483,7 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="ros2_control_node",
         output={"stdout": "screen", "stderr": "screen"},
-        parameters=[ros2_controllers_yaml],
+        parameters=[ros2_controllers_params_file],
         remappings=[("~/robot_description", "/robot_description")],
     )
 
