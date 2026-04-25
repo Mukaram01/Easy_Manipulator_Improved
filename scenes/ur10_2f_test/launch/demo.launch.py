@@ -73,6 +73,7 @@ def _normalize_ros_param_types(value):
     return value
 
 
+_DROP_PARAM = object()
 
 
 def _sanitize_ros_param_types(value):
@@ -80,22 +81,43 @@ def _sanitize_ros_param_types(value):
         sanitized = {}
         for key, item in value.items():
             sanitized_item = _sanitize_ros_param_types(item)
-            if sanitized_item is None:
+            if sanitized_item is _DROP_PARAM:
                 continue
             sanitized[str(key)] = sanitized_item
-        return sanitized or None
+        return sanitized if sanitized else _DROP_PARAM
 
     if isinstance(value, tuple):
-        value = [_sanitize_ros_param_types(item) for item in value]
-        value = [item for item in value if item is not None]
-        return value or None
+        value = list(value)
 
     if isinstance(value, list):
-        value = [_sanitize_ros_param_types(item) for item in value]
-        value = [item for item in value if item is not None]
-        return value or None
+        sanitized_items = []
+        for item in value:
+            sanitized_item = _sanitize_ros_param_types(item)
+            if sanitized_item is not _DROP_PARAM:
+                sanitized_items.append(sanitized_item)
+        return sanitized_items if sanitized_items else _DROP_PARAM
+
+    if isinstance(value, (bool, int, float, str, bytes)):
+        return value
 
     return value
+
+
+def _param_dict(value):
+    sanitized = _sanitize_ros_param_types(value)
+    return {} if sanitized is _DROP_PARAM else sanitized
+
+
+def _param_list(*values):
+    result = []
+    for value in values:
+        sanitized = _sanitize_ros_param_types(value)
+        if sanitized is _DROP_PARAM:
+            continue
+        if isinstance(sanitized, dict) and not sanitized:
+            continue
+        result.append(sanitized)
+    return result
 
 
 def _validate_ros_param_types(value, path="root"):
@@ -111,7 +133,7 @@ def _validate_ros_param_types(value, path="root"):
             _validate_ros_param_types(item, f"{path}[{index}]")
         return
 
-    if isinstance(value, (bool, int, float, str)):
+    if isinstance(value, (bool, int, float, str, bytes)):
         return
 
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
@@ -198,16 +220,16 @@ def _launch_setup(context):
     }
 
     try:
-        validated_use_sim_time = _sanitize_ros_param_types(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"})) or {}
-        validated_robot_description = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description)) or {}
-        validated_robot_description_semantic = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_semantic)) or {}
-        validated_robot_description_kinematics = _sanitize_ros_param_types(_normalize_ros_param_types(robot_description_kinematics)) or {}
-        validated_planning_pipelines_config = _sanitize_ros_param_types(_normalize_ros_param_types(planning_pipelines_config)) or {}
-        validated_ompl_planning_pipeline_config = _sanitize_ros_param_types(_normalize_ros_param_types(ompl_planning_pipeline_config)) or {}
-        validated_planning_scene_monitor_params = _sanitize_ros_param_types(_normalize_ros_param_types(planning_scene_monitor_params)) or {}
-        validated_trajectory_execution = _sanitize_ros_param_types(_normalize_ros_param_types(trajectory_execution)) or {}
-        validated_moveit_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_controller_manager)) or {}
-        validated_moveit_simple_controller_manager = _sanitize_ros_param_types(_normalize_ros_param_types(moveit_simple_controller_manager)) or {}
+        validated_use_sim_time = _param_dict(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"}))
+        validated_robot_description = _param_dict(_normalize_ros_param_types(robot_description))
+        validated_robot_description_semantic = _param_dict(_normalize_ros_param_types(robot_description_semantic))
+        validated_robot_description_kinematics = _param_dict(_normalize_ros_param_types(robot_description_kinematics))
+        validated_planning_pipelines_config = _param_dict(_normalize_ros_param_types(planning_pipelines_config))
+        validated_ompl_planning_pipeline_config = _param_dict(_normalize_ros_param_types(ompl_planning_pipeline_config))
+        validated_planning_scene_monitor_params = _param_dict(_normalize_ros_param_types(planning_scene_monitor_params))
+        validated_trajectory_execution = _param_dict(_normalize_ros_param_types(trajectory_execution))
+        validated_moveit_controller_manager = _param_dict(_normalize_ros_param_types(moveit_controller_manager))
+        validated_moveit_simple_controller_manager = _param_dict(_normalize_ros_param_types(moveit_simple_controller_manager))
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -251,21 +273,21 @@ def _launch_setup(context):
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="screen",
-        parameters=[validated_use_sim_time, validated_robot_description],
+        parameters=_param_list(validated_use_sim_time, validated_robot_description),
     )
 
     joint_state_publisher = Node(
         package="joint_state_publisher",
         executable="joint_state_publisher",
         output="screen",
-        parameters=[validated_use_sim_time, validated_robot_description],
+        parameters=_param_list(validated_use_sim_time, validated_robot_description),
     )
 
     move_group = Node(
         package="moveit_ros_move_group",
         executable="move_group",
         output="screen",
-        parameters=[
+        parameters=_param_list(
             validated_use_sim_time,
             validated_robot_description,
             validated_robot_description_semantic,
@@ -276,7 +298,7 @@ def _launch_setup(context):
             validated_trajectory_execution,
             validated_moveit_controller_manager,
             validated_moveit_simple_controller_manager,
-        ],
+        ),
     )
 
     rviz_config_file = os.path.join(get_package_share_directory(scene_pkg), "launch", "demo.rviz")
@@ -286,12 +308,12 @@ def _launch_setup(context):
         name="rviz2",
         output="screen",
         arguments=["-d", rviz_config_file] if os.path.exists(rviz_config_file) else [],
-        parameters=[
+        parameters=_param_list(
             validated_use_sim_time,
             validated_robot_description,
             validated_robot_description_semantic,
             validated_robot_description_kinematics,
-        ],
+        ),
     )
 
     return [
