@@ -32,10 +32,96 @@ GraspSceneTest::GraspSceneTest()
   node = rclcpp::Node::make_shared("grasp_scene_test", "", node_options);
 }
 
+namespace
+{
+class TestableDirectGraspScene : public grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>
+{
+public:
+  explicit TestableDirectGraspScene(const rclcpp::Node::SharedPtr & node)
+  : grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>(node)
+  {
+  }
+
+  void set_gate_enabled(const bool enabled)
+  {
+    execution_gate_enabled = enabled;
+  }
+
+  void set_client_for_test(
+    const rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedPtr & client)
+  {
+    output_client = client;
+  }
+
+  void invoke_send_to_execution(const emd_msgs::msg::GraspTask & task)
+  {
+    send_to_execution(task);
+  }
+
+  std::atomic<int> send_count{0};
+  bool service_available{true};
+  std::shared_ptr<emd_msgs::srv::GraspRequest::Request> last_request;
+  std::shared_ptr<std::promise<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>>
+  delayed_promise;
+
+protected:
+  bool wait_for_output_service(const std::chrono::duration<double> &) override
+  {
+    return service_available;
+  }
+
+  std::shared_future<rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>
+  send_output_request(
+    const std::shared_ptr<emd_msgs::srv::GraspRequest::Request> & request) override
+  {
+    ++send_count;
+    last_request = request;
+    if (delayed_promise) {
+      return delayed_promise->get_future().share();
+    }
+    auto promise = std::make_shared<std::promise<
+      rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>>();
+    auto response = std::make_shared<emd_msgs::srv::GraspRequest::Response>();
+    response->success = true;
+    response->message = "ok";
+    promise->set_value(response);
+    return promise->get_future().share();
+  }
+};
+}  // namespace
+
 TEST_F(GraspSceneTest, ConstructDirectGraspScene)
 {
   grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2> test_direct(node);
   SUCCEED();
+}
+
+TEST_F(GraspSceneTest, ExecutionGatePreventsRequestSpamWhileBusy)
+{
+  auto fake_client = node->create_client<emd_msgs::srv::GraspRequest>("grasp_requests");
+  TestableDirectGraspScene scene(node);
+  scene.set_client_for_test(fake_client);
+  scene.set_gate_enabled(true);
+  scene.delayed_promise = std::make_shared<std::promise<
+    rclcpp::Client<emd_msgs::srv::GraspRequest>::SharedResponse>>();
+
+  emd_msgs::msg::GraspTask task;
+  task.task_id = "test-task";
+  emd_msgs::msg::GraspTarget target;
+  target.target_type = "mouse";
+  task.grasp_targets.push_back(target);
+
+  scene.invoke_send_to_execution(task);
+  scene.invoke_send_to_execution(task);
+  EXPECT_EQ(scene.send_count.load(), 1);
+
+  auto response = std::make_shared<emd_msgs::srv::GraspRequest::Response>();
+  response->success = true;
+  response->message = "done";
+  scene.delayed_promise->set_value(response);
+
+  scene.invoke_send_to_execution(task);
+  EXPECT_EQ(scene.send_count.load(), 2);
 }
 
 #if EPD_ENABLED == 1

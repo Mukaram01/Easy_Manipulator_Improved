@@ -27,7 +27,7 @@ grasp_execution_node:
     
     plan_request_params:
       planning_attempts: 1
-      planning_time: 0.5
+      planning_time: 5.0
       planning_pipeline: ompl
       max_velocity_scaling_factor: 1.0
       max_acceleration_scaling_factor: 1.0
@@ -41,3 +41,14 @@ grasp_execution_node:
     # When true the release pose z-height is aligned to the grasped object's
     # z-height so the arm clears any surface on the return move.
     release_use_grasp_z: true
+
+    # Optional simple workspace filter to reject unreachable grasp candidates
+    # before invoking OMPL.
+    grasp_workspace_filter:
+      enabled: false
+      min_x: -1.0
+      max_x: 1.0
+      min_y: -1.0
+      max_y: 1.0
+      min_z: 0.0
+      max_z: 1.5
