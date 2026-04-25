@@ -51,6 +51,8 @@ GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR = {
     "robotiq_2f": ("gripper_finger1_joint",),
 }
 
+KNOWN_PLANNER_END_EFFECTOR_IDS = {"robotiq_2f", "robotiq_3f", "suction_cup", "suction", "airpick"}
+
 
 def scene_exposes_gripper_position_interfaces(robot_description_xml, gripper_controller_joints):
     for joint_name in gripper_controller_joints:
@@ -60,14 +62,8 @@ def scene_exposes_gripper_position_interfaces(robot_description_xml, gripper_con
     return True
 
 
-def resolve_gripper_controller_joints(scene_package):
-    scene_metadata = load_yaml(scene_package, "environment.yaml")
-    if not isinstance(scene_metadata, dict):
-        raise RuntimeError(
-            "Invalid scene metadata schema in 'environment.yaml': expected a YAML mapping (dict) at the root, "
-            f"got {type(scene_metadata).__name__}. Check '{SCENE_PACKAGE_ARGUMENT}' points to a valid generated "
-            "scene package with a proper environment.yaml structure."
-        )
+def resolve_gripper_controller_joints(scene_package, scene_metadata=None):
+    scene_metadata = scene_metadata if scene_metadata is not None else load_scene_environment(scene_package)
     end_effector = scene_metadata.get("end_effector", {})
     ee_name = str(end_effector.get("name", "")).lower()
     ee_brand = str(end_effector.get("brand", "")).lower()
@@ -78,6 +74,84 @@ def resolve_gripper_controller_joints(scene_package):
     if "robotiq_85" in ee_name or "robotiq_85" in ee_brand or ee_fingers == 2:
         return GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR["robotiq_2f"]
     return ()
+
+
+def _normalize_text(value):
+    return str(value or "").strip().lower()
+
+
+def load_scene_environment(scene_package):
+    scene_metadata = load_yaml(scene_package, "environment.yaml")
+    if not isinstance(scene_metadata, dict):
+        raise RuntimeError(
+            "Invalid scene metadata schema in 'environment.yaml': expected a YAML mapping (dict) at the root, "
+            f"got {type(scene_metadata).__name__}. Check '{SCENE_PACKAGE_ARGUMENT}' points to a valid generated "
+            "scene package with a proper environment.yaml structure."
+        )
+    return scene_metadata
+
+
+def derive_planner_end_effector_id(end_effector):
+    ee_name = _normalize_text(end_effector.get("name"))
+    ee_brand = _normalize_text(end_effector.get("brand"))
+    ee_type = _normalize_text(end_effector.get("ee_type"))
+    ee_fingers = end_effector.get("attributes", {}).get("fingers")
+
+    if ee_name in KNOWN_PLANNER_END_EFFECTOR_IDS:
+        return ee_name
+    if ee_brand in KNOWN_PLANNER_END_EFFECTOR_IDS:
+        return ee_brand
+
+    search_blob = " ".join((ee_name, ee_brand, ee_type))
+    if "robotiq_3f" in search_blob or ee_fingers == 3:
+        return "robotiq_3f"
+    if any(marker in search_blob for marker in ("robotiq_2f", "robotiq_85")) or ee_fingers == 2:
+        return "robotiq_2f"
+    if any(marker in search_blob for marker in ("suction", "single_suction", "airpick")):
+        # Planner conventions are usually "suction_cup"; this preserves compatibility
+        # with scenes that encode suction variants in name/brand.
+        return "suction_cup"
+
+    return "ur_tool0"
+
+
+def derive_workcell_end_effector_link(end_effector):
+    base_link = _normalize_text(end_effector.get("base_link"))
+    robot_link = _normalize_text(end_effector.get("robot_link"))
+    if base_link:
+        return base_link
+    if robot_link:
+        return robot_link
+    return "tool0"
+
+
+def build_workcell_context_for_scene(scene_package, scene_metadata):
+    end_effector = scene_metadata.get("end_effector", {})
+    if end_effector is None:
+        end_effector = {}
+    if not isinstance(end_effector, dict):
+        raise RuntimeError(
+            f"Invalid scene metadata in package '{scene_package}': 'end_effector' must be a YAML mapping (dict), "
+            f"got {type(end_effector).__name__}."
+        )
+
+    ee_id = derive_planner_end_effector_id(end_effector)
+    ee_link = derive_workcell_end_effector_link(end_effector)
+    return {
+        "workcell": {
+            "ros__parameters": {
+                "groups": ["manipulator"],
+                "groups.manipulator.executors": ["default"],
+                "groups.manipulator.executors.default.plugin": "grasp_execution/DefaultExecutor",
+                "groups.manipulator.end_effectors": [ee_id],
+                f"groups.manipulator.end_effectors.{ee_id}.brand": ee_id,
+                f"groups.manipulator.end_effectors.{ee_id}.link": ee_link,
+                f"groups.manipulator.end_effectors.{ee_id}.clearance": 0.1,
+                f"groups.manipulator.end_effectors.{ee_id}.driver.plugin": "grasp_execution/DummyGripperDriver",
+                f"groups.manipulator.end_effectors.{ee_id}.driver.controller": "",
+            }
+        }
+    }, ee_id, ee_link
 
 
 def align_gripper_controller_joints(
@@ -303,7 +377,11 @@ def launch_setup(context, *args, **kwargs):
         f"'{MOVEIT_CONFIG_PACKAGE_ARGUMENT}:=<package_name>' if it is not 'ur5_moveit_config'.",
     )
     try:
-        gripper_controller_joints = resolve_gripper_controller_joints(scene_package)
+        scene_metadata = load_scene_environment(scene_package)
+        gripper_controller_joints = resolve_gripper_controller_joints(scene_package, scene_metadata=scene_metadata)
+        scene_workcell_context, scene_ee_id, scene_ee_link = build_workcell_context_for_scene(
+            scene_package, scene_metadata
+        )
     except Exception as exc:
         scene_package_path = get_package_share_directory(scene_package)
         scene_yaml_path = os.path.join(scene_package_path, "environment.yaml")
@@ -315,6 +393,11 @@ def launch_setup(context, *args, **kwargs):
             f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
             f"Original error: {exc}"
         ) from exc
+    workcell_context_params_file = write_temp_yaml_params(scene_workcell_context, prefix="workcell_context_")
+    get_logger(__name__).info(
+        f"Generated workcell context for scene '{scene_package}': ee={scene_ee_id} "
+        f"brand={scene_ee_id} link={scene_ee_link} (file='{workcell_context_params_file}')"
+    )
 
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
     scene_args = _extract_scene_xacro_args(scene_xacro_path)
@@ -451,6 +534,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[
             grasp_execution_yaml,
             sensors_yaml,
+            {"workcell_context": workcell_context_params_file},
             {"planning_frame": planning_frame, "octomap_frame": planning_frame},
             robot_description,
             robot_description_semantic,
