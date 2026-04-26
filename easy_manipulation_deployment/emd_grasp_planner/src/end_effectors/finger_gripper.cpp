@@ -16,6 +16,8 @@
 
 // Main PCL files
 #include <mutex>
+#include <algorithm>
+#include <sstream>
 
 #include "emd/grasp_planner/end_effectors/finger_gripper.hpp"
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("FingerGripper");
@@ -43,7 +45,10 @@ FingerGripper::FingerGripper(
   const float & worldZAngleThreshold_,
   const std::string & grasp_stroke_direction_,
   const std::string & grasp_stroke_normal_direction_,
-  const std::string & grasp_approach_direction_)
+  const std::string & grasp_approach_direction_,
+  const bool allow_target_fingertip_contact_,
+  const std::vector<std::string> & allowed_target_touch_links_,
+  const std::vector<std::string> & allowed_target_touch_link_patterns_)
 : id(id_),
   num_fingers_side_1(num_fingers_side_1_),
   num_fingers_side_2(num_fingers_side_2_),
@@ -66,7 +71,10 @@ FingerGripper::FingerGripper(
   worldZAngleThreshold(worldZAngleThreshold_),
   grasp_stroke_direction(grasp_stroke_direction_[0]),
   grasp_stroke_normal_direction(grasp_stroke_normal_direction_[0]),
-  grasp_approach_direction(grasp_approach_direction_[0])
+  grasp_approach_direction(grasp_approach_direction_[0]),
+  allow_target_fingertip_contact(allow_target_fingertip_contact_),
+  allowed_target_touch_links(allowed_target_touch_links_.begin(), allowed_target_touch_links_.end()),
+  allowed_target_touch_link_patterns(allowed_target_touch_link_patterns_)
 {
   if (num_fingers_side_1_ <= 0 || num_fingers_side_2_ <= 0) {
     RCLCPP_ERROR(LOGGER, "Each side needs to have a minimum of 1 finger");
@@ -677,6 +685,7 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_gripper_
   const std::string & camera_frame)
 {
   std::vector<std::shared_ptr<MultiFingerGripper>> valid_open_gripper_configs;
+  last_collision_summary = CollisionSummary();
   // Query the gripping points at the center cutting plane
   if (this->grasp_samples.empty()) {
     return valid_open_gripper_configs;
@@ -722,18 +731,54 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_gripper_
 
         /* With the open configuration of the center fingers, generate the rest of the open configuration grippers */
         std::shared_ptr<MultiFingerGripper> gripper_sample = generate_gripper_open_config(
-          world_collision_object, finger_sample_1, finger_sample_2,
+          world_collision_object, object, finger_sample_1, finger_sample_2,
           open_coords[0], open_coords[1], perpendicular_grasp_direction,
-          grasp_direction, camera_frame);
+          grasp_direction, camera_frame, allow_target_fingertip_contact);
+        last_collision_summary.raw_samples++;
         if (!gripper_sample->collides_with_world) {
           valid_open_gripper_configs.push_back(gripper_sample);
+          last_collision_summary.valid++;
+        } else {
+          last_collision_summary.rejection_counts[gripper_sample->collision_reason]++;
+          if (!gripper_sample->collision_pair.empty()) {
+            last_collision_summary.collision_pairs[gripper_sample->collision_pair]++;
+          }
         }
       }
     }
     if (valid_open_gripper_configs.empty()) {
-      RCLCPP_ERROR(
-        LOGGER,
-        "All Possible Grasp sample collides with something in the scene! No grasps available");
+      const int expected_contact_rejects =
+        last_collision_summary.rejection_counts["object_fingertip_expected_contact"];
+      if (expected_contact_rejects > 0 &&
+        expected_contact_rejects >= (last_collision_summary.raw_samples / 2))
+      {
+        RCLCPP_WARN(
+          LOGGER,
+          "Dominant rejection reason is expected fingertip-target contact. Retrying with "
+          "target fingertip contact allowed.");
+        for (auto & finger_sample_1 : this->grasp_samples[0]->sample_side_1->finger_samples) {
+          for (auto & finger_sample_2 : this->grasp_samples[0]->sample_side_2->finger_samples) {
+            Eigen::Vector3f centerpoint_side1_vector =
+              PCLFunctions::convert_pcl_to_eigen(finger_sample_1->finger_point);
+            Eigen::Vector3f centerpoint_side2_vector =
+              PCLFunctions::convert_pcl_to_eigen(finger_sample_2->finger_point);
+            Eigen::Vector3f grasp_direction = Eigen::ParametrizedLine<float, 3>::Through(
+              centerpoint_side1_vector, centerpoint_side2_vector).direction();
+            Eigen::Vector3f perpendicular_grasp_direction = get_gripper_plane(
+              finger_sample_1, finger_sample_2, grasp_direction, object);
+            std::vector<Eigen::Vector3f> open_coords = get_open_finger_coordinates(
+              grasp_direction, centerpoint_side1_vector, centerpoint_side2_vector);
+            auto fallback_gripper_sample = generate_gripper_open_config(
+              world_collision_object, object, finger_sample_1, finger_sample_2,
+              open_coords[0], open_coords[1], perpendicular_grasp_direction,
+              grasp_direction, camera_frame, true);
+            if (!fallback_gripper_sample->collides_with_world) {
+              valid_open_gripper_configs.push_back(fallback_gripper_sample);
+            }
+          }
+        }
+      }
+      log_collision_summary(object);
     }
   } else {
     RCLCPP_ERROR(
@@ -745,13 +790,15 @@ std::vector<std::shared_ptr<MultiFingerGripper>> FingerGripper::get_all_gripper_
 
 std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   const std::shared_ptr<CollisionObject> & world_collision_object,
+  const GraspObject & object,
   const std::shared_ptr<SingleFinger> & closed_center_finger_1,
   const std::shared_ptr<SingleFinger> & closed_center_finger_2,
   const Eigen::Vector3f & open_center_finger_1,
   const Eigen::Vector3f & open_center_finger_2,
   const Eigen::Vector3f & plane_normal,
   const Eigen::Vector3f & grasp_direction,
-  const std::string & camera_frame)
+  const std::string & camera_frame,
+  const bool allow_expected_target_contact)
 {
   // Create an instance of the multifinger gripper.
   MultiFingerGripper gripper(
@@ -760,6 +807,8 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
     grasp_direction,
     plane_normal);
   gripper.collides_with_world = false;
+  gripper.collision_reason.clear();
+  gripper.collision_pair.clear();
   bool is_even_1 = this->num_fingers_side_1 % 2 == 0;
   bool is_even_2 = this->num_fingers_side_2 % 2 == 0;
 
@@ -784,11 +833,21 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
   }
 
   // Check Initial middle fingers if they collide with world
-  if (check_finger_collision(open_center_finger_1, world_collision_object)) {
+  if (check_finger_collision(
+      open_center_finger_1, world_collision_object, object,
+      "gripper_finger1_finger_tip_link", allow_expected_target_contact,
+      &gripper.collision_reason, &gripper.collision_pair))
+  {
     gripper.collides_with_world = true;
+    return std::make_shared<MultiFingerGripper>(gripper);
   }
-  if (check_finger_collision(open_center_finger_2, world_collision_object)) {
+  if (check_finger_collision(
+      open_center_finger_2, world_collision_object, object,
+      "gripper_finger2_finger_tip_link", allow_expected_target_contact,
+      &gripper.collision_reason, &gripper.collision_pair))
+  {
     gripper.collides_with_world = true;
+    return std::make_shared<MultiFingerGripper>(gripper);
   }
 
   // Iterate through the points on side 1
@@ -811,8 +870,12 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
     /* Check if this current open configuration for the finger collides with the world,
        since the end effector will approach the object in its open state.*/
 
-    if (check_finger_collision(finger_1_open_temp, world_collision_object)) {
+    if (check_finger_collision(
+        finger_1_open_temp, world_collision_object, object, "gripper_finger1_finger_tip_link",
+        allow_expected_target_contact, &gripper.collision_reason, &gripper.collision_pair))
+    {
       gripper.collides_with_world = true;
+      return std::make_shared<MultiFingerGripper>(gripper);
     }
 
     /* Ranking of grasp quality involves the positions of the gripper fingers ON the object,
@@ -876,8 +939,12 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
     Eigen::Vector3f finger_2_open_temp = MathFunctions::get_point_in_direction(
       open_center_finger_2,
       plane_normal, gap2);
-    if (check_finger_collision(finger_2_open_temp, world_collision_object)) {
+    if (check_finger_collision(
+        finger_2_open_temp, world_collision_object, object, "gripper_finger2_finger_tip_link",
+        allow_expected_target_contact, &gripper.collision_reason, &gripper.collision_pair))
+    {
       gripper.collides_with_world = true;
+      return std::make_shared<MultiFingerGripper>(gripper);
     }
     gripper.open_fingers_2.push_back(finger_2_open_temp);
 
@@ -962,7 +1029,12 @@ std::shared_ptr<MultiFingerGripper> FingerGripper::generate_gripper_open_config(
 
 bool FingerGripper::check_finger_collision(
   const Eigen::Vector3f & finger_point,
-  const std::shared_ptr<CollisionObject> & world_collision_object)
+  const std::shared_ptr<CollisionObject> & world_collision_object,
+  const GraspObject & object,
+  const std::string & touch_link_name,
+  const bool allow_expected_target_contact,
+  std::string * rejection_reason,
+  std::string * collision_pair)
 {
   auto finger_shape =
     std::make_shared<grasp_planner::collision::Sphere>(this->finger_thickness / 2);
@@ -992,7 +1064,125 @@ bool FingerGripper::check_finger_collision(
   // result will be returned via the collision result structure
   grasp_planner::collision::CollisionResult result;
   fcl::collide(world_collision_object.get(), finger_ptr.get(), request, result);
-  return result.isCollision();
+  if (!result.isCollision()) {
+    return false;
+  }
+
+  const bool expected_contact = is_expected_target_contact(finger_point, object, touch_link_name);
+  if (expected_contact && allow_expected_target_contact) {
+    return false;
+  }
+
+  if (collision_pair != nullptr) {
+    *collision_pair = expected_contact ? "finger_tip<->object_cloud" : "finger_tip<->world_collision_object";
+  }
+  if (rejection_reason != nullptr) {
+    if (expected_contact) {
+      *rejection_reason = "object_fingertip_expected_contact";
+    } else {
+      float object_min_z = finger_point(2);
+      if (object.cloud != nullptr && !object.cloud->empty()) {
+        object_min_z = object.cloud->points.front().z;
+        for (const auto & p : object.cloud->points) {
+          object_min_z = std::min(object_min_z, p.z);
+        }
+      }
+      *rejection_reason =
+        (finger_point(2) < object_min_z - this->finger_thickness) ?
+        "table_or_support_collision" : "unknown_world_collision";
+      if (collision_pair != nullptr && *rejection_reason == "table_or_support_collision") {
+        *collision_pair = "finger_tip<->table_or_support";
+      }
+    }
+  }
+  return true;
+}
+
+bool FingerGripper::is_expected_target_contact(
+  const Eigen::Vector3f & finger_point,
+  const GraspObject & object,
+  const std::string & touch_link_name) const
+{
+  if (!is_touch_link_allowed(touch_link_name) || object.cloud == nullptr || object.cloud->empty()) {
+    return false;
+  }
+
+  const float max_sq_dist = (this->finger_thickness * this->finger_thickness) * 1.5f;
+  for (const auto & p : object.cloud->points) {
+    const float dx = p.x - finger_point(0);
+    const float dy = p.y - finger_point(1);
+    const float dz = p.z - finger_point(2);
+    const float sq_dist = dx * dx + dy * dy + dz * dz;
+    if (sq_dist <= max_sq_dist) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FingerGripper::is_touch_link_allowed(const std::string & touch_link_name) const
+{
+  if (allowed_target_touch_links.find(touch_link_name) != allowed_target_touch_links.end()) {
+    return true;
+  }
+  for (const auto & pattern : allowed_target_touch_link_patterns) {
+    if (wildcard_match(pattern, touch_link_name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FingerGripper::wildcard_match(const std::string & pattern, const std::string & value)
+{
+  const auto star = pattern.find('*');
+  if (star == std::string::npos) {
+    return pattern == value;
+  }
+  const std::string prefix = pattern.substr(0, star);
+  const std::string suffix = pattern.substr(star + 1);
+  if (value.size() < prefix.size() + suffix.size()) {
+    return false;
+  }
+  return value.rfind(prefix, 0) == 0 &&
+         value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+void FingerGripper::log_collision_summary(const GraspObject & object) const
+{
+  std::ostringstream pairs_stream;
+  int count = 0;
+  for (const auto & pair_count : last_collision_summary.collision_pairs) {
+    if (count++ > 0) {
+      pairs_stream << ", ";
+    }
+    pairs_stream << pair_count.first;
+    if (count >= 5) {
+      break;
+    }
+  }
+
+  RCLCPP_ERROR(
+    LOGGER,
+    "FingerGripper collision summary for object='%s', gripper='%s': raw_samples=%d, valid=%d, "
+    "reject.object_fingertip_expected_contact=%d, reject.table_or_support_collision=%d, "
+    "reject.robot_or_camera_collision=%d, reject.gripper_self_collision=%d, "
+    "reject.unknown_world_collision=%d, top_pairs=[%s]",
+    object.object_name.c_str(),
+    id.c_str(),
+    last_collision_summary.raw_samples,
+    last_collision_summary.valid,
+    last_collision_summary.rejection_counts.count("object_fingertip_expected_contact") ?
+    last_collision_summary.rejection_counts.at("object_fingertip_expected_contact") : 0,
+    last_collision_summary.rejection_counts.count("table_or_support_collision") ?
+    last_collision_summary.rejection_counts.at("table_or_support_collision") : 0,
+    last_collision_summary.rejection_counts.count("robot_or_camera_collision") ?
+    last_collision_summary.rejection_counts.at("robot_or_camera_collision") : 0,
+    last_collision_summary.rejection_counts.count("gripper_self_collision") ?
+    last_collision_summary.rejection_counts.at("gripper_self_collision") : 0,
+    last_collision_summary.rejection_counts.count("unknown_world_collision") ?
+    last_collision_summary.rejection_counts.at("unknown_world_collision") : 0,
+    pairs_stream.str().c_str());
 }
 
 void FingerGripper::get_max_min_values(const GraspObject & object)
