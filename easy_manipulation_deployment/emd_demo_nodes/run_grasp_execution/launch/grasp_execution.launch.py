@@ -582,19 +582,7 @@ def launch_setup(context, *args, **kwargs):
 
     grasp_execution_yaml = os.path.join(run_share, "config", "grasp_execution.yaml")
     rviz_config_file = os.path.join(run_share, "config", "grasp_execution.rviz")
-    sensors_3d_config = require_yaml_mapping(
-        load_yaml(PACKAGE_NAME, "config/sensors_3d.yaml"),
-        "grasp_execution_node",
-        PACKAGE_NAME,
-        "config/sensors_3d.yaml",
-    )
-    sensor_ros_params = require_yaml_mapping(
-        sensors_3d_config.get("grasp_execution_node"),
-        "ros__parameters",
-        PACKAGE_NAME,
-        "config/sensors_3d.yaml",
-    )
-    sensor_ros_params["octomap_frame"] = planning_frame
+    sensors_yaml = os.path.join(run_share, "config", "sensors_3d.yaml")
 
     grasp_execution_demo_node = Node(
         name="grasp_execution_node",
@@ -610,7 +598,7 @@ def launch_setup(context, *args, **kwargs):
         ),
         parameters=[
             grasp_execution_yaml,
-            sensors_3d_config,
+            sensors_yaml,
             {"workcell_context": workcell_context_params_file},
             {"planning_frame": planning_frame, "octomap_frame": planning_frame},
             robot_description,
