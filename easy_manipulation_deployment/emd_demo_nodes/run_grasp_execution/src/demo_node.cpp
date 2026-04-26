@@ -30,6 +30,7 @@
 #include <mutex>
 
 #include <Eigen/Geometry>
+#include <boost/algorithm/string/join.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "lifecycle_msgs/msg/transition.hpp"
@@ -49,6 +50,7 @@
 #include "moveit/collision_detection/collision_common.h"
 #include "moveit/planning_scene_monitor/planning_scene_monitor.h"
 #include "tf2_eigen/tf2_eigen.hpp"
+#include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
 
 
 namespace grasp_execution
@@ -433,6 +435,33 @@ public:
       node,
       node->get_logger(),
       1.5);
+    if (node_->has_parameter("grasp_precheck_allowed_touch_links")) {
+      node_->get_parameter_or<std::vector<std::string>>(
+        "grasp_precheck_allowed_touch_links",
+        grasp_precheck_allowed_touch_links_,
+        std::vector<std::string>{});
+    } else {
+      grasp_precheck_allowed_touch_links_ = node_->declare_parameter<std::vector<std::string>>(
+        "grasp_precheck_allowed_touch_links",
+        {"gripper_finger1_finger_tip_link", "gripper_finger2_finger_tip_link"});
+    }
+    if (node_->has_parameter("grasp_precheck_allowed_collision_ids")) {
+      node_->get_parameter_or<std::vector<std::string>>(
+        "grasp_precheck_allowed_collision_ids",
+        grasp_precheck_allowed_collision_ids_,
+        std::vector<std::string>{});
+    } else {
+      grasp_precheck_allowed_collision_ids_ = node_->declare_parameter<std::vector<std::string>>(
+        "grasp_precheck_allowed_collision_ids", {"<octomap>"});
+    }
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Configured grasp_precheck_allowed_touch_links: [%s]",
+      boost::algorithm::join(grasp_precheck_allowed_touch_links_, ", ").c_str());
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Configured grasp_precheck_allowed_collision_ids: [%s]",
+      boost::algorithm::join(grasp_precheck_allowed_collision_ids_, ", ").c_str());
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
@@ -888,21 +917,35 @@ private:
     collision_detection::CollisionResult res;
     scene->checkCollision(req, res, ik_state);
     if (res.collision) {
-      std::ostringstream contact_links;
-      bool first = true;
+      std::vector<std::pair<std::string, std::string>> collision_pairs;
       for (const auto & contact_pair : res.contacts) {
-        if (!first) {
-          contact_links << ", ";
-        }
-        contact_links << contact_pair.first.first << "<->" << contact_pair.first.second;
-        first = false;
+        collision_pairs.emplace_back(contact_pair.first.first, contact_pair.first.second);
       }
-      rejection_reason = "IK solution in collision: " + contact_links.str();
-      RCLCPP_WARN(
-        node_->get_logger(),
-        "Candidate %zu/%zu target=%s rejected: %s",
-        candidate_index + 1, candidate_total, target_id.c_str(), rejection_reason.c_str());
-      return false;
+      std::set<std::string> allowed_touch_links(
+        grasp_precheck_allowed_touch_links_.begin(), grasp_precheck_allowed_touch_links_.end());
+      std::set<std::string> allowed_collision_ids(
+        grasp_precheck_allowed_collision_ids_.begin(), grasp_precheck_allowed_collision_ids_.end());
+      allowed_collision_ids.insert(target_id);
+      allowed_collision_ids.insert("#" + target_id);
+
+      const auto filter_result = run_grasp_execution::filter_grasp_precheck_collision_pairs(
+        collision_pairs, allowed_touch_links, allowed_collision_ids);
+      if (!filter_result.allowed_pairs.empty() && filter_result.invalid_pairs.empty()) {
+        RCLCPP_INFO(
+          node_->get_logger(),
+          "Candidate %zu/%zu target=%s allowed expected grasp contact: %s",
+          candidate_index + 1, candidate_total, target_id.c_str(),
+          boost::algorithm::join(filter_result.allowed_pairs, ", ").c_str());
+      }
+      if (!filter_result.invalid_pairs.empty()) {
+        rejection_reason = "IK solution in collision: " +
+          boost::algorithm::join(filter_result.invalid_pairs, ", ");
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "Candidate %zu/%zu target=%s rejected: %s",
+          candidate_index + 1, candidate_total, target_id.c_str(), rejection_reason.c_str());
+        return false;
+      }
     }
 
     return true;
@@ -970,6 +1013,8 @@ private:
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
   WorkspaceBounds workspace_bounds_;
+  std::vector<std::string> grasp_precheck_allowed_touch_links_;
+  std::vector<std::string> grasp_precheck_allowed_collision_ids_;
   std::mutex last_failure_mutex_;
   std::string last_failure_message_;
 };

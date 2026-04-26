@@ -20,6 +20,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
 add_executable(demo_node src/demo_node.cpp)
+target_include_directories(demo_node PUBLIC include)
 
 ament_target_dependencies(demo_node
   emd_grasp_execution
@@ -31,6 +32,7 @@ ament_target_dependencies(demo_node
 )
 
 add_executable(fake_grasp_pose_publisher src/fake_grasp_pose_publisher.cpp)
+target_include_directories(fake_grasp_pose_publisher PUBLIC include)
 ament_target_dependencies(fake_grasp_pose_publisher
   emd_grasp_execution
   emd_msgs
@@ -58,8 +60,12 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_grasp_execution_launch.test.py TIMEOUT 120)
+  ament_add_gtest(test_grasp_precheck_collision_filter
+    test/test_grasp_precheck_collision_filter.cpp)
+  target_include_directories(test_grasp_precheck_collision_filter PUBLIC include)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
