@@ -435,6 +435,11 @@ public:
       node,
       node->get_logger(),
       1.5);
+    const std::vector<std::string> default_grasp_precheck_allowed_touch_links = {
+      "gripper_finger1_finger_tip_link",
+      "gripper_finger2_finger_tip_link"};
+    const std::vector<std::string> default_grasp_precheck_allowed_collision_ids = {"<octomap>"};
+
     if (node_->has_parameter("grasp_precheck_allowed_touch_links")) {
       node_->get_parameter_or<std::vector<std::string>>(
         "grasp_precheck_allowed_touch_links",
@@ -442,8 +447,15 @@ public:
         std::vector<std::string>{});
     } else {
       grasp_precheck_allowed_touch_links_ = node_->declare_parameter<std::vector<std::string>>(
-        "grasp_precheck_allowed_touch_links",
-        {"gripper_finger1_finger_tip_link", "gripper_finger2_finger_tip_link"});
+        "grasp_precheck_allowed_touch_links", default_grasp_precheck_allowed_touch_links);
+    }
+    if (grasp_precheck_allowed_touch_links_.empty()) {
+      grasp_precheck_allowed_touch_links_ = default_grasp_precheck_allowed_touch_links;
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Parameter 'grasp_precheck_allowed_touch_links' resolved to an empty list. "
+        "Falling back to defaults: [%s]",
+        boost::algorithm::join(grasp_precheck_allowed_touch_links_, ", ").c_str());
     }
     if (node_->has_parameter("grasp_precheck_allowed_collision_ids")) {
       node_->get_parameter_or<std::vector<std::string>>(
@@ -452,7 +464,15 @@ public:
         std::vector<std::string>{});
     } else {
       grasp_precheck_allowed_collision_ids_ = node_->declare_parameter<std::vector<std::string>>(
-        "grasp_precheck_allowed_collision_ids", {"<octomap>"});
+        "grasp_precheck_allowed_collision_ids", default_grasp_precheck_allowed_collision_ids);
+    }
+    if (grasp_precheck_allowed_collision_ids_.empty()) {
+      grasp_precheck_allowed_collision_ids_ = default_grasp_precheck_allowed_collision_ids;
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Parameter 'grasp_precheck_allowed_collision_ids' resolved to an empty list. "
+        "Falling back to defaults: [%s]",
+        boost::algorithm::join(grasp_precheck_allowed_collision_ids_, ", ").c_str());
     }
     RCLCPP_INFO(
       node_->get_logger(),
@@ -926,7 +946,11 @@ private:
       std::set<std::string> allowed_collision_ids(
         grasp_precheck_allowed_collision_ids_.begin(), grasp_precheck_allowed_collision_ids_.end());
       allowed_collision_ids.insert(target_id);
-      allowed_collision_ids.insert("#" + target_id);
+      if (!target_id.empty() && target_id.front() == '#') {
+        allowed_collision_ids.insert(target_id.substr(1));
+      } else {
+        allowed_collision_ids.insert("#" + target_id);
+      }
 
       const auto filter_result = run_grasp_execution::filter_grasp_precheck_collision_pairs(
         collision_pairs, allowed_touch_links, allowed_collision_ids);
