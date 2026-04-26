@@ -730,6 +730,7 @@ public:
         "Grasp release",
         target_id,
         release_pose)){
+          log_release_octomap_collision_diagnostic(target_id, planning_group);
           return false;
       }
 
@@ -913,6 +914,51 @@ private:
            is_valid_finite(pose.position.z) && is_valid_finite(pose.orientation.x) &&
            is_valid_finite(pose.orientation.y) && is_valid_finite(pose.orientation.z) &&
            is_valid_finite(pose.orientation.w);
+  }
+
+  void log_release_octomap_collision_diagnostic(
+    const std::string & target_id,
+    const std::string & planning_group)
+  {
+    auto current_state = get_curr_state();
+    if (!current_state) {
+      return;
+    }
+    planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp_->getPlanningSceneMonitor());
+    collision_detection::CollisionRequest req;
+    req.contacts = true;
+    req.max_contacts = 50;
+    req.group_name = planning_group;
+    collision_detection::CollisionResult res;
+    scene->checkCollision(req, res, *current_state);
+    if (!res.collision) {
+      return;
+    }
+
+    bool attached_octomap_contact_found = false;
+    const std::string attached_target = "#" + target_id;
+    for (const auto & contact_pair : res.contacts) {
+      const auto & first = contact_pair.first.first;
+      const auto & second = contact_pair.first.second;
+      const bool has_octomap =
+        first.find("octomap") != std::string::npos || second.find("octomap") != std::string::npos;
+      const bool has_target =
+        first.find(target_id) != std::string::npos || second.find(target_id) != std::string::npos ||
+        first.find(attached_target) != std::string::npos ||
+        second.find(attached_target) != std::string::npos;
+      if (has_octomap && has_target) {
+        attached_octomap_contact_found = true;
+        break;
+      }
+    }
+
+    if (attached_octomap_contact_found) {
+      RCLCPP_ERROR(
+        node_->get_logger(),
+        "Release planning failed because attached target object is still colliding with "
+        "octomap/world geometry. This usually means the picked object's world/octomap "
+        "representation was not cleared or allowed after attach.");
+    }
   }
 
   rclcpp::Node::SharedPtr node_;

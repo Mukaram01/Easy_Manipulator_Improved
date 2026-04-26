@@ -236,6 +236,14 @@ public:
   void remove_object(
     const std::string & target_id) override;
 
+  /// Prepare planning-scene collision handling for a freshly attached object.
+  /// This removes any stale world representation of the same object id and
+  /// temporarily allows collisions against octomap entries so immediate
+  /// post-grasp planning does not fail with an invalid start state.
+  void prepare_attached_object_for_release_planning(
+    const std::string & target_id,
+    const std::string & ee_link);
+
   bool execute(
     const robot_trajectory::RobotTrajectoryPtr & traj,
     const std::string & method = "default");
