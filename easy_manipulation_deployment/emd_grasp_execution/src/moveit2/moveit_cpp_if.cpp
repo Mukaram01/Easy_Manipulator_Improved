@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 #include <sstream>
+#include <set>
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 
@@ -101,6 +102,34 @@ std::vector<std::string> get_attached_object_acm_ids(const std::string & target_
   return {target_id, "#" + target_id};
 }
 
+std::vector<std::pair<std::string, std::string>> get_grasp_planning_allowed_pairs(
+  const std::string & target_id,
+  const std::vector<std::string> & allowed_touch_links)
+{
+  std::vector<std::pair<std::string, std::string>> pairs;
+  for (const auto & touch_link : allowed_touch_links) {
+    if (touch_link.empty()) {
+      continue;
+    }
+    pairs.emplace_back("<octomap>", touch_link);
+    pairs.emplace_back(target_id, touch_link);
+  }
+  return pairs;
+}
+
+void set_allowed_collision_pairs(
+  collision_detection::AllowedCollisionMatrix & acm,
+  const std::vector<std::pair<std::string, std::string>> & pairs,
+  bool allow)
+{
+  for (const auto & pair : pairs) {
+    if (pair.first.empty() || pair.second.empty()) {
+      continue;
+    }
+    acm.setEntry(pair.first, pair.second, allow);
+  }
+}
+
 }  // namespace detail
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("grasp_execution");
@@ -140,10 +169,44 @@ void log_goal_failure_diagnostics(
   planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp->getPlanningSceneMonitor());
   const bool in_collision = scene->isStateColliding(goal_state, planning_group);
   if (in_collision) {
+    collision_detection::CollisionRequest req;
+    req.contacts = true;
+    req.max_contacts = 20;
+    req.group_name = planning_group;
+    collision_detection::CollisionResult res;
+    scene->checkCollision(req, res, goal_state);
+
+    std::vector<std::string> disallowed_contact_pairs;
+    const auto & acm = scene->getAllowedCollisionMatrix();
+    for (const auto & contact : res.contacts) {
+      const auto & first = contact.first.first;
+      const auto & second = contact.first.second;
+      collision_detection::AllowedCollision::Type allowed_type =
+        collision_detection::AllowedCollision::NEVER;
+      if (!acm.getEntry(first, second, allowed_type) ||
+        allowed_type != collision_detection::AllowedCollision::ALWAYS)
+      {
+        disallowed_contact_pairs.emplace_back(first + "<->" + second);
+      }
+    }
+
     RCLCPP_WARN(
       logger,
       "Candidate diagnosis: IK solution exists but goal state is in collision for group='%s'.",
       planning_group.c_str());
+    if (!disallowed_contact_pairs.empty()) {
+      std::ostringstream pairs_stream;
+      for (size_t i = 0; i < disallowed_contact_pairs.size(); ++i) {
+        if (i > 0) {
+          pairs_stream << ", ";
+        }
+        pairs_stream << disallowed_contact_pairs[i];
+      }
+      RCLCPP_WARN(
+        logger,
+        "Candidate diagnosis disallowed contact pairs: [%s].",
+        pairs_stream.str().c_str());
+    }
     return;
   }
 
@@ -209,6 +272,32 @@ MoveitCppGraspExecution::MoveitCppGraspExecution(
     LOGGER,
     "Configured release_allowed_touch_links: [%s]",
     touch_links_stream.str().c_str());
+
+  const std::vector<std::string> default_grasp_planning_allowed_touch_links = {
+    "gripper_finger1_finger_tip_link",
+    "gripper_finger2_finger_tip_link",
+  };
+  if (node->has_parameter("grasp_planning_allowed_touch_links")) {
+    node->get_parameter_or<std::vector<std::string>>(
+      "grasp_planning_allowed_touch_links",
+      grasp_planning_allowed_touch_links_,
+      default_grasp_planning_allowed_touch_links);
+  } else {
+    grasp_planning_allowed_touch_links_ = node->declare_parameter<std::vector<std::string>>(
+      "grasp_planning_allowed_touch_links",
+      default_grasp_planning_allowed_touch_links);
+  }
+  std::ostringstream grasp_touch_links_stream;
+  for (size_t i = 0; i < grasp_planning_allowed_touch_links_.size(); ++i) {
+    if (i > 0) {
+      grasp_touch_links_stream << ", ";
+    }
+    grasp_touch_links_stream << grasp_planning_allowed_touch_links_[i];
+  }
+  RCLCPP_INFO(
+    LOGGER,
+    "Configured grasp_planning_allowed_touch_links: [%s]",
+    grasp_touch_links_stream.str().c_str());
 }
 
 MoveitCppGraspExecution::~MoveitCppGraspExecution()
@@ -1383,6 +1472,84 @@ void MoveitCppGraspExecution::prepare_attached_object_for_release_planning(
       "Allowed attached target contact with support link '%s' during release planning.",
       support_link.c_str());
   }
+}
+
+void MoveitCppGraspExecution::apply_grasp_planning_allowed_contacts(const std::string & target_id)
+{
+  if (target_id.empty()) {
+    return;
+  }
+
+  std::vector<std::pair<std::string, std::string>> allowed_pairs =
+    detail::get_grasp_planning_allowed_pairs(target_id, grasp_planning_allowed_touch_links_);
+  const std::string unprefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
+  const std::string prefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
+  if (unprefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
+      unprefixed_target_id, grasp_planning_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+  if (prefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
+      prefixed_target_id, grasp_planning_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+
+  {
+    planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+    auto & acm = scene->getAllowedCollisionMatrixNonConst();
+    detail::set_allowed_collision_pairs(acm, allowed_pairs, true);
+  }
+
+  std::set<std::string> unique_log_pairs;
+  auto base_pairs = detail::get_grasp_planning_allowed_pairs(
+    target_id, grasp_planning_allowed_touch_links_);
+  for (const auto & pair : base_pairs) {
+    unique_log_pairs.insert(pair.first + "<->" + pair.second);
+  }
+  std::ostringstream log_stream;
+  size_t index = 0;
+  for (const auto & pair : unique_log_pairs) {
+    if (index++ > 0) {
+      log_stream << ", ";
+    }
+    log_stream << pair;
+  }
+  RCLCPP_INFO(
+    LOGGER,
+    "Applied grasp planning allowed contacts for target %s: [%s]",
+    target_id.c_str(),
+    log_stream.str().c_str());
+}
+
+void MoveitCppGraspExecution::clear_grasp_planning_allowed_contacts(const std::string & target_id)
+{
+  if (target_id.empty()) {
+    return;
+  }
+
+  std::vector<std::pair<std::string, std::string>> allowed_pairs =
+    detail::get_grasp_planning_allowed_pairs(target_id, grasp_planning_allowed_touch_links_);
+  const std::string unprefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
+  const std::string prefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
+  if (unprefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
+      unprefixed_target_id, grasp_planning_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+  if (prefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
+      prefixed_target_id, grasp_planning_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+
+  planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+  auto & acm = scene->getAllowedCollisionMatrixNonConst();
+  detail::set_allowed_collision_pairs(acm, allowed_pairs, false);
 }
 
 void MoveitCppGraspExecution::remove_object(

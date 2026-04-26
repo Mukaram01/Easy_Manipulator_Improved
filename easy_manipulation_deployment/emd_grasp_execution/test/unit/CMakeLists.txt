@@ -67,3 +67,13 @@ target_link_libraries(test_release_collision_ids
 target_compile_features(test_release_collision_ids
   PRIVATE cxx_std_17
 )
+
+ament_add_gtest(test_grasp_planning_allowed_contacts
+  test_grasp_planning_allowed_contacts.cpp
+)
+target_link_libraries(test_grasp_planning_allowed_contacts
+  moveit_cpp_grasp_execution_interface
+)
+target_compile_features(test_grasp_planning_allowed_contacts
+  PRIVATE cxx_std_17
+)
