@@ -124,6 +124,15 @@ def derive_workcell_end_effector_link(end_effector):
 
 
 def derive_workcell_grasp_frame(end_effector):
+    ee_name = _normalize_text(end_effector.get("name"))
+    ee_brand = _normalize_text(end_effector.get("brand"))
+    ee_type = _normalize_text(end_effector.get("ee_type"))
+    ee_fingers = end_effector.get("attributes", {}).get("fingers")
+    search_blob = " ".join((ee_name, ee_brand, ee_type))
+
+    if any(marker in search_blob for marker in ("robotiq_2f", "robotiq_85")) or ee_fingers == 2:
+        return "ee_palm"
+
     for key in ("grasp_frame", "tcp_link", "physical_ee_link", "base_link", "link"):
         value = _normalize_text(end_effector.get(key))
         if value:
