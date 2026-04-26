@@ -99,7 +99,24 @@ geometry_msgs::msg::Pose get_object_pose_from_world_object(
 
 std::vector<std::string> get_attached_object_acm_ids(const std::string & target_id)
 {
-  return {target_id, "#" + target_id};
+  std::vector<std::string> ids;
+  if (target_id.empty()) {
+    return ids;
+  }
+
+  ids.push_back(target_id);
+  if (!target_id.empty() && target_id.front() == '#') {
+    const std::string unprefixed_id = target_id.substr(1);
+    if (!unprefixed_id.empty()) {
+      ids.push_back(unprefixed_id);
+    }
+  } else {
+    ids.push_back("#" + target_id);
+  }
+
+  std::set<std::string> unique_ids(ids.begin(), ids.end());
+  ids.assign(unique_ids.begin(), unique_ids.end());
+  return ids;
 }
 
 std::vector<std::pair<std::string, std::string>> get_grasp_planning_allowed_pairs(
@@ -1498,15 +1515,22 @@ void MoveitCppGraspExecution::detach_object_from_ee(
   // Attach object to ee_link
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+    const bool had_attached_body = scene->getCurrentState().hasAttachedBody(target_id);
     scene->processAttachedCollisionObjectMsg(detach_object);
+    if (!had_attached_body) {
+      RCLCPP_INFO(
+        LOGGER,
+        "Detach requested for '%s' but no attached body was present in current scene state. "
+        "This can happen when detach/remove updates were already processed; continuing.",
+        target_id.c_str());
+    }
 
     auto & acm = scene->getAllowedCollisionMatrixNonConst();
-    if (acm.hasEntry(target_id)) {
-      acm.removeEntry(target_id);
-    }
-    const std::string attached_target_id = "#" + target_id;
-    if (acm.hasEntry(attached_target_id)) {
-      acm.removeEntry(attached_target_id);
+    const auto attached_ids = detail::get_attached_object_acm_ids(target_id);
+    for (const auto & id : attached_ids) {
+      if (acm.hasEntry(id)) {
+        acm.removeEntry(id);
+      }
     }
   }    // Unlock PlanningScene
 }
@@ -1543,18 +1567,12 @@ void MoveitCppGraspExecution::apply_grasp_planning_allowed_contacts(const std::s
 
   std::vector<std::pair<std::string, std::string>> allowed_pairs =
     detail::get_grasp_planning_allowed_pairs(target_id, grasp_planning_allowed_touch_links_);
-  const std::string unprefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
-  const std::string prefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
-  if (unprefixed_target_id != target_id) {
+  for (const auto & target_alias : detail::get_attached_object_acm_ids(target_id)) {
+    if (target_alias == target_id) {
+      continue;
+    }
     auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
-      unprefixed_target_id, grasp_planning_allowed_touch_links_);
-    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
-  }
-  if (prefixed_target_id != target_id) {
-    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
-      prefixed_target_id, grasp_planning_allowed_touch_links_);
+      target_alias, grasp_planning_allowed_touch_links_);
     allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
   }
 
@@ -1593,18 +1611,12 @@ void MoveitCppGraspExecution::clear_grasp_planning_allowed_contacts(const std::s
 
   std::vector<std::pair<std::string, std::string>> allowed_pairs =
     detail::get_grasp_planning_allowed_pairs(target_id, grasp_planning_allowed_touch_links_);
-  const std::string unprefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
-  const std::string prefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
-  if (unprefixed_target_id != target_id) {
+  for (const auto & target_alias : detail::get_attached_object_acm_ids(target_id)) {
+    if (target_alias == target_id) {
+      continue;
+    }
     auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
-      unprefixed_target_id, grasp_planning_allowed_touch_links_);
-    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
-  }
-  if (prefixed_target_id != target_id) {
-    auto extra_pairs = detail::get_grasp_planning_allowed_pairs(
-      prefixed_target_id, grasp_planning_allowed_touch_links_);
+      target_alias, grasp_planning_allowed_touch_links_);
     allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
   }
 
@@ -1622,18 +1634,12 @@ void MoveitCppGraspExecution::apply_release_planning_allowed_contacts(const std:
   std::vector<std::pair<std::string, std::string>> allowed_pairs =
     detail::get_release_planning_allowed_pairs(
     target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
-  const std::string unprefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
-  const std::string prefixed_target_id =
-    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
-  if (unprefixed_target_id != target_id) {
+  for (const auto & target_alias : detail::get_attached_object_acm_ids(target_id)) {
+    if (target_alias == target_id) {
+      continue;
+    }
     auto extra_pairs = detail::get_release_planning_allowed_pairs(
-      unprefixed_target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
-    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
-  }
-  if (prefixed_target_id != target_id) {
-    auto extra_pairs = detail::get_release_planning_allowed_pairs(
-      prefixed_target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
+      target_alias, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
     allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
   }
 
@@ -1677,12 +1683,11 @@ void MoveitCppGraspExecution::remove_object(
     scene->processCollisionObjectMsg(object);
 
     auto & acm = scene->getAllowedCollisionMatrixNonConst();
-    if (acm.hasEntry(target_id)) {
-      acm.removeEntry(target_id);
-    }
-    const std::string attached_target_id = "#" + target_id;
-    if (acm.hasEntry(attached_target_id)) {
-      acm.removeEntry(attached_target_id);
+    const auto attached_ids = detail::get_attached_object_acm_ids(target_id);
+    for (const auto & id : attached_ids) {
+      if (acm.hasEntry(id)) {
+        acm.removeEntry(id);
+      }
     }
   }    // Unlock PlanningScene
 }

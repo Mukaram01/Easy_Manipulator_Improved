@@ -57,6 +57,28 @@ TEST(ReleasePlanningAllowedContacts, IncludesOnlyExpectedPairs)
   EXPECT_FALSE(contains_pair(pairs, "wrist_2_link", "camera_link"));
 }
 
+TEST(ReleasePlanningAllowedContacts, PrefixedTargetDoesNotCreateDoubleHashAliases)
+{
+  const auto pairs = grasp_execution::moveit2::detail::get_release_planning_allowed_pairs(
+    "#box-abc",
+    {"gripper_finger1_finger_tip_link", "gripper_finger2_finger_tip_link"},
+    {"table_"});
+
+  EXPECT_TRUE(contains_pair(pairs, "<octomap>", "gripper_finger1_finger_tip_link"));
+  EXPECT_TRUE(contains_pair(pairs, "<octomap>", "gripper_finger2_finger_tip_link"));
+  EXPECT_TRUE(contains_pair(pairs, "#box-abc", "<octomap>"));
+  EXPECT_TRUE(contains_pair(pairs, "box-abc", "<octomap>"));
+  EXPECT_TRUE(contains_pair(pairs, "#box-abc", "table_"));
+  EXPECT_TRUE(contains_pair(pairs, "box-abc", "table_"));
+
+  EXPECT_FALSE(contains_pair(pairs, "##box-abc", "<octomap>"));
+  EXPECT_FALSE(contains_pair(pairs, "##box-abc", "table_"));
+  EXPECT_FALSE(contains_pair(pairs, "forearm_link", "table_"));
+  EXPECT_FALSE(contains_pair(pairs, "upper_arm_link", "table_"));
+  EXPECT_FALSE(contains_pair(pairs, "forearm_link", "<octomap>"));
+  EXPECT_FALSE(contains_pair(pairs, "wrist_2_link", "camera_link"));
+}
+
 TEST(ReleasePlanningAllowedContacts, ACMAllowsExpectedAndRejectsDisallowedPairs)
 {
   collision_detection::AllowedCollisionMatrix acm;
