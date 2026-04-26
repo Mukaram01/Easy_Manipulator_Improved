@@ -408,12 +408,28 @@ public:
       node,
       node->get_logger(),
       5);
-    grasp_execution::declare_or_get_param<std::vector<double>>(
-      home_return_safe_joint_state_,
-      "home_return.safe_joint_state",
-      node,
+    constexpr const char * kHomeReturnSafeJointStateParam = "home_return.safe_joint_state";
+    if (node->has_parameter(kHomeReturnSafeJointStateParam)) {
+      node->get_parameter_or<std::vector<double>>(
+        kHomeReturnSafeJointStateParam,
+        home_return_safe_joint_state_,
+        std::vector<double>{});
+    } else {
+      home_return_safe_joint_state_ = node->declare_parameter<std::vector<double>>(
+        kHomeReturnSafeJointStateParam,
+        std::vector<double>{});
+    }
+
+    std::vector<std::string> safe_joint_state_values;
+    safe_joint_state_values.reserve(home_return_safe_joint_state_.size());
+    for (const auto value : home_return_safe_joint_state_) {
+      safe_joint_state_values.push_back(std::to_string(value));
+    }
+    RCLCPP_INFO(
       node->get_logger(),
-      std::vector<double>{});
+      "Found parameter - %s: [%s]",
+      kHomeReturnSafeJointStateParam,
+      boost::algorithm::join(safe_joint_state_values, ", ").c_str());
     grasp_execution::declare_or_get_param<double>(
       home_return_planning_time_s_,
       "home_return.planning_time",
