@@ -1252,6 +1252,8 @@ void MoveitCppGraspExecution::attach_object_to_ee(
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
     scene->processAttachedCollisionObjectMsg(attach_object);
   }    // Unlock PlanningScene
+
+  prepare_attached_object_for_release_planning(target_id, ee_link);
 }
 
 void MoveitCppGraspExecution::detach_object_from_ee(
@@ -1295,7 +1297,51 @@ void MoveitCppGraspExecution::detach_object_from_ee(
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
     scene->processAttachedCollisionObjectMsg(detach_object);
+
+    auto & acm = scene->getAllowedCollisionMatrixNonConst();
+    if (acm.hasEntry(target_id)) {
+      acm.removeEntry(target_id);
+    }
+    const std::string attached_target_id = "#" + target_id;
+    if (acm.hasEntry(attached_target_id)) {
+      acm.removeEntry(attached_target_id);
+    }
   }    // Unlock PlanningScene
+}
+
+void MoveitCppGraspExecution::prepare_attached_object_for_release_planning(
+  const std::string & target_id,
+  const std::string & ee_link)
+{
+  RCLCPP_INFO(
+    LOGGER,
+    "Preparing attached object '%s' for release planning (ee_link=%s).",
+    target_id.c_str(),
+    ee_link.c_str());
+
+  planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+
+  moveit_msgs::msg::CollisionObject remove_world_object;
+  remove_world_object.id = target_id;
+  remove_world_object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+  scene->processCollisionObjectMsg(remove_world_object);
+  RCLCPP_INFO(
+    LOGGER,
+    "Removed world collision object for attached target '%s' (if present).",
+    target_id.c_str());
+
+  auto & acm = scene->getAllowedCollisionMatrixNonConst();
+  const std::vector<std::string> octomap_ids = {"<octomap>", "octomap"};
+  const std::vector<std::string> attached_ids = {target_id, "#" + target_id};
+  for (const auto & attached_id : attached_ids) {
+    for (const auto & octomap_id : octomap_ids) {
+      acm.setEntry(attached_id, octomap_id, true);
+    }
+  }
+  RCLCPP_INFO(
+    LOGGER,
+    "Allowed attached target contact with octomap during release start state for target '%s'.",
+    target_id.c_str());
 }
 
 void MoveitCppGraspExecution::remove_object(
