@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <sstream>
 
 #include "emd/grasp_execution/moveit2/moveit_cpp_if.hpp"
 
@@ -93,6 +94,11 @@ geometry_msgs::msg::Pose get_object_pose_from_world_object(
   object_pose.orientation.z = q.z();
   object_pose.orientation.w = q.w();
   return object_pose;
+}
+
+std::vector<std::string> get_attached_object_acm_ids(const std::string & target_id)
+{
+  return {target_id, "#" + target_id};
 }
 
 }  // namespace detail
@@ -181,6 +187,28 @@ MoveitCppGraspExecution::MoveitCppGraspExecution(
   // Initialized octomap if specified
   grasp_execution::declare_or_get_param<bool>(
     load_octomap_requested_, "load_octomap", node, node->get_logger(), false);
+
+  if (node->has_parameter("release_allowed_touch_links")) {
+    node->get_parameter_or<std::vector<std::string>>(
+      "release_allowed_touch_links",
+      release_allowed_touch_links_,
+      std::vector<std::string>{"table_"});
+  } else {
+    release_allowed_touch_links_ = node->declare_parameter<std::vector<std::string>>(
+      "release_allowed_touch_links",
+      std::vector<std::string>{"table_"});
+  }
+  std::ostringstream touch_links_stream;
+  for (size_t i = 0; i < release_allowed_touch_links_.size(); ++i) {
+    if (i > 0) {
+      touch_links_stream << ", ";
+    }
+    touch_links_stream << release_allowed_touch_links_[i];
+  }
+  RCLCPP_INFO(
+    LOGGER,
+    "Configured release_allowed_touch_links: [%s]",
+    touch_links_stream.str().c_str());
 }
 
 MoveitCppGraspExecution::~MoveitCppGraspExecution()
@@ -1332,7 +1360,7 @@ void MoveitCppGraspExecution::prepare_attached_object_for_release_planning(
 
   auto & acm = scene->getAllowedCollisionMatrixNonConst();
   const std::vector<std::string> octomap_ids = {"<octomap>", "octomap"};
-  const std::vector<std::string> attached_ids = {target_id, "#" + target_id};
+  const std::vector<std::string> attached_ids = detail::get_attached_object_acm_ids(target_id);
   for (const auto & attached_id : attached_ids) {
     for (const auto & octomap_id : octomap_ids) {
       acm.setEntry(attached_id, octomap_id, true);
@@ -1342,6 +1370,19 @@ void MoveitCppGraspExecution::prepare_attached_object_for_release_planning(
     LOGGER,
     "Allowed attached target contact with octomap during release start state for target '%s'.",
     target_id.c_str());
+
+  for (const auto & support_link : release_allowed_touch_links_) {
+    if (support_link.empty()) {
+      continue;
+    }
+    for (const auto & attached_id : attached_ids) {
+      acm.setEntry(attached_id, support_link, true);
+    }
+    RCLCPP_INFO(
+      LOGGER,
+      "Allowed attached target contact with support link '%s' during release planning.",
+      support_link.c_str());
+  }
 }
 
 void MoveitCppGraspExecution::remove_object(
@@ -1359,6 +1400,10 @@ void MoveitCppGraspExecution::remove_object(
     auto & acm = scene->getAllowedCollisionMatrixNonConst();
     if (acm.hasEntry(target_id)) {
       acm.removeEntry(target_id);
+    }
+    const std::string attached_target_id = "#" + target_id;
+    if (acm.hasEntry(attached_target_id)) {
+      acm.removeEntry(attached_target_id);
     }
   }    // Unlock PlanningScene
 }
