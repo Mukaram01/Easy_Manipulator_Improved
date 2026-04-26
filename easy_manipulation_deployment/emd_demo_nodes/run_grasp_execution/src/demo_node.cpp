@@ -365,6 +365,96 @@ std::string format_pose_xyz_quat_rpy(const geometry_msgs::msg::Pose & pose)
   return oss.str();
 }
 
+std::string parameter_type_to_string(const rclcpp::ParameterType type)
+{
+  switch (type) {
+    case rclcpp::ParameterType::PARAMETER_NOT_SET:
+      return "not set";
+    case rclcpp::ParameterType::PARAMETER_BOOL:
+      return "bool";
+    case rclcpp::ParameterType::PARAMETER_INTEGER:
+      return "integer";
+    case rclcpp::ParameterType::PARAMETER_DOUBLE:
+      return "double";
+    case rclcpp::ParameterType::PARAMETER_STRING:
+      return "string";
+    case rclcpp::ParameterType::PARAMETER_BYTE_ARRAY:
+      return "byte_array";
+    case rclcpp::ParameterType::PARAMETER_BOOL_ARRAY:
+      return "bool_array";
+    case rclcpp::ParameterType::PARAMETER_INTEGER_ARRAY:
+      return "integer_array";
+    case rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY:
+      return "double_array";
+    case rclcpp::ParameterType::PARAMETER_STRING_ARRAY:
+      return "string_array";
+    default:
+      return "unknown";
+  }
+}
+
+std::string format_double_vector(const std::vector<double> & values)
+{
+  std::ostringstream oss;
+  oss << "[";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << values[i];
+  }
+  oss << "]";
+  return oss.str();
+}
+
+std::vector<double> resolve_safe_joint_state_param(
+  const rclcpp::Node::SharedPtr & node,
+  const rclcpp::Logger & logger,
+  const std::string & param_name)
+{
+  const std::vector<double> empty_default;
+  if (!node->has_parameter(param_name)) {
+    return node->declare_parameter<std::vector<double>>(param_name, empty_default);
+  }
+
+  rclcpp::Parameter parameter;
+  if (!node->get_parameter(param_name, parameter)) {
+    RCLCPP_WARN(
+      logger,
+      "Could not read parameter '%s'. Using empty safe joint state.",
+      param_name.c_str());
+    return empty_default;
+  }
+
+  if (parameter.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
+    RCLCPP_WARN(
+      logger,
+      "Parameter '%s' is set but has no value (blank/null). Using empty safe joint state.",
+      param_name.c_str());
+    return empty_default;
+  }
+
+  if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
+    RCLCPP_WARN(
+      logger,
+      "Parameter '%s' has type '%s' but expected 'double_array'. Using empty safe joint state.",
+      param_name.c_str(),
+      parameter_type_to_string(parameter.get_type()).c_str());
+    return empty_default;
+  }
+
+  try {
+    return parameter.as_double_array();
+  } catch (const std::exception & e) {
+    RCLCPP_WARN(
+      logger,
+      "Failed to parse parameter '%s' as double array (%s). Using empty safe joint state.",
+      param_name.c_str(),
+      e.what());
+    return empty_default;
+  }
+}
+
 class Demo : public moveit2::MoveitCppGraspExecution
 {
 public:
@@ -409,27 +499,15 @@ public:
       node->get_logger(),
       5);
     constexpr const char * kHomeReturnSafeJointStateParam = "home_return.safe_joint_state";
-    if (node->has_parameter(kHomeReturnSafeJointStateParam)) {
-      node->get_parameter_or<std::vector<double>>(
-        kHomeReturnSafeJointStateParam,
-        home_return_safe_joint_state_,
-        std::vector<double>{});
-    } else {
-      home_return_safe_joint_state_ = node->declare_parameter<std::vector<double>>(
-        kHomeReturnSafeJointStateParam,
-        std::vector<double>{});
-    }
-
-    std::vector<std::string> safe_joint_state_values;
-    safe_joint_state_values.reserve(home_return_safe_joint_state_.size());
-    for (const auto value : home_return_safe_joint_state_) {
-      safe_joint_state_values.push_back(std::to_string(value));
-    }
+    home_return_safe_joint_state_ = resolve_safe_joint_state_param(
+      node,
+      node->get_logger(),
+      kHomeReturnSafeJointStateParam);
     RCLCPP_INFO(
       node->get_logger(),
-      "Found parameter - %s: [%s]",
+      "Resolved parameter - %s: %s",
       kHomeReturnSafeJointStateParam,
-      boost::algorithm::join(safe_joint_state_values, ", ").c_str());
+      format_double_vector(home_return_safe_joint_state_).c_str());
     grasp_execution::declare_or_get_param<double>(
       home_return_planning_time_s_,
       "home_return.planning_time",
@@ -1193,9 +1271,12 @@ private:
     const moveit::core::RobotState & home_state)
   {
     (void)target_id;
-    if (run_grasp_execution::safe_intermediate_enabled(
-        home_return_use_safe_intermediate_, home_return_safe_joint_state_))
-    {
+    if (home_return_use_safe_intermediate_ && home_return_safe_joint_state_.empty()) {
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "[HomeReturn] home_return.use_safe_intermediate=true but home_return.safe_joint_state is empty. "
+        "Skipping safe intermediate and continuing to home.");
+    } else if (home_return_use_safe_intermediate_) {
       auto current_state = get_curr_state();
       if (!current_state) {
         RCLCPP_WARN(
