@@ -16,3 +16,8 @@ The helper test module in `test/test_grasp_execution_launch_helpers.py` is **not
   - `grasp_precheck_allowed_collision_ids: [<octomap>]`
 - The current `target_id` (and attached form `#<target_id>`) is always added dynamically for the candidate being checked.
 - Arm/support collisions (for example `forearm_link<->table_`, `upper_arm_link<->table_`, or arm links vs octomap) remain invalid and still reject the candidate.
+
+### Troubleshooting
+
+- If a candidate logs `allowed expected grasp contact`, fingertip contact against `<octomap>`/target is being treated as expected during precheck.
+- Candidates are still rejected when any non-allowed contact exists (for example arm/support collisions like `forearm_link<->table_`).
