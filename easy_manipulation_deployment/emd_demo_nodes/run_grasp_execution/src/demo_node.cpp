@@ -391,20 +391,48 @@ public:
       release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
-    workspace_bounds_.enabled = node_->declare_parameter<bool>(
-      "grasp_workspace_filter.enabled", false);
-    workspace_bounds_.min_x = node_->declare_parameter<double>(
-      "grasp_workspace_filter.min_x", -1.0);
-    workspace_bounds_.max_x = node_->declare_parameter<double>(
-      "grasp_workspace_filter.max_x", 1.0);
-    workspace_bounds_.min_y = node_->declare_parameter<double>(
-      "grasp_workspace_filter.min_y", -1.0);
-    workspace_bounds_.max_y = node_->declare_parameter<double>(
-      "grasp_workspace_filter.max_y", 1.0);
-    workspace_bounds_.min_z = node_->declare_parameter<double>(
-      "grasp_workspace_filter.min_z", 0.0);
-    workspace_bounds_.max_z = node_->declare_parameter<double>(
-      "grasp_workspace_filter.max_z", 1.5);
+    grasp_execution::declare_or_get_param<bool>(
+      workspace_bounds_.enabled,
+      "grasp_workspace_filter.enabled",
+      node,
+      node->get_logger(),
+      false);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.min_x,
+      "grasp_workspace_filter.min_x",
+      node,
+      node->get_logger(),
+      -1.0);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.max_x,
+      "grasp_workspace_filter.max_x",
+      node,
+      node->get_logger(),
+      1.0);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.min_y,
+      "grasp_workspace_filter.min_y",
+      node,
+      node->get_logger(),
+      -1.0);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.max_y,
+      "grasp_workspace_filter.max_y",
+      node,
+      node->get_logger(),
+      1.0);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.min_z,
+      "grasp_workspace_filter.min_z",
+      node,
+      node->get_logger(),
+      0.0);
+    grasp_execution::declare_or_get_param<double>(
+      workspace_bounds_.max_z,
+      "grasp_workspace_filter.max_z",
+      node,
+      node->get_logger(),
+      1.5);
 
     grasp_task_sub_ = node_->create_subscription<emd_msgs::msg::GraspTask>(
       grasp_task_topic, 10,
