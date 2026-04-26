@@ -1721,11 +1721,64 @@ TEST_F(MultiFingerTest, checkFingerCollisionTest)
 
   Eigen::Vector3f finger_point_sample_center(0.005, 0.025, 0.01);
   Eigen::Vector3f finger_point_far_away(0.1, 0.25, 0.1);
+  std::string rejection_reason;
+  std::string collision_pair;
   EXPECT_TRUE(
     gripper->check_finger_collision_public(
       finger_point_sample_center,
-      collision_object_ptr));
-  EXPECT_FALSE(gripper->check_finger_collision_public(finger_point_far_away, collision_object_ptr));
+      collision_object_ptr,
+      object,
+      "gripper_finger1_finger_tip_link",
+      false,
+      &rejection_reason,
+      &collision_pair));
+  EXPECT_FALSE(gripper->check_finger_collision_public(
+      finger_point_far_away, collision_object_ptr, object, "gripper_finger1_finger_tip_link",
+      false, &rejection_reason, &collision_pair));
+}
+
+TEST_F(MultiFingerTest, FingerTipTargetContactAllowedWhenEnabled)
+{
+  GraspObject object = GenerateObjectVertical();
+  reset_variables();
+  ASSERT_NO_THROW(LoadGripper());
+  GenerateObjectCollision(0.01, 0.05, 0.02);
+  Eigen::Vector3f finger_point_sample_center(0.005, 0.025, 0.01);
+  std::string rejection_reason;
+  std::string collision_pair;
+  EXPECT_FALSE(gripper->check_finger_collision_public(
+      finger_point_sample_center, collision_object_ptr, object,
+      "gripper_finger1_finger_tip_link", true, &rejection_reason, &collision_pair));
+}
+
+TEST_F(MultiFingerTest, FingerTipTargetContactRejectedWhenDisabled)
+{
+  GraspObject object = GenerateObjectVertical();
+  reset_variables();
+  ASSERT_NO_THROW(LoadGripper());
+  GenerateObjectCollision(0.01, 0.05, 0.02);
+  Eigen::Vector3f finger_point_sample_center(0.005, 0.025, 0.01);
+  std::string rejection_reason;
+  std::string collision_pair;
+  EXPECT_TRUE(gripper->check_finger_collision_public(
+      finger_point_sample_center, collision_object_ptr, object,
+      "gripper_finger1_finger_tip_link", false, &rejection_reason, &collision_pair));
+  EXPECT_EQ("object_fingertip_expected_contact", rejection_reason);
+}
+
+TEST_F(MultiFingerTest, NonAllowedLinkContactAlwaysRejected)
+{
+  GraspObject object = GenerateObjectVertical();
+  reset_variables();
+  ASSERT_NO_THROW(LoadGripper());
+  GenerateObjectCollision(0.01, 0.05, 0.02);
+  Eigen::Vector3f finger_point_sample_center(0.005, 0.025, 0.01);
+  std::string rejection_reason;
+  std::string collision_pair;
+  EXPECT_TRUE(gripper->check_finger_collision_public(
+      finger_point_sample_center, collision_object_ptr, object,
+      "gripper_base_link", true, &rejection_reason, &collision_pair));
+  EXPECT_NE("object_fingertip_expected_contact", rejection_reason);
 }
 
 TEST_F(MultiFingerTest, getNearestPlaneIndexTest)
@@ -1853,7 +1906,7 @@ TEST_F(MultiFingerTest, generateGripperOpenConfigTest)
 
   GenerateObjectCollision(0.01, 0.05, 0.02);
   std::shared_ptr<MultiFingerGripper> gripper_sample = gripper->generate_gripper_open_config_public(
-    collision_object_ptr, finger_1, finger_2,
+    collision_object_ptr, object, finger_1, finger_2,
     open_coords[0], open_coords[1], perpendicular_grasp_direction,
     grasp_direction, "camera_frame");
 
@@ -1929,7 +1982,7 @@ TEST_F(MultiFingerTest, generateGripperOpenConfigTestInvalidNearestPointIndex)
   GenerateObjectCollision(0.01, 0.05, 0.02);
   ASSERT_NO_THROW({
     std::shared_ptr<MultiFingerGripper> gripper_sample = gripper->generate_gripper_open_config_public(
-      collision_object_ptr, closed_finger_1, closed_finger_2,
+      collision_object_ptr, object, closed_finger_1, closed_finger_2,
       open_coords[0], open_coords[1], perpendicular_grasp_direction,
       grasp_direction, "camera_frame");
 
@@ -2003,7 +2056,7 @@ TEST_F(MultiFingerTest, generateGripperOpenConfigTestCollision)
 
   GenerateObjectCollision(0.01, 0.05, 0.02);
   std::shared_ptr<MultiFingerGripper> gripper_sample = gripper->generate_gripper_open_config_public(
-    collision_object_ptr, finger_1, finger_2,
+    collision_object_ptr, object, finger_1, finger_2,
     open_coords[0], open_coords[1], perpendicular_grasp_direction,
     grasp_direction, "camera_frame");
 

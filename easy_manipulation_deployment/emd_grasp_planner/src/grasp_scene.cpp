@@ -286,6 +286,23 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
         node->get_parameter("end_effectors." + end_effector + ".type").as_string();
       RCLCPP_INFO_STREAM(LOGGER, "Loading " << end_effector_type << " gripper " << end_effector);
       if (end_effector_type.compare("finger") == 0) {
+        bool allow_target_fingertip_contact = true;
+        node->get_parameter_or(
+          "grasp_planner_allow_target_fingertip_contact",
+          allow_target_fingertip_contact,
+          true);
+        std::vector<std::string> allowed_target_touch_links{
+          "gripper_finger1_finger_tip_link",
+          "gripper_finger2_finger_tip_link"};
+        node->get_parameter_or(
+          "grasp_planner_allowed_target_touch_links",
+          allowed_target_touch_links,
+          allowed_target_touch_links);
+        std::vector<std::string> allowed_target_touch_link_patterns;
+        node->get_parameter_or(
+          "grasp_planner_allowed_target_touch_link_patterns",
+          allowed_target_touch_link_patterns,
+          allowed_target_touch_link_patterns);
         FingerGripper gripper(
           end_effector,
           node->get_parameter("end_effectors." + end_effector + ".num_fingers_side_1").as_int(),
@@ -348,7 +365,10 @@ void grasp_planner::GraspScene<T>::load_end_effectors()
             ".gripper_coordinate_system.grasp_stroke_normal_direction").as_string(),
           node->get_parameter(
             "end_effectors." + end_effector +
-            ".gripper_coordinate_system.grasp_approach_direction").as_string()
+            ".gripper_coordinate_system.grasp_approach_direction").as_string(),
+          allow_target_fingertip_contact,
+          allowed_target_touch_links,
+          allowed_target_touch_link_patterns
         );
         this->end_effectors.push_back(std::make_shared<FingerGripper>(std::move(gripper)));
       } else if (end_effector_type.compare("suction") == 0) {
@@ -686,7 +706,35 @@ bool grasp_planner::GraspScene<T>::process_pointcloud(
   RCLCPP_INFO(LOGGER, "Processing Point Cloud... ");
   pcl::PCLPointCloud2 pcl_pc2;
   PCLFunctions::sensor_msg_to_pcl_pointcloud2(*msg, pcl_pc2);
-  pcl::fromPCLPointCloud2(pcl_pc2, *(this->cloud));
+  bool has_rgb_field = false;
+  for (const auto & field : pcl_pc2.fields) {
+    if (field.name == "rgb" || field.name == "rgba") {
+      has_rgb_field = true;
+      break;
+    }
+  }
+  if (has_rgb_field) {
+    pcl::fromPCLPointCloud2(pcl_pc2, *(this->cloud));
+  } else {
+    pcl::PointCloud<pcl::PointXYZ> xyz_cloud;
+    pcl::fromPCLPointCloud2(pcl_pc2, xyz_cloud);
+    this->cloud->clear();
+    this->cloud->reserve(xyz_cloud.size());
+    for (const auto & point : xyz_cloud.points) {
+      pcl::PointXYZRGB point_rgb;
+      point_rgb.x = point.x;
+      point_rgb.y = point.y;
+      point_rgb.z = point.z;
+      point_rgb.r = 255;
+      point_rgb.g = 255;
+      point_rgb.b = 255;
+      this->cloud->push_back(point_rgb);
+    }
+    RCLCPP_WARN_THROTTLE(
+      LOGGER, *node->get_clock(), 10000,
+      "Input cloud has no rgb/rgba field; converted XYZ points with default color. "
+      "This is harmless for collision/grasp planning.");
+  }
   RCLCPP_INFO(LOGGER, "Applying Passthrough filters");
   PCLFunctions::passthrough_filter(
     this->cloud,

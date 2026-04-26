@@ -62,7 +62,10 @@ public:
     const float & worldZAngleThreshold_,
     std::string grasp_stroke_direction_,
     std::string grasp_stroke_normal_direction_,
-    std::string grasp_approach_direction_
+    std::string grasp_approach_direction_,
+    bool allow_target_fingertip_contact_ = true,
+    const std::vector<std::string> & allowed_target_touch_links_ = {},
+    const std::vector<std::string> & allowed_target_touch_link_patterns_ = {}
 
   )
   : FingerGripper(
@@ -88,7 +91,10 @@ public:
       worldZAngleThreshold_,
       grasp_stroke_direction_,
       grasp_stroke_normal_direction_,
-      grasp_approach_direction_
+      grasp_approach_direction_,
+      allow_target_fingertip_contact_,
+      allowed_target_touch_links_,
+      allowed_target_touch_link_patterns_
   ) {}
 
   Eigen::Vector4f center_cutting_plane_public;
@@ -238,34 +244,53 @@ public:
 
   std::shared_ptr<MultiFingerGripper> generate_gripper_open_config_public(
     const std::shared_ptr<CollisionObject> & world_collision_object,
+    const GraspObject & object,
     const std::shared_ptr<SingleFinger> & closed_center_finger_1,
     const std::shared_ptr<SingleFinger> & closed_center_finger_2,
     const Eigen::Vector3f & open_center_finger_1,
     const Eigen::Vector3f & open_center_finger_2,
     const Eigen::Vector3f & plane_normal_normalized,
     const Eigen::Vector3f & grasp_direction,
-    std::string camera_frame)
+    std::string camera_frame,
+    bool allow_expected_target_contact = true)
   {
     return generate_gripper_open_config(
       world_collision_object,
+      object,
       closed_center_finger_1,
       closed_center_finger_2,
       open_center_finger_1,
       open_center_finger_2,
       plane_normal_normalized,
       grasp_direction,
-      camera_frame
+      camera_frame,
+      allow_expected_target_contact
     );
   }
 
   bool check_finger_collision_public(
     const Eigen::Vector3f & finger_point,
-    const std::shared_ptr<CollisionObject> & world_collision_object)
+    const std::shared_ptr<CollisionObject> & world_collision_object,
+    const GraspObject & object,
+    const std::string & touch_link_name,
+    const bool allow_expected_target_contact,
+    std::string * rejection_reason,
+    std::string * collision_pair)
   {
     return check_finger_collision(
       finger_point,
-      world_collision_object
+      world_collision_object,
+      object,
+      touch_link_name,
+      allow_expected_target_contact,
+      rejection_reason,
+      collision_pair
     );
+  }
+
+  CollisionSummary get_last_collision_summary_public() const
+  {
+    return last_collision_summary;
   }
 
   std::shared_ptr<GraspPlaneSample> generate_grasp_samples_public(

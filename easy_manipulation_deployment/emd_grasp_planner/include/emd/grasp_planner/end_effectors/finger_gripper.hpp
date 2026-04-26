@@ -48,6 +48,8 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 // For Multithreading
 #include <future>
@@ -134,6 +136,10 @@ struct MultiFingerGripper
   std::shared_ptr<SingleFinger> base_point_2;
   /*! \brief True if colliding with world */
   bool collides_with_world;
+  /*! \brief Collision reason classification (if rejected) */
+  std::string collision_reason;
+  /*! \brief Collision pair classification (if available) */
+  std::string collision_pair;
   /*! \brief Unit vector of grasping direction */
   Eigen::Vector3f grasping_direction;
   /*! \brief Unit vector perpendicular to grasping direction */
@@ -250,6 +256,14 @@ struct GraspPlaneSample
 class FingerGripper : public EndEffector
 {
 public:
+  struct CollisionSummary
+  {
+    int raw_samples{0};
+    int valid{0};
+    std::unordered_map<std::string, int> rejection_counts;
+    std::unordered_map<std::string, int> collision_pairs;
+  };
+
   /**
    * Finger Gripper Constructor
    *
@@ -300,7 +314,10 @@ public:
     const float & worldZAngleThreshold_,
     const std::string & grasp_stroke_direction_,
     const std::string & grasp_stroke_normal_direction_,
-    const std::string & grasp_approach_direction_);
+    const std::string & grasp_approach_direction_,
+    const bool allow_target_fingertip_contact_ = true,
+    const std::vector<std::string> & allowed_target_touch_links_ = {},
+    const std::vector<std::string> & allowed_target_touch_link_patterns_ = {});
 
 
   /// Get the derived gripper attributes that will be used in the grasp samples generation
@@ -383,6 +400,14 @@ protected:
   const char grasp_stroke_normal_direction;
   /*! \brief Axis in which the gripper approaches the object */
   const char grasp_approach_direction;
+  /*! \brief Allow expected target-object contact at fingertip links during planning */
+  bool allow_target_fingertip_contact;
+  /*! \brief Allowed fingertip link names for expected target contact */
+  std::unordered_set<std::string> allowed_target_touch_links;
+  /*! \brief Allowed fingertip link wildcard patterns for expected target contact */
+  std::vector<std::string> allowed_target_touch_link_patterns;
+  /*! \brief Diagnostics for the most recent planning attempt */
+  CollisionSummary last_collision_summary;
 
   /*! \brief Coefficients of the cutting plane through the object */
   Eigen::Vector4f center_cutting_plane;  // grasp Plane vector coeff: a, b, c ,d
@@ -557,13 +582,15 @@ protected:
    */
   std::shared_ptr<MultiFingerGripper> generate_gripper_open_config(
     const std::shared_ptr<CollisionObject> & world_collision_object,
+    const GraspObject & object,
     const std::shared_ptr<SingleFinger> & closed_center_finger_1,
     const std::shared_ptr<SingleFinger> & closed_center_finger_2,
     const Eigen::Vector3f & open_center_finger_1,
     const Eigen::Vector3f & open_center_finger_2,
     const Eigen::Vector3f & plane_normal_normalized,
     const Eigen::Vector3f & grasp_direction,
-    const std::string & camera_frame);
+    const std::string & camera_frame,
+    const bool allow_expected_target_contact);
 
   /**
    * Function to check the finger collision with the world
@@ -573,7 +600,19 @@ protected:
    */
   bool check_finger_collision(
     const Eigen::Vector3f & finger_point,
-    const std::shared_ptr<CollisionObject> & world_collision_object);
+    const std::shared_ptr<CollisionObject> & world_collision_object,
+    const GraspObject & object,
+    const std::string & touch_link_name,
+    const bool allow_expected_target_contact,
+    std::string * rejection_reason,
+    std::string * collision_pair);
+  bool is_expected_target_contact(
+    const Eigen::Vector3f & finger_point,
+    const GraspObject & object,
+    const std::string & touch_link_name) const;
+  bool is_touch_link_allowed(const std::string & touch_link_name) const;
+  static bool wildcard_match(const std::string & pattern, const std::string & value);
+  void log_collision_summary(const GraspObject & object) const;
 
   /**
    * Method that generates the grasp sample for a particular plane vector
