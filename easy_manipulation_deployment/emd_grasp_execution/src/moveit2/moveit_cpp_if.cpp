@@ -117,6 +117,36 @@ std::vector<std::pair<std::string, std::string>> get_grasp_planning_allowed_pair
   return pairs;
 }
 
+std::vector<std::pair<std::string, std::string>> get_release_planning_allowed_pairs(
+  const std::string & target_id,
+  const std::vector<std::string> & fingertip_touch_links,
+  const std::vector<std::string> & release_allowed_touch_links)
+{
+  std::vector<std::pair<std::string, std::string>> pairs;
+  const std::vector<std::string> attached_ids = get_attached_object_acm_ids(target_id);
+
+  for (const auto & touch_link : fingertip_touch_links) {
+    if (touch_link.empty()) {
+      continue;
+    }
+    pairs.emplace_back("<octomap>", touch_link);
+  }
+
+  for (const auto & attached_id : attached_ids) {
+    if (attached_id.empty()) {
+      continue;
+    }
+    pairs.emplace_back(attached_id, "<octomap>");
+    for (const auto & touch_link : release_allowed_touch_links) {
+      if (touch_link.empty()) {
+        continue;
+      }
+      pairs.emplace_back(attached_id, touch_link);
+    }
+  }
+  return pairs;
+}
+
 void set_allowed_collision_pairs(
   collision_detection::AllowedCollisionMatrix & acm,
   const std::vector<std::pair<std::string, std::string>> & pairs,
@@ -136,6 +166,57 @@ static const rclcpp::Logger LOGGER = rclcpp::get_logger("grasp_execution");
 
 namespace
 {
+void log_current_state_disallowed_contacts(
+  const rclcpp::Logger & logger,
+  moveit_cpp::MoveItCppPtr moveit_cpp,
+  const std::string & planning_group,
+  const std::string & context)
+{
+  planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp->getPlanningSceneMonitor());
+  collision_detection::CollisionRequest req;
+  req.contacts = true;
+  req.max_contacts = 50;
+  req.group_name = planning_group;
+  collision_detection::CollisionResult res;
+  scene->checkCollision(req, res, scene->getCurrentState());
+
+  if (res.contacts.empty()) {
+    return;
+  }
+
+  std::set<std::string> disallowed_contact_pairs;
+  const auto & acm = scene->getAllowedCollisionMatrix();
+  for (const auto & contact : res.contacts) {
+    const auto & first = contact.first.first;
+    const auto & second = contact.first.second;
+    collision_detection::AllowedCollision::Type allowed_type =
+      collision_detection::AllowedCollision::NEVER;
+    if (!acm.getEntry(first, second, allowed_type) ||
+      allowed_type != collision_detection::AllowedCollision::ALWAYS)
+    {
+      disallowed_contact_pairs.insert(first + "<->" + second);
+    }
+  }
+
+  if (disallowed_contact_pairs.empty()) {
+    return;
+  }
+
+  std::ostringstream pairs_stream;
+  size_t i = 0;
+  for (const auto & pair : disallowed_contact_pairs) {
+    if (i++ > 0) {
+      pairs_stream << ", ";
+    }
+    pairs_stream << pair;
+  }
+  RCLCPP_WARN(
+    logger,
+    "%s disallowed contact pairs in current scene: [%s].",
+    context.c_str(),
+    pairs_stream.str().c_str());
+}
+
 void log_goal_failure_diagnostics(
   const rclcpp::Logger & logger,
   moveit_cpp::MoveItCppPtr moveit_cpp,
@@ -842,6 +923,8 @@ bool MoveitCppGraspExecution::move_to(
   // All strategies failed, exiting
   if (!result) {
     log_goal_failure_diagnostics(LOGGER, moveit_cpp_, option.planning_group, ee_link, pose);
+    log_current_state_disallowed_contacts(
+      LOGGER, moveit_cpp_, option.planning_group, "Planning failure diagnostics");
     return false;
   }
 
@@ -961,6 +1044,8 @@ bool MoveitCppGraspExecution::move_to(
   // All strategies failed, exiting
   if (!result) {
     log_goal_failure_diagnostics(LOGGER, moveit_cpp_, planning_group, ee_link, pose);
+    log_current_state_disallowed_contacts(
+      LOGGER, moveit_cpp_, planning_group, "Planning failure diagnostics");
     return false;
   }
 
@@ -1436,42 +1521,18 @@ void MoveitCppGraspExecution::prepare_attached_object_for_release_planning(
     target_id.c_str(),
     ee_link.c_str());
 
-  planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
-
-  moveit_msgs::msg::CollisionObject remove_world_object;
-  remove_world_object.id = target_id;
-  remove_world_object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
-  scene->processCollisionObjectMsg(remove_world_object);
-  RCLCPP_INFO(
-    LOGGER,
-    "Removed world collision object for attached target '%s' (if present).",
-    target_id.c_str());
-
-  auto & acm = scene->getAllowedCollisionMatrixNonConst();
-  const std::vector<std::string> octomap_ids = {"<octomap>", "octomap"};
-  const std::vector<std::string> attached_ids = detail::get_attached_object_acm_ids(target_id);
-  for (const auto & attached_id : attached_ids) {
-    for (const auto & octomap_id : octomap_ids) {
-      acm.setEntry(attached_id, octomap_id, true);
-    }
-  }
-  RCLCPP_INFO(
-    LOGGER,
-    "Allowed attached target contact with octomap during release start state for target '%s'.",
-    target_id.c_str());
-
-  for (const auto & support_link : release_allowed_touch_links_) {
-    if (support_link.empty()) {
-      continue;
-    }
-    for (const auto & attached_id : attached_ids) {
-      acm.setEntry(attached_id, support_link, true);
-    }
+  {
+    planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+    moveit_msgs::msg::CollisionObject remove_world_object;
+    remove_world_object.id = target_id;
+    remove_world_object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+    scene->processCollisionObjectMsg(remove_world_object);
     RCLCPP_INFO(
       LOGGER,
-      "Allowed attached target contact with support link '%s' during release planning.",
-      support_link.c_str());
+      "Removed world collision object for attached target '%s' (if present).",
+      target_id.c_str());
   }
+  apply_release_planning_allowed_contacts(target_id);
 }
 
 void MoveitCppGraspExecution::apply_grasp_planning_allowed_contacts(const std::string & target_id)
@@ -1550,6 +1611,57 @@ void MoveitCppGraspExecution::clear_grasp_planning_allowed_contacts(const std::s
   planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
   auto & acm = scene->getAllowedCollisionMatrixNonConst();
   detail::set_allowed_collision_pairs(acm, allowed_pairs, false);
+}
+
+void MoveitCppGraspExecution::apply_release_planning_allowed_contacts(const std::string & target_id)
+{
+  if (target_id.empty()) {
+    return;
+  }
+
+  std::vector<std::pair<std::string, std::string>> allowed_pairs =
+    detail::get_release_planning_allowed_pairs(
+    target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
+  const std::string unprefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id.substr(1) : target_id;
+  const std::string prefixed_target_id =
+    !target_id.empty() && target_id.front() == '#' ? target_id : ("#" + target_id);
+  if (unprefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_release_planning_allowed_pairs(
+      unprefixed_target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+  if (prefixed_target_id != target_id) {
+    auto extra_pairs = detail::get_release_planning_allowed_pairs(
+      prefixed_target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
+    allowed_pairs.insert(allowed_pairs.end(), extra_pairs.begin(), extra_pairs.end());
+  }
+
+  {
+    planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
+    auto & acm = scene->getAllowedCollisionMatrixNonConst();
+    detail::set_allowed_collision_pairs(acm, allowed_pairs, true);
+  }
+
+  std::set<std::string> unique_log_pairs;
+  auto base_pairs = detail::get_release_planning_allowed_pairs(
+    target_id, grasp_planning_allowed_touch_links_, release_allowed_touch_links_);
+  for (const auto & pair : base_pairs) {
+    unique_log_pairs.insert(pair.first + "<->" + pair.second);
+  }
+  std::ostringstream log_stream;
+  size_t index = 0;
+  for (const auto & pair : unique_log_pairs) {
+    if (index++ > 0) {
+      log_stream << ", ";
+    }
+    log_stream << pair;
+  }
+  RCLCPP_INFO(
+    LOGGER,
+    "Applied release planning allowed contacts for target %s: [%s]",
+    target_id.c_str(),
+    log_stream.str().c_str());
 }
 
 void MoveitCppGraspExecution::remove_object(

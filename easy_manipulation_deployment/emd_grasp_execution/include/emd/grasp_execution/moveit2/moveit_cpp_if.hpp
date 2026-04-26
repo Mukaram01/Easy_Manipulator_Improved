@@ -57,6 +57,10 @@ std::vector<std::string> get_attached_object_acm_ids(const std::string & target_
 std::vector<std::pair<std::string, std::string>> get_grasp_planning_allowed_pairs(
   const std::string & target_id,
   const std::vector<std::string> & allowed_touch_links);
+std::vector<std::pair<std::string, std::string>> get_release_planning_allowed_pairs(
+  const std::string & target_id,
+  const std::vector<std::string> & fingertip_touch_links,
+  const std::vector<std::string> & release_allowed_touch_links);
 void set_allowed_collision_pairs(
   collision_detection::AllowedCollisionMatrix & acm,
   const std::vector<std::pair<std::string, std::string>> & pairs,
@@ -254,6 +258,7 @@ public:
     const std::string & target_id,
     const std::string & ee_link);
   void apply_grasp_planning_allowed_contacts(const std::string & target_id);
+  void apply_release_planning_allowed_contacts(const std::string & target_id);
   void clear_grasp_planning_allowed_contacts(const std::string & target_id);
 
   bool execute(
