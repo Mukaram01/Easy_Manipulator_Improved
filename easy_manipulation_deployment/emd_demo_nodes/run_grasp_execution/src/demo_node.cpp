@@ -717,11 +717,13 @@ public:
         node_->get_logger(),
         "Candidate %zu/%zu target=%s passed IK/collision precheck. Planning with moveit_link=%s.",
         pose_index + 1, grasp_method.grasp_poses.size(), target_id.c_str(), moveit_link.c_str());
+      this->apply_grasp_planning_allowed_contacts(target_id);
       result = this->plan_and_execute_job(
         options,
         "Grasp location",
         target_id,
         moveit_goal_pose);
+      this->clear_grasp_planning_allowed_contacts(target_id);
 
       if (result) {
         selected_moveit_grasp_pose = moveit_goal_pose;

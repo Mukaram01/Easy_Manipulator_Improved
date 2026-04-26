@@ -32,6 +32,7 @@
 #include "moveit/trajectory_processing/iterative_time_parameterization.h"
 #include "moveit/trajectory_processing/time_optimal_trajectory_generation.h"
 #include "moveit/collision_detection/world.h"
+#include "moveit/collision_detection/collision_matrix.h"
 
 #include "moveit_msgs/msg/attached_collision_object.hpp"
 #include "moveit_msgs/msg/collision_object.hpp"
@@ -53,6 +54,13 @@ geometry_msgs::msg::Pose get_object_pose_from_world_object(
   const rclcpp::Logger & logger);
 
 std::vector<std::string> get_attached_object_acm_ids(const std::string & target_id);
+std::vector<std::pair<std::string, std::string>> get_grasp_planning_allowed_pairs(
+  const std::string & target_id,
+  const std::vector<std::string> & allowed_touch_links);
+void set_allowed_collision_pairs(
+  collision_detection::AllowedCollisionMatrix & acm,
+  const std::vector<std::pair<std::string, std::string>> & pairs,
+  bool allow);
 
 }  // namespace detail
 
@@ -245,6 +253,8 @@ public:
   void prepare_attached_object_for_release_planning(
     const std::string & target_id,
     const std::string & ee_link);
+  void apply_grasp_planning_allowed_contacts(const std::string & target_id);
+  void clear_grasp_planning_allowed_contacts(const std::string & target_id);
 
   bool execute(
     const robot_trajectory::RobotTrajectoryPtr & traj,
@@ -294,6 +304,7 @@ protected:
   bool load_octomap_requested_{false};
   bool world_geometry_monitor_started_{false};
   std::vector<std::string> release_allowed_touch_links_;
+  std::vector<std::string> grasp_planning_allowed_touch_links_;
 };
 }  // namespace moveit2
 
