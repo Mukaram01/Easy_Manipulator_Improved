@@ -66,6 +66,12 @@ if(BUILD_TESTING)
   ament_add_gtest(test_grasp_precheck_collision_filter
     test/test_grasp_precheck_collision_filter.cpp)
   target_include_directories(test_grasp_precheck_collision_filter PUBLIC include)
+  ament_add_gtest(test_grasp_candidate_utils
+    test/test_grasp_candidate_utils.cpp)
+  target_include_directories(test_grasp_candidate_utils PUBLIC include)
+  ament_target_dependencies(test_grasp_candidate_utils
+    tf2_geometry_msgs
+  )
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

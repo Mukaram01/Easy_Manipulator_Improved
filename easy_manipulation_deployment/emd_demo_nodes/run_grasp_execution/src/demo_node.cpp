@@ -22,6 +22,7 @@
 #include <sstream>
 #include <thread>
 #include <set>
+#include <map>
 #include <regex>
 #include <stdexcept>
 #include <unordered_set>
@@ -51,6 +52,7 @@
 #include "moveit/planning_scene_monitor/planning_scene_monitor.h"
 #include "tf2_eigen/tf2_eigen.hpp"
 #include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
+#include "run_grasp_execution/grasp_candidate_utils.hpp"
 
 
 namespace grasp_execution
@@ -393,6 +395,24 @@ public:
       release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<int>(
+      min_grasp_candidate_count_,
+      "min_grasp_candidate_count",
+      node,
+      node->get_logger(),
+      8);
+    grasp_execution::declare_or_get_param<double>(
+      grasp_min_tool_z_warn_,
+      "grasp_min_tool_z_warn",
+      node,
+      node->get_logger(),
+      0.18);
+    grasp_execution::declare_or_get_param<bool>(
+      reject_below_grasp_min_tool_z_warn_,
+      "grasp_reject_below_min_tool_z_warn",
+      node,
+      node->get_logger(),
+      false);
     grasp_execution::declare_or_get_param<bool>(
       workspace_bounds_.enabled,
       "grasp_workspace_filter.enabled",
@@ -674,27 +694,50 @@ public:
       return false;
     }
 
+    auto candidate_poses = run_grasp_execution::expand_grasp_candidates_with_fallbacks(
+      grasp_method.grasp_poses, static_cast<std::size_t>(std::max(1, min_grasp_candidate_count_)));
+    if (candidate_poses.size() != grasp_method.grasp_poses.size()) {
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Expanded grasp candidates for target %s from %zu to %zu (min_grasp_candidate_count=%d).",
+        target_id.c_str(),
+        grasp_method.grasp_poses.size(),
+        candidate_poses.size(),
+        min_grasp_candidate_count_);
+    } else {
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "Using %zu grasp candidates for target %s (min_grasp_candidate_count=%d).",
+        candidate_poses.size(),
+        target_id.c_str(),
+        min_grasp_candidate_count_);
+    }
+
     bool result = false;
     geometry_msgs::msg::PoseStamped selected_moveit_grasp_pose;
     bool selected_moveit_grasp_pose_valid = false;
     bool any_candidate_passed_precheck = false;
+    std::map<std::string, std::size_t> rejection_summary;
+    std::string last_rejection_reason;
 
-    for (size_t pose_index = 0; pose_index < grasp_method.grasp_poses.size(); ++pose_index) {
+    for (size_t pose_index = 0; pose_index < candidate_poses.size(); ++pose_index) {
       if (!rclcpp::ok()) {
         set_last_failure_message("Execution interrupted during candidate evaluation.");
         return false;
       }
-      const auto & grasp_pose = grasp_method.grasp_poses[pose_index];
+      const auto & grasp_pose = candidate_poses[pose_index];
       geometry_msgs::msg::PoseStamped moveit_goal_pose;
       std::string rejection_reason;
       const bool precheck_ok = precheck_and_prepare_grasp_candidate(
-        target_id, pose_index, grasp_method.grasp_poses.size(), planning_group, moveit_link, grasp_frame,
+        target_id, pose_index, candidate_poses.size(), planning_group, moveit_link, grasp_frame,
         grasp_pose, moveit_goal_pose, rejection_reason);
       if (!precheck_ok) {
+        ++rejection_summary[run_grasp_execution::categorize_candidate_rejection_reason(rejection_reason)];
+        last_rejection_reason = rejection_reason;
         RCLCPP_WARN(
           node_->get_logger(),
           "Candidate %zu/%zu rejected for target %s: %s",
-          pose_index + 1, grasp_method.grasp_poses.size(), target_id.c_str(), rejection_reason.c_str());
+          pose_index + 1, candidate_poses.size(), target_id.c_str(), rejection_reason.c_str());
         continue;
       }
       any_candidate_passed_precheck = true;
@@ -705,18 +748,20 @@ public:
           "Rejected candidate %zu/%zu for target %s: outside workspace bounds "
           "[x:(%.3f, %.3f) y:(%.3f, %.3f) z:(%.3f, %.3f)].",
           pose_index + 1,
-          grasp_method.grasp_poses.size(),
+          candidate_poses.size(),
           target_id.c_str(),
           workspace_bounds_.min_x, workspace_bounds_.max_x,
           workspace_bounds_.min_y, workspace_bounds_.max_y,
           workspace_bounds_.min_z, workspace_bounds_.max_z);
+        ++rejection_summary["planner failure"];
+        last_rejection_reason = "outside workspace bounds";
         continue;
       }
 
       RCLCPP_INFO(
         node_->get_logger(),
         "Candidate %zu/%zu target=%s passed IK/collision precheck. Planning with moveit_link=%s.",
-        pose_index + 1, grasp_method.grasp_poses.size(), target_id.c_str(), moveit_link.c_str());
+        pose_index + 1, candidate_poses.size(), target_id.c_str(), moveit_link.c_str());
       this->apply_grasp_planning_allowed_contacts(target_id);
       result = this->plan_and_execute_job(
         options,
@@ -731,22 +776,43 @@ public:
         RCLCPP_INFO(
           node_->get_logger(),
           "Grasp planning/execution succeeded for target %s using candidate %zu/%zu.",
-          target_id.c_str(), pose_index + 1, grasp_method.grasp_poses.size());
+          target_id.c_str(), pose_index + 1, candidate_poses.size());
         break;
       }
 
+      ++rejection_summary["planner failure"];
+      last_rejection_reason = "planner failure";
       RCLCPP_WARN(
         node_->get_logger(),
         "Grasp planning/execution failed for target %s using candidate %zu/%zu. Trying next candidate.",
-        target_id.c_str(), pose_index + 1, grasp_method.grasp_poses.size());
+        target_id.c_str(), pose_index + 1, candidate_poses.size());
+    }
+
+    if (!rejection_summary.empty()) {
+      std::vector<std::string> grouped_reasons;
+      grouped_reasons.reserve(rejection_summary.size());
+      for (const auto & entry : rejection_summary) {
+        grouped_reasons.push_back(entry.first + "=" + std::to_string(entry.second));
+      }
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Candidate rejection summary for target %s: %s",
+        target_id.c_str(),
+        boost::algorithm::join(grouped_reasons, ", ").c_str());
     }
 
     if (!any_candidate_passed_precheck) {
-      set_last_failure_message("All grasp pose candidates failed IK/collision precheck.");
+      if (grasp_method.grasp_poses.size() == 1 && !last_rejection_reason.empty()) {
+        set_last_failure_message(
+          "All candidates rejected because only 1 candidate was available and it failed: " +
+          last_rejection_reason);
+      } else {
+        set_last_failure_message("All grasp pose candidates failed IK/collision precheck.");
+      }
       RCLCPP_ERROR(
         node_->get_logger(),
         "All %zu grasp pose candidates failed IK/collision precheck for target %s.",
-        grasp_method.grasp_poses.size(), target_id.c_str());
+        candidate_poses.size(), target_id.c_str());
       return false;
     }
 
@@ -755,7 +821,7 @@ public:
       RCLCPP_ERROR(
         node_->get_logger(),
         "All %zu grasp pose candidates failed for target %s.",
-        grasp_method.grasp_poses.size(), target_id.c_str());
+        candidate_poses.size(), target_id.c_str());
       return false;
     }
     // ------------------- Attach grasp object to robot --------------------------
@@ -926,6 +992,24 @@ private:
       format_pose_xyz_quat_rpy(out_moveit_goal_pose.pose).c_str(),
       translation_distance, ik_ok ? "true" : "false");
 
+    if (out_moveit_goal_pose.pose.position.z < grasp_min_tool_z_warn_) {
+      const char * severity = reject_below_grasp_min_tool_z_warn_ ? "rejecting" : "warning-only";
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Low-height grasp candidate target=%s idx=%zu/%zu transformed_tool_z=%.6f below "
+        "grasp_min_tool_z_warn=%.6f (%s).",
+        target_id.c_str(),
+        candidate_index + 1,
+        candidate_total,
+        out_moveit_goal_pose.pose.position.z,
+        grasp_min_tool_z_warn_,
+        severity);
+      if (reject_below_grasp_min_tool_z_warn_) {
+        rejection_reason = "transformed moveit goal pose below configured minimum safe tool z.";
+        return false;
+      }
+    }
+
     if (!ik_ok) {
       rejection_reason = "IK failed for transformed moveit goal.";
       return false;
@@ -1038,6 +1122,9 @@ private:
   std::string planning_frame_;
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
+  int min_grasp_candidate_count_{8};
+  double grasp_min_tool_z_warn_{0.18};
+  bool reject_below_grasp_min_tool_z_warn_{false};
   WorkspaceBounds workspace_bounds_;
   std::vector<std::string> grasp_precheck_allowed_touch_links_;
   std::vector<std::string> grasp_precheck_allowed_collision_ids_;
