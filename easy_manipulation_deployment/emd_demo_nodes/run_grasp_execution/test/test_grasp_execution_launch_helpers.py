@@ -301,7 +301,7 @@ def test_load_scene_environment_supports_known_generated_scene_packages(grasp_la
 @pytest.mark.parametrize(
     ("scene_package", "expected_brand", "expected_moveit_link", "expected_grasp_frame"),
     [
-        ("ur5_2f_test", "robotiq_2f", "tool0", "gripper_base_link"),
+        ("ur5_2f_test", "robotiq_2f", "tool0", "ee_palm"),
         ("ur5_3f_test", "robotiq_3f", "tool0", "palm"),
         ("suction_test", "suction_cup", "tool0", "wrist_fixture"),
         ("ur5_airpick4_test", "suction_cup", "tool0", "gripper_base_link"),
@@ -332,6 +332,18 @@ def test_build_workcell_context_maps_scene_end_effector_to_planner_brand_and_lin
     assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.brand"] == expected_brand
     assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.link"] == expected_moveit_link
     assert ros_params[f"groups.manipulator.end_effectors.{expected_brand}.grasp_frame"] == expected_grasp_frame
+
+
+def test_derive_workcell_grasp_frame_prefers_ee_palm_for_robotiq_85_two_finger_metadata(grasp_launch_module):
+    end_effector = {
+        "name": "custom_gripper",
+        "brand": "robotiq_85",
+        "ee_type": "parallel",
+        "attributes": {"fingers": 2},
+        "base_link": "gripper_base_link",
+    }
+
+    assert grasp_launch_module.derive_workcell_grasp_frame(end_effector) == "ee_palm"
 
 
 def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_end_effector(grasp_launch_module):
