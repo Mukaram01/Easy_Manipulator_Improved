@@ -72,6 +72,9 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_grasp_candidate_utils
     tf2_geometry_msgs
   )
+  ament_add_gtest(test_home_return_utils
+    test/test_home_return_utils.cpp)
+  target_include_directories(test_home_return_utils PUBLIC include)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
