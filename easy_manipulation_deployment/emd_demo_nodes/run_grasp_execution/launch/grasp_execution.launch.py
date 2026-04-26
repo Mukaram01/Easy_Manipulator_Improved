@@ -580,9 +580,32 @@ def launch_setup(context, *args, **kwargs):
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager",
     }
 
+    sensors_3d_config = require_yaml_mapping(
+        load_yaml(PACKAGE_NAME, "config/sensors_3d.yaml"),
+        "grasp_execution_node",
+        PACKAGE_NAME,
+        "config/sensors_3d.yaml",
+    )
+    node_section = require_yaml_mapping(
+        sensors_3d_config.get("grasp_execution_node"),
+        "grasp_execution_node",
+        PACKAGE_NAME,
+        "config/sensors_3d.yaml",
+    )
+    sensor_ros_params = require_yaml_mapping(
+        node_section.get("ros__parameters"),
+        "ros__parameters",
+        PACKAGE_NAME,
+        "config/sensors_3d.yaml",
+    )
+    sensor_ros_params["octomap_frame"] = planning_frame
+    sensors_yaml = write_temp_yaml_params(sensors_3d_config, prefix="sensors_3d_")
+    logger.info(
+        f"Generated sanitized sensors params file at '{sensors_yaml}' with octomap_frame='{planning_frame}'."
+    )
+
     grasp_execution_yaml = os.path.join(run_share, "config", "grasp_execution.yaml")
     rviz_config_file = os.path.join(run_share, "config", "grasp_execution.rviz")
-    sensors_yaml = os.path.join(run_share, "config", "sensors_3d.yaml")
 
     grasp_execution_demo_node = Node(
         name="grasp_execution_node",
