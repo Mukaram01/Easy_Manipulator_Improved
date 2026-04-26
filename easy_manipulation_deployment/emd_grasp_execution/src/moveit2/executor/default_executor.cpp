@@ -22,6 +22,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "emd/grasp_execution/moveit2/executor/default_executor.hpp"
+#include "emd/grasp_execution/utils.hpp"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
 
 namespace grasp_execution
@@ -110,6 +111,15 @@ bool DefaultExecutor::load(
   const std::string & /*name*/)
 {
   trajectory_execution_manager_ = moveit_cpp->getTrajectoryExecutionManagerNonConst();
+  auto node = moveit_cpp->getNode();
+  if (node) {
+    grasp_execution::declare_or_get_param<double>(
+      execution_timeout_padding_s_,
+      "execution_timeout_padding_s",
+      node,
+      logger_,
+      0.5);
+  }
   // Force explicit bool operator
   return trajectory_execution_manager_ ? true : false;
 }
@@ -154,7 +164,8 @@ bool DefaultExecutor::run(
   const double expected_duration = robot_trajectory.getDuration();
   const double requested_timeout =
     expected_duration * get_allowed_execution_duration_scaling(*trajectory_execution_manager_) +
-    get_allowed_goal_duration_margin(*trajectory_execution_manager_);
+    get_allowed_goal_duration_margin(*trajectory_execution_manager_) +
+    execution_timeout_padding_s_;
   std::atomic_bool execution_complete(false);
   std::atomic_bool timed_out(false);
   std::mutex status_mutex;
@@ -179,8 +190,10 @@ bool DefaultExecutor::run(
       const auto last_status = trajectory_execution_manager_->getLastExecutionStatus();
       RCLCPP_WARN(
         logger_,
-        "Execution timed out after %.3f s (requested %.3f s). Last action state: %s",
-        elapsed_seconds, requested_timeout, last_status.asString().c_str());
+        "Execution timed out after %.3f s (requested %.3f s including %.3f s timeout padding). "
+        "Last action state: %s",
+        elapsed_seconds, requested_timeout, execution_timeout_padding_s_,
+        last_status.asString().c_str());
       trajectory_execution_manager_->stopExecution();
       timed_out = true;
       break;

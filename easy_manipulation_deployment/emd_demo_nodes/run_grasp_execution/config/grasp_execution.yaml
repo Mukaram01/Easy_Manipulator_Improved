@@ -32,6 +32,11 @@ grasp_execution_node:
       max_velocity_scaling_factor: 1.0
       max_acceleration_scaling_factor: 1.0
 
+    # Extra timeout headroom (seconds) added by grasp_execution/DefaultExecutor
+    # on top of MoveIt trajectory_execution timeout computation. This prevents
+    # immediate timeout/cancel when the controller has already reported SUCCEEDED.
+    execution_timeout_padding_s: 0.5
+
     # --- Release pose configuration ---
     # x-axis offset (metres) applied to the current end-effector position to
     # determine the drop-off point. Negative values move the arm in the

@@ -47,6 +47,7 @@ public:
 private:
   const rclcpp::Logger logger_;
   trajectory_execution_manager::TrajectoryExecutionManagerPtr trajectory_execution_manager_;
+  double execution_timeout_padding_s_{0.5};
 };
 
 }  // namespace moveit2
