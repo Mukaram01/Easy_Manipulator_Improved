@@ -57,3 +57,13 @@ target_link_libraries(test_pose_transform_utils
 target_compile_features(test_pose_transform_utils
   PRIVATE cxx_std_17
 )
+
+ament_add_gtest(test_release_collision_ids
+  test_release_collision_ids.cpp
+)
+target_link_libraries(test_release_collision_ids
+  moveit_cpp_grasp_execution_interface
+)
+target_compile_features(test_release_collision_ids
+  PRIVATE cxx_std_17
+)

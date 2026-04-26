@@ -52,6 +52,8 @@ geometry_msgs::msg::Pose get_object_pose_from_world_object(
   const std::string & object_id,
   const rclcpp::Logger & logger);
 
+std::vector<std::string> get_attached_object_acm_ids(const std::string & target_id);
+
 }  // namespace detail
 
 struct JmgContext
@@ -291,6 +293,7 @@ protected:
       grasp_execution::moveit2::Executor>> executor_loader_;
   bool load_octomap_requested_{false};
   bool world_geometry_monitor_started_{false};
+  std::vector<std::string> release_allowed_touch_links_;
 };
 }  // namespace moveit2
 
