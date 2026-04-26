@@ -53,6 +53,7 @@
 #include "tf2_eigen/tf2_eigen.hpp"
 #include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
 #include "run_grasp_execution/grasp_candidate_utils.hpp"
+#include "run_grasp_execution/home_return_utils.hpp"
 
 
 namespace grasp_execution
@@ -395,6 +396,30 @@ public:
       release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<bool>(
+      home_return_use_safe_intermediate_,
+      "home_return.use_safe_intermediate",
+      node,
+      node->get_logger(),
+      false);
+    grasp_execution::declare_or_get_param<int>(
+      home_return_max_attempts_,
+      "home_return.max_attempts",
+      node,
+      node->get_logger(),
+      5);
+    grasp_execution::declare_or_get_param<std::vector<double>>(
+      home_return_safe_joint_state_,
+      "home_return.safe_joint_state",
+      node,
+      node->get_logger(),
+      std::vector<double>{});
+    grasp_execution::declare_or_get_param<double>(
+      home_return_planning_time_s_,
+      "home_return.planning_time",
+      node,
+      node->get_logger(),
+      2.0);
     grasp_execution::declare_or_get_param<int>(
       min_grasp_candidate_count_,
       "min_grasp_candidate_count",
@@ -864,12 +889,8 @@ public:
     prompt_job_start(
       node_->get_logger(), target_id,
       "Move back to home");
-    result = move_to(
-      options.non_deterministic_max_attempts,
-      planning_group, *home_state);
-
+    result = run_home_return_sequence(target_id, planning_group, *home_state);
     prompt_job_end(node_->get_logger(), result);
-
     if (!result) {
       return false;
     }
@@ -1114,6 +1135,97 @@ private:
     }
   }
 
+  bool move_to_joint_waypoint_with_retries(
+    const std::string & planning_group,
+    const moveit::core::RobotState & goal_state,
+    int max_attempts,
+    const std::string & step_name)
+  {
+    const int bounded_attempts = std::max(1, max_attempts);
+    for (int attempt = 1; attempt <= bounded_attempts && rclcpp::ok(); ++attempt) {
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "[HomeReturn] %s attempt %d/%d (planning_time=%.2fs).",
+        step_name.c_str(),
+        attempt,
+        bounded_attempts,
+        home_return_planning_time_s_);
+      if (move_to(1, planning_group, goal_state, true)) {
+        RCLCPP_INFO(
+          node_->get_logger(),
+          "[HomeReturn] %s succeeded on attempt %d/%d.",
+          step_name.c_str(),
+          attempt,
+          bounded_attempts);
+        return true;
+      }
+      const std::string reason = run_grasp_execution::default_home_return_failure_reason(
+        step_name, attempt, bounded_attempts);
+      RCLCPP_WARN(node_->get_logger(), "[HomeReturn] %s", reason.c_str());
+    }
+    RCLCPP_ERROR(
+      node_->get_logger(),
+      "[HomeReturn] %s failed after %d attempt(s).",
+      step_name.c_str(),
+      bounded_attempts);
+    return false;
+  }
+
+  bool run_home_return_sequence(
+    const std::string & target_id,
+    const std::string & planning_group,
+    const moveit::core::RobotState & home_state)
+  {
+    (void)target_id;
+    if (run_grasp_execution::safe_intermediate_enabled(
+        home_return_use_safe_intermediate_, home_return_safe_joint_state_))
+    {
+      auto current_state = get_curr_state();
+      if (!current_state) {
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "[HomeReturn] Could not read current state for safe intermediate waypoint. "
+          "Skipping safe intermediate and continuing to home.");
+      } else {
+        const auto * jmg = current_state->getJointModelGroup(planning_group);
+        if (!jmg) {
+          RCLCPP_WARN(
+            node_->get_logger(),
+            "[HomeReturn] Planning group '%s' not found for safe intermediate waypoint. "
+            "Skipping safe intermediate and continuing to home.",
+            planning_group.c_str());
+        } else {
+          const auto variable_names = jmg->getVariableNames();
+          if (home_return_safe_joint_state_.size() != variable_names.size()) {
+            RCLCPP_WARN(
+              node_->get_logger(),
+              "[HomeReturn] home_return.safe_joint_state has %zu values, expected %zu for "
+              "group '%s'. Skipping safe intermediate and continuing to home.",
+              home_return_safe_joint_state_.size(),
+              variable_names.size(),
+              planning_group.c_str());
+          } else {
+            moveit::core::RobotState safe_state(*current_state);
+            for (size_t i = 0; i < variable_names.size(); ++i) {
+              safe_state.setVariablePosition(variable_names[i], home_return_safe_joint_state_[i]);
+            }
+            if (!move_to_joint_waypoint_with_retries(
+                planning_group,
+                safe_state,
+                home_return_max_attempts_,
+                "Move to safe intermediate waypoint"))
+            {
+              return false;
+            }
+          }
+        }
+      }
+    }
+
+    return move_to_joint_waypoint_with_retries(
+      planning_group, home_state, home_return_max_attempts_, "Move back to home");
+  }
+
   rclcpp::Node::SharedPtr node_;
   std::shared_ptr<emd::EndEffectorExecutioninterface> end_effector_interface_;
   emd::EndEffectorExecutionContext ee_context_;
@@ -1122,6 +1234,10 @@ private:
   std::string planning_frame_;
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
+  bool home_return_use_safe_intermediate_{false};
+  int home_return_max_attempts_{5};
+  std::vector<double> home_return_safe_joint_state_;
+  double home_return_planning_time_s_{2.0};
   int min_grasp_candidate_count_{8};
   double grasp_min_tool_z_warn_{0.18};
   bool reject_below_grasp_min_tool_z_warn_{false};

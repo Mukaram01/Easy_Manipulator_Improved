@@ -1673,14 +1673,28 @@ void MoveitCppGraspExecution::apply_release_planning_allowed_contacts(const std:
 void MoveitCppGraspExecution::remove_object(
   const std::string & target_id)
 {
+  bool world_object_exists = false;
+  {
+    planning_scene_monitor::LockedPlanningSceneRO scene(moveit_cpp_->getPlanningSceneMonitor());
+    world_object_exists = scene->getWorld()->hasObject(target_id);
+  }
+  if (!world_object_exists) {
+    RCLCPP_DEBUG(
+      LOGGER,
+      "World object '%s' is already absent before remove; skipping REMOVE operation.",
+      target_id.c_str());
+  }
+
   moveit_msgs::msg::CollisionObject object;
   object.id = target_id;
   object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
 
-  // Add object to planning scene
+  // Apply scene cleanup and ACM cleanup.
   {    // Lock PlanningScene
     planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_->getPlanningSceneMonitor());
-    scene->processCollisionObjectMsg(object);
+    if (world_object_exists) {
+      scene->processCollisionObjectMsg(object);
+    }
 
     auto & acm = scene->getAllowedCollisionMatrixNonConst();
     const auto attached_ids = detail::get_attached_object_acm_ids(target_id);

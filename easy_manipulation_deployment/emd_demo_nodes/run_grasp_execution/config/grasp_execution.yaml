@@ -47,6 +47,14 @@ grasp_execution_node:
     # z-height so the arm clears any surface on the return move.
     release_use_grasp_z: true
 
+    # --- Home return configuration ---
+    # Optional safe intermediate joint waypoint between detach and home.
+    home_return:
+      use_safe_intermediate: false
+      max_attempts: 5
+      safe_joint_state: []
+      planning_time: 2.0
+
     # Optional simple workspace filter to reject unreachable grasp candidates
     # before invoking OMPL.
     grasp_workspace_filter:
