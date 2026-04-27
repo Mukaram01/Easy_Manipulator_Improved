@@ -1199,3 +1199,43 @@ This package uses the following external dependencies (fetched via `dependencies
 ## License
 
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+
+### Create a cell definition with the wizard
+
+Create `cell_definition/v1` YAML with guided prompts or CLI options.
+
+```bash
+python3 scripts/create_cell_definition_wizard.py
+```
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_colour \
+  --cell-name "Colour Sorting Demo" \
+  --cell-id colour_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/colour_sorting_demo.cell.yaml \
+  --force
+```
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_shape \
+  --cell-name "Shape Sorting Demo" \
+  --cell-id shape_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/shape_sorting_demo.cell.yaml \
+  --generate-workcell \
+  --workcell-output-dir /tmp/generated_workcells \
+  --package-name generated_shape_sorting_demo \
+  --force
+```
+
+```bash
+python3 scripts/validate_cell_definition.py /tmp/shape_sorting_demo.cell.yaml
+python3 scripts/export_workcell_bundle.py generated_shape_sorting_demo --force
+```

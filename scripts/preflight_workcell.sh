@@ -63,6 +63,21 @@ echo
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 "${SCRIPT_DIR}/check_generated_workcells.sh"
 set +e
+CELL_WIZARD_OUTPUT="$(${SCRIPT_DIR}/check_cell_definition_wizard.sh)"
+CELL_WIZARD_EXIT=$?
+set -e
+echo "${CELL_WIZARD_OUTPUT}"
+if [[ ${CELL_WIZARD_EXIT} -eq 0 ]]; then
+  if grep -q "Cell definition wizard checks: WARN" <<<"${CELL_WIZARD_OUTPUT}"; then
+    echo "Cell definition wizard checks: WARN"
+  else
+    echo "Cell definition wizard checks: PASS"
+  fi
+else
+  echo "Cell definition wizard checks: FAIL"
+  exit ${CELL_WIZARD_EXIT}
+fi
+set +e
 CELL_DEF_OUTPUT="$(${SCRIPT_DIR}/check_cell_definitions.sh)"
 CELL_DEF_EXIT=$?
 set -e

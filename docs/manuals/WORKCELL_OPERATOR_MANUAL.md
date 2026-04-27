@@ -679,3 +679,53 @@ Suggested future inserts:
 - `[Future screenshot: grasp candidate in RViz]`
 
 No image files are required for this PR.
+
+## Create a cell definition with the wizard
+
+### Interactive mode
+
+```bash
+python3 scripts/create_cell_definition_wizard.py
+```
+
+### Non-interactive sort-by-colour mode
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_colour \
+  --cell-name "Colour Sorting Demo" \
+  --cell-id colour_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/colour_sorting_demo.cell.yaml \
+  --force
+```
+
+### Generate workcell package directly from wizard
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_shape \
+  --cell-name "Shape Sorting Demo" \
+  --cell-id shape_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/shape_sorting_demo.cell.yaml \
+  --generate-workcell \
+  --workcell-output-dir /tmp/generated_workcells \
+  --package-name generated_shape_sorting_demo \
+  --force
+```
+
+### Operator workflow
+
+1. Create cell definition with wizard.
+2. Validate cell definition.
+3. Generate workcell package.
+4. Validate generated scene.
+5. Dry-run task recipe.
+6. Generate execution plan.
+7. Export commissioning bundle.
+8. Only then review physical safety/reachability before real robot use.

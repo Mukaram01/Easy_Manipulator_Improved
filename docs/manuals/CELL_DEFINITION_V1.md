@@ -127,3 +127,51 @@ Generated package folder (example):
 - `/tmp/generated_workcells/generated_colour_sorting_cell/generated/validation_report.md`
 
 Safety note: generated package is for offline review and commissioning preparation. It is not proof of physical reachability, collision-free runtime behavior, or machine safety compliance.
+
+## Create a cell definition with the wizard
+
+Use the guided wizard to build valid `cell_definition/v1` YAML without hand-authoring YAML.
+
+### Interactive mode
+
+```bash
+python3 scripts/create_cell_definition_wizard.py
+```
+
+### Non-interactive sort-by-colour
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_colour \
+  --cell-name "Colour Sorting Demo" \
+  --cell-id colour_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/colour_sorting_demo.cell.yaml \
+  --force
+```
+
+### Generate a workcell directly from the wizard
+
+```bash
+python3 scripts/create_cell_definition_wizard.py \
+  --template sort_by_shape \
+  --cell-name "Shape Sorting Demo" \
+  --cell-id shape_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output /tmp/shape_sorting_demo.cell.yaml \
+  --generate-workcell \
+  --workcell-output-dir /tmp/generated_workcells \
+  --package-name generated_shape_sorting_demo \
+  --force
+```
+
+### Validate generated YAML and export a bundle
+
+```bash
+python3 scripts/validate_cell_definition.py /tmp/shape_sorting_demo.cell.yaml
+python3 scripts/export_workcell_bundle.py generated_shape_sorting_demo --force
+```
