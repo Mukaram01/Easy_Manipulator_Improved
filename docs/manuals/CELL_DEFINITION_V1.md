@@ -112,7 +112,7 @@ This runs validation and preview generation for all `tests/fixtures/cell_definit
 ```bash
 python3 scripts/generate_workcell_from_cell_definition.py   tests/fixtures/cell_definition_sort_by_colour.yaml   --output-dir /tmp/generated_workcells   --package-name generated_colour_sorting_cell   --force
 
-python3 scripts/validate_scene_contract.py generated_colour_sorting_cell
+python3 scripts/validate_scene_contract.py /tmp/generated_workcells/generated_colour_sorting_cell/scene_manifest.yaml
 ./scripts/check_generated_workcells.sh
 ```
 

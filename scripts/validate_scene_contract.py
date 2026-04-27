@@ -704,6 +704,60 @@ def _check_declared_files(manifest: dict[str, Any], share_dir: str, errors: list
                 )
 
 
+def validate_scene_manifest_path(manifest_path: str, package_label: str | None = None) -> tuple[ValidationResult, int]:
+    package = package_label or os.path.basename(os.path.dirname(os.path.abspath(manifest_path))) or "direct_manifest"
+    if not os.path.isfile(manifest_path):
+        result = ValidationResult(
+            package=package,
+            manifest_path=manifest_path,
+            parser="n/a",
+            errors=[f"Scene manifest path does not exist: {manifest_path}"],
+        )
+        return result, 1
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    notes: list[str] = ["Validated manifest directly from filesystem path."]
+    try:
+        manifest, parser_name, parser_notes = _read_manifest(manifest_path)
+        notes.extend(parser_notes)
+    except Exception as exc:
+        result = ValidationResult(
+            package=package,
+            manifest_path=manifest_path,
+            parser="fallback" if _pyyaml is None else "pyyaml",
+            errors=[f"Failed to parse manifest YAML: {exc}"],
+        )
+        return result, 1
+
+    package_for_type_check = package
+    scene_name = _dig(manifest, "scene.name")
+    if isinstance(scene_name, str) and scene_name.strip():
+        package_for_type_check = scene_name.strip()
+
+    _check_required(manifest, errors)
+    _check_types(manifest, errors, warnings, package_for_type_check)
+    _check_self_test(manifest, errors, warnings)
+    task_recipe_status, task_recipe_notes = validate_task_recipe_block(manifest)
+    if task_recipe_status == "FAIL":
+        errors.extend(task_recipe_notes)
+    elif task_recipe_status == "WARN":
+        warnings.extend(task_recipe_notes)
+    else:
+        notes.extend(task_recipe_notes)
+    _check_declared_files(manifest, os.path.dirname(os.path.abspath(manifest_path)), errors)
+
+    result = ValidationResult(
+        package=package,
+        manifest_path=manifest_path,
+        parser=parser_name,
+        errors=errors,
+        warnings=warnings,
+        notes=notes,
+    )
+    return result, 0 if result.ok else 1
+
+
 def validate_scene_contract(package: str) -> tuple[ValidationResult, int]:
     share_dir, resolver = resolve_package_share(package)
     if not share_dir:
@@ -811,11 +865,20 @@ def _print_report(result: ValidationResult, exit_code: int, resolver_hint: str =
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate scene contract manifest for a scene package")
-    parser.add_argument("scene_package", help="ROS package name of the scene (e.g. ur5_2f_test)")
+    parser.add_argument(
+        "scene_package",
+        help="ROS package name (e.g. ur5_2f_test) or direct path to scene_manifest.yaml/workcell.yaml",
+    )
     args = parser.parse_args()
 
-    _, resolver = resolve_package_share(args.scene_package)
-    result, exit_code = validate_scene_contract(args.scene_package)
+    candidate = args.scene_package
+    if os.path.isfile(candidate):
+        result, exit_code = validate_scene_manifest_path(candidate)
+        _print_report(result, exit_code, "direct-file")
+        return exit_code
+
+    _, resolver = resolve_package_share(candidate)
+    result, exit_code = validate_scene_contract(candidate)
     _print_report(result, exit_code, resolver)
     return exit_code
 

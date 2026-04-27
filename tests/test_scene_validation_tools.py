@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 
 def _load_module(name: str, path: Path):
@@ -110,6 +111,12 @@ end_effector:
         self.assertEqual(parser, "fallback")
         self.assertIn("PyYAML not available", " ".join(notes))
         self.assertEqual(loaded["robot"]["ee_link"], "tool0")
+
+    def test_validate_scene_manifest_path_accepts_direct_file(self) -> None:
+        result, exit_code = validator.validate_scene_manifest_path(str(FIXTURES / "generated_scene_manifest.yaml"))
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.manifest_path, str(FIXTURES / "generated_scene_manifest.yaml"))
 
 
 class ReportGenerationTests(unittest.TestCase):
