@@ -32,6 +32,9 @@ smoke_reporter = _load_module(
 self_test_reporter = _load_module(
     "generate_scene_self_test_report", REPO_ROOT / "scripts" / "generate_scene_self_test_report.py"
 )
+task_recipe_reporter = _load_module(
+    "generate_task_recipe_report", REPO_ROOT / "scripts" / "generate_task_recipe_report.py"
+)
 
 
 class FallbackYamlParserTests(unittest.TestCase):
@@ -74,8 +77,7 @@ end_effector:
             validator.parse_manifest_yaml(
                 """
 end_effector:
-  allowed_touch_links:
-    - name: link_a
+  allowed_touch_links: {name: link_a}
 """
             )
 
@@ -223,6 +225,165 @@ class SelfTestValidationTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertIn("`scene_a` | **PASS**", report_text)
         self.assertIn("`scene_b` | **WARN**", report_text)
+
+
+class TaskRecipeValidationTests(unittest.TestCase):
+    def test_valid_task_recipe_block(self) -> None:
+        manifest = {
+            "task_recipe": {
+                "id": "colour_sort_demo",
+                "name": "Colour Sort Demo",
+                "type": "sort",
+                "enabled": True,
+                "pick": {"object_source": "perception", "allowed_grasp_methods": ["finger"]},
+                "decision_rules": [
+                    {"id": "rule_a", "when": {"attribute": "colour", "equals": "red"}, "destination": "bin_a"},
+                    {"id": "default", "when": {"default": True}, "destination": "reject_bin"},
+                ],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    },
+                    {
+                        "id": "reject_bin",
+                        "frame_id": "world",
+                        "pose_xyz": [0.2, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "reject",
+                    },
+                ],
+            }
+        }
+        status, notes = validator.validate_task_recipe_block(manifest)
+        self.assertEqual(status, "PASS")
+        self.assertIn("present and valid", " ".join(notes))
+
+    def test_missing_task_recipe_warns(self) -> None:
+        status, notes = validator.validate_task_recipe_block({})
+        self.assertEqual(status, "WARN")
+        self.assertIn("not defined", " ".join(notes))
+
+    def test_invalid_destination_reference_fails(self) -> None:
+        manifest = {
+            "task_recipe": {
+                "id": "test",
+                "name": "Test",
+                "type": "sort",
+                "enabled": True,
+                "decision_rules": [
+                    {
+                        "id": "bad_ref",
+                        "when": {"attribute": "colour", "equals": "red"},
+                        "destination": "missing_bin",
+                    }
+                ],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    }
+                ],
+            }
+        }
+        status, notes = validator.validate_task_recipe_block(manifest)
+        self.assertEqual(status, "FAIL")
+        self.assertIn("does not match any task_recipe.destinations.id", " ".join(notes))
+
+    def test_invalid_destination_pose_length_fails(self) -> None:
+        manifest = {
+            "task_recipe": {
+                "id": "test",
+                "name": "Test",
+                "type": "sort",
+                "enabled": True,
+                "decision_rules": [{"id": "default", "when": {"default": True}, "destination": "bin_a"}],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    }
+                ],
+            }
+        }
+        status, notes = validator.validate_task_recipe_block(manifest)
+        self.assertEqual(status, "FAIL")
+        self.assertIn("pose_xyz", " ".join(notes))
+
+    def test_invalid_task_type_fails(self) -> None:
+        manifest = {
+            "task_recipe": {
+                "id": "test",
+                "name": "Test",
+                "type": "unknown",
+                "enabled": True,
+                "decision_rules": [{"id": "default", "when": {"default": True}, "destination": "bin_a"}],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    }
+                ],
+            }
+        }
+        status, _ = validator.validate_task_recipe_block(manifest)
+        self.assertEqual(status, "FAIL")
+
+    def test_task_recipe_report_generation_with_fake_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            (tmp_root / "scenes" / "scene_a").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_b").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_a" / "scene_manifest.yaml").write_text(
+                "task_recipe:\n"
+                "  id: colour_sort_demo\n"
+                "  name: Colour Sort Demo\n"
+                "  type: sort\n"
+                "  enabled: true\n"
+                "  decision_rules:\n"
+                "    - id: default_rule\n"
+                "      when:\n"
+                "        default: true\n"
+                "      destination: bin_a\n"
+                "  destinations:\n"
+                "    - id: bin_a\n"
+                "      frame_id: world\n"
+                "      pose_xyz: [0.3, 0.0, 0.1]\n"
+                "      pose_rpy: [0.0, 0.0, 0.0]\n"
+                "      action: place\n",
+                encoding="utf-8",
+            )
+            (tmp_root / "scenes" / "scene_b" / "workcell.yaml").write_text(
+                "scene:\n  name: scene_b\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(task_recipe_reporter, "REPO_ROOT", tmp_root):
+                with mock.patch.object(
+                    task_recipe_reporter,
+                    "REPORT_PATH",
+                    tmp_root / "docs" / "manuals" / "task_recipe_report.md",
+                ):
+                    discovered = task_recipe_reporter.discover_scene_manifests()
+                    rows = [task_recipe_reporter.evaluate_scene(name, path) for name, path in discovered]
+                    report_text = task_recipe_reporter.build_report(rows)
+
+        self.assertEqual(len(rows), 2)
+        self.assertIn("`scene_a`", report_text)
+        self.assertIn("**PASS**", report_text)
+        self.assertIn("**WARN**", report_text)
 
 
 class SmokeReportTests(unittest.TestCase):

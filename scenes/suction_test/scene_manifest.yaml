@@ -38,3 +38,42 @@ self_test:
   expected:
     min_grasp_candidates: 1
     allow_simulated_execution: true
+
+task_recipe:
+  # Future runtime/UI contract example plus commissioning defaults.
+  # Metadata-only in this release: validation/reporting only.
+  id: reject_or_place_demo
+  name: Reject Or Place Demo
+  type: reject
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes: [class, quality]
+  pick:
+    object_source: perception
+    grasp_strategy: suction_only
+    allowed_grasp_methods: [suction]
+  decision_rules:
+    - id: accepted_to_good_bin
+      when:
+        attribute: quality
+        equals: accepted
+      destination: good_bin
+    - id: default_reject
+      when:
+        default: true
+      destination: reject_bin
+  destinations:
+    - id: good_bin
+      frame_id: world
+      pose_xyz: [0.32, 0.22, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: reject_bin
+      frame_id: world
+      pose_xyz: [0.20, -0.02, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: reject
+  expected:
+    allow_offline_validation: true
+    min_valid_destinations: 1
