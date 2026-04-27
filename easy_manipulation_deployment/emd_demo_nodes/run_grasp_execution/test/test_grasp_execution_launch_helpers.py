@@ -346,6 +346,60 @@ def test_derive_workcell_grasp_frame_prefers_ee_palm_for_robotiq_85_two_finger_m
     assert grasp_launch_module.derive_workcell_grasp_frame(end_effector) == "ee_palm"
 
 
+@pytest.mark.parametrize(
+    ("end_effector", "expected_grasp_frame"),
+    [
+        (
+            {
+                "name": "single_suction_gripper",
+                "brand": "suction",
+                "links": ["wrist_3_link", "suction_cup_link", "airpick_tcp"],
+                "tcp_link": "airpick_tcp",
+            },
+            "suction_cup_link",
+        ),
+        (
+            {
+                "name": "onrobot_airpick4",
+                "brand": "airpick",
+                "links": ["airpick_base", "airpick_tcp"],
+                "tcp_link": "airpick_tcp",
+            },
+            "airpick_tcp",
+        ),
+        (
+            {
+                "name": "robotiq_3f",
+                "attributes": {"fingers": 3},
+                "links": ["finger_1_link_0", "palm", "finger_middle_link_0"],
+            },
+            "palm",
+        ),
+        (
+            {
+                "name": "robotiq_3f",
+                "attributes": {"fingers": 3},
+                "grasp_frame": "custom_3f_tcp",
+                "links": ["palm", "finger_1_link_0"],
+            },
+            "custom_3f_tcp",
+        ),
+    ],
+)
+def test_derive_workcell_grasp_frame_metadata_only_precedence(
+    grasp_launch_module,
+    end_effector,
+    expected_grasp_frame,
+):
+    assert grasp_launch_module.derive_workcell_grasp_frame(end_effector) == expected_grasp_frame
+
+
+def test_derive_planner_end_effector_id_maps_airpick_to_suction_cup(grasp_launch_module):
+    end_effector = {"name": "airpick", "brand": "onrobot"}
+
+    assert grasp_launch_module.derive_planner_end_effector_id(end_effector) == "suction_cup"
+
+
 def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_end_effector(grasp_launch_module):
     workcell_context, ee_id, ee_link, ee_grasp_frame = grasp_launch_module.build_workcell_context_for_scene(
         "scene_without_ee",
