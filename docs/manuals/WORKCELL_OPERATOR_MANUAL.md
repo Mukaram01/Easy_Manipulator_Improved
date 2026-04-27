@@ -167,6 +167,24 @@ See `docs/manuals/CELL_DEFINITION_V1.md` for schema details and limitations.
 
 ---
 
+
+## D2) Generate a workcell package from a cell definition
+
+Use this offline command to turn one cell definition into a reviewable ROS 2 package skeleton:
+
+```bash
+python3 scripts/generate_workcell_from_cell_definition.py   tests/fixtures/cell_definition_sort_by_colour.yaml   --output-dir /tmp/generated_workcells   --package-name generated_colour_sorting_cell   --force
+
+python3 scripts/validate_scene_contract.py generated_colour_sorting_cell
+./scripts/check_generated_workcells.sh
+```
+
+Generated package includes `scene_manifest.yaml`, `workcell.yaml`, `README.md`, and generated commissioning artifacts.
+
+Safety note: generated package is not proof of physical reachability or machine safety.
+
+---
+
 ## E) Launch known-good scene
 
 Known-good execution launch command:
