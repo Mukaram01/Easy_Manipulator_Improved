@@ -98,6 +98,10 @@ def derive_planner_end_effector_id(end_effector):
     ee_type = _normalize_text(end_effector.get("ee_type"))
     ee_fingers = end_effector.get("attributes", {}).get("fingers")
 
+    if ee_name in {"suction", "airpick"}:
+        return "suction_cup"
+    if ee_brand in {"suction", "airpick"}:
+        return "suction_cup"
     if ee_name in KNOWN_PLANNER_END_EFFECTOR_IDS:
         return ee_name
     if ee_brand in KNOWN_PLANNER_END_EFFECTOR_IDS:
@@ -123,7 +127,26 @@ def derive_workcell_end_effector_link(end_effector):
     return "tool0"
 
 
-def derive_workcell_grasp_frame(end_effector):
+def _extract_end_effector_link_candidates(end_effector):
+    links = end_effector.get("links")
+    if isinstance(links, dict):
+        values = links.values()
+    elif isinstance(links, list):
+        values = links
+    elif isinstance(links, str):
+        values = [links]
+    else:
+        values = []
+
+    candidates = []
+    for value in values:
+        normalized = _normalize_text(value)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def _derive_normalized_ee_family(end_effector):
     ee_name = _normalize_text(end_effector.get("name"))
     ee_brand = _normalize_text(end_effector.get("brand"))
     ee_type = _normalize_text(end_effector.get("ee_type"))
@@ -131,7 +154,61 @@ def derive_workcell_grasp_frame(end_effector):
     search_blob = " ".join((ee_name, ee_brand, ee_type))
 
     if any(marker in search_blob for marker in ("robotiq_2f", "robotiq_85")) or ee_fingers == 2:
-        return "ee_palm"
+        return "2f"
+    if "robotiq_3f" in search_blob or ee_fingers == 3:
+        return "3f"
+    if any(marker in search_blob for marker in ("suction", "single_suction", "airpick")):
+        return "suction"
+    return "generic"
+
+
+def _first_from_metadata_or_links(end_effector, metadata_keys, link_candidates):
+    for key in metadata_keys:
+        value = _normalize_text(end_effector.get(key))
+        if value:
+            return value
+    for value in link_candidates:
+        if value:
+            return value
+    return ""
+
+
+def derive_workcell_grasp_frame(end_effector):
+    ee_family = _derive_normalized_ee_family(end_effector)
+    link_candidates = _extract_end_effector_link_candidates(end_effector)
+
+    if ee_family == "2f":
+        metadata_and_links = ("grasp_frame", "ee_palm", "base_link", "link")
+        return _first_from_metadata_or_links(end_effector, metadata_and_links, link_candidates) or "tool0"
+
+    if ee_family == "3f":
+        for key in ("grasp_frame", "tcp_link", "physical_ee_link", "base_link", "link"):
+            value = _normalize_text(end_effector.get(key))
+            if value:
+                return value
+        for palm_frame in ("ee_palm", "palm"):
+            if palm_frame in link_candidates:
+                return palm_frame
+        return "tool0"
+
+    if ee_family == "suction":
+        suction_metadata_keys = ("suction_cup_link",)
+        suction_link_candidates = [
+            candidate
+            for candidate in link_candidates
+            if candidate == "suction_cup_link" or "suction_cup" in candidate
+        ]
+        suction_frame = _first_from_metadata_or_links(end_effector, suction_metadata_keys, suction_link_candidates)
+        if suction_frame:
+            return suction_frame
+
+        tcp_keys = ("grasp_frame", "tcp_link", "physical_ee_link", "base_link", "link")
+        tcp_link_candidates = [
+            candidate
+            for candidate in link_candidates
+            if "tcp" in candidate or "tool_center_point" in candidate
+        ]
+        return _first_from_metadata_or_links(end_effector, tcp_keys, tcp_link_candidates) or "tool0"
 
     for key in ("grasp_frame", "tcp_link", "physical_ee_link", "base_link", "link"):
         value = _normalize_text(end_effector.get(key))
