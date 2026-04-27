@@ -59,6 +59,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ./scripts/generate_scene_self_test_report.py
 ./scripts/generate_task_recipe_report.py
 ./scripts/generate_task_recipe_dry_run_report.py
+./scripts/generate_task_execution_plan_report.py
 ./scripts/generate_smoke_launch_report.py
 ```
 
@@ -70,6 +71,7 @@ Scene self-test metadata (`self_test` in each scene manifest) defines a determin
 ./scripts/check_scene_self_tests.sh
 ./scripts/check_task_recipes.sh
 ./scripts/check_task_recipe_dry_runs.sh
+./scripts/check_task_execution_plans.sh
 ```
 
 ### Task recipes
@@ -106,6 +108,25 @@ The dry-run does **not** execute the robot, and does **not** validate physical r
 ./scripts/generate_task_recipe_dry_run_report.py
 ./scripts/preflight_workcell.sh
 ```
+
+### Offline task execution plans
+
+This is the next offline step after task recipe dry-run. It converts the already-matched dry-run decision into a deterministic, operator-readable ordered job sequence for commissioning review, future UI layers, and future runtime integration.
+
+It does **not** move the robot and does **not** validate real collision-free path feasibility.
+
+```bash
+./scripts/check_task_execution_plans.sh
+./scripts/generate_task_execution_plan.py
+./scripts/generate_task_execution_plan_report.py
+./scripts/preflight_workcell.sh
+```
+
+Generated artifacts:
+
+- Per-scene plans: `docs/manuals/generated_execution_plans/<scene>_execution_plan.md`
+- Per-scene machine JSON: `docs/manuals/generated_execution_plans/<scene>_execution_plan.json`
+- Fleet report: `docs/manuals/latest_task_execution_plan_report.md`
 
 ```yaml
 task_recipe:
