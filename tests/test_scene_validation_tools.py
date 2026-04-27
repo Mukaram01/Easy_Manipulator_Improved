@@ -35,6 +35,11 @@ self_test_reporter = _load_module(
 task_recipe_reporter = _load_module(
     "generate_task_recipe_report", REPO_ROOT / "scripts" / "generate_task_recipe_report.py"
 )
+task_recipe_dry_run = _load_module("dry_run_task_recipe", REPO_ROOT / "scripts" / "dry_run_task_recipe.py")
+task_recipe_dry_run_reporter = _load_module(
+    "generate_task_recipe_dry_run_report",
+    REPO_ROOT / "scripts" / "generate_task_recipe_dry_run_report.py",
+)
 
 
 class FallbackYamlParserTests(unittest.TestCase):
@@ -318,6 +323,214 @@ class TaskRecipeValidationTests(unittest.TestCase):
         status, notes = validator.validate_task_recipe_block(manifest)
         self.assertEqual(status, "FAIL")
         self.assertIn("pose_xyz", " ".join(notes))
+
+
+class TaskRecipeDryRunTests(unittest.TestCase):
+    def _base_manifest(self) -> dict[str, object]:
+        return {
+            "self_test": {
+                "enabled": True,
+                "object": {
+                    "id": "commissioning_box",
+                    "shape": "box",
+                    "dimensions": [0.05, 0.05, 0.05],
+                    "frame_id": "world",
+                    "pose_xyz": [0.45, 0.0, 0.08],
+                    "pose_rpy": [0.0, 0.0, 0.0],
+                    "attributes": {"class": "part", "colour": "red", "shape": "box"},
+                },
+            },
+            "task_recipe": {
+                "id": "colour_sort",
+                "name": "Colour Sort",
+                "type": "sort",
+                "enabled": True,
+                "decision_rules": [
+                    {"id": "red_to_bin_a", "when": {"attribute": "colour", "equals": "red"}, "destination": "bin_a"},
+                    {"id": "default_reject", "when": {"default": True}, "destination": "reject_bin"},
+                ],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    },
+                    {
+                        "id": "reject_bin",
+                        "frame_id": "world",
+                        "pose_xyz": [0.2, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "reject",
+                    },
+                ],
+            },
+        }
+
+    def test_valid_self_test_and_task_recipe_resolves_pass(self) -> None:
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(self._base_manifest()))
+        self.assertEqual(row.status, "PASS")
+        self.assertEqual(row.selected_destination_id, "bin_a")
+
+    def test_missing_task_recipe_warns_not_fail(self) -> None:
+        manifest = self._base_manifest()
+        manifest.pop("task_recipe")
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(manifest))
+        self.assertEqual(row.status, "WARN")
+
+    def test_missing_self_test_skips_not_fail(self) -> None:
+        manifest = self._base_manifest()
+        manifest.pop("self_test")
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(manifest))
+        self.assertEqual(row.status, "SKIP")
+
+    def test_attribute_equals_rule_resolves_destination(self) -> None:
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(self._base_manifest()))
+        self.assertEqual(row.matched_rule_id, "red_to_bin_a")
+        self.assertEqual(row.selected_destination_id, "bin_a")
+
+    def test_default_rule_resolves_when_no_match(self) -> None:
+        manifest = self._base_manifest()
+        manifest["self_test"]["object"]["attributes"]["colour"] = "green"
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(manifest))
+        self.assertEqual(row.status, "PASS")
+        self.assertEqual(row.matched_rule_id, "default_reject")
+        self.assertEqual(row.selected_destination_id, "reject_bin")
+
+    def test_missing_destination_reference_fails(self) -> None:
+        manifest = self._base_manifest()
+        manifest["task_recipe"]["decision_rules"][0]["destination"] = "missing_bin"
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(manifest))
+        self.assertEqual(row.status, "FAIL")
+        self.assertIn("does not match any task_recipe.destinations.id", " ".join(row.notes))
+
+    def test_malformed_destination_pose_fails(self) -> None:
+        manifest = self._base_manifest()
+        manifest["task_recipe"]["destinations"][0]["pose_xyz"] = [0.3, 0.0]
+        row = task_recipe_dry_run.evaluate_scene("scene_a", self._write_manifest(manifest))
+        self.assertEqual(row.status, "FAIL")
+        self.assertIn("pose_xyz", " ".join(row.notes))
+
+    def test_report_generation_with_fake_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            (tmp_root / "scenes" / "scene_a").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_a" / "scene_manifest.yaml").write_text(
+                "self_test:\n"
+                "  enabled: true\n"
+                "  object:\n"
+                "    id: commissioning_box\n"
+                "    shape: box\n"
+                "    dimensions: [0.05, 0.05, 0.05]\n"
+                "    frame_id: world\n"
+                "    pose_xyz: [0.45, 0.0, 0.08]\n"
+                "    pose_rpy: [0.0, 0.0, 0.0]\n"
+                "    attributes:\n"
+                "      class: part\n"
+                "      colour: red\n"
+                "task_recipe:\n"
+                "  id: colour_sort\n"
+                "  name: Colour Sort\n"
+                "  type: sort\n"
+                "  enabled: true\n"
+                "  decision_rules:\n"
+                "    - id: red_to_bin_a\n"
+                "      when:\n"
+                "        attribute: colour\n"
+                "        equals: red\n"
+                "      destination: bin_a\n"
+                "  destinations:\n"
+                "    - id: bin_a\n"
+                "      frame_id: world\n"
+                "      pose_xyz: [0.3, 0.0, 0.1]\n"
+                "      pose_rpy: [0.0, 0.0, 0.0]\n"
+                "      action: place\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(task_recipe_dry_run_reporter, "REPO_ROOT", tmp_root):
+                with mock.patch.object(task_recipe_dry_run, "REPO_ROOT", tmp_root):
+                    with mock.patch.object(
+                        task_recipe_dry_run_reporter,
+                        "REPORT_PATH",
+                        tmp_root / "docs" / "manuals" / "dry_run_report.md",
+                    ):
+                        discovered = task_recipe_dry_run.discover_scene_manifests()
+                        rows = [task_recipe_dry_run.evaluate_scene(name, path) for name, path in discovered]
+                        report_text = task_recipe_dry_run_reporter.build_report(rows)
+
+        self.assertIn("`scene_a` | **PASS**", report_text)
+
+    def test_fallback_parser_parses_self_test_attributes(self) -> None:
+        manifest_text = (
+            "self_test:\n"
+            "  enabled: true\n"
+            "  object:\n"
+            "    id: commissioning_box\n"
+            "    shape: box\n"
+            "    dimensions: [0.05, 0.05, 0.05]\n"
+            "    frame_id: world\n"
+            "    pose_xyz: [0.45, 0.0, 0.08]\n"
+            "    pose_rpy: [0.0, 0.0, 0.0]\n"
+            "    attributes:\n"
+            "      class: part\n"
+            "      colour: red\n"
+            "      shape: box\n"
+        )
+        parsed = validator.parse_manifest_yaml(manifest_text)
+        self.assertEqual(parsed["self_test"]["object"]["attributes"]["class"], "part")
+        self.assertEqual(parsed["self_test"]["object"]["attributes"]["colour"], "red")
+
+    def _write_manifest(self, manifest: dict[str, object]) -> Path:
+        def _to_yaml(value: object, indent: int = 0) -> str:
+            def _scalar_text(scalar: object) -> str:
+                if isinstance(scalar, bool):
+                    return "true" if scalar else "false"
+                return str(scalar)
+
+            prefix = " " * indent
+            if isinstance(value, dict):
+                lines: list[str] = []
+                for key, child in value.items():
+                    if isinstance(child, (dict, list)):
+                        lines.append(f"{prefix}{key}:")
+                        lines.append(_to_yaml(child, indent + 2))
+                    else:
+                        lines.append(f"{prefix}{key}: {_scalar_text(child)}")
+                return "\n".join(lines)
+            if isinstance(value, list):
+                lines = []
+                for child in value:
+                    if isinstance(child, dict):
+                        first = True
+                        for key, nested in child.items():
+                            if first:
+                                if isinstance(nested, (dict, list)):
+                                    lines.append(f"{prefix}- {key}:")
+                                    lines.append(_to_yaml(nested, indent + 4))
+                                else:
+                                    lines.append(f"{prefix}- {key}: {_scalar_text(nested)}")
+                                first = False
+                                continue
+                            if isinstance(nested, (dict, list)):
+                                lines.append(f"{prefix}  {key}:")
+                                lines.append(_to_yaml(nested, indent + 4))
+                            else:
+                                lines.append(f"{prefix}  {key}: {_scalar_text(nested)}")
+                    elif isinstance(child, list):
+                        lines.append(f"{prefix}-")
+                        lines.append(_to_yaml(child, indent + 2))
+                    else:
+                        lines.append(f"{prefix}- {_scalar_text(child)}")
+                return "\n".join(lines)
+            return f"{prefix}{_scalar_text(value)}"
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as handle:
+            if validator._pyyaml is not None:
+                validator._pyyaml.safe_dump(manifest, handle, sort_keys=False)
+            else:
+                handle.write(_to_yaml(manifest))
+            return Path(handle.name)
 
     def test_invalid_task_type_fails(self) -> None:
         manifest = {

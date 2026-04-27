@@ -42,6 +42,11 @@ self_test:
     frame_id: world
     pose_xyz: [0.45, 0.0, 0.08]
     pose_rpy: [0.0, 0.0, 0.0]
+    attributes:
+      class: "part"
+      colour: "red"
+      shape: "box"
+      material: "plastic"
   expected:
     min_grasp_candidates: 1
     allow_simulated_execution: true

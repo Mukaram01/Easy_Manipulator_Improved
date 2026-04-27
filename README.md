@@ -58,6 +58,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ./scripts/generate_scene_validation_report.py
 ./scripts/generate_scene_self_test_report.py
 ./scripts/generate_task_recipe_report.py
+./scripts/generate_task_recipe_dry_run_report.py
 ./scripts/generate_smoke_launch_report.py
 ```
 
@@ -68,6 +69,7 @@ Scene self-test metadata (`self_test` in each scene manifest) defines a determin
 ```bash
 ./scripts/check_scene_self_tests.sh
 ./scripts/check_task_recipes.sh
+./scripts/check_task_recipe_dry_runs.sh
 ```
 
 ### Task recipes
@@ -84,8 +86,26 @@ Examples include:
 - palletising
 - binning
 
-Current scope in this PR: contract validation + reporting only. Runtime execution remains backward compatible and existing launch behavior is unchanged.
-Future PRs will map recipes into offline simulated jobs and then UI-driven workflows.
+Current scope includes contract validation/reporting plus an offline dry-run resolver. Runtime execution remains backward compatible and existing launch behavior is unchanged.
+
+### Offline task recipe dry-run
+
+This is the first step from static YAML to useful industrial behaviour. It checks that a simulated/self-test object can be routed through the recipe decision rules to a concrete destination/action.
+
+Examples of expected routing outcomes:
+
+- red object -> `bin_a`
+- blue object -> `bin_b`
+- unknown object -> `reject_bin`
+- light part -> suction bin
+
+The dry-run does **not** execute the robot, and does **not** validate physical reachability or collision-free planning. It prepares metadata for future UI/runtime execution layers.
+
+```bash
+./scripts/check_task_recipe_dry_runs.sh
+./scripts/generate_task_recipe_dry_run_report.py
+./scripts/preflight_workcell.sh
+```
 
 ```yaml
 task_recipe:
