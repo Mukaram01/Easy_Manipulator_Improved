@@ -28,19 +28,38 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ## Operator manual and validation report
 
 - Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
-- Preflight helper (recommended before launch smoke tests):
+- Validation-only preflight helper:
 
 ```bash
 ./scripts/preflight_workcell.sh
 ```
 
-- Generate only the markdown validation report:
+- Launch smoke preflight (validation + headless launch readiness checks):
+
+```bash
+./scripts/preflight_workcell.sh --with-smoke
+```
+
+- Single-scene launch smoke check:
+
+```bash
+./scripts/smoke_launch_scenes.sh ur5_2f_test
+```
+
+- All-scene launch smoke check:
+
+```bash
+./scripts/smoke_launch_scenes.sh
+```
+
+- Generate markdown reports:
 
 ```bash
 ./scripts/generate_scene_validation_report.py
+./scripts/generate_smoke_launch_report.py
 ```
 
-These helpers do not require RViz, EPD, RealSense, or robot hardware. See `docs/manuals/WORKCELL_OPERATOR_MANUAL.md` for operator workflow details.
+Validation preflight checks manifests/files only. Smoke launch preflight verifies `run_grasp_execution` reaches readiness markers headlessly. Smoke checks do **not** validate full grasp execution quality, EPD perception, camera hardware, or physical robot behavior. See `docs/manuals/WORKCELL_OPERATOR_MANUAL.md` for operator workflow details.
 
 ---
 

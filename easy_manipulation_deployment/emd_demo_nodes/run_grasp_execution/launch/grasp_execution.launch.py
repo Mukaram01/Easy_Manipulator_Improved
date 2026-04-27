@@ -21,6 +21,7 @@ from pathlib import Path
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, TimerAction
+from launch.conditions import IfCondition
 from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -955,6 +956,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     rviz_node = Node(
+        condition=IfCondition(LaunchConfiguration("launch_rviz")),
         package="rviz2",
         executable="rviz2",
         name="rviz2",
@@ -1074,6 +1076,11 @@ def generate_launch_description():
                 PLANNING_FRAME_ARGUMENT,
                 default_value="world",
                 description="Canonical planning/reference frame shared by grasp execution and octomap.",
+            ),
+            DeclareLaunchArgument(
+                "launch_rviz",
+                default_value="true",
+                description="Launch RViz for grasp execution visualization.",
             ),
             OpaqueFunction(function=launch_setup),
         ]
