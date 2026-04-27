@@ -72,7 +72,24 @@ Scene self-test metadata (`self_test` in each scene manifest) defines a determin
 ./scripts/check_task_recipes.sh
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/check_task_execution_plans.sh
+./scripts/check_cell_definitions.sh
 ```
+
+### Cell Definition v1 (offline contract)
+
+Cell Definition v1 introduces a single high-level YAML for defining a robotic cell (robot, tool, camera, environment, objects, task rules, safe-home metadata) and generating offline preview artifacts for commissioning.
+
+Quick commands:
+
+```bash
+./scripts/check_cell_definitions.sh
+
+python3 scripts/validate_cell_definition.py tests/fixtures/cell_definition_sort_by_colour.yaml
+
+python3 scripts/generate_scene_from_cell_definition.py   tests/fixtures/cell_definition_sort_by_colour.yaml   --output-dir /tmp/emd_cell_preview
+```
+
+Reference: `docs/manuals/CELL_DEFINITION_V1.md`
 
 ### Task recipes
 

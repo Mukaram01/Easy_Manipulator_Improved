@@ -1,0 +1,75 @@
+schema_version: cell_definition/v1
+cell:
+  id: ur5_colour_sort_cell
+  name: UR5 colour sort cell
+  description: Sort by colour preview
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: ee_palm
+  allowed_touch_links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]
+camera:
+  id: realsense_d435i
+  type: depth_camera
+  frame: camera_depth_optical_frame
+environment:
+  frame: world
+  support_surfaces:
+    - id: table_main
+      type: table
+      frame: world
+      pose_xyz: [0.0, 0.0, 0.0]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [1.0, 1.0, 0.05]
+objects:
+  - id: detected_object
+    class: part
+    shape: box
+    color: red
+    material: plastic
+    frame: world
+    dimensions: [0.04, 0.04, 0.04]
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+task:
+  id: colour_sorting_task
+  type: sort_by_colour
+  source_object: detected_object
+  destinations:
+    - id: red_bin
+      frame: world
+      pose_xyz: [0.35, -0.30, 0.10]
+      pose_rpy: [0.0, 0.0, 0.0]
+    - id: blue_bin
+      frame: world
+      pose_xyz: [0.35, 0.30, 0.10]
+      pose_rpy: [0.0, 0.0, 0.0]
+    - id: reject_bin
+      frame: world
+      pose_xyz: [0.20, 0.0, 0.10]
+      pose_rpy: [0.0, 0.0, 0.0]
+  rules:
+    - id: red_to_red_bin
+      when:
+        color: red
+      destination: red_bin
+    - id: blue_to_blue_bin
+      when:
+        color: blue
+      destination: blue_bin
+    - id: fallback
+      when:
+        always: true
+      destination: reject_bin
+commissioning:
+  self_test_enabled: true
+  export_bundle: true
+  require_operator_review: true

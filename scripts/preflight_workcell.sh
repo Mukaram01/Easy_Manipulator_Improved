@@ -62,6 +62,22 @@ echo
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 set +e
+CELL_DEF_OUTPUT="$(${SCRIPT_DIR}/check_cell_definitions.sh)"
+CELL_DEF_EXIT=$?
+set -e
+echo "${CELL_DEF_OUTPUT}"
+if [[ ${CELL_DEF_EXIT} -eq 0 ]]; then
+  if grep -q "Cell definition checks: WARN" <<<"${CELL_DEF_OUTPUT}"; then
+    echo "Cell definition checks: WARN"
+  else
+    echo "Cell definition checks: PASS"
+  fi
+else
+  echo "Cell definition checks: FAIL"
+  exit ${CELL_DEF_EXIT}
+fi
+
+set +e
 WORKCELL_TEMPLATE_OUTPUT="$(${SCRIPT_DIR}/check_workcell_builder_templates.sh)"
 WORKCELL_TEMPLATE_EXIT=$?
 set -e
