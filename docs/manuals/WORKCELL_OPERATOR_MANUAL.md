@@ -460,6 +460,31 @@ Commands:
 ./scripts/preflight_workcell.sh
 ```
 
+## Workcell commissioning bundles
+
+A workcell commissioning bundle is an offline handover/export package for one scene/workcell. It collects metadata, plans, checks, summaries, and an operator checklist in one per-scene folder.
+
+Use this for commissioning review, archival records, versioned handover, and future UI import/export.
+
+Safety boundary statements:
+
+- it is **not** a safety certificate,
+- it does **not** prove real robot reachability,
+- it does **not** prove collision-free runtime execution.
+
+It prepares the project for a future click-driven **Generate Cell Pack** workflow.
+
+Commands:
+
+```bash
+./scripts/export_workcell_bundle.py ur5_2f_test
+./scripts/export_workcell_bundle.py ur5_2f_test --zip --force
+./scripts/inspect_workcell_bundle.py dist/workcell_bundles/ur5_2f_test
+./scripts/inspect_workcell_bundle.py dist/workcell_bundles/ur5_2f_test.zip
+./scripts/check_workcell_bundles.sh
+./scripts/preflight_workcell.sh
+```
+
 Example plan snippet:
 
 ```text

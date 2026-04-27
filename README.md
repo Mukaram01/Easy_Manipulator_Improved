@@ -128,6 +128,23 @@ Generated artifacts:
 - Per-scene machine JSON: `docs/manuals/generated_execution_plans/<scene>_execution_plan.json`
 - Fleet report: `docs/manuals/latest_task_execution_plan_report.md`
 
+### Workcell commissioning bundles
+
+Workcell commissioning bundles are offline handover/export packages for one scene/workcell. They collect scene metadata, validation summaries, task recipe dry-run summaries, execution plan artifacts, and an operator checklist into one reviewable package.
+
+Use bundles for commissioning review, versioned handover, archive traceability, and future UI import/export workflows.
+
+This package is offline-only and **not** a safety certificate. It does **not** prove real robot reachability or collision-free runtime execution.
+
+```bash
+./scripts/export_workcell_bundle.py ur5_2f_test
+./scripts/export_workcell_bundle.py ur5_2f_test --zip --force
+./scripts/inspect_workcell_bundle.py dist/workcell_bundles/ur5_2f_test
+./scripts/inspect_workcell_bundle.py dist/workcell_bundles/ur5_2f_test.zip
+./scripts/check_workcell_bundles.sh
+./scripts/preflight_workcell.sh
+```
+
 ```yaml
 task_recipe:
   id: colour_sort_demo
