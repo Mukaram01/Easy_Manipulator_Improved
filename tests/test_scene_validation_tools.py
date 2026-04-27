@@ -26,6 +26,9 @@ validator = _load_module("validate_scene_contract", REPO_ROOT / "scripts" / "val
 reporter = _load_module(
     "generate_scene_validation_report", REPO_ROOT / "scripts" / "generate_scene_validation_report.py"
 )
+smoke_reporter = _load_module(
+    "generate_smoke_launch_report", REPO_ROOT / "scripts" / "generate_smoke_launch_report.py"
+)
 
 
 class FallbackYamlParserTests(unittest.TestCase):
@@ -103,6 +106,65 @@ class ReportGenerationTests(unittest.TestCase):
 
         self.assertEqual(row.status, "PASS")
         self.assertEqual(row.parser, "fallback")
+
+    def test_discover_scene_packages_from_manifest_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            (tmp_root / "scenes" / "scene_a").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_b").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_c").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_a" / "scene_manifest.yaml").write_text(
+                "scene: {}\n", encoding="utf-8"
+            )
+            (tmp_root / "scenes" / "scene_b" / "workcell.yaml").write_text(
+                "scene: {}\n", encoding="utf-8"
+            )
+
+            with mock.patch.object(reporter, "REPO_ROOT", tmp_root):
+                discovered = reporter.discover_scene_packages()
+
+        self.assertEqual(discovered, ["scene_a", "scene_b"])
+
+
+class SmokeReportTests(unittest.TestCase):
+    def test_parse_smoke_results(self) -> None:
+        rows = smoke_reporter.parse_smoke_results(
+            "\n".join(
+                [
+                    "ur5_2f_test\tPASS\tGenerated workcell context for scene\tReady\t/tmp/ur5_2f_test.log",
+                    "suction_test\tSKIP\t\tNot installed\t/tmp/suction_test.log",
+                ]
+            )
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].status, "PASS")
+        self.assertEqual(rows[1].status, "SKIP")
+
+    def test_build_report_with_fake_rows(self) -> None:
+        rows = [
+            smoke_reporter.SmokeRow(
+                scene="ur5_2f_test",
+                status="PASS",
+                markers_found="Generated workcell context for scene",
+                notes="Readiness markers detected",
+                log_path="/tmp/ur5_2f_test.log",
+            ),
+            smoke_reporter.SmokeRow(
+                scene="suction_test",
+                status="FAIL",
+                markers_found="",
+                notes="Timeout",
+                log_path="/tmp/suction_test.log",
+            ),
+        ]
+
+        report_text = smoke_reporter.build_report(rows, Path("/tmp/results.tsv"))
+
+        self.assertIn("Latest Smoke Launch Report", report_text)
+        self.assertIn("| `ur5_2f_test` | **PASS**", report_text)
+        self.assertIn("| `suction_test` | **FAIL**", report_text)
+        self.assertIn("- PASS: 1", report_text)
+        self.assertIn("- FAIL: 1", report_text)
 
 
 if __name__ == "__main__":

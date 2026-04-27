@@ -80,10 +80,16 @@ colcon build --symlink-install --packages-select run_grasp_planner run_grasp_exe
 
 ## D) Validate the workspace
 
-Recommended full preflight gate (before launch smoke tests):
+Recommended validation-only preflight gate:
 
 ```bash
 ./scripts/preflight_workcell.sh
+```
+
+Launch smoke preflight (validation + bounded headless launch readiness checks):
+
+```bash
+./scripts/preflight_workcell.sh --with-smoke
 ```
 
 Individual commands:
@@ -92,6 +98,9 @@ Individual commands:
 ./scripts/validate_scene_contract.py ur5_2f_test
 ./scripts/check_all_scenes.sh
 ./scripts/generate_scene_validation_report.py
+./scripts/smoke_launch_scenes.sh ur5_2f_test
+./scripts/smoke_launch_scenes.sh
+./scripts/generate_smoke_launch_report.py
 ```
 
 When to use each tool:
@@ -107,6 +116,13 @@ Interpretation:
 - **WARN**: contract passes, but non-blocking metadata issue exists (for example `scene.name` mismatch).
 - **FAIL**: required fields/types or declared file paths are invalid.
 - **SKIP**: scene package is not currently discoverable in your sourced environment.
+
+Smoke preflight intent:
+
+- Validation preflight checks scene manifests/files only.
+- Smoke launch preflight proves `run_grasp_execution` can start to readiness markers for each scene.
+- Smoke launch preflight does **not** test full grasp execution quality, EPD perception behavior, camera hardware, or physical robot behavior.
+- Use full planner/perception/robot integration tests after smoke preflight passes.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 

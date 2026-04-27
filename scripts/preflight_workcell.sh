@@ -4,6 +4,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_scene_validation_report.md"
+SMOKE_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_smoke_launch_report.md"
+WITH_SMOKE=false
+
+while (( $# > 0 )); do
+  case "$1" in
+    --with-smoke)
+      WITH_SMOKE=true
+      ;;
+    -h|--help)
+      cat <<USAGE
+Usage: ./scripts/preflight_workcell.sh [--with-smoke]
+
+  --with-smoke   Run launch smoke tests and generate smoke report after validation.
+USAGE
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
 
 printf '\n=== Easy Manipulation Workcell Preflight ===\n'
 printf 'Repository: %s\n' "${REPO_ROOT}"
@@ -27,3 +50,12 @@ echo
 
 echo
 printf 'Preflight report written to: %s\n' "${REPORT_PATH}"
+
+if [[ "${WITH_SMOKE}" == true ]]; then
+  echo
+  echo "=== Optional launch smoke preflight ==="
+  "${SCRIPT_DIR}/smoke_launch_scenes.sh"
+  "${SCRIPT_DIR}/generate_smoke_launch_report.py"
+  echo
+  printf 'Smoke launch report written to: %s\n' "${SMOKE_REPORT_PATH}"
+fi
