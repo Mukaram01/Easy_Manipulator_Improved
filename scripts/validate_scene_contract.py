@@ -379,6 +379,90 @@ def _check_types(manifest: dict[str, Any], errors: list[str], warnings: list[str
             )
 
 
+def _is_numeric_list(value: Any, expected_len: int, positive_only: bool = False) -> bool:
+    if not isinstance(value, list) or len(value) != expected_len:
+        return False
+    for item in value:
+        if not isinstance(item, (int, float)):
+            return False
+        if isinstance(item, float) and not math.isfinite(item):
+            return False
+        if positive_only and item <= 0:
+            return False
+    return True
+
+
+def _check_self_test(manifest: dict[str, Any], errors: list[str], warnings: list[str]) -> None:
+    self_test = manifest.get("self_test")
+    if self_test is None:
+        warnings.append(
+            "Field 'self_test' is not defined. Add deterministic commissioning metadata when available."
+        )
+        return
+
+    if not isinstance(self_test, dict):
+        errors.append("Field 'self_test' must be a mapping/object when provided.")
+        return
+
+    enabled = self_test.get("enabled")
+    if enabled is None:
+        warnings.append("Field 'self_test.enabled' is not set; treating self-test metadata as disabled.")
+        return
+    if not isinstance(enabled, bool):
+        errors.append("Field 'self_test.enabled' must be a boolean.")
+        return
+    if not enabled:
+        warnings.append("Field 'self_test.enabled' is false; scene self-test metadata is intentionally disabled.")
+        return
+
+    object_block = self_test.get("object")
+    if not isinstance(object_block, dict):
+        errors.append("Field 'self_test.object' must be a mapping/object when self_test.enabled is true.")
+        return
+
+    object_id = object_block.get("id")
+    if not isinstance(object_id, str) or not object_id.strip():
+        errors.append("Field 'self_test.object.id' must be a non-empty string.")
+
+    shape = object_block.get("shape")
+    if shape != "box":
+        errors.append("Field 'self_test.object.shape' currently supports only 'box'.")
+
+    dimensions = object_block.get("dimensions")
+    if not _is_numeric_list(dimensions, 3, positive_only=True):
+        errors.append(
+            "Field 'self_test.object.dimensions' must be a numeric list of length 3 with values > 0."
+        )
+
+    frame_id = object_block.get("frame_id")
+    if not isinstance(frame_id, str) or not frame_id.strip():
+        errors.append("Field 'self_test.object.frame_id' must be a non-empty string.")
+
+    pose_xyz = object_block.get("pose_xyz")
+    if not _is_numeric_list(pose_xyz, 3):
+        errors.append("Field 'self_test.object.pose_xyz' must be a numeric list of length 3.")
+
+    pose_rpy = object_block.get("pose_rpy")
+    if not _is_numeric_list(pose_rpy, 3):
+        errors.append("Field 'self_test.object.pose_rpy' must be a numeric list of length 3.")
+
+    expected_block = self_test.get("expected")
+    if expected_block is None:
+        return
+    if not isinstance(expected_block, dict):
+        errors.append("Field 'self_test.expected' must be a mapping/object when provided.")
+        return
+
+    min_grasp_candidates = expected_block.get("min_grasp_candidates")
+    if min_grasp_candidates is not None:
+        if not isinstance(min_grasp_candidates, int) or min_grasp_candidates < 1:
+            errors.append("Field 'self_test.expected.min_grasp_candidates' must be an integer >= 1.")
+
+    allow_simulated_execution = expected_block.get("allow_simulated_execution")
+    if allow_simulated_execution is not None and not isinstance(allow_simulated_execution, bool):
+        errors.append("Field 'self_test.expected.allow_simulated_execution' must be a boolean.")
+
+
 def _resolve_declared_path(share_dir: str, path_value: str) -> str:
     candidate = path_value.strip()
     if os.path.isabs(candidate):
@@ -467,6 +551,7 @@ def validate_scene_contract(package: str) -> tuple[ValidationResult, int]:
 
     _check_required(manifest, errors)
     _check_types(manifest, errors, warnings, package)
+    _check_self_test(manifest, errors, warnings)
     _check_declared_files(manifest, share_dir, errors)
 
     result = ValidationResult(

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_scene_validation_report.md"
+SELF_TEST_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_scene_self_test_report.md"
 SMOKE_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_smoke_launch_report.md"
 WITH_SMOKE=false
 
@@ -47,9 +48,12 @@ fi
 echo
 "${SCRIPT_DIR}/check_all_scenes.sh"
 "${SCRIPT_DIR}/generate_scene_validation_report.py"
+"${SCRIPT_DIR}/check_scene_self_tests.sh"
+"${SCRIPT_DIR}/generate_scene_self_test_report.py"
 
 echo
 printf 'Preflight report written to: %s\n' "${REPORT_PATH}"
+printf 'Self-test report written to: %s\n' "${SELF_TEST_REPORT_PATH}"
 
 if [[ "${WITH_SMOKE}" == true ]]; then
   echo

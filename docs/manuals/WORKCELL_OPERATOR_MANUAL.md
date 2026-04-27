@@ -98,6 +98,8 @@ Individual commands:
 ./scripts/validate_scene_contract.py ur5_2f_test
 ./scripts/check_all_scenes.sh
 ./scripts/generate_scene_validation_report.py
+./scripts/check_scene_self_tests.sh
+./scripts/generate_scene_self_test_report.py
 ./scripts/smoke_launch_scenes.sh ur5_2f_test
 ./scripts/smoke_launch_scenes.sh
 ./scripts/generate_smoke_launch_report.py
@@ -123,6 +125,7 @@ Smoke preflight intent:
 - Smoke launch preflight proves `run_grasp_execution` can start to readiness markers for each scene.
 - Smoke launch preflight does **not** test full grasp execution quality, EPD perception behavior, camera hardware, or physical robot behavior.
 - Use full planner/perception/robot integration tests after smoke preflight passes.
+- Scene self-test metadata checks are deterministic/offline metadata validation only; they do not launch the robot.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 
@@ -258,6 +261,44 @@ Generated scenes should emit all required artifacts:
 - [ ] `robot.ee_link` exists in URDF
 - [ ] `end_effector.grasp_frame` exists and is consistent
 - [ ] `end_effector.allowed_touch_links` are non-empty and valid link names
+
+---
+
+## Scene self-test object
+
+`self_test` defines a deterministic commissioning object pose per scene. It is intended for repeatable offline checks and future one-click offline pick/place simulation workflows.
+
+Important scope:
+
+- it **does not** launch the robot,
+- it **does not** require EPD/camera input,
+- it **does not** require RealSense, RViz, or physical hardware,
+- it is conservative commissioning metadata that should be tuned per physical cell.
+
+Example:
+
+```yaml
+self_test:
+  enabled: true
+  object:
+    id: commissioning_box
+    shape: box
+    dimensions: [0.05, 0.05, 0.05]
+    frame_id: world
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+  expected:
+    min_grasp_candidates: 1
+    allow_simulated_execution: true
+```
+
+Quick commands:
+
+```bash
+./scripts/check_scene_self_tests.sh
+./scripts/generate_scene_self_test_report.py
+./scripts/preflight_workcell.sh
+```
 - [ ] launch file starts without package-not-found errors
 
 ---

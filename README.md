@@ -56,10 +56,17 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 ```bash
 ./scripts/generate_scene_validation_report.py
+./scripts/generate_scene_self_test_report.py
 ./scripts/generate_smoke_launch_report.py
 ```
 
 Validation preflight checks manifests/files only. Smoke launch preflight verifies `run_grasp_execution` reaches readiness markers headlessly. Smoke checks do **not** validate full grasp execution quality, EPD perception, camera hardware, or physical robot behavior. See `docs/manuals/WORKCELL_OPERATOR_MANUAL.md` for operator workflow details.
+
+Scene self-test metadata (`self_test` in each scene manifest) defines a deterministic commissioning object pose for offline checks. It is metadata-only: no robot launch, no EPD/camera requirement, and no physical hardware requirement.
+
+```bash
+./scripts/check_scene_self_tests.sh
+```
 
 ---
 
