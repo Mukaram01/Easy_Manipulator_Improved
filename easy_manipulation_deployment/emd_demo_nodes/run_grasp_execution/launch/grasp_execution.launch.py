@@ -153,6 +153,10 @@ def build_workcell_context_for_scene(scene_package, scene_metadata):
     ee_id = derive_planner_end_effector_id(end_effector)
     ee_link = derive_workcell_end_effector_link(end_effector)
     ee_grasp_frame = derive_workcell_grasp_frame(end_effector) or ee_link
+    return build_workcell_context(ee_id, ee_link, ee_grasp_frame), ee_id, ee_link, ee_grasp_frame
+
+
+def build_workcell_context(ee_id, ee_link, ee_grasp_frame):
     return {
         "workcell": {
             "ros__parameters": {
@@ -168,7 +172,34 @@ def build_workcell_context_for_scene(scene_package, scene_metadata):
                 f"groups.manipulator.end_effectors.{ee_id}.driver.controller": "",
             }
         }
-    }, ee_id, ee_link, ee_grasp_frame
+    }
+
+
+def validate_and_normalize_workcell_end_effector_frames(scene_metadata, ee_id, ee_link, ee_grasp_frame, link_names, logger):
+    end_effector = scene_metadata.get("end_effector", {}) if isinstance(scene_metadata, dict) else {}
+    if not isinstance(end_effector, dict):
+        end_effector = {}
+
+    expected_3f_links = {"palm", "finger_1_link_0", "finger_2_link_0", "finger_middle_link_0"}
+    metadata_declares_3f = ee_id == "robotiq_3f" or resolve_gripper_controller_joints("", scene_metadata) == GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR["robotiq_3f"]
+    urdf_has_3f_links = bool(expected_3f_links.intersection(link_names))
+
+    if metadata_declares_3f and not urdf_has_3f_links:
+        logger.warning(
+            "Scene metadata declares Robotiq 3F, but the URDF does not expose 3F links; falling back to arm-only "
+            "workcell context (ee='ur_tool0', link='tool0', grasp_frame='tool0')."
+        )
+        return "ur_tool0", "tool0", "tool0"
+
+    missing_targets = [frame for frame in (ee_link, ee_grasp_frame) if frame not in link_names]
+    if missing_targets:
+        logger.warning(
+            "Derived workcell frames are not present in the scene URDF links "
+            f"({', '.join(missing_targets)}); falling back to arm-only context link/frame 'tool0'."
+        )
+        return "ur_tool0", "tool0", "tool0"
+
+    return ee_id, ee_link, ee_grasp_frame
 
 
 def align_gripper_controller_joints(
@@ -446,9 +477,6 @@ def launch_setup(context, *args, **kwargs):
     try:
         scene_metadata = load_scene_environment(scene_package)
         gripper_controller_joints = resolve_gripper_controller_joints(scene_package, scene_metadata=scene_metadata)
-        scene_workcell_context, scene_ee_id, scene_ee_link, scene_ee_grasp_frame = build_workcell_context_for_scene(
-            scene_package, scene_metadata
-        )
     except Exception as exc:
         scene_package_path = get_package_share_directory(scene_package)
         scene_yaml_path = os.path.join(scene_package_path, "environment.yaml")
@@ -460,13 +488,6 @@ def launch_setup(context, *args, **kwargs):
             f"{PLANNING_FRAME_ARGUMENT}='{planning_frame}'. "
             f"Original error: {exc}"
         ) from exc
-    workcell_context_params_file = write_temp_yaml_params(scene_workcell_context, prefix="workcell_context_")
-    logger.info(
-        f"Generated workcell context for scene '{scene_package}': ee={scene_ee_id} "
-        f"brand={scene_ee_id} moveit_link={scene_ee_link} "
-        f"grasp_frame={scene_ee_grasp_frame} (file='{workcell_context_params_file}')"
-    )
-
     scene_xacro_path = Path(get_package_share_directory(scene_package)) / "urdf" / "scene.urdf.xacro"
     scene_args = _extract_scene_xacro_args(scene_xacro_path)
     ur_robot_args = _extract_ur_robot_macro_params()
@@ -500,6 +521,26 @@ def launch_setup(context, *args, **kwargs):
         robot_description_config,
         robot_description_semantic_config,
         logger,
+    )
+
+    scene_workcell_context, scene_ee_id, scene_ee_link, scene_ee_grasp_frame = build_workcell_context_for_scene(
+        scene_package, scene_metadata
+    )
+    scene_link_names = _extract_link_names_from_urdf(robot_description_config)
+    scene_ee_id, scene_ee_link, scene_ee_grasp_frame = validate_and_normalize_workcell_end_effector_frames(
+        scene_metadata,
+        scene_ee_id,
+        scene_ee_link,
+        scene_ee_grasp_frame,
+        scene_link_names,
+        logger,
+    )
+    scene_workcell_context = build_workcell_context(scene_ee_id, scene_ee_link, scene_ee_grasp_frame)
+    workcell_context_params_file = write_temp_yaml_params(scene_workcell_context, prefix="workcell_context_")
+    logger.info(
+        f"Generated workcell context for scene '{scene_package}': ee={scene_ee_id} "
+        f"brand={scene_ee_id} moveit_link={scene_ee_link} "
+        f"grasp_frame={scene_ee_grasp_frame} (file='{workcell_context_params_file}')"
     )
 
     robot_description = {"robot_description": robot_description_config}

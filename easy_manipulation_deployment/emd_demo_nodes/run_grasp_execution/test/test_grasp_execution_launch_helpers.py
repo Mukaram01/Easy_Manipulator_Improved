@@ -302,7 +302,7 @@ def test_load_scene_environment_supports_known_generated_scene_packages(grasp_la
     ("scene_package", "expected_brand", "expected_moveit_link", "expected_grasp_frame"),
     [
         ("ur5_2f_test", "robotiq_2f", "tool0", "ee_palm"),
-        ("ur5_3f_test", "robotiq_3f", "tool0", "palm"),
+        ("ur5_3f_test", "ur_tool0", "tool0", "tool0"),
         ("suction_test", "suction_cup", "tool0", "wrist_fixture"),
         ("ur5_airpick4_test", "suction_cup", "tool0", "gripper_base_link"),
     ],
@@ -357,6 +357,43 @@ def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_en
     assert ee_link == "tool0"
     assert ee_grasp_frame == "tool0"
     assert ros_params["groups.manipulator.end_effectors"] == ["ur_tool0"]
+
+
+@pytest.fixture()
+def three_finger_metadata_with_arm_only_urdf():
+    scene_metadata = {
+        "robot": {"name": "ur5"},
+        "end_effector": {
+            "name": "robotiq_3f",
+            "brand": "robotiq_3f_gripper",
+            "robot_link": "tool0",
+            "base_link": "palm",
+            "attributes": {"fingers": 3},
+        },
+    }
+    arm_only_links = {"world", "base_link", "wrist_3_link", "tool0"}
+    return scene_metadata, arm_only_links
+
+
+def test_validate_and_normalize_workcell_end_effector_frames_falls_back_on_3f_urdf_mismatch(
+    grasp_launch_module,
+    three_finger_metadata_with_arm_only_urdf,
+):
+    scene_metadata, arm_only_links = three_finger_metadata_with_arm_only_urdf
+    logger = types.SimpleNamespace(warning_messages=[])
+    logger.warning = lambda msg: logger.warning_messages.append(msg)
+
+    ee_id, ee_link, ee_grasp_frame = grasp_launch_module.validate_and_normalize_workcell_end_effector_frames(
+        scene_metadata=scene_metadata,
+        ee_id="robotiq_3f",
+        ee_link="tool0",
+        ee_grasp_frame="palm",
+        link_names=arm_only_links,
+        logger=logger,
+    )
+
+    assert (ee_id, ee_link, ee_grasp_frame) == ("ur_tool0", "tool0", "tool0")
+    assert any("declares Robotiq 3F" in message for message in logger.warning_messages)
 
 
 

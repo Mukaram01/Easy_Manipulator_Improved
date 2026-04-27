@@ -14,28 +14,16 @@ robot:
     - base
     - tool0
 end_effector:
-  name: robotiq_3f
-  brand: robotiq_3f_gripper
-  filepath: assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description
-  base_link: palm
+  name: ur_tool0
+  brand: universal_robot
+  filepath: ""
+  base_link: tool0
   robot_link: tool0
-  ee_type: finger
+  ee_type: none
   attributes:
-    fingers: 3
+    fingers: 0
   links:
-    - palm
-    - finger_1_link_0
-    - finger_1_link_1
-    - finger_1_link_2
-    - finger_1_link_3
-    - finger_2_link_0
-    - finger_2_link_1
-    - finger_2_link_2
-    - finger_2_link_3
-    - finger_middle_link_0
-    - finger_middle_link_1
-    - finger_middle_link_2
-    - finger_middle_link_3
+    - tool0
 objects:
   table:
     child_link: table
