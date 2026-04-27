@@ -729,3 +729,11 @@ python3 scripts/create_cell_definition_wizard.py \
 6. Generate execution plan.
 7. Export commissioning bundle.
 8. Only then review physical safety/reachability before real robot use.
+
+## Offline workcell project generation
+
+Use `scripts/create_workcell_project.py` to create a complete offline review package from a cell definition (or template mode). The generated project includes reports, commissioning bundle artifacts, and operator next commands.
+
+Run: `./scripts/check_workcell_projects.sh` for representative fixture checks, or `./scripts/preflight_workcell.sh` to include this stage in full offline preflight.
+
+Reference: `docs/manuals/WORKCELL_PROJECT_GENERATOR.md`.

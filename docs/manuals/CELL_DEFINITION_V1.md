@@ -175,3 +175,13 @@ python3 scripts/create_cell_definition_wizard.py \
 python3 scripts/validate_cell_definition.py /tmp/shape_sorting_demo.cell.yaml
 python3 scripts/export_workcell_bundle.py generated_shape_sorting_demo --force
 ```
+
+## Workcell project orchestration
+
+A validated `cell_definition/v1` can now be used directly with:
+
+```bash
+python3 scripts/create_workcell_project.py --cell-definition <path/to/cell.yaml> --output-dir dist/workcell_projects --force
+```
+
+This orchestrates existing offline tooling (validation, package generation, direct manifest validation, dry-run, execution plan, and commissioning bundle) into one project folder and emits `project_manifest.json`.
