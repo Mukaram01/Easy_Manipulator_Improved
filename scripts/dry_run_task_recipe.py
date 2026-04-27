@@ -91,7 +91,7 @@ def _evaluate_rules(decision_rules: Any, object_attributes: dict[str, Any]) -> t
         if not isinstance(when, dict):
             continue
 
-        if when.get("default") is True:
+        if when.get("default") is True or when.get("always") is True:
             return rule, None
 
         attribute = when.get("attribute")

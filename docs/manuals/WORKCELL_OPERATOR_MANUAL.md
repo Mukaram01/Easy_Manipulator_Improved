@@ -276,6 +276,39 @@ Reference placeholder template: `workcell_builder/workcell_builder/templates/ros
 - [ ] `self_test` block validates for deterministic commissioning metadata
 - [ ] `task_recipe` block validates (or is intentionally disabled with WARN)
 
+### Generated scenes from workcell_builder
+
+`workcell_builder` generated scenes now include default commissioning metadata blocks by default:
+
+- `self_test`
+- `task_recipe`
+- `home_return` (with explicit `home_return.safe_joint_state`, including `[]` when named target fallback is used)
+
+These defaults are conservative and editable, so generated scenes can enter the same offline validation/export path immediately after generation.
+
+Run:
+
+```bash
+./scripts/check_workcell_builder_templates.sh
+./scripts/preflight_workcell.sh
+./scripts/check_workcell_bundles.sh <generated_scene_name>
+```
+
+Future click-driven workflow target:
+
+1. create/import environment
+2. select robot
+3. select gripper/tool
+4. define objects/support surfaces
+5. choose task type
+6. generate scene
+7. validate scene
+8. export commissioning bundle
+9. run simulation smoke test
+10. commission physical cell
+
+**Strong limitation:** generated metadata is a commissioning starting point, not a safety certificate and not proof of physical reachability.
+
 ---
 
 ## Scene self-test object

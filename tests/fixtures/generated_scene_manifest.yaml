@@ -1,0 +1,74 @@
+schema_version: 1.0
+scene:
+  name: generated_demo_scene
+robot:
+  model: panda
+  planning_group: panda_arm
+  base_frame: panda_link0
+  ee_link: panda_hand
+  home_named_target: home
+planning:
+  pipeline: ompl
+  planner_id: RRTConnectkConfigDefault
+end_effector:
+  type: finger
+  brand: generated_unknown
+  grasp_frame: panda_hand
+  allowed_touch_links:
+    - panda_leftfinger
+    - panda_rightfinger
+frames:
+  world: world
+  robot_base: panda_link0
+  grasp_frame: panda_hand
+  support_surface_frame: world
+environment:
+  support_surface_link: table
+self_test:
+  enabled: true
+  object:
+    id: commissioning_box
+    shape: box
+    frame_id: world
+    dimensions: [0.05, 0.05, 0.05]
+    pose_xyz: [0.45, 0.00, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    attributes:
+      color: unknown
+      shape: box
+      material: unknown
+      class: commissioning
+  expected:
+    min_grasp_candidates: 1
+    allow_simulated_execution: true
+task_recipe:
+  enabled: true
+  recipe_id: generated_default_pick_place
+  id: generated_default_pick_place
+  task_type: pick_place
+  type: pick_place
+  description: Generated default commissioning recipe. Review and tune before runtime use.
+  name: Generated default commissioning recipe
+  pick:
+    source: self_test.object
+    object_source: self_test
+  decision_rules:
+    - id: default_place
+      when:
+        always: true
+      destination: default_drop_zone
+      action: place
+  destinations:
+    - id: default_drop_zone
+      frame_id: world
+      pose_xyz: [0.30, -0.30, 0.10]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+  expected:
+    allow_fallback_rule: true
+    require_destination_pose: true
+home_return:
+  enabled: true
+  strategy: named_target_or_safe_joint_state
+  named_target: home
+  safe_joint_state: []

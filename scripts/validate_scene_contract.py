@@ -304,8 +304,6 @@ def _check_required(manifest: dict[str, Any], errors: list[str]) -> None:
         "robot.ee_link",
         "end_effector.type",
         "end_effector.brand",
-        "end_effector.grasp_frame",
-        "end_effector.allowed_touch_links",
         "environment.support_surface_link",
     ]
 
@@ -318,11 +316,13 @@ def _check_required(manifest: dict[str, Any], errors: list[str]) -> None:
             )
 
     home_named = _dig(manifest, "robot.home_named_target")
+    if not _is_non_empty(home_named):
+        home_named = _dig(manifest, "home_return.named_target")
     safe_state = _dig(manifest, "home_return.safe_joint_state")
     if not _is_non_empty(home_named) and not _is_non_empty(safe_state):
         errors.append(
             "Missing home return definition. Provide either "
-            "'robot.home_named_target' or 'home_return.safe_joint_state'."
+            "'robot.home_named_target'/'home_return.named_target' or 'home_return.safe_joint_state'."
         )
 
 
@@ -348,6 +348,19 @@ def _check_types(manifest: dict[str, Any], errors: list[str], warnings: list[str
                 f"Field 'scene.name' ('{scene_name.strip()}') does not match package name '{package}'."
             )
 
+    ee_type = str(_dig(manifest, "end_effector.type") or "").strip().lower()
+    grasp_frame = _dig(manifest, "end_effector.grasp_frame")
+    if ee_type in {"finger", "suction"}:
+        if not isinstance(grasp_frame, str) or not grasp_frame.strip():
+            errors.append(
+                "Field 'end_effector.grasp_frame' must be a non-empty string for finger/suction end effectors."
+            )
+    elif ee_type:
+        if not isinstance(grasp_frame, str) or not grasp_frame.strip():
+            warnings.append(
+                "Field 'end_effector.grasp_frame' is missing/empty for unknown end-effector type."
+            )
+
     touch_links = _dig(manifest, "end_effector.allowed_touch_links")
     if touch_links is not None:
         if not isinstance(touch_links, list):
@@ -356,12 +369,23 @@ def _check_types(manifest: dict[str, Any], errors: list[str], warnings: list[str
             )
         else:
             if not touch_links:
-                errors.append("Field 'end_effector.allowed_touch_links' must not be empty.")
+                if ee_type == "finger":
+                    errors.append("Field 'end_effector.allowed_touch_links' must not be empty for finger grippers.")
+                else:
+                    warnings.append(
+                        "Field 'end_effector.allowed_touch_links' is empty; populate known contact links when available."
+                    )
             bad_items = [item for item in touch_links if not isinstance(item, str) or not item.strip()]
             if bad_items:
                 errors.append(
                     "Field 'end_effector.allowed_touch_links' must contain only non-empty strings."
                 )
+    elif ee_type == "finger":
+        errors.append("Field 'end_effector.allowed_touch_links' is required for finger grippers.")
+    else:
+        warnings.append(
+            "Field 'end_effector.allowed_touch_links' is not defined; provide a placeholder list for commissioning."
+        )
 
     input_frames = _dig(manifest, "perception.input_frame_options")
     if input_frames is not None:
@@ -369,12 +393,23 @@ def _check_types(manifest: dict[str, Any], errors: list[str], warnings: list[str
             errors.append("Field 'perception.input_frame_options' must be a YAML list.")
 
     safe_state = _dig(manifest, "home_return.safe_joint_state")
+    named_target = _dig(manifest, "home_return.named_target")
+    if not _is_non_empty(named_target):
+        named_target = _dig(manifest, "robot.home_named_target")
     if safe_state is not None:
         if not isinstance(safe_state, list):
             errors.append("Field 'home_return.safe_joint_state' must be a YAML list of numbers.")
             return
         if not safe_state:
-            errors.append("Field 'home_return.safe_joint_state' must be non-empty when provided.")
+            if not _is_non_empty(named_target):
+                errors.append(
+                    "Field 'home_return.safe_joint_state' cannot be empty unless "
+                    "'home_return.named_target' or 'robot.home_named_target' is provided."
+                )
+            else:
+                warnings.append(
+                    "Field 'home_return.safe_joint_state' is empty; using named target fallback for home return."
+                )
             return
         non_numeric = [v for v in safe_state if not isinstance(v, (int, float))]
         non_finite = [v for v in safe_state if isinstance(v, float) and not math.isfinite(v)]
@@ -482,7 +517,16 @@ def _is_int_and_not_bool(value: Any) -> bool:
 
 VALID_TASK_TYPES = {"pick_place", "sort", "inspect", "reject", "palletise", "binning", "custom"}
 VALID_OBJECT_SOURCES = {"perception", "self_test", "manual"}
-VALID_DESTINATION_ACTIONS = {"place", "reject", "inspect", "drop", "stage", "custom"}
+VALID_DESTINATION_ACTIONS = {
+    "place",
+    "reject",
+    "inspect",
+    "drop",
+    "stage",
+    "pick_suction",
+    "place_suction",
+    "custom",
+}
 
 
 def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]]:
@@ -501,12 +545,15 @@ def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]
         return "WARN", ["task_recipe.enabled=false; recipe metadata intentionally disabled."]
 
     notes: list[str] = []
-    if not _is_non_empty_string(recipe.get("id")):
+    recipe_id = recipe.get("id", recipe.get("recipe_id"))
+    recipe_name = recipe.get("name", recipe.get("description"))
+    recipe_type = recipe.get("type", recipe.get("task_type"))
+
+    if not _is_non_empty_string(recipe_id):
         notes.append("task_recipe.id must be non-empty string when task_recipe.enabled=true.")
-    if not _is_non_empty_string(recipe.get("name")):
+    if not _is_non_empty_string(recipe_name):
         notes.append("task_recipe.name must be non-empty string when task_recipe.enabled=true.")
 
-    recipe_type = recipe.get("type")
     if recipe_type not in VALID_TASK_TYPES:
         notes.append(
             "task_recipe.type must be one of: "
@@ -529,6 +576,10 @@ def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]
             notes.append("task_recipe.pick must be a mapping/object when provided.")
         else:
             object_source = pick.get("object_source")
+            if object_source is None:
+                object_source = pick.get("source")
+                if object_source == "self_test.object":
+                    object_source = "self_test"
             if object_source is not None and object_source not in VALID_OBJECT_SOURCES:
                 notes.append(
                     "task_recipe.pick.object_source must be one of: "
@@ -590,7 +641,7 @@ def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]
                 notes.append(f"{prefix}.when must be a mapping/object.")
                 continue
 
-            is_default = when.get("default") is True
+            is_default = when.get("default") is True or when.get("always") is True
             if is_default:
                 continue
 

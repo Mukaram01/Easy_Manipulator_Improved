@@ -145,6 +145,32 @@ This package is offline-only and **not** a safety certificate. It does **not** p
 ./scripts/preflight_workcell.sh
 ```
 
+### Generated scenes from workcell_builder
+
+New scenes generated from `workcell_builder` now include commissioning-oriented contract defaults in `scene_manifest.yaml` (or `workcell.yaml`): `self_test`, `task_recipe`, and `home_return` metadata blocks plus explicit `home_return.safe_joint_state` (empty list allowed when a named target is provided). These defaults are designed for offline validation/export workflows first, and are intended to be edited/tuned per cell before runtime use.
+
+Commissioning checks for generated templates/scenes:
+
+```bash
+./scripts/check_workcell_builder_templates.sh
+./scripts/preflight_workcell.sh
+./scripts/check_workcell_bundles.sh <generated_scene_name>
+```
+
+Future click-driven workflow this enables:
+1. create/import environment
+2. select robot
+3. select gripper/tool
+4. define objects/support surfaces
+5. choose task type
+6. generate scene
+7. validate scene
+8. export commissioning bundle
+9. run simulation smoke test
+10. commission physical cell
+
+**Strong limitation:** generated metadata is a commissioning starting point, **not** a safety certificate and **not** proof of physical reachability/collision-free runtime behavior.
+
 ```yaml
 task_recipe:
   id: colour_sort_demo
