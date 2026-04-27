@@ -72,3 +72,41 @@ def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
     bad_yaml.write_text('list: [1, 2')
     monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
     assert demo.load_yaml('pkg', bad_yaml.name) is None
+
+
+def test_extract_end_effector_metadata_supports_legacy_keys():
+    environment = {
+        "end_effector": {
+            "brand": "robotiq",
+            "ee_type": "finger",
+            "base_link": "robotiq_85_base_link",
+            "attributes": {"fingers": 2},
+        }
+    }
+    metadata = demo.extract_end_effector_metadata(environment)
+    assert metadata["planner_id"] == "robotiq"
+    assert metadata["gripper_type"] == "finger"
+    assert metadata["grasp_frame"] == "robotiq_85_base_link"
+    assert metadata["tcp_link"] == "robotiq_85_base_link"
+    assert metadata["spawn_gripper_controller"] is True
+    assert metadata["finger_count"] == 2
+
+
+def test_extract_end_effector_metadata_prefers_normalized_keys():
+    environment = {
+        "end_effector": {
+            "planner_id": "ur5e_robotiq",
+            "gripper_type": "airpick",
+            "grasp_frame": "vacuum_tip",
+            "tcp_link": "vacuum_tip",
+            "spawn_gripper_controller": False,
+            "finger_count": 0,
+        }
+    }
+    metadata = demo.extract_end_effector_metadata(environment)
+    assert metadata["planner_id"] == "ur5e_robotiq"
+    assert metadata["gripper_type"] == "airpick"
+    assert metadata["grasp_frame"] == "vacuum_tip"
+    assert metadata["tcp_link"] == "vacuum_tip"
+    assert metadata["spawn_gripper_controller"] is False
+    assert metadata["finger_count"] == 0

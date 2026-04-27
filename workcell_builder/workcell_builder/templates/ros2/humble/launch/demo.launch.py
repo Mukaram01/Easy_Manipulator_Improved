@@ -76,6 +76,36 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(file) or {}
 
 
+def extract_end_effector_metadata(environment_config):
+    end_effector = environment_config.get("end_effector", {}) if isinstance(environment_config, dict) else {}
+    if not isinstance(end_effector, dict):
+        end_effector = {}
+
+    gripper_type = end_effector.get("gripper_type") or end_effector.get("ee_type") or ""
+    planner_id = end_effector.get("planner_id") or end_effector.get("brand") or ""
+    grasp_frame = end_effector.get("grasp_frame") or end_effector.get("tcp_link") or end_effector.get("base_link") or ""
+    tcp_link = end_effector.get("tcp_link") or end_effector.get("grasp_frame") or end_effector.get("base_link") or ""
+
+    spawn_gripper_controller = end_effector.get("spawn_gripper_controller")
+    if spawn_gripper_controller is None:
+        spawn_gripper_controller = gripper_type == "finger"
+
+    finger_count = end_effector.get("finger_count")
+    if finger_count is None and gripper_type == "finger":
+        attributes = end_effector.get("attributes", {})
+        if isinstance(attributes, dict):
+            finger_count = attributes.get("fingers")
+
+    return {
+        "planner_id": planner_id,
+        "grasp_frame": grasp_frame,
+        "tcp_link": tcp_link,
+        "gripper_type": gripper_type,
+        "spawn_gripper_controller": bool(spawn_gripper_controller),
+        "finger_count": finger_count,
+    }
+
+
 def _normalize_ros_param_types(value):
     if isinstance(value, dict):
         return {str(key): _normalize_ros_param_types(item) for key, item in value.items()}
@@ -314,6 +344,8 @@ def _launch_setup(context):
         "publish_state_updates": True,
         "publish_transforms_updates": True,
     }
+    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    end_effector_metadata = extract_end_effector_metadata(environment_config)
 
     try:
         validated_use_sim_time = _param_dict(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"}))
@@ -326,6 +358,9 @@ def _launch_setup(context):
         validated_trajectory_execution = _param_dict(_normalize_ros_param_types(trajectory_execution))
         validated_moveit_controller_manager = _param_dict(_normalize_ros_param_types(moveit_controller_manager))
         validated_moveit_simple_controller_manager = _param_dict(_normalize_ros_param_types(moveit_simple_controller_manager))
+        validated_end_effector_metadata = _param_dict(_normalize_ros_param_types({
+            "workcell_end_effector_metadata": end_effector_metadata
+        }))
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -337,6 +372,7 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_trajectory_execution, "trajectory_execution")
         _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
         _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
+        _validate_ros_param_types(validated_end_effector_metadata, "end_effector_metadata")
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 
@@ -399,6 +435,7 @@ def _launch_setup(context):
             validated_trajectory_execution,
             validated_moveit_controller_manager,
             validated_moveit_simple_controller_manager,
+            validated_end_effector_metadata,
         ),
         remappings=[
             ("joint_states", joint_states_topic),

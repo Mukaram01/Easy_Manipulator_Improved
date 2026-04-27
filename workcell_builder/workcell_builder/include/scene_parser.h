@@ -97,6 +97,12 @@ public:
       if (ee_it->first.as < std::string > ().compare("brand") == 0) {
         input_ee->brand = ee_it->second.as < std::string > ();
       }
+      if (ee_it->first.as < std::string > ().compare("planner_id") == 0) {
+        input_ee->planner_id = ee_it->second.as < std::string > ();
+        if (input_ee->brand.empty()) {
+          input_ee->brand = input_ee->planner_id;
+        }
+      }
       if (ee_it->first.as < std::string > ().compare("base_link") == 0) {
         input_ee->base_link = ee_it->second.as < std::string > ();
       }
@@ -108,6 +114,27 @@ public:
       }
       if (ee_it->first.as < std::string > ().compare("ee_type") == 0) {
         input_ee->ee_type = ee_it->second.as < std::string > ();
+      }
+      if (ee_it->first.as < std::string > ().compare("gripper_type") == 0) {
+        input_ee->gripper_type = ee_it->second.as < std::string > ();
+        if (input_ee->ee_type.empty()) {
+          input_ee->ee_type = input_ee->gripper_type;
+        }
+      }
+      if (ee_it->first.as < std::string > ().compare("grasp_frame") == 0) {
+        input_ee->grasp_frame = ee_it->second.as < std::string > ();
+      }
+      if (ee_it->first.as < std::string > ().compare("tcp_link") == 0) {
+        input_ee->tcp_link = ee_it->second.as < std::string > ();
+      }
+      if (ee_it->first.as < std::string > ().compare("spawn_gripper_controller") == 0) {
+        input_ee->spawn_gripper_controller = ee_it->second.as < bool > ();
+      }
+      if (ee_it->first.as < std::string > ().compare("finger_count") == 0) {
+        input_ee->finger_count = ee_it->second.as < int > ();
+        if (input_ee->attribute_1 < 0) {
+          input_ee->attribute_1 = input_ee->finger_count;
+        }
       }
 
       if (ee_it->first.as < std::string > ().compare("attributes") == 0) {
@@ -163,6 +190,21 @@ public:
         }
         input_ee->ee_links = temp_vec;
       }
+    }
+    if (input_ee->planner_id.empty()) {
+      input_ee->planner_id = input_ee->brand;
+    }
+    if (input_ee->gripper_type.empty()) {
+      input_ee->gripper_type = input_ee->ee_type;
+    }
+    if (input_ee->grasp_frame.empty()) {
+      input_ee->grasp_frame = input_ee->base_link;
+    }
+    if (input_ee->tcp_link.empty()) {
+      input_ee->tcp_link = input_ee->grasp_frame;
+    }
+    if (input_ee->finger_count < 0 && input_ee->gripper_type == "finger" && input_ee->attribute_1 > 0) {
+      input_ee->finger_count = input_ee->attribute_1;
     }
     return true;
   }

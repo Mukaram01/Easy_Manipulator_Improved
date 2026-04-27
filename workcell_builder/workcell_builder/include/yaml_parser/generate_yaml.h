@@ -68,6 +68,50 @@ std::vector<std::string> normalize_robot_links(const Robot & robot)
 
   return links;
 }
+
+std::string normalized_planner_id(const EndEffector & ee)
+{
+  return ee.planner_id.empty() ? ee.brand : ee.planner_id;
+}
+
+std::string normalized_gripper_type(const EndEffector & ee)
+{
+  return ee.gripper_type.empty() ? ee.ee_type : ee.gripper_type;
+}
+
+std::string normalized_grasp_frame(const EndEffector & ee)
+{
+  if (!ee.grasp_frame.empty()) {
+    return ee.grasp_frame;
+  }
+  if (!ee.tcp_link.empty()) {
+    return ee.tcp_link;
+  }
+  return ee.base_link;
+}
+
+std::string normalized_tcp_link(const EndEffector & ee)
+{
+  if (!ee.tcp_link.empty()) {
+    return ee.tcp_link;
+  }
+  if (!ee.grasp_frame.empty()) {
+    return ee.grasp_frame;
+  }
+  return ee.base_link;
+}
+
+bool normalized_spawn_gripper_controller(const EndEffector & ee)
+{
+  const std::string gripper_type = normalized_gripper_type(ee);
+  if (gripper_type == "finger") {
+    return true;
+  }
+  if (gripper_type == "suction" || gripper_type == "airpick") {
+    return false;
+  }
+  return ee.spawn_gripper_controller;
+}
 }  // namespace
 
 
@@ -128,6 +172,24 @@ public:
       out << YAML::Value << scene.ee_vector[0].robot_link;
       out << YAML::Key << "ee_type";
       out << YAML::Value << scene.ee_vector[0].ee_type;
+      out << YAML::Key << "planner_id";
+      out << YAML::Value << normalized_planner_id(scene.ee_vector[0]);
+      out << YAML::Key << "grasp_frame";
+      out << YAML::Value << normalized_grasp_frame(scene.ee_vector[0]);
+      out << YAML::Key << "tcp_link";
+      out << YAML::Value << normalized_tcp_link(scene.ee_vector[0]);
+      out << YAML::Key << "gripper_type";
+      out << YAML::Value << normalized_gripper_type(scene.ee_vector[0]);
+      out << YAML::Key << "spawn_gripper_controller";
+      out << YAML::Value << normalized_spawn_gripper_controller(scene.ee_vector[0]);
+      if (normalized_gripper_type(scene.ee_vector[0]) == "finger") {
+        const int normalized_finger_count = scene.ee_vector[0].finger_count > 0 ?
+          scene.ee_vector[0].finger_count : scene.ee_vector[0].attribute_1;
+        if (normalized_finger_count > 0) {
+          out << YAML::Key << "finger_count";
+          out << YAML::Value << normalized_finger_count;
+        }
+      }
       out << YAML::Key << "attributes";
       out << YAML::Value << YAML::BeginMap;
       if (scene.ee_vector[0].ee_type.compare("finger") == 0) {
