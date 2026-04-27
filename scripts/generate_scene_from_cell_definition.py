@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""Generate scene/task/commissioning preview artifacts from Cell Definition v1."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from typing import Any
+
+import validate_cell_definition as cell_validator
+
+
+def _task_recipe_type(task_type: str) -> str:
+    mapping = {
+        "sort_by_colour": "sort",
+        "sort_by_shape": "sort",
+        "sort_by_class": "sort",
+        "garbage_sorting": "sort",
+        "inspection_then_place": "inspection_then_place",
+        "pick_place": "pick_place",
+        "custom": "custom",
+    }
+    return mapping.get(task_type, task_type)
+
+
+def _to_yaml_text(data: Any) -> str:
+    if cell_validator._pyyaml is not None:
+        return str(cell_validator._pyyaml.safe_dump(data, sort_keys=False))
+
+    def _scalar_text(value: Any) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if value is None:
+            return "null"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, list) and all(not isinstance(item, (dict, list)) for item in value):
+            return "[" + ", ".join(_scalar_text(item) for item in value) + "]"
+        return str(value)
+
+    def dump(value: Any, indent: int = 0) -> list[str]:
+        prefix = " " * indent
+        if isinstance(value, dict):
+            lines: list[str] = []
+            for key, child in value.items():
+                if isinstance(child, dict):
+                    lines.append(f"{prefix}{key}:")
+                    lines.extend(dump(child, indent + 2))
+                elif isinstance(child, list) and child and all(isinstance(item, dict) for item in child):
+                    lines.append(f"{prefix}{key}:")
+                    for item in child:
+                        first = True
+                        for item_key, item_value in item.items():
+                            if first and not isinstance(item_value, (dict, list)):
+                                lines.append(f"{' ' * (indent + 2)}- {item_key}: {_scalar_text(item_value)}")
+                                first = False
+                            elif first:
+                                lines.append(f"{' ' * (indent + 2)}- {item_key}:")
+                                lines.extend(dump(item_value, indent + 6))
+                                first = False
+                            elif isinstance(item_value, (dict, list)):
+                                lines.append(f"{' ' * (indent + 4)}{item_key}:")
+                                lines.extend(dump(item_value, indent + 6))
+                            else:
+                                lines.append(f"{' ' * (indent + 4)}{item_key}: {_scalar_text(item_value)}")
+                elif isinstance(child, list):
+                    lines.append(f"{prefix}{key}: {_scalar_text(child)}")
+                else:
+                    lines.append(f"{prefix}{key}: {_scalar_text(child)}")
+            return lines
+        if isinstance(value, list):
+            return [f"{prefix}- {_scalar_text(item)}" for item in value]
+        return [f"{prefix}{_scalar_text(value)}"]
+
+    return "\n".join(dump(data)) + "\n"
+
+
+def build_scene_manifest(cell_def: dict[str, Any]) -> dict[str, Any]:
+    cell = cell_def.get("cell", {})
+    robot = cell_def.get("robot", {})
+    end_effector = cell_def.get("end_effector", {})
+    environment = cell_def.get("environment", {})
+    objects = cell_def.get("objects", [])
+    task = cell_def.get("task", {})
+    commissioning = cell_def.get("commissioning", {})
+
+    self_test_object = objects[0] if objects else {}
+
+    return {
+        "schema_version": "1.0",
+        "scene": {"name": cell.get("id", "generated_cell")},
+        "robot": {
+            "model": robot.get("model", "unknown"),
+            "planning_group": robot.get("planning_group", "manipulator"),
+            "base_frame": robot.get("base_frame", "world"),
+            "ee_link": robot.get("tool_link", "tool0"),
+            "home_named_target": robot.get("home_named_target", "home"),
+        },
+        "planning": {"pipeline": "ompl", "planner_id": "RRTConnectkConfigDefault"},
+        "end_effector": {
+            "type": end_effector.get("type", "unknown"),
+            "brand": end_effector.get("brand", "unknown"),
+            "grasp_frame": end_effector.get("grasp_frame", "tool0"),
+            "allowed_touch_links": end_effector.get("allowed_touch_links", []),
+        },
+        "frames": {
+            "world": environment.get("frame", "world"),
+            "robot_base": robot.get("base_frame", "world"),
+            "grasp_frame": end_effector.get("grasp_frame", "tool0"),
+            "support_surface_frame": environment.get("frame", "world"),
+        },
+        "environment": {
+            "support_surface_link": (
+                environment.get("support_surfaces", [{}])[0].get("id", "table")
+                if isinstance(environment.get("support_surfaces"), list) and environment.get("support_surfaces")
+                else "table"
+            ),
+            "support_surfaces": environment.get("support_surfaces", []),
+            "objects": objects,
+        },
+        "self_test": {
+            "enabled": bool(commissioning.get("self_test_enabled", True)),
+            "object": {
+                "id": self_test_object.get("id", "commissioning_box"),
+                "shape": self_test_object.get("shape", "box"),
+                "frame_id": self_test_object.get("frame", "world"),
+                "dimensions": self_test_object.get("dimensions", [0.05, 0.05, 0.05]),
+                "pose_xyz": self_test_object.get("pose_xyz", [0.45, 0.0, 0.08]),
+                "pose_rpy": self_test_object.get("pose_rpy", [0.0, 0.0, 0.0]),
+                "attributes": {
+                    "color": self_test_object.get("color", "unknown"),
+                    "shape": self_test_object.get("shape", "unknown"),
+                    "material": self_test_object.get("material", "unknown"),
+                    "class": self_test_object.get("class", "unknown"),
+                },
+            },
+            "expected": {"min_grasp_candidates": 1, "allow_simulated_execution": True},
+        },
+        "task_recipe": build_task_recipe(cell_def),
+        "home_return": {
+            "enabled": True,
+            "strategy": "named_target_or_safe_joint_state",
+            "named_target": robot.get("home_named_target", "home"),
+            "safe_joint_state": robot.get("safe_joint_state", []),
+        },
+    }
+
+
+def _map_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    mapped = {"id": rule.get("id", "rule"), "destination": rule.get("destination")}
+    when = rule.get("when") if isinstance(rule.get("when"), dict) else {}
+    if when.get("always") is True:
+        mapped["when"] = {"default": True}
+    else:
+        attr_key = None
+        attr_value = None
+        for key, value in when.items():
+            if key == "always":
+                continue
+            attr_key = key
+            attr_value = value
+            break
+        if attr_key is not None:
+            mapped["when"] = {"attribute": attr_key, "equals": attr_value}
+        else:
+            mapped["when"] = {"default": True}
+    mapped["action"] = "place"
+    return mapped
+
+
+def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
+    task = cell_def.get("task", {})
+    task_type = str(task.get("type", "custom"))
+    return {
+        "enabled": True,
+        "recipe_id": task.get("id", "generated_task"),
+        "id": task.get("id", "generated_task"),
+        "task_type": task_type,
+        "type": _task_recipe_type(task_type),
+        "name": task.get("id", "Generated Task"),
+        "description": f"Preview generated from cell definition task type '{task_type}'.",
+        "pick": {
+            "source": task.get("source_object", "detected_object"),
+            "object_source": "self_test",
+            "allowed_grasp_methods": ["finger", "suction"],
+        },
+        "decision_rules": [
+            _map_rule(rule) for rule in task.get("rules", []) if isinstance(rule, dict)
+        ],
+        "destinations": [
+            {
+                "id": item.get("id"),
+                "frame_id": item.get("frame", "world"),
+                "pose_xyz": item.get("pose_xyz", [0.0, 0.0, 0.0]),
+                "pose_rpy": item.get("pose_rpy", [0.0, 0.0, 0.0]),
+                "action": "place",
+            }
+            for item in task.get("destinations", [])
+            if isinstance(item, dict)
+        ],
+        "expected": {"allow_fallback_rule": True, "require_destination_pose": True},
+    }
+
+
+def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str]) -> str:
+    cell = cell_def.get("cell", {})
+    robot = cell_def.get("robot", {})
+    end_effector = cell_def.get("end_effector", {})
+    camera = cell_def.get("camera", {})
+    task = cell_def.get("task", {})
+    objects = cell_def.get("objects", [])
+    destinations = task.get("destinations", [])
+
+    lines = [
+        "# Commissioning Summary (Preview)",
+        "",
+        f"- Cell: **{cell.get('name', '(unknown)')}** (`{cell.get('id', '(unknown)')}`)",
+        f"- Robot: `{robot.get('model', '(unknown)')}` / planning group `{robot.get('planning_group', '(unknown)')}`",
+        f"- End effector: `{end_effector.get('id', '(unknown)')}` ({end_effector.get('type', '(unknown)' )})",
+        f"- Camera: `{camera.get('id', '(unknown)')}` ({camera.get('type', '(unknown)')})",
+        f"- Task type: `{task.get('type', '(unknown)')}`",
+        f"- Objects in definition: `{len(objects)}`",
+        f"- Destinations in task: `{len(destinations)}`",
+        "",
+        "## Warnings",
+    ]
+    if warnings:
+        lines.extend([f"- {warning}" for warning in warnings])
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Next commissioning steps",
+            "1. Review this preview with controls/robotics engineer.",
+            "2. Generate/update workcell_builder scene package using approved metadata.",
+            "3. Run scene validation, task checks, and simulation smoke tests.",
+            "4. Validate real robot interlocks and operator safety workflow on hardware.",
+            "",
+            "> Limitation: This preview is not proof of physical reachability, collision-free motion, or safety compliance.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("yaml_path", type=Path, help="Path to cell definition YAML")
+    parser.add_argument("--output-dir", type=Path, required=True, help="Output directory for preview artifacts")
+    args = parser.parse_args()
+
+    try:
+        loaded, parser_name, parser_notes = cell_validator.load_yaml(args.yaml_path)
+    except Exception as exc:
+        print(f"FAIL: Unable to load cell definition: {exc}")
+        return 1
+
+    summary = cell_validator.validate_cell_definition(loaded, args.yaml_path, parser_name, parser_notes)
+    status = "PASS" if summary.ok and not summary.warnings else "WARN" if summary.ok else "FAIL"
+    if not summary.ok:
+        print("FAIL: Cell definition failed validation; preview generation aborted.")
+        for error in summary.errors:
+            print(f" - {error}")
+        return 1
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    scene_manifest_path = args.output_dir / "scene_manifest.preview.yaml"
+    task_recipe_path = args.output_dir / "task_recipe.preview.yaml"
+    commissioning_path = args.output_dir / "commissioning_summary.md"
+
+    scene_manifest = build_scene_manifest(loaded)
+    task_recipe = build_task_recipe(loaded)
+
+    scene_manifest_path.write_text(_to_yaml_text(scene_manifest), encoding="utf-8")
+    task_recipe_path.write_text(_to_yaml_text(task_recipe), encoding="utf-8")
+    commissioning_path.write_text(build_commissioning_summary(loaded, summary.warnings), encoding="utf-8")
+
+    print(f"RESULT: {status}")
+    print(f"Wrote: {scene_manifest_path}")
+    print(f"Wrote: {task_recipe_path}")
+    print(f"Wrote: {commissioning_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -141,6 +141,32 @@ Smoke preflight intent:
 
 ---
 
+## D1) Cell Definition workflow (offline-first)
+
+Use this when defining or importing a new cell contract before runtime integration.
+
+1. Create or import cell definition.
+2. Validate cell definition.
+3. Generate scene/task preview.
+4. Review commissioning summary.
+5. Generate or update workcell_builder scene.
+6. Run scene validation.
+7. Export commissioning bundle.
+8. Run simulation smoke test.
+9. Commission physical cell.
+
+Commands:
+
+```bash
+./scripts/check_cell_definitions.sh
+python3 scripts/validate_cell_definition.py tests/fixtures/cell_definition_pick_place.yaml
+python3 scripts/generate_scene_from_cell_definition.py   tests/fixtures/cell_definition_pick_place.yaml   --output-dir /tmp/emd_cell_preview
+```
+
+See `docs/manuals/CELL_DEFINITION_V1.md` for schema details and limitations.
+
+---
+
 ## E) Launch known-good scene
 
 Known-good execution launch command:
