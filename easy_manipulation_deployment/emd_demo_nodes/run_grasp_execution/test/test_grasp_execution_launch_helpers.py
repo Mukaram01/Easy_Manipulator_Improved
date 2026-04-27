@@ -22,6 +22,7 @@ Python environment.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
@@ -259,6 +260,15 @@ def test_validate_gripper_controller_consistency_enables_when_joints_and_interfa
     assert details["robot_description"]["missing_command_interfaces"] == {}
     assert details["robot_description"]["missing_state_interfaces"] == {}
     assert details["missing_ros2_controller_joints"] == []
+
+
+def test_home_return_safe_intermediate_default_is_disabled():
+    config_path = Path(__file__).resolve().parent.parent / "config" / "grasp_execution.yaml"
+    config_text = config_path.read_text(encoding="utf-8")
+    assert re.search(
+        r"home_return:\s*\n(?:\s+.+\n)*?\s+use_safe_intermediate:\s*false\b",
+        config_text,
+    )
 
 
 def test_validate_gripper_controller_consistency_disables_when_joints_missing(grasp_launch_module):

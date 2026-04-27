@@ -75,6 +75,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_home_return_utils
     test/test_home_return_utils.cpp)
   target_include_directories(test_home_return_utils PUBLIC include)
+  ament_target_dependencies(test_home_return_utils
+    rclcpp
+  )
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

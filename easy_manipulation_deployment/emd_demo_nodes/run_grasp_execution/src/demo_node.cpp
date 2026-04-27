@@ -365,34 +365,6 @@ std::string format_pose_xyz_quat_rpy(const geometry_msgs::msg::Pose & pose)
   return oss.str();
 }
 
-std::string parameter_type_to_string(const rclcpp::ParameterType type)
-{
-  switch (type) {
-    case rclcpp::ParameterType::PARAMETER_NOT_SET:
-      return "not set";
-    case rclcpp::ParameterType::PARAMETER_BOOL:
-      return "bool";
-    case rclcpp::ParameterType::PARAMETER_INTEGER:
-      return "integer";
-    case rclcpp::ParameterType::PARAMETER_DOUBLE:
-      return "double";
-    case rclcpp::ParameterType::PARAMETER_STRING:
-      return "string";
-    case rclcpp::ParameterType::PARAMETER_BYTE_ARRAY:
-      return "byte_array";
-    case rclcpp::ParameterType::PARAMETER_BOOL_ARRAY:
-      return "bool_array";
-    case rclcpp::ParameterType::PARAMETER_INTEGER_ARRAY:
-      return "integer_array";
-    case rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY:
-      return "double_array";
-    case rclcpp::ParameterType::PARAMETER_STRING_ARRAY:
-      return "string_array";
-    default:
-      return "unknown";
-  }
-}
-
 std::string format_double_vector(const std::vector<double> & values)
 {
   std::ostringstream oss;
@@ -426,33 +398,15 @@ std::vector<double> resolve_safe_joint_state_param(
     return empty_default;
   }
 
-  if (parameter.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
+  const auto resolution =
+    run_grasp_execution::parse_safe_joint_state_parameter(parameter, param_name);
+  if (resolution.warning_message.has_value()) {
     RCLCPP_WARN(
       logger,
-      "Parameter '%s' is set but has no value (blank/null). Using empty safe joint state.",
-      param_name.c_str());
-    return empty_default;
+      "%s",
+      resolution.warning_message->c_str());
   }
-
-  if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
-    RCLCPP_WARN(
-      logger,
-      "Parameter '%s' has type '%s' but expected 'double_array'. Using empty safe joint state.",
-      param_name.c_str(),
-      parameter_type_to_string(parameter.get_type()).c_str());
-    return empty_default;
-  }
-
-  try {
-    return parameter.as_double_array();
-  } catch (const std::exception & e) {
-    RCLCPP_WARN(
-      logger,
-      "Failed to parse parameter '%s' as double array (%s). Using empty safe joint state.",
-      param_name.c_str(),
-      e.what());
-    return empty_default;
-  }
+  return resolution.value;
 }
 
 class Demo : public moveit2::MoveitCppGraspExecution
@@ -1271,12 +1225,7 @@ private:
     const moveit::core::RobotState & home_state)
   {
     (void)target_id;
-    if (home_return_use_safe_intermediate_ && home_return_safe_joint_state_.empty()) {
-      RCLCPP_WARN(
-        node_->get_logger(),
-        "[HomeReturn] home_return.use_safe_intermediate=true but home_return.safe_joint_state is empty. "
-        "Skipping safe intermediate and continuing to home.");
-    } else if (home_return_use_safe_intermediate_) {
+    if (home_return_use_safe_intermediate_) {
       auto current_state = get_curr_state();
       if (!current_state) {
         RCLCPP_WARN(
@@ -1293,14 +1242,16 @@ private:
             planning_group.c_str());
         } else {
           const auto variable_names = jmg->getVariableNames();
-          if (home_return_safe_joint_state_.size() != variable_names.size()) {
+          const auto skip_warning = run_grasp_execution::safe_intermediate_skip_warning(
+            home_return_use_safe_intermediate_,
+            home_return_safe_joint_state_,
+            variable_names.size(),
+            planning_group);
+          if (skip_warning.has_value()) {
             RCLCPP_WARN(
               node_->get_logger(),
-              "[HomeReturn] home_return.safe_joint_state has %zu values, expected %zu for "
-              "group '%s'. Skipping safe intermediate and continuing to home.",
-              home_return_safe_joint_state_.size(),
-              variable_names.size(),
-              planning_group.c_str());
+              "%s",
+              skip_warning->c_str());
           } else {
             moveit::core::RobotState safe_state(*current_state);
             for (size_t i = 0; i < variable_names.size(); ++i) {
