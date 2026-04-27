@@ -22,3 +22,18 @@ perception:
   input_frame_options:
     - world
     - base_link
+
+self_test:
+  # Commissioning defaults for deterministic offline checks.
+  # Tune these values for each physical workcell before production.
+  enabled: true
+  object:
+    id: commissioning_box
+    shape: box
+    dimensions: [0.05, 0.05, 0.05]
+    frame_id: world
+    pose_xyz: [0.44, -0.02, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+  expected:
+    min_grasp_candidates: 1
+    allow_simulated_execution: true

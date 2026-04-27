@@ -29,6 +29,9 @@ reporter = _load_module(
 smoke_reporter = _load_module(
     "generate_smoke_launch_report", REPO_ROOT / "scripts" / "generate_smoke_launch_report.py"
 )
+self_test_reporter = _load_module(
+    "generate_scene_self_test_report", REPO_ROOT / "scripts" / "generate_scene_self_test_report.py"
+)
 
 
 class FallbackYamlParserTests(unittest.TestCase):
@@ -124,6 +127,102 @@ class ReportGenerationTests(unittest.TestCase):
                 discovered = reporter.discover_scene_packages()
 
         self.assertEqual(discovered, ["scene_a", "scene_b"])
+
+
+class SelfTestValidationTests(unittest.TestCase):
+    def test_valid_self_test_block(self) -> None:
+        manifest = {
+            "self_test": {
+                "enabled": True,
+                "object": {
+                    "id": "commissioning_box",
+                    "shape": "box",
+                    "dimensions": [0.05, 0.05, 0.05],
+                    "frame_id": "world",
+                    "pose_xyz": [0.45, 0.0, 0.08],
+                    "pose_rpy": [0.0, 0.0, 0.0],
+                },
+                "expected": {"min_grasp_candidates": 1, "allow_simulated_execution": True},
+            }
+        }
+        status, notes = self_test_reporter.validate_self_test_block(manifest)
+        self.assertEqual(status, "PASS")
+        self.assertIn("present and valid", " ".join(notes))
+
+    def test_missing_self_test_warns(self) -> None:
+        status, notes = self_test_reporter.validate_self_test_block({})
+        self.assertEqual(status, "WARN")
+        self.assertIn("not defined", " ".join(notes))
+
+    def test_invalid_dimensions_fail(self) -> None:
+        manifest = {
+            "self_test": {
+                "enabled": True,
+                "object": {
+                    "id": "commissioning_box",
+                    "shape": "box",
+                    "dimensions": [0.05, -0.01, 0.05],
+                    "frame_id": "world",
+                    "pose_xyz": [0.45, 0.0, 0.08],
+                    "pose_rpy": [0.0, 0.0, 0.0],
+                },
+            }
+        }
+        status, notes = self_test_reporter.validate_self_test_block(manifest)
+        self.assertEqual(status, "FAIL")
+        self.assertIn("dimensions", " ".join(notes))
+
+    def test_invalid_pose_length_fail(self) -> None:
+        manifest = {
+            "self_test": {
+                "enabled": True,
+                "object": {
+                    "id": "commissioning_box",
+                    "shape": "box",
+                    "dimensions": [0.05, 0.05, 0.05],
+                    "frame_id": "world",
+                    "pose_xyz": [0.45, 0.0],
+                    "pose_rpy": [0.0, 0.0, 0.0],
+                },
+            }
+        }
+        status, notes = self_test_reporter.validate_self_test_block(manifest)
+        self.assertEqual(status, "FAIL")
+        self.assertIn("pose_xyz", " ".join(notes))
+
+    def test_report_generation_with_fake_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            (tmp_root / "scenes" / "scene_a").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_b").mkdir(parents=True)
+            (tmp_root / "scenes" / "scene_a" / "scene_manifest.yaml").write_text(
+                "self_test:\n"
+                "  enabled: true\n"
+                "  object:\n"
+                "    id: commissioning_box\n"
+                "    shape: box\n"
+                "    dimensions: [0.05, 0.05, 0.05]\n"
+                "    frame_id: world\n"
+                "    pose_xyz: [0.45, 0.0, 0.08]\n"
+                "    pose_rpy: [0.0, 0.0, 0.0]\n",
+                encoding="utf-8",
+            )
+            (tmp_root / "scenes" / "scene_b" / "workcell.yaml").write_text(
+                "scene:\n  name: scene_b\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(self_test_reporter, "REPO_ROOT", tmp_root):
+                with mock.patch.object(
+                    self_test_reporter, "REPORT_PATH", tmp_root / "docs" / "manuals" / "report.md"
+                ):
+                    discovered = self_test_reporter.discover_scene_manifests()
+                    rows = [self_test_reporter.evaluate_scene(name, path) for name, path in discovered]
+                    report_text = self_test_reporter.build_report(rows)
+
+        self.assertEqual(len(rows), 2)
+        self.assertIn("`scene_a` | **PASS**", report_text)
+        self.assertIn("`scene_b` | **WARN**", report_text)
 
 
 class SmokeReportTests(unittest.TestCase):
