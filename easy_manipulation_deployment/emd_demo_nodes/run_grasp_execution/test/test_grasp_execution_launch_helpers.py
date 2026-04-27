@@ -223,6 +223,91 @@ def test_align_gripper_controller_joints_normalizes_null_controller_names(grasp_
     assert controllers_yaml["ur5_gripper_controller"]["joints"] == ["gripper_finger1_joint"]
 
 
+def test_validate_gripper_controller_consistency_enables_when_joints_and_interfaces_match(grasp_launch_module):
+    robot_description_xml = """
+    <robot name="demo">
+      <joint name="gripper_finger1_joint" type="revolute"/>
+      <ros2_control name="GripperSystem" type="system">
+        <joint name="gripper_finger1_joint">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="velocity"/>
+        </joint>
+      </ros2_control>
+    </robot>
+    """
+    ros2_controllers_yaml = {
+        "ur5_gripper_controller": {
+            "ros__parameters": {
+                "joints": ["gripper_finger1_joint"],
+            }
+        }
+    }
+
+    enabled, details = grasp_launch_module.validate_gripper_controller_consistency(
+        robot_description_xml=robot_description_xml,
+        ros2_controllers_yaml=ros2_controllers_yaml,
+        gripper_controller_joints=("gripper_finger1_joint",),
+    )
+
+    assert enabled is True
+    assert details["robot_description"]["missing_robot_description_joints"] == []
+    assert details["robot_description"]["missing_command_interfaces"] == {}
+    assert details["robot_description"]["missing_state_interfaces"] == {}
+    assert details["missing_ros2_controller_joints"] == []
+
+
+def test_validate_gripper_controller_consistency_disables_when_joints_missing(grasp_launch_module):
+    robot_description_xml = """
+    <robot name="demo">
+      <joint name="wrist_3_joint" type="revolute"/>
+    </robot>
+    """
+    ros2_controllers_yaml = {
+        "ur5_gripper_controller": {"ros__parameters": {"joints": ["gripper_finger1_joint"]}}
+    }
+
+    enabled, details = grasp_launch_module.validate_gripper_controller_consistency(
+        robot_description_xml=robot_description_xml,
+        ros2_controllers_yaml=ros2_controllers_yaml,
+        gripper_controller_joints=("gripper_finger1_joint",),
+    )
+
+    assert enabled is False
+    assert details["robot_description"]["missing_robot_description_joints"] == ["gripper_finger1_joint"]
+
+
+def test_validate_gripper_controller_consistency_disables_when_interfaces_missing(grasp_launch_module):
+    robot_description_xml = """
+    <robot name="demo">
+      <joint name="gripper_finger1_joint" type="revolute"/>
+      <ros2_control name="GripperSystem" type="system">
+        <joint name="gripper_finger1_joint">
+          <command_interface name="effort"/>
+          <state_interface name="position"/>
+        </joint>
+      </ros2_control>
+    </robot>
+    """
+    ros2_controllers_yaml = {
+        "ur5_gripper_controller": {"ros__parameters": {"joints": ["gripper_finger1_joint"]}}
+    }
+
+    enabled, details = grasp_launch_module.validate_gripper_controller_consistency(
+        robot_description_xml=robot_description_xml,
+        ros2_controllers_yaml=ros2_controllers_yaml,
+        gripper_controller_joints=("gripper_finger1_joint",),
+    )
+
+    assert enabled is False
+    assert details["robot_description"]["missing_command_interfaces"] == {
+        "gripper_finger1_joint": ["position"]
+    }
+    assert details["robot_description"]["missing_state_interfaces"] == {
+        "gripper_finger1_joint": ["velocity"]
+    }
+
+
 @pytest.mark.parametrize(
     ("controllers_yaml", "ros2_controllers_yaml", "expected_error"),
     [

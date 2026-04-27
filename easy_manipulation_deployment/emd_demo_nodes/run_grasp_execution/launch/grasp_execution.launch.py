@@ -56,11 +56,104 @@ KNOWN_PLANNER_END_EFFECTOR_IDS = {"robotiq_2f", "robotiq_3f", "suction_cup", "su
 
 
 def scene_exposes_gripper_position_interfaces(robot_description_xml, gripper_controller_joints):
+    if not gripper_controller_joints:
+        return False, {
+            "missing_robot_description_joints": [],
+            "missing_command_interfaces": {},
+            "missing_state_interfaces": {},
+        }
+
+    try:
+        root = ET.fromstring(robot_description_xml)
+    except ET.ParseError:
+        return False, {
+            "missing_robot_description_joints": list(gripper_controller_joints),
+            "missing_command_interfaces": {},
+            "missing_state_interfaces": {},
+        }
+
+    ros2_control_joint_interfaces = {}
+    for ros2_control in root.findall(".//ros2_control"):
+        for joint in ros2_control.findall("joint"):
+            joint_name = (joint.get("name") or "").strip()
+            if not joint_name:
+                continue
+            command_interfaces = {
+                (interface.get("name") or "").strip()
+                for interface in joint.findall("command_interface")
+                if (interface.get("name") or "").strip()
+            }
+            state_interfaces = {
+                (interface.get("name") or "").strip()
+                for interface in joint.findall("state_interface")
+                if (interface.get("name") or "").strip()
+            }
+            ros2_control_joint_interfaces[joint_name] = {
+                "command_interfaces": command_interfaces,
+                "state_interfaces": state_interfaces,
+            }
+
+    missing_robot_description_joints = []
+    missing_command_interfaces = {}
+    missing_state_interfaces = {}
     for joint_name in gripper_controller_joints:
-        joint_tag = f'<joint name="{joint_name}">'
-        if joint_tag not in robot_description_xml:
-            return False
-    return True
+        if not root.findall(f".//joint[@name='{joint_name}']"):
+            missing_robot_description_joints.append(joint_name)
+            continue
+
+        interfaces = ros2_control_joint_interfaces.get(joint_name)
+        if interfaces is None:
+            missing_command_interfaces[joint_name] = ["position"]
+            missing_state_interfaces[joint_name] = ["position", "velocity"]
+            continue
+
+        command_interfaces = interfaces["command_interfaces"]
+        state_interfaces = interfaces["state_interfaces"]
+        if "position" not in command_interfaces:
+            missing_command_interfaces[joint_name] = ["position"]
+
+        missing_joint_state_interfaces = [
+            interface_name for interface_name in ("position", "velocity") if interface_name not in state_interfaces
+        ]
+        if missing_joint_state_interfaces:
+            missing_state_interfaces[joint_name] = missing_joint_state_interfaces
+
+    is_valid = (
+        not missing_robot_description_joints
+        and not missing_command_interfaces
+        and not missing_state_interfaces
+    )
+    return is_valid, {
+        "missing_robot_description_joints": missing_robot_description_joints,
+        "missing_command_interfaces": missing_command_interfaces,
+        "missing_state_interfaces": missing_state_interfaces,
+    }
+
+
+def validate_gripper_controller_consistency(
+    robot_description_xml, ros2_controllers_yaml, gripper_controller_joints
+):
+    robot_description_valid, robot_description_details = scene_exposes_gripper_position_interfaces(
+        robot_description_xml, gripper_controller_joints
+    )
+
+    gripper_ros_params = (
+        ros2_controllers_yaml.get("ur5_gripper_controller", {}).get("ros__parameters", {})
+        if isinstance(ros2_controllers_yaml, dict)
+        else {}
+    )
+    configured_joints = gripper_ros_params.get("joints", [])
+    if not isinstance(configured_joints, list):
+        configured_joints = []
+    missing_yaml_joints = [
+        joint_name for joint_name in gripper_controller_joints if joint_name not in configured_joints
+    ]
+
+    yaml_list_valid = not missing_yaml_joints
+    return robot_description_valid and yaml_list_valid, {
+        "robot_description": robot_description_details,
+        "missing_ros2_controller_joints": missing_yaml_joints,
+    }
 
 
 def resolve_gripper_controller_joints(scene_package, scene_metadata=None):
@@ -687,10 +780,21 @@ def launch_setup(context, *args, **kwargs):
         "trajectory_execution.allowed_start_tolerance": 0.01,
     }
 
-    scene_supports_gripper_controller = bool(
-        gripper_controller_joints
-        and scene_exposes_gripper_position_interfaces(robot_description_config, gripper_controller_joints)
-    )
+    scene_supports_gripper_controller = False
+    gripper_validation_details = {
+        "robot_description": {
+            "missing_robot_description_joints": [],
+            "missing_command_interfaces": {},
+            "missing_state_interfaces": {},
+        },
+        "missing_ros2_controller_joints": [],
+    }
+    if gripper_controller_joints:
+        scene_supports_gripper_controller, gripper_validation_details = validate_gripper_controller_consistency(
+            robot_description_config,
+            ros2_controllers_yaml,
+            gripper_controller_joints,
+        )
 
     align_gripper_controller_joints(
         controllers_yaml,
@@ -829,9 +933,32 @@ def launch_setup(context, *args, **kwargs):
         spawn_gripper = TimerAction(period=3.0, actions=[gripper_spawner])
         launch_actions.insert(-1, spawn_gripper)
     else:
+        details = gripper_validation_details["robot_description"]
+        reason_parts = []
+        if details["missing_robot_description_joints"]:
+            reason_parts.append(
+                "missing joints in robot_description="
+                f"{details['missing_robot_description_joints']}"
+            )
+        if details["missing_command_interfaces"]:
+            reason_parts.append(
+                "missing ros2_control command interfaces="
+                f"{details['missing_command_interfaces']}"
+            )
+        if details["missing_state_interfaces"]:
+            reason_parts.append(
+                "missing ros2_control state interfaces="
+                f"{details['missing_state_interfaces']}"
+            )
+        if gripper_validation_details["missing_ros2_controller_joints"]:
+            reason_parts.append(
+                "missing joints in ur5_ros_controllers.yaml ur5_gripper_controller.ros__parameters.joints="
+                f"{gripper_validation_details['missing_ros2_controller_joints']}"
+            )
+        reasons = "; ".join(reason_parts) if reason_parts else "no matching gripper controller joints"
         logger.warning(
-            "Skipping ur5_gripper_controller spawner: scene metadata and robot description do not agree on "
-            "gripper controller joints/interfaces; dummy gripper driver remains responsible for gripper actions."
+            "Skipping ur5_gripper_controller spawner: "
+            f"{reasons}; dummy gripper driver remains responsible for gripper actions."
         )
 
     return launch_actions
