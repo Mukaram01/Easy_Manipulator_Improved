@@ -61,6 +61,22 @@ echo
 "${SCRIPT_DIR}/check_task_execution_plans.sh"
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
+set +e
+WORKCELL_TEMPLATE_OUTPUT="$(${SCRIPT_DIR}/check_workcell_builder_templates.sh)"
+WORKCELL_TEMPLATE_EXIT=$?
+set -e
+echo "${WORKCELL_TEMPLATE_OUTPUT}"
+
+if [[ ${WORKCELL_TEMPLATE_EXIT} -eq 0 ]]; then
+  if grep -q "Workcell builder template check: WARN" <<<"${WORKCELL_TEMPLATE_OUTPUT}"; then
+    echo "Workcell builder template check: WARN"
+  else
+    echo "Workcell builder template check: PASS"
+  fi
+else
+  echo "Workcell builder template check: FAIL"
+  exit ${WORKCELL_TEMPLATE_EXIT}
+fi
 
 echo
 printf 'Preflight report written to: %s\n' "${REPORT_PATH}"

@@ -1043,5 +1043,81 @@ class WorkcellBundleTests(unittest.TestCase):
                     )
 
 
+class GeneratedSceneFixtureTests(unittest.TestCase):
+    def _fixture_path(self) -> Path:
+        return REPO_ROOT / "tests" / "fixtures" / "generated_scene_manifest.yaml"
+
+    def _load_fixture_manifest(self) -> dict[str, object]:
+        manifest, _, _ = validator._read_manifest(str(self._fixture_path()))
+        return manifest
+
+    def test_generated_manifest_fixture_validates(self) -> None:
+        manifest = self._load_fixture_manifest()
+        status, notes = validator.validate_task_recipe_block(manifest)
+        self.assertIn(status, {"PASS", "WARN"})
+        self.assertTrue(any("present and valid" in note for note in notes))
+
+    def test_generated_manifest_has_required_generated_blocks(self) -> None:
+        manifest = self._load_fixture_manifest()
+        self.assertIn("self_test", manifest)
+        self.assertIn("task_recipe", manifest)
+        self.assertIn("home_return", manifest)
+        self.assertIn("safe_joint_state", manifest["home_return"])
+
+    def test_empty_safe_joint_state_allowed_with_named_target(self) -> None:
+        manifest = self._load_fixture_manifest()
+        errors: list[str] = []
+        warnings: list[str] = []
+        validator._check_types(manifest, errors, warnings, "generated_demo_scene")
+        self.assertFalse(errors)
+        self.assertTrue(any("named target fallback" in warning for warning in warnings))
+
+    def test_malformed_generated_destination_pose_fails(self) -> None:
+        manifest = self._load_fixture_manifest()
+        manifest["task_recipe"]["destinations"][0]["pose_xyz"] = [0.3, -0.3]
+        status, notes = validator.validate_task_recipe_block(manifest)
+        self.assertEqual(status, "FAIL")
+        self.assertIn("pose_xyz", " ".join(notes))
+
+    def test_generated_task_recipe_dry_run_does_not_crash(self) -> None:
+        row = task_recipe_dry_run.evaluate_scene("generated_demo_scene", self._fixture_path())
+        self.assertIn(row.status, {"PASS", "WARN"})
+
+    def test_execution_plan_generator_handles_generated_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "plans"
+            with mock.patch.object(task_execution_plan, "OUTPUT_DIR", output_dir):
+                row = task_execution_plan.evaluate_scene("generated_demo_scene", self._fixture_path())
+        self.assertIn(row.status, {"PASS", "WARN"})
+
+    def test_bundle_exporter_packages_generated_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            scene_name = "generated_demo_scene"
+            scene_dir = root / "scenes" / scene_name
+            scene_dir.mkdir(parents=True, exist_ok=True)
+            fixture_text = self._fixture_path().read_text(encoding="utf-8")
+            manifest_path = scene_dir / "scene_manifest.yaml"
+            manifest_path.write_text(fixture_text, encoding="utf-8")
+
+            workcell_bundle_exporter.REPO_ROOT = root
+            workcell_bundle_exporter.DEFAULT_OUTPUT_DIR = root / "dist" / "workcell_bundles"
+            workcell_bundle_exporter.REPORTS_DIR = root / "docs" / "manuals"
+            workcell_bundle_exporter.PLAN_OUTPUT_DIR = root / "docs" / "manuals" / "generated_execution_plans"
+            workcell_bundle_exporter.dry_run.REPO_ROOT = root
+            workcell_bundle_exporter.plan_generator.REPO_ROOT = root
+            workcell_bundle_exporter.plan_generator.dry_run.REPO_ROOT = root
+            workcell_bundle_exporter.plan_generator.OUTPUT_DIR = (
+                root / "docs" / "manuals" / "generated_execution_plans"
+            )
+            workcell_bundle_exporter.self_test_reporter.REPO_ROOT = root
+            workcell_bundle_exporter.task_recipe_reporter.REPO_ROOT = root
+
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                scene_name, manifest_path, root / "dist" / "workcell_bundles", zip_output=False, force=True
+            )
+            self.assertTrue((bundle_dir / "bundle_manifest.json").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
