@@ -22,6 +22,21 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - [Common scenarios](#common-scenarios)
 - [Troubleshooting](#troubleshooting)
 - [Version notes / advanced compatibility](#version-notes--advanced-compatibility)
+- [Operator manual and validation report](#operator-manual-and-validation-report)
+
+
+## Operator manual and validation report
+
+- Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
+- Generate a scene validation report:
+
+```bash
+./scripts/generate_scene_validation_report.py
+```
+
+This command writes `docs/manuals/latest_scene_validation_report.md` without requiring RViz, EPD, RealSense, or robot hardware.
+
+---
 
 ## Supported platform
 
