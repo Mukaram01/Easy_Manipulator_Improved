@@ -298,6 +298,41 @@ Run the validator before `suction_test` so missing `single_suction_description` 
 
 If you only want to confirm the workspace built successfully, `source install/setup.bash` plus a successful `ros2 pkg prefix emd_msgs` is the safest quick check.
 
+## Scene contract validation
+
+Scene packages can optionally include a scene manifest (`scene_manifest.yaml` or `workcell.yaml`) with a shared contract used for pre-launch validation.
+
+Required manifest fields:
+
+- `scene.name`
+- `robot.model`
+- `robot.planning_group`
+- `robot.base_frame`
+- `robot.ee_link`
+- `robot.home_named_target` **or** `home_return.safe_joint_state`
+- `end_effector.type`
+- `end_effector.brand`
+- `end_effector.grasp_frame`
+- `end_effector.allowed_touch_links`
+- `environment.support_surface_link`
+- `perception.input_frame_options`
+
+`workcell_builder`-generated scene packages should emit the same manifest so they can be validated with the same tools before launch.
+
+Validate one scene package:
+
+```bash
+./scripts/validate_scene_contract.py ur5_2f_test
+```
+
+Validate all currently tracked scene packages:
+
+```bash
+./scripts/check_all_scenes.sh
+```
+
+The all-scenes script reports `SKIP` when a scene package is not installed in the current ROS environment, and only fails when an installed scene does not satisfy the contract.
+
 ## Fake hardware vs real hardware
 
 All scene launch files default to **simulated (fake) hardware** so you can develop, test, and visualise motions without a physical robot.

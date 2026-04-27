@@ -21,7 +21,9 @@ install(DIRECTORY urdf
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(FILES environment.yaml
+install(FILES
+  environment.yaml
+  scene_manifest.yaml
   DESTINATION share/${PROJECT_NAME}
 )
 ament_package()
