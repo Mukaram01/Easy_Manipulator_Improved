@@ -52,7 +52,11 @@ launch_substitutions_mod.PythonExpression = object
 sys.modules.setdefault("launch.substitutions", launch_substitutions_mod)
 launch_logging_mod = types.ModuleType("launch.logging")
 launch_logging_mod.get_logger = (
-    lambda _name: types.SimpleNamespace(error=lambda *_args, **_kwargs: None)
+    lambda _name: types.SimpleNamespace(
+        error=lambda *_args, **_kwargs: None,
+        warning=lambda *_args, **_kwargs: None,
+        info=lambda *_args, **_kwargs: None,
+    )
 )
 sys.modules.setdefault("launch.logging", launch_logging_mod)
 launch_ros_mod = types.ModuleType("launch_ros")
@@ -496,6 +500,35 @@ def test_build_workcell_context_falls_back_to_ur_tool0_only_when_scene_has_no_en
     assert ee_link == "tool0"
     assert ee_grasp_frame == "tool0"
     assert ros_params["groups.manipulator.end_effectors"] == ["ur_tool0"]
+
+
+def test_build_workcell_context_logs_warning_for_unknown_end_effector_metadata_fallback(grasp_launch_module):
+    logger = types.SimpleNamespace(warning_messages=[])
+    logger.warning = lambda msg: logger.warning_messages.append(msg)
+
+    unknown_scene_metadata = {
+        "robot": {"name": "ur5"},
+        "end_effector": {
+            "name": " mystery_hand ",
+            "brand": " ACME ",
+            "ee_type": " HybridParallel ",
+            "robot_link": "tool0",
+        },
+    }
+
+    _workcell_context, ee_id, ee_link, ee_grasp_frame = grasp_launch_module.build_workcell_context_for_scene(
+        "mystery_scene",
+        unknown_scene_metadata,
+        logger=logger,
+    )
+
+    assert (ee_id, ee_link, ee_grasp_frame) == ("ur_tool0", "tool0", "tool0")
+    assert len(logger.warning_messages) == 1
+    assert "mystery_scene" in logger.warning_messages[0]
+    assert "name='mystery_hand'" in logger.warning_messages[0]
+    assert "brand='acme'" in logger.warning_messages[0]
+    assert "ee_type='hybridparallel'" in logger.warning_messages[0]
+    assert "tool0" in logger.warning_messages[0]
 
 
 @pytest.fixture()

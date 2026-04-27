@@ -310,7 +310,7 @@ def derive_workcell_grasp_frame(end_effector):
     return ""
 
 
-def build_workcell_context_for_scene(scene_package, scene_metadata):
+def build_workcell_context_for_scene(scene_package, scene_metadata, logger=None):
     end_effector = scene_metadata.get("end_effector", {})
     if end_effector is None:
         end_effector = {}
@@ -320,9 +320,22 @@ def build_workcell_context_for_scene(scene_package, scene_metadata):
             f"got {type(end_effector).__name__}."
         )
 
+    normalized_ee_name = _normalize_text(end_effector.get("name"))
+    normalized_ee_brand = _normalize_text(end_effector.get("brand"))
+    normalized_ee_type = _normalize_text(end_effector.get("ee_type"))
     ee_id = derive_planner_end_effector_id(end_effector)
     ee_link = derive_workcell_end_effector_link(end_effector)
     ee_grasp_frame = derive_workcell_grasp_frame(end_effector) or ee_link
+
+    if ee_id == "ur_tool0":
+        if logger is None:
+            logger = get_logger(__name__)
+        logger.warning(
+            "Falling back to arm-only workcell end effector classification for scene "
+            f"'{scene_package}' (normalized metadata: name='{normalized_ee_name}', "
+            f"brand='{normalized_ee_brand}', ee_type='{normalized_ee_type}'); "
+            "using fallback link/frame 'tool0' and planner ee id 'ur_tool0'."
+        )
     return build_workcell_context(ee_id, ee_link, ee_grasp_frame), ee_id, ee_link, ee_grasp_frame
 
 
@@ -694,7 +707,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     scene_workcell_context, scene_ee_id, scene_ee_link, scene_ee_grasp_frame = build_workcell_context_for_scene(
-        scene_package, scene_metadata
+        scene_package, scene_metadata, logger=logger
     )
     scene_link_names = _extract_link_names_from_urdf(robot_description_config)
     scene_ee_id, scene_ee_link, scene_ee_grasp_frame = validate_and_normalize_workcell_end_effector_frames(
