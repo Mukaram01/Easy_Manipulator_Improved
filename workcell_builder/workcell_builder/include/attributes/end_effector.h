@@ -40,6 +40,12 @@ public:
   std::string ee_type;
   int attribute_1 = -1;
   int attribute_2 = -1;
+  std::string planner_id;
+  std::string grasp_frame;
+  std::string tcp_link;
+  std::string gripper_type;
+  bool spawn_gripper_controller = false;
+  int finger_count = -1;
   std::string ee_robot_joint_type = "fixed";
   Origin origin;
   std::vector < std::string > ee_links;
