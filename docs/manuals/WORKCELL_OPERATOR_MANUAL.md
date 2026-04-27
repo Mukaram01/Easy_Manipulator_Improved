@@ -104,6 +104,8 @@ Individual commands:
 ./scripts/generate_task_recipe_report.py
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/generate_task_recipe_dry_run_report.py
+./scripts/check_task_execution_plans.sh
+./scripts/generate_task_execution_plan_report.py
 ./scripts/smoke_launch_scenes.sh ur5_2f_test
 ./scripts/smoke_launch_scenes.sh
 ./scripts/generate_smoke_launch_report.py
@@ -393,6 +395,8 @@ Commands:
 ./scripts/generate_task_recipe_report.py
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/generate_task_recipe_dry_run_report.py
+./scripts/check_task_execution_plans.sh
+./scripts/generate_task_execution_plan_report.py
 ./scripts/preflight_workcell.sh
 ```
 
@@ -422,7 +426,55 @@ Commands:
 ```bash
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/generate_task_recipe_dry_run_report.py
+./scripts/check_task_execution_plans.sh
+./scripts/generate_task_execution_plan_report.py
 ./scripts/preflight_workcell.sh
+```
+
+---
+
+## Offline task execution plans
+
+This is the next step after task recipe dry-run. It converts the matched recipe decision into a clear ordered job sequence that is deterministic and operator-readable.
+
+Use cases:
+
+- operator review before runtime,
+- commissioning and handoff documentation,
+- future UI display of the job sequence,
+- future click-driven runtime integration.
+
+Scope boundaries:
+
+- it does **not** move the robot,
+- it does **not** validate physical reachability,
+- it does **not** validate collision-free planning,
+- it does **not** validate hardware/sensor behaviour.
+
+Commands:
+
+```bash
+./scripts/check_task_execution_plans.sh
+./scripts/generate_task_execution_plan.py
+./scripts/generate_task_execution_plan_report.py
+./scripts/preflight_workcell.sh
+```
+
+Example plan snippet:
+
+```text
+1) acquire_object            perception_or_self_test  resolve_object
+2) select_grasp_strategy    grasp_selection           select_strategy
+3) move_to_pre_grasp        motion_plan               plan_pre_grasp
+4) move_to_grasp            motion_plan               plan_grasp_approach
+5) close_end_effector       end_effector_action       close_gripper / activate_suction / engage_end_effector
+6) attach_object            planning_scene_update     attach_collision_object
+7) move_to_pre_place        motion_plan               plan_pre_place
+8) move_to_place            motion_plan               plan_place
+9) release_object           end_effector_action       open_gripper / deactivate_suction / release_end_effector
+10) detach_object           planning_scene_update     detach_collision_object
+11) retreat                 motion_plan               plan_retreat
+12) return_home             motion_plan               plan_return_home
 ```
 
 ---

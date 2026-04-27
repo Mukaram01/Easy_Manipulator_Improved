@@ -7,6 +7,7 @@ REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_scene_validation_report.md"
 SELF_TEST_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_scene_self_test_report.md"
 TASK_RECIPE_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_task_recipe_report.md"
 TASK_RECIPE_DRY_RUN_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_task_recipe_dry_run_report.md"
+TASK_EXECUTION_PLAN_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_task_execution_plan_report.md"
 SMOKE_REPORT_PATH="${REPO_ROOT}/docs/manuals/latest_smoke_launch_report.md"
 WITH_SMOKE=false
 
@@ -56,12 +57,15 @@ echo
 "${SCRIPT_DIR}/generate_task_recipe_report.py"
 "${SCRIPT_DIR}/check_task_recipe_dry_runs.sh"
 "${SCRIPT_DIR}/generate_task_recipe_dry_run_report.py"
+"${SCRIPT_DIR}/check_task_execution_plans.sh"
+"${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 
 echo
 printf 'Preflight report written to: %s\n' "${REPORT_PATH}"
 printf 'Self-test report written to: %s\n' "${SELF_TEST_REPORT_PATH}"
 printf 'Task recipe report written to: %s\n' "${TASK_RECIPE_REPORT_PATH}"
 printf 'Task recipe dry-run report written to: %s\n' "${TASK_RECIPE_DRY_RUN_REPORT_PATH}"
+printf 'Task execution plan report written to: %s\n' "${TASK_EXECUTION_PLAN_REPORT_PATH}"
 
 if [[ "${WITH_SMOKE}" == true ]]; then
   echo

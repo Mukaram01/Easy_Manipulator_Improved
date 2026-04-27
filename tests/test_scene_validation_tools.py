@@ -40,6 +40,12 @@ task_recipe_dry_run_reporter = _load_module(
     "generate_task_recipe_dry_run_report",
     REPO_ROOT / "scripts" / "generate_task_recipe_dry_run_report.py",
 )
+task_execution_plan = _load_module(
+    "generate_task_execution_plan", REPO_ROOT / "scripts" / "generate_task_execution_plan.py"
+)
+task_execution_plan_reporter = _load_module(
+    "generate_task_execution_plan_report", REPO_ROOT / "scripts" / "generate_task_execution_plan_report.py"
+)
 
 
 class FallbackYamlParserTests(unittest.TestCase):
@@ -638,6 +644,223 @@ class SmokeReportTests(unittest.TestCase):
         self.assertIn("| `suction_test` | **FAIL**", report_text)
         self.assertIn("- PASS: 1", report_text)
         self.assertIn("- FAIL: 1", report_text)
+
+
+class TaskExecutionPlanTests(unittest.TestCase):
+    def _base_manifest(self, ee_type: str = "finger", ee_brand: str = "robotiq_2f") -> dict[str, object]:
+        return {
+            "robot": {
+                "planning_group": "manipulator",
+                "base_frame": "world",
+                "ee_link": "tool0",
+            },
+            "end_effector": {
+                "type": ee_type,
+                "brand": ee_brand,
+                "grasp_frame": "ee_palm",
+            },
+            "self_test": {
+                "enabled": True,
+                "object": {
+                    "id": "commissioning_box",
+                    "shape": "box",
+                    "dimensions": [0.05, 0.05, 0.05],
+                    "frame_id": "world",
+                    "pose_xyz": [0.45, 0.0, 0.08],
+                    "pose_rpy": [0.0, 0.0, 0.0],
+                    "attributes": {"class": "part", "colour": "red", "shape": "box"},
+                },
+            },
+            "task_recipe": {
+                "id": "colour_sort_demo",
+                "name": "Colour Sort",
+                "type": "sort",
+                "enabled": True,
+                "decision_rules": [
+                    {
+                        "id": "red_to_bin_a",
+                        "when": {"attribute": "colour", "equals": "red"},
+                        "destination": "bin_a",
+                    },
+                    {"id": "default_reject", "when": {"default": True}, "destination": "reject_bin"},
+                ],
+                "destinations": [
+                    {
+                        "id": "bin_a",
+                        "frame_id": "world",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "place",
+                    },
+                    {
+                        "id": "reject_bin",
+                        "frame_id": "world",
+                        "pose_xyz": [0.2, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "action": "reject",
+                    },
+                ],
+            },
+        }
+
+    def _write_manifest(self, root: Path, scene: str, manifest: dict[str, object]) -> Path:
+        def _to_yaml(value: object, indent: int = 0) -> str:
+            def _scalar_text(scalar: object) -> str:
+                if isinstance(scalar, bool):
+                    return "true" if scalar else "false"
+                return str(scalar)
+
+            prefix = " " * indent
+            if isinstance(value, dict):
+                lines: list[str] = []
+                for key, child in value.items():
+                    if isinstance(child, (dict, list)):
+                        lines.append(f"{prefix}{key}:")
+                        lines.append(_to_yaml(child, indent + 2))
+                    else:
+                        lines.append(f"{prefix}{key}: {_scalar_text(child)}")
+                return "\n".join(lines)
+            if isinstance(value, list):
+                lines = []
+                for child in value:
+                    if isinstance(child, dict):
+                        first = True
+                        for key, nested in child.items():
+                            if first:
+                                if isinstance(nested, (dict, list)):
+                                    lines.append(f"{prefix}- {key}:")
+                                    lines.append(_to_yaml(nested, indent + 4))
+                                else:
+                                    lines.append(f"{prefix}- {key}: {_scalar_text(nested)}")
+                                first = False
+                                continue
+                            if isinstance(nested, (dict, list)):
+                                lines.append(f"{prefix}  {key}:")
+                                lines.append(_to_yaml(nested, indent + 4))
+                            else:
+                                lines.append(f"{prefix}  {key}: {_scalar_text(nested)}")
+                    else:
+                        lines.append(f"{prefix}- {_scalar_text(child)}")
+                return "\n".join(lines)
+            return f"{prefix}{_scalar_text(value)}"
+
+        scene_dir = root / "scenes" / scene
+        scene_dir.mkdir(parents=True, exist_ok=True)
+        path = scene_dir / "scene_manifest.yaml"
+        if validator._pyyaml is not None:
+            path.write_text(validator._pyyaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        else:
+            path.write_text(_to_yaml(manifest), encoding="utf-8")
+        return path
+
+    def _plan_actions(self, plan: dict[str, object]) -> tuple[str, str]:
+        close_action = next(step["action"] for step in plan["steps"] if step["id"] == "close_end_effector")
+        open_action = next(step["action"] for step in plan["steps"] if step["id"] == "release_object")
+        return close_action, open_action
+
+    def test_valid_dry_run_pass_produces_plan_steps(self) -> None:
+        dry_row = task_recipe_dry_run.DryRunResult(
+            scene="scene_a",
+            status="PASS",
+            recipe_id="colour_sort_demo",
+            task_type="sort",
+            object_id="commissioning_box",
+            object_attributes={"colour": "red"},
+            matched_rule_id="red_to_bin_a",
+            selected_destination_id="bin_a",
+            selected_action="place",
+            notes=[],
+        )
+        plan = task_execution_plan.build_execution_plan("scene_a", self._base_manifest(), dry_row)
+        step_ids = [step["id"] for step in plan["steps"]]
+        self.assertIn("acquire_object", step_ids)
+        self.assertIn("close_end_effector", step_ids)
+        self.assertIn("release_object", step_ids)
+        self.assertIn("return_home", step_ids)
+
+    def test_robotiq_scene_uses_gripper_labels(self) -> None:
+        dry_row = task_recipe_dry_run.DryRunResult("scene_a", "PASS", "id", "sort", "o", {}, "r", "bin_a", "place", [])
+        plan = task_execution_plan.build_execution_plan("scene_a", self._base_manifest("finger", "robotiq_2f"), dry_row)
+        self.assertEqual(self._plan_actions(plan), ("close_gripper", "open_gripper"))
+
+    def test_suction_scene_uses_suction_labels(self) -> None:
+        dry_row = task_recipe_dry_run.DryRunResult("scene_a", "PASS", "id", "sort", "o", {}, "r", "bin_a", "place", [])
+        plan = task_execution_plan.build_execution_plan("scene_a", self._base_manifest("suction", "airpick4"), dry_row)
+        self.assertEqual(self._plan_actions(plan), ("activate_suction", "deactivate_suction"))
+
+    def test_unknown_end_effector_uses_generic_labels(self) -> None:
+        dry_row = task_recipe_dry_run.DryRunResult("scene_a", "PASS", "id", "sort", "o", {}, "r", "bin_a", "place", [])
+        plan = task_execution_plan.build_execution_plan("scene_a", self._base_manifest("none", "custom_ee"), dry_row)
+        self.assertEqual(self._plan_actions(plan), ("engage_end_effector", "release_end_effector"))
+
+    def test_missing_task_recipe_warn_skip_no_hard_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest = self._base_manifest()
+            manifest.pop("task_recipe")
+            path = self._write_manifest(root, "scene_warn", manifest)
+            with mock.patch.object(task_execution_plan.dry_run, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan, "OUTPUT_DIR", root / "docs" / "manuals" / "generated_execution_plans"
+            ):
+                row = task_execution_plan.evaluate_scene("scene_warn", path)
+        self.assertEqual(row.status, "WARN")
+        self.assertIsNone(row.markdown_path)
+
+    def test_missing_self_test_skip_no_hard_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest = self._base_manifest()
+            manifest.pop("self_test")
+            path = self._write_manifest(root, "scene_skip", manifest)
+            with mock.patch.object(task_execution_plan.dry_run, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan, "OUTPUT_DIR", root / "docs" / "manuals" / "generated_execution_plans"
+            ):
+                row = task_execution_plan.evaluate_scene("scene_skip", path)
+        self.assertEqual(row.status, "SKIP")
+        self.assertIsNone(row.json_path)
+
+    def test_dry_run_fail_prevents_plan_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest = self._base_manifest()
+            manifest["task_recipe"]["decision_rules"] = []
+            path = self._write_manifest(root, "scene_fail", manifest)
+            with mock.patch.object(task_execution_plan.dry_run, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan, "OUTPUT_DIR", root / "docs" / "manuals" / "generated_execution_plans"
+            ):
+                row = task_execution_plan.evaluate_scene("scene_fail", path)
+        self.assertEqual(row.status, "FAIL")
+        self.assertEqual(row.steps_count, 0)
+
+    def test_generated_markdown_and_json_paths_created(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = self._write_manifest(root, "scene_pass", self._base_manifest())
+            out_dir = root / "docs" / "manuals" / "generated_execution_plans"
+            with mock.patch.object(task_execution_plan.dry_run, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan, "OUTPUT_DIR", out_dir
+            ):
+                row = task_execution_plan.evaluate_scene("scene_pass", path)
+                self.assertEqual(row.status, "PASS")
+                self.assertTrue(row.markdown_path and row.markdown_path.is_file())
+                self.assertTrue(row.json_path and row.json_path.is_file())
+
+    def test_summary_report_generation_with_fake_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._write_manifest(root, "scene_a", self._base_manifest())
+            with mock.patch.object(task_execution_plan_reporter, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan_reporter, "REPORT_PATH", root / "docs" / "manuals" / "latest_task_execution_plan_report.md"
+            ), mock.patch.object(task_execution_plan_reporter.plan_generator.dry_run, "REPO_ROOT", root), mock.patch.object(
+                task_execution_plan_reporter.plan_generator,
+                "OUTPUT_DIR",
+                root / "docs" / "manuals" / "generated_execution_plans",
+            ):
+                discovered = task_execution_plan_reporter.plan_generator.dry_run.discover_scene_manifests()
+                rows = [task_execution_plan_reporter.plan_generator.evaluate_scene(name, path) for name, path in discovered]
+                report_text = task_execution_plan_reporter.build_report(rows)
+        self.assertIn("`scene_a` | **PASS**", report_text)
+        self.assertIn("deterministic operator-readable job sequence", report_text)
 
 
 if __name__ == "__main__":
