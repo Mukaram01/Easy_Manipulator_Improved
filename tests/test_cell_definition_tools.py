@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -228,6 +229,160 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             manifest, _, _ = scene_contract_validator._read_manifest(str(manifest_path))
             status, _ = scene_contract_validator.validate_task_recipe_block(manifest)
             self.assertIn(status, {"PASS", "WARN"})
+
+
+class CellDefinitionWizardTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.wizard = REPO_ROOT / "scripts" / "create_cell_definition_wizard.py"
+        self.validator_script = REPO_ROOT / "scripts" / "validate_cell_definition.py"
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(self.wizard), *args], capture_output=True, text=True, check=False)
+
+    def test_list_templates_succeeds(self) -> None:
+        proc = self._run("--list-templates")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("sort_by_colour", proc.stdout)
+
+    def test_list_presets_succeeds(self) -> None:
+        proc = self._run("--list-presets")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("robotiq_2f", proc.stdout)
+
+    def test_non_interactive_templates_create_valid_yaml(self) -> None:
+        templates = ["pick_place", "sort_by_colour", "sort_by_shape", "garbage_sorting"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            for template in templates:
+                output = tmp / f"{template}.yaml"
+                proc = self._run(
+                    "--template", template,
+                    "--cell-name", f"Wizard {template}",
+                    "--cell-id", f"wizard_{template}",
+                    "--robot", "ur5",
+                    "--end-effector", "robotiq_2f",
+                    "--camera", "realsense_d435i",
+                    "--output", str(output),
+                    "--force",
+                )
+                self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+                self.assertTrue(output.is_file())
+
+                valid = subprocess.run([sys.executable, str(self.validator_script), str(output)], capture_output=True, text=True, check=False)
+                self.assertEqual(valid.returncode, 0, msg=valid.stdout + valid.stderr)
+
+    def test_dry_run_writes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "dry.yaml"
+            proc = self._run(
+                "--template", "pick_place",
+                "--cell-name", "Dry",
+                "--cell-id", "dry",
+                "--robot", "ur5",
+                "--end-effector", "robotiq_2f",
+                "--camera", "realsense_d435i",
+                "--output", str(output),
+                "--dry-run",
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_output_without_force_refuses_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "out.yaml"
+            output.write_text("existing", encoding="utf-8")
+            proc = self._run(
+                "--template", "pick_place",
+                "--cell-name", "No Force",
+                "--cell-id", "no_force",
+                "--robot", "ur5",
+                "--end-effector", "robotiq_2f",
+                "--camera", "realsense_d435i",
+                "--output", str(output),
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("Refusing to overwrite", proc.stdout)
+
+    def test_output_with_force_overwrites(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "out.yaml"
+            output.write_text("existing", encoding="utf-8")
+            proc = self._run(
+                "--template", "pick_place",
+                "--cell-name", "Force",
+                "--cell-id", "force",
+                "--robot", "ur5",
+                "--end-effector", "robotiq_2f",
+                "--camera", "realsense_d435i",
+                "--output", str(output),
+                "--force",
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            self.assertIn("schema_version: cell_definition/v1", output.read_text(encoding="utf-8"))
+
+    def test_invalid_presets_fail_clearly(self) -> None:
+        invalid_cases = [
+            ("--template", "unknown_template", "Invalid template"),
+            ("--robot", "unknown_robot", "Invalid robot preset"),
+            ("--end-effector", "unknown_ee", "Invalid end-effector preset"),
+        ]
+        for flag, value, expected in invalid_cases:
+            with self.subTest(flag=flag):
+                args = [
+                    "--template", "pick_place",
+                    "--cell-name", "Invalid",
+                    "--cell-id", "invalid",
+                    "--robot", "ur5",
+                    "--end-effector", "robotiq_2f",
+                    "--camera", "realsense_d435i",
+                ]
+                idx = args.index(flag) if flag in args else None
+                if idx is not None:
+                    args[idx + 1] = value
+                else:
+                    args.extend([flag, value])
+                proc = self._run(*args)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn(expected, proc.stdout)
+
+    def test_generate_workcell_creates_package_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            yaml_path = tmp / "shape.yaml"
+            out_dir = tmp / "generated"
+            proc = self._run(
+                "--template", "sort_by_shape",
+                "--cell-name", "Shape",
+                "--cell-id", "shape",
+                "--robot", "ur5",
+                "--end-effector", "robotiq_2f",
+                "--camera", "realsense_d435i",
+                "--output", str(yaml_path),
+                "--generate-workcell",
+                "--workcell-output-dir", str(out_dir),
+                "--package-name", "generated_shape",
+                "--force",
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            package_dir = out_dir / "generated_shape"
+            self.assertTrue(package_dir.is_dir())
+            manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
+            status, _ = scene_contract_validator.validate_task_recipe_block(manifest)
+            self.assertIn(status, {"PASS", "WARN"})
+
+    def test_expected_wizard_fixtures_validate(self) -> None:
+        fixtures = [
+            "wizard_expected_pick_place.yaml",
+            "wizard_expected_sort_by_colour.yaml",
+            "wizard_expected_sort_by_shape.yaml",
+            "wizard_expected_garbage_sorting.yaml",
+        ]
+        for fixture_name in fixtures:
+            with self.subTest(fixture=fixture_name):
+                fixture = FIXTURES / fixture_name
+                loaded, parser, notes = validator.load_yaml(fixture)
+                summary = validator.validate_cell_definition(loaded, fixture, parser, notes)
+                self.assertTrue(summary.ok)
 
 
 if __name__ == "__main__":
