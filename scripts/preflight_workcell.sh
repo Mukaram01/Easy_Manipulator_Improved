@@ -62,6 +62,7 @@ echo
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 "${SCRIPT_DIR}/check_generated_workcells.sh"
+"${SCRIPT_DIR}/check_workcell_projects.sh"
 set +e
 CELL_WIZARD_OUTPUT="$(${SCRIPT_DIR}/check_cell_definition_wizard.sh)"
 CELL_WIZARD_EXIT=$?

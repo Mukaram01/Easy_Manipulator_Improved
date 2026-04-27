@@ -1239,3 +1239,37 @@ python3 scripts/create_cell_definition_wizard.py \
 python3 scripts/validate_cell_definition.py /tmp/shape_sorting_demo.cell.yaml
 python3 scripts/export_workcell_bundle.py generated_shape_sorting_demo --force
 ```
+
+### One-command offline workcell project generator
+
+Generate a full offline project (cell definition copy, generated ROS package, reports, commissioning bundle, project manifest, and next commands):
+
+```bash
+python3 scripts/create_workcell_project.py \
+  --cell-definition tests/fixtures/cell_definition_sort_by_colour.yaml \
+  --output-dir dist/workcell_projects \
+  --force
+```
+
+Template-driven mode is also available via the wizard/template tooling:
+
+```bash
+python3 scripts/create_workcell_project.py \
+  --template sort_by_colour \
+  --cell-name "Colour Sorting Demo" \
+  --cell-id colour_sorting_demo \
+  --robot ur5 \
+  --end-effector robotiq_2f \
+  --camera realsense_d435i \
+  --output-dir dist/workcell_projects \
+  --force
+```
+
+Check helper and preflight integration:
+
+```bash
+./scripts/check_workcell_projects.sh
+./scripts/preflight_workcell.sh
+```
+
+See `docs/manuals/WORKCELL_PROJECT_GENERATOR.md` for full workflow details.
