@@ -57,7 +57,7 @@ for fixture in "${fixtures[@]}"; do
   pkg_dir="${tmp_root}/${package_name}"
   manifest_path="${pkg_dir}/scene_manifest.yaml"
 
-  for required in package.xml CMakeLists.txt scene_manifest.yaml README.md generated/commissioning_summary.md generated/validation_report.md; do
+  for required in package.xml CMakeLists.txt scene_manifest.yaml README.md generated/commissioning_summary.md generated/validation_report.md generated/task_recipe.preview.yaml generated/scene_manifest.preview.yaml; do
     if [[ ! -f "${pkg_dir}/${required}" ]]; then
       echo "FAIL ${base_name}: missing generated file ${required}"
       fail_count=$((fail_count + 1))
@@ -65,35 +65,14 @@ for fixture in "${fixtures[@]}"; do
   done
 
   set +e
-  validate_output="$(python3 - <<'PY' "${REPO_ROOT}" "${manifest_path}" "${base_name}"
-import importlib.util
-import sys
-from pathlib import Path
-
-repo_root = Path(sys.argv[1])
-manifest_path = Path(sys.argv[2])
-scene_name = sys.argv[3]
-
-validator_spec = importlib.util.spec_from_file_location("validate_scene_contract", repo_root / "scripts" / "validate_scene_contract.py")
-validator = importlib.util.module_from_spec(validator_spec)
-sys.modules["validate_scene_contract"] = validator
-validator_spec.loader.exec_module(validator)
-
-manifest, parser, notes = validator._read_manifest(str(manifest_path))
-status, task_notes = validator.validate_task_recipe_block(manifest)
-print(f"validate_scene_contract(practical): scene={scene_name} parser={parser} status={status}")
-for note in notes + task_notes:
-    print(f"NOTE: {note}")
-raise SystemExit(0 if status in {"PASS", "WARN"} else 1)
-PY
-2>&1)"
+  validate_output="$(python3 "${SCRIPT_DIR}/validate_scene_contract.py" "${manifest_path}" 2>&1)"
   validate_code=$?
   set -e
   echo "${validate_output}"
   if [[ ${validate_code} -ne 0 ]]; then
     echo "FAIL ${base_name}: practical scene contract validation failed"
     fail_count=$((fail_count + 1))
-  elif grep -q 'status=WARN' <<<"${validate_output}"; then
+  elif grep -q 'RESULT: WARN' <<<"${validate_output}"; then
     warn_count=$((warn_count + 1))
   fi
 

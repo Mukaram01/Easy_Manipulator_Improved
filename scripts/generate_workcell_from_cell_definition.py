@@ -144,6 +144,16 @@ def _augment_scene_manifest(cell_def: dict[str, Any], scene_manifest: dict[str, 
             "home_return.safe_joint_state is empty and no home_named_target was provided; update before runtime use."
         )
 
+    self_test = out.get("self_test")
+    if isinstance(self_test, dict) and isinstance(self_test.get("object"), dict):
+        test_object = self_test["object"]
+        shape = str(test_object.get("shape", "box")).strip().lower()
+        if shape != "box":
+            warnings.append(
+                f"self_test.object.shape '{shape}' is not currently supported by validator; using conservative 'box'."
+            )
+            test_object["shape"] = "box"
+
     return out
 
 
@@ -179,7 +189,9 @@ ament_package()
 """
 
 
-def _build_readme(cell_def: dict[str, Any], package_name: str, source_path: Path, warnings: list[str]) -> str:
+def _build_readme(
+    cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str]
+) -> str:
     cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
     robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
     end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
@@ -201,7 +213,7 @@ def _build_readme(cell_def: dict[str, Any], package_name: str, source_path: Path
         f"- Task type: `{task.get('type', '(unknown)')}`",
         "",
         "## Offline checks",
-        f"- Validate scene contract: `python3 scripts/validate_scene_contract.py {package_name}`",
+        f"- Validate scene contract: `python3 scripts/validate_scene_contract.py {package_dir / 'scene_manifest.yaml'}`",
         "- Dry-run task recipe (practical): `python3 scripts/dry_run_task_recipe.py --check`",
         "- Generate execution plan: `python3 scripts/generate_task_execution_plan.py --check`",
         "- Export commissioning bundle: `python3 scripts/export_workcell_bundle.py --force`",
@@ -337,7 +349,7 @@ def generate_package(
 
     (package_dir / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + _build_readme(loaded, package_name, cell_definition_path, warnings),
+        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings),
         encoding="utf-8",
     )
 
