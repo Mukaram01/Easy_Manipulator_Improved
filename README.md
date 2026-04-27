@@ -162,6 +162,26 @@ This package is offline-only and **not** a safety certificate. It does **not** p
 ./scripts/preflight_workcell.sh
 ```
 
+
+### Generate a workcell package from a cell definition
+
+Generate a reviewable ROS 2 scene package from a high-level cell definition:
+
+```bash
+python3 scripts/generate_workcell_from_cell_definition.py   tests/fixtures/cell_definition_sort_by_colour.yaml   --output-dir /tmp/generated_workcells   --package-name generated_colour_sorting_cell   --force
+
+python3 scripts/validate_scene_contract.py generated_colour_sorting_cell
+./scripts/check_generated_workcells.sh
+```
+
+Generated package contents include:
+- `package.xml`, `CMakeLists.txt`
+- `scene_manifest.yaml` and `workcell.yaml`
+- `README.md`
+- generated previews/reports under `generated/`
+
+Safety note: generated package metadata is for offline review and commissioning only. It is not proof of physical reachability, collision-free runtime behavior, or machine safety certification.
+
 ### Generated scenes from workcell_builder
 
 New scenes generated from `workcell_builder` now include commissioning-oriented contract defaults in `scene_manifest.yaml` (or `workcell.yaml`): `self_test`, `task_recipe`, and `home_return` metadata blocks plus explicit `home_return.safe_joint_state` (empty list allowed when a named target is provided). These defaults are designed for offline validation/export workflows first, and are intended to be edited/tuned per cell before runtime use.

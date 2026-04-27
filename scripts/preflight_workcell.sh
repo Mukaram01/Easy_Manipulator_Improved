@@ -61,6 +61,7 @@ echo
 "${SCRIPT_DIR}/check_task_execution_plans.sh"
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
+"${SCRIPT_DIR}/check_generated_workcells.sh"
 set +e
 CELL_DEF_OUTPUT="$(${SCRIPT_DIR}/check_cell_definitions.sh)"
 CELL_DEF_EXIT=$?

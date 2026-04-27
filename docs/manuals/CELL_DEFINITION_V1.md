@@ -105,3 +105,25 @@ This runs validation and preview generation for all `tests/fixtures/cell_definit
 - Not proof of robot reachability.
 - Not proof of collision-free execution.
 - Generated outputs must be engineering-reviewed before runtime use.
+
+
+## Generate a workcell package from a cell definition
+
+```bash
+python3 scripts/generate_workcell_from_cell_definition.py   tests/fixtures/cell_definition_sort_by_colour.yaml   --output-dir /tmp/generated_workcells   --package-name generated_colour_sorting_cell   --force
+
+python3 scripts/validate_scene_contract.py generated_colour_sorting_cell
+./scripts/check_generated_workcells.sh
+```
+
+Generated package folder (example):
+
+- `/tmp/generated_workcells/generated_colour_sorting_cell/package.xml`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/CMakeLists.txt`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/scene_manifest.yaml`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/workcell.yaml`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/README.md`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/generated/commissioning_summary.md`
+- `/tmp/generated_workcells/generated_colour_sorting_cell/generated/validation_report.md`
+
+Safety note: generated package is for offline review and commissioning preparation. It is not proof of physical reachability, collision-free runtime behavior, or machine safety compliance.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for Cell Definition v1 validation and preview tooling."""
+"""Tests for Cell Definition v1 validation and preview/tooling workflows."""
 
 from __future__ import annotations
 
@@ -27,6 +27,9 @@ generator = _load_module(
     "generate_scene_from_cell_definition", REPO_ROOT / "scripts" / "generate_scene_from_cell_definition.py"
 )
 scene_contract_validator = _load_module("validate_scene_contract", REPO_ROOT / "scripts" / "validate_scene_contract.py")
+workcell_generator = _load_module(
+    "generate_workcell_from_cell_definition", REPO_ROOT / "scripts" / "generate_workcell_from_cell_definition.py"
+)
 
 
 class CellDefinitionValidationTests(unittest.TestCase):
@@ -113,6 +116,118 @@ class CellDefinitionGenerationTests(unittest.TestCase):
             self.assertIn(status, {"PASS", "WARN"})
             self.assertTrue(parser_name in {"pyyaml", "fallback"})
             self.assertTrue(isinstance(parser_notes + notes, list))
+
+
+class WorkcellPackageGenerationTests(unittest.TestCase):
+    def _assert_generate_fixture(self, fixture_name: str, package_name: str) -> Path:
+        fixture = FIXTURES / fixture_name
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            rc = workcell_generator.generate_package(
+                cell_definition_path=fixture,
+                output_dir=tmp_path,
+                package_name=package_name,
+                force=False,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            package_dir = tmp_path / package_name
+            self.assertTrue((package_dir / "package.xml").is_file())
+            self.assertTrue((package_dir / "CMakeLists.txt").is_file())
+            self.assertTrue((package_dir / "scene_manifest.yaml").is_file())
+            self.assertTrue((package_dir / "README.md").is_file())
+
+            parsed_manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
+            self.assertIn("self_test", parsed_manifest)
+            self.assertIn("task_recipe", parsed_manifest)
+            self.assertIn("home_return", parsed_manifest)
+            self.assertIn("safe_joint_state", parsed_manifest["home_return"])
+            return package_dir
+
+    def test_pick_place_generates_package(self) -> None:
+        self._assert_generate_fixture("cell_definition_pick_place.yaml", "generated_pick_place")
+
+    def test_sort_by_colour_generates_package(self) -> None:
+        self._assert_generate_fixture("cell_definition_sort_by_colour.yaml", "generated_sort_colour")
+
+    def test_sort_by_shape_generates_package(self) -> None:
+        self._assert_generate_fixture("cell_definition_sort_by_shape.yaml", "generated_sort_shape")
+
+    def test_garbage_sorting_generates_package(self) -> None:
+        self._assert_generate_fixture("cell_definition_garbage_sorting.yaml", "generated_garbage_sort")
+
+    def test_dry_run_does_not_write_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            rc = workcell_generator.generate_package(
+                cell_definition_path=FIXTURES / "cell_definition_sort_by_colour.yaml",
+                output_dir=tmp_path,
+                package_name="generated_dry_run",
+                force=False,
+                dry_run=True,
+            )
+            self.assertEqual(rc, 0)
+            self.assertFalse((tmp_path / "generated_dry_run").exists())
+
+    def test_existing_output_without_force_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            pkg = tmp_path / "generated_exists"
+            pkg.mkdir(parents=True, exist_ok=True)
+            rc = workcell_generator.generate_package(
+                cell_definition_path=FIXTURES / "cell_definition_sort_by_colour.yaml",
+                output_dir=tmp_path,
+                package_name="generated_exists",
+                force=False,
+                dry_run=False,
+            )
+            self.assertNotEqual(rc, 0)
+
+    def test_force_overwrites_generated_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            pkg = tmp_path / "generated_force"
+            pkg.mkdir(parents=True, exist_ok=True)
+            (pkg / "README.md").write_text("old", encoding="utf-8")
+            rc = workcell_generator.generate_package(
+                cell_definition_path=FIXTURES / "cell_definition_sort_by_colour.yaml",
+                output_dir=tmp_path,
+                package_name="generated_force",
+                force=True,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            self.assertNotEqual((pkg / "README.md").read_text(encoding="utf-8"), "old")
+
+    def test_invalid_cell_definition_fails_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            invalid_path = tmp_path / "invalid.yaml"
+            invalid_path.write_text("schema_version: cell_definition/v1\ncell: {}\n", encoding="utf-8")
+            rc = workcell_generator.generate_package(
+                cell_definition_path=invalid_path,
+                output_dir=tmp_path,
+                package_name="generated_invalid",
+                force=False,
+                dry_run=False,
+            )
+            self.assertNotEqual(rc, 0)
+
+    def test_generated_package_offline_validation_is_practical(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            rc = workcell_generator.generate_package(
+                cell_definition_path=FIXTURES / "cell_definition_sort_by_colour.yaml",
+                output_dir=tmp_path,
+                package_name="generated_validation",
+                force=False,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            manifest_path = tmp_path / "generated_validation" / "scene_manifest.yaml"
+            manifest, _, _ = scene_contract_validator._read_manifest(str(manifest_path))
+            status, _ = scene_contract_validator.validate_task_recipe_block(manifest)
+            self.assertIn(status, {"PASS", "WARN"})
 
 
 if __name__ == "__main__":
