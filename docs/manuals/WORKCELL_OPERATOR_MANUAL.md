@@ -80,22 +80,32 @@ colcon build --symlink-install --packages-select run_grasp_planner run_grasp_exe
 
 ## D) Validate the workspace
 
-Validate all known scenes:
+Recommended full preflight gate (before launch smoke tests):
 
 ```bash
-./scripts/check_all_scenes.sh
+./scripts/preflight_workcell.sh
 ```
 
-Validate one scene explicitly:
+Individual commands:
 
 ```bash
 ./scripts/validate_scene_contract.py ur5_2f_test
+./scripts/check_all_scenes.sh
+./scripts/generate_scene_validation_report.py
 ```
+
+When to use each tool:
+
+- `validate_scene_contract.py`: deep check for one specific scene (best for fixing failures).
+- `check_all_scenes.sh`: quick fleet check across known scene packages.
+- `generate_scene_validation_report.py`: writes markdown summary for handoff/review.
+- `preflight_workcell.sh`: operator command that runs checks + report together.
 
 Interpretation:
 
 - **PASS**: required contract fields are present and valid.
-- **FAIL**: required fields/types are missing/invalid and must be fixed before runtime.
+- **WARN**: contract passes, but non-blocking metadata issue exists (for example `scene.name` mismatch).
+- **FAIL**: required fields/types or declared file paths are invalid.
 - **SKIP**: scene package is not currently discoverable in your sourced environment.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
@@ -293,6 +303,12 @@ Generated scenes should emit all required artifacts:
 - Cause: scene package not discoverable in current shell.
 - Fix: source the correct workspace overlay and ensure scene package is installed.
 
+### PyYAML missing / fallback parser in use
+
+- Cause: `python3-yaml` is not installed in the current environment.
+- Expected behavior: validation still runs with the built-in fallback parser and prints a parser note.
+- Fix (optional): install `python3-yaml` for full YAML syntax support, or simplify manifest syntax to contract-friendly YAML.
+
 ### RViz `get_planning_scene` warning when demo node dies
 
 - Cause: expected warning after planning scene service provider exits.
@@ -305,7 +321,7 @@ Generated scenes should emit all required artifacts:
 - [ ] source ROS (`source /opt/ros/humble/setup.bash`)
 - [ ] source workspace (`source ~/workcell_ws/install/setup.bash`)
 - [ ] build (`colcon build --symlink-install --parallel-workers 2`)
-- [ ] validate all scenes (`./scripts/check_all_scenes.sh`)
+- [ ] run preflight gate (`./scripts/preflight_workcell.sh`)
 - [ ] validate one scene (`./scripts/validate_scene_contract.py ur5_2f_test`)
 - [ ] launch `ur5_2f_test`
 - [ ] run planner

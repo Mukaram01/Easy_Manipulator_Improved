@@ -19,6 +19,7 @@ REPORT_PATH = REPO_ROOT / "docs" / "manuals" / "latest_scene_validation_report.m
 class SceneReportRow:
     scene: str
     status: str
+    parser: str
     notes: str
 
 
@@ -40,7 +41,7 @@ def summarize_note(text: str, fallback: str) -> str:
     content = text.replace("\n", " ").strip()
     if not content:
         return fallback
-    return content if len(content) <= 160 else f"{content[:157]}..."
+    return content if len(content) <= 200 else f"{content[:197]}..."
 
 
 def resolve_workspace_hint() -> str:
@@ -51,9 +52,26 @@ def resolve_workspace_hint() -> str:
     return str(Path.cwd())
 
 
+def _extract_line(prefix: str, output: str) -> str | None:
+    for raw in output.splitlines():
+        line = raw.strip()
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return None
+
+
+def _collect_messages(output: str) -> list[str]:
+    messages: list[str] = []
+    for raw in output.splitlines():
+        line = raw.strip()
+        if line.startswith(("NOTE:", "W", "E")):
+            messages.append(line)
+    return messages
+
+
 def validate_scene(package: str) -> SceneReportRow:
     if not VALIDATOR.exists():
-        return SceneReportRow(package, "FAIL", f"Missing validator at {VALIDATOR}")
+        return SceneReportRow(package, "FAIL", "n/a", f"Missing validator at {VALIDATOR}")
 
     completed = subprocess.run(
         [str(VALIDATOR), package],
@@ -64,28 +82,20 @@ def validate_scene(package: str) -> SceneReportRow:
     )
     output = (completed.stdout or "") + (completed.stderr or "")
 
-    if completed.returncode == 0:
-        return SceneReportRow(package, "PASS", "Manifest contract validated.")
+    result = _extract_line("RESULT:", output) or "FAIL"
+    parser_name = _extract_line("Parser:", output) or "unknown"
+    notes = summarize_note(" | ".join(_collect_messages(output)), "Validation completed.")
 
     if completed.returncode == 3:
-        return SceneReportRow(
-            package,
-            "SKIP",
-            summarize_note(output, "Scene package not discoverable in current environment."),
-        )
+        return SceneReportRow(package, "SKIP", parser_name, notes)
 
-    if "Missing PyYAML" in output:
-        return SceneReportRow(
-            package,
-            "SKIP",
-            "Validation dependency missing (PyYAML). Source ROS/workspace environment and rerun.",
-        )
+    if completed.returncode != 0:
+        return SceneReportRow(package, "FAIL", parser_name, notes)
 
-    return SceneReportRow(
-        package,
-        "FAIL",
-        summarize_note(output, "Manifest contract validation failed."),
-    )
+    if result == "WARN":
+        return SceneReportRow(package, "WARN", parser_name, notes)
+
+    return SceneReportRow(package, "PASS", parser_name, notes)
 
 
 def main() -> int:
@@ -101,30 +111,53 @@ def main() -> int:
     timestamp = datetime.now(timezone.utc).isoformat()
     workspace_hint = resolve_workspace_hint()
 
+    parser_summary = sorted({row.parser for row in rows})
+
     lines = [
         "# Latest Scene Validation Report",
         "",
         f"- Generated (UTC): `{timestamp}`",
         f"- Repository: `{REPO_ROOT}`",
         f"- Workspace hint: `{workspace_hint}`",
+        f"- Parser backend(s): `{', '.join(parser_summary)}`",
         "",
         "## Scene contract results",
         "",
-        "| Scene | Result | Notes |",
-        "|---|---|---|",
+        "| scene | status | parser | notes |",
+        "|---|---|---|---|",
     ]
 
     for row in rows:
-        lines.append(f"| `{row.scene}` | **{row.status}** | {row.notes} |")
+        lines.append(f"| `{row.scene}` | **{row.status}** | `{row.parser}` | {row.notes} |")
+
+    pass_count = sum(1 for row in rows if row.status == "PASS")
+    fail_count = sum(1 for row in rows if row.status == "FAIL")
+    skip_count = sum(1 for row in rows if row.status == "SKIP")
+    warn_count = sum(1 for row in rows if row.status == "WARN")
+
+    next_action = "- Safe to proceed to launch smoke tests."
+    if fail_count > 0:
+        failed = ", ".join(row.scene for row in rows if row.status == "FAIL")
+        next_action = (
+            "- Run `./scripts/validate_scene_contract.py <scene_name>` for failed scenes: "
+            f"`{failed}`."
+        )
+    elif skip_count > 0 and fail_count == 0 and pass_count == 0 and warn_count == 0:
+        next_action = "- Source workspace and rebuild/install scenes, then rerun preflight."
 
     lines.extend(
         [
             "",
             "## Summary",
             "",
-            f"- PASS: {sum(1 for row in rows if row.status == 'PASS')}",
-            f"- FAIL: {sum(1 for row in rows if row.status == 'FAIL')}",
-            f"- SKIP: {sum(1 for row in rows if row.status == 'SKIP')}",
+            f"- PASS: {pass_count}",
+            f"- FAIL: {fail_count}",
+            f"- SKIP: {skip_count}",
+            f"- WARN: {warn_count}",
+            "",
+            "## Next action",
+            "",
+            next_action,
             "",
             "Generated by `./scripts/generate_scene_validation_report.py`.",
         ]
@@ -133,7 +166,7 @@ def main() -> int:
     REPORT_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Wrote scene validation report: {REPORT_PATH}")
 
-    return 1 if any(row.status == "FAIL" for row in rows) else 0
+    return 1 if fail_count > 0 else 0
 
 
 if __name__ == "__main__":

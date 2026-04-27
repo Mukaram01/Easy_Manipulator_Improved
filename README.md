@@ -28,13 +28,19 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ## Operator manual and validation report
 
 - Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
-- Generate a scene validation report:
+- Preflight helper (recommended before launch smoke tests):
+
+```bash
+./scripts/preflight_workcell.sh
+```
+
+- Generate only the markdown validation report:
 
 ```bash
 ./scripts/generate_scene_validation_report.py
 ```
 
-This command writes `docs/manuals/latest_scene_validation_report.md` without requiring RViz, EPD, RealSense, or robot hardware.
+These helpers do not require RViz, EPD, RealSense, or robot hardware. See `docs/manuals/WORKCELL_OPERATOR_MANUAL.md` for operator workflow details.
 
 ---
 
