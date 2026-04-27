@@ -102,6 +102,8 @@ Individual commands:
 ./scripts/generate_scene_self_test_report.py
 ./scripts/check_task_recipes.sh
 ./scripts/generate_task_recipe_report.py
+./scripts/check_task_recipe_dry_runs.sh
+./scripts/generate_task_recipe_dry_run_report.py
 ./scripts/smoke_launch_scenes.sh ur5_2f_test
 ./scripts/smoke_launch_scenes.sh
 ./scripts/generate_smoke_launch_report.py
@@ -129,6 +131,7 @@ Smoke preflight intent:
 - Use full planner/perception/robot integration tests after smoke preflight passes.
 - Scene self-test metadata checks are deterministic/offline metadata validation only; they do not launch the robot.
 - Task recipe metadata checks are deterministic/offline contract validation only; they do not launch the robot.
+- Task recipe dry-run checks resolve decision rules against a simulated self-test object and still do not launch the robot.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 
@@ -388,6 +391,37 @@ Commands:
 ```bash
 ./scripts/check_task_recipes.sh
 ./scripts/generate_task_recipe_report.py
+./scripts/check_task_recipe_dry_runs.sh
+./scripts/generate_task_recipe_dry_run_report.py
+./scripts/preflight_workcell.sh
+```
+
+---
+
+
+## Offline task recipe dry-run
+
+This is the first step from static YAML to useful industrial behaviour. It checks that a simulated/self-test object can be routed through rule evaluation into a concrete destination and action.
+
+Representative outcomes:
+
+- red object -> `bin_a`
+- blue object -> `bin_b`
+- unknown object -> `reject_bin`
+- light part -> suction bin
+
+Scope boundaries:
+
+- it does not execute the robot,
+- it does not validate physical reachability,
+- it does not validate collision-free planning,
+- it prepares the system for future UI/runtime execution.
+
+Commands:
+
+```bash
+./scripts/check_task_recipe_dry_runs.sh
+./scripts/generate_task_recipe_dry_run_report.py
 ./scripts/preflight_workcell.sh
 ```
 
