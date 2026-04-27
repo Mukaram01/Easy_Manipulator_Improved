@@ -572,13 +572,99 @@ def _extract_link_names_from_urdf(robot_description_xml):
     return {link.attrib.get("name") for link in root.findall("link") if link.attrib.get("name")}
 
 
-def _normalize_srdf_for_ur_base_inertia(robot_description_xml, srdf_xml, logger):
-    required_pairs = (("base_link", "base_link_inertia"), ("base_link_inertia", "shoulder_link"))
-    link_names = _extract_link_names_from_urdf(robot_description_xml)
-    required_links = {"base_link_inertia", "shoulder_link"}
-    if not required_links.issubset(link_names):
-        return srdf_xml
+def _extract_fixed_joint_pairs_from_urdf(robot_description_xml):
+    try:
+        root = ET.fromstring(robot_description_xml)
+    except ET.ParseError:
+        return set()
 
+    fixed_pairs = set()
+    for joint in root.findall("joint"):
+        if (joint.attrib.get("type") or "").strip().lower() != "fixed":
+            continue
+        parent = joint.find("parent")
+        child = joint.find("child")
+        parent_link = (parent.attrib.get("link") if parent is not None else "") or ""
+        child_link = (child.attrib.get("link") if child is not None else "") or ""
+        parent_link = parent_link.strip()
+        child_link = child_link.strip()
+        if parent_link and child_link:
+            fixed_pairs.add(tuple(sorted((parent_link, child_link))))
+    return fixed_pairs
+
+
+def _extract_disable_collision_pairs_from_srdf_root(srdf_root):
+    existing_pairs = set()
+    for element in srdf_root.findall("disable_collisions"):
+        link1 = element.attrib.get("link1", "")
+        link2 = element.attrib.get("link2", "")
+        if link1 and link2:
+            existing_pairs.add(tuple(sorted((link1, link2))))
+    return existing_pairs
+
+
+def _is_camera_link_name(link_name):
+    normalized = _normalize_text(link_name)
+    return any(token in normalized for token in ("camera", "realsense", "d435"))
+
+
+def _is_environment_surface_link(link_name):
+    normalized = _normalize_text(link_name)
+    return any(token in normalized for token in ("table", "workbench"))
+
+
+def _compute_conservative_srdf_disable_collision_injections(robot_description_xml, srdf_xml):
+    urdf_link_names = _extract_link_names_from_urdf(robot_description_xml)
+    if not urdf_link_names:
+        return []
+
+    try:
+        srdf_root = ET.fromstring(srdf_xml)
+    except ET.ParseError:
+        return []
+    existing_pairs = _extract_disable_collision_pairs_from_srdf_root(srdf_root)
+
+    requested_pairs = []
+
+    # Keep existing UR base-link inertia adjacency compatibility rules.
+    if {"base_link_inertia", "shoulder_link"}.issubset(urdf_link_names):
+        requested_pairs.extend(
+            [
+                ("base_link", "base_link_inertia", "Adjacent"),
+                ("base_link_inertia", "shoulder_link", "Adjacent"),
+            ]
+        )
+
+    # Known UR false-positive: forearm_link vs wrist_2_link.
+    if {"forearm_link", "wrist_2_link"}.issubset(urdf_link_names):
+        requested_pairs.append(("forearm_link", "wrist_2_link", "Never"))
+
+    # Camera mount links can be fixed to the wrist in some scenes; only add when
+    # the URDF explicitly models a fixed wrist<->camera connection.
+    wrist_links = {"wrist_1_link", "wrist_2_link", "wrist_3_link"}
+    for pair in _extract_fixed_joint_pairs_from_urdf(robot_description_xml):
+        link1, link2 = pair
+        if _is_environment_surface_link(link1) or _is_environment_surface_link(link2):
+            continue
+        if (
+            ((link1 in wrist_links) and _is_camera_link_name(link2))
+            or ((link2 in wrist_links) and _is_camera_link_name(link1))
+        ):
+            requested_pairs.append((link1, link2, "Adjacent"))
+
+    injected_pairs = []
+    requested_pairs = sorted(set(requested_pairs), key=lambda item: (item[0], item[1], item[2]))
+    for link1, link2, reason in requested_pairs:
+        pair_key = tuple(sorted((link1, link2)))
+        if pair_key in existing_pairs:
+            continue
+        if _is_environment_surface_link(link1) or _is_environment_surface_link(link2):
+            continue
+        injected_pairs.append((link1, link2, reason))
+    return injected_pairs
+
+
+def _normalize_srdf_for_ur_base_inertia(robot_description_xml, srdf_xml, logger):
     try:
         root = ET.fromstring(srdf_xml)
     except ET.ParseError as exc:
@@ -587,30 +673,20 @@ def _normalize_srdf_for_ur_base_inertia(robot_description_xml, srdf_xml, logger)
         )
         return srdf_xml
 
-    existing_pairs = set()
-    for element in root.findall("disable_collisions"):
-        link1 = element.attrib.get("link1", "")
-        link2 = element.attrib.get("link2", "")
-        if link1 and link2:
-            existing_pairs.add(tuple(sorted((link1, link2))))
+    pairs_to_inject = _compute_conservative_srdf_disable_collision_injections(robot_description_xml, srdf_xml)
+    if not pairs_to_inject:
+        return srdf_xml
 
     injected_pairs = []
-    for link1, link2 in required_pairs:
-        pair_key = tuple(sorted((link1, link2)))
-        if pair_key in existing_pairs:
-            continue
-        ET.SubElement(root, "disable_collisions", link1=link1, link2=link2, reason="Adjacent")
-        existing_pairs.add(pair_key)
-        injected_pairs.append(f"{link1}<->{link2}")
+    for link1, link2, reason in pairs_to_inject:
+        ET.SubElement(root, "disable_collisions", link1=link1, link2=link2, reason=reason)
+        injected_pairs.append(f"{link1}<->{link2} ({reason})")
 
-    if injected_pairs:
-        logger.info(
-            "Injected SRDF disable_collisions pairs for UR base_link_inertia compatibility: "
-            + ", ".join(injected_pairs)
-        )
-        return ET.tostring(root, encoding="unicode")
-
-    return srdf_xml
+    logger.info(
+        "Injected conservative SRDF disable_collisions pairs for UR scene normalization: "
+        + ", ".join(injected_pairs)
+    )
+    return ET.tostring(root, encoding="unicode")
 
 
 def resolve_required_package_share_dir(package_name, remediation_hint):

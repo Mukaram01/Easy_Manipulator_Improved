@@ -578,6 +578,106 @@ def test_validate_and_normalize_workcell_end_effector_frames_falls_back_on_3f_ur
     assert any("declares Robotiq 3F" in message for message in logger.warning_messages)
 
 
+def _sorted_pair_set(triples):
+    return {tuple(sorted((link1, link2))) for link1, link2, _reason in triples}
+
+
+def test_compute_conservative_srdf_disable_collision_injections_keeps_ur_base_and_forearm_wrist2(
+    grasp_launch_module,
+):
+    robot_description_xml = """
+    <robot name="demo">
+      <link name="base_link"/>
+      <link name="base_link_inertia"/>
+      <link name="shoulder_link"/>
+      <link name="forearm_link"/>
+      <link name="wrist_2_link"/>
+    </robot>
+    """
+    srdf_xml = "<robot name='demo'></robot>"
+
+    injections = grasp_launch_module._compute_conservative_srdf_disable_collision_injections(
+        robot_description_xml,
+        srdf_xml,
+    )
+    pair_set = _sorted_pair_set(injections)
+
+    assert tuple(sorted(("base_link", "base_link_inertia"))) in pair_set
+    assert tuple(sorted(("base_link_inertia", "shoulder_link"))) in pair_set
+    assert tuple(sorted(("forearm_link", "wrist_2_link"))) in pair_set
+
+
+def test_compute_conservative_srdf_disable_collision_injections_adds_camera_wrist_pair_only_for_fixed_joints(
+    grasp_launch_module,
+):
+    robot_description_xml = """
+    <robot name="demo">
+      <link name="wrist_3_link"/>
+      <link name="camera_bottom_screw_frame"/>
+      <joint name="wrist_to_camera_mount" type="fixed">
+        <parent link="wrist_3_link"/>
+        <child link="camera_bottom_screw_frame"/>
+      </joint>
+    </robot>
+    """
+    srdf_xml = "<robot name='demo'></robot>"
+
+    injections = grasp_launch_module._compute_conservative_srdf_disable_collision_injections(
+        robot_description_xml,
+        srdf_xml,
+    )
+
+    assert tuple(sorted(("wrist_3_link", "camera_bottom_screw_frame"))) in _sorted_pair_set(injections)
+
+
+def test_compute_conservative_srdf_disable_collision_injections_rejects_non_fixed_camera_wrist_joints(
+    grasp_launch_module,
+):
+    robot_description_xml = """
+    <robot name="demo">
+      <link name="wrist_3_link"/>
+      <link name="camera_bottom_screw_frame"/>
+      <joint name="wrist_to_camera_mount" type="revolute">
+        <parent link="wrist_3_link"/>
+        <child link="camera_bottom_screw_frame"/>
+      </joint>
+    </robot>
+    """
+    srdf_xml = "<robot name='demo'></robot>"
+
+    injections = grasp_launch_module._compute_conservative_srdf_disable_collision_injections(
+        robot_description_xml,
+        srdf_xml,
+    )
+
+    assert tuple(sorted(("wrist_3_link", "camera_bottom_screw_frame"))) not in _sorted_pair_set(injections)
+
+
+def test_compute_conservative_srdf_disable_collision_injections_never_adds_table_or_workbench_pairs(
+    grasp_launch_module,
+):
+    robot_description_xml = """
+    <robot name="demo">
+      <link name="wrist_3_link"/>
+      <link name="table_top"/>
+      <joint name="table_joint" type="fixed">
+        <parent link="wrist_3_link"/>
+        <child link="table_top"/>
+      </joint>
+    </robot>
+    """
+    srdf_xml = "<robot name='demo'></robot>"
+
+    injections = grasp_launch_module._compute_conservative_srdf_disable_collision_injections(
+        robot_description_xml,
+        srdf_xml,
+    )
+
+    for link1, link2, _reason in injections:
+        pair_text = f"{link1} {link2}".lower()
+        assert "table" not in pair_text
+        assert "workbench" not in pair_text
+
 
 def test_require_yaml_mapping_reports_package_and_file(grasp_launch_module):
     with pytest.raises(

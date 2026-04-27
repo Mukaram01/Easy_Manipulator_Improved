@@ -17,6 +17,7 @@ import importlib.util
 import os
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
@@ -68,6 +69,44 @@ def test_missing_scene_package_error_message():
     with pytest.raises(RuntimeError, match=rf"Scene package '{missing_scene}' was not found") as exc_info:
         module.resolve_scene_package_share_dir(missing_scene)
     assert "build/source your generated scene package first" in str(exc_info.value)
+
+
+def test_scene_srdf_injections_are_scoped_and_exclude_table_workbench_rules():
+    module = import_launch_module()
+    scene_package = SCENE_PACKAGE
+    robot_description_xml = module.load_file(scene_package, "urdf/scene.urdf.xacro")
+    srdf_xml = module.load_file(scene_package, "urdf/arm_hand.srdf.xacro")
+
+    pairs_to_inject = module._compute_conservative_srdf_disable_collision_injections(
+        robot_description_xml=robot_description_xml,
+        srdf_xml=srdf_xml,
+    )
+    allowed_pairs = {
+        tuple(sorted(("base_link", "base_link_inertia"))),
+        tuple(sorted(("base_link_inertia", "shoulder_link"))),
+        tuple(sorted(("forearm_link", "wrist_2_link"))),
+    }
+
+    injected_pair_set = {tuple(sorted((link1, link2))) for link1, link2, _reason in pairs_to_inject}
+    assert injected_pair_set.issubset(allowed_pairs)
+    for link1, link2, _reason in pairs_to_inject:
+        text = f"{link1} {link2}".lower()
+        assert "table" not in text
+        assert "workbench" not in text
+
+
+def test_scene_srdf_no_blanket_robot_vs_table_disable_rules():
+    module = import_launch_module()
+    srdf_xml = module.load_file(SCENE_PACKAGE, "urdf/arm_hand.srdf.xacro")
+    srdf_root = ET.fromstring(srdf_xml)
+    for element in srdf_root.findall("disable_collisions"):
+        link1 = (element.attrib.get("link1", "") or "").lower()
+        link2 = (element.attrib.get("link2", "") or "").lower()
+        if "table" not in link1 and "table" not in link2 and "workbench" not in link1 and "workbench" not in link2:
+            continue
+        assert "wrist" not in link1 and "wrist" not in link2
+        assert "forearm" not in link1 and "forearm" not in link2
+        assert "upper_arm" not in link1 and "upper_arm" not in link2
 
 
 @pytest.mark.launch_test
