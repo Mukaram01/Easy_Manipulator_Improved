@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -45,6 +46,12 @@ task_execution_plan = _load_module(
 )
 task_execution_plan_reporter = _load_module(
     "generate_task_execution_plan_report", REPO_ROOT / "scripts" / "generate_task_execution_plan_report.py"
+)
+workcell_bundle_exporter = _load_module(
+    "export_workcell_bundle", REPO_ROOT / "scripts" / "export_workcell_bundle.py"
+)
+workcell_bundle_inspector = _load_module(
+    "inspect_workcell_bundle", REPO_ROOT / "scripts" / "inspect_workcell_bundle.py"
 )
 
 
@@ -861,6 +868,179 @@ class TaskExecutionPlanTests(unittest.TestCase):
                 report_text = task_execution_plan_reporter.build_report(rows)
         self.assertIn("`scene_a` | **PASS**", report_text)
         self.assertIn("deterministic operator-readable job sequence", report_text)
+
+
+class WorkcellBundleTests(unittest.TestCase):
+    def _manifest_text(self) -> str:
+        return (
+            "scene:\n"
+            "  name: fake_scene\n"
+            "robot:\n"
+            "  model: ur5\n"
+            "  planning_group: manipulator\n"
+            "  base_frame: base_link\n"
+            "  ee_link: tool0\n"
+            "end_effector:\n"
+            "  type: finger\n"
+            "  brand: robotiq_2f\n"
+            "  grasp_frame: tool0\n"
+            "self_test:\n"
+            "  enabled: true\n"
+            "  object:\n"
+            "    id: commissioning_box\n"
+            "    shape: box\n"
+            "    dimensions: [0.05, 0.05, 0.05]\n"
+            "    frame_id: world\n"
+            "    pose_xyz: [0.45, 0.0, 0.08]\n"
+            "    pose_rpy: [0.0, 0.0, 0.0]\n"
+            "task_recipe:\n"
+            "  id: colour_sort_demo\n"
+            "  name: Colour Sort Demo\n"
+            "  type: sort\n"
+            "  enabled: true\n"
+            "  decision_rules:\n"
+            "    - id: red_to_bin_a\n"
+            "      when:\n"
+            "        attribute: colour\n"
+            "        equals: red\n"
+            "      destination: bin_a\n"
+            "    - id: default\n"
+            "      when:\n"
+            "        default: true\n"
+            "      destination: reject_bin\n"
+            "  destinations:\n"
+            "    - id: bin_a\n"
+            "      frame_id: world\n"
+            "      pose_xyz: [0.20, 0.0, 0.12]\n"
+            "      pose_rpy: [0.0, 0.0, 0.0]\n"
+            "      action: place\n"
+            "    - id: reject_bin\n"
+            "      frame_id: world\n"
+            "      pose_xyz: [0.15, 0.0, 0.12]\n"
+            "      pose_rpy: [0.0, 0.0, 0.0]\n"
+            "      action: reject\n"
+        )
+
+    def _write_scene(self, root: Path, name: str = "fake_scene") -> Path:
+        manifest_path = root / "scenes" / name / "scene_manifest.yaml"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(self._manifest_text().replace("fake_scene", name), encoding="utf-8")
+        return manifest_path
+
+    def _configure_bundle_modules(self, root: Path) -> None:
+        workcell_bundle_exporter.REPO_ROOT = root
+        workcell_bundle_exporter.DEFAULT_OUTPUT_DIR = root / "dist" / "workcell_bundles"
+        workcell_bundle_exporter.REPORTS_DIR = root / "docs" / "manuals"
+        workcell_bundle_exporter.PLAN_OUTPUT_DIR = root / "docs" / "manuals" / "generated_execution_plans"
+        workcell_bundle_exporter.dry_run.REPO_ROOT = root
+        workcell_bundle_exporter.plan_generator.REPO_ROOT = root
+        workcell_bundle_exporter.plan_generator.dry_run.REPO_ROOT = root
+        workcell_bundle_exporter.plan_generator.OUTPUT_DIR = root / "docs" / "manuals" / "generated_execution_plans"
+        workcell_bundle_exporter.self_test_reporter.REPO_ROOT = root
+        workcell_bundle_exporter.task_recipe_reporter.REPO_ROOT = root
+
+    def test_bundle_export_and_manifest_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                "fake_scene", manifest_path, root / "dist" / "workcell_bundles", zip_output=False, force=True
+            )
+            self.assertTrue((bundle_dir / "README.md").is_file())
+            self.assertTrue((bundle_dir / "operator_checklist.md").is_file())
+            manifest = json.loads((bundle_dir / "bundle_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["bundle_schema_version"], "1.0")
+            self.assertEqual(manifest["scene"], "fake_scene")
+            self.assertTrue(manifest["offline_only"])
+            self.assertIn("files", manifest)
+
+    def test_operator_checklist_sections_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                "fake_scene", manifest_path, root / "dist" / "workcell_bundles", zip_output=False, force=True
+            )
+            checklist = (bundle_dir / "operator_checklist.md").read_text(encoding="utf-8")
+            self.assertIn("## Offline checks", checklist)
+            self.assertIn("## Simulation checks", checklist)
+            self.assertIn("## Physical cell checks", checklist)
+
+    def test_missing_optional_reports_warn_not_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                "fake_scene", manifest_path, root / "dist" / "workcell_bundles", zip_output=False, force=True
+            )
+            manifest = json.loads((bundle_dir / "bundle_manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(any("Optional report missing" in warning for warning in manifest["warnings"]))
+
+    def test_inspector_pass_and_checksum_mismatch_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                "fake_scene", manifest_path, root / "dist" / "workcell_bundles", zip_output=False, force=True
+            )
+            status, _ = workcell_bundle_inspector.inspect_bundle(bundle_dir)
+            self.assertEqual(status, "PASS")
+
+            readme = bundle_dir / "README.md"
+            readme.write_text(readme.read_text(encoding="utf-8") + "\nTamper\n", encoding="utf-8")
+            status_after, notes = workcell_bundle_inspector.inspect_bundle(bundle_dir)
+            self.assertEqual(status_after, "FAIL")
+            self.assertTrue(any("Checksum mismatch" in note for note in notes))
+
+    def test_zip_export_and_force_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            out_dir = root / "dist" / "workcell_bundles"
+            bundle_dir, _ = workcell_bundle_exporter.export_scene(
+                "fake_scene", manifest_path, out_dir, zip_output=True, force=True
+            )
+            zip_path = out_dir / "fake_scene.zip"
+            self.assertTrue(zip_path.is_file())
+
+            status, _ = workcell_bundle_inspector.inspect_bundle(zip_path)
+            self.assertEqual(status, "PASS")
+
+            with self.assertRaises(RuntimeError):
+                workcell_bundle_exporter._zip_bundle("fake_scene", bundle_dir, out_dir, force=False)
+
+            zip_forced = workcell_bundle_exporter._zip_bundle("fake_scene", bundle_dir, out_dir, force=True)
+            self.assertTrue(zip_forced.is_file())
+
+    def test_missing_execution_plan_with_dry_run_pass_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manifest_path = self._write_scene(root)
+            self._configure_bundle_modules(root)
+            out_dir = root / "dist" / "workcell_bundles"
+
+            with mock.patch.object(workcell_bundle_exporter.plan_generator, "evaluate_scene") as mocked_eval:
+                mocked_eval.return_value = task_execution_plan.PlanResult(
+                    scene="fake_scene",
+                    status="PASS",
+                    task_recipe_id="id",
+                    task_type="sort",
+                    matched_rule_id="rule",
+                    destination_id="bin_a",
+                    markdown_path=None,
+                    json_path=None,
+                    steps_count=0,
+                    notes=["forced failure"],
+                )
+                with self.assertRaises(RuntimeError):
+                    workcell_bundle_exporter.export_scene(
+                        "fake_scene", manifest_path, out_dir, zip_output=False, force=True
+                    )
 
 
 if __name__ == "__main__":
