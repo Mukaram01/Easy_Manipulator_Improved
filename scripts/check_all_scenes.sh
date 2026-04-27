@@ -30,7 +30,11 @@ for scene in "${SCENES[@]}"; do
 
   case "${status}" in
     0)
-      echo "SUMMARY: PASS (${scene})"
+      if printf "%s\n" "${output}" | grep -q "RESULT: WARN"; then
+        echo "SUMMARY: WARN (${scene})"
+      else
+        echo "SUMMARY: PASS (${scene})"
+      fi
       installed_count=$((installed_count + 1))
       ;;
     3)
