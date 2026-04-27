@@ -57,6 +57,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ```bash
 ./scripts/generate_scene_validation_report.py
 ./scripts/generate_scene_self_test_report.py
+./scripts/generate_task_recipe_report.py
 ./scripts/generate_smoke_launch_report.py
 ```
 
@@ -66,6 +67,50 @@ Scene self-test metadata (`self_test` in each scene manifest) defines a determin
 
 ```bash
 ./scripts/check_scene_self_tests.sh
+./scripts/check_task_recipes.sh
+```
+
+### Task recipes
+
+`task_recipe` metadata in `scene_manifest.yaml` / `workcell.yaml` describes what the workcell is trying to do (job intent), not only how to pick/place.
+
+Examples include:
+
+- colour sorting
+- shape sorting
+- garbage sorting
+- reject handling
+- inspection routing
+- palletising
+- binning
+
+Current scope in this PR: contract validation + reporting only. Runtime execution remains backward compatible and existing launch behavior is unchanged.
+Future PRs will map recipes into offline simulated jobs and then UI-driven workflows.
+
+```yaml
+task_recipe:
+  id: colour_sort_demo
+  name: Colour Sort Demo
+  type: sort
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes: [class, colour, shape]
+  pick:
+    object_source: perception
+    grasp_strategy: auto
+    allowed_grasp_methods: [finger]
+  decision_rules:
+    - id: default_reject
+      when:
+        default: true
+      destination: reject_bin
+  destinations:
+    - id: reject_bin
+      frame_id: world
+      pose_xyz: [0.20, 0.0, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: reject
 ```
 
 ---

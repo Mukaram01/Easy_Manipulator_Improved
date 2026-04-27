@@ -100,6 +100,8 @@ Individual commands:
 ./scripts/generate_scene_validation_report.py
 ./scripts/check_scene_self_tests.sh
 ./scripts/generate_scene_self_test_report.py
+./scripts/check_task_recipes.sh
+./scripts/generate_task_recipe_report.py
 ./scripts/smoke_launch_scenes.sh ur5_2f_test
 ./scripts/smoke_launch_scenes.sh
 ./scripts/generate_smoke_launch_report.py
@@ -126,6 +128,7 @@ Smoke preflight intent:
 - Smoke launch preflight does **not** test full grasp execution quality, EPD perception behavior, camera hardware, or physical robot behavior.
 - Use full planner/perception/robot integration tests after smoke preflight passes.
 - Scene self-test metadata checks are deterministic/offline metadata validation only; they do not launch the robot.
+- Task recipe metadata checks are deterministic/offline contract validation only; they do not launch the robot.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 
@@ -248,9 +251,13 @@ Generated scenes should emit all required artifacts:
 - launch file,
 - `environment.yaml` (if used by the scene),
 - `scene_manifest.yaml` or `workcell.yaml`,
+- `self_test` commissioning metadata block,
+- `task_recipe` job metadata block,
 - URDF links that actually exist,
 - a valid MoveIt planning group,
 - valid gripper metadata.
+
+Reference placeholder template: `workcell_builder/workcell_builder/templates/ros2/scene_manifest_contract_template.yaml`.
 
 ### Generated scene checklist
 
@@ -261,6 +268,8 @@ Generated scenes should emit all required artifacts:
 - [ ] `robot.ee_link` exists in URDF
 - [ ] `end_effector.grasp_frame` exists and is consistent
 - [ ] `end_effector.allowed_touch_links` are non-empty and valid link names
+- [ ] `self_test` block validates for deterministic commissioning metadata
+- [ ] `task_recipe` block validates (or is intentionally disabled with WARN)
 
 ---
 
@@ -300,6 +309,87 @@ Quick commands:
 ./scripts/preflight_workcell.sh
 ```
 - [ ] launch file starts without package-not-found errors
+
+---
+
+## Task recipes
+
+`task_recipe` describes **what job the cell should perform**. This avoids hard-coding every scene to simple pick/place and creates a stable contract for future UI/runtime layers.
+
+Representative job families:
+
+- colour sorting
+- shape sorting
+- garbage sorting
+- reject handling
+- inspection routing
+- palletising
+- binning
+- generic pick/process/place workflows
+
+Current scope (this PR):
+
+- validates and reports task recipe metadata,
+- does not yet convert recipes into runtime execution behavior,
+- does not require EPD, RealSense, RViz, or physical hardware.
+
+Future scope:
+
+- offline simulated jobs generated from recipes,
+- UI-driven workflow selection and execution using recipe contracts.
+
+Example:
+
+```yaml
+task_recipe:
+  id: colour_sort_demo
+  name: Colour Sort Demo
+  type: sort
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes:
+      - class
+      - colour
+      - shape
+  pick:
+    object_source: perception
+    grasp_strategy: auto
+    allowed_grasp_methods:
+      - finger
+  decision_rules:
+    - id: red_to_bin_a
+      when:
+        attribute: colour
+        equals: red
+      destination: bin_a
+    - id: default_reject
+      when:
+        default: true
+      destination: reject_bin
+  destinations:
+    - id: bin_a
+      frame_id: world
+      pose_xyz: [0.35, -0.35, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: reject_bin
+      frame_id: world
+      pose_xyz: [0.20, 0.0, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: reject
+  expected:
+    allow_offline_validation: true
+    min_valid_destinations: 1
+```
+
+Commands:
+
+```bash
+./scripts/check_task_recipes.sh
+./scripts/generate_task_recipe_report.py
+./scripts/preflight_workcell.sh
+```
 
 ---
 

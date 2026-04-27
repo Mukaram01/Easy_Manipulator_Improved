@@ -225,9 +225,18 @@ def _parse_list(lines: list[_Line], start: int, indent: int) -> tuple[list[Any],
         if not item_text:
             raise SimpleYamlError(f"Line {line.line_no}: empty block list entries are unsupported")
         if item_text.endswith(":") or (":" in item_text and not item_text.startswith(("'", '"'))):
-            raise SimpleYamlError(
-                f"Line {line.line_no}: mapping entries inside lists are unsupported by fallback parser"
-            )
+            end = i + 1
+            while end < len(lines) and lines[end].indent > indent:
+                end += 1
+            synthetic = [_Line(line_no=line.line_no, indent=indent + 2, content=item_text)]
+            synthetic.extend(lines[i + 1 : end])
+            parsed_map, consumed = _parse_mapping(synthetic, 0, indent + 2)
+            if consumed != len(synthetic):
+                extra = synthetic[consumed]
+                raise SimpleYamlError(f"Line {extra.line_no}: unsupported YAML structure in list mapping")
+            items.append(parsed_map)
+            i = end
+            continue
 
         items.append(_parse_scalar(item_text, line.line_no))
         i += 1
@@ -463,6 +472,158 @@ def _check_self_test(manifest: dict[str, Any], errors: list[str], warnings: list
         errors.append("Field 'self_test.expected.allow_simulated_execution' must be a boolean.")
 
 
+def _is_non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_int_and_not_bool(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+VALID_TASK_TYPES = {"pick_place", "sort", "inspect", "reject", "palletise", "binning", "custom"}
+VALID_OBJECT_SOURCES = {"perception", "self_test", "manual"}
+VALID_DESTINATION_ACTIONS = {"place", "reject", "inspect", "drop", "stage", "custom"}
+
+
+def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]]:
+    recipe = manifest.get("task_recipe")
+    if recipe is None:
+        return "WARN", ["task_recipe is not defined; add recipe metadata when the workcell job is known."]
+    if not isinstance(recipe, dict):
+        return "FAIL", ["task_recipe must be a mapping/object when provided."]
+
+    enabled = recipe.get("enabled")
+    if enabled is None:
+        return "WARN", ["task_recipe.enabled is not set; treated as disabled."]
+    if not isinstance(enabled, bool):
+        return "FAIL", ["task_recipe.enabled must be boolean."]
+    if not enabled:
+        return "WARN", ["task_recipe.enabled=false; recipe metadata intentionally disabled."]
+
+    notes: list[str] = []
+    if not _is_non_empty_string(recipe.get("id")):
+        notes.append("task_recipe.id must be non-empty string when task_recipe.enabled=true.")
+    if not _is_non_empty_string(recipe.get("name")):
+        notes.append("task_recipe.name must be non-empty string when task_recipe.enabled=true.")
+
+    recipe_type = recipe.get("type")
+    if recipe_type not in VALID_TASK_TYPES:
+        notes.append(
+            "task_recipe.type must be one of: "
+            + ", ".join(sorted(VALID_TASK_TYPES))
+            + "."
+        )
+
+    inputs = recipe.get("inputs")
+    if inputs is not None:
+        if not isinstance(inputs, dict):
+            notes.append("task_recipe.inputs must be a mapping/object when provided.")
+        else:
+            required_attributes = inputs.get("required_attributes")
+            if required_attributes is not None and not isinstance(required_attributes, list):
+                notes.append("task_recipe.inputs.required_attributes must be a list when provided.")
+
+    pick = recipe.get("pick")
+    if pick is not None:
+        if not isinstance(pick, dict):
+            notes.append("task_recipe.pick must be a mapping/object when provided.")
+        else:
+            object_source = pick.get("object_source")
+            if object_source is not None and object_source not in VALID_OBJECT_SOURCES:
+                notes.append(
+                    "task_recipe.pick.object_source must be one of: "
+                    + ", ".join(sorted(VALID_OBJECT_SOURCES))
+                    + "."
+                )
+            grasp_strategy = pick.get("grasp_strategy")
+            if grasp_strategy is not None and not _is_non_empty_string(grasp_strategy):
+                notes.append("task_recipe.pick.grasp_strategy must be non-empty string when provided.")
+            allowed_methods = pick.get("allowed_grasp_methods")
+            if allowed_methods is not None and not isinstance(allowed_methods, list):
+                notes.append("task_recipe.pick.allowed_grasp_methods must be a list when provided.")
+
+    destinations = recipe.get("destinations")
+    destination_ids: set[str] = set()
+    if not isinstance(destinations, list) or not destinations:
+        notes.append("task_recipe.destinations must be a non-empty list when task_recipe.enabled=true.")
+    else:
+        for idx, destination in enumerate(destinations, start=1):
+            prefix = f"task_recipe.destinations[{idx}]"
+            if not isinstance(destination, dict):
+                notes.append(f"{prefix} must be a mapping/object.")
+                continue
+            destination_id = destination.get("id")
+            if not _is_non_empty_string(destination_id):
+                notes.append(f"{prefix}.id must be non-empty string.")
+            else:
+                destination_ids.add(destination_id.strip())
+            if not _is_non_empty_string(destination.get("frame_id")):
+                notes.append(f"{prefix}.frame_id must be non-empty string.")
+            if not _is_numeric_list(destination.get("pose_xyz"), 3):
+                notes.append(f"{prefix}.pose_xyz must be a numeric list of length 3.")
+            if not _is_numeric_list(destination.get("pose_rpy"), 3):
+                notes.append(f"{prefix}.pose_rpy must be a numeric list of length 3.")
+            if destination.get("action") not in VALID_DESTINATION_ACTIONS:
+                notes.append(
+                    f"{prefix}.action must be one of: "
+                    + ", ".join(sorted(VALID_DESTINATION_ACTIONS))
+                    + "."
+                )
+
+    decision_rules = recipe.get("decision_rules")
+    if not isinstance(decision_rules, list) or not decision_rules:
+        notes.append("task_recipe.decision_rules must be a non-empty list when task_recipe.enabled=true.")
+    else:
+        for idx, rule in enumerate(decision_rules, start=1):
+            prefix = f"task_recipe.decision_rules[{idx}]"
+            if not isinstance(rule, dict):
+                notes.append(f"{prefix} must be a mapping/object.")
+                continue
+            if not _is_non_empty_string(rule.get("id")):
+                notes.append(f"{prefix}.id must be non-empty string.")
+            destination = rule.get("destination")
+            if not _is_non_empty_string(destination):
+                notes.append(f"{prefix}.destination must be non-empty string.")
+
+            when = rule.get("when")
+            if not isinstance(when, dict):
+                notes.append(f"{prefix}.when must be a mapping/object.")
+                continue
+
+            is_default = when.get("default") is True
+            if is_default:
+                continue
+
+            attribute = when.get("attribute")
+            has_matcher = any(
+                key in when and key not in {"default", "attribute"} for key in when.keys()
+            )
+            if not _is_non_empty_string(attribute) or not has_matcher:
+                notes.append(
+                    f"{prefix}.when must set default=true or include attribute plus at least one matcher."
+                )
+            if _is_non_empty_string(destination) and destination_ids and destination not in destination_ids:
+                notes.append(
+                    f"{prefix}.destination '{destination}' does not match any task_recipe.destinations.id."
+                )
+
+    expected = recipe.get("expected")
+    if expected is not None:
+        if not isinstance(expected, dict):
+            notes.append("task_recipe.expected must be a mapping/object when provided.")
+        else:
+            allow_offline = expected.get("allow_offline_validation")
+            if allow_offline is not None and not isinstance(allow_offline, bool):
+                notes.append("task_recipe.expected.allow_offline_validation must be boolean when provided.")
+            min_valid = expected.get("min_valid_destinations")
+            if min_valid is not None and (not _is_int_and_not_bool(min_valid) or min_valid < 1):
+                notes.append("task_recipe.expected.min_valid_destinations must be an integer >= 1.")
+
+    if notes:
+        return "FAIL", notes
+    return "PASS", ["task_recipe metadata is present and valid."]
+
+
 def _resolve_declared_path(share_dir: str, path_value: str) -> str:
     candidate = path_value.strip()
     if os.path.isabs(candidate):
@@ -552,6 +713,13 @@ def validate_scene_contract(package: str) -> tuple[ValidationResult, int]:
     _check_required(manifest, errors)
     _check_types(manifest, errors, warnings, package)
     _check_self_test(manifest, errors, warnings)
+    task_recipe_status, task_recipe_notes = validate_task_recipe_block(manifest)
+    if task_recipe_status == "FAIL":
+        errors.extend(task_recipe_notes)
+    elif task_recipe_status == "WARN":
+        warnings.extend(task_recipe_notes)
+    else:
+        notes.extend(task_recipe_notes)
     _check_declared_files(manifest, share_dir, errors)
 
     result = ValidationResult(

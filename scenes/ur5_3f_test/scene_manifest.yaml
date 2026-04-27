@@ -37,3 +37,52 @@ self_test:
   expected:
     min_grasp_candidates: 1
     allow_simulated_execution: true
+
+task_recipe:
+  # Future runtime/UI contract example plus commissioning defaults.
+  # Metadata-only in this release: validation/reporting only.
+  id: shape_sort_demo
+  name: Shape Sort Demo
+  type: sort
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes: [class, shape]
+  pick:
+    object_source: perception
+    grasp_strategy: auto
+    allowed_grasp_methods: [finger]
+  decision_rules:
+    - id: cylinder_to_lane_a
+      when:
+        attribute: shape
+        equals: cylinder
+      destination: lane_a
+    - id: box_to_lane_b
+      when:
+        attribute: shape
+        equals: box
+      destination: lane_b
+    - id: default_reject
+      when:
+        default: true
+      destination: reject_bin
+  destinations:
+    - id: lane_a
+      frame_id: world
+      pose_xyz: [0.33, -0.30, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: lane_b
+      frame_id: world
+      pose_xyz: [0.33, 0.30, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: reject_bin
+      frame_id: world
+      pose_xyz: [0.18, 0.0, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: reject
+  expected:
+    allow_offline_validation: true
+    min_valid_destinations: 1

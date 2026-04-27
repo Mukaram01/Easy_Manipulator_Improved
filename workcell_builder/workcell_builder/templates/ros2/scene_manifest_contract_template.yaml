@@ -1,0 +1,50 @@
+# Workcell Builder contract placeholder template.
+# Generated scenes should eventually emit scene_manifest.yaml with:
+# - scene contract metadata
+# - self_test commissioning block
+# - task_recipe job/industrial behavior block
+
+scene:
+  name: scene_name_here
+
+robot:
+  model: robot_model_here
+  planning_group: manipulator
+  base_frame: base_link
+  ee_link: tool0
+
+end_effector:
+  type: finger
+  brand: vendor_identifier
+  grasp_frame: tool0
+  allowed_touch_links: [tool0]
+
+environment:
+  support_surface_link: table
+
+self_test:
+  enabled: true
+  object:
+    id: commissioning_box
+    shape: box
+    dimensions: [0.05, 0.05, 0.05]
+    frame_id: world
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+
+task_recipe:
+  enabled: false
+  id: example_recipe
+  name: Example Job Recipe
+  type: custom
+  decision_rules:
+    - id: default_route
+      when:
+        default: true
+      destination: staging_bin
+  destinations:
+    - id: staging_bin
+      frame_id: world
+      pose_xyz: [0.30, 0.00, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: stage

@@ -37,3 +37,52 @@ self_test:
   expected:
     min_grasp_candidates: 1
     allow_simulated_execution: true
+
+task_recipe:
+  # Future runtime/UI contract example plus commissioning defaults.
+  # Metadata-only in this release: validation/reporting only.
+  id: light_part_binning_demo
+  name: Light Part Binning Demo
+  type: binning
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes: [class, weight_class]
+  pick:
+    object_source: perception
+    grasp_strategy: suction_priority
+    allowed_grasp_methods: [suction]
+  decision_rules:
+    - id: lightweight_to_bin_small
+      when:
+        attribute: weight_class
+        equals: light
+      destination: bin_small
+    - id: standard_to_bin_large
+      when:
+        attribute: weight_class
+        equals: standard
+      destination: bin_large
+    - id: default_stage
+      when:
+        default: true
+      destination: staging_bin
+  destinations:
+    - id: bin_small
+      frame_id: world
+      pose_xyz: [0.34, -0.27, 0.11]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: bin_large
+      frame_id: world
+      pose_xyz: [0.34, 0.27, 0.11]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: staging_bin
+      frame_id: world
+      pose_xyz: [0.20, 0.0, 0.11]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: stage
+  expected:
+    allow_offline_validation: true
+    min_valid_destinations: 1
