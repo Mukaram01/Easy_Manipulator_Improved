@@ -72,7 +72,7 @@ source ~/workcell_ws/install/setup.bash
 Build all packages (symlink install, conservative worker count):
 
 ```bash
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install
 ```
 
 Targeted build examples:
@@ -715,7 +715,7 @@ Example plan snippet:
 
 - [ ] source ROS (`source /opt/ros/humble/setup.bash`)
 - [ ] source workspace (`source ~/workcell_ws/install/setup.bash`)
-- [ ] build (`colcon build --symlink-install --parallel-workers 2`)
+- [ ] build (`colcon build --symlink-install`)
 - [ ] run preflight gate (`./scripts/preflight_workcell.sh`)
 - [ ] validate one scene (`./scripts/validate_scene_contract.py ur5_2f_test`)
 - [ ] launch `ur5_2f_test`
