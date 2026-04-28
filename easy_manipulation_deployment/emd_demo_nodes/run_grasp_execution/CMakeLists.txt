@@ -78,6 +78,12 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_home_return_utils
     rclcpp
   )
+  ament_add_gtest(test_explicit_release_pose_utils
+    test/test_explicit_release_pose_utils.cpp)
+  target_include_directories(test_explicit_release_pose_utils PUBLIC include)
+  ament_target_dependencies(test_explicit_release_pose_utils
+    tf2_geometry_msgs
+  )
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

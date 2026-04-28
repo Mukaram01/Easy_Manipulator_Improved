@@ -26,6 +26,7 @@
 #include <regex>
 #include <stdexcept>
 #include <unordered_set>
+#include <unordered_map>
 #include <cctype>
 #include <cmath>
 #include <mutex>
@@ -54,6 +55,7 @@
 #include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
 #include "run_grasp_execution/grasp_candidate_utils.hpp"
 #include "run_grasp_execution/home_return_utils.hpp"
+#include "run_grasp_execution/explicit_release_pose_utils.hpp"
 
 
 namespace grasp_execution
@@ -412,6 +414,16 @@ std::vector<double> resolve_safe_joint_state_param(
 class Demo : public moveit2::MoveitCppGraspExecution
 {
 public:
+  struct ReleasePlanDecision
+  {
+    std::string strategy{"legacy_offset"};
+    geometry_msgs::msg::PoseStamped pose;
+    std::string destination_id;
+    std::string destination_name;
+    std::string source_object_id;
+    std::string fallback_reason;
+  };
+
   explicit Demo(
     const rclcpp::Node::SharedPtr & node,
     [[maybe_unused]] const std::string & package_name,
@@ -440,6 +452,29 @@ public:
       release_x_offset_, "release_x_offset", node, node->get_logger(), -0.3);
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<bool>(
+      use_explicit_release_pose_, "use_explicit_release_pose", node, node->get_logger(), false);
+    grasp_execution::declare_or_get_param<std::string>(
+      explicit_release_pose_source_,
+      "explicit_release_pose_source",
+      node,
+      node->get_logger(),
+      "auto");
+    grasp_execution::declare_or_get_param<std::string>(
+      explicit_release_pose_frame_policy_,
+      "explicit_release_pose_frame_policy",
+      node,
+      node->get_logger(),
+      "require_planning_frame");
+    grasp_execution::declare_or_get_param<bool>(
+      fallback_to_legacy_release_, "fallback_to_legacy_release", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<std::string>(
+      explicit_release_pose_bridge_payload_path_,
+      "explicit_release_pose_bridge_payload_path",
+      node,
+      node->get_logger(),
+      "");
+    maybe_load_explicit_release_pose_adapter();
     grasp_execution::declare_or_get_param<bool>(
       home_return_use_safe_intermediate_,
       "home_return.use_safe_intermediate",
@@ -603,6 +638,14 @@ public:
     const emd_msgs::msg::GraspTask::SharedPtr & msg,
     bool blocking = false)
   {
+    explicit_release_pose_by_target_id_.clear();
+    std::unordered_map<size_t, run_grasp_execution::ExplicitReleasePoseEntry> explicit_by_index;
+    if (explicit_release_pose_adapter_loaded_) {
+      const size_t max_count = std::min(explicit_release_entries_.size(), msg->grasp_targets.size());
+      for (size_t i = 0; i < max_count; ++i) {
+        explicit_by_index.emplace(i, explicit_release_entries_[i]);
+      }
+    }
     bool all_targets_success = true;
     // target id will be "#<shape>-<task_id>-<target-index>"
 
@@ -621,6 +664,9 @@ public:
 
       auto target_id =
         gen_target_object_id(grasp_target->target_shape, msg->task_id, i);
+      if (explicit_by_index.count(i) > 0U) {
+        explicit_release_pose_by_target_id_[target_id] = explicit_by_index[i];
+      }
 
       // Start planning workflow using planning schedule
       auto status = planning_scheduler.add_workflow(
@@ -906,23 +952,54 @@ public:
 
     prompt_job_end(node_->get_logger(), true);
 
-    // Apply configurable release pose offsets. The x_offset is applied to the
-    // current EE position. Optionally the z-height is aligned to the grasp
-    // pose so the object clears any surface obstacle on approach.
-    release_pose.pose.position.x += release_x_offset_;
-    if (release_use_grasp_z_) {
-      release_pose.pose.position.z = selected_moveit_grasp_pose.pose.position.z;
+    const auto release_decision = resolve_release_plan_decision(
+      target_id, release_pose, selected_moveit_grasp_pose);
+    if (!release_decision.fallback_reason.empty()) {
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Release strategy fallback for target %s: %s",
+        target_id.c_str(),
+        release_decision.fallback_reason.c_str());
     }
-    release_pose.pose.orientation = selected_moveit_grasp_pose.pose.orientation;
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Release strategy target=%s strategy=%s destination_id=%s destination_name=%s source_object_id=%s pose=%s",
+      target_id.c_str(),
+      release_decision.strategy.c_str(),
+      release_decision.destination_id.c_str(),
+      release_decision.destination_name.c_str(),
+      release_decision.source_object_id.c_str(),
+      format_pose_xyz_quat_rpy(release_decision.pose.pose).c_str());
 
-    if(!this->plan_and_execute_job(
+    bool release_result = this->plan_and_execute_job(
+      options,
+      "Grasp release",
+      target_id,
+      release_decision.pose);
+    if (!release_result && release_decision.strategy == "explicit_destination_pose" &&
+      fallback_to_legacy_release_)
+    {
+      const auto legacy_release_pose = make_legacy_release_pose(release_pose, selected_moveit_grasp_pose);
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Explicit release planning failed for target %s. Falling back to legacy_offset strategy.",
+        target_id.c_str());
+      release_result = this->plan_and_execute_job(
         options,
-        "Grasp release",
+        "Grasp release (legacy fallback)",
         target_id,
-        release_pose)){
-          log_release_octomap_collision_diagnostic(target_id, planning_group);
-          return false;
-      }
+        legacy_release_pose);
+    }
+    if (!release_result) {
+      log_release_octomap_collision_diagnostic(target_id, planning_group);
+      return false;
+    }
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Release summary target=%s strategy=%s fallback_used=%s",
+      target_id.c_str(),
+      release_decision.strategy.c_str(),
+      (!release_decision.fallback_reason.empty()) ? "true" : "false");
 
     // ------------------- detach grasp object from robot --------------------------
     prompt_job_start(
@@ -959,6 +1036,125 @@ public:
   }
 
 private:
+  geometry_msgs::msg::PoseStamped make_legacy_release_pose(
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    const geometry_msgs::msg::PoseStamped & selected_moveit_grasp_pose) const
+  {
+    auto release_pose = current_pose;
+    release_pose.pose.position.x += release_x_offset_;
+    if (release_use_grasp_z_) {
+      release_pose.pose.position.z = selected_moveit_grasp_pose.pose.position.z;
+    }
+    release_pose.pose.orientation = selected_moveit_grasp_pose.pose.orientation;
+    return release_pose;
+  }
+
+  void maybe_load_explicit_release_pose_adapter()
+  {
+    const auto source = to_lower_copy(explicit_release_pose_source_);
+    const bool source_disabled = source == "disabled";
+    if (!use_explicit_release_pose_ || source_disabled) {
+      return;
+    }
+    if (explicit_release_pose_bridge_payload_path_.empty()) {
+      if (source == "bridge_payload") {
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "explicit_release_pose_source=bridge_payload requested but explicit_release_pose_bridge_payload_path is empty.");
+      }
+      return;
+    }
+    const auto load_result =
+      run_grasp_execution::load_explicit_release_pose_bridge_payload(explicit_release_pose_bridge_payload_path_);
+    if (!load_result.loaded) {
+      RCLCPP_WARN(node_->get_logger(), "Explicit release adapter disabled: %s", load_result.error.c_str());
+      return;
+    }
+    explicit_release_pose_adapter_loaded_ = true;
+    explicit_release_entries_ = load_result.entries;
+    for (const auto & warning : load_result.warnings) {
+      RCLCPP_WARN(node_->get_logger(), "Explicit release adapter: %s", warning.c_str());
+    }
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Loaded explicit release adapter entries=%zu from bridge payload '%s'.",
+      explicit_release_entries_.size(),
+      explicit_release_pose_bridge_payload_path_.c_str());
+  }
+
+  ReleasePlanDecision resolve_release_plan_decision(
+    const std::string & target_id,
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    const geometry_msgs::msg::PoseStamped & selected_moveit_grasp_pose)
+  {
+    ReleasePlanDecision decision;
+    decision.pose = make_legacy_release_pose(current_pose, selected_moveit_grasp_pose);
+
+    if (!use_explicit_release_pose_) {
+      decision.fallback_reason = "explicit release poses are disabled by parameter.";
+      return decision;
+    }
+
+    const auto source = to_lower_copy(explicit_release_pose_source_);
+    if (source == "disabled") {
+      decision.fallback_reason = "explicit_release_pose_source=disabled.";
+      return decision;
+    }
+
+    const auto it = explicit_release_pose_by_target_id_.find(target_id);
+    if (it == explicit_release_pose_by_target_id_.end()) {
+      decision.fallback_reason = "no destination pose entry resolved for target.";
+      return decision;
+    }
+
+    const auto & entry = it->second;
+    decision.destination_id = entry.destination_id;
+    decision.destination_name = entry.destination_name;
+    decision.source_object_id = entry.object_id;
+    if (!entry.valid_pose) {
+      decision.fallback_reason = "destination pose is missing/malformed.";
+      return decision;
+    }
+    const auto destination_frame = grasp_execution::sanitize_frame_id(entry.frame_id);
+    if (destination_frame.empty()) {
+      decision.fallback_reason = "destination frame is empty.";
+      return decision;
+    }
+    if (destination_frame != planning_frame_) {
+      if (to_lower_copy(explicit_release_pose_frame_policy_) == "require_planning_frame") {
+        decision.fallback_reason =
+          "destination frame '" + destination_frame + "' does not match planning_frame '" +
+          planning_frame_ + "'.";
+        return decision;
+      }
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Explicit destination pose frame mismatch target=%s frame=%s planning_frame=%s (policy=warn_and_use).",
+        target_id.c_str(),
+        destination_frame.c_str(),
+        planning_frame_.c_str());
+    }
+
+    geometry_msgs::msg::PoseStamped explicit_pose;
+    explicit_pose.header.frame_id = destination_frame;
+    explicit_pose.pose = entry.pose;
+    if (!pose_within_workspace(explicit_pose, workspace_bounds_)) {
+      decision.fallback_reason = "destination pose outside configured workspace bounds.";
+      return decision;
+    }
+
+    decision.strategy = "explicit_destination_pose";
+    decision.pose = explicit_pose;
+    decision.fallback_reason.clear();
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Using explicit destination release pose for target %s destination_id=%s frame=%s",
+      target_id.c_str(),
+      decision.destination_id.c_str(),
+      destination_frame.c_str());
+    return decision;
+  }
+
   void set_last_failure_message(const std::string & message)
   {
     std::lock_guard<std::mutex> lock(last_failure_mutex_);
@@ -1282,6 +1478,15 @@ private:
   std::string planning_frame_;
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
+  bool use_explicit_release_pose_{false};
+  std::string explicit_release_pose_source_{"auto"};
+  std::string explicit_release_pose_frame_policy_{"require_planning_frame"};
+  bool fallback_to_legacy_release_{true};
+  std::string explicit_release_pose_bridge_payload_path_;
+  bool explicit_release_pose_adapter_loaded_{false};
+  std::vector<run_grasp_execution::ExplicitReleasePoseEntry> explicit_release_entries_;
+  std::unordered_map<std::string, run_grasp_execution::ExplicitReleasePoseEntry>
+    explicit_release_pose_by_target_id_;
   bool home_return_use_safe_intermediate_{false};
   int home_return_max_attempts_{5};
   std::vector<double> home_return_safe_joint_state_;
@@ -1443,3 +1648,11 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }
+    std::unordered_map<size_t, run_grasp_execution::ExplicitReleasePoseEntry> explicit_by_index;
+    if (explicit_release_pose_adapter_loaded_) {
+      const auto entries = explicit_release_entries_;
+      const size_t max_count = std::min(entries.size(), msg->grasp_targets.size());
+      for (size_t i = 0; i < max_count; ++i) {
+        explicit_by_index.emplace(i, entries[i]);
+      }
+    }

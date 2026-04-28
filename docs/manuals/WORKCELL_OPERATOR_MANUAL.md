@@ -155,7 +155,13 @@ Destination-aware routing chain (offline-first):
 - `task_recipe/v1` decision rules select destination ids (e.g., red bin, cylinder bin, reject tray).
 - `runtime_execution_plan/v1` stores both legacy destination metadata and resolved destination pose/quaternion in `routing.destination_resolved`.
 - `emd_grasp_bridge_payload/v1` preserves this release destination pose metadata and emits warnings when fallback is required.
-- Runtime release currently still follows `run_grasp_execution` fallback parameters (`release_x_offset`, `release_use_grasp_z`) until EMD runtime interfaces are extended.
+- Runtime release defaults to legacy fallback parameters (`release_x_offset`, `release_use_grasp_z`), but operators can now opt-in to explicit destination release poses from bridge payload JSON:
+  - `use_explicit_release_pose: true`
+  - `explicit_release_pose_source: auto` (or `bridge_payload`)
+  - `explicit_release_pose_bridge_payload_path: <path-to-emd_grasp_bridge_payload.json>`
+  - `explicit_release_pose_frame_policy: require_planning_frame` (strict default)
+  - `fallback_to_legacy_release: true`
+- When explicit pose is invalid/unavailable, runtime logs WARN with fallback reason and keeps legacy behavior without crashing (recommended for sorting lines: color/shape/garbage bins).
 
 Mock runtime objects under `tests/fixtures/runtime_objects` are test fixtures only and are not the normal operator path.
 

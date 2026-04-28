@@ -77,6 +77,10 @@ If ROS Python modules are unavailable, status is `FAIL` with an explicit error m
   - using explicit destination release pose metadata (offline bridge level),
   - destination frame mismatch with planning frame,
   - destination missing/malformed pose, causing fallback to `release_x_offset` / `release_use_grasp_z`.
-- Because of this interface boundary, `run_grasp_execution` keeps existing release behavior unless runtime interfaces are extended in a future non-breaking step.
+- `run_grasp_execution` now supports a **non-breaking runtime adapter** for explicit destination release poses:
+  - keep `release_x_offset` / `release_use_grasp_z` as default legacy behavior,
+  - opt-in with `use_explicit_release_pose:=true`,
+  - point `explicit_release_pose_bridge_payload_path` to the generated `emd_grasp_bridge_payload/v1` JSON,
+  - keep `fallback_to_legacy_release:=true` to safely recover when destination pose is missing, malformed, wrong-frame, or unreachable.
 - synthesized grasp poses are conservative first-pass placeholders.
 - this bridge is not full production sequencing or a safety certification layer.
