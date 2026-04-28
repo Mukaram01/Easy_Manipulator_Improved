@@ -145,8 +145,13 @@ PY
   fi
 
   if need_command rosdep; then
-    run_cmd "rosdep init || true"
-    log_change "rosdep init"
+    local rosdep_sources="/etc/ros/rosdep/sources.list.d/20-default.list"
+    if [[ -f "$rosdep_sources" ]]; then
+      echo "rosdep default sources already initialized."
+    else
+      run_cmd "rosdep init || true"
+      log_change "rosdep init"
+    fi
   fi
 }
 
@@ -203,21 +208,21 @@ prepare_osqp_stack() {
 
   if [[ $need_local_osqp -eq 1 ]]; then
     echo "Installing pinned OSQP/OsqpEigen compatibility stack for TrajOpt/Tesseract (OSQP 0.6.3 + OsqpEigen 0.8.0)."
-    run_cmd "cmake -S src/osqp -B build/osqp -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON"
-    run_cmd "cmake --build build/osqp"
+    run_cmd "cmake -S src/osqp -B build/_external/osqp -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON"
+    run_cmd "cmake --build build/_external/osqp"
     if command -v sudo >/dev/null 2>&1; then
-      run_cmd "sudo cmake --install build/osqp"
+      run_cmd "sudo cmake --install build/_external/osqp"
     else
-      run_cmd "cmake --install build/osqp"
+      run_cmd "cmake --install build/_external/osqp"
     fi
     log_change "install osqp from source (0.6.3)"
 
-    run_cmd "cmake -S src/osqp-eigen -B build/osqp-eigen -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DOSQP_EIGEN_BUILD_PYTHON=OFF"
-    run_cmd "cmake --build build/osqp-eigen"
+    run_cmd "cmake -S src/osqp-eigen -B build/_external/osqp-eigen -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DOSQP_EIGEN_BUILD_PYTHON=OFF"
+    run_cmd "cmake --build build/_external/osqp-eigen"
     if command -v sudo >/dev/null 2>&1; then
-      run_cmd "sudo cmake --install build/osqp-eigen"
+      run_cmd "sudo cmake --install build/_external/osqp-eigen"
     else
-      run_cmd "cmake --install build/osqp-eigen"
+      run_cmd "cmake --install build/_external/osqp-eigen"
     fi
     log_change "install osqp-eigen from source (0.8.0)"
 
@@ -238,6 +243,26 @@ prepare_osqp_stack() {
     echo "Incompatible OSQP headers detected: auxil.h not found. TrajOpt SQP requires the OSQP 0.6 API." >&2
     exit 1
   fi
+
+  [[ -d "/usr/local/lib/cmake/osqp" ]] || {
+    echo "OSQP compatibility install incomplete: /usr/local/lib/cmake/osqp was not found." >&2
+    exit 1
+  }
+  [[ -d "/usr/local/lib/cmake/OsqpEigen" ]] || {
+    echo "OsqpEigen compatibility install incomplete: /usr/local/lib/cmake/OsqpEigen was not found." >&2
+    exit 1
+  }
+}
+
+hide_workspace_osqp_sources() {
+  local marker
+  local osqp_dirs=("src/osqp" "src/osqp-eigen")
+  for dir in "${osqp_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for marker in COLCON_IGNORE AMENT_IGNORE; do
+      [[ -e "$dir/$marker" ]] || run_cmd "touch '$dir/$marker'"
+    done
+  done
 }
 
 capture_epd_state() {
@@ -371,8 +396,9 @@ build_phase() {
 
   run_cmd "./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh"
   run_cmd "./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh $([[ $WITH_GUI -eq 1 ]] && echo --with-gui || true)"
+  hide_workspace_osqp_sources
 
-  local rosdep_skip_keys=(qt_advanced_docking tesseract_visualization taskflow trajopt_ifopt trajopt_sqp osqp osqp_vendor osqp-eigen)
+  local rosdep_skip_keys=(qt_advanced_docking tesseract_visualization taskflow trajopt_ifopt trajopt_sqp osqp osqp_vendor osqp-eigen osqp_eigen qpoases)
   local fallback_keys=""
   if fallback_keys=$(./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble --print-rosdep-skip-keys 2>/dev/null); then
     if [[ -n "$fallback_keys" ]]; then
