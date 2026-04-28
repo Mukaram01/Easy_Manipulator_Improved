@@ -740,3 +740,11 @@ Use `scripts/create_workcell_project.py` to create a complete offline review pac
 Run: `./scripts/check_workcell_projects.sh` for representative fixture checks, or `./scripts/preflight_workcell.sh` to include this stage in full offline preflight.
 
 Reference: `docs/manuals/WORKCELL_PROJECT_GENERATOR.md`.
+
+## Capability-aware offline commissioning
+
+Generated scene/workcell manifests may now include a `capabilities` block and compatibility status notes. These are offline review aids to help operators/engineers confirm selected robot/EOAT/sensor/task/environment combinations before deployment.
+
+Example combinations:
+- UR5 + Robotiq 2F + RealSense for colour sorting.
+- Delta + suction + overhead RGBD for conveyor sorting.

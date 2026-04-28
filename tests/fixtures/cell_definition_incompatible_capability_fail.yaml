@@ -1,0 +1,60 @@
+schema_version: cell_definition/v1
+cell:
+  id: incompatible_capability_cell
+  name: Incompatible Capability Fail
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+  capability: ur5
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+  allowed_touch_links: [left_inner_finger, right_inner_finger]
+  capability: robotiq_2f_85
+camera:
+  id: c
+  type: depth_camera
+  frame: world
+environment:
+  frame: world
+  support_surfaces:
+    - id: t
+      type: table
+      frame: world
+      pose_xyz: [0,0,0]
+      pose_rpy: [0,0,0]
+      dimensions: [1,1,0.05]
+objects:
+  - id: o
+    class: part
+    shape: box
+    color: red
+    material: steel
+    frame: world
+    dimensions: [0.05,0.05,0.05]
+    pose_xyz: [0.4,0,0.1]
+    pose_rpy: [0,0,0]
+task:
+  id: magnetic_pick
+  type: pick_place
+  capability: task_magnetic_pick_place
+  source_object: o
+  destinations:
+    - id: place_target
+      frame: world
+      pose_xyz: [0.6,0,0.1]
+      pose_rpy: [0,0,0]
+  rules:
+    - id: fallback
+      when:
+        always: true
+      destination: place_target
+commissioning:
+  self_test_enabled: true
+  export_bundle: false

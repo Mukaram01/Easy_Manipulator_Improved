@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from capability_registry import DEFAULT_CAPABILITIES_DIR, load_capability_registry
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = REPO_ROOT / "scripts" / "validate_cell_definition.py"
 WORKCELL_GENERATOR_PATH = REPO_ROOT / "scripts" / "generate_workcell_from_cell_definition.py"
@@ -319,6 +321,24 @@ def _choose(prompt: str, values: tuple[str, ...], default: str | None = None) ->
         print(f"Invalid choice '{choice}'.")
 
 
+
+
+def _parse_csv_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _capability_args_from_cli(args: argparse.Namespace) -> dict[str, Any]:
+    assets = list(args.asset_capability or [])
+    assets.extend(_parse_csv_list(args.asset_capabilities_csv))
+    return {
+        "robot": args.robot_capability,
+        "end_effector": args.end_effector_capability,
+        "sensors": _parse_csv_list(args.sensor_capability),
+        "task": args.task_capability,
+        "environment_assets": assets,
+    }
 def _interactive_args(args: argparse.Namespace) -> argparse.Namespace:
     print("Cell Definition Wizard (interactive mode)")
     args.template = _choose("Task template", TEMPLATES, default="pick_place")
@@ -327,6 +347,11 @@ def _interactive_args(args: argparse.Namespace) -> argparse.Namespace:
     args.robot = _choose("Robot preset", tuple(ROBOT_PRESETS.keys()), default="ur5")
     args.end_effector = _choose("End-effector preset", tuple(END_EFFECTOR_PRESETS.keys()), default="robotiq_2f")
     args.camera = _choose("Camera preset", tuple(CAMERA_PRESETS.keys()), default="realsense_d435i")
+    args.robot_capability = input("> Optional robot capability id [blank none]: ").strip() or None
+    args.end_effector_capability = input("> Optional end-effector capability id [blank none]: ").strip() or None
+    args.sensor_capability = input("> Optional sensor capability id(s) comma-separated [blank none]: ").strip() or None
+    args.task_capability = input("> Optional task capability id [blank none]: ").strip() or None
+    args.asset_capabilities_csv = input("> Optional environment asset capability id(s) comma-separated [blank none]: ").strip() or None
     args.pick_source = input("> Pick source object id [commissioning_object]: ").strip() or "commissioning_object"
     args.destinations = input("> Destination IDs (comma-separated, blank for template defaults): ").strip() or None
     args.decision_rules = input("> Decision rule note (optional): ").strip() or "review_template_rules"
@@ -391,8 +416,9 @@ def _build_definition(args: argparse.Namespace) -> dict[str, Any]:
 
     camera = dict(CAMERA_PRESETS[args.camera])
     perception_mode = "offline" if args.camera == "none/offline" else "online"
+    capability_args = _capability_args_from_cli(args)
 
-    return {
+    data = {
         "schema_version": "cell_definition/v1",
         "cell": {
             "id": _sanitize_id(args.cell_id),
@@ -460,6 +486,20 @@ def _build_definition(args: argparse.Namespace) -> dict[str, Any]:
         },
     }
 
+    if capability_args["robot"]:
+        data["robot"]["capability"] = capability_args["robot"]
+    if capability_args["end_effector"]:
+        data["end_effector"]["capability"] = capability_args["end_effector"]
+    if capability_args["task"]:
+        data["task"]["capability"] = capability_args["task"]
+    if capability_args["sensors"]:
+        data["sensors"] = [{"capability": cap} for cap in capability_args["sensors"]]
+    if capability_args["environment_assets"]:
+        data.setdefault("environment", {}).setdefault("assets", [])
+        data["environment"]["assets"] = [{"capability": cap} for cap in capability_args["environment_assets"]]
+
+    return data
+
 
 def _validate_data(data: dict[str, Any], path_hint: Path) -> tuple[bool, list[str], list[str]]:
     validator = _load_module("wizard_cell_validator", VALIDATOR_PATH)
@@ -487,12 +527,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list-templates", action="store_true", help="List supported task templates and exit")
     parser.add_argument("--list-presets", action="store_true", help="List supported robot/EE/camera presets and exit")
+    parser.add_argument("--list-capabilities", action="store_true", help="List discovered capability ids and exit")
+    parser.add_argument("--capabilities-dir", type=Path, default=DEFAULT_CAPABILITIES_DIR, help="Capability fixture directory")
     parser.add_argument("--template", type=str, help="Task template")
     parser.add_argument("--cell-name", type=str, help="Cell display name")
     parser.add_argument("--cell-id", type=str, help="Cell ID / package-safe name")
     parser.add_argument("--robot", type=str, help="Robot preset")
     parser.add_argument("--end-effector", type=str, help="End-effector preset")
     parser.add_argument("--camera", type=str, help="Camera preset")
+    parser.add_argument("--robot-capability", type=str, help="Optional robot capability id")
+    parser.add_argument("--end-effector-capability", type=str, help="Optional end-effector capability id")
+    parser.add_argument("--sensor-capability", type=str, help="Optional sensor capability ids (comma-separated)")
+    parser.add_argument("--task-capability", type=str, help="Optional task capability id")
+    parser.add_argument("--asset-capability", action="append", default=[], help="Optional asset capability id (repeatable)")
+    parser.add_argument("--asset-capabilities", dest="asset_capabilities_csv", type=str, help="Optional asset capability ids comma-separated")
     parser.add_argument("--pick-source", type=str, default="commissioning_object", help="Source object id")
     parser.add_argument("--destinations", type=str, help="Comma-separated destination IDs")
     parser.add_argument("--decision-rules", type=str, help="Operator note for rules")
@@ -526,6 +574,16 @@ def main(argv: list[str] | None = None) -> int:
         print("Supported templates:")
         for item in TEMPLATES:
             print(f"- {item}")
+        return 0
+
+    if args.list_capabilities:
+        registry = load_capability_registry(args.capabilities_dir)
+        print(f"Capabilities from: {args.capabilities_dir}")
+        for cap_id in registry.ids():
+            print(f"- {cap_id}")
+        if registry.parser_notes:
+            for note in registry.parser_notes:
+                print(f"NOTE: {note}")
         return 0
 
     if args.list_presets:

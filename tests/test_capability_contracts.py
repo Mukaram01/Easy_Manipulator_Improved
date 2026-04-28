@@ -64,6 +64,7 @@ class CapabilityFixturesTests(unittest.TestCase):
             "task_shape_sorting.yaml",
             "task_garbage_sorting.yaml",
             "task_conveyor_sorting.yaml",
+            "task_magnetic_pick_place.yaml",
         ]:
             self._assert_pass(name)
 

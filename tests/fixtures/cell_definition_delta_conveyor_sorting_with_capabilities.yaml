@@ -1,0 +1,80 @@
+schema_version: cell_definition/v1
+cell:
+  id: delta_conveyor_caps
+  name: Delta Conveyor Sorting with Capabilities
+robot:
+  model: generic_delta
+  planning_group: delta_arm
+  base_frame: world
+  tool_link: delta_tool
+  home_named_target: home
+  safe_joint_state: []
+  capability: generic_delta_900
+end_effector:
+  id: suction
+  type: suction
+  brand: generic
+  grasp_frame: suction_tip
+  allowed_touch_links: []
+  capability: onrobot_airpick_style
+camera:
+  id: overhead_rgbd
+  type: depth_camera
+  frame: overhead_optical_frame
+environment:
+  frame: world
+  support_surfaces:
+    - id: conveyor_surface
+      type: conveyor
+      frame: world
+      pose_xyz: [0.0, 0.0, 0.0]
+      pose_rpy: [0, 0, 0]
+      dimensions: [2.0, 0.5, 0.1]
+  assets:
+    - capability: conveyor_2m
+objects:
+  - id: pkg1
+    class: part
+    shape: box
+    color: blue
+    material: plastic
+    frame: world
+    dimensions: [0.03, 0.03, 0.02]
+    pose_xyz: [0.5, 0.0, 0.2]
+    pose_rpy: [0, 0, 0]
+task:
+  id: conveyor_sort_task
+  type: sort_by_class
+  capability: conveyor_sorting
+  source_object: pkg1
+  destinations:
+    - id: lane_a
+      frame: world
+      pose_xyz: [0.8, -0.2, 0.2]
+      pose_rpy: [0, 0, 0]
+    - id: lane_b
+      frame: world
+      pose_xyz: [0.8, 0.0, 0.2]
+      pose_rpy: [0, 0, 0]
+    - id: reject_lane
+      frame: world
+      pose_xyz: [0.8, 0.2, 0.2]
+      pose_rpy: [0, 0, 0]
+  rules:
+    - id: route_a
+      when:
+        class: class_a
+      destination: lane_a
+    - id: route_b
+      when:
+        class: class_b
+      destination: lane_b
+    - id: fallback
+      when:
+        always: true
+      destination: reject_lane
+sensors:
+  - capability: generic_overhead_rgbd
+commissioning:
+  self_test_enabled: true
+  export_bundle: false

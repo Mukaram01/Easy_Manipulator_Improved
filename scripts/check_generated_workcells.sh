@@ -43,7 +43,18 @@ for fixture in "${fixtures[@]}"; do
   echo "${gen_output}"
 
   if [[ ${gen_code} -ne 0 ]]; then
+    if [[ "${base_name}" == *"_fail" ]]; then
+      echo "PASS ${base_name}: expected generation failure fixture"
+      pass_count=$((pass_count + 1))
+      continue
+    fi
     echo "FAIL ${base_name}: generation failed"
+    fail_count=$((fail_count + 1))
+    continue
+  fi
+
+  if [[ "${base_name}" == *"_fail" ]]; then
+    echo "FAIL ${base_name}: expected fixture to fail generation"
     fail_count=$((fail_count + 1))
     continue
   fi

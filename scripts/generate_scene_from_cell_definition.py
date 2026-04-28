@@ -75,7 +75,24 @@ def _to_yaml_text(data: Any) -> str:
     return "\n".join(dump(data)) + "\n"
 
 
-def build_scene_manifest(cell_def: dict[str, Any]) -> dict[str, Any]:
+def _extract_capability_refs(cell_def: dict[str, Any]) -> dict[str, Any]:
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
+    sensors = cell_def.get("sensors") if isinstance(cell_def.get("sensors"), list) else []
+    task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    assets = environment.get("assets") if isinstance(environment.get("assets"), list) else []
+    refs = {
+        "robot": robot.get("capability"),
+        "end_effector": end_effector.get("capability"),
+        "sensors": [item.get("capability") for item in sensors if isinstance(item, dict) and item.get("capability")],
+        "task": task.get("capability"),
+        "environment_assets": [item.get("capability") for item in assets if isinstance(item, dict) and item.get("capability")],
+    }
+    return {k: v for k, v in refs.items() if v}
+
+
+def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     cell = cell_def.get("cell", {})
     robot = cell_def.get("robot", {})
     end_effector = cell_def.get("end_effector", {})
@@ -86,7 +103,7 @@ def build_scene_manifest(cell_def: dict[str, Any]) -> dict[str, Any]:
 
     self_test_object = objects[0] if objects else {}
 
-    return {
+    manifest = {
         "schema_version": "1.0",
         "scene": {"name": cell.get("id", "generated_cell")},
         "robot": {
@@ -145,6 +162,19 @@ def build_scene_manifest(cell_def: dict[str, Any]) -> dict[str, Any]:
         },
     }
 
+    refs = _extract_capability_refs(cell_def)
+    if refs:
+        manifest["capabilities"] = refs
+    if capability_summary and isinstance(capability_summary, dict):
+        checks = capability_summary.get("checks", {})
+        status = checks.get("status")
+        if status:
+            manifest.setdefault("generated_defaults", {})
+            if isinstance(manifest["generated_defaults"], dict):
+                manifest["generated_defaults"]["capability_checks"] = status
+
+    return manifest
+
 
 def _map_rule(rule: dict[str, Any]) -> dict[str, Any]:
     mapped = {"id": rule.get("id", "rule"), "destination": rule.get("destination")}
@@ -202,7 +232,7 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str]) -> str:
+def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str], capability_summary: dict[str, Any] | None = None) -> str:
     cell = cell_def.get("cell", {})
     robot = cell_def.get("robot", {})
     end_effector = cell_def.get("end_effector", {})
@@ -211,6 +241,11 @@ def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str]) -
     objects = cell_def.get("objects", [])
     destinations = task.get("destinations", [])
 
+
+    refs = _extract_capability_refs(cell_def)
+    capability_status = None
+    if capability_summary and isinstance(capability_summary, dict):
+        capability_status = capability_summary.get("checks", {}).get("status")
     lines = [
         "# Commissioning Summary (Preview)",
         "",
@@ -228,6 +263,14 @@ def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str]) -
         lines.extend([f"- {warning}" for warning in warnings])
     else:
         lines.append("- None")
+
+    lines.extend(["", "## Capability references"])
+    if refs:
+        lines.append(f"- Selected capability ids: `{refs}`")
+    else:
+        lines.append("- None (direct cell_definition fields only)")
+    if capability_status:
+        lines.append(f"- Capability compatibility status: **{capability_status}**")
 
     lines.extend(
         [
@@ -270,12 +313,12 @@ def main() -> int:
     task_recipe_path = args.output_dir / "task_recipe.preview.yaml"
     commissioning_path = args.output_dir / "commissioning_summary.md"
 
-    scene_manifest = build_scene_manifest(loaded)
+    scene_manifest = build_scene_manifest(loaded, capability_summary=summary.capability_summary)
     task_recipe = build_task_recipe(loaded)
 
     scene_manifest_path.write_text(_to_yaml_text(scene_manifest), encoding="utf-8")
     task_recipe_path.write_text(_to_yaml_text(task_recipe), encoding="utf-8")
-    commissioning_path.write_text(build_commissioning_summary(loaded, summary.warnings), encoding="utf-8")
+    commissioning_path.write_text(build_commissioning_summary(loaded, summary.warnings, summary.capability_summary), encoding="utf-8")
 
     print(f"RESULT: {status}")
     print(f"Wrote: {scene_manifest_path}")
