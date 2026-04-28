@@ -2,6 +2,8 @@
 
 This manual is written for engineers who are comfortable with Linux/ROS 2 but are new to this repository. It focuses on copy-paste operational steps for building, validating, launching, troubleshooting, and extending scenes without changing grasp runtime behavior.
 
+For generated project review dashboards, see `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`. **The dashboard is a read-only offline project summary. It does not replace the existing GUI and does not control the robot.**
+
 ---
 
 ## A) Purpose of the platform
