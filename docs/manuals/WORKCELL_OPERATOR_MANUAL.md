@@ -5,6 +5,7 @@ This manual is written for engineers who are comfortable with Linux/ROS 2 but ar
 For generated project review dashboards, see `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`. **The dashboard is a read-only offline project summary. It does not replace the existing GUI and does not control the robot.**
 For offline robot/tool/sensor/task/asset capability contracts, see `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`.
 For offline task intent and routing logic, see `docs/manuals/TASK_RECIPE_V1.md`.
+For runtime-plan to EMD bridge mapping, see `docs/manuals/EMD_GRASP_BRIDGE_PAYLOAD.md`.
 
 ---
 
@@ -109,6 +110,7 @@ Individual commands:
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/generate_task_recipe_dry_run_report.py
 ./scripts/check_task_execution_plans.sh
+./scripts/check_emd_grasp_bridge.sh
 ./scripts/generate_task_execution_plan_report.py
 ./scripts/smoke_launch_scenes.sh ur5_2f_test
 ./scripts/smoke_launch_scenes.sh
@@ -143,7 +145,8 @@ Layer reminder:
 - `task_recipe/v1` = what the cell should do (task intent/routing),
 - `environment_layout/v1` = where assets are placed,
 - capability contracts = what components can do,
-- scene readiness = whether scene files look sane before runtime.
+- scene readiness = whether scene files look sane before runtime,
+- `emd_grasp_bridge_payload/v1` = conservative translation of routed pick steps into EMD `GraspTask`-shaped payloads.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 

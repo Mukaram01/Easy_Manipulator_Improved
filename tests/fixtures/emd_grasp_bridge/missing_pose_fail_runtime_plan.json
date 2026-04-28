@@ -1,0 +1,17 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "task_recipe": {"id": "missing_pose", "type": "pick_place"},
+  "steps": [
+    {
+      "step_id": "pick_001",
+      "task": "pick_route_place",
+      "object": {
+        "id": "obj_missing_pose",
+        "class_id": "box",
+        "frame_id": "camera",
+        "dimensions": [0.03, 0.03, 0.05]
+      },
+      "routing": {"destination_id": "bin_a", "destination": {"frame": "world", "pose_xyz": [0.7, 0.0, 0.1], "pose_rpy": [0, 0, 0]}}
+    }
+  ]
+}

@@ -185,6 +185,8 @@ def _render_next_commands(project_dir: Path, package_name: str) -> str:
         f"python3 scripts/export_workcell_bundle.py {package_name} --force",
         "python3 scripts/dry_run_task_recipe.py --check",
         "python3 scripts/generate_task_execution_plan.py --check",
+        "python3 scripts/run_task_recipe_adapter.py --task-recipe <task_recipe.yaml> --objects <objects.yaml> --json",
+        "python3 scripts/convert_runtime_plan_to_emd_grasp.py --runtime-plan <runtime_execution_plan.json> --json",
         f"cp -r {pkg_path} ~/workcell_ws/src/",
         "cd ~/workcell_ws",
         f"colcon build --packages-select {package_name}",

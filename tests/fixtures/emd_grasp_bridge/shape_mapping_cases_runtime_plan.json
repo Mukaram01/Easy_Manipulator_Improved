@@ -1,0 +1,9 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "task_recipe": {"id": "shape_cases", "type": "sort_by_shape"},
+  "steps": [
+    {"step_id": "pick_001", "task": "pick_route_place", "object": {"id": "obj_box", "class_id": "box", "shape": "box", "frame_id": "camera", "pose": {"xyz": [0.1, 0.1, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.02, 0.03, 0.04]}, "routing": {"destination_id": "bin_box", "destination": {"frame": "world", "pose_xyz": [0.5, 0.1, 0.1], "pose_rpy": [0, 0, 0]}}},
+    {"step_id": "pick_002", "task": "pick_route_place", "object": {"id": "obj_cyl", "class_id": "cylinder", "shape": "cylinder", "frame_id": "camera", "pose": {"xyz": [0.2, 0.1, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.1, 0.02]}, "routing": {"destination_id": "bin_cyl", "destination": {"frame": "world", "pose_xyz": [0.6, 0.1, 0.1], "pose_rpy": [0, 0, 0]}}},
+    {"step_id": "pick_003", "task": "pick_route_place", "object": {"id": "obj_sphere_ambiguous", "class_id": "sphere", "shape": "sphere", "frame_id": "camera", "pose": {"xyz": [0.3, 0.1, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.03, 0.04, 0.05]}, "routing": {"destination_id": "bin_sphere", "destination": {"frame": "world", "pose_xyz": [0.7, 0.1, 0.1], "pose_rpy": [0, 0, 0]}}}
+  ]
+}

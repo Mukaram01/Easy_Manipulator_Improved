@@ -121,6 +121,7 @@ def _normalize_objects(doc: dict[str, Any]) -> list[dict[str, Any]]:
                 "frame_id": obj.get("frame_id", "unknown"),
                 "pose": obj.get("pose") if isinstance(obj.get("pose"), dict) else {},
                 "dimensions": obj.get("dimensions") if isinstance(obj.get("dimensions"), list) else [],
+                "preferred_end_effector": obj.get("preferred_end_effector") or obj.get("ee_id"),
                 "attributes": attrs,
             }
         )
@@ -195,6 +196,7 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
                 "frame_id": obj.get("frame_id"),
                 "pose": obj.get("pose"),
                 "dimensions": obj.get("dimensions"),
+                "preferred_end_effector": obj.get("preferred_end_effector"),
             },
             "routing": {
                 "matched_rule_id": str(matched_rule.get("id", f"rule_{idx}")),
