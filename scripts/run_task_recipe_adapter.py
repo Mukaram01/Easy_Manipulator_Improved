@@ -89,7 +89,16 @@ def _resolve_task_recipe_path(task_recipe: Path | None, project_dir: Path | None
     raise FileNotFoundError("Unable to auto-discover task recipe from --project-dir.")
 
 
+def _as_dimensions_list(raw: Any) -> list[float]:
+    if isinstance(raw, list) and raw:
+        return [float(x) for x in raw]
+    if isinstance(raw, dict) and all(k in raw for k in ("x", "y", "z")):
+        return [float(raw["x"]), float(raw["y"]), float(raw["z"])]
+    return []
+
+
 def _normalize_objects(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    schema_version = str(doc.get("schema_version", ""))
     objects = doc.get("objects") if isinstance(doc.get("objects"), list) else None
     if objects is None:
         if isinstance(doc, list):
@@ -100,29 +109,48 @@ def _normalize_objects(doc: dict[str, Any]) -> list[dict[str, Any]]:
     for idx, obj in enumerate(objects):
         if not isinstance(obj, dict):
             raise ValueError(f"objects[{idx}] must be a mapping.")
-        oid = str(obj.get("id", f"object_{idx+1:03d}"))
+        is_detected_v1 = schema_version == "detected_objects/v1" or "object_id" in obj
+        oid = str(obj.get("id") or obj.get("object_id") or f"object_{idx+1:03d}")
+        pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else {}
+        pose_frame = str(
+            pose.get("frame_id")
+            or obj.get("frame_id")
+            or doc.get("source", {}).get("frame_id", "unknown")
+        )
+        colour = obj.get("colour") or obj.get("color")
+        shape = obj.get("shape")
+        if isinstance(shape, dict):
+            shape = shape.get("type")
+        attributes = obj.get("attributes") if isinstance(obj.get("attributes"), dict) else {}
+        colour = colour or attributes.get("colour")
+        shape = shape or attributes.get("shape")
+        class_id = obj.get("class_id") or obj.get("class") or obj.get("name")
+
         attrs = {
-            "class": obj.get("class") or obj.get("class_id"),
-            "colour": obj.get("colour") or obj.get("color"),
-            "shape": obj.get("shape"),
-            "material": obj.get("material"),
+            "class": class_id,
+            "colour": colour,
+            "shape": shape,
+            "material": obj.get("material") or attributes.get("material"),
             "inspection_result": obj.get("inspection_result"),
         }
         attrs = {k: v for k, v in attrs.items() if isinstance(v, str) and v.strip()}
         out.append(
             {
                 "id": oid,
-                "class_id": obj.get("class_id") or obj.get("class"),
-                "colour": obj.get("colour") or obj.get("color"),
-                "shape": obj.get("shape"),
-                "material": obj.get("material"),
+                "name": obj.get("name") or class_id,
+                "class_id": class_id,
+                "colour": colour,
+                "shape": shape,
+                "material": obj.get("material") or attributes.get("material"),
                 "inspection_result": obj.get("inspection_result"),
                 "confidence": float(obj.get("confidence", 1.0)),
-                "frame_id": obj.get("frame_id", "unknown"),
-                "pose": obj.get("pose") if isinstance(obj.get("pose"), dict) else {},
-                "dimensions": obj.get("dimensions") if isinstance(obj.get("dimensions"), list) else [],
+                "frame_id": pose_frame,
+                "pose": pose,
+                "centroid": obj.get("centroid") if isinstance(obj.get("centroid"), dict) else {},
+                "dimensions": _as_dimensions_list(obj.get("dimensions")),
                 "preferred_end_effector": obj.get("preferred_end_effector") or obj.get("ee_id"),
                 "attributes": attrs,
+                "source_type": "detected_objects/v1" if is_detected_v1 else "runtime_objects",
             }
         )
     return out
@@ -187,6 +215,7 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
             "task": "pick_route_place",
             "object": {
                 "id": obj["id"],
+                "name": obj.get("name"),
                 "class_id": obj.get("class_id"),
                 "colour": obj.get("colour"),
                 "shape": obj.get("shape"),
@@ -195,8 +224,11 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
                 "confidence": obj.get("confidence"),
                 "frame_id": obj.get("frame_id"),
                 "pose": obj.get("pose"),
+                "centroid": obj.get("centroid"),
                 "dimensions": obj.get("dimensions"),
                 "preferred_end_effector": obj.get("preferred_end_effector"),
+                "attributes": obj.get("attributes"),
+                "source_type": obj.get("source_type"),
             },
             "routing": {
                 "matched_rule_id": str(matched_rule.get("id", f"rule_{idx}")),

@@ -7,6 +7,14 @@ It is:
 - not a replacement for runtime motion execution,
 - a bridge between user task selection and future generated runtime behaviour.
 
+## Perception input compatibility
+
+`scripts/run_task_recipe_adapter.py` accepts:
+- legacy runtime object fixtures (`tests/fixtures/runtime_objects`), and
+- real/recorded `detected_objects/v1` snapshots (`tests/fixtures/detected_objects`).
+
+For production direction, `detected_objects/v1` is the first-class input, while mock fixtures remain test-only.
+
 ## Supported task types
 
 - `pick_place`

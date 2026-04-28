@@ -1,0 +1,45 @@
+schema_version: detected_objects/v1
+source:
+  type: epd_localization
+  frame_id: camera_depth_optical_frame
+objects:
+  - object_id: rec_001
+    name: bottle
+    class_id: bottle
+    confidence: 0.89
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.1, -0.1, 0.2]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.1
+      y: -0.1
+      z: 0.2
+    dimensions:
+      x: 0.03
+      y: 0.03
+      z: 0.12
+    attributes:
+      colour: clear
+      shape: cylinder
+      material: plastic
+  - object_id: reject_001
+    name: unknown
+    class_id: unknown
+    confidence: 0.40
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.3, -0.1, 0.2]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.3
+      y: -0.1
+      z: 0.2
+    dimensions:
+      x: 0.06
+      y: 0.05
+      z: 0.02
+    attributes:
+      colour: mixed
+      shape: irregular
+      material: unknown

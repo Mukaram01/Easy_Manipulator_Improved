@@ -1,0 +1,20 @@
+schema_version: detected_objects/v1
+source:
+  type: epd_localization
+  frame_id: camera_depth_optical_frame
+objects:
+  - object_id: obj_missing_dims
+    name: part
+    class_id: part
+    confidence: 0.9
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.1, 0.2, 0.3]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.1
+      y: 0.2
+      z: 0.3
+    attributes:
+      colour: unknown
+      shape: box

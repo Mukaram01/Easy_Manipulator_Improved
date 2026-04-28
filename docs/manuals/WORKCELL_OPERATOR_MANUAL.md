@@ -6,6 +6,7 @@ For generated project review dashboards, see `docs/manuals/WORKCELL_PROJECT_DASH
 For offline robot/tool/sensor/task/asset capability contracts, see `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`.
 For offline task intent and routing logic, see `docs/manuals/TASK_RECIPE_V1.md`.
 For runtime-plan to EMD bridge mapping, see `docs/manuals/EMD_GRASP_BRIDGE_PAYLOAD.md`.
+For real perception snapshot schema and capture workflow, see `docs/manuals/DETECTED_OBJECTS_V1.md` and `docs/manuals/REAL_D435I_EPD_PIPELINE.md`.
 
 ---
 
@@ -143,10 +144,13 @@ Smoke preflight intent:
 
 Layer reminder:
 - `task_recipe/v1` = what the cell should do (task intent/routing),
+- `detected_objects/v1` = production perception snapshot contract from D435i/EPD,
 - `environment_layout/v1` = where assets are placed,
 - capability contracts = what components can do,
 - scene readiness = whether scene files look sane before runtime,
 - `emd_grasp_bridge_payload/v1` = conservative translation of routed pick steps into EMD `GraspTask`-shaped payloads.
+
+Mock runtime objects under `tests/fixtures/runtime_objects` are test fixtures only and are not the normal operator path.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 
