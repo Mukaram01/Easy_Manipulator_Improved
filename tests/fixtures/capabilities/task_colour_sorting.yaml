@@ -1,0 +1,12 @@
+schema_version: task_capability/v1
+task:
+  task_family: sort_by_colour
+  required_robot_capabilities: [named_targets, supported_task_families]
+  required_end_effector_capabilities: [supported_grasp_strategies]
+  required_sensor_attributes: [colour, class, confidence, pose]
+  required_destinations: [bin_red, bin_blue, reject_bin]
+  rule_model: attribute_threshold_rules
+  expected_validation_checks: [destination_defined_for_all_rules, confidence_threshold_defined]
+  runtime_requirements: [continuous_detection_loop]
+  limitations_warnings:
+    - Lighting changes may impact colour classification.

@@ -1,0 +1,13 @@
+schema_version: sensor_capability/v1
+sensor:
+  id: intel_realsense_d435i
+  label: Intel RealSense D435i
+  family: rgbd_camera
+  frames: [camera_link, camera_color_optical_frame, camera_depth_optical_frame]
+  topics: [/camera/color/image_raw, /camera/depth/image_rect_raw, /camera/aligned_depth_to_color/image_raw]
+  detection_outputs: [pose, size, confidence, class]
+  supported_object_attributes: [class, colour, shape, pose, size, confidence]
+  mounting: fixed
+  calibration_requirements: [intrinsics, hand_eye_if_robot_relative]
+  limitations_warnings:
+    - IR interference can reduce depth quality on reflective parts.

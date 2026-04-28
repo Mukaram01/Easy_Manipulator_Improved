@@ -1,0 +1,17 @@
+schema_version: environment_asset/v1
+asset:
+  id: table_standard_1200
+  label: Standard Table 1200
+  family: table
+  dimensions:
+    length_m: 1.2
+    width_m: 0.8
+    height_m: 0.9
+  frame: world
+  pose: [0.8, 0.0, 0.45, 0.0, 0.0, 0.0]
+  collision_behaviour: static_collision
+  mobility: static
+  import_source: internal_catalog
+  mesh_path: assets/environment/table_standard.stl
+  limitations_warnings:
+    - Payload limit depends on selected table model.

@@ -1,0 +1,12 @@
+schema_version: task_capability/v1
+task:
+  task_family: garbage_sorting
+  required_robot_capabilities: [supported_task_families]
+  required_end_effector_capabilities: [supported_grasp_strategies]
+  required_sensor_attributes: [class, confidence, pose, size]
+  required_destinations: [plastic_bin, metal_bin, organic_bin, reject_bin]
+  rule_model: class_then_fallback
+  expected_validation_checks: [category_bins_exist, hazardous_fallback_defined]
+  runtime_requirements: [category_mapping_table]
+  limitations_warnings:
+    - Hazardous material handling must follow site policy.
