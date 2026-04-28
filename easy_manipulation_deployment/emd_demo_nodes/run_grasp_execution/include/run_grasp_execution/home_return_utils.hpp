@@ -7,7 +7,6 @@
 #include <exception>
 
 #include "rclcpp/parameter.hpp"
-#include "rclcpp/parameter_type.hpp"
 
 namespace run_grasp_execution
 {
