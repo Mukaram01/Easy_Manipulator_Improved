@@ -1,0 +1,53 @@
+schema_version: environment_layout/v1
+layout_id: ur5_table_bins_existing_assets
+metadata:
+  name: UR5 table bins existing assets layout
+  description: Uses existing table and sensor assets.
+assets:
+  - id: main_table
+    asset_ref: table_basic
+    source:
+      package: table_description
+      uri: package://table_description/meshes/visual/table.stl
+      path: assets/environment/table_description/meshes/visual/table.stl
+    type: table
+    pose:
+      frame: world
+      xyz: [0.5, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+    collision: true
+    visual: true
+  - id: overhead_sensor
+    asset_ref: realsense_d435i_sensor
+    source:
+      package: realsense2_description
+      uri: package://realsense2_description/meshes/d435.dae
+      path: assets/environment/realsense2_description/meshes/d435.dae
+    type: sensor
+    pose:
+      frame: world
+      xyz: [0.7, 0.0, 1.2]
+      rpy: [0.0, 0.0, 0.0]
+    collision: false
+    visual: true
+zones:
+  - id: pick_zone
+    type: pick
+    frame: world
+    bounds_xyz:
+      min: [0.2, -0.7, 0.35]
+      max: [0.8, -0.2, 0.75]
+  - id: red_place_zone
+    type: place
+    frame: world
+    bounds_xyz:
+      min: [0.55, 0.3, 0.35]
+      max: [0.85, 0.6, 0.75]
+safety:
+  zones:
+    - id: robot_reach_warning
+      type: warning
+      frame: world
+      bounds_xyz:
+        min: [-1.0, -1.0, 0.0]
+        max: [1.0, 1.0, 1.8]

@@ -238,3 +238,12 @@ Capability contracts can now be referenced directly by `cell_definition/v1` tool
 - optional environment asset references
 
 This is intentionally metadata-only and does not alter runtime launch/planning/perception behavior.
+
+## Capability contracts + asset manifests + environment layouts
+
+- Capability contracts describe **what an asset/component can do**.
+- `assets/` folders store the physical meshes/models/descriptions.
+- `asset_manifest.yaml` provides optional sidecar metadata for existing assets.
+- `environment_layout/v1` describes where those existing assets are placed in a specific cell.
+
+This separation prepares future GUI import/export workflows while keeping runtime behavior unchanged in this phase.

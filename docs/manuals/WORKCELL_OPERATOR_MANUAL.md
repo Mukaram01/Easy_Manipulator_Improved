@@ -748,3 +748,22 @@ Generated scene/workcell manifests may now include a `capabilities` block and co
 Example combinations:
 - UR5 + Robotiq 2F + RealSense for colour sorting.
 - Delta + suction + overhead RGBD for conveyor sorting.
+
+## D3) Environment layout tooling (offline metadata)
+
+The environment layout layer is placement metadata only:
+
+- Asset storage remains in existing `assets/` folders.
+- Layout files state where assets are placed and where zones/safety bounds are.
+- No runtime launch/planning/controller/perception/grasp behavior changes.
+
+Commands:
+
+```bash
+python3 scripts/inspect_asset_inventory.py
+python3 scripts/validate_environment_layout.py tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml
+python3 scripts/generate_environment_preview.py tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml
+./scripts/check_environment_layouts.sh
+```
+
+Reference: `docs/manuals/ENVIRONMENT_LAYOUT_V1.md`.

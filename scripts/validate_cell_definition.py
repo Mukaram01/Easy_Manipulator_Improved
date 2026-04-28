@@ -47,6 +47,7 @@ class ValidationSummary:
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     capability_summary: dict[str, Any] = field(default_factory=dict)
+    environment_layout_summary: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -453,6 +454,43 @@ def validate_cell_definition(
     if task_type in SORTING_TASK_TYPES and not fallback_present:
         result.warnings.append("Sorting task has no explicit fallback rule with when.always=true.")
 
+    layout_path_value = environment.get("layout")
+    if layout_path_value is not None:
+        if not isinstance(layout_path_value, str) or not layout_path_value.strip():
+            result.errors.append("environment.layout must be a non-empty string path when provided.")
+        else:
+            layout_path = (Path(__file__).resolve().parents[1] / layout_path_value).resolve()
+            if not layout_path.exists():
+                msg = f"environment.layout path not found: {layout_path_value}"
+                (result.errors if strict else result.warnings).append(msg)
+            else:
+                try:
+                    import validate_environment_layout as env_layout_validator
+
+                    loaded_layout, layout_parser, layout_notes = env_layout_validator.load_layout(layout_path)
+                    layout_summary = env_layout_validator.validate_layout(
+                        loaded_layout,
+                        layout_path,
+                        layout_parser,
+                        layout_notes,
+                        strict=strict,
+                    )
+                    result.warnings.extend(layout_summary.warnings)
+                    result.errors.extend(layout_summary.errors)
+                    result.notes.extend([f"environment.layout: {note}" for note in layout_summary.notes])
+                    result.environment_layout_summary = {
+                        "path": layout_path_value,
+                        "layout_id": loaded_layout.get("layout_id"),
+                        "asset_count": layout_summary.summary.get("asset_count", 0),
+                        "zone_count": layout_summary.summary.get("zone_count", 0),
+                        "safety_zone_count": layout_summary.summary.get("safety_zone_count", 0),
+                        "result": "PASS" if layout_summary.ok and not layout_summary.warnings else "WARN" if layout_summary.ok else "FAIL",
+                    }
+                except Exception as exc:
+                    (result.errors if strict else result.warnings).append(
+                        f"environment.layout validation failed for '{layout_path_value}': {exc}"
+                    )
+
     _check_capabilities(defn, result, strict=strict, capabilities_dir=capabilities_dir)
     return result
 
@@ -477,6 +515,7 @@ def main() -> int:
     parser.add_argument("yaml_path", type=Path, help="Path to a cell_definition YAML file")
     parser.add_argument("--strict", action="store_true", help="Treat uncertain warnings as failures where supported")
     parser.add_argument("--json", action="store_true", help="Print machine-readable output")
+    parser.add_argument("--quiet", action="store_true", help="Suppress human-readable output")
     parser.add_argument("--capabilities-dir", type=Path, default=DEFAULT_CAPABILITIES_DIR)
     args = parser.parse_args()
 
@@ -499,9 +538,10 @@ def main() -> int:
             "notes": summary.notes,
             "result": "PASS" if summary.ok and not summary.warnings else "WARN" if summary.ok else "FAIL",
             "capabilities": summary.capability_summary,
+            "environment_layout": summary.environment_layout_summary,
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
-    else:
+    elif not args.quiet:
         print_summary(summary)
     return 0 if summary.ok else 1
 

@@ -1,0 +1,38 @@
+schema_version: asset_manifest/v1
+assets:
+  - asset_id: table_basic
+    display_name: Basic table
+    asset_type: table
+    source:
+      path: assets/environment/table_description
+      package: table_description
+    geometry:
+      preferred_mesh: package://table_description/meshes/visual/table.stl
+    capabilities:
+      - asset_table
+    notes:
+      - Existing asset reused. No files moved.
+  - asset_id: workbench_basic
+    display_name: Basic workbench
+    asset_type: workbench
+    source:
+      path: assets/environment/workbench_description
+      package: workbench_description
+    geometry:
+      preferred_mesh: package://workbench_description/meshes/visual/table.stl
+    capabilities:
+      - asset_workbench
+    notes:
+      - Existing asset reused. No files moved.
+  - asset_id: realsense_d435i_sensor
+    display_name: Intel RealSense D435i
+    asset_type: sensor
+    source:
+      path: assets/environment/realsense2_description
+      package: realsense2_description
+    geometry:
+      preferred_mesh: package://realsense2_description/meshes/d435.dae
+    capabilities:
+      - sensor_realsense_d435i
+    notes:
+      - Existing asset reused. No files moved.

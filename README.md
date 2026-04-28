@@ -1289,3 +1289,15 @@ Why this matters:
 
 Use `python3 scripts/validate_cell_definition.py <cell.yaml> --capabilities-dir tests/fixtures/capabilities`.
 Use `--strict` to convert unresolved capability references from WARN to FAIL.
+
+### Environment layout + asset inventory (offline)
+
+The repository already uses `assets/` and related package asset paths as the physical source of truth.
+This project now adds metadata-only tooling around those existing assets:
+
+- `scripts/inspect_asset_inventory.py` -> `reports/asset_inventory.md` + `reports/asset_inventory.json`
+- `assets/asset_manifest.yaml` (optional sidecar metadata)
+- `environment_layout/v1` docs + validator + preview tooling
+- `scripts/check_environment_layouts.sh` integrated into `scripts/preflight_workcell.sh`
+
+These additions are offline/import-export focused and do not change runtime ROS/MoveIt/perception/grasp/controller behavior.

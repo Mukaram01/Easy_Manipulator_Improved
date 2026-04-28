@@ -1,0 +1,13 @@
+schema_version: environment_layout/v1
+layout_id: unknown_asset_ref_warn
+assets:
+  - id: unknown_ref_asset
+    asset_ref: unknown_asset_id
+    source:
+      path: assets/environment/table_description/meshes/visual/table.stl
+    type: table
+    pose:
+      frame: world
+      xyz: [0.0, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+zones: []
