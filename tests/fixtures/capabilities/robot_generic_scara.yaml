@@ -1,0 +1,20 @@
+schema_version: robot_capability/v1
+robot:
+  id: generic_scara_600
+  label: Generic SCARA 600
+  brand: Generic
+  family: scara
+  mounting: table
+  planning_groups: [scara_arm]
+  base_frame: scara_base
+  tool_frames: [scara_tool]
+  default_tool_frame: scara_tool
+  named_targets: [home, service]
+  payload_kg: 3.0
+  reach_m: 0.6
+  workspace_description: Planar annulus with vertical stroke
+  controller_type: joint_trajectory
+  supported_interfaces: [moveit, joint_trajectory_controller, named_targets]
+  supported_task_families: [pick_place, sort_by_shape, machine_tending]
+  limitations_warnings:
+    - Not suitable for high-angle side picks.

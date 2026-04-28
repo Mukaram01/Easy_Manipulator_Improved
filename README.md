@@ -28,6 +28,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ## Operator manual and validation report
 
 - Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
+- Industrial capability contracts manual: `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`
 - Workcell project dashboard manual: `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`
 - Validation-only preflight helper:
 

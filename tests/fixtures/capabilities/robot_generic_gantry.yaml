@@ -1,0 +1,20 @@
+schema_version: robot_capability/v1
+robot:
+  id: generic_gantry_xyz
+  label: Generic Gantry XYZ
+  brand: Generic
+  family: gantry
+  mounting: ceiling
+  planning_groups: [gantry]
+  base_frame: world
+  tool_frames: [gantry_tool]
+  default_tool_frame: gantry_tool
+  named_targets: [home, park]
+  payload_kg: 15.0
+  reach_m: 3.5
+  workspace_description: Rectangular cartesian envelope over multi-station line
+  controller_type: cartesian_controller
+  supported_interfaces: [moveit, ros2_control, joint_trajectory_controller, cartesian_path]
+  supported_task_families: [palletising, machine_tending, conveyor_sorting]
+  limitations_warnings:
+    - Dynamic acceleration constrained by bridge mass.

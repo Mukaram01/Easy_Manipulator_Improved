@@ -1,0 +1,12 @@
+schema_version: task_capability/v1
+task:
+  task_family: conveyor_sorting
+  required_robot_capabilities: [cartesian_path, supported_task_families]
+  required_end_effector_capabilities: [required_io_signals]
+  required_sensor_attributes: [pose, class, confidence]
+  required_destinations: [lane_a, lane_b, reject_lane]
+  rule_model: conveyor_tracking_rules
+  expected_validation_checks: [pick_window_defined, tracking_latency_budget]
+  runtime_requirements: [time_synchronization, conveyor_encoder]
+  limitations_warnings:
+    - High conveyor speed can reduce pick success.

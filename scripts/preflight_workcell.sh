@@ -51,6 +51,7 @@ fi
 
 echo
 "${SCRIPT_DIR}/check_all_scenes.sh"
+"${SCRIPT_DIR}/check_capability_contracts.sh"
 "${SCRIPT_DIR}/generate_scene_validation_report.py"
 "${SCRIPT_DIR}/check_scene_self_tests.sh"
 "${SCRIPT_DIR}/generate_scene_self_test_report.py"
