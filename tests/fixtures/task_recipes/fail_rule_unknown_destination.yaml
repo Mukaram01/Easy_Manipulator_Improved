@@ -1,0 +1,25 @@
+schema_version: task_recipe/v1
+task:
+  id: fail_unknown_dest
+  type: sort_by_class
+  source: detected_object
+  destinations:
+    - id: class_a_bin
+      frame: world
+      pose_xyz: [0.3, -0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: unknown_reject_bin
+      frame: world
+      pose_xyz: [0.2, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: reject
+  decision_rules:
+    - id: class_a
+      when:
+        attribute: class
+        equals: class_a
+      destination: class_a_bin
+    - id: fallback
+      when:
+        default: true
+      destination: ghost_bin

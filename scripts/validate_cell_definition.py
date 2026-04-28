@@ -16,6 +16,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from capability_registry import DEFAULT_CAPABILITIES_DIR, load_capability_registry
+import validate_task_recipe as task_recipe_validator
 
 try:  # Optional dependency.
     import yaml as _pyyaml
@@ -453,6 +454,53 @@ def validate_cell_definition(
 
     if task_type in SORTING_TASK_TYPES and not fallback_present:
         result.warnings.append("Sorting task has no explicit fallback rule with when.always=true.")
+
+    recipe_ref = task.get("recipe")
+    if recipe_ref is not None:
+        if isinstance(recipe_ref, str):
+            if not recipe_ref.strip():
+                result.errors.append("task.recipe must be a non-empty path string when provided.")
+            else:
+                recipe_path = (path.parent / recipe_ref).resolve()
+                if not recipe_path.exists():
+                    (result.errors if strict else result.warnings).append(
+                        f"task.recipe path not found: {recipe_ref}"
+                    )
+                else:
+                    try:
+                        recipe_loaded, recipe_parser, recipe_notes = load_yaml(recipe_path)
+                        recipe_summary = task_recipe_validator.validate_task_recipe_doc(
+                            recipe_loaded,
+                            recipe_path,
+                            recipe_parser,
+                            recipe_notes,
+                            strict=strict,
+                        )
+                        result.warnings.extend([f"task.recipe: {item}" for item in recipe_summary.warnings])
+                        result.errors.extend([f"task.recipe: {item}" for item in recipe_summary.errors])
+                        result.notes.append(f"task.recipe validated from path: {recipe_ref}")
+                    except Exception as exc:
+                        (result.errors if strict else result.warnings).append(
+                            f"task.recipe validation failed for '{recipe_ref}': {exc}"
+                        )
+        elif isinstance(recipe_ref, dict):
+            try:
+                recipe_summary = task_recipe_validator.validate_task_recipe_doc(
+                    recipe_ref,
+                    path,
+                    parser,
+                    [],
+                    strict=strict,
+                )
+                result.warnings.extend([f"task.recipe: {item}" for item in recipe_summary.warnings])
+                result.errors.extend([f"task.recipe: {item}" for item in recipe_summary.errors])
+                result.notes.append("task.recipe validated from embedded mapping.")
+            except Exception as exc:
+                (result.errors if strict else result.warnings).append(
+                    f"task.recipe embedded validation failed: {exc}"
+                )
+        else:
+            result.errors.append("task.recipe must be either a string path or an embedded mapping.")
 
     layout_path_value = environment.get("layout")
     if layout_path_value is not None:

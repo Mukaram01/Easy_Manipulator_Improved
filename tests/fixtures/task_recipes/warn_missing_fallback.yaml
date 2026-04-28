@@ -1,0 +1,21 @@
+schema_version: task_recipe/v1
+task:
+  id: warn_missing_fallback
+  type: sort_by_colour
+  source: detected_object
+  destinations:
+    - id: red_bin
+      frame: world
+      pose_xyz: [0.3, -0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: reject_bin
+      frame: world
+      pose_xyz: [0.2, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: reject
+  decision_rules:
+    - id: red
+      when:
+        attribute: colour
+        equals: red
+      destination: red_bin

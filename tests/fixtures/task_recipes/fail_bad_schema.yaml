@@ -1,0 +1,15 @@
+schema_version: task_recipe/v0
+task:
+  id: bad_schema
+  type: pick_place
+  source: source_part
+  destinations:
+    - id: place_bin
+      frame: world
+      pose_xyz: [0.3, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+  decision_rules:
+    - id: fallback
+      when:
+        default: true
+      destination: place_bin

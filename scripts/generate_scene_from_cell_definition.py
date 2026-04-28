@@ -178,6 +178,22 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
             "path": environment.get("layout"),
             "metadata_only": True,
         }
+    if isinstance(task, dict) and task.get("recipe") is not None:
+        recipe = task.get("recipe")
+        if isinstance(recipe, str):
+            manifest["task_recipe_metadata"] = {"mode": "external", "path": recipe, "type": task.get("type")}
+        elif isinstance(recipe, dict):
+            recipe_task = recipe.get("task") if isinstance(recipe.get("task"), dict) else recipe
+            rules = recipe_task.get("decision_rules") if isinstance(recipe_task, dict) else []
+            manifest["task_recipe_metadata"] = {
+                "mode": "embedded",
+                "schema_version": recipe.get("schema_version"),
+                "type": recipe_task.get("type") if isinstance(recipe_task, dict) else task.get("type"),
+                "destinations_count": len(recipe_task.get("destinations", []))
+                if isinstance(recipe_task, dict) and isinstance(recipe_task.get("destinations"), list)
+                else 0,
+                "rules_count": len(rules) if isinstance(rules, list) else 0,
+            }
 
     return manifest
 

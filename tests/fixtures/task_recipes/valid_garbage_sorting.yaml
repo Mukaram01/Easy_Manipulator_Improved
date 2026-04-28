@@ -1,0 +1,50 @@
+schema_version: task_recipe/v1
+task:
+  id: garbage_sort
+  type: garbage_sorting
+  source: waste_item
+  destinations:
+    - id: plastic_bin
+      frame: world
+      pose_xyz: [0.4, -0.3, 0.1]
+      pose_rpy: [0, 0, 0]
+      type: plastic
+    - id: metal_bin
+      frame: world
+      pose_xyz: [0.4, -0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+      type: metal
+    - id: paper_bin
+      frame: world
+      pose_xyz: [0.4, 0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+      type: paper
+    - id: unknown_reject_bin
+      frame: world
+      pose_xyz: [0.4, 0.3, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: reject
+  decision_rules:
+    - id: plastic
+      when:
+        attribute: material
+        equals: plastic
+      destination: plastic_bin
+    - id: metal
+      when:
+        attribute: material
+        equals: metal
+      destination: metal_bin
+    - id: paper
+      when:
+        attribute: material
+        equals: paper
+      destination: paper_bin
+    - id: low_confidence
+      when:
+        confidence_below: 0.5
+      destination: unknown_reject_bin
+    - id: fallback
+      when:
+        default: true
+      destination: unknown_reject_bin

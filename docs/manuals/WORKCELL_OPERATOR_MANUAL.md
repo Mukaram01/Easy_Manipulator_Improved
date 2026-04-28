@@ -4,6 +4,7 @@ This manual is written for engineers who are comfortable with Linux/ROS 2 but ar
 
 For generated project review dashboards, see `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`. **The dashboard is a read-only offline project summary. It does not replace the existing GUI and does not control the robot.**
 For offline robot/tool/sensor/task/asset capability contracts, see `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`.
+For offline task intent and routing logic, see `docs/manuals/TASK_RECIPE_V1.md`.
 
 ---
 
@@ -137,6 +138,12 @@ Smoke preflight intent:
 - Scene self-test metadata checks are deterministic/offline metadata validation only; they do not launch the robot.
 - Task recipe metadata checks are deterministic/offline contract validation only; they do not launch the robot.
 - Task recipe dry-run checks resolve decision rules against a simulated self-test object and still do not launch the robot.
+
+Layer reminder:
+- `task_recipe/v1` = what the cell should do (task intent/routing),
+- `environment_layout/v1` = where assets are placed,
+- capability contracts = what components can do,
+- scene readiness = whether scene files look sane before runtime.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
 

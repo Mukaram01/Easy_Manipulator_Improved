@@ -125,6 +125,7 @@ def _render_project_readme(
     end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
     camera = cell_def.get("camera", {}) if isinstance(cell_def.get("camera"), dict) else {}
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    task_recipe_meta = _extract_task_recipe_metadata(cell_def)
 
     capability_refs = _extract_capability_refs(cell_def)
 
@@ -137,6 +138,7 @@ def _render_project_readme(
         f"- Source type: `{source_type}` (`{source_ref}`)\n"
         f"- Generated ROS package: `{package_name}`\n"
         f"- Task type: `{task.get('type', '(unknown)')}`\n"
+        f"- Task recipe metadata: `{task_recipe_meta if task_recipe_meta else 'none'}`\n"
         f"- Robot: `{robot.get('model', '(unknown)')}`\n"
         f"- End effector: `{end_effector.get('id', '(unknown)')}`\n"
         f"- Camera: `{camera.get('id', '(unknown)')}`\n"
@@ -219,6 +221,34 @@ def _extract_environment_layout(cell_def: dict[str, Any]) -> dict[str, Any]:
     layout = environment.get("layout")
     if isinstance(layout, str) and layout.strip():
         return {"path": layout, "metadata_only": True}
+    return {}
+
+
+def _extract_task_recipe_metadata(cell_def: dict[str, Any]) -> dict[str, Any]:
+    task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    recipe = task.get("recipe")
+    if isinstance(recipe, str) and recipe.strip():
+        return {"mode": "external", "path": recipe, "type": task.get("type")}
+    if isinstance(recipe, dict):
+        recipe_task = recipe.get("task") if isinstance(recipe.get("task"), dict) else recipe
+        destinations = recipe_task.get("destinations") if isinstance(recipe_task, dict) else []
+        rules = recipe_task.get("decision_rules") if isinstance(recipe_task, dict) else []
+        fallback = False
+        if isinstance(rules, list):
+            fallback = any(
+                isinstance(item, dict)
+                and isinstance(item.get("when"), dict)
+                and (item["when"].get("default") is True or item["when"].get("always") is True)
+                for item in rules
+            )
+        return {
+            "mode": "embedded",
+            "schema_version": recipe.get("schema_version"),
+            "type": recipe_task.get("type") if isinstance(recipe_task, dict) else task.get("type"),
+            "destinations_count": len(destinations) if isinstance(destinations, list) else 0,
+            "rules_count": len(rules) if isinstance(rules, list) else 0,
+            "fallback_present": fallback,
+        }
     return {}
 def _create_from_template(args: argparse.Namespace, cell_yaml_path: Path) -> tuple[int, list[str]]:
     notes: list[str] = []
@@ -617,6 +647,16 @@ def main() -> int:
         "capabilities": _extract_capability_refs(loaded),
         "capability_validation": getattr(summary, "capability_summary", {}),
         "environment_layout": getattr(summary, "environment_layout_summary", {}) or _extract_environment_layout(loaded),
+        "task": {
+            "type": loaded.get("task", {}).get("type") if isinstance(loaded.get("task"), dict) else None,
+            "destinations": len(loaded.get("task", {}).get("destinations", []))
+            if isinstance(loaded.get("task"), dict) and isinstance(loaded.get("task", {}).get("destinations"), list)
+            else 0,
+            "decision_rules": len(loaded.get("task", {}).get("rules", []))
+            if isinstance(loaded.get("task"), dict) and isinstance(loaded.get("task", {}).get("rules"), list)
+            else 0,
+        },
+        "task_recipe": _extract_task_recipe_metadata(loaded),
     }
     _write_text(project_dir / "project_manifest.json", json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n", False, planned_paths)
 

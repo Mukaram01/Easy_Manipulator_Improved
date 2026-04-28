@@ -1,0 +1,16 @@
+schema_version: task_recipe/v1
+task:
+  id: pick_place_demo
+  type: pick_place
+  source: source_part
+  destinations:
+    - id: place_bin
+      frame: world
+      pose_xyz: [0.35, -0.2, 0.1]
+      pose_rpy: [0.0, 0.0, 0.0]
+      label: place
+  decision_rules:
+    - id: default_place
+      when:
+        default: true
+      destination: place_bin

@@ -29,6 +29,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 
 - Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
 - Industrial capability contracts manual: `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`
+- Task recipe schema manual: `docs/manuals/TASK_RECIPE_V1.md`
 - Workcell project dashboard manual: `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`
 - Validation-only preflight helper:
 
@@ -97,7 +98,7 @@ Reference: `docs/manuals/CELL_DEFINITION_V1.md`
 
 ### Task recipes
 
-`task_recipe` metadata in `scene_manifest.yaml` / `workcell.yaml` describes what the workcell is trying to do (job intent), not only how to pick/place.
+`task_recipe/v1` metadata describes what the workcell is trying to do (job intent), not only how to pick/place.
 
 Examples include:
 
@@ -110,6 +111,8 @@ Examples include:
 - binning
 
 Current scope includes contract validation/reporting plus an offline dry-run resolver. Runtime execution remains backward compatible and existing launch behavior is unchanged.
+
+Future GUI direction: users should be able to pick task logic profiles like `sort_by_colour`, `sort_by_shape`, or `garbage_sorting`, then generate offline-validated artifacts before runtime integration.
 
 ### Offline task recipe dry-run
 
