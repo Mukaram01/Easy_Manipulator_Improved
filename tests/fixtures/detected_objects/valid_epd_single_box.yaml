@@ -1,0 +1,32 @@
+schema_version: detected_objects/v1
+source:
+  type: epd_localization
+  topic: /easy_perception_deployment/epd_localize_output
+  camera: intel_realsense_d435i
+  frame_id: camera_depth_optical_frame
+  captured_at: 2026-04-28T00:00:00Z
+objects:
+  - object_id: obj_001
+    name: mouse
+    class_id: mouse
+    confidence: 0.92
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [-0.56, 0.09, 0.13]
+      rpy: [0.0, 0.0, 0.0]
+    centroid:
+      x: -0.56
+      y: 0.09
+      z: 0.13
+    dimensions:
+      x: 0.08
+      y: 0.04
+      z: 0.03
+    shape:
+      type: box
+    attributes:
+      colour: red
+      shape: box
+      material: plastic
+    raw:
+      source_message_type: epd_msgs/msg/EPDObjectLocalization

@@ -92,6 +92,7 @@ echo
 "${SCRIPT_DIR}/generate_task_recipe_dry_run_report.py"
 "${SCRIPT_DIR}/check_task_execution_plans.sh"
 "${SCRIPT_DIR}/check_emd_grasp_bridge.sh"
+"${SCRIPT_DIR}/check_detected_objects_pipeline.sh"
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 "${SCRIPT_DIR}/check_generated_workcells.sh"

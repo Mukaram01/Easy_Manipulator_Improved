@@ -32,6 +32,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - Task recipe schema manual: `docs/manuals/TASK_RECIPE_V1.md`
 - Workcell project dashboard manual: `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`
 - EMD grasp bridge payload manual: `docs/manuals/EMD_GRASP_BRIDGE_PAYLOAD.md`
+- Detected objects snapshot manual: `docs/manuals/DETECTED_OBJECTS_V1.md`
+- Real D435i + EPD pipeline manual: `docs/manuals/REAL_D435I_EPD_PIPELINE.md`
 - Validation-only preflight helper:
 
 ```bash
@@ -165,6 +167,26 @@ python3 scripts/convert_runtime_plan_to_emd_grasp.py   --runtime-plan tests/fixt
 ```
 
 This is offline by default and does not change existing `run_grasp_execution` behavior.
+
+### Real perception bridge (D435i/EPD -> task runtime)
+
+The intended direction is now explicit:
+
+```text
+GUI / workcell definition
+    ↓
+environment + robot + gripper + sensor + task
+    ↓
+D435i/EPD detected objects
+    ↓
+task logic
+    ↓
+validated runtime plan
+    ↓
+existing EMD grasp execution
+```
+
+Operator path uses `detected_objects/v1` snapshots captured from live EPD topics. Mock object fixtures remain for tests/CI only.
 
 ### Workcell commissioning bundles
 

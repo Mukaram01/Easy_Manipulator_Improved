@@ -5,6 +5,7 @@
 `runtime_execution_plan/v1 -> emd_grasp_bridge_payload/v1` provides a conservative adapter from offline task routing output into an EMD-shaped grasp payload that mirrors the existing `emd_msgs/msg/GraspTask` and `emd_msgs/srv/GraspRequest` interfaces.
 
 It is additive and does **not** replace `run_grasp_execution`.
+It is now paired with `detected_objects/v1` so real D435i/EPD captures can feed the same runtime bridge path.
 
 ## Why it exists
 
@@ -14,6 +15,7 @@ Recent workflow layers produce deterministic offline plans, but `run_grasp_execu
 
 - Input: `runtime_execution_plan/v1`
 - Output contract: `emd_grasp_bridge_payload/v1`
+- Upstream recommended input to runtime plan: `detected_objects/v1`
 - Runtime boundary references:
   - topic: `grasp_tasks` (`emd_msgs/msg/GraspTask`)
   - service: `grasp_requests` (`emd_msgs/srv/GraspRequest`)
