@@ -1277,3 +1277,15 @@ Check helper and preflight integration:
 ```
 
 See `docs/manuals/WORKCELL_PROJECT_GENERATOR.md` for full workflow details.
+
+## Optional capability references for cell_definition/v1
+
+The offline tooling now supports optional capability IDs in cell definitions. Existing files without capability references continue to validate and generate unchanged.
+
+Why this matters:
+- Better offline validation across robot / gripper / sensor / task / environment combinations.
+- Generated manifests and project manifests preserve selected capability IDs.
+- Future GUI workflows can offer valid, data-driven combinations instead of hard-coded examples.
+
+Use `python3 scripts/validate_cell_definition.py <cell.yaml> --capabilities-dir tests/fixtures/capabilities`.
+Use `--strict` to convert unresolved capability references from WARN to FAIL.

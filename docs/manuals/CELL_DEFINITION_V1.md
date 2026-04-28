@@ -185,3 +185,27 @@ python3 scripts/create_workcell_project.py --cell-definition <path/to/cell.yaml>
 ```
 
 This orchestrates existing offline tooling (validation, package generation, direct manifest validation, dry-run, execution plan, and commissioning bundle) into one project folder and emits `project_manifest.json`.
+
+## Optional capability references (offline)
+
+`cell_definition/v1` now optionally supports capability IDs for robot, end effector, sensors, task, and environment assets. Existing direct fields remain valid and required; capability references only add extra offline validation and metadata propagation.
+
+```yaml
+robot:
+  capability: ur5
+end_effector:
+  capability: robotiq_2f_85
+sensors:
+  - capability: intel_realsense_d435i
+task:
+  capability: sort_by_colour
+environment:
+  assets:
+    - capability: table_standard_1200
+    - capability: bin_blue_large
+```
+
+Validation behavior:
+- Non-strict mode: unresolved capability IDs report WARN.
+- Strict mode (`--strict`): unresolved capability IDs report FAIL.
+- Compatibility checks are best-effort and conservative to preserve backward compatibility.

@@ -1,0 +1,64 @@
+schema_version: cell_definition/v1
+cell:
+  id: ur5_pick_place_caps
+  name: UR5 Pick Place with Capabilities
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+  capability: ur5
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+  allowed_touch_links: [left_inner_finger, right_inner_finger]
+  capability: robotiq_2f_85
+camera:
+  id: realsense_d435i
+  type: depth_camera
+  frame: camera_depth_optical_frame
+environment:
+  frame: world
+  support_surfaces:
+    - id: table_main
+      type: table
+      frame: world
+      pose_xyz: [0.0, 0.0, 0.0]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [1.2, 0.8, 0.05]
+  assets:
+    - capability: table_standard_1200
+objects:
+  - id: box1
+    class: part
+    shape: box
+    color: blue
+    material: plastic
+    frame: world
+    dimensions: [0.05, 0.05, 0.05]
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+task:
+  id: pick_place_task
+  type: pick_place
+  capability: pick_place
+  source_object: box1
+  destinations:
+    - id: place_target
+      frame: world
+      pose_xyz: [0.6, -0.2, 0.1]
+      pose_rpy: [0.0, 0.0, 0.0]
+  rules:
+    - id: default_place
+      when:
+        always: true
+      destination: place_target
+sensors:
+  - capability: intel_realsense_d435i
+commissioning:
+  self_test_enabled: true
+  export_bundle: false

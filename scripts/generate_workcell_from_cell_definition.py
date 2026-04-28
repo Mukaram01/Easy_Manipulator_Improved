@@ -190,7 +190,7 @@ ament_package()
 
 
 def _build_readme(
-    cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str]
+    cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str], capability_summary: dict[str, Any] | None = None
 ) -> str:
     cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
     robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
@@ -198,6 +198,8 @@ def _build_readme(
     camera = cell_def.get("camera", {}) if isinstance(cell_def.get("camera"), dict) else {}
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
 
+    capabilities = (capability_summary or {}).get("capability_refs", {}) if isinstance(capability_summary, dict) else {}
+    cap_status = (capability_summary or {}).get("checks", {}).get("status") if isinstance(capability_summary, dict) else None
     lines = [
         f"# Generated Workcell Package: {package_name}",
         "",
@@ -224,6 +226,14 @@ def _build_readme(
         lines.extend(f"- {warning}" for warning in warnings)
     else:
         lines.append("- None")
+
+    lines.extend(["", "## Capability references"])
+    if capabilities:
+        lines.append(f"- Capability ids: `{capabilities}`")
+    else:
+        lines.append("- None")
+    if cap_status:
+        lines.append(f"- Capability compatibility status: **{cap_status}**")
 
     lines.extend(
         [
@@ -349,11 +359,11 @@ def generate_package(
 
     (package_dir / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings),
+        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings, summary.capability_summary),
         encoding="utf-8",
     )
 
-    commissioning_summary = scene_generator.build_commissioning_summary(loaded, warnings)
+    commissioning_summary = scene_generator.build_commissioning_summary(loaded, warnings, summary.capability_summary)
     (package_dir / "generated" / "commissioning_summary.md").write_text(
         _header_markdown(cell_definition_path) + commissioning_summary,
         encoding="utf-8",

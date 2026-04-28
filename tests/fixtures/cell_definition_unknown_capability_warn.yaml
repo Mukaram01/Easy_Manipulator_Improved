@@ -1,0 +1,58 @@
+schema_version: cell_definition/v1
+cell:
+  id: unknown_capability_cell
+  name: Unknown Capability Warning
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+  capability: robot_does_not_exist
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+  allowed_touch_links: [left_inner_finger, right_inner_finger]
+camera:
+  id: c
+  type: depth_camera
+  frame: world
+environment:
+  frame: world
+  support_surfaces:
+    - id: t
+      type: table
+      frame: world
+      pose_xyz: [0,0,0]
+      pose_rpy: [0,0,0]
+      dimensions: [1,1,0.05]
+objects:
+  - id: o
+    class: c
+    shape: box
+    color: red
+    material: m
+    frame: world
+    dimensions: [0.05,0.05,0.05]
+    pose_xyz: [0.4,0,0.1]
+    pose_rpy: [0,0,0]
+task:
+  id: t1
+  type: pick_place
+  source_object: o
+  destinations:
+    - id: place_target
+      frame: world
+      pose_xyz: [0.5,0,0.1]
+      pose_rpy: [0,0,0]
+  rules:
+    - id: fallback
+      when:
+        always: true
+      destination: place_target
+commissioning:
+  self_test_enabled: true
+  export_bundle: false

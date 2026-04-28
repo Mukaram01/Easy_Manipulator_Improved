@@ -1,0 +1,13 @@
+schema_version: task_capability/v1
+task:
+  id: task_magnetic_pick_place
+  task_family: pick_place
+  required_robot_capabilities: [planning_groups]
+  required_end_effector_capabilities: [magnetic]
+  required_sensor_attributes: [pose, confidence]
+  required_destinations: [place_target]
+  rule_model: direct_target
+  expected_validation_checks: [reachable_pick]
+  runtime_requirements: [trajectory_execution]
+  limitations_warnings:
+    - Requires magnetic-compatible parts.

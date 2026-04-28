@@ -126,6 +126,8 @@ def _render_project_readme(
     camera = cell_def.get("camera", {}) if isinstance(cell_def.get("camera"), dict) else {}
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
 
+    capability_refs = _extract_capability_refs(cell_def)
+
     return (
         f"# Workcell Project: {cell.get('name', '(unknown)')}\n\n"
         "This folder is a one-command, offline-generated review package for a robotic workcell.\n\n"
@@ -137,7 +139,8 @@ def _render_project_readme(
         f"- Task type: `{task.get('type', '(unknown)')}`\n"
         f"- Robot: `{robot.get('model', '(unknown)')}`\n"
         f"- End effector: `{end_effector.get('id', '(unknown)')}`\n"
-        f"- Camera: `{camera.get('id', '(unknown)')}`\n\n"
+        f"- Camera: `{camera.get('id', '(unknown)')}`\n"
+        f"- Capabilities: `{capability_refs if capability_refs else 'none'}`\n\n"
         "## Safety boundary\n"
         "Offline review only. This project is not a certified production runtime or safety approval.\n\n"
         "## Inspect generated files\n"
@@ -192,6 +195,23 @@ def _render_next_commands(project_dir: Path, package_name: str) -> str:
     return "\n".join(lines)
 
 
+
+
+def _extract_capability_refs(cell_def: dict[str, Any]) -> dict[str, Any]:
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
+    sensors = cell_def.get("sensors") if isinstance(cell_def.get("sensors"), list) else []
+    task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    assets = environment.get("assets") if isinstance(environment.get("assets"), list) else []
+    refs = {
+        "robot": robot.get("capability"),
+        "end_effector": end_effector.get("capability"),
+        "sensors": [item.get("capability") for item in sensors if isinstance(item, dict) and item.get("capability")],
+        "task": task.get("capability"),
+        "environment_assets": [item.get("capability") for item in assets if isinstance(item, dict) and item.get("capability")],
+    }
+    return {k: v for k, v in refs.items() if v}
 def _create_from_template(args: argparse.Namespace, cell_yaml_path: Path) -> tuple[int, list[str]]:
     notes: list[str] = []
     command: list[str]
@@ -586,6 +606,8 @@ def main() -> int:
         "checksums": checksums,
         "parser": parser_name,
         "parser_notes": parser_notes,
+        "capabilities": _extract_capability_refs(loaded),
+        "capability_validation": getattr(summary, "capability_summary", {}),
     }
     _write_text(project_dir / "project_manifest.json", json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n", False, planned_paths)
 

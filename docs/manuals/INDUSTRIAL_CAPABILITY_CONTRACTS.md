@@ -228,3 +228,13 @@ Planned direction:
 5. Runtime adapters can then map validated capabilities to concrete planners/controllers/drivers.
 
 This keeps the **physical robotic cell** as the commercial product while software remains the configurable engineering pipeline used to define, validate, and commission that cell.
+
+## Cell-definition integration
+
+Capability contracts can now be referenced directly by `cell_definition/v1` tooling. This enables offline compatibility hints between:
+- robot family and supported task families
+- end-effector compatibility with robot family
+- task requirements and selected sensor attributes
+- optional environment asset references
+
+This is intentionally metadata-only and does not alter runtime launch/planning/perception behavior.

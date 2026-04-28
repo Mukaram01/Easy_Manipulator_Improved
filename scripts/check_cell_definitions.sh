@@ -38,6 +38,16 @@ for fixture in "${fixtures[@]}"; do
   set -e
   echo "${validator_output}"
   if [[ ${validator_code} -ne 0 ]]; then
+    if [[ "${name}" == *"_fail" ]]; then
+      echo "PASS ${name}: expected validation failure fixture"
+      continue
+    fi
+    status="FAIL"
+    ((fail_count+=1))
+    continue
+  fi
+  if [[ "${name}" == *"_fail" ]]; then
+    echo "FAIL ${name}: expected fixture to fail validation"
     status="FAIL"
     ((fail_count+=1))
     continue
