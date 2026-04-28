@@ -13,6 +13,7 @@ INSTALL_PREREQS=0
 BUILD_WORKSPACE=0
 PARALLEL_WORKERS=""
 EPD_UNDERLAY=""
+CMAKE_BUILD_TYPE="Release"
 
 MUTATING_ACTIONS=()
 PACKAGES_INSTALLED=()
@@ -43,6 +44,7 @@ General options:
   --profile minimal|full     Build profile (default: minimal)
   --with-gui                 Build optional GUI packages in full profile
   --parallel-workers <N>     Optional colcon parallel workers override (default: colcon default)
+  --cmake-build-type <type>  CMake build type for colcon/osqp builds (default: Release)
   --epd-underlay <path>      Optional EPD workspace root (sources <path>/install/local_setup.bash)
   --clean                    Remove build/, install/, and log/ before build
   --dry-run                  Print commands without executing
@@ -186,45 +188,62 @@ PY
   echo "Prerequisite check passed for workspace: $WORKSPACE"
 }
 
-prepare_osqp_stack() {
-  local osqp_include="/usr/local/include/osqp"
-  local osqp_header="${osqp_include}/osqp.h"
-  local aux_header="${osqp_include}/auxil.h"
+osqp_v1_headers_ok() {
+  local include_dir="$1"
+  local api_types_header="$include_dir/osqp_api_types.h"
+  [[ -f "$api_types_header" ]] || return 1
+  grep -R -q "OSQPSolver" "$include_dir" || return 1
+  grep -R -q "OSQPInt" "$include_dir" || return 1
+  grep -R -q "OSQPCscMatrix" "$include_dir" || return 1
+}
 
-  if [[ -f "$osqp_header" ]] && [[ -f "$aux_header" ]]; then
+cleanup_stale_osqp_install() {
+  local rm_prefix=""
+  if command -v sudo >/dev/null 2>&1; then
+    rm_prefix="sudo "
+  fi
+  run_cmd "${rm_prefix}rm -rf /usr/local/include/osqp /usr/local/lib/libosqp* /usr/local/lib/cmake/osqp /usr/local/lib/pkgconfig/osqp.pc"
+}
+
+prepare_osqp_stack() {
+  local osqp_include_local="/usr/local/include/osqp"
+  local osqp_include_system="/usr/include/osqp"
+  local need_local_osqp=1
+
+  if osqp_v1_headers_ok "$osqp_include_local"; then
     OSQP_PROVIDER="/usr/local"
-    OSQP_VERSION_DETECTED="$(grep -E '#define OSQP_VERSION' "$osqp_header" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
-  elif [[ -f "/usr/include/osqp.h" ]]; then
+    OSQP_VERSION_DETECTED="$(grep -R -E '#define OSQP_VERSION' "$osqp_include_local" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+    need_local_osqp=0
+  elif osqp_v1_headers_ok "$osqp_include_system"; then
     OSQP_PROVIDER="/usr"
-    OSQP_VERSION_DETECTED="$(grep -E '#define OSQP_VERSION' /usr/include/osqp.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+    OSQP_VERSION_DETECTED="$(grep -R -E '#define OSQP_VERSION' "$osqp_include_system" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+    need_local_osqp=0
   fi
 
-  local need_local_osqp=0
-  if [[ ! -f "$aux_header" ]]; then
-    need_local_osqp=1
-  elif [[ "${OSQP_VERSION_DETECTED:-}" == 1.* ]]; then
-    need_local_osqp=1
+  if [[ -d "$osqp_include_local" ]] && [[ $need_local_osqp -eq 1 ]]; then
+    echo "Existing /usr/local OSQP is incompatible with current TrajOpt sources. Reinstalling pinned OSQP v1 compatibility stack."
+    cleanup_stale_osqp_install
   fi
 
   if [[ $need_local_osqp -eq 1 ]]; then
-    echo "Installing pinned OSQP/OsqpEigen compatibility stack for TrajOpt/Tesseract (OSQP 0.6.3 + OsqpEigen 0.8.0)."
-    run_cmd "cmake -S src/osqp -B build/_external/osqp -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON"
+    echo "Installing pinned OSQP/OsqpEigen compatibility stack for current TrajOpt/Tesseract sources (OSQP v1.x + OsqpEigen v0.11.x)."
+    run_cmd "cmake -S src/osqp -B build/_external/osqp -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON"
     run_cmd "cmake --build build/_external/osqp"
     if command -v sudo >/dev/null 2>&1; then
       run_cmd "sudo cmake --install build/_external/osqp"
     else
       run_cmd "cmake --install build/_external/osqp"
     fi
-    log_change "install osqp from source (0.6.3)"
+    log_change "install osqp from source (v1.x)"
 
-    run_cmd "cmake -S src/osqp-eigen -B build/_external/osqp-eigen -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DOSQP_EIGEN_BUILD_PYTHON=OFF"
+    run_cmd "cmake -S src/osqp-eigen -B build/_external/osqp-eigen -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_INSTALL_PREFIX=/usr/local -DOSQP_EIGEN_BUILD_PYTHON=OFF"
     run_cmd "cmake --build build/_external/osqp-eigen"
     if command -v sudo >/dev/null 2>&1; then
       run_cmd "sudo cmake --install build/_external/osqp-eigen"
     else
       run_cmd "cmake --install build/_external/osqp-eigen"
     fi
-    log_change "install osqp-eigen from source (0.8.0)"
+    log_change "install osqp-eigen from source (v0.11.x)"
 
     OSQP_PROVIDER="/usr/local"
   fi
@@ -239,17 +258,22 @@ prepare_osqp_stack() {
     OSQPEIGEN_VERSION_DETECTED="$(grep -E '#define OSQP_EIGEN_VERSION' /usr/include/OsqpEigen/OsqpEigen.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
   fi
 
-  if [[ ! -f "/usr/local/include/osqp/auxil.h" && ! -f "/usr/include/osqp/auxil.h" ]]; then
-    echo "Incompatible OSQP headers detected: auxil.h not found. TrajOpt SQP requires the OSQP 0.6 API." >&2
+  if ! osqp_v1_headers_ok "/usr/local/include/osqp" && ! osqp_v1_headers_ok "/usr/include/osqp"; then
+    echo "Incompatible OSQP headers detected: expected OSQP v1 symbols (OSQPSolver, OSQPInt, OSQPCscMatrix)." >&2
     exit 1
   fi
 
-  [[ -d "/usr/local/lib/cmake/osqp" ]] || {
-    echo "OSQP compatibility install incomplete: /usr/local/lib/cmake/osqp was not found." >&2
+  if [[ ! -f "/usr/local/include/OsqpEigen/OsqpEigen.h" && ! -f "/usr/include/OsqpEigen/OsqpEigen.h" ]]; then
+    echo "OsqpEigen compatibility install incomplete: OsqpEigen headers were not found." >&2
+    exit 1
+  fi
+
+  [[ -d "/usr/local/lib/cmake/osqp" || -d "/usr/lib/cmake/osqp" ]] || {
+    echo "OSQP compatibility install incomplete: osqp CMake config directory was not found." >&2
     exit 1
   }
-  [[ -d "/usr/local/lib/cmake/OsqpEigen" ]] || {
-    echo "OsqpEigen compatibility install incomplete: /usr/local/lib/cmake/OsqpEigen was not found." >&2
+  [[ -d "/usr/local/lib/cmake/OsqpEigen" || -d "/usr/lib/cmake/OsqpEigen" ]] || {
+    echo "OsqpEigen compatibility install incomplete: OsqpEigen CMake config directory was not found." >&2
     exit 1
   }
 }
@@ -349,7 +373,7 @@ emit_summary() {
     "provider": "${OSQP_PROVIDER}",
     "osqp_version": "${OSQP_VERSION_DETECTED}",
     "osqp_eigen_version": "${OSQPEIGEN_VERSION_DETECTED}",
-    "expected_matrix": "OSQP=0.6.3, OsqpEigen=0.8.0, TrajOpt/Tesseract=0.33.x"
+    "expected_matrix": "OSQP=v1.x, OsqpEigen=v0.11.x, TrajOpt/Tesseract=0.33.x"
   },
   "rosdep_skip_keys_used": ${rosdep_skip_json},
   "colcon_skip_packages_used": ${colcon_skip_json},
@@ -432,7 +456,7 @@ build_phase() {
 
   calculate_colcon_skip_packages "$PROFILE" "$WITH_GUI"
 
-  local colcon_cmd="colcon build --symlink-install $allow_override"
+  local colcon_cmd="colcon build --symlink-install $allow_override --cmake-args -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
   if [[ -n "$PARALLEL_WORKERS" ]]; then
     colcon_cmd+=" --parallel-workers $PARALLEL_WORKERS"
   fi
@@ -458,6 +482,7 @@ while [[ $# -gt 0 ]]; do
     --profile) PROFILE="${2:-}"; shift 2 ;;
     --with-gui|--with-tesseract-qt) WITH_GUI=1; shift ;;
     --parallel-workers) PARALLEL_WORKERS="${2:-}"; shift 2 ;;
+    --cmake-build-type) CMAKE_BUILD_TYPE="${2:-}"; shift 2 ;;
     --epd-underlay) EPD_UNDERLAY="${2:-}"; shift 2 ;;
     --clean) CLEAN_BUILD=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -478,6 +503,11 @@ fi
 
 if [[ -n "$PARALLEL_WORKERS" ]] && ! [[ "$PARALLEL_WORKERS" =~ ^[0-9]+$ ]] ; then
   echo "--parallel-workers expects a positive integer" >&2
+  exit 1
+fi
+
+if [[ "$CMAKE_BUILD_TYPE" != "Release" && "$CMAKE_BUILD_TYPE" != "RelWithDebInfo" && "$CMAKE_BUILD_TYPE" != "Debug" ]]; then
+  echo "Invalid --cmake-build-type value: '$CMAKE_BUILD_TYPE' (expected: Release, RelWithDebInfo, or Debug)" >&2
   exit 1
 fi
 

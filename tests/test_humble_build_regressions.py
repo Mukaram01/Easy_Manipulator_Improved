@@ -23,6 +23,22 @@ def test_fix_and_build_uses_external_osqp_strategy():
     assert "/usr/local/lib/cmake/OsqpEigen" in text
 
 
+def test_prepare_osqp_stack_expects_v1_symbols_not_legacy_auxil():
+    text = Path("fix_and_build_humble.sh").read_text()
+    assert "osqp_api_types.h" in text
+    for symbol in ["OSQPSolver", "OSQPInt", "OSQPCscMatrix"]:
+        assert symbol in text
+    assert "auxil.h" not in text
+    assert "OSQP 0.6.3 + OsqpEigen 0.8.0" not in text
+
+
+def test_summary_expected_matrix_uses_v1_stack():
+    text = Path("fix_and_build_humble.sh").read_text()
+    assert "expected_matrix" in text
+    assert "OSQP=v1.x, OsqpEigen=v0.11.x" in text
+    assert "OSQP=0.6.3" not in text
+
+
 def test_rosdep_skip_keys_include_required_variants():
     text = Path("fix_and_build_humble.sh").read_text()
     for key in ["osqp", "osqp_vendor", "osqp-eigen", "osqp_eigen", "qpoases"]:
@@ -41,3 +57,10 @@ def test_epd_underlay_validation_uses_local_setup_and_epd_msgs():
     text = Path("fix_and_build_humble.sh").read_text()
     assert "install/local_setup.bash" in text
     assert "ros2 pkg prefix epd_msgs" in text
+
+
+def test_default_colcon_build_sets_release_type():
+    text = Path("fix_and_build_humble.sh").read_text()
+    assert "CMAKE_BUILD_TYPE=\"Release\"" in text
+    assert "--cmake-args -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE" in text
+    assert "--cmake-build-type" in text
