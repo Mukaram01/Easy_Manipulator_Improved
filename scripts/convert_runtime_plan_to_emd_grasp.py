@@ -107,6 +107,7 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
         errors.append("Input schema_version must be runtime_execution_plan/v1.")
 
     steps = plan.get("steps") if isinstance(plan.get("steps"), list) else []
+    planning_frame = str(plan.get("metadata", {}).get("planning_frame") or "world")
     targets: list[dict[str, Any]] = []
     skipped = 0
 
@@ -155,12 +156,64 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
         routing = step.get("routing") if isinstance(step.get("routing"), dict) else {}
         destination_id = routing.get("destination_id") if isinstance(routing.get("destination_id"), str) else None
         destination = routing.get("destination") if isinstance(routing.get("destination"), dict) else {}
+        destination_resolved = (
+            routing.get("destination_resolved")
+            if isinstance(routing.get("destination_resolved"), dict)
+            else {}
+        )
+
+        destination_name = (
+            destination_resolved.get("destination_name")
+            if isinstance(destination_resolved.get("destination_name"), str)
+            else destination.get("label")
+        )
+        destination_label = (
+            destination_resolved.get("destination_label")
+            if isinstance(destination_resolved.get("destination_label"), str)
+            else destination.get("label")
+        )
+
+        resolved_pose = destination_resolved.get("pose") if isinstance(destination_resolved.get("pose"), dict) else {}
+        resolved_frame = (
+            destination_resolved.get("frame_id")
+            if isinstance(destination_resolved.get("frame_id"), str)
+            else None
+        )
+        resolved_xyz = resolved_pose.get("xyz") if isinstance(resolved_pose.get("xyz"), list) else None
+        resolved_quat = (
+            resolved_pose.get("quaternion_xyzw")
+            if isinstance(resolved_pose.get("quaternion_xyzw"), list)
+            else None
+        )
 
         destination_pose = {
-            "frame_id": destination.get("frame") or frame_id,
-            "xyz": destination.get("pose_xyz") if isinstance(destination.get("pose_xyz"), list) else None,
-            "rpy": destination.get("pose_rpy") if isinstance(destination.get("pose_rpy"), list) else None,
+            "frame_id": resolved_frame or destination.get("frame") or planning_frame,
+            "xyz": resolved_xyz if resolved_xyz is not None else destination.get("pose_xyz") if isinstance(destination.get("pose_xyz"), list) else None,
+            "rpy": resolved_pose.get("rpy") if isinstance(resolved_pose.get("rpy"), list) else destination.get("pose_rpy") if isinstance(destination.get("pose_rpy"), list) else None,
+            "quaternion_xyzw": resolved_quat,
         }
+        destination_safety_warnings = (
+            destination_resolved.get("safety_warnings")
+            if isinstance(destination_resolved.get("safety_warnings"), list)
+            else []
+        )
+        for item in destination_safety_warnings:
+            if isinstance(item, str):
+                warnings.append(f"Object '{object_id}': {item}")
+
+        if destination_pose["xyz"] is not None and destination_pose["rpy"] is not None:
+            warnings.append(
+                f"Object '{object_id}': using explicit destination release pose for destination '{destination_id}'."
+            )
+        else:
+            warnings.append(
+                f"Object '{object_id}': destination has no pose; falling back to release_x_offset/release_use_grasp_z."
+            )
+
+        if destination_pose["frame_id"] != planning_frame:
+            warnings.append(
+                f"Object '{object_id}': destination pose frame '{destination_pose['frame_id']}' does not match planning frame '{planning_frame}'."
+            )
 
         target = {
             "object_id": object_id,
@@ -175,8 +228,17 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
                 }
             ],
             "destination_id": destination_id,
+            "destination_name": destination_name,
+            "destination_label": destination_label,
             "destination_pose": destination_pose,
-            "notes": ["destination pose is preserved for future destination-aware release logic"],
+            "destination_approach": destination_resolved.get("approach"),
+            "destination_retreat": destination_resolved.get("retreat"),
+            "destination_safety_warnings": destination_safety_warnings,
+            "notes": [
+                "Destination pose preserved in bridge payload.",
+                "Current emd_msgs/GraspTarget has no explicit release/place pose field; runtime uses release_x_offset/release_use_grasp_z fallback.",
+                "TODO(adapter-boundary): extend runtime interface to consume destination_pose without breaking GraspRequest compatibility.",
+            ],
         }
         targets.append(target)
 
@@ -212,6 +274,12 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
             "selected": args.ros_interface,
         },
         "grasp_task": {"task_id": task_id, "grasp_targets": targets},
+        "runtime_release_adapter_boundary": {
+            "explicit_release_pose_supported_in_runtime": False,
+            "active_release_strategy": "release_x_offset/release_use_grasp_z",
+            "why": "emd_msgs/msg/GraspTarget and emd_msgs/srv/GraspRequest do not carry release destination pose fields.",
+            "todo": "Add non-breaking runtime interface extension to consume destination_pose when available.",
+        },
         "warnings": warnings,
         "errors": errors,
     }

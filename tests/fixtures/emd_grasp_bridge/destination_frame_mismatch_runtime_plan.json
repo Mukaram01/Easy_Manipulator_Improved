@@ -1,0 +1,36 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "metadata": {"planning_frame": "world"},
+  "task_recipe": {"id": "pick_place_demo", "type": "pick_place"},
+  "steps": [
+    {
+      "step_id": "pick_001",
+      "task": "pick_route_place",
+      "object": {
+        "id": "obj_frame_mismatch",
+        "class_id": "box",
+        "shape": "box",
+        "frame_id": "camera",
+        "pose": {"xyz": [0.2, 0.1, 0.2], "rpy": [0.0, 0.0, 0.0]},
+        "dimensions": [0.03, 0.03, 0.03]
+      },
+      "routing": {
+        "destination_id": "camera_bin",
+        "destination": {"frame": "camera_depth_optical_frame", "pose_xyz": [0.7, 0.0, 0.1], "pose_rpy": [0.0, 0.0, 0.0]},
+        "destination_resolved": {
+          "destination_id": "camera_bin",
+          "destination_name": "camera bin",
+          "destination_label": "camera",
+          "frame_id": "camera_depth_optical_frame",
+          "pose": {
+            "frame_id": "camera_depth_optical_frame",
+            "xyz": [0.7, 0.0, 0.1],
+            "rpy": [0.0, 0.0, 0.0],
+            "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+          },
+          "safety_warnings": ["Destination 'camera_bin' uses suspicious frame 'camera_depth_optical_frame'."]
+        }
+      }
+    }
+  ]
+}

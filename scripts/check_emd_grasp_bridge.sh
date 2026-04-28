@@ -39,13 +39,15 @@ pass_count=0
 warn_count=0
 fail_count=0
 
-if run_case "valid_single_box_runtime_plan.json" "PASS"; then ((pass_count+=1)); else ((fail_count+=1)); fi
+if run_case "valid_single_box_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 if run_case "valid_colour_sort_multi_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 if run_case "missing_dimensions_warn_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 if run_case "missing_pose_fail_runtime_plan.json" "FAIL"; then ((pass_count+=1)); else ((fail_count+=1)); fi
 if run_case "synthesized_grasp_pose_warn_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 if run_case "rejected_unknown_skip_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 if run_case "shape_mapping_cases_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
+if run_case "missing_destination_pose_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
+if run_case "destination_frame_mismatch_runtime_plan.json" "WARN"; then ((warn_count+=1)); else ((fail_count+=1)); fi
 
 if run_case "missing_dimensions_warn_runtime_plan.json" "FAIL" --strict; then ((pass_count+=1)); else ((fail_count+=1)); fi
 

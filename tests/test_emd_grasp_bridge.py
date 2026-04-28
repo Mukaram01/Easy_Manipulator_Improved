@@ -27,7 +27,7 @@ class EmdGraspBridgeTests(unittest.TestCase):
         proc, payload = self._run_json("valid_single_box_runtime_plan.json")
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         self.assertEqual(payload["schema_version"], "emd_grasp_bridge_payload/v1")
-        self.assertEqual(payload["status"], "PASS")
+        self.assertEqual(payload["status"], "WARN")
 
     def test_one_pick_step_maps_to_one_target(self) -> None:
         _, payload = self._run_json("valid_single_box_runtime_plan.json")
@@ -66,8 +66,20 @@ class EmdGraspBridgeTests(unittest.TestCase):
         _, payload = self._run_json("valid_single_box_runtime_plan.json")
         target = payload["grasp_task"]["grasp_targets"][0]
         self.assertEqual(target["destination_id"], "red_bin")
+        self.assertEqual(target["destination_name"], "red bin")
         self.assertEqual(target["destination_pose"]["frame_id"], "world")
-        self.assertTrue(any("destination pose is preserved" in n for n in target.get("notes", [])))
+        self.assertTrue(any("Destination pose preserved" in n for n in target.get("notes", [])))
+        self.assertTrue(any("using explicit destination release pose" in w for w in payload.get("warnings", [])))
+
+    def test_missing_destination_pose_warns_and_uses_release_fallback(self) -> None:
+        proc, payload = self._run_json("missing_destination_pose_runtime_plan.json")
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+        self.assertEqual(payload["status"], "WARN")
+        self.assertTrue(any("falling back to release_x_offset/release_use_grasp_z" in w for w in payload.get("warnings", [])))
+
+    def test_destination_frame_mismatch_warns(self) -> None:
+        _, payload = self._run_json("destination_frame_mismatch_runtime_plan.json")
+        self.assertTrue(any("does not match planning frame" in w for w in payload.get("warnings", [])))
 
     def test_json_output_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -80,6 +92,7 @@ class EmdGraspBridgeTests(unittest.TestCase):
             payload_b = json.loads(second.stdout)
             self.assertEqual(payload_a["grasp_task"], payload_b["grasp_task"])
             self.assertEqual(payload_a["ros_interface"], payload_b["ros_interface"])
+            self.assertEqual(payload_a["runtime_release_adapter_boundary"], payload_b["runtime_release_adapter_boundary"])
 
     def test_shape_mapping_box_cylinder_and_sphere_fallback(self) -> None:
         _, payload = self._run_json("shape_mapping_cases_runtime_plan.json")

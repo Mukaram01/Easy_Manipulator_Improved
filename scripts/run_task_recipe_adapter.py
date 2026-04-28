@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -186,12 +187,83 @@ def _destination_index(recipe_task: dict[str, Any]) -> dict[str, dict[str, Any]]
     return out
 
 
+def _rpy_to_quaternion(rpy: list[float]) -> list[float]:
+    roll, pitch, yaw = rpy
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    qw = cr * cp * cy + sr * sp * sy
+    return [qx, qy, qz, qw]
+
+
+def _as_numeric3(raw: Any) -> list[float] | None:
+    if not isinstance(raw, list) or len(raw) != 3:
+        return None
+    try:
+        return [float(raw[0]), float(raw[1]), float(raw[2])]
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_destination_pose(
+    destination: dict[str, Any],
+    destination_id: str,
+    planning_frame: str,
+) -> dict[str, Any]:
+    safety_warnings: list[str] = []
+    frame_id_raw = destination.get("frame")
+    if isinstance(frame_id_raw, str) and frame_id_raw.strip():
+        frame_id = frame_id_raw.strip()
+    else:
+        frame_id = planning_frame
+        safety_warnings.append(
+            f"Destination '{destination_id}' has no frame; defaulting to planning frame '{planning_frame}'."
+        )
+
+    pose_xyz = _as_numeric3(destination.get("pose_xyz"))
+    pose_rpy = _as_numeric3(destination.get("pose_rpy"))
+    if pose_xyz is None:
+        safety_warnings.append(f"Destination '{destination_id}' has no valid pose_xyz; release fallback will be used.")
+    if pose_rpy is None:
+        safety_warnings.append(f"Destination '{destination_id}' has no valid pose_rpy; release fallback will be used.")
+
+    if frame_id.startswith("camera"):
+        safety_warnings.append(f"Destination '{destination_id}' uses suspicious frame '{frame_id}'.")
+
+    resolved_pose: dict[str, Any] | None = None
+    if pose_xyz is not None and pose_rpy is not None:
+        resolved_pose = {
+            "frame_id": frame_id,
+            "xyz": pose_xyz,
+            "quaternion_xyzw": _rpy_to_quaternion(pose_rpy),
+            "rpy": pose_rpy,
+        }
+
+    return {
+        "destination_id": destination_id,
+        "destination_name": destination.get("name") or destination.get("label") or destination_id,
+        "destination_label": destination.get("label"),
+        "frame_id": frame_id,
+        "pose": resolved_pose,
+        "approach": destination.get("approach") if isinstance(destination.get("approach"), dict) else None,
+        "retreat": destination.get("retreat") if isinstance(destination.get("retreat"), dict) else None,
+        "safety_warnings": safety_warnings,
+    }
+
+
 def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode: str, dry_run: bool) -> AdapterResult:
     warnings: list[str] = []
     errors: list[str] = []
 
     task = task_recipe.get("task") if isinstance(task_recipe.get("task"), dict) else {}
     task_type = str(task.get("type", ""))
+    planning_frame = str(task.get("planning_frame") or "world")
     if task_type not in SUPPORTED_TYPES:
         warnings.append(f"task.type '{task_type}' is not in adapter guaranteed set; using conservative generic routing.")
 
@@ -209,6 +281,9 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
         if destination is None:
             errors.append(f"Matched destination '{destination_id}' for object '{obj['id']}' is undefined.")
             continue
+        resolved_destination = _resolve_destination_pose(destination, str(destination_id), planning_frame)
+        for warning in resolved_destination.get("safety_warnings", []):
+            warnings.append(f"[{obj['id']}] {warning}")
 
         step = {
             "step_id": f"route_{idx:03d}_{obj['id']}",
@@ -240,6 +315,7 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
                     "label": destination.get("label"),
                     "action": destination.get("action", "place"),
                 },
+                "destination_resolved": resolved_destination,
             },
             "execution": {
                 "mode": mode,
@@ -261,6 +337,7 @@ def build_plan(task_recipe: dict[str, Any], objects: list[dict[str, Any]], mode:
             "adapter": "scripts/run_task_recipe_adapter.py",
             "mode": mode,
             "dry_run": dry_run,
+            "planning_frame": planning_frame,
         },
         "task_recipe": {
             "id": task.get("id"),

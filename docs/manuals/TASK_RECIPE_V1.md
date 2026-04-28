@@ -51,6 +51,21 @@ Task recipe metadata does **not** prove:
 
 Commissioning validation is still required.
 
+## Destination-aware routing into runtime execution plans
+
+`scripts/run_task_recipe_adapter.py` now preserves destination routing in two layers:
+
+- legacy-compatible metadata under `steps[].routing.destination` (`frame`, `pose_xyz`, `pose_rpy`, `label`, `action`), and
+- additive resolved metadata under `steps[].routing.destination_resolved`:
+  - `destination_id`
+  - `destination_name` / `destination_label`
+  - `frame_id` (defaults to `task.planning_frame` or `world` when missing)
+  - `pose` (`xyz`, `rpy`, `quaternion_xyzw`) when destination pose is valid
+  - optional `approach` / `retreat` passthrough when present
+  - `safety_warnings` for missing/malformed/suspicious destination pose data
+
+If a destination pose is missing/malformed, the adapter emits WARN and keeps routing output valid so downstream runtime can fall back to existing release behavior.
+
 ## Schema sketch
 
 ```yaml

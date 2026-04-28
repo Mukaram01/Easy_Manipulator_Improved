@@ -10,8 +10,10 @@ detected_objects/v1 snapshot
 task_recipe adapter
     ↓
 runtime_execution_plan/v1
+  (includes destination_resolved pose metadata per routed step)
     ↓
 EMD grasp bridge payload
+  (preserves destination release pose metadata + fallback warnings)
     ↓
 existing grasp_requests / grasp_tasks runtime
 ```
@@ -60,9 +62,17 @@ python3 scripts/run_perception_task_pipeline.py \
   --ros-interface service
 ```
 
+## Runtime boundary note
+
+Destination-aware release pose metadata is now preserved end-to-end through:
+
+`detected_objects/v1 -> task recipe decision rule -> runtime_execution_plan/v1 destination_resolved -> emd_grasp_bridge_payload/v1 destination_pose`.
+
+Current runtime execution (`grasp_requests` / `grasp_tasks`) still uses legacy release behavior (`release_x_offset`, `release_use_grasp_z`) because the existing EMD messages do not include explicit place/release pose fields yet.
+
 ## Not production-ready yet
 
-- final destination-aware placement/release logic
+- runtime interface extension to consume explicit destination release pose
 - safety validation
 - IO validation
 - physical robot commissioning

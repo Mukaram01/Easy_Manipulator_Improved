@@ -26,6 +26,11 @@ Per-step mapping:
 - object dimensions/shape -> `target_shape`
 - `preferred_end_effector` -> `grasp_methods[].ee_id`
 - destination metadata preserved as bridge metadata for future place/release logic
+- destination-aware release metadata is preserved in each bridge target as:
+  - `destination_id`, `destination_name`, `destination_label`
+  - `destination_pose.frame_id`, `destination_pose.xyz`, `destination_pose.rpy`, `destination_pose.quaternion_xyzw`
+  - optional `destination_approach` / `destination_retreat`
+  - `destination_safety_warnings`
 
 ## Offline mode (default)
 
@@ -67,6 +72,11 @@ If ROS Python modules are unavailable, status is `FAIL` with an explicit error m
 
 ## Limitations
 
-- destination pose is preserved for sorting/place metadata, but current grasp execution release behavior is unchanged unless later extended.
+- The current EMD runtime request (`emd_msgs/srv/GraspRequest`) and target message (`emd_msgs/msg/GraspTarget`) do not carry an explicit release/place destination pose field.
+- Bridge payload now records a `runtime_release_adapter_boundary` block and emits explicit warnings for:
+  - using explicit destination release pose metadata (offline bridge level),
+  - destination frame mismatch with planning frame,
+  - destination missing/malformed pose, causing fallback to `release_x_offset` / `release_use_grasp_z`.
+- Because of this interface boundary, `run_grasp_execution` keeps existing release behavior unless runtime interfaces are extended in a future non-breaking step.
 - synthesized grasp poses are conservative first-pass placeholders.
 - this bridge is not full production sequencing or a safety certification layer.
