@@ -31,6 +31,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - Industrial capability contracts manual: `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`
 - Task recipe schema manual: `docs/manuals/TASK_RECIPE_V1.md`
 - Workcell project dashboard manual: `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`
+- EMD grasp bridge payload manual: `docs/manuals/EMD_GRASP_BRIDGE_PAYLOAD.md`
 - Validation-only preflight helper:
 
 ```bash
@@ -77,6 +78,7 @@ Workcell project generation also emits a static offline dashboard at `dashboard/
 ./scripts/check_task_recipes.sh
 ./scripts/check_task_recipe_dry_runs.sh
 ./scripts/check_task_execution_plans.sh
+./scripts/check_emd_grasp_bridge.sh
 ./scripts/check_cell_definitions.sh
 ```
 
@@ -151,6 +153,18 @@ Generated artifacts:
 - Per-scene plans: `docs/manuals/generated_execution_plans/<scene>_execution_plan.md`
 - Per-scene machine JSON: `docs/manuals/generated_execution_plans/<scene>_execution_plan.json`
 - Fleet report: `docs/manuals/latest_task_execution_plan_report.md`
+
+### Runtime plan -> EMD grasp bridge payload
+
+Use the new offline bridge to translate `runtime_execution_plan/v1` into an EMD-compatible payload preview:
+
+```bash
+python3 scripts/convert_runtime_plan_to_emd_grasp.py   --runtime-plan tests/fixtures/emd_grasp_bridge/valid_single_box_runtime_plan.json   --json
+
+./scripts/check_emd_grasp_bridge.sh
+```
+
+This is offline by default and does not change existing `run_grasp_execution` behavior.
 
 ### Workcell commissioning bundles
 

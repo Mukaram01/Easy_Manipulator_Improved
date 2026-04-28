@@ -1,0 +1,8 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "task_recipe": {"id": "colour_sort", "type": "sort_by_colour"},
+  "steps": [
+    {"step_id": "pick_001", "task": "pick_route_place", "object": {"id": "red_001", "class_id": "box", "colour": "red", "shape": "box", "frame_id": "camera", "pose": {"xyz": [0.1, 0.1, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.03, 0.03, 0.03]}, "routing": {"destination_id": "red_bin", "destination": {"frame": "world", "pose_xyz": [0.5, 0.0, 0.1], "pose_rpy": [0, 0, 0]}}},
+    {"step_id": "pick_002", "task": "pick_route_place", "object": {"id": "blue_001", "class_id": "box", "colour": "blue", "shape": "box", "frame_id": "camera", "pose": {"xyz": [0.2, 0.1, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.03, 0.03, 0.03]}, "routing": {"destination_id": "blue_bin", "destination": {"frame": "world", "pose_xyz": [0.6, 0.0, 0.1], "pose_rpy": [0, 0, 0]}}}
+  ]
+}

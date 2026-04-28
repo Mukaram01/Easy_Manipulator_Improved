@@ -1,0 +1,24 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "task_recipe": {"id": "pick_place_demo", "type": "pick_place"},
+  "steps": [
+    {
+      "step_id": "pick_001",
+      "task": "pick_route_place",
+      "object": {
+        "id": "obj_001",
+        "class_id": "box",
+        "shape": "box",
+        "frame_id": "camera_depth_optical_frame",
+        "pose": {"frame_id": "camera_depth_optical_frame", "xyz": [0.4, 0.1, 0.2], "rpy": [0.0, 0.0, 0.0]},
+        "grasp_pose": {"frame_id": "camera_depth_optical_frame", "xyz": [0.4, 0.1, 0.27], "rpy": [3.14, 0.0, 0.0]},
+        "dimensions": [0.04, 0.05, 0.08],
+        "preferred_end_effector": "robotiq_2f"
+      },
+      "routing": {
+        "destination_id": "red_bin",
+        "destination": {"frame": "world", "pose_xyz": [0.8, 0.2, 0.15], "pose_rpy": [0.0, 0.0, 0.0]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "task_recipe": {"id": "reject_case", "type": "sort_by_class"},
+  "steps": [
+    {"step_id": "pick_001", "task": "pick_route_place", "object": {"id": "obj_unknown", "class_id": "unknown", "frame_id": "camera", "pose": {"xyz": [0.1, 0.0, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.02, 0.02, 0.02]}, "routing": {"destination_id": "unknown_reject_bin", "destination": {"frame": "world", "pose_xyz": [0.9, 0.0, 0.1], "pose_rpy": [0, 0, 0]}}},
+    {"step_id": "pick_002", "task": "pick_route_place", "object": {"id": "obj_good", "class_id": "box", "frame_id": "camera", "pose": {"xyz": [0.2, 0.0, 0.1], "rpy": [0, 0, 0]}, "dimensions": [0.02, 0.03, 0.04]}, "routing": {"destination_id": "good_bin", "destination": {"frame": "world", "pose_xyz": [0.5, 0.0, 0.1], "pose_rpy": [0, 0, 0]}}}
+  ]
+}
