@@ -189,7 +189,7 @@ if [ ${#repo_missing[@]} -gt 0 ] || [ ${#repo_index_fail[@]} -gt 0 ]; then
   (including suction assets: single_suction_description, single_suction_moveit_config)
     1. cd ${WORKSPACE_ROOT}
     2. ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-    3. colcon build --symlink-install --parallel-workers 2
+    3. colcon build --symlink-install
     4. source install/setup.bash
     5. rerun ${SCRIPT_DIR}/validate_workspace_assets.sh
 

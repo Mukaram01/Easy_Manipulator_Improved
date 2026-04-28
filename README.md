@@ -335,7 +335,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
   --skip-keys "qt_advanced_docking tesseract_visualization"
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 ./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils \
   --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
@@ -420,7 +420,7 @@ For scripted workflows, `./scripts/fix_and_build.sh` now runs the same preflight
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 eval "$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)"
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
-colcon build --symlink-install --parallel-workers 2 --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
+colcon build --symlink-install  --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
 ```
 
@@ -463,7 +463,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
 
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
 
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils \
   --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
 source install/setup.bash
@@ -487,7 +487,7 @@ test -e src/table_description && test -e src/workbench_description && test -e sr
   ```bash
   cd ~/workcell_ws
   source /opt/ros/humble/setup.bash
-  colcon build --symlink-install --parallel-workers 2 \
+  colcon build --symlink-install  \
     --packages-skip tesseract_qt QtADS tesseract_rviz tesseract_planning_server
   ```
 
@@ -702,7 +702,7 @@ For the default manual/headless path, keep the GUI packages disabled so a plain 
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install 
 ```
 
 If you want an explicit non-GUI full-workspace example that matches the Humble helper-script defaults from the logs, skip the GUI packages by their discovered names (with the checkout folder as an extra fallback) or use the helper script without `--with-gui`:
@@ -710,7 +710,7 @@ If you want an explicit non-GUI full-workspace example that matches the Humble h
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --packages-skip tesseract_qt QtADS qtadvanceddocking
 ```
 
@@ -729,14 +729,14 @@ vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/de
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --with-gui
 
 # 1) Build/install the core package set that exports tesseract_commonConfig.cmake
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --packages-skip tesseract_qt QtADS qtadvanceddocking tesseract_rviz tesseract_planning_server
 
 # 2) Refresh the overlay environment from the staged install
 source install/setup.bash
 
 # 3) Build tesseract_qt and remaining downstream GUI packages
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --packages-up-to tesseract_qt tesseract_rviz tesseract_planning_server
 ```
 
@@ -764,7 +764,7 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 cd ~/workcell_ws
 rm -rf build install log
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --parallel-workers 2
+colcon build 
 ```
 
 Helper-script equivalent:
@@ -823,7 +823,7 @@ cd /opt/workcell_ws/src/easy_manipulation_deployment
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --packages-select emd_grasp_planner --parallel-workers 2
+colcon build --packages-select emd_grasp_planner 
 ```
 
 For dependency-first troubleshooting of the planning stack:
@@ -860,7 +860,7 @@ The main supported quick-start path uses a plain build:
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --parallel-workers 2
+colcon build 
 ```
 
 If you are actively developing packages and want editable install behavior, use:
@@ -868,7 +868,7 @@ If you are actively developing packages and want editable install behavior, use:
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install 
 ```
 
 Some helper scripts and source-overlay workflows still use `--symlink-install`, especially for full-profile development workspaces.
@@ -901,7 +901,7 @@ source /opt/ros/humble/setup.bash
 cd ~/workcell_ws
 rm -rf build install log
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-colcon build --parallel-workers 2
+colcon build 
 ```
 
 Do **not** remove `ros-humble-ruckig` just to build this repository; that can remove unrelated MoveIt packages.
@@ -934,7 +934,7 @@ cd ~/workcell_ws
 vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
 colcon list | grep tesseract_motion_planners
-colcon build --symlink-install --parallel-workers 2 --packages-up-to tesseract_rosutils
+colcon build --symlink-install  --packages-up-to tesseract_rosutils
 ```
 
 If `colcon list` shows planner component packages (for example `tesseract_motion_planners_core`, `tesseract_motion_planners_simple`, `tesseract_motion_planners_ompl`, `tesseract_motion_planners_descartes`, `tesseract_motion_planners_trajopt`), build those first and then rebuild `tesseract_rosutils`.
@@ -943,7 +943,7 @@ Then source the rebuilt overlay and continue with a full workspace build:
 
 ```bash
 source ~/workcell_ws/install/setup.bash
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install 
 ```
 
 Binary-package path: install/verify `ros-${ROS_DISTRO}-tesseract-motion-planners`, open a fresh shell, source `/opt/ros/${ROS_DISTRO}/setup.bash`, and rebuild `tesseract_rosutils`.
@@ -955,10 +955,10 @@ If `tesseract_qt` fails to link because the ADS target name differs on your syst
 ```bash
 cd ~/workcell_ws
 ./src/easy_manipulation_deployment/scripts/apply_upstream_patches.sh
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --packages-skip tesseract_qt QtADS qtadvanceddocking tesseract_rviz tesseract_planning_server
 source install/setup.bash
-colcon build --symlink-install --parallel-workers 2 \
+colcon build --symlink-install  \
   --packages-up-to tesseract_qt tesseract_rviz tesseract_planning_server
 ```
 
@@ -1001,7 +1001,7 @@ rm -rf build install log
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
   --skip-keys "qt_advanced_docking tesseract_visualization"
 colcon list --base-paths src --names-only | grep -E '^tesseract_motion_planners($|_)'
-colcon build --parallel-workers 2
+colcon build 
 ```
 
 ### `workbench_description` missing during `rosdep install`
@@ -1033,7 +1033,7 @@ sudo apt install -y libboost-dev libboost-graph-dev libboost-program-options-dev
   libboost-serialization-dev libboost-stacktrace-dev
 cd ~/workcell_ws
 rm -rf build install log
-colcon build --symlink-install --parallel-workers 2
+colcon build --symlink-install 
 ```
 
 Cereal not found:
@@ -1376,6 +1376,7 @@ Notes:
 - Full profile builds `trajopt_sco`, `trajopt`, `trajopt_ifopt`, `trajopt_sqp`, and `tesseract_motion_planners`.
 - GUI packages are optional and skipped by default unless `--with-gui` is provided.
 - OSQP/OsqpEigen are pinned for TrajOpt/Tesseract 0.33.x compatibility through the dependency overlay.
+- The shorter `./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --build --profile full` flow is intended for already-prepared machines (or non-EPD runs).
 
 ### Package classification
 

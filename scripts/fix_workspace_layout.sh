@@ -498,6 +498,66 @@ link_from_backup() {
   fi
 }
 
+find_package_dir_in_root() {
+  local pkg_name="$1"
+  local root="$2"
+  local pkg_xml pkg_dir discovered_name
+
+  [[ -d "$root" ]] || return 1
+  while IFS= read -r pkg_xml; do
+    pkg_dir="$(dirname "$pkg_xml")"
+    discovered_name="$(package_name_from_xml "$pkg_xml")"
+    if [[ "$discovered_name" == "$pkg_name" ]]; then
+      echo "$pkg_dir"
+      return 0
+    fi
+  done < <(find "$root" -name package.xml -print 2>/dev/null)
+
+  return 1
+}
+
+ensure_required_trajopt_package() {
+  local pkg_name="$1"
+  local -a search_roots=(
+    "$SRC_DIR/trajopt"
+    "$SRC_DIR/tesseract_planning"
+    "$BACKUP_DIR/original"
+    "$BACKUP_DIR"
+  )
+  local discovered_path=""
+  local root
+  local dest="$SRC_DIR/$pkg_name"
+
+  for root in "${search_roots[@]}"; do
+    if discovered_path="$(find_package_dir_in_root "$pkg_name" "$root")"; then
+      break
+    fi
+  done
+
+  if [[ -z "$discovered_path" ]]; then
+    echo "Warning: required TrajOpt package '$pkg_name' was not found in expected roots." >&2
+    return 1
+  fi
+
+  ensure_symlink_target "$dest" "$discovered_path"
+  echo "Verified TrajOpt package: ${pkg_name} -> $(readlink -f "$dest")"
+  return 0
+}
+
+expose_required_trajopt_packages() {
+  local pkg
+  local failed=0
+  local required=(trajopt trajopt_common trajopt_sco trajopt_ifopt trajopt_sqp)
+
+  for pkg in "${required[@]}"; do
+    if ! ensure_required_trajopt_package "$pkg"; then
+      failed=1
+    fi
+  done
+
+  return "$failed"
+}
+
 ensure_symlink_target() {
   local dest="$1"
   local target="$2"
@@ -575,7 +635,7 @@ PY
     present["$pkg"]=1
   done
 
-  local required=(trajopt trajopt_common trajopt_sco)
+  local required=(trajopt trajopt_common trajopt_sco trajopt_ifopt trajopt_sqp)
   _missing_ref=()
   for pkg in "${required[@]}"; do
     if [[ -z ${present[$pkg]:-} ]]; then
@@ -586,11 +646,11 @@ PY
   [[ ${#_missing_ref[@]} -eq 0 ]]
 }
 
-# Ensure symlink for trajopt_sco points to a valid package source.
-trajopt_sco_target="$(resolve_trajopt_sco_target "${SRC_DIR}/easy_manipulation_deployment/trajopt/trajopt_sco")"
-ensure_symlink_target \
-  "${SRC_DIR}/trajopt_sco" \
-  "${trajopt_sco_target}"
+# Ensure the required TrajOpt packages are directly discoverable from src/.
+if ! expose_required_trajopt_packages; then
+  echo "Error: failed to expose one or more required TrajOpt packages." >&2
+  exit 1
+fi
 
 # Ensure trajopt_common declares all dependencies it links against. Some
 # upstream snapshots omit find_package() calls for tinyxml2, Boost graph, and
