@@ -212,6 +212,17 @@ Future click-driven workflow this enables:
 
 **Strong limitation:** generated metadata is a commissioning starting point, **not** a safety certificate and **not** proof of physical reachability/collision-free runtime behavior.
 
+### Scene creation helper tools
+
+These helper tools make the existing scene creation flow easier without replacing `workcell_builder`.
+
+```bash
+python3 scripts/report_workcell_builder_paths.py
+python3 scripts/check_scene_readiness.py --workcell-root <path>
+python3 scripts/generate_scene_import_checklist.py <mesh.stl>
+python3 scripts/environment_layout_to_scene_checklist.py <layout.yaml>
+```
+
 ```yaml
 task_recipe:
   id: colour_sort_demo
