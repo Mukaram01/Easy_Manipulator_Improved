@@ -1,0 +1,11 @@
+objects:
+  - id: obj_001
+    class_id: box
+    colour: red
+    shape: box
+    confidence: 0.92
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.1, 0.2, 0.3]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.05, 0.05, 0.05]
