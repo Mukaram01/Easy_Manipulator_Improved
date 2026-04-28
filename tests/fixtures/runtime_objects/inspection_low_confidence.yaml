@@ -1,0 +1,12 @@
+objects:
+  - id: inspect_001
+    class_id: part_a
+    inspection_result: fail
+    colour: blue
+    shape: box
+    confidence: 0.38
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.18, 0.11, 0.24]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.05, 0.04, 0.02]

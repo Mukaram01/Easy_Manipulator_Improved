@@ -1,0 +1,31 @@
+objects:
+  - id: red_001
+    class_id: part
+    colour: red
+    shape: box
+    confidence: 0.97
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.1, 0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.04, 0.04, 0.02]
+  - id: blue_001
+    class_id: part
+    colour: blue
+    shape: cylinder
+    confidence: 0.95
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.2, 0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.03, 0.03, 0.06]
+  - id: green_001
+    class_id: part
+    colour: green
+    shape: sphere
+    confidence: 0.91
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.3, 0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.03, 0.03, 0.03]

@@ -1,0 +1,34 @@
+objects:
+  - id: rec_001
+    class_id: bottle
+    material: plastic
+    colour: clear
+    shape: cylinder
+    confidence: 0.89
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.1, -0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.03, 0.03, 0.12]
+  - id: gen_001
+    class_id: can
+    material: metal
+    colour: silver
+    shape: cylinder
+    confidence: 0.87
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.2, -0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.03, 0.03, 0.09]
+  - id: reject_001
+    class_id: unknown
+    material: unknown
+    colour: mixed
+    shape: irregular
+    confidence: 0.41
+    frame_id: camera_depth_optical_frame
+    pose:
+      xyz: [0.3, -0.1, 0.2]
+      rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.06, 0.05, 0.02]
