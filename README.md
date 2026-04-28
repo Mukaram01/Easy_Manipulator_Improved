@@ -28,6 +28,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 ## Operator manual and validation report
 
 - Operator + commissioning manual: `docs/manuals/WORKCELL_OPERATOR_MANUAL.md`
+- Workcell project dashboard manual: `docs/manuals/WORKCELL_PROJECT_DASHBOARD.md`
 - Validation-only preflight helper:
 
 ```bash
@@ -66,6 +67,8 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 Validation preflight checks manifests/files only. Smoke launch preflight verifies `run_grasp_execution` reaches readiness markers headlessly. Smoke checks do **not** validate full grasp execution quality, EPD perception, camera hardware, or physical robot behavior. See `docs/manuals/WORKCELL_OPERATOR_MANUAL.md` for operator workflow details.
 
 Scene self-test metadata (`self_test` in each scene manifest) defines a deterministic commissioning object pose for offline checks. It is metadata-only: no robot launch, no EPD/camera requirement, and no physical hardware requirement.
+
+Workcell project generation also emits a static offline dashboard at `dashboard/index.html` for read-only project review. **The dashboard is a read-only offline project summary. It does not replace the existing GUI and does not control the robot.**
 
 ```bash
 ./scripts/check_scene_self_tests.sh

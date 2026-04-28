@@ -14,11 +14,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests" / "fixtures"
 GENERATOR = REPO_ROOT / "scripts" / "create_workcell_project.py"
 CHECKER = REPO_ROOT / "scripts" / "check_workcell_projects.sh"
+DASHBOARD_GENERATOR = REPO_ROOT / "scripts" / "generate_workcell_dashboard.py"
 
 
 class WorkcellProjectGeneratorTests(unittest.TestCase):
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(GENERATOR), *args], capture_output=True, text=True, check=False)
+
+    def _run_dashboard(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(DASHBOARD_GENERATOR), *args], capture_output=True, text=True, check=False)
 
     def test_dry_run_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -170,6 +174,95 @@ class WorkcellProjectGeneratorTests(unittest.TestCase):
             self.assertTrue(manifest["checksums"])
             validation_summary = (project / "reports" / "validation_summary.md").read_text(encoding="utf-8")
             self.assertIn("direct file", validation_summary)
+
+    def test_dashboard_generated_by_default_and_manifest_includes_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            proc = self._run("--cell-definition", str(FIXTURES / "cell_definition_pick_place.yaml"), "--output-dir", str(out), "--force")
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            project = out / "ur5_2f_demo_cell"
+            dashboard = project / "dashboard" / "index.html"
+            self.assertTrue(dashboard.is_file())
+            html_text = dashboard.read_text(encoding="utf-8")
+            self.assertIn("Workcell Project Dashboard", html_text)
+            manifest = json.loads((project / "project_manifest.json").read_text(encoding="utf-8"))
+            self.assertIn("dashboard", manifest["artifacts"])
+            self.assertIn("dashboard", manifest["checksums"])
+
+    def test_skip_dashboard_prevents_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            proc = self._run(
+                "--cell-definition", str(FIXTURES / "cell_definition_sort_by_colour.yaml"),
+                "--output-dir", str(out),
+                "--skip-dashboard",
+                "--force",
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            project = out / "ur5_colour_sort_cell"
+            self.assertFalse((project / "dashboard" / "index.html").exists())
+
+    def test_generate_dashboard_from_project_and_manifest_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            create = self._run("--cell-definition", str(FIXTURES / "cell_definition_sort_by_shape.yaml"), "--output-dir", str(out), "--force")
+            self.assertEqual(create.returncode, 0, msg=create.stdout + create.stderr)
+            project = out / "ur5_shape_sort_cell"
+            manifest = project / "project_manifest.json"
+            dash_a = project / "dashboard" / "a.html"
+            dash_b = project / "dashboard" / "b.html"
+            proc_a = self._run_dashboard("--project-dir", str(project), "--output", str(dash_a))
+            self.assertEqual(proc_a.returncode, 0, msg=proc_a.stdout + proc_a.stderr)
+            proc_b = self._run_dashboard("--manifest", str(manifest), "--output", str(dash_b))
+            self.assertEqual(proc_b.returncode, 0, msg=proc_b.stdout + proc_b.stderr)
+            self.assertIn("Project Summary", dash_a.read_text(encoding="utf-8"))
+            self.assertIn("Generated Artifacts", dash_b.read_text(encoding="utf-8"))
+
+    def test_dashboard_escapes_unsafe_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir) / "proj"
+            project.mkdir(parents=True)
+            manifest = project / "project_manifest.json"
+            payload = {
+                "schema_version": "workcell_project/v1",
+                "cell_name": "<script>alert('x')</script>",
+                "generated_package_name": "pkg",
+                "statuses": {"scene_manifest_validation": "PASS"},
+                "artifacts": {"next_commands": "next_commands.md"},
+            }
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+            (project / "next_commands.md").write_text("<b>danger</b>", encoding="utf-8")
+            dash = project / "dashboard" / "index.html"
+            proc = self._run_dashboard("--manifest", str(manifest), "--output", str(dash))
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            text = dash.read_text(encoding="utf-8")
+            self.assertIn("&lt;script&gt;alert", text)
+            self.assertNotIn("<script>alert", text)
+            self.assertIn("&lt;b&gt;danger&lt;/b&gt;", text)
+
+    def test_dashboard_missing_optional_fields_warn_and_strict_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir) / "p"
+            project.mkdir(parents=True)
+            manifest = project / "project_manifest.json"
+            manifest.write_text(json.dumps({"cell_name": "x"}), encoding="utf-8")
+            proc_warn = self._run_dashboard("--manifest", str(manifest))
+            self.assertEqual(proc_warn.returncode, 0, msg=proc_warn.stdout + proc_warn.stderr)
+            self.assertIn("WARN", proc_warn.stdout)
+            proc_strict = self._run_dashboard("--manifest", str(manifest), "--strict")
+            self.assertNotEqual(proc_strict.returncode, 0)
+
+    def test_dashboard_json_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            create = self._run("--cell-definition", str(FIXTURES / "cell_definition_pick_place.yaml"), "--output-dir", str(out), "--force")
+            self.assertEqual(create.returncode, 0, msg=create.stdout + create.stderr)
+            project = out / "ur5_2f_demo_cell"
+            proc = self._run_dashboard("--project-dir", str(project), "--json", "--quiet")
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertIn("dashboard_path", payload)
+            self.assertIn("dashboard_checksum", payload)
 
 
 class WorkcellProjectCheckHelperTests(unittest.TestCase):

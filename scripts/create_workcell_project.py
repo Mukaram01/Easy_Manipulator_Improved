@@ -27,6 +27,7 @@ PLAN_PATH = SCRIPTS_DIR / "generate_task_execution_plan.py"
 BUNDLE_PATH = SCRIPTS_DIR / "export_workcell_bundle.py"
 WIZARD_PATH = SCRIPTS_DIR / "create_cell_definition_wizard.py"
 TEMPLATE_TOOL_PATH = SCRIPTS_DIR / "create_cell_from_template.py"
+DASHBOARD_PATH = SCRIPTS_DIR / "generate_workcell_dashboard.py"
 
 REQUIRED_GENERATED_FILES = (
     "package.xml",
@@ -262,6 +263,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-bundle", action="store_true")
     parser.add_argument("--skip-execution-plan", action="store_true")
+    parser.add_argument("--skip-dashboard", action="store_true", help="Skip generation of static dashboard")
+    parser.add_argument("--dashboard-output", type=Path, help="Optional output HTML path for generated dashboard")
     parser.add_argument("--json", action="store_true", help="Print final summary as JSON")
     parser.add_argument("--print-next-commands", action="store_true")
     parser.add_argument("--strict", action="store_true")
@@ -291,6 +294,7 @@ def main() -> int:
         dry_runner = _load_module("project_dry_run", DRY_RUN_PATH)
         plan_generator = _load_module("project_plan", PLAN_PATH)
         bundle_exporter = _load_module("project_bundle", BUNDLE_PATH)
+        dashboard_generator = _load_module("project_dashboard", DASHBOARD_PATH)
     except Exception as exc:
         print(f"FAIL: unable to load offline tooling: {exc}")
         return 2
@@ -373,6 +377,7 @@ def main() -> int:
         str(reports_dir / "task_execution_plan.md"),
         str(reports_dir / "task_execution_plan.json"),
         str(bundle_dir),
+        str(project_dir / "dashboard" / "index.html"),
     ]
 
     if args.dry_run:
@@ -490,17 +495,6 @@ def main() -> int:
         "commissioning_bundle": bundle_status,
     }
 
-    warnings: list[str] = []
-    errors: list[str] = []
-    for step_name, step in statuses.items():
-        for note in step.notes:
-            if step.status in {"FAIL"}:
-                errors.append(f"{step_name}: {note}")
-            elif step.status in {"WARN", "SKIP"}:
-                warnings.append(f"{step_name}: {note}")
-
-    _write_text(reports_dir / "validation_summary.md", _render_validation_summary(statuses, warnings, errors), False, planned_paths)
-
     next_commands_text = _render_next_commands(project_dir, package_name)
     _write_text(project_dir / "next_commands.md", next_commands_text, False, planned_paths)
 
@@ -522,6 +516,44 @@ def main() -> int:
         "commissioning_bundle": "commissioning_bundle",
         "next_commands": "next_commands.md",
     }
+
+    dashboard_output = args.dashboard_output.resolve() if args.dashboard_output else (project_dir / "dashboard" / "index.html")
+    if args.skip_dashboard:
+        dashboard_status = StepStatus("SKIP", ["Skipped by --skip-dashboard"])
+    else:
+        try:
+            rc = dashboard_generator.main(
+                [
+                    "--project-dir",
+                    str(project_dir),
+                    "--manifest",
+                    str(project_dir / "project_manifest.json"),
+                    "--output",
+                    str(dashboard_output),
+                    "--quiet",
+                ]
+            )
+            if rc == 0 and dashboard_output.is_file():
+                dashboard_status = StepStatus("PASS", [])
+                try:
+                    important_paths["dashboard"] = dashboard_output.relative_to(project_dir).as_posix()
+                except ValueError:
+                    important_paths["dashboard"] = dashboard_output.as_posix()
+            else:
+                dashboard_status = StepStatus("WARN", [f"Dashboard generation returned non-zero: {rc}"])
+        except Exception as exc:
+            dashboard_status = StepStatus("WARN", [f"Dashboard generation warning: {exc}"])
+
+    statuses["dashboard_generation"] = dashboard_status
+
+    warnings: list[str] = []
+    errors: list[str] = []
+    for step_name, step in statuses.items():
+        for note in step.notes:
+            if step.status in {"FAIL"}:
+                errors.append(f"{step_name}: {note}")
+            elif step.status in {"WARN", "SKIP"}:
+                warnings.append(f"{step_name}: {note}")
 
     checksums: dict[str, str] = {}
     for key, rel_path in important_paths.items():
@@ -545,6 +577,7 @@ def main() -> int:
             "generate_task_execution_plan.py",
             "export_workcell_bundle.py",
             "create_cell_definition_wizard.py",
+            "generate_workcell_dashboard.py",
         ],
         "statuses": {key: value.status for key, value in statuses.items()},
         "artifacts": important_paths,
@@ -556,6 +589,37 @@ def main() -> int:
     }
     _write_text(project_dir / "project_manifest.json", json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n", False, planned_paths)
 
+    if not args.skip_dashboard and dashboard_status.status != "PASS":
+        try:
+            rc = dashboard_generator.main(
+                [
+                    "--project-dir",
+                    str(project_dir),
+                    "--manifest",
+                    str(project_dir / "project_manifest.json"),
+                    "--output",
+                    str(dashboard_output),
+                    "--quiet",
+                ]
+            )
+            if rc == 0 and dashboard_output.is_file():
+                statuses["dashboard_generation"] = StepStatus("PASS", [])
+                warnings = [w for w in warnings if not w.startswith("dashboard_generation:")]
+                try:
+                    important_paths["dashboard"] = dashboard_output.relative_to(project_dir).as_posix()
+                except ValueError:
+                    important_paths["dashboard"] = dashboard_output.as_posix()
+                checksums["dashboard"] = _sha256(dashboard_output)
+                manifest_payload["statuses"] = {key: value.status for key, value in statuses.items()}
+                manifest_payload["artifacts"] = important_paths
+                manifest_payload["warnings"] = warnings + temp_notes
+                manifest_payload["checksums"] = checksums
+                _write_text(project_dir / "project_manifest.json", json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n", False, planned_paths)
+        except Exception:
+            pass
+
+    _write_text(reports_dir / "validation_summary.md", _render_validation_summary(statuses, warnings, errors), False, planned_paths)
+
     blocking_failed = any(
         statuses[key].status == "FAIL"
         for key in ("cell_definition_validation", "workcell_generation", "scene_manifest_validation")
@@ -563,6 +627,8 @@ def main() -> int:
     if not args.skip_execution_plan and statuses["task_execution_plan"].status == "FAIL":
         blocking_failed = True
     if not args.skip_bundle and statuses["commissioning_bundle"].status == "FAIL":
+        blocking_failed = True
+    if not args.skip_dashboard and statuses["dashboard_generation"].status == "FAIL":
         blocking_failed = True
 
     strict_failed = args.strict and any(step.status in {"WARN", "SKIP"} for step in statuses.values())
@@ -574,6 +640,7 @@ def main() -> int:
         "dry_run_status": statuses["task_recipe_dry_run"].status,
         "execution_plan_status": statuses["task_execution_plan"].status,
         "bundle_status": statuses["commissioning_bundle"].status,
+        "dashboard_status": statuses["dashboard_generation"].status,
         "next_command": f"cat {project_dir / 'next_commands.md'}",
         "warnings": warnings + temp_notes,
         "errors": errors,
@@ -588,6 +655,7 @@ def main() -> int:
             "dry_run_status",
             "execution_plan_status",
             "bundle_status",
+            "dashboard_status",
             "next_command",
         ):
             print(f"{key}: {summary[key]}")
