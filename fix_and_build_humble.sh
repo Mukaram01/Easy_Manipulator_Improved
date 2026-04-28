@@ -278,15 +278,52 @@ prepare_osqp_stack() {
   }
 }
 
-hide_workspace_osqp_sources() {
+hide_source_only_vendor_dependencies() {
   local marker
-  local osqp_dirs=("src/osqp" "src/osqp-eigen")
-  for dir in "${osqp_dirs[@]}"; do
+  local source_only_dirs=("src/osqp" "src/osqp-eigen" "src/cereal")
+  for dir in "${source_only_dirs[@]}"; do
     [[ -d "$dir" ]] || continue
+    echo "Keeping source-only/vendor dependency hidden from colcon: $dir"
     for marker in COLCON_IGNORE AMENT_IGNORE; do
-      [[ -e "$dir/$marker" ]] || run_cmd "touch '$dir/$marker'"
+      if [[ ! -e "$dir/$marker" ]]; then
+        run_cmd "touch '$dir/$marker'"
+        append_unique FILES_TOUCHED "$WORKSPACE/$dir/$marker"
+        log_change "hide source-only dependency $dir via $marker"
+      fi
     done
   done
+}
+
+validate_cereal_dependency_handling() {
+  local rosdep_resolution
+  rosdep_resolution="$(rosdep resolve cereal 2>/dev/null || true)"
+  if [[ "$rosdep_resolution" != *"libcereal-dev"* ]]; then
+    echo "Cereal rosdep validation failed: expected cereal -> libcereal-dev mapping." >&2
+    echo "rosdep resolve cereal output:" >&2
+    printf '%s\n' "$rosdep_resolution" >&2
+    exit 1
+  fi
+  echo "Validated rosdep override: cereal resolves to libcereal-dev."
+
+  if [[ -d "src/cereal" ]]; then
+    local missing_markers=()
+    [[ -e "src/cereal/COLCON_IGNORE" ]] || missing_markers+=("src/cereal/COLCON_IGNORE")
+    [[ -e "src/cereal/AMENT_IGNORE" ]] || missing_markers+=("src/cereal/AMENT_IGNORE")
+    if [[ ${#missing_markers[@]} -gt 0 ]]; then
+      echo "Cereal source hiding validation failed: missing ignore markers:" >&2
+      printf '  - %s\n' "${missing_markers[@]}" >&2
+      exit 1
+    fi
+    echo "Validated source checkout hiding: src/cereal contains COLCON_IGNORE and AMENT_IGNORE."
+  else
+    echo "Cereal source checkout not present under src/. Relying on libcereal-dev via rosdep."
+  fi
+
+  if colcon list --base-paths src --names-only 2>/dev/null | grep -xq "cereal"; then
+    echo "Workspace validation failed: colcon still discovers package named 'cereal'." >&2
+    exit 1
+  fi
+  echo "Validated workspace discovery: no colcon package named cereal is visible."
 }
 
 capture_epd_state() {
@@ -420,7 +457,8 @@ build_phase() {
 
   run_cmd "./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh"
   run_cmd "./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh $([[ $WITH_GUI -eq 1 ]] && echo --with-gui || true)"
-  hide_workspace_osqp_sources
+  hide_source_only_vendor_dependencies
+  validate_cereal_dependency_handling
 
   local rosdep_skip_keys=(qt_advanced_docking tesseract_visualization taskflow trajopt_ifopt trajopt_sqp osqp osqp_vendor osqp-eigen osqp_eigen qpoases)
   local fallback_keys=""

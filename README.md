@@ -330,6 +330,11 @@ cd ~/workcell_ws/src/easy_manipulation_deployment
 source ~/workcell_ws/install/setup.bash
 ```
 
+Notes:
+- `cereal` is treated as a system/header-only dependency and is supplied through `libcereal-dev` via rosdep override resolution.
+- If `src/cereal` is imported by the dependency manifest, the installer intentionally writes `COLCON_IGNORE` + `AMENT_IGNORE` so colcon does not try to build upstream cereal sandbox/tests/examples.
+- Do **not** manually build `cereal` in this workspace.
+
 ### Verify the install
 
 ```bash
@@ -340,6 +345,7 @@ ros2 pkg prefix run_grasp_planner
 ros2 pkg prefix run_grasp_execution
 ros2 pkg prefix run_waypoint_execution
 ros2 pkg prefix workcell_builder
+colcon list --base-paths ~/workcell_ws/src --names-only | grep -x cereal && echo "ERROR cereal visible" || echo "OK cereal hidden"
 ```
 
 ### First launch smoke test
@@ -399,6 +405,7 @@ source ~/epd_ros2_ws/install/local_setup.bash
 
 vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
+touch src/cereal/COLCON_IGNORE src/cereal/AMENT_IGNORE 2>/dev/null || true
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y --rosdistro humble \
   --skip-keys "qt_advanced_docking tesseract_visualization"
@@ -904,13 +911,16 @@ rm -rf build install log
 colcon build --symlink-install 
 ```
 
-Cereal not found:
+Cereal setup (header-only system dependency):
 
 ```bash
 sudo apt install -y libcereal-dev
 sudo mkdir -p /usr/lib/x86_64-linux-gnu/cmake/
 sudo ln -sf /usr/share/cmake/cereal /usr/lib/x86_64-linux-gnu/cmake/cereal
+colcon list --base-paths ~/workcell_ws/src --names-only | grep -x cereal && echo "ERROR cereal visible" || echo "OK cereal hidden"
 ```
+
+`cereal` should come from `libcereal-dev`; do not manually build `src/cereal`. If `src/cereal` exists from `vcs import`, keep it hidden with `COLCON_IGNORE` + `AMENT_IGNORE`.
 
 Boost serialization `library_version_type` error:
 
