@@ -1,0 +1,1 @@
+<robot name="demo"><link name="base_link"><visual><geometry><mesh filename="mesh.stl"/></geometry></visual><collision><geometry><mesh filename="mesh.stl"/></geometry></collision></link></robot>

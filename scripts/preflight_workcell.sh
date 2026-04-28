@@ -46,7 +46,36 @@ fi
 if [[ -n "${AMENT_PREFIX_PATH:-}" ]]; then
   echo "ROS check: AMENT_PREFIX_PATH is set."
 else
-  echo "ROS check: AMENT_PREFIX_PATH is not set (source ROS/workspace setup before launch preflight)."
+echo "ROS check: AMENT_PREFIX_PATH is not set (source ROS/workspace setup before launch preflight)."
+fi
+
+echo
+echo "=== Scene creation readiness helpers (offline, non-invasive) ==="
+if python3 "${SCRIPT_DIR}/report_workcell_builder_paths.py"; then
+  echo "Scene creation path report: PASS"
+else
+  echo "Scene creation path report: WARN (report tool unavailable)"
+fi
+
+if [[ -d "${REPO_ROOT}/scenes" ]]; then
+  if python3 "${SCRIPT_DIR}/check_scene_readiness.py" --workcell-root "${REPO_ROOT}"; then
+    echo "Scene readiness check: PASS/WARN"
+  else
+    echo "Scene readiness check: WARN (readiness failures detected)"
+  fi
+else
+  echo "Scene readiness check: SKIP (no scenes directory at ${REPO_ROOT}/scenes)"
+fi
+
+LAYOUT_FIXTURE="${REPO_ROOT}/tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml"
+if [[ -f "${LAYOUT_FIXTURE}" ]]; then
+  if python3 "${SCRIPT_DIR}/environment_layout_to_scene_checklist.py" "${LAYOUT_FIXTURE}" >/dev/null; then
+    echo "Environment layout checklist bridge: PASS"
+  else
+    echo "Environment layout checklist bridge: WARN (could not generate checklist)"
+  fi
+else
+  echo "Environment layout checklist bridge: SKIP (fixture not found)"
 fi
 
 echo

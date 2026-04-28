@@ -1,0 +1,1 @@
+<robot name="demo"><link name="base_link"><visual><geometry><mesh filename="/home/user/model.stl"/></geometry></visual></link></robot>

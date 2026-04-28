@@ -188,6 +188,36 @@ Safety note: generated package is not proof of physical reachability or machine 
 
 ---
 
+## D3) Creating a new environment/scene without breaking the repo
+
+Use the existing `workcell_builder` flow; do not create a parallel scene system.
+
+1. Start with the existing `workcell_builder` GUI and existing `scenes/` structure.
+2. Import meshes/STLs through the current GUI flow (visual + collision geometry).
+3. Keep reusable physical files under existing `assets/` structure.
+4. Validate scene readiness before runtime wiring:
+
+```bash
+python3 scripts/report_workcell_builder_paths.py
+python3 scripts/check_scene_readiness.py --workcell-root .
+```
+
+5. If environment metadata exists, treat `environment_layout/v1` as checklist metadata only:
+
+```bash
+python3 scripts/environment_layout_to_scene_checklist.py tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml
+```
+
+6. Later, connect scene metadata to `cell_definition/v1` workflow as needed.
+
+Guardrails:
+- Avoid duplicate scene names.
+- Avoid absolute `/home/...` paths in reusable scene files.
+- Keep collision geometry present for imported visuals.
+- Do not move/rename existing assets/scenes just to make a new scene.
+
+---
+
 ## E) Launch known-good scene
 
 Known-good execution launch command:
