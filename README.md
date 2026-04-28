@@ -1351,3 +1351,51 @@ This project now adds metadata-only tooling around those existing assets:
 - `scripts/check_environment_layouts.sh` integrated into `scripts/preflight_workcell.sh`
 
 These additions are offline/import-export focused and do not change runtime ROS/MoveIt/perception/grasp/controller behavior.
+
+## Fresh Ubuntu 22.04 / ROS 2 Humble full-profile build (EPD + TrajOpt/Tesseract)
+
+Use this path on a clean machine when you need the full simulation-first workflow (MoveIt + EPD + Tesseract/TrajOpt), not a reduced demo build.
+
+```bash
+mkdir -p ~/workcell_ws/src
+cd ~/workcell_ws/src
+git clone https://github.com/Mukaram01/Easy_Manipulator_Improved.git easy_manipulation_deployment
+cd easy_manipulation_deployment
+
+./fix_and_build_humble.sh \
+  --workspace ~/workcell_ws \
+  --check-prereqs \
+  --install-prereqs \
+  --build \
+  --profile full \
+  --epd-underlay ~/epd_ros2_ws
+```
+
+Notes:
+- `--epd-underlay` sources `~/epd_ros2_ws/install/local_setup.bash` (not `setup.bash`) and validates `epd_msgs`.
+- Full profile builds `trajopt_sco`, `trajopt`, `trajopt_ifopt`, `trajopt_sqp`, and `tesseract_motion_planners`.
+- GUI packages are optional and skipped by default unless `--with-gui` is provided.
+- OSQP/OsqpEigen are pinned for TrajOpt/Tesseract 0.33.x compatibility through the dependency overlay.
+
+### Package classification
+
+**Required for normal EMD/EPD simulation-first workflows:**
+- `epd_msgs`
+- `emd_grasp_planner`
+- `emd_grasp_execution`
+- `run_grasp_planner`
+- `run_grasp_execution`
+- `run_waypoint_execution`
+- `workcell_builder`
+- `trajopt_sco`
+- `trajopt`
+- `trajopt_ifopt`
+- `trajopt_sqp`
+- `tesseract_motion_planners`
+
+**Optional GUI packages (enable with `--with-gui`):**
+- `tesseract_qt`
+- `qtadvanceddocking`
+- `QtADS`
+- `tesseract_rviz`
+- `tesseract_planning_server` (optional for standard headless demos)

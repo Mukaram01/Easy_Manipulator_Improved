@@ -1648,11 +1648,3 @@ int main(int argc, char ** argv)
   rclcpp::shutdown();
   return 0;
 }
-    std::unordered_map<size_t, run_grasp_execution::ExplicitReleasePoseEntry> explicit_by_index;
-    if (explicit_release_pose_adapter_loaded_) {
-      const auto entries = explicit_release_entries_;
-      const size_t max_count = std::min(entries.size(), msg->grasp_targets.size());
-      for (size_t i = 0; i < max_count; ++i) {
-        explicit_by_index.emplace(i, entries[i]);
-      }
-    }

@@ -52,4 +52,15 @@ repositories:
   ruckig:
     type: git
     url: https://github.com/pantor/ruckig.git
-    version: 6f73b03f4e155cf931263709eabe6add6afab618
+    version: v0.9.2
+
+  # TrajOpt/Tesseract 0.33.x on Humble requires the legacy OSQP 0.6 API
+  # (including osqp/auxil.h). Pin OSQP/OsqpEigen to known-compatible refs.
+  osqp:
+    type: git
+    url: https://github.com/osqp/osqp.git
+    version: v0.6.3
+  osqp-eigen:
+    type: git
+    url: https://github.com/robotology/osqp-eigen.git
+    version: v0.8.0

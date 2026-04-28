@@ -11,12 +11,23 @@ DRY_RUN=0
 CHECK_PREREQS=0
 INSTALL_PREREQS=0
 BUILD_WORKSPACE=0
+PARALLEL_WORKERS=""
+EPD_UNDERLAY=""
 
 MUTATING_ACTIONS=()
 PACKAGES_INSTALLED=()
 PIP_PACKAGES_INSTALLED=()
 REPOS_IMPORTED=()
 FILES_TOUCHED=()
+RODEP_SKIP_KEYS_USED=()
+COLCON_SKIP_PACKAGES_USED=()
+
+EPD_UNDERLAY_USED=0
+EPD_MSGS_PREFIX=""
+EPD_INTEGRATION_ENABLED="unknown"
+OSQP_PROVIDER="unknown"
+OSQP_VERSION_DETECTED="unknown"
+OSQPEIGEN_VERSION_DETECTED="unknown"
 
 usage() {
   cat <<'USAGE'
@@ -31,34 +42,19 @@ General options:
   --workspace <path>         Workspace root (default: current working directory)
   --profile minimal|full     Build profile (default: minimal)
   --with-gui                 Build optional GUI packages in full profile
+  --parallel-workers <N>     Optional colcon parallel workers override (default: colcon default)
+  --epd-underlay <path>      Optional EPD workspace root (sources <path>/install/local_setup.bash)
   --clean                    Remove build/, install/, and log/ before build
   --dry-run                  Print commands without executing
   -h, --help                 Show this help message
 
 Examples:
-  # Local dev: validate, install missing tools, then build
-  ./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --install-prereqs --build --profile full
-
-  # Locked-down enterprise host: read-only preflight only (no apt/pip mutation)
-  ./fix_and_build_humble.sh --workspace /opt/workcell_ws --check-prereqs
-
-  # CI runner: deterministic build from pre-provisioned image
-  ./fix_and_build_humble.sh --workspace "$GITHUB_WORKSPACE" --check-prereqs --build --profile minimal --clean
+  ./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --install-prereqs --build --profile full --epd-underlay ~/epd_ros2_ws
+  ./fix_and_build_humble.sh --workspace ~/workcell_ws --check-prereqs --install-prereqs --build --profile full --clean --epd-underlay ~/epd_ros2_ws
 USAGE
 }
 
-log_change() {
-  MUTATING_ACTIONS+=("$1")
-}
-
-run_cmd() {
-  local cmd="$*"
-  if [[ $DRY_RUN -eq 1 ]]; then
-    printf '[dry-run] %s\n' "$cmd"
-    return 0
-  fi
-  eval "$cmd"
-}
+log_change() { MUTATING_ACTIONS+=("$1"); }
 
 append_unique() {
   local -n arr_ref=$1
@@ -70,52 +66,31 @@ append_unique() {
   arr_ref+=("$value")
 }
 
-emit_summary() {
-  local summary_file="$WORKSPACE/fix_and_build_summary.json"
-  local mut_json pkg_json pip_json repo_json file_json
-
-  mut_json=$(printf '%s\n' "${MUTATING_ACTIONS[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
-  pkg_json=$(printf '%s\n' "${PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
-  pip_json=$(printf '%s\n' "${PIP_PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
-  repo_json=$(printf '%s\n' "${REPOS_IMPORTED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
-  file_json=$(printf '%s\n' "${FILES_TOUCHED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
-
-  local json
-  json=$(cat <<JSON
-{
-  "workspace": "${WORKSPACE}",
-  "dry_run": ${DRY_RUN},
-  "phases": {
-    "check_prereqs": ${CHECK_PREREQS},
-    "install_prereqs": ${INSTALL_PREREQS},
-    "build": ${BUILD_WORKSPACE}
-  },
-  "profile": "${PROFILE}",
-  "with_gui": ${WITH_GUI},
-  "clean_build": ${CLEAN_BUILD},
-  "mutating_actions": ${mut_json},
-  "packages_installed": ${pkg_json},
-  "pip_packages_installed": ${pip_json},
-  "repos_imported": ${repo_json},
-  "files_touched": ${file_json}
+join_by() {
+  local delim="$1"; shift || true
+  local out=""
+  local val
+  for val in "$@"; do
+    [[ -z "$val" ]] && continue
+    if [[ -z "$out" ]]; then
+      out="$val"
+    else
+      out+="$delim$val"
+    fi
+  done
+  printf '%s' "$out"
 }
-JSON
-)
 
+run_cmd() {
+  local cmd="$*"
   if [[ $DRY_RUN -eq 1 ]]; then
-    printf '%s\n' "$json"
-  else
-    printf '%s\n' "$json" > "$summary_file"
-    echo "Wrote summary: $summary_file"
+    printf '[dry-run] %s\n' "$cmd"
+    return 0
   fi
+  eval "$cmd"
 }
 
-need_command() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    return 1
-  fi
-}
+need_command() { command -v "$1" >/dev/null 2>&1; }
 
 apt_install_package() {
   local pkg="$1"
@@ -123,7 +98,7 @@ apt_install_package() {
   if command -v sudo >/dev/null 2>&1; then
     apt_prefix="sudo "
   elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    echo "Cannot install '$pkg': requires root or sudo. Re-run with sudo access or preinstall package manually." >&2
+    echo "Cannot install '$pkg': requires root or sudo." >&2
     exit 1
   fi
 
@@ -131,6 +106,16 @@ apt_install_package() {
   run_cmd "${apt_prefix}apt-get install -y $pkg"
   append_unique PACKAGES_INSTALLED "$pkg"
   log_change "apt install $pkg"
+}
+
+check_epd_underlay_layout() {
+  [[ -z "$EPD_UNDERLAY" ]] && return 0
+  EPD_UNDERLAY="$(cd "$EPD_UNDERLAY" && pwd 2>/dev/null || printf '%s' "$EPD_UNDERLAY")"
+  local local_setup="$EPD_UNDERLAY/install/local_setup.bash"
+  if [[ ! -f "$local_setup" ]]; then
+    echo "--epd-underlay expects an EPD workspace root with install/local_setup.bash. Missing: $local_setup" >&2
+    exit 1
+  fi
 }
 
 install_prereqs_phase() {
@@ -153,9 +138,7 @@ PY
   done
 
   if ! need_command colcon; then
-    if ! need_command pip3; then
-      apt_install_package python3-pip
-    fi
+    need_command pip3 || apt_install_package python3-pip
     run_cmd "python3 -m pip install -U colcon-common-extensions"
     append_unique PIP_PACKAGES_INSTALLED "colcon-common-extensions"
     log_change "pip install colcon-common-extensions"
@@ -175,26 +158,191 @@ check_prereqs_phase() {
   [[ -d "$WORKSPACE/src" ]] || missing+=("workspace is missing src/ directory at '$WORKSPACE/src'")
   [[ -f "$ros_setup" ]] || missing+=("missing ROS setup: $ros_setup")
 
-  need_command git || missing+=("missing command: git (install package: git)")
-  need_command vcs || missing+=("missing command: vcs (install package: python3-vcstool)")
-  need_command rosdep || missing+=("missing command: rosdep (install package: python3-rosdep)")
-  need_command colcon || missing+=("missing command: colcon (install via pip: colcon-common-extensions)")
+  need_command git || missing+=("missing command: git")
+  need_command vcs || missing+=("missing command: vcs")
+  need_command rosdep || missing+=("missing command: rosdep")
+  need_command colcon || missing+=("missing command: colcon")
 
   if ! python3 - <<'PY' >/dev/null 2>&1
 import yaml  # noqa: F401
 PY
   then
-    missing+=("missing Python module: yaml (install package: python3-yaml)")
+    missing+=("missing Python module: yaml")
   fi
+
+  check_epd_underlay_layout
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo "Prerequisite check failed. Missing requirements:" >&2
     printf '  - %s\n' "${missing[@]}" >&2
-    echo "Action: run --install-prereqs to allow this script to install missing tools, or install them manually." >&2
     exit 1
   fi
 
   echo "Prerequisite check passed for workspace: $WORKSPACE"
+}
+
+prepare_osqp_stack() {
+  local osqp_include="/usr/local/include/osqp"
+  local osqp_header="${osqp_include}/osqp.h"
+  local aux_header="${osqp_include}/auxil.h"
+
+  if [[ -f "$osqp_header" ]] && [[ -f "$aux_header" ]]; then
+    OSQP_PROVIDER="/usr/local"
+    OSQP_VERSION_DETECTED="$(grep -E '#define OSQP_VERSION' "$osqp_header" | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+  elif [[ -f "/usr/include/osqp.h" ]]; then
+    OSQP_PROVIDER="/usr"
+    OSQP_VERSION_DETECTED="$(grep -E '#define OSQP_VERSION' /usr/include/osqp.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+  fi
+
+  local need_local_osqp=0
+  if [[ ! -f "$aux_header" ]]; then
+    need_local_osqp=1
+  elif [[ "${OSQP_VERSION_DETECTED:-}" == 1.* ]]; then
+    need_local_osqp=1
+  fi
+
+  if [[ $need_local_osqp -eq 1 ]]; then
+    echo "Installing pinned OSQP/OsqpEigen compatibility stack for TrajOpt/Tesseract (OSQP 0.6.3 + OsqpEigen 0.8.0)."
+    run_cmd "cmake -S src/osqp -B build/osqp -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON"
+    run_cmd "cmake --build build/osqp"
+    if command -v sudo >/dev/null 2>&1; then
+      run_cmd "sudo cmake --install build/osqp"
+    else
+      run_cmd "cmake --install build/osqp"
+    fi
+    log_change "install osqp from source (0.6.3)"
+
+    run_cmd "cmake -S src/osqp-eigen -B build/osqp-eigen -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DOSQP_EIGEN_BUILD_PYTHON=OFF"
+    run_cmd "cmake --build build/osqp-eigen"
+    if command -v sudo >/dev/null 2>&1; then
+      run_cmd "sudo cmake --install build/osqp-eigen"
+    else
+      run_cmd "cmake --install build/osqp-eigen"
+    fi
+    log_change "install osqp-eigen from source (0.8.0)"
+
+    OSQP_PROVIDER="/usr/local"
+  fi
+
+  if [[ -f "/usr/local/include/osqp/osqp.h" ]]; then
+    OSQP_VERSION_DETECTED="$(grep -E '#define OSQP_VERSION' /usr/local/include/osqp/osqp.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+  fi
+
+  if [[ -f "/usr/local/include/OsqpEigen/OsqpEigen.h" ]]; then
+    OSQPEIGEN_VERSION_DETECTED="$(grep -E '#define OSQP_EIGEN_VERSION' /usr/local/include/OsqpEigen/OsqpEigen.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+  elif [[ -f "/usr/include/OsqpEigen/OsqpEigen.h" ]]; then
+    OSQPEIGEN_VERSION_DETECTED="$(grep -E '#define OSQP_EIGEN_VERSION' /usr/include/OsqpEigen/OsqpEigen.h | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+  fi
+
+  if [[ ! -f "/usr/local/include/osqp/auxil.h" && ! -f "/usr/include/osqp/auxil.h" ]]; then
+    echo "Incompatible OSQP headers detected: auxil.h not found. TrajOpt SQP requires the OSQP 0.6 API." >&2
+    exit 1
+  fi
+}
+
+capture_epd_state() {
+  if [[ -z "$EPD_UNDERLAY" ]]; then
+    EPD_UNDERLAY_USED=0
+    EPD_MSGS_PREFIX=""
+    return 0
+  fi
+
+  EPD_UNDERLAY_USED=1
+  if ! EPD_MSGS_PREFIX="$(ros2 pkg prefix epd_msgs 2>/dev/null)"; then
+    echo "EPD underlay was requested (--epd-underlay $EPD_UNDERLAY) but 'epd_msgs' was not discoverable." >&2
+    echo "Ensure: source /opt/ros/humble/setup.bash && source $EPD_UNDERLAY/install/local_setup.bash exposes epd_msgs." >&2
+    exit 1
+  fi
+}
+
+calculate_colcon_skip_packages() {
+  local profile="$1"
+  local with_gui="$2"
+  local all_packages
+  mapfile -t all_packages < <(colcon list --base-paths src --names-only 2>/dev/null || true)
+
+  local requested_skips=()
+  if [[ "$profile" == "full" && "$with_gui" -eq 0 ]]; then
+    requested_skips+=(tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server)
+  fi
+
+  local discovered=()
+  local pkg
+  for pkg in "${requested_skips[@]}"; do
+    if printf '%s\n' "${all_packages[@]}" | grep -Fxq "$pkg"; then
+      discovered+=("$pkg")
+    fi
+  done
+
+  COLCON_SKIP_PACKAGES_USED=("${discovered[@]:-}")
+}
+
+capture_emd_epd_integration_flag() {
+  local flags_file="$WORKSPACE/build/emd_grasp_planner/CMakeFiles/grasp_planning_interface.dir/flags.make"
+  if [[ -f "$flags_file" ]] && grep -q 'EPD_ENABLED=1' "$flags_file"; then
+    EPD_INTEGRATION_ENABLED="true"
+  elif [[ -f "$flags_file" ]] && grep -q 'EPD_ENABLED=0' "$flags_file"; then
+    EPD_INTEGRATION_ENABLED="false"
+  else
+    EPD_INTEGRATION_ENABLED="unknown"
+  fi
+}
+
+emit_summary() {
+  local summary_file="$WORKSPACE/fix_and_build_summary.json"
+  local mut_json pkg_json pip_json repo_json file_json rosdep_skip_json colcon_skip_json
+
+  mut_json=$(printf '%s\n' "${MUTATING_ACTIONS[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  pkg_json=$(printf '%s\n' "${PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  pip_json=$(printf '%s\n' "${PIP_PACKAGES_INSTALLED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  repo_json=$(printf '%s\n' "${REPOS_IMPORTED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  file_json=$(printf '%s\n' "${FILES_TOUCHED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  rosdep_skip_json=$(printf '%s\n' "${RODEP_SKIP_KEYS_USED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  colcon_skip_json=$(printf '%s\n' "${COLCON_SKIP_PACKAGES_USED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+
+  local json
+  json=$(cat <<JSON
+{
+  "workspace": "${WORKSPACE}",
+  "dry_run": ${DRY_RUN},
+  "phases": {
+    "check_prereqs": ${CHECK_PREREQS},
+    "install_prereqs": ${INSTALL_PREREQS},
+    "build": ${BUILD_WORKSPACE}
+  },
+  "profile": "${PROFILE}",
+  "with_gui": ${WITH_GUI},
+  "clean_build": ${CLEAN_BUILD},
+  "parallel_workers": "${PARALLEL_WORKERS}",
+  "epd_underlay": {
+    "requested": "${EPD_UNDERLAY}",
+    "used": ${EPD_UNDERLAY_USED},
+    "epd_msgs_prefix": "${EPD_MSGS_PREFIX}",
+    "emd_grasp_planner_epd_enabled": "${EPD_INTEGRATION_ENABLED}"
+  },
+  "osqp_compatibility": {
+    "provider": "${OSQP_PROVIDER}",
+    "osqp_version": "${OSQP_VERSION_DETECTED}",
+    "osqp_eigen_version": "${OSQPEIGEN_VERSION_DETECTED}",
+    "expected_matrix": "OSQP=0.6.3, OsqpEigen=0.8.0, TrajOpt/Tesseract=0.33.x"
+  },
+  "rosdep_skip_keys_used": ${rosdep_skip_json},
+  "colcon_skip_packages_used": ${colcon_skip_json},
+  "mutating_actions": ${mut_json},
+  "packages_installed": ${pkg_json},
+  "pip_packages_installed": ${pip_json},
+  "repos_imported": ${repo_json},
+  "files_touched": ${file_json}
+}
+JSON
+)
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    printf '%s\n' "$json"
+  else
+    printf '%s\n' "$json" > "$summary_file"
+    echo "Wrote summary: $summary_file"
+  fi
 }
 
 build_phase() {
@@ -209,36 +357,66 @@ build_phase() {
   fi
 
   local ros_setup="/opt/ros/humble/setup.bash"
-  local skip_keys="qt_advanced_docking,tesseract_visualization"
-  local build_skip="tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server"
   local allow_override="--allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils"
 
   run_cmd "unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH"
   run_cmd "set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$ros_setup'; set -u"
+
+  if [[ -n "$EPD_UNDERLAY" ]]; then
+    run_cmd "set +u; : \"\${AMENT_TRACE_SETUP_FILES:=}\"; source '$EPD_UNDERLAY/install/local_setup.bash'; set -u"
+  fi
+
   run_cmd "vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos"
   append_unique REPOS_IMPORTED "dependencies/emd_epd_ws.repos"
 
   run_cmd "./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh"
-  run_cmd "./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh"
-  run_cmd "./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble || true"
+  run_cmd "./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh $([[ $WITH_GUI -eq 1 ]] && echo --with-gui || true)"
 
+  local rosdep_skip_keys=(qt_advanced_docking tesseract_visualization taskflow trajopt_ifopt trajopt_sqp osqp osqp_vendor osqp-eigen)
   local fallback_keys=""
   if fallback_keys=$(./src/easy_manipulation_deployment/scripts/preflight_tesseract_apt.sh --ros-distro humble --print-rosdep-skip-keys 2>/dev/null); then
-    true
-  fi
-  if [[ -n "$fallback_keys" ]]; then
-    skip_keys+=",$fallback_keys"
+    if [[ -n "$fallback_keys" ]]; then
+      IFS=',' read -r -a extra_keys <<< "$fallback_keys"
+      rosdep_skip_keys+=("${extra_keys[@]}")
+    fi
   fi
 
-  run_cmd "rosdep install --from-paths src --ignore-src -r -y --rosdistro humble --skip-keys '$skip_keys'"
+  # de-duplicate rosdep skip keys
+  local dedup_skip=()
+  local key
+  for key in "${rosdep_skip_keys[@]}"; do
+    [[ -z "$key" ]] && continue
+    if ! printf '%s\n' "${dedup_skip[@]}" | grep -Fxq "$key"; then
+      dedup_skip+=("$key")
+    fi
+  done
+  RODEP_SKIP_KEYS_USED=("${dedup_skip[@]:-}")
+
+  local rosdep_skip_arg
+  rosdep_skip_arg="$(join_by ' ' "${dedup_skip[@]:-}")"
+
+  run_cmd "rosdep install --from-paths src --ignore-src -r -y --rosdistro humble --skip-keys '$rosdep_skip_arg'"
+
   run_cmd "eval \"\$(./src/easy_manipulation_deployment/scripts/ensure_taskflow_cmake_package.sh --export)\""
+
+  prepare_osqp_stack
+  capture_epd_state
+
   run_cmd "./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh"
 
-  if [[ "$PROFILE" == "full" && $WITH_GUI -eq 1 ]]; then
-    run_cmd "colcon build --symlink-install --parallel-workers 2 $allow_override"
-  else
-    run_cmd "colcon build --symlink-install --parallel-workers 2 $allow_override --packages-skip $build_skip"
+  calculate_colcon_skip_packages "$PROFILE" "$WITH_GUI"
+
+  local colcon_cmd="colcon build --symlink-install $allow_override"
+  if [[ -n "$PARALLEL_WORKERS" ]]; then
+    colcon_cmd+=" --parallel-workers $PARALLEL_WORKERS"
   fi
+
+  if [[ ${#COLCON_SKIP_PACKAGES_USED[@]} -gt 0 ]]; then
+    colcon_cmd+=" --packages-skip $(join_by ' ' "${COLCON_SKIP_PACKAGES_USED[@]}")"
+  fi
+
+  run_cmd "$colcon_cmd"
+  capture_emd_epd_integration_flag
 
   append_unique FILES_TOUCHED "$WORKSPACE/build"
   append_unique FILES_TOUCHED "$WORKSPACE/install"
@@ -247,47 +425,18 @@ build_phase() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --check-prereqs)
-      CHECK_PREREQS=1
-      shift
-      ;;
-    --install-prereqs)
-      INSTALL_PREREQS=1
-      shift
-      ;;
-    --build)
-      BUILD_WORKSPACE=1
-      shift
-      ;;
-    --workspace)
-      WORKSPACE="${2:-}"
-      shift 2
-      ;;
-    --profile)
-      PROFILE="${2:-}"
-      shift 2
-      ;;
-    --with-gui|--with-tesseract-qt)
-      WITH_GUI=1
-      shift
-      ;;
-    --clean)
-      CLEAN_BUILD=1
-      shift
-      ;;
-    --dry-run)
-      DRY_RUN=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage
-      exit 1
-      ;;
+    --check-prereqs) CHECK_PREREQS=1; shift ;;
+    --install-prereqs) INSTALL_PREREQS=1; shift ;;
+    --build) BUILD_WORKSPACE=1; shift ;;
+    --workspace) WORKSPACE="${2:-}"; shift 2 ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
+    --with-gui|--with-tesseract-qt) WITH_GUI=1; shift ;;
+    --parallel-workers) PARALLEL_WORKERS="${2:-}"; shift 2 ;;
+    --epd-underlay) EPD_UNDERLAY="${2:-}"; shift 2 ;;
+    --clean) CLEAN_BUILD=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
 done
 
@@ -298,6 +447,11 @@ WORKSPACE="$(cd "$WORKSPACE" && pwd 2>/dev/null || printf '%s' "$WORKSPACE")"
 
 if [[ "$PROFILE" != "minimal" && "$PROFILE" != "full" ]]; then
   echo "Invalid --profile value: '$PROFILE' (expected: minimal or full)" >&2
+  exit 1
+fi
+
+if [[ -n "$PARALLEL_WORKERS" ]] && ! [[ "$PARALLEL_WORKERS" =~ ^[0-9]+$ ]] ; then
+  echo "--parallel-workers expects a positive integer" >&2
   exit 1
 fi
 
