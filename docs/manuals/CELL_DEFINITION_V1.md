@@ -209,3 +209,22 @@ Validation behavior:
 - Non-strict mode: unresolved capability IDs report WARN.
 - Strict mode (`--strict`): unresolved capability IDs report FAIL.
 - Compatibility checks are best-effort and conservative to preserve backward compatibility.
+
+## Optional `environment.layout` reference
+
+`cell_definition/v1` now supports an optional layout reference under `environment`:
+
+```yaml
+environment:
+  layout: tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml
+```
+
+`environment.layout` is a placement-layer input (`environment_layout/v1`) that references existing assets.
+It does not duplicate assets and does not replace the existing asset folder structure.
+
+Validation behavior:
+- Missing layout path: WARN by default, FAIL in strict mode.
+- Valid layout: summary included in validator JSON output.
+- Backward compatibility: cell definitions without `environment.layout` remain valid.
+
+See `docs/manuals/ENVIRONMENT_LAYOUT_V1.md`.

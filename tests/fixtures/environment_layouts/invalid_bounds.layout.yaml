@@ -1,0 +1,18 @@
+schema_version: environment_layout/v1
+layout_id: invalid_bounds
+assets:
+  - id: ok_asset
+    source:
+      path: assets/environment/table_description/meshes/visual/table.stl
+    type: table
+    pose:
+      frame: world
+      xyz: [0.0, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+zones:
+  - id: bad_zone
+    type: pick
+    frame: world
+    bounds_xyz:
+      min: [0.0, 0.0]
+      max: [1.0, 1.0, 1.0]

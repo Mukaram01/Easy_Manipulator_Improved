@@ -172,6 +172,12 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
             manifest.setdefault("generated_defaults", {})
             if isinstance(manifest["generated_defaults"], dict):
                 manifest["generated_defaults"]["capability_checks"] = status
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    if isinstance(environment.get("layout"), str) and environment.get("layout").strip():
+        manifest["environment_layout"] = {
+            "path": environment.get("layout"),
+            "metadata_only": True,
+        }
 
     return manifest
 

@@ -1,0 +1,20 @@
+schema_version: environment_layout/v1
+layout_id: ur5_conveyor_sorting_existing_assets
+assets:
+  - id: conveyor_table
+    asset_ref: table_basic
+    source:
+      uri: package://table_description/meshes/visual/table.stl
+      path: assets/environment/table_description/meshes/visual/table.stl
+    type: conveyor
+    pose:
+      frame: world
+      xyz: [0.8, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+zones:
+  - id: conveyor_pick
+    type: pick
+    frame: world
+    bounds_xyz:
+      min: [0.4, -0.2, 0.2]
+      max: [1.1, 0.2, 0.7]

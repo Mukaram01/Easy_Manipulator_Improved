@@ -212,6 +212,14 @@ def _extract_capability_refs(cell_def: dict[str, Any]) -> dict[str, Any]:
         "environment_assets": [item.get("capability") for item in assets if isinstance(item, dict) and item.get("capability")],
     }
     return {k: v for k, v in refs.items() if v}
+
+
+def _extract_environment_layout(cell_def: dict[str, Any]) -> dict[str, Any]:
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    layout = environment.get("layout")
+    if isinstance(layout, str) and layout.strip():
+        return {"path": layout, "metadata_only": True}
+    return {}
 def _create_from_template(args: argparse.Namespace, cell_yaml_path: Path) -> tuple[int, list[str]]:
     notes: list[str] = []
     command: list[str]
@@ -608,6 +616,7 @@ def main() -> int:
         "parser_notes": parser_notes,
         "capabilities": _extract_capability_refs(loaded),
         "capability_validation": getattr(summary, "capability_summary", {}),
+        "environment_layout": getattr(summary, "environment_layout_summary", {}) or _extract_environment_layout(loaded),
     }
     _write_text(project_dir / "project_manifest.json", json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n", False, planned_paths)
 

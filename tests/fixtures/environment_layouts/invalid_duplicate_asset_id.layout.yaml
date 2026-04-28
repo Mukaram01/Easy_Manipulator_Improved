@@ -1,0 +1,20 @@
+schema_version: environment_layout/v1
+layout_id: invalid_duplicate_asset_id
+assets:
+  - id: dup_asset
+    source:
+      path: assets/environment/table_description/meshes/visual/table.stl
+    type: table
+    pose:
+      frame: world
+      xyz: [0.0, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+  - id: dup_asset
+    source:
+      path: assets/environment/workbench_description/meshes/visual/table.stl
+    type: workbench
+    pose:
+      frame: world
+      xyz: [1.0, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+zones: []
