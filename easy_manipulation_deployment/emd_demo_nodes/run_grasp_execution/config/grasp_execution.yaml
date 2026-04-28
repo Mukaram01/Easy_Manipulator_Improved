@@ -47,6 +47,18 @@ grasp_execution_node:
     # z-height so the arm clears any surface on the return move.
     release_use_grasp_z: true
 
+    # --- Explicit destination release pose adapter (safe opt-in) ---
+    # Keep disabled by default for backward compatibility.
+    use_explicit_release_pose: false
+    # auto | bridge_payload | disabled
+    explicit_release_pose_source: "auto"
+    # require_planning_frame | warn_and_use
+    explicit_release_pose_frame_policy: "require_planning_frame"
+    fallback_to_legacy_release: true
+    # Optional path to emd_grasp_bridge_payload/v1 JSON output from:
+    # scripts/convert_runtime_plan_to_emd_grasp.py
+    explicit_release_pose_bridge_payload_path: ""
+
     # --- Home return configuration ---
     # Optional safe intermediate joint waypoint between detach and home.
     home_return:

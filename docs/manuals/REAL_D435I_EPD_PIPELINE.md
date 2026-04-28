@@ -68,7 +68,16 @@ Destination-aware release pose metadata is now preserved end-to-end through:
 
 `detected_objects/v1 -> task recipe decision rule -> runtime_execution_plan/v1 destination_resolved -> emd_grasp_bridge_payload/v1 destination_pose`.
 
-Current runtime execution (`grasp_requests` / `grasp_tasks`) still uses legacy release behavior (`release_x_offset`, `release_use_grasp_z`) because the existing EMD messages do not include explicit place/release pose fields yet.
+Current runtime execution (`grasp_requests` / `grasp_tasks`) keeps legacy release behavior (`release_x_offset`, `release_use_grasp_z`) by default, and now adds a safe opt-in adapter for explicit destination release poses via bridge payload path.
+
+Recommended safe runtime knobs:
+
+- `use_explicit_release_pose: false` (default; set `true` only when bridge payload path is provided)
+- `explicit_release_pose_bridge_payload_path: /path/to/emd_grasp_bridge_payload.json`
+- `explicit_release_pose_frame_policy: require_planning_frame`
+- `fallback_to_legacy_release: true`
+
+This is required for physical sorting workflows (e.g., colour/shape/garbage bins) where route-selected destinations must map to real release coordinates while preserving existing scene compatibility.
 
 ## Not production-ready yet
 
