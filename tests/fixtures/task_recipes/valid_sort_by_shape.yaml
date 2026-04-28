@@ -1,0 +1,34 @@
+schema_version: task_recipe/v1
+task:
+  id: shape_sort
+  type: sort_by_shape
+  source: detected_object
+  destinations:
+    - id: box_bin
+      frame: world
+      pose_xyz: [0.35, -0.2, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: cylinder_bin
+      frame: world
+      pose_xyz: [0.35, 0.2, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: reject_bin
+      frame: world
+      pose_xyz: [0.2, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: reject
+  decision_rules:
+    - id: box
+      when:
+        attribute: shape
+        equals: box
+      destination: box_bin
+    - id: cyl
+      when:
+        attribute: shape
+        equals: cylinder
+      destination: cylinder_bin
+    - id: fallback
+      when:
+        default: true
+      destination: reject_bin

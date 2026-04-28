@@ -127,6 +127,7 @@ def _render_html(manifest: dict[str, Any], project_dir: Path, manifest_path: Pat
     ee = manifest.get("end_effector", {}) if isinstance(manifest.get("end_effector"), dict) else {}
     env = manifest.get("environment", {}) if isinstance(manifest.get("environment"), dict) else {}
     task = manifest.get("task", {}) if isinstance(manifest.get("task"), dict) else {}
+    task_recipe = manifest.get("task_recipe", {}) if isinstance(manifest.get("task_recipe"), dict) else {}
 
     artifact_rows = _rows_from_artifacts(manifest, project_dir, output_dir)
 
@@ -221,7 +222,10 @@ ul {{ margin-top: 0.2rem; }}
 <h2>Task Overview</h2>
 <ul>
 <li>Task type: {_escape(task.get('type', manifest.get('task_type', 'UNKNOWN')))}</li>
-<li>Destinations/rules: {_escape(task.get('destinations') or task.get('decision_rules') or manifest.get('task_rules') or 'UNKNOWN')}</li>
+<li>Destinations: {_escape(task.get('destinations', 'UNKNOWN'))}</li>
+<li>Decision rules: {_escape(task.get('decision_rules', manifest.get('task_rules', 'UNKNOWN')))}</li>
+<li>Task recipe mode/type: {_escape(task_recipe.get('mode', 'none'))} / {_escape(task_recipe.get('type', 'UNKNOWN'))}</li>
+<li>Task recipe fallback: {_escape(task_recipe.get('fallback_present', 'UNKNOWN'))}</li>
 <li>Task recipe preview: <a href=\"{_resolve_link(project_dir, output_dir, str(artifacts.get('task_preview', '#')))[0]}\">{_escape(artifacts.get('task_preview', 'UNKNOWN'))}</a></li>
 <li>Task execution plan: <a href=\"{_resolve_link(project_dir, output_dir, str(artifacts.get('execution_plan_md', '#')))[0]}\">{_escape(artifacts.get('execution_plan_md', 'UNKNOWN'))}</a></li>
 </ul>

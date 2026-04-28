@@ -1,0 +1,31 @@
+schema_version: task_recipe/v1
+task:
+  id: inspection_route
+  type: inspection_then_place
+  source: inspected_part
+  destinations:
+    - id: pass_bin
+      frame: world
+      pose_xyz: [0.3, -0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: pass
+    - id: fail_bin
+      frame: world
+      pose_xyz: [0.3, 0.1, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: fail
+  decision_rules:
+    - id: pass
+      when:
+        attribute: inspection_result
+        equals: pass
+      destination: pass_bin
+    - id: fail
+      when:
+        attribute: inspection_result
+        equals: fail
+      destination: fail_bin
+    - id: fallback
+      when:
+        default: true
+      destination: fail_bin

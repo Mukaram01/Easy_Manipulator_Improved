@@ -33,6 +33,7 @@ This manual documents the **current intended flow** for creating/importing/editi
 
 - `environment_layout/v1`: placement/zones checklist metadata for operators.
 - `cell_definition/v1`: high-level cell intent (robot/tool/sensor/task).
+- `task_recipe/v1`: offline task logic intent (`pick_place`, `sort_by_colour`, `garbage_sorting`, etc.).
 - Scene package (`scenes/<name>`): concrete files used by existing workflow and validation.
 
 ## Helper commands
