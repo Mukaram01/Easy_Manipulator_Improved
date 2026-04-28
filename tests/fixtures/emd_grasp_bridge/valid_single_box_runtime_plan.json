@@ -1,5 +1,6 @@
 {
   "schema_version": "runtime_execution_plan/v1",
+  "metadata": {"planning_frame": "world"},
   "task_recipe": {"id": "pick_place_demo", "type": "pick_place"},
   "steps": [
     {
@@ -17,7 +18,20 @@
       },
       "routing": {
         "destination_id": "red_bin",
-        "destination": {"frame": "world", "pose_xyz": [0.8, 0.2, 0.15], "pose_rpy": [0.0, 0.0, 0.0]}
+        "destination": {"frame": "world", "pose_xyz": [0.8, 0.2, 0.15], "pose_rpy": [0.0, 0.0, 0.0], "label": "red"},
+        "destination_resolved": {
+          "destination_id": "red_bin",
+          "destination_name": "red bin",
+          "destination_label": "red",
+          "frame_id": "world",
+          "pose": {
+            "frame_id": "world",
+            "xyz": [0.8, 0.2, 0.15],
+            "rpy": [0.0, 0.0, 0.0],
+            "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+          },
+          "safety_warnings": []
+        }
       }
     }
   ]

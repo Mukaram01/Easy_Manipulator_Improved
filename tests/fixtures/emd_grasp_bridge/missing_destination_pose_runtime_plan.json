@@ -1,0 +1,31 @@
+{
+  "schema_version": "runtime_execution_plan/v1",
+  "metadata": {"planning_frame": "world"},
+  "task_recipe": {"id": "pick_place_demo", "type": "pick_place"},
+  "steps": [
+    {
+      "step_id": "pick_001",
+      "task": "pick_route_place",
+      "object": {
+        "id": "obj_missing_dest_pose",
+        "class_id": "box",
+        "shape": "box",
+        "frame_id": "camera",
+        "pose": {"xyz": [0.2, 0.1, 0.2], "rpy": [0.0, 0.0, 0.0]},
+        "dimensions": [0.03, 0.03, 0.03]
+      },
+      "routing": {
+        "destination_id": "fallback_bin",
+        "destination": {"frame": "world", "label": "fallback"},
+        "destination_resolved": {
+          "destination_id": "fallback_bin",
+          "destination_name": "fallback",
+          "destination_label": "fallback",
+          "frame_id": "world",
+          "pose": null,
+          "safety_warnings": ["Destination 'fallback_bin' has no valid pose_xyz; release fallback will be used."]
+        }
+      }
+    }
+  ]
+}

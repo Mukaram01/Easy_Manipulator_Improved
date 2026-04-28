@@ -109,14 +109,20 @@ def validate_task_recipe_doc(data: dict[str, Any], path: Path, parser: str, note
             destination_ids.add(dest_id)
 
         if not isinstance(dest.get("frame"), str) or not dest.get("frame", "").strip():
-            summary.errors.append(f"task.destinations[{idx}].frame must be a non-empty string.")
+            summary.warnings.append(
+                f"task.destinations[{idx}].frame is missing/empty; runtime adapter defaults destination frame to planning frame/world."
+            )
         if not _is_num_list(dest.get("pose_xyz"), 3):
-            summary.errors.append(f"task.destinations[{idx}].pose_xyz must be numeric list length 3.")
+            summary.warnings.append(
+                f"task.destinations[{idx}].pose_xyz is missing/malformed; runtime release will fall back to legacy release_x_offset behavior."
+            )
         else:
             if any(float(v) != 0.0 for v in dest["pose_xyz"]):
                 all_zero = False
         if "pose_rpy" in dest and not _is_num_list(dest.get("pose_rpy"), 3):
-            summary.errors.append(f"task.destinations[{idx}].pose_rpy must be numeric list length 3 when provided.")
+            summary.warnings.append(
+                f"task.destinations[{idx}].pose_rpy is malformed; runtime release will fall back to legacy release behavior."
+            )
 
         reject_like_present = reject_like_present or _is_reject_like(dest)
 

@@ -150,6 +150,13 @@ Layer reminder:
 - scene readiness = whether scene files look sane before runtime,
 - `emd_grasp_bridge_payload/v1` = conservative translation of routed pick steps into EMD `GraspTask`-shaped payloads.
 
+Destination-aware routing chain (offline-first):
+- D435i/EPD emits `detected_objects/v1`.
+- `task_recipe/v1` decision rules select destination ids (e.g., red bin, cylinder bin, reject tray).
+- `runtime_execution_plan/v1` stores both legacy destination metadata and resolved destination pose/quaternion in `routing.destination_resolved`.
+- `emd_grasp_bridge_payload/v1` preserves this release destination pose metadata and emits warnings when fallback is required.
+- Runtime release currently still follows `run_grasp_execution` fallback parameters (`release_x_offset`, `release_use_grasp_z`) until EMD runtime interfaces are extended.
+
 Mock runtime objects under `tests/fixtures/runtime_objects` are test fixtures only and are not the normal operator path.
 
 > Generated scenes from `workcell_builder` must pass this same validation contract before they are treated as runnable scenes.
