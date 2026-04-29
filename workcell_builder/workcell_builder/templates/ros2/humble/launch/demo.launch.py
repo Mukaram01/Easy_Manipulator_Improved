@@ -292,9 +292,14 @@ def _derive_controller_configs(scene_name, controller_group_name, controller_joi
 
     gripper_joints = [
         joint for joint in movable_joints
-        if joint.startswith("gripper_") and joint not in set(arm_joints)
+        if joint.startswith("gripper_")
+        and joint not in set(arm_joints)
+        and joint != "gripper_base_joint"
     ]
-    gripper_joints = [joint for joint in gripper_joints if "inner_knuckle" not in joint and "finger_tip" not in joint]
+    gripper_joints = [
+        joint for joint in gripper_joints
+        if "inner_knuckle" not in joint and "finger_tip" not in joint
+    ]
     preferred = ["gripper_finger1_joint", "gripper_finger2_joint"]
     preferred_gripper = [joint for joint in preferred if joint in gripper_joints]
     if preferred_gripper:
@@ -312,13 +317,17 @@ def _derive_controller_configs(scene_name, controller_group_name, controller_joi
         },
     }
 
-    if end_effector_metadata.get("spawn_gripper_controller") and gripper_joints:
+    should_emit_gripper_controller = (
+        bool(end_effector_metadata.get("spawn_gripper_controller"))
+        or end_effector_metadata.get("gripper_type") == "finger"
+    )
+    if should_emit_gripper_controller and gripper_joints:
         gripper_controller_name = (f"{robot_name}_gripper_controller" if robot_name.startswith("ur") else f"{robot_name}_gripper_controller")
         controllers["controller_names"].append(gripper_controller_name)
         controllers[gripper_controller_name] = {
             "action_ns": "follow_joint_trajectory",
             "type": "FollowJointTrajectory",
-            "default": True,
+            "default": False,
             "joints": gripper_joints,
         }
 

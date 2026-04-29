@@ -1115,6 +1115,12 @@ ros2 param dump /move_group | grep -A80 -B10 "moveit_simple_controller_manager"
 ros2 action list | grep -E "move|trajectory|follow"
 ```
 
+Expected output for freshly generated UR5 + Robotiq85 scenes includes:
+- Two MoveItSimpleControllerManager entries in `controller_names`: `<scene_or_robot>_arm_controller` and `<scene_or_robot>_gripper_controller`.
+- Arm joints: `shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`, `wrist_2_joint`, `wrist_3_joint`.
+- Gripper joints: `gripper_finger1_joint`, `gripper_finger2_joint` (and not `gripper_base_joint`/inner knuckle/finger tip joints when active finger joints are available).
+- Action endpoints: `/<scene_or_robot>_arm_controller/follow_joint_trajectory` and `/<scene_or_robot>_gripper_controller/follow_joint_trajectory`.
+
 End-effector mount pose defaults in generated scenes:
 
 - The Workcell Builder end-effector `origin` fields are interpreted as the wrist mount transform (`parent` robot link -> end-effector base link).
