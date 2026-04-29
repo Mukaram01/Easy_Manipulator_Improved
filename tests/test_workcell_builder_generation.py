@@ -66,3 +66,33 @@ def test_scene_xacro_sanitizes_end_effector_mount_origin_defaults_to_identity() 
     assert "unset sentinel values (-1)" in content
     assert "invalid NaN/Inf values" in content
     assert "defaulting to identity origin xyz/rpy (0 0 0)" in content
+
+
+def test_humble_scene_template_emits_ur5_arm_and_gripper_controllers() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
+    assert "UR_ARM_JOINTS" in content
+    for joint in [
+        "shoulder_pan_joint",
+        "shoulder_lift_joint",
+        "elbow_joint",
+        "wrist_1_joint",
+        "wrist_2_joint",
+        "wrist_3_joint",
+    ]:
+        assert joint in content
+    assert "_arm_controller" in content
+    assert "_gripper_controller" in content
+
+
+def test_humble_scene_template_excludes_fixed_and_legacy_gripper_only_controller() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
+    assert "gripper_base_joint" not in content
+    assert "fake_gripper_controller" not in content
+    assert '"type") not in (None, "fixed")' in content
+
+
+def test_humble_scene_template_preserves_fake_hardware_launch_behavior() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
+    assert '"allow_trajectory_execution": False' in content
+    assert '"moveit_manage_controllers": False' in content
+    assert "use_fake_hardware" in content
