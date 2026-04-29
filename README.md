@@ -1107,6 +1107,12 @@ Expected behavior:
 - No launch parameter validation error like `finger_count: NoneType -> None`.
 - MoveIt launch should continue to the "You can start planning now!" stage.
 
+End-effector mount pose defaults in generated scenes:
+
+- The Workcell Builder end-effector `origin` fields are interpreted as the wrist mount transform (`parent` robot link -> end-effector base link).
+- If those GUI fields are left unset, invalid, or contain placeholder sentinel values (`-1` for all xyz/rpy), generation now normalizes to identity: `xyz="0 0 0"` and `rpy="0 0 0"`.
+- The resolved mount transform is persisted in `environment.yaml` so regenerated packages are reproducible.
+
 ## Running demo scenes
 
 Before launching `ur5_*` demo scenes, verify that `ur5_moveit_config` resolves from the active workspace via `ament_index`. This catches the common case where asset packages are still hidden by `COLCON_IGNORE` markers because the workspace was built before running `fix_workspace_layout.sh`.
