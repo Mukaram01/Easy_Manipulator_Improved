@@ -60,9 +60,9 @@ def test_scene_select_startup_rediscovery_supports_scaffolded_packages() -> None
     assert "scene already loaded" in content
 
 
-def test_scene_xacro_uses_fallback_robotiq_85_mount_orientation_for_ur() -> None:
+def test_scene_xacro_sanitizes_end_effector_mount_origin_defaults_to_identity() -> None:
     content = (REPO_ROOT / "workcell_builder/workcell_builder/include/scene_xacro_parser.h").read_text(encoding="utf-8")
-    assert "resolve_default_ee_mount_origin" in content
-    assert "Fallback defaults only apply when user did not explicitly set an EE origin." in content
-    assert "robot.brand == \"universal_robot\" && ee.brand == \"robotiq_85_gripper\"" in content
-    assert "fallback.yaw = 1.57079632679;" in content
+    assert "resolve_ee_mount_origin" in content
+    assert "unset sentinel values (-1)" in content
+    assert "invalid NaN/Inf values" in content
+    assert "defaulting to identity origin xyz/rpy (0 0 0)" in content

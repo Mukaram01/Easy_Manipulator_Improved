@@ -24,6 +24,7 @@
 
 // General
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -40,6 +41,30 @@
 #include "yaml_parser/origin_parser.h"
 
 namespace {
+Origin identity_origin()
+{
+  Origin origin{};
+  origin.is_origin = true;
+  return origin;
+}
+
+bool is_valid_origin(const Origin & origin)
+{
+  const bool finite = std::isfinite(origin.x) && std::isfinite(origin.y) && std::isfinite(origin.z) &&
+    std::isfinite(origin.roll) && std::isfinite(origin.pitch) && std::isfinite(origin.yaw);
+  const bool sentinel = origin.x == -1.0F && origin.y == -1.0F && origin.z == -1.0F &&
+    origin.roll == -1.0F && origin.pitch == -1.0F && origin.yaw == -1.0F;
+  return origin.is_origin && finite && !sentinel;
+}
+
+Origin resolve_end_effector_mount_origin(const EndEffector & ee)
+{
+  if (!is_valid_origin(ee.origin)) {
+    return identity_origin();
+  }
+  return ee.origin;
+}
+
 std::vector<std::string> normalize_robot_links(const Robot & robot)
 {
   std::vector<std::string> links = robot.robot_links;
@@ -203,9 +228,7 @@ public:
       }
       out << YAML::EndMap;
 
-      if (scene.ee_vector[0].origin.is_origin) {
-        OriginParser::generate_origin(&out, scene.ee_vector[0].origin);
-      }
+      OriginParser::generate_origin(&out, resolve_end_effector_mount_origin(scene.ee_vector[0]));
 
       out << YAML::Key << "links";
       out << YAML::Value << YAML::BeginSeq;

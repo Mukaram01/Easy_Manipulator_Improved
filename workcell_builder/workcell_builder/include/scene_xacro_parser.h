@@ -19,6 +19,8 @@
 
 
 #include <fstream>
+#include <cmath>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -124,20 +126,56 @@ std::string resolve_ee_xacro_macro(const EndEffector & ee)
   return ee.name + "_gripper";
 }
 
-Origin resolve_default_ee_mount_origin(const Scene & scene, const EndEffector & ee)
+bool is_finite_origin_component(float value)
 {
-  Origin fallback;
-  fallback.disableOrigin();
-  // Fallback defaults only apply when user did not explicitly set an EE origin.
-  if (scene.robot_vector.empty()) {
-    return fallback;
-  }
-  const Robot & robot = scene.robot_vector.front();
-  if (robot.brand == "universal_robot" && ee.brand == "robotiq_85_gripper") {
-    fallback.is_origin = true;
-    fallback.yaw = 1.57079632679;
-  }
+  return std::isfinite(static_cast<double>(value));
+}
+
+bool is_all_negative_one(const Origin & origin)
+{
+  return origin.x == -1.0F && origin.y == -1.0F && origin.z == -1.0F &&
+         origin.roll == -1.0F && origin.pitch == -1.0F && origin.yaw == -1.0F;
+}
+
+bool has_any_invalid_origin_component(const Origin & origin)
+{
+  return !is_finite_origin_component(origin.x) ||
+         !is_finite_origin_component(origin.y) ||
+         !is_finite_origin_component(origin.z) ||
+         !is_finite_origin_component(origin.roll) ||
+         !is_finite_origin_component(origin.pitch) ||
+         !is_finite_origin_component(origin.yaw);
+}
+
+Origin resolve_default_ee_mount_origin(const Scene &, const EndEffector &)
+{
+  Origin fallback{};
+  fallback.is_origin = true;
+  fallback.x = 0.0F;
+  fallback.y = 0.0F;
+  fallback.z = 0.0F;
+  fallback.roll = 0.0F;
+  fallback.pitch = 0.0F;
+  fallback.yaw = 0.0F;
   return fallback;
+}
+
+Origin resolve_ee_mount_origin(const Scene & scene, const EndEffector & ee)
+{
+  (void)scene;
+  if (!ee.origin.is_origin) {
+    std::cerr << "WARNING: End-effector mount pose not set; defaulting to identity origin xyz/rpy (0 0 0).\n";
+    return resolve_default_ee_mount_origin(scene, ee);
+  }
+  if (is_all_negative_one(ee.origin)) {
+    std::cerr << "WARNING: End-effector mount pose contains unset sentinel values (-1); defaulting to identity origin xyz/rpy (0 0 0).\n";
+    return resolve_default_ee_mount_origin(scene, ee);
+  }
+  if (has_any_invalid_origin_component(ee.origin)) {
+    std::cerr << "WARNING: End-effector mount pose contains invalid NaN/Inf values; defaulting to identity origin xyz/rpy (0 0 0).\n";
+    return resolve_default_ee_mount_origin(scene, ee);
+  }
+  return ee.origin;
 }
 }  // namespace
 
@@ -226,25 +264,12 @@ void generate_scene_xacro(Scene scene, const std::string & output_path)
       MyFile << " <xacro:include filename=\"$(find " + ee_package + ")/urdf/" + ee_xacro + "\"/>\n";
       MyFile << " <xacro:" + ee_macro + " prefix=\"\" parent=\"" +
         scene.ee_vector[i].robot_link + "\">\n";
-      if (scene.ee_vector[i].origin.is_origin) {
-        MyFile << "\t<origin xyz=\"" + std::to_string(scene.ee_vector[i].origin.x) + " " +
-          std::to_string(scene.ee_vector[i].origin.y) + " " + std::to_string(
-          scene.ee_vector[i].origin.z) + "\" rpy=\"" +
-          std::to_string(scene.ee_vector[i].origin.roll) + " " + std::to_string(
-          scene.ee_vector[i].origin.pitch) + " " + std::to_string(scene.ee_vector[i].origin.yaw) +
-          "\"/>\n";
-      } else {
-        const Origin fallback_origin = resolve_default_ee_mount_origin(scene, scene.ee_vector[i]);
-        if (fallback_origin.is_origin) {
-          MyFile << "\t<origin xyz=\"" + std::to_string(fallback_origin.x) + " " +
-            std::to_string(fallback_origin.y) + " " + std::to_string(fallback_origin.z) +
-            "\" rpy=\"" + std::to_string(fallback_origin.roll) + " " +
-            std::to_string(fallback_origin.pitch) + " " + std::to_string(fallback_origin.yaw) +
-            "\"/>\n";
-        } else {
-          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
-        }
-      }
+      const Origin ee_mount_origin = resolve_ee_mount_origin(scene, scene.ee_vector[i]);
+      MyFile << "\t<origin xyz=\"" + std::to_string(ee_mount_origin.x) + " " +
+        std::to_string(ee_mount_origin.y) + " " + std::to_string(ee_mount_origin.z) +
+        "\" rpy=\"" + std::to_string(ee_mount_origin.roll) + " " +
+        std::to_string(ee_mount_origin.pitch) + " " + std::to_string(ee_mount_origin.yaw) +
+        "\"/>\n";
       MyFile << " </xacro:" + ee_macro + ">\n\n";
 
       if (scene.ee_vector[i].brand == "robotiq_85_gripper") {
