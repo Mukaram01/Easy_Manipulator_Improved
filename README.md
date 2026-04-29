@@ -1280,3 +1280,17 @@ Notes:
 - `tesseract_rviz`
 - `tesseract_ros_examples`
 - `tesseract_planning_server` (optional for standard headless demos)
+
+
+### Validate generated scene
+
+After running `fix_and_build_humble.sh`, generate and validate a scene without manually moving assets/scenes into `src`:
+
+```bash
+workcell_builder
+colcon build --packages-select new_scene --symlink-install
+source install/setup.bash
+ros2 launch new_scene demo.launch.py
+```
+
+`workcell_builder` resolves assets from package shares and workspace links created by `scripts/fix_workspace_layout.sh`; manual asset/scenes moves are not required or supported.

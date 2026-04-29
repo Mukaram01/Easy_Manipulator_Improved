@@ -190,7 +190,6 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
 
 bool package_exists(Object object)
 {
-  std::cout << "Package exists: " << fs::current_path() << std::endl;
   fs::path temp_path(fs::current_path());
   std::string package_name = object.name + "_description";
   if (fs::is_directory(package_name)) {  // folder exists
@@ -203,12 +202,10 @@ bool package_exists(Object object)
       return false;
     }
     if (!fs::exists("CMakeLists.txt") || !fs::exists("package.xml")) {
-      std::cout << "No CMakeLists or package.xml available" << std::endl;
       safe_chdir(temp_path);
       return false;
     }
   } else {
-    std::cout << "No description folders" << std::endl;
     safe_chdir(temp_path);
     return false;
   }

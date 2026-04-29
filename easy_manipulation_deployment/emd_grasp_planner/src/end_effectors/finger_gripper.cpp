@@ -449,7 +449,7 @@ bool FingerGripper::get_initial_sample_points(const GraspObject & object)
     object.centerpoint(2));
 
   for (auto & sample : this->grasp_samples) {
-    int first_point_index, second_point_index;
+    int first_point_index = -1, second_point_index = -1;
     float min_dist = std::numeric_limits<float>::max();
     // float min_linepoint_factor = std::numeric_limits<float>::max();
     float max_dist = 0;
@@ -491,6 +491,10 @@ bool FingerGripper::get_initial_sample_points(const GraspObject & object)
           max_dist = point_vector[i].projection_distance;
           second_point_index = point_vector[i].index;
         }
+      }
+      if (first_point_index < 0 || second_point_index < 0) {
+        sample->plane_intersects_object = false;
+        continue;
       }
       sample->sample_side_1->start_index = first_point_index;
       sample->sample_side_2->start_index = second_point_index;
@@ -1343,9 +1347,9 @@ std::vector<double> FingerGripper::get_planar_rpy(
   const Eigen::Vector3f & grasp_direction_normal)
 {
   std::vector<double> output_vec;
-  Eigen::Vector3f x_norm;
-  Eigen::Vector3f y_norm;
-  Eigen::Vector3f z_norm;
+  Eigen::Vector3f x_norm = Eigen::Vector3f::UnitX();
+  Eigen::Vector3f y_norm = Eigen::Vector3f::UnitY();
+  Eigen::Vector3f z_norm = Eigen::Vector3f::UnitZ();
   bool x_filled = false;
   bool y_filled = false;
   bool z_filled = false;
@@ -1604,7 +1608,7 @@ std::shared_ptr<GraspPlaneSample> FingerGripper::generate_grasp_samples(
 int FingerGripper::get_nearest_plane_index(float target_distance)
 {
   float plane_dist_diff = std::numeric_limits<float>::max();
-  int plane_index;
+  int plane_index = 0;
 
   /* We use the gap from the open configuration finger to compare with the cutting plane
       gaps to find the most identical distance between the center plane to that plane, and

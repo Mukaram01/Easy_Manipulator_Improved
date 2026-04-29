@@ -796,9 +796,9 @@ std::vector<double> SuctionGripper::get_planar_rpy(
   const Eigen::Vector3f & row_vector)
 {
   std::vector<double> output_vec;
-  Eigen::Vector3f x_norm;
-  Eigen::Vector3f y_norm;
-  Eigen::Vector3f z_norm;
+  Eigen::Vector3f x_norm = Eigen::Vector3f::UnitX();
+  Eigen::Vector3f y_norm = Eigen::Vector3f::UnitY();
+  Eigen::Vector3f z_norm = Eigen::Vector3f::UnitZ();
   bool x_filled = false;
   bool y_filled = false;
   bool z_filled = false;

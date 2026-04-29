@@ -185,7 +185,7 @@ def _validate_ros_param_types(value, path="root"):
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
 
 
-def _extract_controller_joints(robot_description_semantic_config):
+def _extract_controller_joints(robot_description_semantic_config, robot_description_config):
     try:
         srdf_root = ET.fromstring(robot_description_semantic_config)
     except ET.ParseError as exc:
@@ -206,13 +206,22 @@ def _extract_controller_joints(robot_description_semantic_config):
         if first_group_with_joints is None:
             first_group_with_joints = (group_name, joints)
 
-    if first_group_with_joints:
-        return first_group_with_joints
+    if not first_group_with_joints:
+        raise RuntimeError(
+            "No controller joints were found in robot_description_semantic. "
+            "Ensure the SRDF has a manipulator/arm group with explicit <joint> entries."
+        )
 
-    raise RuntimeError(
-        "No controller joints were found in robot_description_semantic. "
-        "Ensure the SRDF has a manipulator/arm group with explicit <joint> entries."
-    )
+    _, raw_joints = first_group_with_joints
+    urdf_root = ET.fromstring(robot_description_config)
+    movable = {
+        j.get("name") for j in urdf_root.findall(".//joint")
+        if j.get("name") and j.get("type") not in (None, "fixed", "mimic")
+    }
+    filtered = [joint for joint in raw_joints if joint in movable]
+    if not filtered:
+        raise RuntimeError("No movable controller joints remain after filtering fixed/mimic joints")
+    return first_group_with_joints[0], filtered
 
 
 def _validate_joint_state_configuration(robot_description_config, controller_joints):
@@ -307,7 +316,7 @@ def _launch_setup(context):
         ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
     controller_group_name, controller_joints = _extract_controller_joints(
-        robot_description_semantic_config
+        robot_description_semantic_config, robot_description_config
     )
     if not controller_joints:
         raise RuntimeError(
