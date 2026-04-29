@@ -29,6 +29,8 @@ EPD_INTEGRATION_ENABLED="unknown"
 OSQP_PROVIDER="unknown"
 OSQP_VERSION_DETECTED="unknown"
 OSQPEIGEN_VERSION_DETECTED="unknown"
+TARGET_WS_IN_ENV_BEFORE_BUILD=0
+TARGET_WS_ENV_HITS=()
 
 usage() {
   cat <<'USAGE'
@@ -349,7 +351,12 @@ calculate_colcon_skip_packages() {
 
   local requested_skips=()
   if [[ "$profile" == "full" && "$with_gui" -eq 0 ]]; then
-    requested_skips+=(tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server)
+    requested_skips+=(tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_ros_examples tesseract_planning_server)
+  fi
+
+  # Dependency-safe skip: tesseract_ros_examples must be skipped when tesseract_rviz is skipped.
+  if printf '%s\n' "${requested_skips[@]:-}" | grep -Fxq "tesseract_rviz"; then
+    requested_skips+=(tesseract_ros_examples)
   fi
 
   local discovered=()
@@ -361,6 +368,33 @@ calculate_colcon_skip_packages() {
   done
 
   COLCON_SKIP_PACKAGES_USED=("${discovered[@]:-}")
+}
+
+capture_target_workspace_env_contamination() {
+  local workspace_install="$WORKSPACE/install"
+  local var_name var_value split_value
+  local env_vars=("AMENT_PREFIX_PATH" "CMAKE_PREFIX_PATH" "COLCON_PREFIX_PATH")
+
+  TARGET_WS_IN_ENV_BEFORE_BUILD=0
+  TARGET_WS_ENV_HITS=()
+  for var_name in "${env_vars[@]}"; do
+    var_value="${!var_name:-}"
+    [[ -z "$var_value" ]] && continue
+    IFS=':' read -r -a split_value <<< "$var_value"
+    local entry
+    for entry in "${split_value[@]}"; do
+      if [[ "$entry" == "$workspace_install" ]]; then
+        TARGET_WS_IN_ENV_BEFORE_BUILD=1
+        TARGET_WS_ENV_HITS+=("$var_name=$entry")
+      fi
+    done
+  done
+
+  if [[ $TARGET_WS_IN_ENV_BEFORE_BUILD -eq 1 ]]; then
+    echo "Warning: target workspace install path was present in the shell environment before build: $workspace_install"
+    printf '  - %s\n' "${TARGET_WS_ENV_HITS[@]}"
+    echo "The script will sanitize underlays and continue with only /opt/ros/humble and optional EPD underlay."
+  fi
 }
 
 capture_emd_epd_integration_flag() {
@@ -406,6 +440,10 @@ emit_summary() {
     "epd_msgs_prefix": "${EPD_MSGS_PREFIX}",
     "emd_grasp_planner_epd_enabled": "${EPD_INTEGRATION_ENABLED}"
   },
+  "target_workspace_in_environment_before_build": {
+    "detected": ${TARGET_WS_IN_ENV_BEFORE_BUILD},
+    "hits": $(printf '%s\n' "${TARGET_WS_ENV_HITS[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
+  },
   "osqp_compatibility": {
     "provider": "${OSQP_PROVIDER}",
     "osqp_version": "${OSQP_VERSION_DETECTED}",
@@ -441,6 +479,7 @@ build_phase() {
     append_unique FILES_TOUCHED "$WORKSPACE/log"
     log_change "removed build/install/log"
   fi
+  capture_target_workspace_env_contamination
 
   local ros_setup="/opt/ros/humble/setup.bash"
   local allow_override="--allow-overriding ruckig tesseract_monitoring tesseract_msgs tesseract_rosutils"
