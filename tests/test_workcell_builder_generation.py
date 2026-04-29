@@ -82,13 +82,18 @@ def test_humble_scene_template_emits_ur5_arm_and_gripper_controllers() -> None:
         assert joint in content
     assert "_arm_controller" in content
     assert "_gripper_controller" in content
+    assert '"controller_names": [arm_controller_name]' in content
+    assert 'controllers["controller_names"].append(gripper_controller_name)' in content
 
 
 def test_humble_scene_template_excludes_fixed_and_legacy_gripper_only_controller() -> None:
     content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
-    assert "gripper_base_joint" not in content
+    assert 'joint != "gripper_base_joint"' in content
     assert "fake_gripper_controller" not in content
     assert '"type") not in (None, "fixed")' in content
+    assert '"inner_knuckle" not in joint and "finger_tip" not in joint' in content
+    assert 'preferred = ["gripper_finger1_joint", "gripper_finger2_joint"]' in content
+    assert '"default": False' in content
 
 
 def test_humble_scene_template_preserves_fake_hardware_launch_behavior() -> None:
