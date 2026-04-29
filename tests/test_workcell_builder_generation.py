@@ -50,3 +50,19 @@ def test_onrobot_airpick_standalone_wrapper_exists_and_instantiates_required_par
     assert "<xacro:onrobot_airpick4_gripper" in content
     assert "prefix=\"\"" in content
     assert "parent=\"tool0\"" in content
+
+
+def test_scene_select_startup_rediscovery_supports_scaffolded_packages() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
+    assert "discover_scene_packages_on_startup" in content
+    assert "missing one of [package.xml, CMakeLists.txt, urdf/]" in content
+    assert "without environment.yaml; scene can launch but cannot be fully edited until YAML exists." in content
+    assert "scene already loaded" in content
+
+
+def test_scene_xacro_uses_fallback_robotiq_85_mount_orientation_for_ur() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/include/scene_xacro_parser.h").read_text(encoding="utf-8")
+    assert "resolve_default_ee_mount_origin" in content
+    assert "Fallback defaults only apply when user did not explicitly set an EE origin." in content
+    assert "robot.brand == \"universal_robot\" && ee.brand == \"robotiq_85_gripper\"" in content
+    assert "fallback.yaw = 1.57079632679;" in content

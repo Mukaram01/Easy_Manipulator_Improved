@@ -399,7 +399,71 @@ void SceneSelect::load_workcell(Workcell workcell_input)
   if (assets_path.empty()) {
     assets_path = workcell_path / "assets";
   }
+  discover_scene_packages_on_startup();
   refresh_scenes(0, false);
+}
+
+void SceneSelect::discover_scene_packages_on_startup()
+{
+  if (workcell_path.empty()) {
+    configure_startup_fallback_paths();
+  }
+  append_info("Selected workcell root: " + workcell_path.string());
+  append_info("Selected scenes directory: " + scenes_path.string());
+
+  if (!fs::exists(scenes_path) || !fs::is_directory(scenes_path)) {
+    append_warning("Scenes directory not found; skipping startup rediscovery.");
+    return;
+  }
+
+  std::unordered_set<std::string> known_scenes;
+  for (const auto & known_scene : workcell.scene_vector) {
+    known_scenes.insert(known_scene.name);
+  }
+
+  int discovered_count = 0;
+  for (const auto & entry : fs::directory_iterator(scenes_path)) {
+    if (!fs::is_directory(entry.path())) {
+      continue;
+    }
+    const std::string scene_name = entry.path().filename().string();
+    const fs::path package_xml = entry.path() / "package.xml";
+    const fs::path cmake_lists = entry.path() / "CMakeLists.txt";
+    const fs::path urdf_dir = entry.path() / "urdf";
+    const fs::path environment_yaml = entry.path() / "environment.yaml";
+
+    if (!fs::exists(package_xml) || !fs::exists(cmake_lists) || !fs::is_directory(urdf_dir)) {
+      append_info(
+        "Skipped scene directory '" + scene_name +
+        "': missing one of [package.xml, CMakeLists.txt, urdf/].");
+      continue;
+    }
+    if (known_scenes.find(scene_name) != known_scenes.end()) {
+      append_info("Skipped scene directory '" + scene_name + "': scene already loaded.");
+      continue;
+    }
+
+    Scene discovered_scene;
+    discovered_scene.name = scene_name;
+    discovered_scene.loaded = false;
+
+    if (fs::exists(environment_yaml)) {
+      if (!load_scene_from_yaml(&discovered_scene)) {
+        append_warning(
+          "Discovered scene package '" + scene_name +
+          "' but environment.yaml failed to load; showing as scaffold-only.");
+        discovered_scene.loaded = false;
+      }
+    } else {
+      append_warning(
+        "Discovered scaffold scene package '" + scene_name +
+        "' without environment.yaml; scene can launch but cannot be fully edited until YAML exists.");
+    }
+    workcell.scene_vector.push_back(discovered_scene);
+    known_scenes.insert(scene_name);
+    ++discovered_count;
+  }
+  append_info("Discovered scene packages: " + std::to_string(discovered_count));
 }
 void SceneSelect::on_add_scene_clicked()
 {
