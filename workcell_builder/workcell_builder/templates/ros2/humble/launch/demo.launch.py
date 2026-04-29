@@ -143,10 +143,13 @@ def _sanitize_ros_param_types(value):
                 sanitized_items.append(sanitized_item)
         return sanitized_items if sanitized_items else _DROP_PARAM
 
+    if value is None:
+        return _DROP_PARAM
+
     if isinstance(value, (bool, int, float, str, bytes)):
         return value
 
-    return value
+    return _DROP_PARAM
 
 
 def _param_dict(value):

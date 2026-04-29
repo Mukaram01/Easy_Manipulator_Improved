@@ -1081,6 +1081,28 @@ Required external robot descriptions on ROS 2 Humble:
 - `fanuc`: `moveit_resources_fanuc_description` or `fanuc_description`
 - `panda_robot`: `moveit_resources_panda_description`
 
+### Validate generated scene
+
+- Do not manually move assets/scenes into `~/workcell_ws/src/assets`.
+- Source your built workspace before running `workcell_builder`.
+- Build the generated scene package.
+- Launch the generated scene package.
+
+```bash
+source ~/workcell_ws/install/setup.bash
+workcell_builder
+colcon build --packages-select <generated_scene_package> --symlink-install
+source install/setup.bash
+ros2 launch <generated_scene_package> demo.launch.py
+```
+
+Expected behavior:
+
+- No `package://...` `copy_file` "No such file or directory" errors.
+- No runtime dependency on `/home/ubuntu/workcell_ws/src/assets/environment`.
+- No launch parameter validation error like `finger_count: NoneType -> None`.
+- MoveIt launch should continue to the "You can start planning now!" stage.
+
 ## Running demo scenes
 
 Before launching `ur5_*` demo scenes, verify that `ur5_moveit_config` resolves from the active workspace via `ament_index`. This catches the common case where asset packages are still hidden by `COLCON_IGNORE` markers because the workspace was built before running `fix_workspace_layout.sh`.
