@@ -1106,6 +1106,14 @@ Expected behavior:
 - No runtime dependency on `/home/ubuntu/workcell_ws/src/assets/environment`.
 - No launch parameter validation error like `finger_count: NoneType -> None`.
 - MoveIt launch should continue to the "You can start planning now!" stage.
+- MoveIt controller params should include both arm and gripper controllers for UR5 + Robotiq 85 scenes (`ur5_arm_controller`, `ur5_gripper_controller`).
+
+Controller validation commands:
+
+```bash
+ros2 param dump /move_group | grep -A80 -B10 "moveit_simple_controller_manager"
+ros2 action list | grep -E "move|trajectory|follow"
+```
 
 End-effector mount pose defaults in generated scenes:
 

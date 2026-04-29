@@ -188,6 +188,16 @@ def _validate_ros_param_types(value, path="root"):
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
 
 
+UR_ARM_JOINTS = [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+]
+
+
 def _extract_controller_joints(robot_description_semantic_config, robot_description_config):
     try:
         srdf_root = ET.fromstring(robot_description_semantic_config)
@@ -256,6 +266,63 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
 
 
 
+
+
+
+def _derive_controller_configs(scene_name, controller_group_name, controller_joints, robot_description_config, end_effector_metadata):
+    urdf_root = ET.fromstring(robot_description_config)
+    movable_joints = {
+        j.get("name") for j in urdf_root.findall(".//joint")
+        if j.get("name") and j.get("type") not in (None, "fixed")
+    }
+
+    robot_name = (scene_name or controller_group_name or "robot").lower()
+    detected_ur_arm = [joint for joint in UR_ARM_JOINTS if joint in movable_joints]
+    arm_joints = detected_ur_arm if len(detected_ur_arm) == len(UR_ARM_JOINTS) else [
+        joint for joint in controller_joints if joint in movable_joints
+    ]
+
+    if not arm_joints:
+        raise RuntimeError("Unable to derive movable arm joints for MoveIt controller configuration")
+
+    if robot_name.startswith("ur") and len(detected_ur_arm) == len(UR_ARM_JOINTS):
+        arm_controller_name = f"{robot_name}_arm_controller"
+    else:
+        arm_controller_name = f"{robot_name}_arm_controller"
+
+    gripper_joints = [
+        joint for joint in movable_joints
+        if joint.startswith("gripper_") and joint not in set(arm_joints)
+    ]
+    gripper_joints = [joint for joint in gripper_joints if "inner_knuckle" not in joint and "finger_tip" not in joint]
+    preferred = ["gripper_finger1_joint", "gripper_finger2_joint"]
+    preferred_gripper = [joint for joint in preferred if joint in gripper_joints]
+    if preferred_gripper:
+        gripper_joints = preferred_gripper
+    else:
+        gripper_joints.sort()
+
+    controllers = {
+        "controller_names": [arm_controller_name],
+        arm_controller_name: {
+            "action_ns": "follow_joint_trajectory",
+            "type": "FollowJointTrajectory",
+            "default": True,
+            "joints": arm_joints,
+        },
+    }
+
+    if end_effector_metadata.get("spawn_gripper_controller") and gripper_joints:
+        gripper_controller_name = (f"{robot_name}_gripper_controller" if robot_name.startswith("ur") else f"{robot_name}_gripper_controller")
+        controllers["controller_names"].append(gripper_controller_name)
+        controllers[gripper_controller_name] = {
+            "action_ns": "follow_joint_trajectory",
+            "type": "FollowJointTrajectory",
+            "default": True,
+            "joints": gripper_joints,
+        }
+
+    return controllers
 
 def _write_robot_description_file(scene_name, robot_description_config):
     path = os.path.join(
@@ -327,22 +394,22 @@ def _launch_setup(context):
             "The generated fake controller cannot be created with an empty joints list."
         )
     _validate_joint_state_configuration(robot_description_config, controller_joints)
-    controller_name = f"fake_{controller_group_name}_controller"
+    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    end_effector_metadata = extract_end_effector_metadata(environment_config)
+    controller_configs = _derive_controller_configs(
+        scene_pkg,
+        controller_group_name,
+        controller_joints,
+        robot_description_config,
+        end_effector_metadata,
+    )
 
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
     }
 
     moveit_simple_controller_manager = {
-        "moveit_simple_controller_manager": {
-            "controller_names": [controller_name],
-            controller_name: {
-                "action_ns": "follow_joint_trajectory",
-                "type": "FollowJointTrajectory",
-                "default": True,
-                "joints": controller_joints,
-            },
-        }
+        "moveit_simple_controller_manager": controller_configs
     }
 
     trajectory_execution = {
@@ -356,8 +423,6 @@ def _launch_setup(context):
         "publish_state_updates": True,
         "publish_transforms_updates": True,
     }
-    environment_config = load_yaml(scene_pkg, "environment.yaml")
-    end_effector_metadata = extract_end_effector_metadata(environment_config)
 
     try:
         validated_use_sim_time = _param_dict(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"}))
