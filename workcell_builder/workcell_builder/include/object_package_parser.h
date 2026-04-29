@@ -26,6 +26,7 @@
 #include "include/default_asset_paths.h"
 #include "attributes/object.h"
 #include "include/file_functions.h"
+#include "include/package_uri_utils.h"
 
 namespace fs = boost::filesystem;
 
@@ -118,9 +119,10 @@ void GenerateObjectCMakeLists(
 void generate_object_package(fs::path workcell_filepath, Object object, int ros_ver)
 {
   safe_chdir(workcell_filepath);
-  safe_chdir("assets/environment");
+  safe_chdir("assets");
+  safe_chdir("environment");
   if (!package_exists(object)) {
-    std::cout << "generate_object_package: " << fs::current_path() << std::endl;
+    std::cout << "Generating object package at: " << fs::current_path() << std::endl;
     safe_chdir(object.name + std::string("_description"));
     fs::path package_filepath(
       workcell_filepath / "assets" / "environment" /
@@ -154,7 +156,12 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
         if (!fs::exists(stl_name)) {
           ensure_parent(link_visual_path);
           try {
-            fs::copy_file(link.visual_vector[0].geometry.filepath, link_visual_path);
+            const auto resolved = workcell_builder::resolvePackageUriToPath(
+              link.visual_vector[0].geometry.filepath);
+            if (!resolved.success) {
+              continue;
+            }
+            fs::copy_file(resolved.resolved_path, link_visual_path);
           } catch(fs::filesystem_error const & e) {
             RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
           }
@@ -176,9 +183,12 @@ void generate_object_package(fs::path workcell_filepath, Object object, int ros_
         if (!fs::exists(stl_name)) {
           ensure_parent(link_collision_path);
           try {
-            fs::copy_file(
-              link.collision_vector[0].geometry.filepath,
-              link_collision_path);
+            const auto resolved = workcell_builder::resolvePackageUriToPath(
+              link.collision_vector[0].geometry.filepath);
+            if (!resolved.success) {
+              continue;
+            }
+            fs::copy_file(resolved.resolved_path, link_collision_path);
           } catch(fs::filesystem_error const & e) {
             RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
           }
