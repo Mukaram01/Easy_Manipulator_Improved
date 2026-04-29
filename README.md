@@ -1083,6 +1083,9 @@ Required external robot descriptions on ROS 2 Humble:
 
 ### Validate generated scene
 
+- Generated scenes are created under `~/workcell_ws/src/scenes/<scene_name>`.
+- Generated assets are created under `~/workcell_ws/src/assets/...`.
+- Reopening `workcell_builder` re-discovers existing scene packages under the selected `<workcell_root>/scenes`.
 - Do not manually move assets/scenes into `~/workcell_ws/src/assets`.
 - Source your built workspace before running `workcell_builder`.
 - Build the generated scene package.
@@ -1092,7 +1095,7 @@ Required external robot descriptions on ROS 2 Humble:
 rm -rf src/scenes/new_scene* src/new_scene* build/new_scene* install/new_scene* log/latest_build/new_scene*
 source ~/workcell_ws/install/setup.bash
 workcell_builder
-colcon build --packages-select <generated_scene_package> --symlink-install
+colcon build --symlink-install --packages-select <generated_scene_package>
 source install/setup.bash
 ros2 launch <generated_scene_package> demo.launch.py
 ```
@@ -1307,13 +1310,13 @@ Notes:
 
 ### Validate generated scene
 
-After running `fix_and_build_humble.sh`, generate and validate a scene without manually moving assets/scenes into `src`:
+After running `fix_and_build_humble.sh`, generate and validate a scene (without moving assets/scenes manually):
 
 ```bash
 workcell_builder
-colcon build --packages-select new_scene --symlink-install
+colcon build --symlink-install --packages-select new_scene
 source install/setup.bash
 ros2 launch new_scene demo.launch.py
 ```
 
-`workcell_builder` resolves assets from package shares and workspace links created by `scripts/fix_workspace_layout.sh`; manual asset/scenes moves are not required or supported.
+`workcell_builder` keeps generated scenes in `~/workcell_ws/src/scenes/<scene_name>` and generated assets in `~/workcell_ws/src/assets`; scene rediscovery on reopen scans that `scenes/` directory automatically.

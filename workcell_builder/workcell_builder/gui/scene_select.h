@@ -100,6 +100,7 @@ private:
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
+  void discover_scene_packages_on_startup();
 
   int scaffold_scene_index_ = -1;
 };

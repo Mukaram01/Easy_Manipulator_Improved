@@ -123,6 +123,22 @@ std::string resolve_ee_xacro_macro(const EndEffector & ee)
   }
   return ee.name + "_gripper";
 }
+
+Origin resolve_default_ee_mount_origin(const Scene & scene, const EndEffector & ee)
+{
+  Origin fallback;
+  fallback.disableOrigin();
+  // Fallback defaults only apply when user did not explicitly set an EE origin.
+  if (scene.robot_vector.empty()) {
+    return fallback;
+  }
+  const Robot & robot = scene.robot_vector.front();
+  if (robot.brand == "universal_robot" && ee.brand == "robotiq_85_gripper") {
+    fallback.is_origin = true;
+    fallback.yaw = 1.57079632679;
+  }
+  return fallback;
+}
 }  // namespace
 
 
@@ -218,7 +234,16 @@ void generate_scene_xacro(Scene scene, const std::string & output_path)
           scene.ee_vector[i].origin.pitch) + " " + std::to_string(scene.ee_vector[i].origin.yaw) +
           "\"/>\n";
       } else {
-        MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        const Origin fallback_origin = resolve_default_ee_mount_origin(scene, scene.ee_vector[i]);
+        if (fallback_origin.is_origin) {
+          MyFile << "\t<origin xyz=\"" + std::to_string(fallback_origin.x) + " " +
+            std::to_string(fallback_origin.y) + " " + std::to_string(fallback_origin.z) +
+            "\" rpy=\"" + std::to_string(fallback_origin.roll) + " " +
+            std::to_string(fallback_origin.pitch) + " " + std::to_string(fallback_origin.yaw) +
+            "\"/>\n";
+        } else {
+          MyFile << "\t<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
+        }
       }
       MyFile << " </xacro:" + ee_macro + ">\n\n";
 
