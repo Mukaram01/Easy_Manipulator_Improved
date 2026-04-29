@@ -1111,6 +1111,8 @@ Expected behavior:
 Controller validation commands:
 
 ```bash
+ros2 pkg prefix <scene_package>
+ls $(ros2 pkg prefix <scene_package>)/share/<scene_package>/environment.yaml
 ros2 param dump /move_group | grep -A80 -B10 "moveit_simple_controller_manager"
 ros2 action list | grep -E "move|trajectory|follow"
 ```
