@@ -320,6 +320,7 @@ def _derive_controller_configs(scene_name, controller_group_name, controller_joi
     should_emit_gripper_controller = (
         bool(end_effector_metadata.get("spawn_gripper_controller"))
         or end_effector_metadata.get("gripper_type") == "finger"
+        or bool(gripper_joints)
     )
     if should_emit_gripper_controller and gripper_joints:
         gripper_controller_name = (f"{robot_name}_gripper_controller" if robot_name.startswith("ur") else f"{robot_name}_gripper_controller")

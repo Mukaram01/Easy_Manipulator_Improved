@@ -101,3 +101,17 @@ def test_humble_scene_template_preserves_fake_hardware_launch_behavior() -> None
     assert '"allow_trajectory_execution": False' in content
     assert '"moveit_manage_controllers": False' in content
     assert "use_fake_hardware" in content
+
+
+def test_humble_scene_cmakelists_installs_environment_yaml() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/CMakeLists_example.txt").read_text(encoding="utf-8")
+    assert "install(FILES environment.yaml" in content
+    assert "DESTINATION share/${PROJECT_NAME}" in content
+
+
+def test_humble_scene_template_gripper_controller_emits_without_environment_yaml_metadata() -> None:
+    content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
+    assert "or bool(gripper_joints)" in content
+    assert 'preferred = ["gripper_finger1_joint", "gripper_finger2_joint"]' in content
+    assert 'joint != "gripper_base_joint"' in content
+    assert '"inner_knuckle" not in joint and "finger_tip" not in joint' in content
