@@ -1089,6 +1089,7 @@ Required external robot descriptions on ROS 2 Humble:
 - Launch the generated scene package.
 
 ```bash
+rm -rf src/scenes/new_scene* src/new_scene* build/new_scene* install/new_scene* log/latest_build/new_scene*
 source ~/workcell_ws/install/setup.bash
 workcell_builder
 colcon build --packages-select <generated_scene_package> --symlink-install

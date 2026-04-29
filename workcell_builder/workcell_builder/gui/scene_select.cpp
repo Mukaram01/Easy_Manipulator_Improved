@@ -471,7 +471,12 @@ void SceneSelect::generate_scene_files(Scene scene)
     launch_path = base_template_path / "launch";
   }
   fs::path target_path = scene_dir / "launch";
-  copyDir(launch_path, target_path);
+  if (!copyDir(launch_path, target_path)) {
+    append_error(
+      "Failed to generate launch files because destination already exists or could not be created: " +
+      target_path.string());
+    return;
+  }
 
   find_replace(
     (target_path / "demo.launch.py").string(),

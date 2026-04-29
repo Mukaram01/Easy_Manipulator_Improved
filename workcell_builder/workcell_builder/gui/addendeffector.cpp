@@ -455,6 +455,7 @@ std::vector<std::string> AddEndEffector::GetLinks(
       wrapper_xml += "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"ee_wrapper\">\n";
       wrapper_xml += QString("  <xacro:include filename=\"%1\"/>\n").arg(xacro_filename);
       wrapper_xml += QString("  <xacro:%1").arg(macro_name);
+      std::set<QString> provided_params;
       for (const auto & arg : expanded_xacro_arguments) {
         const auto delimiter_pos = arg.find(":=");
         if (delimiter_pos == std::string::npos) {
@@ -465,7 +466,20 @@ std::vector<std::string> AddEndEffector::GetLinks(
         if (!param_names.empty() && param_names.find(key) == param_names.end()) {
           continue;
         }
+        provided_params.insert(key);
         wrapper_xml += QString(" %1=\"%2\"").arg(key, value);
+      }
+      if (
+        param_names.find("prefix") != param_names.end() &&
+        provided_params.find("prefix") == provided_params.end())
+      {
+        wrapper_xml += " prefix=\"\"";
+      }
+      if (
+        param_names.find("parent") != param_names.end() &&
+        provided_params.find("parent") == provided_params.end())
+      {
+        wrapper_xml += " parent=\"tool0\"";
       }
       if (needs_origin_block) {
         wrapper_xml += ">\n    <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n";
