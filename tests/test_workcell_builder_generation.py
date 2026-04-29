@@ -39,3 +39,14 @@ def test_readme_validate_generated_scene_docs_no_manual_assets_move() -> None:
     content = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "Validate generated scene" in content
     assert "Do not manually move assets/scenes into `~/workcell_ws/src/assets`" in content
+    assert "rm -rf src/scenes/new_scene* src/new_scene* build/new_scene* install/new_scene* log/latest_build/new_scene*" in content
+
+
+def test_onrobot_airpick_standalone_wrapper_exists_and_instantiates_required_params() -> None:
+    content = (
+        REPO_ROOT
+        / "workcell_builder/workcell_builder/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper_standalone.urdf.xacro"
+    ).read_text(encoding="utf-8")
+    assert "<xacro:onrobot_airpick4_gripper" in content
+    assert "prefix=\"\"" in content
+    assert "parent=\"tool0\"" in content

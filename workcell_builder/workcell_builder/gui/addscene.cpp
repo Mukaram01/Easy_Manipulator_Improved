@@ -510,6 +510,18 @@ bool AddScene::CheckSceneName()
         }
     }
     ui->scene_name->setText(QString::fromStdString(final_name));
+    const boost::filesystem::path target_scene_dir = scenes_path / final_name;
+    if (boost::filesystem::exists(target_scene_dir)) {
+      if (scene.loaded && scene.name == final_name) {
+        return true;
+      }
+      ui->scene_errors->append(
+        QString::fromStdString(
+          "<font color='red'> Scene directory already exists: " +
+          target_scene_dir.string() +
+          ". Please choose a different scene name or delete the existing scene first. </font>"));
+      return false;
+    }
     return true;
   } else {
     ui->scene_errors->append("<font color='red'> Please enter a scene name. </font>");

@@ -117,3 +117,15 @@ def test_required_planner_and_runtime_packages_not_in_default_skip_list():
         "workcell_builder",
     ]:
         assert pkg not in skip_block
+
+
+def test_airpick_macro_only_wrapper_supplies_prefix_and_parent_defaults():
+    text = Path("workcell_builder/workcell_builder/gui/addendeffector.cpp").read_text()
+    assert "wrapper_xml += \" prefix=\\\"\\\"\"" in text
+    assert "wrapper_xml += \" parent=\\\"tool0\\\"\"" in text
+
+
+def test_existing_scene_directory_is_rejected_before_generation_starts():
+    text = Path("workcell_builder/workcell_builder/gui/addscene.cpp").read_text()
+    assert "Scene directory already exists:" in text
+    assert "Please choose a different scene name or delete the existing scene first." in text

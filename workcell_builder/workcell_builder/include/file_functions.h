@@ -243,10 +243,12 @@ bool copyDir(fs::path const & source, fs::path const & destination)
     if (fs::exists(destination)) {
       RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
         "Destination directory %s already exists.", destination.string().c_str());
+      return false;
     }
     if (!fs::create_directory(destination)) {
       RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
         "Unable to create destination directory %s", destination.string().c_str());
+      return false;
     }
   } catch(fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
