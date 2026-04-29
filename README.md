@@ -1232,7 +1232,7 @@ These additions are offline/import-export focused and do not change runtime ROS/
 
 ## Fresh Ubuntu 22.04 / ROS 2 Humble full-profile build (EPD + TrajOpt/Tesseract)
 
-Use this path on a clean machine when you need the full simulation-first workflow (MoveIt + EPD + Tesseract/TrajOpt), not a reduced demo build.
+Use this path on a clean machine when you need the full non-GUI simulation-first workflow (MoveIt + EPD + Tesseract/TrajOpt), not a reduced demo build.
 
 ```bash
 mkdir -p ~/workcell_ws/src
@@ -1252,7 +1252,8 @@ cd easy_manipulation_deployment
 Notes:
 - `--epd-underlay` sources `~/epd_ros2_ws/install/local_setup.bash` (not `setup.bash`) and validates `epd_msgs`.
 - Full profile builds `trajopt_sco`, `trajopt`, `trajopt_ifopt`, `trajopt_sqp`, and `tesseract_motion_planners`.
-- GUI packages are optional and skipped by default unless `--with-gui` is provided.
+- RViz/Tesseract examples are skipped by default unless `--with-gui` is provided.
+- Do not source `~/workcell_ws/install/setup.bash` until after the installer completes.
 - OSQP/OsqpEigen are pinned for TrajOpt/Tesseract 0.33.x compatibility through the dependency overlay.
 - For EPD-enabled full-profile builds, keep `--install-prereqs` and `--epd-underlay ~/epd_ros2_ws` in the command even on pre-provisioned machines.
 
@@ -1277,4 +1278,5 @@ Notes:
 - `qtadvanceddocking`
 - `QtADS`
 - `tesseract_rviz`
+- `tesseract_ros_examples`
 - `tesseract_planning_server` (optional for standard headless demos)
