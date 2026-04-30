@@ -14,9 +14,16 @@ from typing import Any
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
+
 except Exception as exc:  # pragma: no cover
     raise SystemExit(f"FAIL: tkinter is required for this optional panel: {exc}")
 
+
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+from workcell_discovery import discover_all
 
 DEFAULTS = {
     "scene_package": "ur5_2f_test",
@@ -108,7 +115,9 @@ class CellCyclePanel:
         self.json_output = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="Status: idle")
 
+        self.discovery_data = {"scenes": [], "task_recipes": [], "detected_objects": []}
         self._build_ui()
+        self.refresh_discovery()
         self._toggle_input_mode()
         self.root.after(100, self._poll_queue)
 
@@ -119,7 +128,27 @@ class CellCyclePanel:
         self.root.rowconfigure(0, weight=1)
 
         row = 0
-        for label, var in [("Scene package", self.scene_package), ("Task recipe", self.task_recipe), ("Detected objects", self.detected_objects), ("EPD topic", self.epd_topic), ("Output dir", self.output_dir), ("Capture timeout", self.capture_timeout), ("Min objects", self.min_objects)]:
+        ttk.Label(frm, text="Scene package").grid(row=row, column=0, sticky="w")
+        self.scene_combo = ttk.Combobox(frm, textvariable=self.scene_package, width=77)
+        self.scene_combo.grid(row=row, column=1, sticky="ew", padx=4, pady=2)
+        self.scene_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_selection_details())
+        row += 1
+
+        ttk.Label(frm, text="Task recipe").grid(row=row, column=0, sticky="w")
+        self.task_combo = ttk.Combobox(frm, textvariable=self.task_recipe, width=77)
+        self.task_combo.grid(row=row, column=1, sticky="ew", padx=4, pady=2)
+        ttk.Button(frm, text="Browse...", command=self._browse_task_recipe).grid(row=row, column=2, sticky="w")
+        self.task_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_selection_details())
+        row += 1
+
+        ttk.Label(frm, text="Detected objects").grid(row=row, column=0, sticky="w")
+        self.objects_combo = ttk.Combobox(frm, textvariable=self.detected_objects, width=77)
+        self.objects_combo.grid(row=row, column=1, sticky="ew", padx=4, pady=2)
+        ttk.Button(frm, text="Browse...", command=self._browse_detected_objects).grid(row=row, column=2, sticky="w")
+        self.objects_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_selection_details())
+        row += 1
+
+        for label, var in [("EPD topic", self.epd_topic), ("Output dir", self.output_dir), ("Capture timeout", self.capture_timeout), ("Min objects", self.min_objects)]:
             ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w")
             ttk.Entry(frm, textvariable=var, width=80).grid(row=row, column=1, sticky="ew", padx=4, pady=2)
             row += 1
@@ -135,6 +164,7 @@ class CellCyclePanel:
             row += 1
 
         self.run_btn = ttk.Button(frm, text="Run Cycle", command=self.run_cycle)
+        ttk.Button(frm, text="Refresh", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
         self.run_btn.grid(row=row, column=0, sticky="ew", pady=6)
         ttk.Button(frm, text="Open Output Folder", command=self.open_output).grid(row=row, column=1, sticky="w")
         row += 1
@@ -144,7 +174,12 @@ class CellCyclePanel:
 
         ttk.Label(frm, textvariable=self.status, font=("TkDefaultFont", 12, "bold")).grid(row=row, column=0, columnspan=2, sticky="w")
         row += 1
-        ttk.Label(frm, text="Live mode prerequisites: (1) EPD / RealSense node running, (2) run_grasp_execution running if replay is selected.").grid(row=row, column=0, columnspan=2, sticky="w")
+        ttk.Label(frm, text="Live mode prerequisites: (1) EPD / RealSense node running, (2) run_grasp_execution running if replay is selected.").grid(row=row, column=0, columnspan=3, sticky="w")
+        row += 1
+        self.selection_details = tk.Text(frm, height=5, wrap="word")
+        self.selection_details.grid(row=row, column=0, columnspan=3, sticky="ew")
+        self.selection_details.insert(tk.END, "Selection details will appear here.\n")
+        self.selection_details.configure(state="disabled")
         row += 1
 
         self.log = tk.Text(frm, height=20, wrap="word")
@@ -242,6 +277,53 @@ class CellCyclePanel:
         else:
             os.startfile(str(path))
 
+
+    def _browse_task_recipe(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("YAML/JSON", "*.yaml *.yml *.json"), ("All", "*")])
+        if path:
+            self.task_recipe.set(path)
+            self._update_selection_details()
+
+    def _browse_detected_objects(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("YAML/JSON", "*.yaml *.yml *.json"), ("All", "*")])
+        if path:
+            self.detected_objects.set(path)
+            self._update_selection_details()
+
+    def refresh_discovery(self) -> None:
+        scene_sel = self.scene_package.get()
+        task_sel = self.task_recipe.get()
+        obj_sel = self.detected_objects.get()
+        self.discovery_data = discover_all()
+        scene_values = [x["package_name"] for x in self.discovery_data["scenes"]]
+        task_values = [x["path"] for x in self.discovery_data["task_recipes"]]
+        obj_values = [x["path"] for x in self.discovery_data["detected_objects"]]
+        self.scene_combo.configure(values=scene_values)
+        self.task_combo.configure(values=task_values)
+        self.objects_combo.configure(values=obj_values)
+        if scene_sel in scene_values: self.scene_package.set(scene_sel)
+        elif scene_values: self.scene_package.set(scene_values[0])
+        if task_sel in task_values: self.task_recipe.set(task_sel)
+        elif task_values: self.task_recipe.set(task_values[0])
+        if obj_sel in obj_values: self.detected_objects.set(obj_sel)
+        elif obj_values: self.detected_objects.set(obj_values[0])
+        self._update_selection_details()
+
+    def _update_selection_details(self) -> None:
+        lines = []
+        scene = next((x for x in self.discovery_data.get("scenes", []) if x.get("package_name") == self.scene_package.get().strip()), None)
+        task = next((x for x in self.discovery_data.get("task_recipes", []) if x.get("path") == self.task_recipe.get().strip()), None)
+        obj = next((x for x in self.discovery_data.get("detected_objects", []) if x.get("path") == self.detected_objects.get().strip()), None)
+        lines.append(f"Scene: {self.scene_package.get().strip()}")
+        if scene: lines.append(f"  source={scene.get('source_path')} installed={scene.get('installed')} generated={scene.get('generated')} warnings={scene.get('warnings')}")
+        lines.append(f"Task: {self.task_recipe.get().strip()}")
+        if task: lines.append(f"  version={task.get('version')} type={task.get('task_type')} warnings={task.get('warnings')}")
+        lines.append(f"Detected objects: {self.detected_objects.get().strip()}")
+        if obj: lines.append(f"  version={obj.get('version')} object_count={obj.get('object_count')} warnings={obj.get('warnings')}")
+        self.selection_details.configure(state='normal')
+        self.selection_details.delete('1.0', tk.END)
+        self.selection_details.insert(tk.END, "\n".join(lines) + "\n")
+        self.selection_details.configure(state='disabled')
 
 def main() -> int:
     root = tk.Tk()

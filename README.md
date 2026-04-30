@@ -1355,3 +1355,5 @@ ros2 launch new_scene demo.launch.py
 
 ## Manuals
 - [MVP-1 Generated Cell Acceptance](docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md) (includes the optional **Run from the operator panel** flow).
+
+- The MVP-1 operator panel now auto-discovers scene packages, task recipes, and detected-object fixtures, while still allowing manual overrides.

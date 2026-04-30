@@ -262,3 +262,14 @@ By default, artifacts are written to `/tmp/mvp1` (or the selected output directo
 
 ### Future full GUI mapping
 This panel is the first GUI layer over the generated-cell cycle runner. It does not replace Workcell Builder.
+
+## Discover scenes and recipes from the operator panel
+
+Use **Refresh** in `scripts/run_cell_cycle_panel.py` to discover existing scene packages, task recipes, and detected-object fixtures. The panel now provides dropdowns for each, plus **Browse...** fallbacks for manual path selection.
+
+- Scene package dropdown: discovered packages from install/src/generated locations.
+- Task recipe dropdown: discovered `task_recipe/v1` YAML/JSON fixtures.
+- Detected objects dropdown: discovered `detected_objects/v1` YAML/JSON fixtures.
+- Selection details: shows source path, schema/version, object count, and warnings.
+- Live EPD mode does not require a detected_objects fixture.
+- Replay still requires `run_grasp_execution` to already be running.
