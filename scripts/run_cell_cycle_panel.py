@@ -86,6 +86,17 @@ def build_cycle_command(config: dict[str, Any]) -> list[str]:
 
 
 
+
+def build_gated_cycle_command(config: dict[str, Any]) -> list[str]:
+    cmd = build_cycle_command(config)
+    cmd += ['--require-preflight']
+    if config.get('capture_live'):
+        cmd += ['--preflight-live', '--preflight-check-ros-topics', '--preflight-check-tf', '--preflight-target-frame', 'world', '--preflight-camera-frame', 'camera_depth_optical_frame']
+        if '--epd-qos-reliability' not in cmd:
+            cmd += ['--epd-qos-reliability', 'best_effort']
+    return cmd
+
+
 def build_preflight_command(config: dict[str, Any]) -> list[str]:
     script = Path(__file__).resolve().parent / "run_cell_readiness_check.py"
     cmd = [
@@ -195,10 +206,12 @@ class CellCyclePanel:
         ttk.Checkbutton(frm, text="Show developer/test fixtures", variable=self.show_dev_fixtures, command=self.refresh_discovery).grid(row=row, column=1, sticky="w")
         row += 1
 
-        self.run_btn = ttk.Button(frm, text="Run live dry-run cycle", command=self.run_cycle)
+        self.run_btn = ttk.Button(frm, text="Run generated cycle", command=self.run_cycle)
+        self.gated_btn = ttk.Button(frm, text="Run Gated Dry-Run", command=self.run_gated_cycle)
         self.preflight_btn = ttk.Button(frm, text="Run Preflight Check", command=self.run_preflight)
         ttk.Button(frm, text="Refresh discovery", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
         self.run_btn.grid(row=row, column=0, sticky="ew", pady=6)
+        self.gated_btn.grid(row=row, column=0, sticky="e", pady=6)
         self.preflight_btn.grid(row=row, column=1, sticky="w", padx=4)
         ttk.Button(frm, text="Capture live snapshot only", command=self.capture_only).grid(row=row, column=1, sticky="w")
         row += 1
@@ -284,6 +297,34 @@ class CellCyclePanel:
             self.queue.put(("done", str(rc)))
 
         threading.Thread(target=worker, daemon=True).start()
+
+
+    def run_gated_cycle(self) -> None:
+        if self.proc is not None:
+            return
+        cfg = self._config()
+        cfg['dry_run'] = True
+        cfg['replay'] = False
+        cmd = build_gated_cycle_command(cfg)
+        self._append("\n$ " + " ".join(cmd) + "\n")
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        output = (proc.stdout or "") + (proc.stderr or "")
+        self._append(output)
+        payload = {}
+        try:
+            payload = json.loads(proc.stdout) if proc.stdout.strip().startswith('{') else {}
+        except Exception:
+            payload = {}
+        pre = payload.get('preflight', {}) if isinstance(payload, dict) else {}
+        cycle = payload.get('cycle', {}) if isinstance(payload, dict) else {}
+        self._append(f"Preflight status: {pre.get('status', 'UNKNOWN')}\n")
+        self._append("Blockers: " + json.dumps(pre.get('blockers', [])) + "\n")
+        self._append("Warnings: " + json.dumps(pre.get('warnings', [])) + "\n")
+        self._append(f"Selected object: {cycle.get('selected_object')}\n")
+        self._append(f"Selected destination: {cycle.get('chosen_destination')}\n")
+        self._append(f"Final status: {payload.get('operator_summary', {}).get('status', cycle.get('status', 'FAIL'))}\n")
+        self._append(f"Report path: {Path(cfg['output_dir']) / 'cell_cycle_gated_report.json'}\n")
+        self.status.set(f"Status: {payload.get('operator_summary', {}).get('status', 'FAIL')} (gated dry-run)")
 
 
     def run_preflight(self) -> None:

@@ -1361,3 +1361,13 @@ ros2 launch new_scene demo.launch.py
 
 
 - For the operator live perception smoke workflow, see `docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md` section **First live D435i / EPD smoke test**.
+
+## One-click gated dry-run
+1. Select scene
+2. Select task recipe
+3. Select detected objects or live EPD
+4. Press Run Gated Dry-Run
+5. Read PASS/WARN/FAIL
+6. Do not proceed to replay/motion unless all blockers are clear
+
+This path is dry-run only and never executes robot motion.
