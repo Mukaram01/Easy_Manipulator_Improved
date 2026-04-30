@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--min-objects', type=int, default=1)
     p.add_argument('--capture-timeout', type=float, default=10)
     p.add_argument('--frame-fallback', default='camera_depth_optical_frame')
+    p.add_argument('--target-frame', default='world')
+    p.add_argument('--tf-timeout', type=float, default=2.0)
+    p.add_argument('--require-transform', action='store_true', default=True)
+    p.add_argument('--allow-untransformed', action='store_true')
     p.add_argument('--replay', action='store_true')
     p.add_argument('--no-replay', action='store_true')
     p.add_argument('--dry-run', action='store_true')
@@ -83,8 +87,11 @@ def main(argv: list[str] | None = None) -> int:
             cap_cmd = [
                 sys.executable, str(capture_script), '--topic', args.epd_topic, '--output', str(live_out),
                 '--scene-package', args.scene_package, '--timeout', str(args.capture_timeout), '--min-objects', str(args.min_objects),
-                '--frame-fallback', args.frame_fallback, '--qos-reliability', args.epd_qos_reliability, '--qos-depth', str(args.epd_qos_depth), '--once', '--json'
+                '--frame-fallback', args.frame_fallback, '--qos-reliability', args.epd_qos_reliability, '--qos-depth', str(args.epd_qos_depth), '--once', '--json',
+                '--target-frame', args.target_frame, '--tf-timeout', str(args.tf_timeout), '--require-transform'
             ]
+            if args.allow_untransformed:
+                cap_cmd.append('--allow-untransformed')
             cap = subprocess.run(cap_cmd, capture_output=True, text=True, check=False)
             if cap.returncode != 0:
                 err = cap.stdout.strip() or cap.stderr.strip() or 'unknown error'
@@ -138,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
     selected_obj = _pick_selected_object(detected_data, acceptance)
     selected_pose = (selected_obj or {}).get("pose") if isinstance(selected_obj, dict) else {}
     pose_frame = selected_pose.get("frame_id") if isinstance(selected_pose, dict) else None
+    raw_pose = (selected_obj or {}).get("raw_pose") if isinstance(selected_obj, dict) else {}
+    raw_pose_frame = raw_pose.get("frame_id") if isinstance(raw_pose, dict) else None
+    transform_meta = (((detected_data.get("source") or {}).get("transform")) if isinstance(detected_data.get("source"), dict) else {}) or {}
+    transform_status = transform_meta.get("status")
+    transform_message = transform_meta.get("message")
     xyz = selected_pose.get("xyz") if isinstance(selected_pose, dict) else None
     conf = (selected_obj or {}).get("confidence") if isinstance(selected_obj, dict) else None
     dims = (selected_obj or {}).get("dimensions") if isinstance(selected_obj, dict) else None
@@ -147,8 +159,10 @@ def main(argv: list[str] | None = None) -> int:
         warnings.append("Selected object missing confidence")
     elif isinstance(conf, (int, float)) and conf < 0.5:
         warnings.append(f"Selected object has low confidence ({conf:.3f} < 0.500)")
-    if pose_frame and pose_frame != "world":
-        warnings.append(f"Selected object pose frame is '{pose_frame}', not 'world'; transform validation not available")
+    if pose_frame and pose_frame != args.target_frame:
+        warnings.append(f"Selected object pose frame is '{pose_frame}', not target planning frame; transform validation not available")
+    if transform_status == "WARN":
+        warnings.append("Object pose transform is WARN; runtime replay is unsafe/not recommended")
     if isinstance(xyz, list) and len(xyz) >= 3 and isinstance(xyz[2], (int, float)) and xyz[2] < 0.0:
         warnings.append(f"Selected object z ({xyz[2]:.4f}) is below conservative table threshold (0.0)")
 
@@ -167,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         'selected_object_label': (selected_obj or {}).get('name') if isinstance(selected_obj, dict) else None,
         'selected_object_confidence': conf,
         'object_pose_frame': pose_frame,
+        'object_pose_frame_raw': raw_pose_frame,
+        'object_pose_frame_normalized': pose_frame,
+        'transform_status': transform_status,
+        'transform_message': transform_message,
         'object_xyz': xyz,
         'chosen_destination': acceptance.get('destination_selected'),
         'destination_release_pose': acceptance.get('destination_release_pose'),

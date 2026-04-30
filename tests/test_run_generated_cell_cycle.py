@@ -61,6 +61,9 @@ class RunGeneratedCellCycleTests(unittest.TestCase):
             p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK),'--detected-objects',str(OBJECTS),'--output-dir',td,'--dry-run','--json')
             report=json.loads(p.stdout)
             self.assertIn(report['status'],{'PASS','WARN','FAIL'})
+            self.assertIn('object_pose_frame_raw', report)
+            self.assertIn('object_pose_frame_normalized', report)
+            self.assertIn('transform_status', report)
 
     def test_valid_garbage_offline_cycle_has_no_blockers(self):
         with tempfile.TemporaryDirectory() as td:
