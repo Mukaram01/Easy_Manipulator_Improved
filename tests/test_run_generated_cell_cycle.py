@@ -8,6 +8,8 @@ SCRIPT = REPO_ROOT / 'scripts' / 'run_generated_cell_cycle.py'
 TASK = REPO_ROOT / 'tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml'
 TASK_WARN = REPO_ROOT / 'tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting_missing_reject_pose.yaml'
 OBJECTS = REPO_ROOT / 'tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml'
+TASK_VALID_GARBAGE = REPO_ROOT / 'tests/fixtures/task_recipes/valid_garbage_sorting.yaml'
+OBJECTS_VALID_GARBAGE = REPO_ROOT / 'tests/fixtures/detected_objects/valid_epd_garbage_sorting.yaml'
 
 class RunGeneratedCellCycleTests(unittest.TestCase):
     def _run(self, *args: str):
@@ -50,6 +52,14 @@ class RunGeneratedCellCycleTests(unittest.TestCase):
             p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK),'--detected-objects',str(OBJECTS),'--output-dir',td,'--dry-run','--json')
             report=json.loads(p.stdout)
             self.assertIn(report['status'],{'PASS','WARN','FAIL'})
+
+    def test_valid_garbage_offline_cycle_has_no_blockers(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK_VALID_GARBAGE),'--detected-objects',str(OBJECTS_VALID_GARBAGE),'--output-dir',td,'--dry-run','--no-replay','--json')
+            self.assertEqual(p.returncode,0,msg=p.stdout+p.stderr)
+            report=json.loads(p.stdout)
+            self.assertIn(report['status'],{'PASS','WARN'})
+            self.assertEqual(report['acceptance'].get('blockers',[]),[])
 
 if __name__ == '__main__':
     unittest.main()

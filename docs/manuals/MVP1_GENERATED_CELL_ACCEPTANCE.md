@@ -40,6 +40,39 @@ Arguments:
 - **WARN**: pipeline succeeded, but operator attention is required (example: scene package not found offline, missing destination pose).
 - **FAIL**: blockers occurred, or strict mode escalated warnings.
 
+## First offline operator test (recommended baseline)
+Use this sequence from repository root on a fresh machine:
+
+```bash
+colcon build --symlink-install --packages-skip tesseract_rviz tesseract_planning_server tesseract_ros_examples
+```
+
+```bash
+python3 -m pytest -q tests/test_workcell_discovery.py tests/test_run_cell_cycle_panel.py tests/test_run_generated_cell_cycle.py
+```
+
+```bash
+python3 scripts/run_generated_cell_cycle.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/valid_garbage_sorting.yaml \
+  --detected-objects tests/fixtures/detected_objects/valid_epd_garbage_sorting.yaml \
+  --output-dir /tmp/mvp1_valid_test \
+  --min-objects 1 \
+  --once \
+  --dry-run \
+  --no-replay \
+  --json
+```
+
+Expected result:
+- **PASS** or **WARN** is acceptable for first offline operator test when `blockers=[]`.
+- **FAIL** is not acceptable for first offline operator test.
+
+Fixture naming guidance:
+- `valid_*`: operator-ready examples.
+- `warn_*`: warning-path examples.
+- `fail_*`, `missing_*`, `low_confidence_*`, `unknown_*`: developer/test fixtures (kept for regression testing, not default operator selection).
+
 Previous runtime boundary (now addressed in `run_grasp_execution` destination-aware mode):
 
 > destination_resolved is present in the bridge payload; runtime release execution may still use existing release fallback until runtime destination support is implemented.

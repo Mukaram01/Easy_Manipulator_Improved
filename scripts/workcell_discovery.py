@@ -25,6 +25,7 @@ class RecipeRecord:
     path: str
     task_type: str | None
     version: str | None
+    category: str
     warnings: list[str] = field(default_factory=list)
 
 
@@ -34,6 +35,7 @@ class DetectedObjectsRecord:
     path: str
     object_count: int | None
     version: str | None
+    category: str
     warnings: list[str] = field(default_factory=list)
 
 
@@ -65,7 +67,9 @@ def discover_scene_packages() -> list[SceneRecord]:
             continue
         package_name = path.name
         warnings: list[str] = []
-        for requiredish in ("package.xml", "launch", "config"):
+        has_emd_layout = (path / "launch").exists() and (path / "environment.yaml").exists()
+        expected_dirs = ("package.xml", "launch") if has_emd_layout else ("package.xml", "launch", "config")
+        for requiredish in expected_dirs:
             if not (path / requiredish).exists():
                 warnings.append(f"missing {requiredish}")
         installed = "/install/" in str(path.resolve()) or str(path).startswith(str(REPO_ROOT / "install"))
@@ -91,6 +95,16 @@ def _load_structured_file(path: Path) -> tuple[dict[str, Any] | None, str | None
         return None, str(exc)
 
 
+
+
+def _fixture_category(name: str) -> str:
+    lowered = name.lower()
+    if lowered.startswith(("fail_", "missing_", "low_confidence_", "unknown_")):
+        return "failure_test"
+    if lowered.startswith("warn_"):
+        return "warning"
+    return "valid"
+
 def discover_task_recipes() -> list[RecipeRecord]:
     dirs = [
         REPO_ROOT / "tests/fixtures/task_recipes",
@@ -106,7 +120,7 @@ def discover_task_recipes() -> list[RecipeRecord]:
             data, err = _load_structured_file(path)
             warnings: list[str] = []
             if err:
-                records.append(RecipeRecord(path.stem, str(path), None, None, [f"parse error: {err}"]))
+                records.append(RecipeRecord(path.stem, str(path), None, None, _fixture_category(path.stem), [f"parse error: {err}"]))
                 continue
             if not data:
                 continue
@@ -114,7 +128,7 @@ def discover_task_recipes() -> list[RecipeRecord]:
             if version != "task_recipe/v1":
                 continue
             task = data.get("task") if isinstance(data.get("task"), dict) else {}
-            records.append(RecipeRecord(path.stem, str(path), task.get("type"), version, warnings))
+            records.append(RecipeRecord(path.stem, str(path), task.get("type"), version, _fixture_category(path.stem), warnings))
     return sorted(records, key=lambda r: r.display_name)
 
 
@@ -127,7 +141,7 @@ def discover_detected_objects() -> list[DetectedObjectsRecord]:
         for path in [*base.rglob("*.yaml"), *base.rglob("*.yml"), *base.rglob("*.json")]:
             data, err = _load_structured_file(path)
             if err:
-                records.append(DetectedObjectsRecord(path.stem, str(path), None, None, [f"parse error: {err}"]))
+                records.append(DetectedObjectsRecord(path.stem, str(path), None, None, _fixture_category(path.stem), [f"parse error: {err}"]))
                 continue
             if not data:
                 continue
@@ -135,7 +149,7 @@ def discover_detected_objects() -> list[DetectedObjectsRecord]:
             if version != "detected_objects/v1":
                 continue
             objects = data.get("objects") if isinstance(data.get("objects"), list) else None
-            records.append(DetectedObjectsRecord(path.stem, str(path), len(objects) if objects is not None else None, version, []))
+            records.append(DetectedObjectsRecord(path.stem, str(path), len(objects) if objects is not None else None, version, _fixture_category(path.stem), []))
     return sorted(records, key=lambda r: r.display_name)
 
 

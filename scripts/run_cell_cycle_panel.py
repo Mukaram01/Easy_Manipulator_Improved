@@ -27,8 +27,8 @@ from workcell_discovery import discover_all
 
 DEFAULTS = {
     "scene_package": "ur5_2f_test",
-    "task_recipe": "tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml",
-    "detected_objects": "tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml",
+    "task_recipe": "tests/fixtures/task_recipes/valid_garbage_sorting.yaml",
+    "detected_objects": "tests/fixtures/detected_objects/valid_epd_garbage_sorting.yaml",
     "epd_topic": "/easy_perception_deployment/epd_localize_output",
     "output_dir": "/tmp/mvp1",
     "capture_timeout": "10",
@@ -113,6 +113,7 @@ class CellCyclePanel:
         self.replay = tk.BooleanVar(value=False)
         self.strict = tk.BooleanVar(value=False)
         self.json_output = tk.BooleanVar(value=True)
+        self.show_dev_fixtures = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Status: idle")
 
         self.discovery_data = {"scenes": [], "task_recipes": [], "detected_objects": []}
@@ -162,6 +163,8 @@ class CellCyclePanel:
         for txt, var in [("Dry run", self.dry_run), ("Replay to runtime", self.replay), ("Strict mode", self.strict), ("JSON output", self.json_output)]:
             ttk.Checkbutton(frm, text=txt, variable=var).grid(row=row, column=1, sticky="w")
             row += 1
+        ttk.Checkbutton(frm, text="Show developer/test fixtures", variable=self.show_dev_fixtures, command=self.refresh_discovery).grid(row=row, column=1, sticky="w")
+        row += 1
 
         self.run_btn = ttk.Button(frm, text="Run Cycle", command=self.run_cycle)
         ttk.Button(frm, text="Refresh", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
@@ -296,17 +299,22 @@ class CellCyclePanel:
         obj_sel = self.detected_objects.get()
         self.discovery_data = discover_all()
         scene_values = [x["package_name"] for x in self.discovery_data["scenes"]]
-        task_values = [x["path"] for x in self.discovery_data["task_recipes"]]
-        obj_values = [x["path"] for x in self.discovery_data["detected_objects"]]
+        show_dev = self.show_dev_fixtures.get()
+        task_values = [x["path"] for x in self.discovery_data["task_recipes"] if show_dev or x.get("category") != "failure_test"]
+        obj_values = [x["path"] for x in self.discovery_data["detected_objects"] if show_dev or x.get("category") != "failure_test"]
         self.scene_combo.configure(values=scene_values)
         self.task_combo.configure(values=task_values)
         self.objects_combo.configure(values=obj_values)
         if scene_sel in scene_values: self.scene_package.set(scene_sel)
         elif scene_values: self.scene_package.set(scene_values[0])
         if task_sel in task_values: self.task_recipe.set(task_sel)
-        elif task_values: self.task_recipe.set(task_values[0])
+        elif task_values:
+            valid_default = next((p for p in task_values if p.endswith("valid_garbage_sorting.yaml")), task_values[0])
+            self.task_recipe.set(valid_default)
         if obj_sel in obj_values: self.detected_objects.set(obj_sel)
-        elif obj_values: self.detected_objects.set(obj_values[0])
+        elif obj_values:
+            valid_default = next((p for p in obj_values if p.endswith("valid_epd_garbage_sorting.yaml")), obj_values[0])
+            self.detected_objects.set(valid_default)
         self._update_selection_details()
 
     def _update_selection_details(self) -> None:
@@ -317,9 +325,9 @@ class CellCyclePanel:
         lines.append(f"Scene: {self.scene_package.get().strip()}")
         if scene: lines.append(f"  source={scene.get('source_path')} installed={scene.get('installed')} generated={scene.get('generated')} warnings={scene.get('warnings')}")
         lines.append(f"Task: {self.task_recipe.get().strip()}")
-        if task: lines.append(f"  version={task.get('version')} type={task.get('task_type')} warnings={task.get('warnings')}")
+        if task: lines.append(f"  version={task.get('version')} type={task.get('task_type')} category={task.get('category')} warnings={task.get('warnings')}")
         lines.append(f"Detected objects: {self.detected_objects.get().strip()}")
-        if obj: lines.append(f"  version={obj.get('version')} object_count={obj.get('object_count')} warnings={obj.get('warnings')}")
+        if obj: lines.append(f"  version={obj.get('version')} object_count={obj.get('object_count')} category={obj.get('category')} warnings={obj.get('warnings')}")
         self.selection_details.configure(state='normal')
         self.selection_details.delete('1.0', tk.END)
         self.selection_details.insert(tk.END, "\n".join(lines) + "\n")
