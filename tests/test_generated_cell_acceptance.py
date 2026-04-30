@@ -42,6 +42,8 @@ class GeneratedCellAcceptanceTests(unittest.TestCase):
         self.assertEqual(payload["selected_object"], "red_001")
         self.assertEqual(payload["matched_rule"], "route_red")
         self.assertEqual(payload["destination_selected"], "red_bin")
+        self.assertEqual(payload["runtime_destination_release"], "enabled")
+        self.assertTrue(payload["destination_release_supported"])
 
     def test_fallback_destination_is_present_in_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

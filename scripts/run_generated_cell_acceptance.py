@@ -15,12 +15,11 @@ VALIDATE_RECIPE = SCRIPTS_DIR / "validate_task_recipe.py"
 ADAPTER = SCRIPTS_DIR / "run_task_recipe_adapter.py"
 BRIDGE = SCRIPTS_DIR / "convert_runtime_plan_to_emd_grasp.py"
 
-KNOWN_RUNTIME_BOUNDARY = (
-    "destination_resolved is present in the bridge payload; runtime release execution may still "
-    "use existing release fallback until runtime destination support is implemented."
+RUNTIME_DESTINATION_SUPPORT_ENABLED = (
+    "destination_release_supported=true (runtime explicit destination release adapter enabled)."
 )
-KNOWN_RUNTIME_BOUNDARY_OPERATOR_TEXT = (
-    "Task planner selected a destination, but runtime replay may not yet command that exact release pose."
+RUNTIME_DESTINATION_SUPPORT_OPERATOR_TEXT = (
+    "Task planner selected a destination and runtime can use explicit destination release pose when provided."
 )
 
 
@@ -131,7 +130,9 @@ def run_acceptance(scene_package: str, task_recipe: Path, detected_objects: Path
                 for warning in item.get("warnings", []):
                     if isinstance(warning, str):
                         warnings.append(warning)
-    warnings.append(KNOWN_RUNTIME_BOUNDARY)
+    runtime_boundary = bridge_json.get("runtime_release_adapter_boundary", {})
+    destination_release_supported = bool(runtime_boundary.get("explicit_release_pose_supported_in_runtime"))
+    runtime_release_strategy = runtime_boundary.get("active_release_strategy")
 
     status = "PASS"
     if blockers:
@@ -161,9 +162,12 @@ def run_acceptance(scene_package: str, task_recipe: Path, detected_objects: Path
         "warnings": warnings,
         "warning_groups": {
             "hard_blockers": blockers,
-            "operator_warnings": [w for w in warnings if w != KNOWN_RUNTIME_BOUNDARY],
-            "developer_runtime_todo": [KNOWN_RUNTIME_BOUNDARY, KNOWN_RUNTIME_BOUNDARY_OPERATOR_TEXT],
+            "operator_warnings": [w for w in warnings],
+            "developer_runtime_todo": [RUNTIME_DESTINATION_SUPPORT_ENABLED, RUNTIME_DESTINATION_SUPPORT_OPERATOR_TEXT],
         },
+        "runtime_destination_release": "enabled" if destination_release_supported else "disabled",
+        "destination_release_supported": destination_release_supported,
+        "runtime_release_strategy": runtime_release_strategy,
         "blockers": blockers,
         "step_status": {
             "detected_objects": obj_json.get("status"),
