@@ -112,6 +112,10 @@ def test_humble_scene_template_defaults_octomap_disabled_without_sensor_plugins(
     assert 'msg="Octomap occupancy monitor disabled (enable_octomap:=false)."' in content
     assert '"octomap_resolution": 0.1' in content
     assert "no 3D sensor plugin configuration" in content
+    assert "from launch.actions import DeclareLaunchArgument, LogInfo" in content
+    assert "LogWarning" not in content
+    assert "octomap_launch_message = LogInfo(" in content
+    assert "WARNING: enable_octomap:=true requested, but no 3D sensor plugin configuration" in content
 
 
 def test_humble_scene_cmakelists_installs_environment_yaml() -> None:
