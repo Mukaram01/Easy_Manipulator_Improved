@@ -6,7 +6,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.run_cell_cycle_panel import DEFAULTS, build_cycle_command, build_gated_cycle_command, parse_cycle_report
+from scripts.run_cell_cycle_panel import (
+    DEFAULTS,
+    build_cycle_command,
+    build_gated_cycle_command,
+    build_generate_workcell_command,
+    build_validate_cell_definition_command,
+    parse_cycle_report,
+)
 from scripts.workcell_discovery import discover_all
 
 
@@ -103,6 +110,13 @@ class RunCellCyclePanelTests(unittest.TestCase):
         self.assertIn('--preflight-live', cmd)
         self.assertIn('--preflight-check-tf', cmd)
         self.assertIn('--preflight-check-ros-topics', cmd)
+
+    def test_panel_cell_definition_commands(self):
+        vcmd = build_validate_cell_definition_command("cell_definitions/demo_ur5_sorting_cell.yaml")
+        gcmd = build_generate_workcell_command("cell_definitions/demo_ur5_sorting_cell.yaml", "/tmp/generated_workcells/demo")
+        self.assertIn("validate_cell_definition.py", " ".join(vcmd))
+        self.assertIn("--cell-definition", vcmd)
+        self.assertIn("generate_workcell_from_cell_definition.py", " ".join(gcmd))
 
 
 if __name__ == "__main__":

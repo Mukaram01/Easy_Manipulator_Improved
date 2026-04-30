@@ -115,6 +115,16 @@ def build_preflight_command(config: dict[str, Any]) -> list[str]:
         cmd += ["--live", "--check-tf"]
     return cmd
 
+
+def build_validate_cell_definition_command(cell_definition: str) -> list[str]:
+    script = Path(__file__).resolve().parent / "validate_cell_definition.py"
+    return [sys.executable, str(script), "--cell-definition", cell_definition, "--json"]
+
+
+def build_generate_workcell_command(cell_definition: str, output_dir: str) -> list[str]:
+    script = Path(__file__).resolve().parent / "generate_workcell_from_cell_definition.py"
+    return [sys.executable, str(script), "--cell-definition", cell_definition, "--output-dir", output_dir, "--json"]
+
 def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     report_path = output_dir / "cycle_report.json"
     generated = {

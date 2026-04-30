@@ -1,0 +1,85 @@
+schema_version: cell_definition/v1
+cell:
+  id: demo_ur5_sorting_cell
+  name: Demo UR5 Sorting Cell
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+  allowed_touch_links: [left_finger, right_finger]
+camera:
+  id: d435i_overhead
+  type: d435i
+  frame: camera_color_optical_frame
+environment:
+  frame: world
+  support_surfaces:
+    - id: work_table
+      shape: box
+      pose_xyz: [0.60, 0.00, 0.40]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [1.20, 0.80, 0.80]
+  assets:
+    - id: plastic_bin
+      shape: box
+      pose_xyz: [0.55, -0.25, 0.84]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.30, 0.20, 0.14]
+    - id: metal_bin
+      shape: box
+      pose_xyz: [0.55, 0.00, 0.84]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.30, 0.20, 0.14]
+    - id: reject_bin
+      shape: box
+      pose_xyz: [0.55, 0.25, 0.84]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.30, 0.20, 0.14]
+objects:
+  - id: spawn_box
+    shape: box
+    pose_xyz: [0.45, 0.00, 0.84]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.20, 0.20, 0.10]
+    frame: world
+    class: mixed_part
+task:
+  id: demo_sort
+  type: sort_by_class
+  source_object: detected_object
+  destinations:
+    - id: plastic_dest
+      frame: world
+      pose_xyz: [0.55, -0.25, 0.95]
+      pose_rpy: [0.0, 0.0, 0.0]
+    - id: metal_dest
+      frame: world
+      pose_xyz: [0.55, 0.00, 0.95]
+      pose_rpy: [0.0, 0.0, 0.0]
+    - id: reject_dest
+      frame: world
+      pose_xyz: [0.55, 0.25, 0.95]
+      pose_rpy: [0.0, 0.0, 0.0]
+  rules:
+    - id: to_plastic
+      when:
+        class: plastic
+      destination: plastic_dest
+    - id: to_metal
+      when:
+        class: metal
+      destination: metal_dest
+    - id: fallback_reject
+      when:
+        always: true
+      destination: reject_dest
+commissioning:
+  self_test_enabled: true
