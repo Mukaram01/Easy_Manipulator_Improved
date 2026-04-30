@@ -61,5 +61,17 @@ class RunGeneratedCellCycleTests(unittest.TestCase):
             self.assertIn(report['status'],{'PASS','WARN'})
             self.assertEqual(report['acceptance'].get('blockers',[]),[])
 
+
+    def test_report_includes_live_fields_and_snapshot_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            fake=Path('/tmp/mvp1/fake_detected_objects.yaml')
+            fake.parent.mkdir(parents=True,exist_ok=True)
+            fake.write_text(OBJECTS_VALID_GARBAGE.read_text(encoding='utf-8'), encoding='utf-8')
+            p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK_VALID_GARBAGE),'--capture-live','--epd-topic','/easy_perception_deployment/epd_localize_output','--output-dir',td,'--dry-run','--no-replay','--json')
+            self.assertEqual(p.returncode,0,msg=p.stdout+p.stderr)
+            report=json.loads(p.stdout)
+            self.assertEqual(report['perception_source'],'live_epd')
+            self.assertTrue(report['detected_objects_used'].endswith('detected_objects_used.yaml'))
+
 if __name__ == '__main__':
     unittest.main()

@@ -1357,3 +1357,6 @@ ros2 launch new_scene demo.launch.py
 - [MVP-1 Generated Cell Acceptance](docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md) (includes the optional **Run from the operator panel** flow).
 
 - The MVP-1 operator panel now auto-discovers scene packages, task recipes, and detected-object fixtures, while still allowing manual overrides.
+
+
+- For the operator live perception smoke workflow, see `docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md` section **First live D435i / EPD smoke test**.

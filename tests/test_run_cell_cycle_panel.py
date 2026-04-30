@@ -14,6 +14,7 @@ class RunCellCyclePanelTests(unittest.TestCase):
     def test_operator_defaults_use_valid_fixtures(self):
         self.assertTrue(DEFAULTS["task_recipe"].endswith("valid_garbage_sorting.yaml"))
         self.assertTrue(DEFAULTS["detected_objects"].endswith("valid_epd_garbage_sorting.yaml"))
+        self.assertEqual(DEFAULTS["output_dir"], "/tmp/mvp1_live_smoke_test")
 
     def test_filtered_defaults_avoid_failure_test_fixtures(self):
         payload = discover_all()
@@ -32,6 +33,7 @@ class RunCellCyclePanelTests(unittest.TestCase):
             "output_dir": "/tmp/mvp1",
             "capture_timeout": 10,
             "min_objects": 1,
+            "frame_fallback": "world",
             "dry_run": True,
             "replay": False,
             "strict": False,
@@ -40,6 +42,7 @@ class RunCellCyclePanelTests(unittest.TestCase):
         cmd = build_cycle_command(cfg)
         self.assertIn("--dry-run", cmd)
         self.assertNotIn("--replay", cmd)
+        self.assertIn("--no-replay", cmd)
         self.assertIn("--detected-objects", cmd)
 
     def test_live_mode_command_uses_capture_live(self):
@@ -52,6 +55,7 @@ class RunCellCyclePanelTests(unittest.TestCase):
             "output_dir": "/tmp/mvp1",
             "capture_timeout": 10,
             "min_objects": 1,
+            "frame_fallback": "world",
             "dry_run": True,
             "replay": False,
             "strict": False,
@@ -60,6 +64,8 @@ class RunCellCyclePanelTests(unittest.TestCase):
         cmd = build_cycle_command(cfg)
         self.assertIn("--capture-live", cmd)
         self.assertIn("--epd-topic", cmd)
+        self.assertIn("--dry-run", cmd)
+        self.assertIn("--no-replay", cmd)
         self.assertNotIn("--detected-objects", cmd)
 
     def test_missing_cycle_report_is_graceful(self):
@@ -73,6 +79,8 @@ class RunCellCyclePanelTests(unittest.TestCase):
             report = {
                 "status": "WARN",
                 "warnings": ["w1", "w2"],
+                "perception_source": "live_epd",
+                "detected_objects_used": "/tmp/x/detected_objects_used.yaml",
                 "acceptance": {"errors": ["e1"]},
             }
             p = Path(td) / "cycle_report.json"
@@ -81,6 +89,7 @@ class RunCellCyclePanelTests(unittest.TestCase):
             self.assertEqual(summary.status, "WARN")
             self.assertEqual(summary.warning_count, 2)
             self.assertEqual(summary.error_count, 1)
+            self.assertEqual(summary.perception_source, "live_epd")
 
 
 if __name__ == "__main__":

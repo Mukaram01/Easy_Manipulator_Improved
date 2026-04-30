@@ -30,9 +30,10 @@ DEFAULTS = {
     "task_recipe": "tests/fixtures/task_recipes/valid_garbage_sorting.yaml",
     "detected_objects": "tests/fixtures/detected_objects/valid_epd_garbage_sorting.yaml",
     "epd_topic": "/easy_perception_deployment/epd_localize_output",
-    "output_dir": "/tmp/mvp1",
+    "output_dir": "/tmp/mvp1_live_smoke_test",
     "capture_timeout": "10",
     "min_objects": "1",
+    "frame_fallback": "world",
 }
 
 
@@ -43,6 +44,8 @@ class CycleReportSummary:
     error_count: int
     report_path: Path | None
     generated_files: dict[str, Path]
+    perception_source: str | None = None
+    detected_objects_used: str | None = None
 
 
 def build_cycle_command(config: dict[str, Any]) -> list[str]:
@@ -60,6 +63,8 @@ def build_cycle_command(config: dict[str, Any]) -> list[str]:
         str(config["min_objects"]),
         "--capture-timeout",
         str(config["capture_timeout"]),
+        "--frame-fallback",
+        str(config["frame_fallback"]),
         "--once",
     ]
     if config.get("capture_live"):
@@ -70,6 +75,8 @@ def build_cycle_command(config: dict[str, Any]) -> list[str]:
         cmd.append("--dry-run")
     if config.get("replay"):
         cmd.append("--replay")
+    else:
+        cmd.append("--no-replay")
     if config.get("strict"):
         cmd.append("--strict")
     if config.get("json"):
@@ -91,7 +98,7 @@ def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     warnings = data.get("warnings") or []
     acceptance = data.get("acceptance") or {}
     errors = acceptance.get("errors") or []
-    return CycleReportSummary(data.get("status", "FAIL"), len(warnings), len(errors), report_path, generated)
+    return CycleReportSummary(data.get("status", "FAIL"), len(warnings), len(errors), report_path, generated, data.get("perception_source"), data.get("detected_objects_used"))
 
 
 class CellCyclePanel:
@@ -108,6 +115,7 @@ class CellCyclePanel:
         self.output_dir = tk.StringVar(value=DEFAULTS["output_dir"])
         self.capture_timeout = tk.StringVar(value=DEFAULTS["capture_timeout"])
         self.min_objects = tk.StringVar(value=DEFAULTS["min_objects"])
+        self.frame_fallback = tk.StringVar(value=DEFAULTS["frame_fallback"])
         self.input_mode = tk.StringVar(value="offline")
         self.dry_run = tk.BooleanVar(value=True)
         self.replay = tk.BooleanVar(value=False)
@@ -149,7 +157,7 @@ class CellCyclePanel:
         self.objects_combo.bind("<<ComboboxSelected>>", lambda _e: self._update_selection_details())
         row += 1
 
-        for label, var in [("EPD topic", self.epd_topic), ("Output dir", self.output_dir), ("Capture timeout", self.capture_timeout), ("Min objects", self.min_objects)]:
+        for label, var in [("EPD topic", self.epd_topic), ("Output dir", self.output_dir), ("Capture timeout", self.capture_timeout), ("Min objects", self.min_objects), ("Frame fallback", self.frame_fallback)]:
             ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w")
             ttk.Entry(frm, textvariable=var, width=80).grid(row=row, column=1, sticky="ew", padx=4, pady=2)
             row += 1
@@ -166,9 +174,11 @@ class CellCyclePanel:
         ttk.Checkbutton(frm, text="Show developer/test fixtures", variable=self.show_dev_fixtures, command=self.refresh_discovery).grid(row=row, column=1, sticky="w")
         row += 1
 
-        self.run_btn = ttk.Button(frm, text="Run Cycle", command=self.run_cycle)
-        ttk.Button(frm, text="Refresh", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
+        self.run_btn = ttk.Button(frm, text="Run live dry-run cycle", command=self.run_cycle)
+        ttk.Button(frm, text="Refresh discovery", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
         self.run_btn.grid(row=row, column=0, sticky="ew", pady=6)
+        ttk.Button(frm, text="Capture live snapshot only", command=self.capture_only).grid(row=row, column=1, sticky="w")
+        row += 1
         ttk.Button(frm, text="Open Output Folder", command=self.open_output).grid(row=row, column=1, sticky="w")
         row += 1
         ttk.Button(frm, text="Open cycle_report.json", command=self.open_report).grid(row=row, column=1, sticky="w")
@@ -221,6 +231,7 @@ class CellCyclePanel:
             "output_dir": self.output_dir.get().strip(),
             "capture_timeout": self.capture_timeout.get().strip(),
             "min_objects": self.min_objects.get().strip(),
+            "frame_fallback": self.frame_fallback.get().strip(),
             "dry_run": self.dry_run.get(),
             "replay": self.replay.get(),
             "strict": self.strict.get(),
@@ -251,12 +262,36 @@ class CellCyclePanel:
 
         threading.Thread(target=worker, daemon=True).start()
 
+
+    def capture_only(self) -> None:
+        out = Path(self.output_dir.get().strip()) / "detected_objects_live.yaml"
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "capture_epd_detected_objects.py"),
+            "--scene-package", self.scene_package.get().strip(),
+            "--topic", self.epd_topic.get().strip(),
+            "--output", str(out),
+            "--timeout", self.capture_timeout.get().strip(),
+            "--min-objects", self.min_objects.get().strip(),
+            "--frame-fallback", self.frame_fallback.get().strip(),
+            "--once",
+            "--json",
+        ]
+        self._append("\n$ " + " ".join(cmd) + "\n")
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        self._append((proc.stdout or "") + (proc.stderr or ""))
+        self.status.set("Status: PASS (capture-only)" if proc.returncode == 0 else "Status: FAIL (capture-only)")
+
     def _on_done(self, rc: int) -> None:
         self.proc = None
         self.run_btn.configure(state="normal")
         summary = parse_cycle_report(Path(self.output_dir.get().strip()))
         self._append(f"\nProcess exited with code {rc}\n")
         self._append(f"Summary: status={summary.status} warnings={summary.warning_count} errors={summary.error_count}\n")
+        if summary.perception_source:
+            self._append(f"Perception source: {summary.perception_source}\n")
+        if summary.detected_objects_used:
+            self._append(f"Detected objects used: {summary.detected_objects_used}\n")
         for name, path in summary.generated_files.items():
             self._append(f"- {name}: {'FOUND' if path.exists() else 'MISSING'} ({path})\n")
         self.status.set(f"Status: {summary.status} (warnings={summary.warning_count}, errors={summary.error_count})")
