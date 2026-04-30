@@ -54,23 +54,14 @@ def _scene_readiness(scene_package: str) -> tuple[list[str], list[str]]:
     return warnings, errors
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scene-package", required=True)
-    parser.add_argument("--task-recipe", type=Path, required=True)
-    parser.add_argument("--detected-objects", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/generated_cell_acceptance"))
-    parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
+def run_acceptance(scene_package: str, task_recipe: Path, detected_objects: Path, output_dir: Path, strict: bool = False) -> tuple[dict[str, Any], int]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runtime_plan = output_dir / "runtime_execution_plan.json"
+    bridge_payload = output_dir / "emd_grasp_bridge_payload.json"
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    runtime_plan = args.output_dir / "runtime_execution_plan.json"
-    bridge_payload = args.output_dir / "emd_grasp_bridge_payload.json"
-
-    validate_objects_cmd = [sys.executable, str(VALIDATE_OBJECTS), str(args.detected_objects), "--json"]
-    validate_recipe_cmd = [sys.executable, str(VALIDATE_RECIPE), str(args.task_recipe), "--json"]
-    if args.strict:
+    validate_objects_cmd = [sys.executable, str(VALIDATE_OBJECTS), str(detected_objects), "--json"]
+    validate_recipe_cmd = [sys.executable, str(VALIDATE_RECIPE), str(task_recipe), "--json"]
+    if strict:
         validate_objects_cmd.append("--strict")
         validate_recipe_cmd.append("--strict")
 
@@ -81,16 +72,16 @@ def main(argv: list[str] | None = None) -> int:
         sys.executable,
         str(ADAPTER),
         "--task-recipe",
-        str(args.task_recipe),
+        str(task_recipe),
         "--objects",
-        str(args.detected_objects),
+        str(detected_objects),
         "--output",
         str(runtime_plan),
         "--json",
         "--mode",
         "offline",
     ]
-    if args.strict:
+    if strict:
         adapter_cmd.append("--strict")
     adapter_proc = _run(adapter_cmd)
 
@@ -105,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         "--mode",
         "offline",
     ]
-    if args.strict:
+    if strict:
         bridge_cmd.append("--strict")
     bridge_proc = _run(bridge_cmd)
 
@@ -116,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
 
     warnings: list[str] = []
     blockers: list[str] = []
-    scene_warnings, scene_errors = _scene_readiness(args.scene_package)
+    scene_warnings, scene_errors = _scene_readiness(scene_package)
     warnings.extend(scene_warnings)
     blockers.extend(scene_errors)
 
@@ -144,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         status = "FAIL"
     elif warnings:
         status = "WARN"
-    if args.strict and warnings:
+    if strict and warnings:
         status = "FAIL"
         blockers.append("Strict mode treats warnings as blockers.")
 
@@ -157,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "schema_version": "generated_cell_acceptance/v1",
         "status": status,
-        "scene_package": args.scene_package,
+        "scene_package": scene_package,
         "selected_object": selected_obj.get("id"),
         "matched_rule": routing.get("matched_rule_id"),
         "destination_selected": routing.get("destination_id"),
@@ -173,23 +164,37 @@ def main(argv: list[str] | None = None) -> int:
             "emd_bridge": bridge_json.get("status"),
         },
     }
+    return payload, (1 if status == "FAIL" else 0)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scene-package", required=True)
+    parser.add_argument("--task-recipe", type=Path, required=True)
+    parser.add_argument("--detected-objects", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/generated_cell_acceptance"))
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    payload, rc = run_acceptance(args.scene_package, args.task_recipe, args.detected_objects, args.output_dir, strict=args.strict)
 
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        print(f"Generated cell acceptance: {status}")
+        print(f"Generated cell acceptance: {payload['status']}")
         print(f"- selected object: {payload['selected_object']}")
         print(f"- matched rule: {payload['matched_rule']}")
         print(f"- destination selected: {payload['destination_selected']}")
         print(f"- destination pose/frame: {payload['destination_pose']}")
-        print(f"- generated runtime plan path: {runtime_plan}")
-        print(f"- generated EMD bridge payload path: {bridge_payload}")
-        for w in warnings:
+        print(f"- generated runtime plan path: {payload['runtime_plan_path']}")
+        print(f"- generated EMD bridge payload path: {payload['emd_bridge_payload_path']}")
+        for w in payload["warnings"]:
             print(f"WARN: {w}")
-        for b in blockers:
+        for b in payload["blockers"]:
             print(f"FAIL: {b}")
 
-    return 1 if status == "FAIL" else 0
+    return rc
 
 
 if __name__ == "__main__":
