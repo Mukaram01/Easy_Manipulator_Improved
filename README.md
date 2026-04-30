@@ -1379,3 +1379,7 @@ This path is dry-run only and never executes robot motion.
 4. Read PASS/WARN/FAIL in `bundle_run_report.json` and `cell_cycle_gated_report.json`.
 5. Do not proceed to robot motion (dry-run/preflight only).
 6. Future Studio flow will generate this cell definition visually.
+
+## Visual preview of a generated workcell
+
+After generating a workcell bundle, run `scripts/preview_generated_workcell_bundle.py` to inspect table/bin/object/destination poses using JSON summaries and optional RViz MarkerArray publishing. This preview is visualization-only (no robot motion), and is intended before gated dry-runs.

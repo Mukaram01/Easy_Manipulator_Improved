@@ -24,6 +24,16 @@ def build_command(summary: dict, output_dir: Path, dry_run: bool, no_replay: boo
     return cmd
 
 
+def build_preview_command(workcell: Path, marker_mode: bool, as_json: bool) -> list[str]:
+    script = Path(__file__).resolve().parent / 'preview_generated_workcell_bundle.py'
+    cmd = [sys.executable, str(script), '--workcell', str(workcell)]
+    if marker_mode:
+        cmd.append('--publish-markers')
+    if as_json:
+        cmd.append('--json')
+    return cmd
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description='Run generated workcell bundle gated dry-run')
     p.add_argument('--workcell', type=Path, required=True)
@@ -32,7 +42,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--dry-run', action='store_true', default=True)
     p.add_argument('--no-replay', action='store_true', default=True)
     p.add_argument('--json', action='store_true')
+    p.add_argument('--preview-only', action='store_true')
+    p.add_argument('--preview-markers', action='store_true')
     args = p.parse_args(argv)
+    if args.preview_only or args.preview_markers:
+        cmd = build_preview_command(args.workcell, args.preview_markers, args.json or args.preview_only)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        print(proc.stdout if proc.stdout else proc.stderr)
+        return proc.returncode
+
     summary = _load_summary(args.workcell)
     detected = Path(summary.get('detected_objects_example_path', ''))
     if not detected.exists():

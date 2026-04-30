@@ -397,3 +397,7 @@ This path is dry-run only and never executes robot motion.
 
 ## Generate and test your own workcell bundle
 Generated packages now include `generated/generated_workcell_summary.json`, detected-object example, environment objects, destinations export, and an executable gated dry-run command script. Use `scripts/run_generated_workcell_bundle.py` for PASS/WARN/FAIL dry-run validation.
+
+## Visual preview of a generated workcell
+
+Recommended flow: (1) generate bundle, (2) run visual preview, (3) verify table/bin/object/destination placement, (4) run gated dry-run, (5) keep motion disabled. Future Studio tooling can replace manual YAML editing; this preview does not replace Workcell Builder.

@@ -133,6 +133,14 @@ def build_run_generated_workcell_bundle_command(workcell_path: str, output_dir: 
         cmd += ["--output-dir", output_dir]
     return cmd
 
+
+def build_preview_generated_workcell_bundle_command(workcell_path: str, publish_markers: bool = False) -> list[str]:
+    script = Path(__file__).resolve().parent / "preview_generated_workcell_bundle.py"
+    cmd = [sys.executable, str(script), "--workcell", workcell_path, "--json"]
+    if publish_markers:
+        cmd.append("--publish-markers")
+    return cmd
+
 def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     report_path = output_dir / "cycle_report.json"
     generated = {
