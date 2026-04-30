@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import importlib.util
+import json
 import shutil
 import sys
 import tempfile
@@ -267,6 +268,81 @@ def _write_validation_report(report_path: Path, manifest: dict[str, Any], scene_
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _build_detected_objects_example(cell_def: dict[str, Any], task_recipe: dict[str, Any]) -> dict[str, Any]:
+    planning_frame = str((cell_def.get("cell", {}) or {}).get("planning_frame", "world"))
+    rules = task_recipe.get("decision_rules", []) if isinstance(task_recipe.get("decision_rules"), list) else []
+    matched = {}
+    for rule in rules:
+        when = rule.get("when", {}) if isinstance(rule, dict) and isinstance(rule.get("when"), dict) else {}
+        if any(when.get(k) for k in ("class", "label", "colour", "color", "material")):
+            matched = when
+            break
+    support_surfaces = cell_def.get("support_surfaces", []) if isinstance(cell_def.get("support_surfaces"), list) else []
+    first_surface = support_surfaces[0] if support_surfaces and isinstance(support_surfaces[0], dict) else {}
+    surface_pose = first_surface.get("pose", {}) if isinstance(first_surface.get("pose"), dict) else {}
+    surface_dims = first_surface.get("dimensions", [1.0, 1.0, 0.2]) if isinstance(first_surface.get("dimensions"), list) else [1.0, 1.0, 0.2]
+    sx, sy, sz = (surface_dims + [1.0, 1.0, 0.2])[:3]
+    pose_xyz = surface_pose.get("xyz", [0.5, 0.0, 0.75]) if isinstance(surface_pose.get("xyz"), list) else [0.5, 0.0, 0.75]
+    object_pose = [float(pose_xyz[0]), float(pose_xyz[1]), float(pose_xyz[2]) + max(float(sz) * 0.5, 0.05)]
+    return {
+        "schema_version": "detected_objects/v1",
+        "scene_id": str((cell_def.get("cell", {}) or {}).get("id", "generated_scene")),
+        "source": {"type": "generated_example", "note": "offline-safe example for gated dry-run"},
+        "objects": [
+            {
+                "name": "generated_example_object_1",
+                "class": matched.get("class", "box"),
+                "label": matched.get("label", matched.get("class", "demo_item")),
+                "colour": matched.get("colour", matched.get("color", "blue")),
+                "material": matched.get("material", "plastic"),
+                "confidence": 0.9,
+                "dimensions": [max(0.03, float(sx) * 0.1), max(0.03, float(sy) * 0.1), 0.05],
+                "pose": {"frame_id": planning_frame, "position": object_pose, "orientation_rpy": [0.0, 0.0, 0.0]},
+            }
+        ],
+    }
+
+
+def _build_destinations_export(task_recipe: dict[str, Any]) -> dict[str, Any]:
+    out = {"schema_version": "generated_destinations/v1", "destinations": []}
+    for dst in task_recipe.get("destinations", []):
+        if not isinstance(dst, dict):
+            continue
+        pose = dst.get("pose", {}) if isinstance(dst.get("pose"), dict) else {}
+        out["destinations"].append(
+            {
+                "id": dst.get("id"),
+                "frame": pose.get("frame", "world"),
+                "pose_xyz": pose.get("xyz", [0.0, 0.0, 0.0]),
+                "pose_rpy": pose.get("rpy", [0.0, 0.0, 0.0]),
+                "role": dst.get("role"),
+                "linked_environment_object": dst.get("environment_object"),
+            }
+        )
+    return out
+
+
+def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
+    objects = []
+    for key, role in [("support_surfaces", "support_surface"), ("environment", "environment"), ("assets", "asset"), ("objects", "object")]:
+        entries = cell_def.get(key, []) if isinstance(cell_def.get(key), list) else []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            objects.append(
+                {
+                    "id": entry.get("id", entry.get("name")),
+                    "type": entry.get("type", key.rstrip("s")),
+                    "role": entry.get("role", role),
+                    "dimensions": entry.get("dimensions"),
+                    "pose": entry.get("pose"),
+                    "primitive_fallback": entry.get("primitive", {"shape": "box"}),
+                    "mesh": entry.get("mesh") or entry.get("mesh_path"),
+                }
+            )
+    return {"schema_version": "environment_objects/v1", "objects": objects}
+
+
 def _run_optional_bundle_export(
     bundle_exporter: Any,
     package_name: str,
@@ -396,6 +472,52 @@ def generate_package(
             plan_generator.OUTPUT_DIR = original_plan_dir
 
     _write_validation_report(package_dir / "generated" / "validation_report.md", scene_manifest, scene_contract, dry_result)
+
+    generated_dir = package_dir / "generated"
+    detected_example_path = generated_dir / "generated_detected_objects_example.yaml"
+    env_objects_path = generated_dir / "generated_environment_objects.yaml"
+    destinations_path = generated_dir / "generated_destinations.yaml"
+    summary_path = generated_dir / "generated_workcell_summary.json"
+    command_script_path = generated_dir / "generated_gated_dry_run_command.sh"
+    detected_example = _build_detected_objects_example(loaded, task_recipe)
+    env_objects = _build_environment_objects(loaded)
+    destinations = _build_destinations_export(task_recipe)
+    detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
+    env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
+    destinations_path.write_text(_yaml_text_from(scene_generator, destinations), encoding="utf-8")
+    preflight_cmd = (
+        f"python3 scripts/run_cell_readiness_check.py --scene-package {package_name} "
+        f"--task-recipe {task_recipe_path} --detected-objects {detected_example_path} --json"
+    )
+    gated_cmd = (
+        f"python3 scripts/run_generated_cell_cycle.py --scene-package {package_name} "
+        f"--task-recipe {task_recipe_path} --detected-objects {detected_example_path} "
+        f"--output-dir /tmp/{package_name}_gated_dry_run --min-objects 1 --once --dry-run --no-replay --require-preflight --json"
+    )
+    summary_payload = {
+        "schema_version": "generated_workcell_bundle/v1",
+        "package_name": package_name,
+        "source_cell_definition": str(cell_definition_path),
+        "scene_package": package_name,
+        "planning_frame": str((loaded.get("cell", {}) or {}).get("planning_frame", "world")),
+        "robot": loaded.get("robot", {}),
+        "end_effector": loaded.get("end_effector", {}),
+        "camera": loaded.get("camera", {}),
+        "task_recipe_path": str(task_recipe_path),
+        "detected_objects_example_path": str(detected_example_path),
+        "environment_objects_path": str(env_objects_path),
+        "destinations_path": str(destinations_path),
+        "warnings": warnings,
+        "blockers": [],
+        "recommended_commands": {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
+    }
+    summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    command_script_path.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n\n"
+        f"cd {REPO_ROOT}\n{gated_cmd}\n",
+        encoding="utf-8",
+    )
+    command_script_path.chmod(0o755)
 
     commissioning = loaded.get("commissioning", {}) if isinstance(loaded.get("commissioning"), dict) else {}
     if bool(commissioning.get("export_bundle", False)):

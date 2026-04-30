@@ -1371,3 +1371,11 @@ ros2 launch new_scene demo.launch.py
 6. Do not proceed to replay/motion unless all blockers are clear
 
 This path is dry-run only and never executes robot motion.
+
+## Generate and test your own workcell bundle
+1. Edit `cell_definitions/demo_ur5_sorting_cell.yaml`.
+2. Generate package: `python3 scripts/generate_workcell_from_cell_definition.py cell_definitions/demo_ur5_sorting_cell.yaml --output-dir /tmp/generated_workcells --package-name demo_ur5_sorting_cell --force`.
+3. Run gated dry-run: `python3 scripts/run_generated_workcell_bundle.py --workcell /tmp/generated_workcells/demo_ur5_sorting_cell --gated-dry-run --json`.
+4. Read PASS/WARN/FAIL in `bundle_run_report.json` and `cell_cycle_gated_report.json`.
+5. Do not proceed to robot motion (dry-run/preflight only).
+6. Future Studio flow will generate this cell definition visually.
