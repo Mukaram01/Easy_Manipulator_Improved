@@ -345,6 +345,7 @@ ros2 pkg prefix run_grasp_planner
 ros2 pkg prefix run_grasp_execution
 ros2 pkg prefix run_waypoint_execution
 ros2 pkg prefix workcell_builder
+ros2 pkg prefix moveit_ros_perception
 colcon list --base-paths ~/workcell_ws/src --names-only | grep -x cereal && echo "ERROR cereal visible" || echo "OK cereal hidden"
 ```
 
@@ -374,6 +375,8 @@ ros2 launch run_grasp_planner grasp_planner_2f_launch.py
 ```
 
 If EPD is not running, warnings such as `EPD service unavailable` are expected. The install is still valid when the node and interfaces are present (for example `/grasp_planning_node`, `/grasp_requests`, and `/query_planner_interface`).
+
+Workcell Builder note: generated scenes default to `enable_octomap:=true` and expect a RealSense-style pointcloud topic at `/camera/camera/depth/color/points`. For simulation-only testing without a camera, launch with `enable_octomap:=false`.
 
 ## Underlay sourcing order (important)
 
@@ -1321,6 +1324,7 @@ Notes:
 - `run_grasp_execution`
 - `run_waypoint_execution`
 - `workcell_builder`
+- `moveit_ros_perception` (apt package: `ros-humble-moveit-ros-perception`, required for octomap pointcloud updates)
 - `trajopt_sco`
 - `trajopt`
 - `trajopt_ifopt`

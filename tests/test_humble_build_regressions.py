@@ -129,3 +129,10 @@ def test_existing_scene_directory_is_rejected_before_generation_starts():
     text = Path("workcell_builder/workcell_builder/gui/addscene.cpp").read_text()
     assert "Scene directory already exists:" in text
     assert "Please choose a different scene name or delete the existing scene first." in text
+
+
+def test_humble_prereqs_check_moveit_ros_perception_for_octomap():
+    text = Path("fix_and_build_humble.sh").read_text()
+    assert "ros2 pkg prefix moveit_ros_perception" in text
+    assert "Missing MoveIt perception package required for octomap pointcloud updates: ros-humble-moveit-ros-perception" in text
+    assert "missing_tools+=(ros-humble-moveit-ros-perception)" in text
