@@ -1,0 +1,35 @@
+schema_version: task_recipe/v1
+task:
+  id: mvp1_generated_cell_colour_sorting
+  type: sort_by_colour
+  source: detected_object
+  perception_source: realsense_d435i
+  destinations:
+    - id: red_bin
+      frame: world
+      pose_xyz: [0.3, -0.2, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: red
+    - id: blue_bin
+      frame: world
+      pose_xyz: [0.3, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+      label: blue
+    - id: reject_bin
+      frame: world
+      label: reject
+  decision_rules:
+    - id: route_red
+      when:
+        attribute: colour
+        equals: red
+      destination: red_bin
+    - id: route_blue
+      when:
+        attribute: colour
+        equals: blue
+      destination: blue_bin
+    - id: fallback
+      when:
+        default: true
+      destination: reject_bin

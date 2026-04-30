@@ -82,7 +82,7 @@ class TaskRecipeValidatorTests(unittest.TestCase):
         )
         self.assertNotEqual(proc.returncode, 0)
         payload = json.loads(proc.stdout)
-        self.assertEqual(len(payload["files"]), 10)
+        self.assertEqual(len(payload["files"]), 12)
 
 
 class TaskRecipeGeneratorTests(unittest.TestCase):
