@@ -138,6 +138,19 @@ def _write_output(payload: dict[str, Any], output: Path, as_json: bool) -> None:
             output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def create_qos_profile(reliability: str, depth: int):
+    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy  # type: ignore
+
+    chosen = "best_effort" if reliability == "auto" else reliability
+    rel_policy = ReliabilityPolicy.BEST_EFFORT if chosen == "best_effort" else ReliabilityPolicy.RELIABLE
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=max(1, int(depth)),
+        reliability=rel_policy,
+        durability=DurabilityPolicy.VOLATILE,
+    ), chosen
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--topic", default="/easy_perception_deployment/epd_localize_output")
@@ -149,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--qos-reliability", choices=("auto", "best_effort", "reliable"), default="best_effort")
+    parser.add_argument("--qos-depth", type=int, default=10)
     args = parser.parse_args(argv)
 
     try:
@@ -167,7 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     class CaptureNode(Node):
         def __init__(self) -> None:
             super().__init__("capture_epd_detected_objects")
-            self.create_subscription(msg_type, args.topic, self._cb, 10)
+            qos_profile, qos_selected = create_qos_profile(args.qos_reliability, args.qos_depth)
+            self.qos_selected = qos_selected
+            self.create_subscription(msg_type, args.topic, self._cb, qos_profile)
 
         def _cb(self, msg: Any) -> None:
             nonlocal latest_message
@@ -191,18 +208,18 @@ def main(argv: list[str] | None = None) -> int:
                 break
 
         if payload is None or len(payload.get("objects", [])) < max(1, args.min_objects):
-            print(json.dumps({"status": "FAIL", "error": f"No detections meeting min-objects={args.min_objects} on {args.topic}"}, indent=2))
+            print(json.dumps({"status": "FAIL", "error": f"No detections meeting min-objects={args.min_objects} on {args.topic}", "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
             return 1
 
         validation = validate_detected_objects(payload, strict=False, allow_generate_ids=True)
         warnings.extend(validation.warnings)
 
         if args.dry_run:
-            print(json.dumps({"status": "WARN" if warnings else "PASS", "dry_run": True, "output": str(args.output), "payload": payload, "warnings": warnings}, indent=2))
+            print(json.dumps({"status": "WARN" if warnings else "PASS", "dry_run": True, "output": str(args.output), "payload": payload, "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
             return 0
 
         _write_output(payload, args.output, args.json)
-        print(json.dumps({"status": "WARN" if warnings else "PASS", "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings}, indent=2))
+        print(json.dumps({"status": "WARN" if warnings else "PASS", "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
         return 0
     finally:
         node.destroy_node()

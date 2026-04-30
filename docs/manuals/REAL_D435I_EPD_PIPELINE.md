@@ -31,6 +31,66 @@ ros2 launch realsense2_camera rs_launch.py ...
 ros2 launch easy_perception_deployment run.launch.py ...
 ```
 
+## MVP live smoke-test commands (generated-cell)
+
+Run tests from repo root (no `PYTHONPATH` required):
+
+```bash
+python3 -m pytest -q \
+  tests/test_workcell_discovery.py \
+  tests/test_run_cell_cycle_panel.py \
+  tests/test_run_generated_cell_cycle.py \
+  tests/test_capture_epd_detected_objects.py \
+  tests/test_generated_cell_acceptance.py \
+  tests/test_replay_emd_bridge_payload.py
+```
+
+Check camera topics:
+
+```bash
+ros2 topic list | grep camera
+```
+
+Check EPD topic:
+
+```bash
+ros2 topic list | grep easy_perception
+```
+
+Capture one live EPD detection (best-effort QoS, expected PASS/WARN with `objects >= 1`):
+
+```bash
+python3 scripts/capture_epd_detected_objects.py \
+  --topic /easy_perception_deployment/epd_localize_output \
+  --output /tmp/mvp1_live_smoke_test/detected_objects_live.yaml \
+  --scene-package ur5_2f_test \
+  --timeout 15 \
+  --min-objects 1 \
+  --once \
+  --qos-reliability best_effort \
+  --json
+```
+
+Run generated-cell dry-run from live EPD capture (expected PASS/WARN; `perception_source=live_epd` only when ROS message capture succeeds):
+
+```bash
+python3 scripts/run_generated_cell_cycle.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/valid_garbage_sorting.yaml \
+  --capture-live \
+  --epd-topic /easy_perception_deployment/epd_localize_output \
+  --epd-qos-reliability best_effort \
+  --output-dir /tmp/mvp1_live_smoke_test \
+  --min-objects 1 \
+  --capture-timeout 15 \
+  --once \
+  --dry-run \
+  --no-replay \
+  --json
+```
+
+Offline fake mode is now explicit (`--offline-fake-live`) and intended only for tests/CI.
+
 ## Capture one snapshot
 
 ```bash

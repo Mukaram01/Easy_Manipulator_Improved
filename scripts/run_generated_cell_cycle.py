@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse, json, shutil
+import subprocess, sys
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--capture-live', action='store_true')
     p.add_argument('--epd-topic', default='/easy_perception_deployment/epd_localize_output')
     p.add_argument('--output-dir', type=Path, default=Path('/tmp/mvp1'))
+    p.add_argument('--epd-qos-reliability', choices=('auto','best_effort','reliable'), default='best_effort')
+    p.add_argument('--epd-qos-depth', type=int, default=10)
+    p.add_argument('--offline-fake-live', action='store_true')
     p.add_argument('--min-objects', type=int, default=1)
     p.add_argument('--capture-timeout', type=float, default=10)
     p.add_argument('--frame-fallback', default='camera_depth_optical_frame')
@@ -55,22 +59,38 @@ def main(argv: list[str] | None = None) -> int:
     warnings: list[str] = []
 
     perception_source = "fixture"
+    capture_status = 'offline_fixture'
     if args.capture_live:
-        perception_source = "live_epd"
         live_out = args.output_dir / 'live_detected_objects.yaml'
-        fake_detected = Path('/tmp/mvp1/fake_detected_objects.yaml')
-        fake_path = Path('/tmp/mvp1/fake_epd_message.json')
-        if fake_detected.exists():
-            shutil.copyfile(fake_detected, live_out)
-        elif fake_path.exists():
-            msg = json.loads(fake_path.read_text())
-            payload, capture_warnings = convert_epd_message_to_detected_objects(msg, args.epd_topic, args.scene_package, args.frame_fallback)
-            warnings.extend(capture_warnings)
-            if len(payload.get('objects', [])) < max(1, args.min_objects):
-                raise SystemExit('FAIL: capture-live generated fewer than min-objects')
-            _write_output(payload, live_out, as_json=True)
+        if args.offline_fake_live:
+            fake_detected = Path('/tmp/mvp1/fake_detected_objects.yaml')
+            fake_path = Path('/tmp/mvp1/fake_epd_message.json')
+            if fake_detected.exists():
+                shutil.copyfile(fake_detected, live_out)
+                capture_status = 'offline_fake_file'
+            elif fake_path.exists():
+                msg = json.loads(fake_path.read_text())
+                payload, capture_warnings = convert_epd_message_to_detected_objects(msg, args.epd_topic, args.scene_package, args.frame_fallback)
+                warnings.extend(capture_warnings)
+                if len(payload.get('objects', [])) < max(1, args.min_objects):
+                    raise SystemExit('FAIL: capture-live generated fewer than min-objects in offline fake mode')
+                _write_output(payload, live_out, as_json=True)
+                capture_status = 'offline_fake_message'
+            else:
+                raise SystemExit('FAIL: --offline-fake-live requested but no fake input found in /tmp/mvp1')
         else:
-            raise SystemExit('FAIL: live capture requires ROS runtime; for offline tests use /tmp/mvp1/fake_detected_objects.yaml or /tmp/mvp1/fake_epd_message.json')
+            capture_script = Path(__file__).resolve().parent / 'capture_epd_detected_objects.py'
+            cap_cmd = [
+                sys.executable, str(capture_script), '--topic', args.epd_topic, '--output', str(live_out),
+                '--scene-package', args.scene_package, '--timeout', str(args.capture_timeout), '--min-objects', str(args.min_objects),
+                '--frame-fallback', args.frame_fallback, '--qos-reliability', args.epd_qos_reliability, '--qos-depth', str(args.epd_qos_depth), '--once', '--json'
+            ]
+            cap = subprocess.run(cap_cmd, capture_output=True, text=True, check=False)
+            if cap.returncode != 0:
+                err = cap.stdout.strip() or cap.stderr.strip() or 'unknown error'
+                raise SystemExit(f'FAIL: live EPD capture failed: {err}')
+            capture_status = 'live_capture_ok'
+            perception_source = 'live_epd'
         detected_input = live_out
     else:
         if not args.detected_objects:
@@ -137,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         'scene_package': args.scene_package,
         'task_recipe': str(args.task_recipe),
         'perception_source': perception_source,
+        'capture_status': capture_status,
+        'epd_qos_reliability': args.epd_qos_reliability if args.capture_live else None,
         'epd_topic': args.epd_topic if args.capture_live else None,
         'detected_objects_used': str(used),
         'detected_object_count': detected_count,

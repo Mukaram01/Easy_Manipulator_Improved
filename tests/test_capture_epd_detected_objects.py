@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from scripts.capture_epd_detected_objects import convert_epd_message_to_detected_objects
+from scripts.capture_epd_detected_objects import convert_epd_message_to_detected_objects, create_qos_profile
 from scripts.validate_detected_objects import validate_detected_objects
 
 
@@ -59,6 +60,28 @@ class CaptureEPDDetectedObjectsTests(unittest.TestCase):
         result = validate_detected_objects(payload, strict=False, allow_generate_ids=True)
         self.assertIn(result.status, {"PASS", "WARN"})
         self.assertFalse(result.errors)
+
+    def test_qos_profile_best_effort_and_reliable(self) -> None:
+        class Dummy:
+            BEST_EFFORT = "be"
+            RELIABLE = "rel"
+            VOLATILE = "vol"
+            KEEP_LAST = "kl"
+
+        class DummyQoS:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        with patch.dict("sys.modules", {"rclpy.qos": type("M", (), {"DurabilityPolicy": Dummy, "HistoryPolicy": Dummy, "QoSProfile": DummyQoS, "ReliabilityPolicy": Dummy})}):
+            be, choice_be = create_qos_profile("best_effort", 7)
+            rel, choice_rel = create_qos_profile("reliable", 3)
+            auto, choice_auto = create_qos_profile("auto", 4)
+        self.assertEqual(choice_be, "best_effort")
+        self.assertEqual(choice_rel, "reliable")
+        self.assertEqual(choice_auto, "best_effort")
+        self.assertEqual(be.kwargs["reliability"], "be")
+        self.assertEqual(rel.kwargs["reliability"], "rel")
+        self.assertEqual(auto.kwargs["reliability"], "be")
 
 
 if __name__ == "__main__":
