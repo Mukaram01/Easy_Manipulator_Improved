@@ -79,6 +79,25 @@ else
 fi
 
 echo
+echo "INFO: To capture live EPD detections manually, run:"
+echo "python3 ${SCRIPT_DIR}/capture_epd_detected_objects.py --topic /easy_perception_deployment/epd_localize_output --output /tmp/mvp1/live_detected_objects.yaml --scene-package ur5_2f_test --timeout 10 --min-objects 1 --once"
+LIVE_DETECTIONS="/tmp/mvp1/live_detected_objects.yaml"
+if [[ -f "${LIVE_DETECTIONS}" ]]; then
+  set +e
+  LIVE_VALIDATE_OUTPUT="$(python3 "${SCRIPT_DIR}/validate_detected_objects.py" "${LIVE_DETECTIONS}" --json)"
+  LIVE_VALIDATE_EXIT=$?
+  set -e
+  echo "${LIVE_VALIDATE_OUTPUT}"
+  if [[ ${LIVE_VALIDATE_EXIT} -eq 0 ]]; then
+    echo "Live EPD detected_objects snapshot validation: PASS/WARN"
+  else
+    echo "Live EPD detected_objects snapshot validation: WARN (validation failed)"
+  fi
+else
+  echo "INFO: Live EPD detected_objects snapshot not found at ${LIVE_DETECTIONS}; skipping optional validation."
+fi
+
+echo
 "${SCRIPT_DIR}/check_all_scenes.sh"
 "${SCRIPT_DIR}/check_capability_contracts.sh"
 "${SCRIPT_DIR}/check_cell_capability_integration.sh"

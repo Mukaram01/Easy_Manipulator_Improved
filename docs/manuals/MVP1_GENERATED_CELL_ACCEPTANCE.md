@@ -124,3 +124,48 @@ python3 scripts/replay_emd_bridge_payload.py \
   --scene-package ur5_2f_test \
   --dry-run
 ```
+
+## Use live RealSense / EPD detections
+
+Terminal 1:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/epd_ros2_ws/install/setup.bash
+ros2 launch easy_perception_deployment run.launch.py
+```
+
+Terminal 2:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+python3 scripts/capture_epd_detected_objects.py \
+  --topic /easy_perception_deployment/epd_localize_output \
+  --output /tmp/mvp1/live_detected_objects.yaml \
+  --scene-package ur5_2f_test \
+  --timeout 10 \
+  --min-objects 1 \
+  --once
+```
+
+Then:
+```bash
+python3 scripts/run_generated_cell_acceptance.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml \
+  --detected-objects /tmp/mvp1/live_detected_objects.yaml \
+  --output-dir /tmp/mvp1 \
+  --json
+```
+
+Then:
+```bash
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_test
+```
+
+Then:
+```bash
+python3 scripts/replay_emd_bridge_payload.py \
+  --payload /tmp/mvp1/emd_grasp_bridge_payload.json \
+  --scene-package ur5_2f_test \
+  --once
+```
