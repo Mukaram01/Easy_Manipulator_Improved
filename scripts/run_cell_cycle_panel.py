@@ -84,6 +84,26 @@ def build_cycle_command(config: dict[str, Any]) -> list[str]:
     return cmd
 
 
+
+
+def build_preflight_command(config: dict[str, Any]) -> list[str]:
+    script = Path(__file__).resolve().parent / "run_cell_readiness_check.py"
+    cmd = [
+        sys.executable, str(script),
+        "--scene-package", config["scene_package"],
+        "--task-recipe", config["task_recipe"],
+        "--epd-topic", config["epd_topic"],
+        "--target-frame", config.get("target_frame", "world"),
+        "--camera-frame", config.get("camera_frame", "camera_depth_optical_frame"),
+        "--check-ros-topics",
+        "--json",
+    ]
+    if config.get("detected_objects"):
+        cmd += ["--detected-objects", config["detected_objects"]]
+    if config.get("capture_live"):
+        cmd += ["--live", "--check-tf"]
+    return cmd
+
 def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     report_path = output_dir / "cycle_report.json"
     generated = {
@@ -123,6 +143,7 @@ class CellCyclePanel:
         self.json_output = tk.BooleanVar(value=True)
         self.show_dev_fixtures = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="Status: idle")
+        self.preflight_btn: ttk.Button | None = None
 
         self.discovery_data = {"scenes": [], "task_recipes": [], "detected_objects": []}
         self._build_ui()
@@ -175,8 +196,10 @@ class CellCyclePanel:
         row += 1
 
         self.run_btn = ttk.Button(frm, text="Run live dry-run cycle", command=self.run_cycle)
+        self.preflight_btn = ttk.Button(frm, text="Run Preflight Check", command=self.run_preflight)
         ttk.Button(frm, text="Refresh discovery", command=self.refresh_discovery).grid(row=row, column=2, sticky="ew", pady=6)
         self.run_btn.grid(row=row, column=0, sticky="ew", pady=6)
+        self.preflight_btn.grid(row=row, column=1, sticky="w", padx=4)
         ttk.Button(frm, text="Capture live snapshot only", command=self.capture_only).grid(row=row, column=1, sticky="w")
         row += 1
         ttk.Button(frm, text="Open Output Folder", command=self.open_output).grid(row=row, column=1, sticky="w")
@@ -262,6 +285,26 @@ class CellCyclePanel:
 
         threading.Thread(target=worker, daemon=True).start()
 
+
+    def run_preflight(self) -> None:
+        cfg = self._config()
+        cmd = build_preflight_command(cfg)
+        self._append("\n$ " + " ".join(cmd) + "\n")
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        output = (proc.stdout or "") + (proc.stderr or "")
+        self._append(output)
+        try:
+            payload = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else {}
+            status = payload.get("status", "FAIL")
+            blockers = payload.get("blockers") or []
+            warns = payload.get("warnings") or []
+            if blockers:
+                self._append("Blockers:\n" + "\n".join(f"- {b}" for b in blockers) + "\n")
+            if warns:
+                self._append("Warnings:\n" + "\n".join(f"- {w}" for w in warns) + "\n")
+            self.status.set(f"Status: {status} (preflight)")
+        except Exception:
+            self.status.set("Status: FAIL (preflight parse)")
 
     def capture_only(self) -> None:
         out = Path(self.output_dir.get().strip()) / "detected_objects_live.yaml"

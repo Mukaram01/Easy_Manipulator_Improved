@@ -34,6 +34,7 @@ This package was tested with [easy_perception_deployment](https://github.com/ros
 - EMD grasp bridge payload manual: `docs/manuals/EMD_GRASP_BRIDGE_PAYLOAD.md`
 - Detected objects snapshot manual: `docs/manuals/DETECTED_OBJECTS_V1.md`
 - Real D435i + EPD pipeline manual: `docs/manuals/REAL_D435I_EPD_PIPELINE.md`
+- Cell readiness preflight manual: `docs/manuals/CELL_READINESS_PREFLIGHT.md`
 - Validation-only preflight helper:
 
 ```bash
