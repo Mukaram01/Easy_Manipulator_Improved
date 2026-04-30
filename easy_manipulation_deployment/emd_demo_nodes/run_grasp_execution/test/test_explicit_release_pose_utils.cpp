@@ -74,3 +74,28 @@ TEST(ExplicitReleasePoseUtilsTest, MalformedPoseDoesNotCrash)
   EXPECT_FALSE(result.entries.front().valid_pose);
   EXPECT_FALSE(result.warnings.empty());
 }
+
+TEST(ExplicitReleasePoseUtilsTest, MissingFrameStillParsesPoseForPolicyHandling)
+{
+  const auto path = write_temp_payload(R"JSON({
+    "grasp_task": {
+      "grasp_targets": [
+        {
+          "object_id": "box_no_frame",
+          "destination_id": "reject_bin",
+          "destination_pose": {
+            "xyz": [0.1, -0.2, 0.3],
+            "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+          }
+        }
+      ]
+    }
+  })JSON");
+
+  const auto result = run_grasp_execution::load_explicit_release_pose_bridge_payload(path);
+  ASSERT_TRUE(result.loaded);
+  ASSERT_EQ(result.entries.size(), 1U);
+  EXPECT_TRUE(result.entries.front().valid_pose);
+  EXPECT_EQ(result.entries.front().frame_id, "");
+  EXPECT_EQ(result.entries.front().destination_id, "reject_bin");
+}

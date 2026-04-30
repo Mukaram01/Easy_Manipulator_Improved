@@ -40,7 +40,7 @@ Arguments:
 - **WARN**: pipeline succeeded, but operator attention is required (example: scene package not found offline, missing destination pose).
 - **FAIL**: blockers occurred, or strict mode escalated warnings.
 
-Known runtime boundary is always surfaced:
+Previous runtime boundary (now addressed in `run_grasp_execution` destination-aware mode):
 
 > destination_resolved is present in the bridge payload; runtime release execution may still use existing release fallback until runtime destination support is implemented.
 
@@ -64,3 +64,40 @@ After offline acceptance reaches PASS/WARN-understood status:
 2. Ensure generated scene package is discoverable.
 3. Launch existing `run_grasp_execution` stack.
 4. Feed generated runtime plan / bridge payload through current runtime integration path.
+
+## Runtime destination-aware placement
+Offline acceptance determines routing (`destination_id`) and writes `destination_resolved.destination_pose` into the generated bridge payload. Runtime now consumes that pose for the release/place planning target when available.
+
+- If destination pose exists and is valid, runtime logs:
+  - `Using destination-aware release target: destination_id=<id> frame=<frame> ...`
+- If destination pose is missing or unresolved, runtime logs:
+  - `No destination pose supplied; using legacy release fallback.`
+- Legacy compatibility fallback remains available via parameter when destination release planning fails.
+
+### Runtime parameters (grasp_execution.yaml)
+- `use_destination_release: true`
+- `destination_release_fallback_to_legacy: true`
+- `destination_release_require_frame: true`
+
+Frame notes:
+- Destination poses should include `frame_id`.
+- If `destination_release_require_frame=false` and `frame_id` is missing, runtime warns and safely defaults to `planning_frame`.
+- If frame policy rejects a destination frame (for example planning-frame-only policy), the job fails destination-aware planning and uses legacy fallback only when enabled.
+
+### Example end-to-end commands
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+
+python3 scripts/run_generated_cell_acceptance.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml \
+  --detected-objects tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml \
+  --output-dir /tmp/mvp1 \
+  --json
+
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_test
+```
+
+Bridge replay status:
+- TODO: document/standardize a lightweight bridge-payload replay publisher command if/when a shared tool is added.
