@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.run_cell_cycle_panel import DEFAULTS, build_cycle_command, parse_cycle_report
+from scripts.run_cell_cycle_panel import DEFAULTS, build_cycle_command, build_gated_cycle_command, parse_cycle_report
 from scripts.workcell_discovery import discover_all
 
 
@@ -90,6 +90,19 @@ class RunCellCyclePanelTests(unittest.TestCase):
             self.assertEqual(summary.warning_count, 2)
             self.assertEqual(summary.error_count, 1)
             self.assertEqual(summary.perception_source, "live_epd")
+
+    def test_panel_gated_command_includes_require_preflight(self):
+        cfg = {"scene_package":"ur5_2f_test","task_recipe":"t.yaml","detected_objects":"d.yaml","capture_live":False,"epd_topic":"/epd","output_dir":"/tmp/mvp1","capture_timeout":10,"min_objects":1,"frame_fallback":"world","dry_run":True,"replay":False,"strict":False,"json":True}
+        cmd = build_gated_cycle_command(cfg)
+        self.assertIn('--require-preflight', cmd)
+        self.assertNotIn('--preflight-check-ros-topics', cmd)
+
+    def test_panel_live_gated_command_has_live_preflight_flags(self):
+        cfg = {"scene_package":"ur5_2f_test","task_recipe":"t.yaml","detected_objects":"d.yaml","capture_live":True,"epd_topic":"/epd","output_dir":"/tmp/mvp1","capture_timeout":10,"min_objects":1,"frame_fallback":"world","dry_run":True,"replay":False,"strict":False,"json":True}
+        cmd = build_gated_cycle_command(cfg)
+        self.assertIn('--preflight-live', cmd)
+        self.assertIn('--preflight-check-tf', cmd)
+        self.assertIn('--preflight-check-ros-topics', cmd)
 
 
 if __name__ == "__main__":

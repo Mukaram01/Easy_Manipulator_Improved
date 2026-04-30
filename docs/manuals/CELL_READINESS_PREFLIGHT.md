@@ -46,3 +46,13 @@ If TF camera → world is missing, preflight returns `FAIL` with a blocker.
 - Do not publish robot motion commands from preflight.
 
 The operator panel includes a **Run Preflight Check** button that runs this script and prints blockers/warnings.
+
+## One-click gated dry-run
+1. Select scene
+2. Select task recipe
+3. Select detected objects or live EPD
+4. Press Run Gated Dry-Run
+5. Read PASS/WARN/FAIL
+6. Do not proceed to replay/motion unless all blockers are clear
+
+This path is dry-run only and never executes robot motion.

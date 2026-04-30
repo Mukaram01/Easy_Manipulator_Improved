@@ -85,6 +85,33 @@ class RunGeneratedCellCycleTests(unittest.TestCase):
             self.assertNotEqual(report['perception_source'],'live_epd')
             self.assertIn(report['capture_status'], {'offline_fake_file', 'offline_fake_message'})
             self.assertTrue(report['detected_objects_used'].endswith('detected_objects_used.yaml'))
+    def test_require_preflight_pass_proceeds(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK_VALID_GARBAGE),'--detected-objects',str(OBJECTS_VALID_GARBAGE),'--output-dir',td,'--dry-run','--no-replay','--require-preflight','--json')
+            self.assertEqual(p.returncode,0,msg=p.stdout+p.stderr)
+            report=json.loads(p.stdout)
+            self.assertIn('preflight', report)
+            self.assertIn(report['preflight']['status'], {'PASS','WARN'})
+            self.assertEqual(report['operator_summary']['safe_for_robot_motion'], False)
+
+    def test_require_preflight_fail_stops_cycle(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=self._run('--scene-package','missing_scene','--task-recipe',str(TASK_VALID_GARBAGE),'--detected-objects',str(OBJECTS_VALID_GARBAGE),'--output-dir',td,'--dry-run','--no-replay','--require-preflight','--json')
+            self.assertNotEqual(p.returncode,0)
+            report=json.loads(p.stdout)
+            self.assertEqual(report['preflight']['status'], 'FAIL')
+            self.assertEqual(report['cycle']['status'], 'SKIPPED')
+
+    def test_gated_report_written(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=self._run('--scene-package','ur5_2f_test','--task-recipe',str(TASK_VALID_GARBAGE),'--detected-objects',str(OBJECTS_VALID_GARBAGE),'--output-dir',td,'--dry-run','--no-replay','--require-preflight','--json')
+            self.assertEqual(p.returncode,0,msg=p.stdout+p.stderr)
+            report=json.loads((Path(td)/'cell_cycle_gated_report.json').read_text())
+            self.assertIn('preflight', report)
+            self.assertIn('cycle', report)
+            self.assertIn('operator_summary', report)
+            self.assertFalse(report['operator_summary']['safe_for_robot_motion'])
+
 
 if __name__ == '__main__':
     unittest.main()
