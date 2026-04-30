@@ -74,3 +74,7 @@ It does not change runtime ROS 2, MoveIt, grasp, perception, or controller behav
 
 ## Generate and test your own workcell bundle
 Use `generate_workcell_from_cell_definition.py` then run `run_generated_workcell_bundle.py --gated-dry-run --json` to execute preflight + gated dry-run with generated defaults only; robot motion remains disabled.
+
+## Visual preview of a generated workcell
+
+Use `python3 scripts/preview_generated_workcell_bundle.py --workcell <path> --json` to produce `generated/visual_preview_summary.json`, then optionally publish markers to `/generated_workcell/markers` for RViz checks of tables, bins, objects, destinations, and task pick/release highlights. Motion remains disabled.
