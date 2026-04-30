@@ -19,6 +19,9 @@ KNOWN_RUNTIME_BOUNDARY = (
     "destination_resolved is present in the bridge payload; runtime release execution may still "
     "use existing release fallback until runtime destination support is implemented."
 )
+KNOWN_RUNTIME_BOUNDARY_OPERATOR_TEXT = (
+    "Task planner selected a destination, but runtime replay may not yet command that exact release pose."
+)
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -156,6 +159,11 @@ def run_acceptance(scene_package: str, task_recipe: Path, detected_objects: Path
         "runtime_plan_path": str(runtime_plan),
         "emd_bridge_payload_path": str(bridge_payload),
         "warnings": warnings,
+        "warning_groups": {
+            "hard_blockers": blockers,
+            "operator_warnings": [w for w in warnings if w != KNOWN_RUNTIME_BOUNDARY],
+            "developer_runtime_todo": [KNOWN_RUNTIME_BOUNDARY, KNOWN_RUNTIME_BOUNDARY_OPERATOR_TEXT],
+        },
         "blockers": blockers,
         "step_status": {
             "detected_objects": obj_json.get("status"),

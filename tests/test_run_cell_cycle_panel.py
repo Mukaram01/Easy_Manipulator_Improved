@@ -6,10 +6,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.run_cell_cycle_panel import build_cycle_command, parse_cycle_report
+from scripts.run_cell_cycle_panel import DEFAULTS, build_cycle_command, parse_cycle_report
+from scripts.workcell_discovery import discover_all
 
 
 class RunCellCyclePanelTests(unittest.TestCase):
+    def test_operator_defaults_use_valid_fixtures(self):
+        self.assertTrue(DEFAULTS["task_recipe"].endswith("valid_garbage_sorting.yaml"))
+        self.assertTrue(DEFAULTS["detected_objects"].endswith("valid_epd_garbage_sorting.yaml"))
+
+    def test_filtered_defaults_avoid_failure_test_fixtures(self):
+        payload = discover_all()
+        task_values = [x["path"] for x in payload["task_recipes"] if x.get("category") != "failure_test"]
+        obj_values = [x["path"] for x in payload["detected_objects"] if x.get("category") != "failure_test"]
+        self.assertNotIn("tests/fixtures/task_recipes/fail_missing_destination.yaml", task_values)
+        self.assertNotIn("tests/fixtures/detected_objects/low_confidence_object.yaml", obj_values)
+
     def test_defaults_encode_dry_run_enabled_replay_disabled(self):
         cfg = {
             "scene_package": "ur5_2f_test",
