@@ -45,6 +45,19 @@ python3 scripts/generate_scene_import_checklist.py path/to/fixture.stl
 python3 scripts/environment_layout_to_scene_checklist.py tests/fixtures/environment_layouts/ur5_table_bins_existing_assets.layout.yaml
 ```
 
+## Create your own environment using cell definitions
+
+Use the existing Workcell Builder + generation flow (no duplicate builder/system).
+
+1. Start from `cell_definitions/demo_ur5_sorting_cell.yaml`.
+2. Edit robot/base scene metadata, table/bin/box/camera frames, and task destinations/rules.
+3. Validate:
+   - `python3 scripts/validate_cell_definition.py --cell-definition cell_definitions/demo_ur5_sorting_cell.yaml --json`
+4. Generate staged workcell package:
+   - `python3 scripts/generate_workcell_from_cell_definition.py --cell-definition cell_definitions/demo_ur5_sorting_cell.yaml --output-dir /tmp/generated_workcells/demo_ur5_sorting_cell --json`
+5. Run preflight and gated dry-run with generated artifacts (no robot motion required).
+6. Only after offline checks pass, continue with simulation/replay commissioning steps.
+
 ## Do not do this
 
 - Do **not** copy the same mesh into multiple folders unnecessarily.

@@ -24,6 +24,7 @@ class WorkcellDiscoveryTests(unittest.TestCase):
         payload = discover_all()
         json.dumps(payload)
         self.assertIn("scenes", payload)
+        self.assertIn("cell_definitions", payload)
 
     def test_summary_mode_does_not_crash(self):
         script = Path(__file__).resolve().parents[1] / "scripts/workcell_discovery.py"

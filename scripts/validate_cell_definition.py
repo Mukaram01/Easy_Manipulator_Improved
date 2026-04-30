@@ -241,6 +241,21 @@ def _validate_dimensions(summary: ValidationSummary, owner: str, dims: Any) -> N
             summary.errors.append(f"{owner}.dimensions[{idx}] must be a positive number.")
 
 
+def _check_duplicate_ids(summary: ValidationSummary, owner: str, entries: Any) -> None:
+    if not isinstance(entries, list):
+        return
+    seen: set[str] = set()
+    for idx, item in enumerate(entries):
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id.strip():
+            continue
+        if item_id in seen:
+            summary.errors.append(f"Duplicate id '{item_id}' found in {owner}.")
+        seen.add(item_id)
+
+
 def _extract_refs(defn: dict[str, Any]) -> dict[str, Any]:
     robot = defn.get("robot") if isinstance(defn.get("robot"), dict) else {}
     end_effector = defn.get("end_effector") if isinstance(defn.get("end_effector"), dict) else {}
@@ -248,6 +263,8 @@ def _extract_refs(defn: dict[str, Any]) -> dict[str, Any]:
     if not sensors and isinstance(defn.get("camera"), dict) and defn["camera"].get("capability"):
         sensors = [{"capability": defn["camera"].get("capability")}]
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
+    if not isinstance(robot.get("model"), str) or not robot.get("model", "").strip():
+        result.errors.append("robot.model must be a non-empty string.")
     environment = defn.get("environment") if isinstance(defn.get("environment"), dict) else {}
     assets = environment.get("assets") if isinstance(environment.get("assets"), list) else []
     return {
@@ -400,6 +417,16 @@ def validate_cell_definition(
                 continue
             _validate_pose(result, f"environment.support_surfaces[{idx}]", surface)
             _validate_dimensions(result, f"environment.support_surfaces[{idx}]", surface.get("dimensions"))
+            if isinstance(surface.get("mesh"), str) and surface.get("mesh").strip():
+                mesh_path = (Path(__file__).resolve().parents[1] / surface.get("mesh")).resolve()
+                if not mesh_path.exists():
+                    result.warnings.append(
+                        f"environment.support_surfaces[{idx}].mesh not found ({surface.get('mesh')}); using primitive collision dimensions only."
+                    )
+            surface_z = surface.get("pose_xyz", [0.0, 0.0, 0.0])[2] if _is_numeric_list(surface.get("pose_xyz"), 3) else None
+            if isinstance(surface_z, (int, float)):
+                max_surface_z = max(result.environment_layout_summary.get("surface_z", [surface_z] + [surface_z]))
+                result.environment_layout_summary["surface_z"] = [max_surface_z]
 
     for idx, obj in enumerate(objects):
         if not isinstance(obj, dict):
@@ -407,6 +434,8 @@ def validate_cell_definition(
             continue
         _validate_pose(result, f"objects[{idx}]", obj)
         _validate_dimensions(result, f"objects[{idx}]", obj.get("dimensions"))
+    _check_duplicate_ids(result, "objects", objects)
+    _check_duplicate_ids(result, "environment.support_surfaces", support_surfaces)
 
     task_type = task.get("type")
     if not isinstance(task_type, str):
@@ -432,6 +461,23 @@ def validate_cell_definition(
             else:
                 destination_ids.add(destination_id)
             _validate_pose(result, f"task.destinations[{idx}]", destination)
+            if _is_numeric_list(destination.get("pose_xyz"), 3):
+                dest_z = destination["pose_xyz"][2]
+                if isinstance(dest_z, (int, float)):
+                    surfaces = environment.get("support_surfaces")
+                    if isinstance(surfaces, list) and surfaces:
+                        top_z = None
+                        for surface in surfaces:
+                            if isinstance(surface, dict) and _is_numeric_list(surface.get("pose_xyz"), 3):
+                                z = surface["pose_xyz"][2]
+                                if isinstance(z, (int, float)):
+                                    top_z = z if top_z is None else max(top_z, z)
+                        if top_z is not None and dest_z < top_z:
+                            result.warnings.append(
+                                f"task.destinations[{idx}] z={dest_z} is below support surface z={top_z}."
+                            )
+        if len(destination_ids) != len([d for d in destinations if isinstance(d, dict) and isinstance(d.get('id'), str) and d.get('id', '').strip()]):
+            result.errors.append("task.destinations contains duplicate destination ids.")
 
     rules = task.get("rules")
     if task_type in SORTING_TASK_TYPES and (not isinstance(rules, list) or not rules):

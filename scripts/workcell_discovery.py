@@ -39,6 +39,14 @@ class DetectedObjectsRecord:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class CellDefinitionRecord:
+    display_name: str
+    path: str
+    schema_version: str | None
+    warnings: list[str] = field(default_factory=list)
+
+
 def _iter_scene_dirs() -> list[Path]:
     roots = [REPO_ROOT / "install" / "share", REPO_ROOT / "scenes", REPO_ROOT / "src"]
     extra_patterns = [
@@ -158,7 +166,42 @@ def discover_all() -> dict[str, list[dict[str, Any]]]:
         "scenes": [asdict(r) for r in discover_scene_packages()],
         "task_recipes": [asdict(r) for r in discover_task_recipes()],
         "detected_objects": [asdict(r) for r in discover_detected_objects()],
+        "cell_definitions": [asdict(r) for r in discover_cell_definitions()],
+        "generated_workcell_summaries": discover_generated_workcell_summaries(),
     }
+
+
+def discover_cell_definitions() -> list[CellDefinitionRecord]:
+    dirs = [REPO_ROOT / "cell_definitions", REPO_ROOT / "docs/examples"]
+    records: list[CellDefinitionRecord] = []
+    for base in dirs:
+        if not base.exists():
+            continue
+        for path in [*base.rglob("*.yaml"), *base.rglob("*.yml")]:
+            data, err = _load_structured_file(path)
+            if err:
+                records.append(CellDefinitionRecord(path.stem, str(path), None, [f"parse error: {err}"]))
+                continue
+            if not data:
+                continue
+            schema = data.get("schema_version")
+            if schema == "cell_definition/v1":
+                records.append(CellDefinitionRecord(path.stem, str(path), schema, []))
+    return sorted(records, key=lambda r: r.display_name)
+
+
+def discover_generated_workcell_summaries() -> list[dict[str, Any]]:
+    roots = [REPO_ROOT / "generated_workcell", REPO_ROOT / "tests/fixtures/generated_workcell"]
+    results: list[dict[str, Any]] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("summary.json"):
+            data, err = _load_structured_file(path)
+            if err or not data:
+                continue
+            results.append({"path": str(path), "cell_id": data.get("cell_id"), "package_name": data.get("package_name")})
+    return sorted(results, key=lambda x: x["path"])
 
 
 def _print_summary(data: dict[str, list[dict[str, Any]]]) -> None:
@@ -168,6 +211,8 @@ def _print_summary(data: dict[str, list[dict[str, Any]]]) -> None:
     print(f"Scenes found: {len(data['scenes'])}")
     print(f"Task recipes found: {len(data['task_recipes'])}")
     print(f"Detected object fixtures found: {len(data['detected_objects'])}")
+    print(f"Cell definition templates found: {len(data.get('cell_definitions', []))}")
+    print(f"Generated workcell summaries found: {len(data.get('generated_workcell_summaries', []))}")
     print(f"Warnings: {scene_warnings + recipe_warnings + obj_warnings}")
 
 
