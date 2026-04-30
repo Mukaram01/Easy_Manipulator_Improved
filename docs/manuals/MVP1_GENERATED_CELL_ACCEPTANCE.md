@@ -169,3 +169,53 @@ python3 scripts/replay_emd_bridge_payload.py \
   --scene-package ur5_2f_test \
   --once
 ```
+
+
+## Run one complete generated-cell cycle
+
+### A) Offline fixture workflow
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+
+python3 scripts/run_generated_cell_cycle.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml \
+  --detected-objects tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml \
+  --output-dir /tmp/mvp1 \
+  --dry-run \
+  --json
+```
+
+### B) Live RealSense / EPD workflow
+Terminal 1:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/epd_ros2_ws/install/setup.bash
+ros2 launch easy_perception_deployment run.launch.py
+```
+
+Terminal 2:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_test
+```
+
+Terminal 3:
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+
+python3 scripts/run_generated_cell_cycle.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml \
+  --capture-live \
+  --epd-topic /easy_perception_deployment/epd_localize_output \
+  --output-dir /tmp/mvp1 \
+  --min-objects 1 \
+  --capture-timeout 10 \
+  --replay \
+  --once \
+  --json
+```

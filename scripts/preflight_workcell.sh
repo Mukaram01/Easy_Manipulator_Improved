@@ -79,9 +79,18 @@ else
 fi
 
 echo
-echo "INFO: To capture live EPD detections manually, run:"
+echo "INFO: Manual live cycle command:"
 echo "python3 ${SCRIPT_DIR}/capture_epd_detected_objects.py --topic /easy_perception_deployment/epd_localize_output --output /tmp/mvp1/live_detected_objects.yaml --scene-package ur5_2f_test --timeout 10 --min-objects 1 --once"
 LIVE_DETECTIONS="/tmp/mvp1/live_detected_objects.yaml"
+
+FIXTURE_OBJECTS="${REPO_ROOT}/tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml"
+FIXTURE_TASK="${REPO_ROOT}/tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml"
+if [[ -f "${FIXTURE_OBJECTS}" && -f "${FIXTURE_TASK}" ]]; then
+  python3 "${SCRIPT_DIR}/run_generated_cell_cycle.py" --scene-package ur5_2f_test --task-recipe "${FIXTURE_TASK}" --detected-objects "${FIXTURE_OBJECTS}" --output-dir /tmp/mvp1 --dry-run --json || true
+fi
+if [[ -f "/tmp/mvp1/live_detected_objects.yaml" && -f "${FIXTURE_TASK}" ]]; then
+  python3 "${SCRIPT_DIR}/run_generated_cell_cycle.py" --scene-package ur5_2f_test --task-recipe "${FIXTURE_TASK}" --detected-objects /tmp/mvp1/live_detected_objects.yaml --output-dir /tmp/mvp1 --dry-run --json || true
+fi
 if [[ -f "${LIVE_DETECTIONS}" ]]; then
   set +e
   LIVE_VALIDATE_OUTPUT="$(python3 "${SCRIPT_DIR}/validate_detected_objects.py" "${LIVE_DETECTIONS}" --json)"
