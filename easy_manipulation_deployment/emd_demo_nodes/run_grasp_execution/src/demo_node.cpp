@@ -453,7 +453,10 @@ public:
     grasp_execution::declare_or_get_param<bool>(
       release_use_grasp_z_, "release_use_grasp_z", node, node->get_logger(), true);
     grasp_execution::declare_or_get_param<bool>(
-      use_explicit_release_pose_, "use_explicit_release_pose", node, node->get_logger(), false);
+      use_explicit_release_pose_, "use_explicit_release_pose", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<bool>(
+      use_destination_release_, "use_destination_release", node, node->get_logger(), use_explicit_release_pose_);
+    use_explicit_release_pose_ = use_destination_release_;
     grasp_execution::declare_or_get_param<std::string>(
       explicit_release_pose_source_,
       "explicit_release_pose_source",
@@ -468,6 +471,19 @@ public:
       "require_planning_frame");
     grasp_execution::declare_or_get_param<bool>(
       fallback_to_legacy_release_, "fallback_to_legacy_release", node, node->get_logger(), true);
+    grasp_execution::declare_or_get_param<bool>(
+      destination_release_fallback_to_legacy_,
+      "destination_release_fallback_to_legacy",
+      node,
+      node->get_logger(),
+      fallback_to_legacy_release_);
+    fallback_to_legacy_release_ = destination_release_fallback_to_legacy_;
+    grasp_execution::declare_or_get_param<bool>(
+      destination_release_require_frame_,
+      "destination_release_require_frame",
+      node,
+      node->get_logger(),
+      true);
     grasp_execution::declare_or_get_param<std::string>(
       explicit_release_pose_bridge_payload_path_,
       "explicit_release_pose_bridge_payload_path",
@@ -982,7 +998,7 @@ public:
       const auto legacy_release_pose = make_legacy_release_pose(release_pose, selected_moveit_grasp_pose);
       RCLCPP_WARN(
         node_->get_logger(),
-        "Explicit release planning failed for target %s. Falling back to legacy_offset strategy.",
+        "Destination-aware release planning failed for target %s. Falling back to legacy_offset strategy.",
         target_id.c_str());
       release_result = this->plan_and_execute_job(
         options,
@@ -1091,19 +1107,19 @@ private:
     decision.pose = make_legacy_release_pose(current_pose, selected_moveit_grasp_pose);
 
     if (!use_explicit_release_pose_) {
-      decision.fallback_reason = "explicit release poses are disabled by parameter.";
+      decision.fallback_reason = "No destination pose supplied; using legacy release fallback.";
       return decision;
     }
 
     const auto source = to_lower_copy(explicit_release_pose_source_);
     if (source == "disabled") {
-      decision.fallback_reason = "explicit_release_pose_source=disabled.";
+      decision.fallback_reason = "No destination pose supplied; using legacy release fallback.";
       return decision;
     }
 
     const auto it = explicit_release_pose_by_target_id_.find(target_id);
     if (it == explicit_release_pose_by_target_id_.end()) {
-      decision.fallback_reason = "no destination pose entry resolved for target.";
+      decision.fallback_reason = "No destination pose supplied; using legacy release fallback.";
       return decision;
     }
 
@@ -1112,12 +1128,32 @@ private:
     decision.destination_name = entry.destination_name;
     decision.source_object_id = entry.object_id;
     if (!entry.valid_pose) {
-      decision.fallback_reason = "destination pose is missing/malformed.";
+      decision.fallback_reason = "No destination pose supplied; using legacy release fallback.";
       return decision;
     }
     const auto destination_frame = grasp_execution::sanitize_frame_id(entry.frame_id);
     if (destination_frame.empty()) {
-      decision.fallback_reason = "destination frame is empty.";
+      if (destination_release_require_frame_) {
+        decision.fallback_reason = "destination frame is empty and destination_release_require_frame=true.";
+        return decision;
+      }
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Destination pose frame_id missing for target %s; defaulting to planning_frame=%s.",
+        target_id.c_str(),
+        planning_frame_.c_str());
+      geometry_msgs::msg::PoseStamped explicit_pose;
+      explicit_pose.header.frame_id = planning_frame_;
+      explicit_pose.pose = entry.pose;
+      decision.strategy = "explicit_destination_pose";
+      decision.pose = explicit_pose;
+      decision.fallback_reason.clear();
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "Using destination-aware release target: destination_id=%s frame=%s pose=%s",
+        decision.destination_id.c_str(),
+        explicit_pose.header.frame_id.c_str(),
+        format_pose_xyz_quat_rpy(explicit_pose.pose).c_str());
       return decision;
     }
     if (destination_frame != planning_frame_) {
@@ -1148,10 +1184,10 @@ private:
     decision.fallback_reason.clear();
     RCLCPP_INFO(
       node_->get_logger(),
-      "Using explicit destination release pose for target %s destination_id=%s frame=%s",
-      target_id.c_str(),
+      "Using destination-aware release target: destination_id=%s frame=%s pose=%s",
       decision.destination_id.c_str(),
-      destination_frame.c_str());
+      destination_frame.c_str(),
+      format_pose_xyz_quat_rpy(explicit_pose.pose).c_str());
     return decision;
   }
 
@@ -1479,9 +1515,12 @@ private:
   double release_x_offset_{-0.3};
   bool release_use_grasp_z_{true};
   bool use_explicit_release_pose_{false};
+  bool use_destination_release_{true};
   std::string explicit_release_pose_source_{"auto"};
   std::string explicit_release_pose_frame_policy_{"require_planning_frame"};
   bool fallback_to_legacy_release_{true};
+  bool destination_release_fallback_to_legacy_{true};
+  bool destination_release_require_frame_{true};
   std::string explicit_release_pose_bridge_payload_path_;
   bool explicit_release_pose_adapter_loaded_{false};
   std::vector<run_grasp_execution::ExplicitReleasePoseEntry> explicit_release_entries_;
