@@ -45,6 +45,7 @@ class ReplayEmdBridgePayloadTests(unittest.TestCase):
             proc = self._run("--payload", str(p), "--scene-package", "ur5_2f_test", "--dry-run")
             self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
             self.assertIn("PASS: dry-run only", proc.stdout)
+            self.assertIn("explicit destination release pose will be used", proc.stdout)
 
     def test_missing_payload_file(self) -> None:
         proc = self._run("--payload", "/tmp/does-not-exist.json", "--scene-package", "ur5_2f_test", "--dry-run")
@@ -60,7 +61,18 @@ class ReplayEmdBridgePayloadTests(unittest.TestCase):
             p.write_text(json.dumps(payload), encoding="utf-8")
             proc = self._run("--payload", str(p), "--scene-package", "ur5_2f_test", "--dry-run")
             self.assertEqual(proc.returncode, 0)
-            self.assertIn("WARN:", proc.stdout)
+            self.assertIn("legacy release fallback will be used", proc.stdout)
+
+    def test_invalid_destination_pose_xyz_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._payload()
+            target = payload["grasp_task"]["grasp_targets"][0]
+            target["destination_pose"] = {"frame_id": "world", "xyz": [0.2, 0.0]}
+            p = Path(tmp) / "payload.json"
+            p.write_text(json.dumps(payload), encoding="utf-8")
+            proc = self._run("--payload", str(p), "--scene-package", "ur5_2f_test", "--dry-run")
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("destination pose xyz must be a 3-number list", proc.stdout)
 
     def test_missing_frame_id_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

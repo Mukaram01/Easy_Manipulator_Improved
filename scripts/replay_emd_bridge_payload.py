@@ -66,8 +66,11 @@ def _validate(payload: dict[str, Any], scene_package: str) -> tuple[list[str], l
             errors.append("grasp_target entry must be a mapping.")
             continue
         dest = t.get("destination_pose") if isinstance(t.get("destination_pose"), dict) else {}
-        if not isinstance(dest.get("xyz"), list):
+        xyz = dest.get("xyz")
+        if not isinstance(xyz, list):
             warnings.append(f"Object '{t.get('object_id', '(unknown)')}' has no destination pose xyz; runtime will use fallback release mode.")
+        elif len(xyz) != 3 or not all(isinstance(v, (int, float)) for v in xyz):
+            errors.append(f"Object '{t.get('object_id', '(unknown)')}' destination pose xyz must be a 3-number list.")
         if not isinstance(dest.get("frame_id"), str) or not str(dest.get("frame_id")).strip():
             errors.append(f"Object '{t.get('object_id', '(unknown)')}' destination pose frame_id is missing.")
         methods = t.get("grasp_methods") if isinstance(t.get("grasp_methods"), list) else []
@@ -168,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(item, dict):
                 s = _summarize_target(item)
                 print(f" - object={s['object_id']} class={s['object_class']} grasp_frame={s['grasp_frame']} dest={s['destination_id']} dest_frame={s['destination_frame']} release={s['release_mode']}")
+                if s["release_mode"] == "destination-aware":
+                    print(f"PASS: explicit destination release pose will be used for object='{s['object_id']}' destination='{s['destination_id']}'.")
+                else:
+                    print(f"WARN: No task destination release pose provided; legacy release fallback will be used for object='{s['object_id']}'.")
         for w in warnings:
             print(f"WARN: {w}")
         if errors:

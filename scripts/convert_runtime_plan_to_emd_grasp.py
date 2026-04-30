@@ -236,8 +236,8 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
             "destination_safety_warnings": destination_safety_warnings,
             "notes": [
                 "Destination pose preserved in bridge payload.",
-                "Current emd_msgs/GraspTarget has no explicit release/place pose field; runtime uses release_x_offset/release_use_grasp_z fallback.",
-                "TODO(adapter-boundary): extend runtime interface to consume destination_pose without breaking GraspRequest compatibility.",
+                "Runtime can consume destination_pose via explicit_release_pose bridge payload adapter when enabled.",
+                "Legacy release_x_offset/release_use_grasp_z fallback remains active when destination pose is unavailable or invalid.",
             ],
         }
         targets.append(target)
@@ -275,10 +275,10 @@ def _build_bridge_payload(plan: dict[str, Any], args: argparse.Namespace) -> dic
         },
         "grasp_task": {"task_id": task_id, "grasp_targets": targets},
         "runtime_release_adapter_boundary": {
-            "explicit_release_pose_supported_in_runtime": False,
-            "active_release_strategy": "release_x_offset/release_use_grasp_z",
-            "why": "emd_msgs/msg/GraspTarget and emd_msgs/srv/GraspRequest do not carry release destination pose fields.",
-            "todo": "Add non-breaking runtime interface extension to consume destination_pose when available.",
+            "explicit_release_pose_supported_in_runtime": True,
+            "active_release_strategy": "destination_pose_when_available_else_release_x_offset/release_use_grasp_z",
+            "why": "run_grasp_execution consumes destination_pose via explicit_release_pose bridge payload adapter path.",
+            "todo": "Optional future improvement: add first-class release destination pose fields to emd_msgs interfaces.",
         },
         "warnings": warnings,
         "errors": errors,
