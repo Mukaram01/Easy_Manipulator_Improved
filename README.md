@@ -1354,4 +1354,4 @@ ros2 launch new_scene demo.launch.py
 `workcell_builder` keeps generated scenes in `~/workcell_ws/src/scenes/<scene_name>` and generated assets in `~/workcell_ws/src/assets`; scene rediscovery on reopen scans that `scenes/` directory automatically.
 
 ## Manuals
-- [MVP-1 Generated Cell Acceptance](docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md)
+- [MVP-1 Generated Cell Acceptance](docs/manuals/MVP1_GENERATED_CELL_ACCEPTANCE.md) (includes the optional **Run from the operator panel** flow).
