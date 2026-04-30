@@ -1,0 +1,62 @@
+schema_version: detected_objects/v1
+source:
+  type: epd_localization
+  frame_id: camera_depth_optical_frame
+objects:
+  - object_id: red_001
+    name: part
+    class_id: part
+    confidence: 0.97
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.1, 0.1, 0.2]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.1
+      y: 0.1
+      z: 0.2
+    dimensions:
+      x: 0.04
+      y: 0.04
+      z: 0.02
+    attributes:
+      colour: red
+      shape: box
+  - object_id: blue_001
+    name: part
+    class_id: part
+    confidence: 0.95
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.2, 0.1, 0.2]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.2
+      y: 0.1
+      z: 0.2
+    dimensions:
+      x: 0.03
+      y: 0.03
+      z: 0.06
+    attributes:
+      colour: blue
+      shape: cylinder
+  - object_id: unknown_001
+    name: part
+    class_id: part
+    confidence: 0.88
+    pose:
+      frame_id: camera_depth_optical_frame
+      xyz: [0.25, 0.1, 0.2]
+      rpy: [0, 0, 0]
+    centroid:
+      x: 0.25
+      y: 0.1
+      z: 0.2
+    dimensions:
+      x: 0.05
+      y: 0.04
+      z: 0.02
+    attributes:
+      colour: yellow
+      shape: irregular

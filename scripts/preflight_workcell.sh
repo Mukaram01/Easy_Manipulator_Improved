@@ -93,6 +93,24 @@ echo
 "${SCRIPT_DIR}/check_task_execution_plans.sh"
 "${SCRIPT_DIR}/check_emd_grasp_bridge.sh"
 "${SCRIPT_DIR}/check_detected_objects_pipeline.sh"
+set +e
+MVP1_OUTPUT="$(python3 "${SCRIPT_DIR}/run_generated_cell_acceptance.py" \
+  --scene-package ur5_robotiq_generated_cell \
+  --task-recipe "${REPO_ROOT}/tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml" \
+  --detected-objects "${REPO_ROOT}/tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml" \
+  --output-dir "${REPO_ROOT}/reports/generated_cell_acceptance" --json)"
+MVP1_EXIT=$?
+set -e
+echo "${MVP1_OUTPUT}"
+if [[ ${MVP1_EXIT} -eq 0 ]]; then
+  if grep -q '"status": "WARN"' <<<"${MVP1_OUTPUT}"; then
+    echo "Generated cell MVP-1 acceptance: WARN"
+  else
+    echo "Generated cell MVP-1 acceptance: PASS"
+  fi
+else
+  echo "Generated cell MVP-1 acceptance: FAIL"
+fi
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 "${SCRIPT_DIR}/check_generated_workcells.sh"
