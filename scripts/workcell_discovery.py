@@ -196,11 +196,22 @@ def discover_generated_workcell_summaries() -> list[dict[str, Any]]:
     for root in roots:
         if not root.exists():
             continue
-        for path in root.rglob("summary.json"):
+        for path in [*root.rglob("summary.json"), *root.rglob("generated_workcell_summary.json")]:
             data, err = _load_structured_file(path)
             if err or not data:
                 continue
-            results.append({"path": str(path), "cell_id": data.get("cell_id"), "package_name": data.get("package_name")})
+            results.append(
+                {
+                    "path": str(path),
+                    "cell_id": data.get("cell_id"),
+                    "package_name": data.get("package_name"),
+                    "task_recipe_path": data.get("task_recipe_path"),
+                    "detected_objects_example_path": data.get("detected_objects_example_path"),
+                    "warnings": data.get("warnings", []),
+                    "blockers": data.get("blockers", []),
+                    "status": "FAIL" if data.get("blockers") else ("WARN" if data.get("warnings") else "PASS"),
+                }
+            )
     return sorted(results, key=lambda x: x["path"])
 
 

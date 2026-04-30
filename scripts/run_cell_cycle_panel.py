@@ -125,6 +125,14 @@ def build_generate_workcell_command(cell_definition: str, output_dir: str) -> li
     script = Path(__file__).resolve().parent / "generate_workcell_from_cell_definition.py"
     return [sys.executable, str(script), "--cell-definition", cell_definition, "--output-dir", output_dir, "--json"]
 
+
+def build_run_generated_workcell_bundle_command(workcell_path: str, output_dir: str | None = None) -> list[str]:
+    script = Path(__file__).resolve().parent / "run_generated_workcell_bundle.py"
+    cmd = [sys.executable, str(script), "--workcell", workcell_path, "--gated-dry-run", "--dry-run", "--no-replay", "--json"]
+    if output_dir:
+        cmd += ["--output-dir", output_dir]
+    return cmd
+
 def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     report_path = output_dir / "cycle_report.json"
     generated = {

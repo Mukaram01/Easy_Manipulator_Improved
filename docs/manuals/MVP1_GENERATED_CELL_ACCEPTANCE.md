@@ -394,3 +394,6 @@ Expected outcome:
 6. Do not proceed to replay/motion unless all blockers are clear
 
 This path is dry-run only and never executes robot motion.
+
+## Generate and test your own workcell bundle
+Generated packages now include `generated/generated_workcell_summary.json`, detected-object example, environment objects, destinations export, and an executable gated dry-run command script. Use `scripts/run_generated_workcell_bundle.py` for PASS/WARN/FAIL dry-run validation.
