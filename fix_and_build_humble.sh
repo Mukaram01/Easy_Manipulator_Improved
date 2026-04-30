@@ -136,6 +136,11 @@ PY
     missing_tools+=(python3-yaml)
   fi
 
+  source /opt/ros/humble/setup.bash
+  if ! ros2 pkg prefix moveit_ros_perception >/dev/null 2>&1; then
+    missing_tools+=(ros-humble-moveit-ros-perception)
+  fi
+
   local pkg
   for pkg in "${missing_tools[@]:-}"; do
     apt_install_package "$pkg"
@@ -180,6 +185,11 @@ PY
   fi
 
   check_epd_underlay_layout
+
+  source /opt/ros/humble/setup.bash
+  if ! ros2 pkg prefix moveit_ros_perception >/dev/null 2>&1; then
+    missing+=("Missing MoveIt perception package required for octomap pointcloud updates: ros-humble-moveit-ros-perception")
+  fi
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     echo "Prerequisite check failed. Missing requirements:" >&2
