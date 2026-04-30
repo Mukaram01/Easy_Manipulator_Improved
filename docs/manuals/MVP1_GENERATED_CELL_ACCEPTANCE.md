@@ -99,5 +99,28 @@ python3 scripts/run_generated_cell_acceptance.py \
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_test
 ```
 
-Bridge replay status:
-- TODO: document/standardize a lightweight bridge-payload replay publisher command if/when a shared tool is added.
+## Replay a generated task into runtime
+
+This replay flow is the backend equivalent of the future GUI **"Simulate Cycle"** button.
+
+1. Acceptance generates `emd_grasp_bridge_payload.json` from detected objects + task recipe.
+2. Replay sends that payload through the existing runtime communication boundary (`grasp_requests` service or `grasp_tasks` topic) used by `run_grasp_execution`.
+3. `run_grasp_execution` performs destination-aware placement when destination pose data is available, and falls back to legacy release mode when not.
+
+Replay command:
+
+```bash
+python3 scripts/replay_emd_bridge_payload.py \
+  --payload /tmp/mvp1/emd_grasp_bridge_payload.json \
+  --scene-package ur5_2f_test \
+  --once
+```
+
+Use `--dry-run` for validation-only checks (no ROS runtime send):
+
+```bash
+python3 scripts/replay_emd_bridge_payload.py \
+  --payload /tmp/mvp1/emd_grasp_bridge_payload.json \
+  --scene-package ur5_2f_test \
+  --dry-run
+```

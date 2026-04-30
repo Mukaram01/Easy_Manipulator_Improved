@@ -111,6 +111,22 @@ if [[ ${MVP1_EXIT} -eq 0 ]]; then
 else
   echo "Generated cell MVP-1 acceptance: FAIL"
 fi
+
+MVP1_BRIDGE_PAYLOAD="/tmp/mvp1/emd_grasp_bridge_payload.json"
+if [[ -f "${MVP1_BRIDGE_PAYLOAD}" ]]; then
+  set +e
+  REPLAY_OUTPUT="$(python3 "${SCRIPT_DIR}/replay_emd_bridge_payload.py" --payload "${MVP1_BRIDGE_PAYLOAD}" --scene-package ur5_2f_test --dry-run)"
+  REPLAY_EXIT=$?
+  set -e
+  echo "${REPLAY_OUTPUT}"
+  if [[ ${REPLAY_EXIT} -eq 0 ]]; then
+    echo "MVP-1 bridge replay dry-run: PASS/WARN"
+  else
+    echo "MVP-1 bridge replay dry-run: WARN (validation failed)"
+  fi
+else
+  echo "INFO: Skipping MVP-1 bridge replay dry-run (/tmp/mvp1/emd_grasp_bridge_payload.json not found)."
+fi
 "${SCRIPT_DIR}/generate_task_execution_plan_report.py"
 "${SCRIPT_DIR}/check_workcell_bundles.sh"
 "${SCRIPT_DIR}/check_generated_workcells.sh"
