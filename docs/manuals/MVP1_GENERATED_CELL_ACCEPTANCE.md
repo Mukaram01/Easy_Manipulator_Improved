@@ -219,3 +219,46 @@ python3 scripts/run_generated_cell_cycle.py \
   --once \
   --json
 ```
+
+
+## Run from the operator panel
+
+Launch the optional MVP-1 operator panel:
+
+```bash
+python3 scripts/run_cell_cycle_panel.py
+```
+
+This panel is a thin GUI layer over `scripts/run_generated_cell_cycle.py`. It does not replace Workcell Builder.
+
+### Offline dry-run example
+1. Set `Scene package` to `ur5_2f_test`.
+2. Set `Task recipe` to `tests/fixtures/task_recipes/mvp1_generated_cell_colour_sorting.yaml`.
+3. Select `Offline detected_objects file`.
+4. Set `Detected objects` to `tests/fixtures/detected_objects/mvp1_colour_sorting_with_fallback.yaml`.
+5. Keep `Dry run` enabled and `Replay to runtime` disabled.
+6. Click `Run Cycle`.
+
+### Live EPD example
+Before clicking `Run Cycle`, start:
+1. EPD / RealSense node (`easy_perception_deployment`).
+2. `run_grasp_execution` if replay is selected.
+
+Then select `Live EPD capture`, verify topic `/easy_perception_deployment/epd_localize_output`, and run.
+
+### Replay warning
+If `Replay to runtime` is enabled, the panel prompts:
+
+`Replay will send the generated payload to the running grasp execution node. Continue?`
+
+Use replay only when you intentionally want to submit the generated payload to runtime.
+
+### Output files
+By default, artifacts are written to `/tmp/mvp1` (or the selected output directory), including:
+- `detected_objects_used.yaml`
+- `runtime_execution_plan.json`
+- `emd_grasp_bridge_payload.json`
+- `cycle_report.json`
+
+### Future full GUI mapping
+This panel is the first GUI layer over the generated-cell cycle runner. It does not replace Workcell Builder.
