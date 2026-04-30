@@ -103,20 +103,17 @@ def test_humble_scene_template_preserves_fake_hardware_launch_behavior() -> None
     assert "use_fake_hardware" in content
 
 
-def test_humble_scene_template_defaults_octomap_disabled_without_sensor_plugins() -> None:
+def test_humble_scene_template_defaults_octomap_enabled_with_realsense_pointcloud_config() -> None:
     content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
     assert 'DeclareLaunchArgument(\n            "enable_octomap"' in content
-    assert 'default_value="false"' in content
-    assert 'octomap_enabled = enable_octomap.perform(context).lower() == "true"' in content
-    assert 'octomap_config = {}' in content
-    assert 'msg="Octomap occupancy monitor disabled (enable_octomap:=false)."' in content
-    assert '"octomap_resolution": 0.1' in content
-    assert "no 3D sensor plugin configuration" in content
+    assert 'default_value="true"' in content
+    assert '"occupancy_map_monitor/PointCloudOctomapUpdater"' in content
+    assert 'default_value="/camera/camera/depth/color/points"' in content
+    assert '"octomap_pointcloud_topic"' in content
     assert "from launch.actions import DeclareLaunchArgument, LogInfo" in content
     assert "LogWarning" not in content
-    assert "octomap_launch_message = LogInfo(" in content
-    assert "WARNING: enable_octomap:=true requested, but no 3D sensor plugin configuration" in content
-
+    assert '"sensors": ["realsense_pointcloud"]' in content
+    assert '"point_cloud_topic": octomap_pointcloud_topic.perform(context)' in content
 
 def test_humble_scene_cmakelists_installs_environment_yaml() -> None:
     content = (REPO_ROOT / "workcell_builder/workcell_builder/templates/ros2/humble/CMakeLists_example.txt").read_text(encoding="utf-8")

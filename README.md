@@ -1098,8 +1098,8 @@ workcell_builder
 colcon build --symlink-install --packages-select <generated_scene_package>
 source install/setup.bash
 ros2 launch <generated_scene_package> demo.launch.py
-# enable octomap mode only after adding occupancy-map sensor plugins:
-ros2 launch <generated_scene_package> demo.launch.py enable_octomap:=true
+ros2 launch <generated_scene_package> demo.launch.py enable_octomap:=false
+ros2 launch <generated_scene_package> demo.launch.py octomap_pointcloud_topic:=/your/points/topic
 ```
 
 Expected behavior:
@@ -1109,8 +1109,10 @@ Expected behavior:
 - No launch parameter validation error like `finger_count: NoneType -> None`.
 - MoveIt launch should continue to the "You can start planning now!" stage.
 - MoveIt controller params should include both arm and gripper controllers for UR5 + Robotiq 85 scenes (`ur5_arm_controller`, `ur5_gripper_controller`).
-- Generated scene launches default to `enable_octomap:=false` so MoveIt avoids false octomap sensor errors when no 3D sensor plugin is configured.
-- Future RealSense/octomap integration should use `enable_octomap:=true` only after adding occupancy-map sensor plugin parameters to the scene package.
+- Generated scene launches default to `enable_octomap:=true` with a MoveIt `PointCloudOctomapUpdater` configuration.
+- Default RealSense pointcloud topic for octomap updates is `/camera/camera/depth/color/points`.
+- Launch without octomap when needed: `ros2 launch <generated_scene_package> demo.launch.py enable_octomap:=false`.
+- Override the pointcloud topic when needed: `ros2 launch <generated_scene_package> demo.launch.py octomap_pointcloud_topic:=/your/points/topic`.
 
 Controller validation commands:
 
