@@ -5,10 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
@@ -44,6 +45,33 @@ def _message_objects(msg: Any) -> list[Any]:
     return []
 
 
+def _quaternion_from_rpy(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    return (
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+        cr * cp * cy + sr * sp * sy,
+    )
+
+
+def _rpy_from_quaternion(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = 2.0 * (w * y - z * x)
+    pitch = math.copysign(math.pi / 2.0, sinp) if abs(sinp) >= 1.0 else math.asin(sinp)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return roll, pitch, yaw
+
+
 def _object_to_detected(raw: Any, index: int, frame_id: str) -> tuple[dict[str, Any] | None, list[str]]:
     warnings: list[str] = []
     centroid = _get(raw, "centroid")
@@ -72,12 +100,15 @@ def _object_to_detected(raw: Any, index: int, frame_id: str) -> tuple[dict[str, 
         if lx and wy and hz:
             dims = {"x": lx, "y": wy, "z": hz}
 
+    raw_rpy = [0.0, 0.0, 0.0]
+    raw_pose = {"frame_id": frame_id, "xyz": [x, y, z], "rpy": raw_rpy}
     obj = {
         "object_id": f"obj_{index:03d}",
         "name": str(name),
         "class_id": str(class_id),
         "confidence": _to_float(_get(raw, "confidence")),
-        "pose": {"frame_id": frame_id, "xyz": [x, y, z], "rpy": [0.0, 0.0, 0.0]},
+        "pose": raw_pose.copy(),
+        "raw_pose": raw_pose,
         "centroid": {"x": x, "y": y, "z": z},
         "dimensions": dims,
         "shape": {"type": str(_get(raw, "shape") or "box")},
@@ -89,6 +120,25 @@ def _object_to_detected(raw: Any, index: int, frame_id: str) -> tuple[dict[str, 
         "raw": {"source_message_type": str(type(raw)).replace("<class '", "").replace("'>", "")},
     }
     return obj, warnings
+
+
+def _normalize_pose_with_tf(
+    obj: dict[str, Any],
+    target_frame: str,
+    tf_timeout_sec: float,
+    transform_pose: Callable[[str, str, list[float], list[float], float], tuple[list[float], list[float], str]],
+) -> tuple[str, str]:
+    pose = obj.get("pose") if isinstance(obj.get("pose"), dict) else {}
+    src_frame = str(pose.get("frame_id") or "").strip()
+    xyz = pose.get("xyz")
+    rpy = pose.get("rpy")
+    if not src_frame or not isinstance(xyz, list) or len(xyz) < 3:
+        return "FAIL", "Object pose missing frame_id/xyz for TF normalization"
+    if not isinstance(rpy, list) or len(rpy) < 3:
+        rpy = [0.0, 0.0, 0.0]
+    transformed_xyz, transformed_rpy, msg = transform_pose(src_frame, target_frame, xyz, rpy, tf_timeout_sec)
+    obj["pose"] = {"frame_id": target_frame, "xyz": transformed_xyz, "rpy": transformed_rpy}
+    return "PASS", msg
 
 
 def convert_epd_message_to_detected_objects(
@@ -164,6 +214,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--qos-reliability", choices=("auto", "best_effort", "reliable"), default="best_effort")
     parser.add_argument("--qos-depth", type=int, default=10)
+    parser.add_argument("--target-frame", default="world")
+    parser.add_argument("--tf-timeout", type=float, default=2.0)
+    parser.add_argument("--require-transform", action="store_true", default=True)
+    parser.add_argument("--allow-untransformed", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -190,7 +244,38 @@ def main(argv: list[str] | None = None) -> int:
             nonlocal latest_message
             latest_message = msg
 
+    tf_ready = False
+    tf_buffer = None
     node = CaptureNode()
+    if args.capture_live if hasattr(args, "capture_live") else True:
+        try:
+            from tf2_ros import Buffer, TransformListener  # type: ignore
+            tf_buffer = Buffer()
+            _tf_listener = TransformListener(tf_buffer, node)
+            tf_ready = True
+        except Exception:
+            tf_ready = False
+
+    def _transform_pose(src_frame: str, target_frame: str, xyz: list[float], rpy: list[float], timeout_sec: float):
+        if tf_buffer is None:
+            raise RuntimeError("TF2 listener is unavailable")
+        from geometry_msgs.msg import PoseStamped  # type: ignore
+        from rclpy.duration import Duration  # type: ignore
+        pose = PoseStamped()
+        pose.header.frame_id = src_frame
+        pose.header.stamp = node.get_clock().now().to_msg()
+        pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = float(xyz[0]), float(xyz[1]), float(xyz[2])
+        qx, qy, qz, qw = _quaternion_from_rpy(float(rpy[0]), float(rpy[1]), float(rpy[2]))
+        pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w = qx, qy, qz, qw
+        transformed = tf_buffer.transform(pose, target_frame, timeout=Duration(seconds=float(timeout_sec)))
+        out_xyz = [float(transformed.pose.position.x), float(transformed.pose.position.y), float(transformed.pose.position.z)]
+        out_rpy = list(_rpy_from_quaternion(
+            float(transformed.pose.orientation.x),
+            float(transformed.pose.orientation.y),
+            float(transformed.pose.orientation.z),
+            float(transformed.pose.orientation.w),
+        ))
+        return out_xyz, out_rpy, f"Pose transformed {src_frame} -> {target_frame}"
     try:
         end_ns = node.get_clock().now().nanoseconds + int(args.timeout * 1e9)
         payload = None
@@ -211,15 +296,45 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"status": "FAIL", "error": f"No detections meeting min-objects={args.min_objects} on {args.topic}", "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
             return 1
 
+        transform_status = "PASS"
+        transform_message = "No objects required normalization"
+        source_frame = payload.get("source", {}).get("frame_id")
+        if payload.get("objects"):
+            statuses: list[str] = []
+            messages: list[str] = []
+            for obj in payload.get("objects", []):
+                try:
+                    status, message = _normalize_pose_with_tf(obj, args.target_frame, args.tf_timeout, _transform_pose)
+                except Exception as exc:
+                    status, message = "FAIL", f"TF transform failed: {exc}"
+                statuses.append(status)
+                messages.append(message)
+            transform_status = "PASS" if all(s == "PASS" for s in statuses) else "FAIL"
+            transform_message = "; ".join(messages)
+            if transform_status == "FAIL" and args.allow_untransformed:
+                transform_status = "WARN"
+                transform_message += "; continuing because --allow-untransformed"
+            if transform_status == "FAIL" and (args.require_transform and not args.allow_untransformed):
+                print(json.dumps({"status": "FAIL", "error": transform_message}, indent=2))
+                return 1
+        payload["source"]["transform"] = {
+            "requested_target_frame": args.target_frame,
+            "status": transform_status,
+            "source_frame": source_frame,
+            "target_frame": args.target_frame,
+            "message": transform_message,
+            "tf_listener_ready": tf_ready,
+        }
+
         validation = validate_detected_objects(payload, strict=False, allow_generate_ids=True)
         warnings.extend(validation.warnings)
 
         if args.dry_run:
-            print(json.dumps({"status": "WARN" if warnings else "PASS", "dry_run": True, "output": str(args.output), "payload": payload, "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
+            print(json.dumps({"status": "FAIL" if transform_status == "FAIL" else ("WARN" if (warnings or transform_status == "WARN") else "PASS"), "dry_run": True, "output": str(args.output), "payload": payload, "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
             return 0
 
         _write_output(payload, args.output, args.json)
-        print(json.dumps({"status": "WARN" if warnings else "PASS", "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
+        print(json.dumps({"status": "FAIL" if transform_status == "FAIL" else ("WARN" if (warnings or transform_status == "WARN") else "PASS"), "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
         return 0
     finally:
         node.destroy_node()

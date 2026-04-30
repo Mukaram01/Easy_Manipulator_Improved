@@ -57,6 +57,17 @@ Check EPD topic:
 ros2 topic list | grep easy_perception
 ```
 
+## Verify TF from camera to world
+
+Before trusting any live replay/execution, verify TF is continuously available from the camera frame to the planning frame (`world` by default):
+
+```bash
+ros2 run tf2_ros tf2_echo world camera_depth_optical_frame
+ros2 run tf2_ros tf2_echo world camera_color_optical_frame
+```
+
+Expected result: transforms print continuously and do not timeout.
+
 Capture one live EPD detection (best-effort QoS, expected PASS/WARN with `objects >= 1`):
 
 ```bash
@@ -68,6 +79,8 @@ python3 scripts/capture_epd_detected_objects.py \
   --min-objects 1 \
   --once \
   --qos-reliability best_effort \
+  --target-frame world \
+  --require-transform \
   --json
 ```
 
@@ -86,8 +99,13 @@ python3 scripts/run_generated_cell_cycle.py \
   --once \
   --dry-run \
   --no-replay \
+  --target-frame world \
+  --require-transform \
   --json
 ```
+
+If transform is unavailable and `--require-transform` is active, live capture fails conservatively.
+Only use `--allow-untransformed` for debugging; this is reported as WARN and runtime replay is unsafe/not recommended.
 
 Offline fake mode is now explicit (`--offline-fake-live`) and intended only for tests/CI.
 

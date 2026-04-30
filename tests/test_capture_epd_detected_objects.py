@@ -4,7 +4,11 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from scripts.capture_epd_detected_objects import convert_epd_message_to_detected_objects, create_qos_profile
+from scripts.capture_epd_detected_objects import (
+    _normalize_pose_with_tf,
+    convert_epd_message_to_detected_objects,
+    create_qos_profile,
+)
 from scripts.validate_detected_objects import validate_detected_objects
 
 
@@ -82,6 +86,20 @@ class CaptureEPDDetectedObjectsTests(unittest.TestCase):
         self.assertEqual(be.kwargs["reliability"], "be")
         self.assertEqual(rel.kwargs["reliability"], "rel")
         self.assertEqual(auto.kwargs["reliability"], "be")
+
+    def test_normalize_pose_helper_pass(self) -> None:
+        obj = {"pose": {"frame_id": "camera_depth_optical_frame", "xyz": [0.1, 0.2, 0.3], "rpy": [0.0, 0.0, 0.0]}}
+
+        def fake_tf(src: str, target: str, xyz: list[float], rpy: list[float], timeout: float):
+            self.assertEqual(src, "camera_depth_optical_frame")
+            self.assertEqual(target, "world")
+            self.assertEqual(timeout, 2.0)
+            return [1.0, 2.0, 3.0], [0.1, 0.2, 0.3], "ok"
+
+        status, message = _normalize_pose_with_tf(obj, "world", 2.0, fake_tf)
+        self.assertEqual(status, "PASS")
+        self.assertEqual(message, "ok")
+        self.assertEqual(obj["pose"]["frame_id"], "world")
 
 
 if __name__ == "__main__":
