@@ -20,6 +20,18 @@ def _load_detected(path: Path) -> dict[str, Any]:
     return data
 
 
+def _pick_selected_object(detected: dict[str, Any], acceptance: dict[str, Any]) -> dict[str, Any] | None:
+    selected_name = acceptance.get("selected_object")
+    objects = detected.get("objects") or []
+    if not isinstance(objects, list):
+        return None
+    if selected_name:
+        for obj in objects:
+            if isinstance(obj, dict) and obj.get("name") == selected_name:
+                return obj
+    return objects[0] if objects else None
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description='Run one generated-cell cycle.')
     p.add_argument('--scene-package', required=True)
@@ -42,7 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     warnings: list[str] = []
 
+    perception_source = "fixture"
     if args.capture_live:
+        perception_source = "live_epd"
         live_out = args.output_dir / 'live_detected_objects.yaml'
         fake_detected = Path('/tmp/mvp1/fake_detected_objects.yaml')
         fake_path = Path('/tmp/mvp1/fake_epd_message.json')
@@ -68,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
 
     used = args.output_dir / 'detected_objects_used.yaml'
     shutil.copyfile(detected_input, used)
+    detected_data = _load_detected(used)
 
     acceptance, rc = run_acceptance(args.scene_package, args.task_recipe, used, args.output_dir, strict=args.strict)
     payload_path = Path(acceptance['emd_bridge_payload_path'])
@@ -94,16 +109,51 @@ def main(argv: list[str] | None = None) -> int:
         replay_status = 'SKIPPED'
         replay_message = 'dry-run enabled'
 
+    detected_count = len(detected_data.get("objects", [])) if isinstance(detected_data.get("objects"), list) else 0
+    if detected_count == 0:
+        warnings.append("No objects detected in detected_objects_used payload")
+    if detected_count < max(1, args.min_objects):
+        warnings.append(f"Detected object count {detected_count} is below min-objects={max(1, args.min_objects)}")
+
+    selected_obj = _pick_selected_object(detected_data, acceptance)
+    selected_pose = (selected_obj or {}).get("pose") if isinstance(selected_obj, dict) else {}
+    pose_frame = selected_pose.get("frame_id") if isinstance(selected_pose, dict) else None
+    xyz = selected_pose.get("xyz") if isinstance(selected_pose, dict) else None
+    conf = (selected_obj or {}).get("confidence") if isinstance(selected_obj, dict) else None
+    dims = (selected_obj or {}).get("dimensions") if isinstance(selected_obj, dict) else None
+    if selected_obj and not dims:
+        warnings.append("Selected object missing dimensions")
+    if selected_obj and conf is None:
+        warnings.append("Selected object missing confidence")
+    elif isinstance(conf, (int, float)) and conf < 0.5:
+        warnings.append(f"Selected object has low confidence ({conf:.3f} < 0.500)")
+    if pose_frame and pose_frame != "world":
+        warnings.append(f"Selected object pose frame is '{pose_frame}', not 'world'; transform validation not available")
+    if isinstance(xyz, list) and len(xyz) >= 3 and isinstance(xyz[2], (int, float)) and xyz[2] < 0.0:
+        warnings.append(f"Selected object z ({xyz[2]:.4f}) is below conservative table threshold (0.0)")
+
     report = {
         'status': acceptance['status'] if rc == 0 else 'FAIL',
         'scene_package': args.scene_package,
         'task_recipe': str(args.task_recipe),
+        'perception_source': perception_source,
+        'epd_topic': args.epd_topic if args.capture_live else None,
         'detected_objects_used': str(used),
-        'detected_object_count': _load_detected(used).get('objects') and len(_load_detected(used)['objects']) or 0,
+        'detected_object_count': detected_count,
+        'selected_object': acceptance.get('selected_object'),
+        'selected_object_class': (selected_obj or {}).get('class_id') if isinstance(selected_obj, dict) else None,
+        'selected_object_label': (selected_obj or {}).get('name') if isinstance(selected_obj, dict) else None,
+        'selected_object_confidence': conf,
+        'object_pose_frame': pose_frame,
+        'object_xyz': xyz,
         'chosen_destination': acceptance.get('destination_selected'),
+        'destination_release_pose': acceptance.get('destination_release_pose'),
+        'runtime_release_strategy': acceptance.get('runtime_release_strategy'),
         'payload_path': str(payload_path),
         'replay_status': replay_status,
         'replay_message': replay_message,
+        'dry_run': bool(args.dry_run),
+        'blockers': acceptance.get('blockers', []),
         'warnings': acceptance.get('warnings', []) + warnings,
         'acceptance': acceptance,
     }

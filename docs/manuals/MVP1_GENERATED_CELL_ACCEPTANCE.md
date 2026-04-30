@@ -306,3 +306,81 @@ Use **Refresh** in `scripts/run_cell_cycle_panel.py` to discover existing scene 
 - Selection details: shows source path, schema/version, object count, and warnings.
 - Live EPD mode does not require a detected_objects fixture.
 - Replay still requires `run_grasp_execution` to already be running.
+
+
+## First live D435i / EPD smoke test
+
+A. Build:
+
+```bash
+colcon build --symlink-install --packages-skip tesseract_rviz tesseract_planning_server tesseract_ros_examples
+```
+
+B. Source:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/setup.bash
+```
+
+C. Launch RealSense D435i:
+
+```bash
+ros2 launch realsense2_camera rs_launch.py \
+  device_type:=d435i \
+  rgb_camera.color_profile:=424x240x15 \
+  depth_module.depth_profile:=424x240x15 \
+  pointcloud.enable:=true \
+  align_depth.enable:=true
+```
+
+D. Launch EPD in another terminal using the existing project command.
+
+E. Confirm topics:
+
+```bash
+ros2 topic list | grep camera
+ros2 topic list | grep easy_perception
+```
+
+F. Run capture-only smoke test:
+
+```bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+python3 scripts/capture_epd_detected_objects.py \
+  --topic /easy_perception_deployment/epd_localize_output \
+  --output /tmp/mvp1_live_smoke_test/detected_objects_live.yaml \
+  --scene-package ur5_2f_test \
+  --timeout 10 \
+  --min-objects 1 \
+  --once \
+  --json
+```
+
+G. Run full live dry-run generated-cell cycle:
+
+```bash
+python3 scripts/run_generated_cell_cycle.py \
+  --scene-package ur5_2f_test \
+  --task-recipe tests/fixtures/task_recipes/valid_garbage_sorting.yaml \
+  --capture-live \
+  --epd-topic /easy_perception_deployment/epd_localize_output \
+  --output-dir /tmp/mvp1_live_smoke_test \
+  --min-objects 1 \
+  --capture-timeout 10 \
+  --once \
+  --dry-run \
+  --no-replay \
+  --json
+```
+
+Expected outcome:
+- PASS or WARN is acceptable.
+- FAIL means a real blocker.
+- blockers=[] is required before any future replay/motion test.
+- detected_objects_used.yaml is saved.
+- runtime_execution_plan.json is saved.
+- emd_grasp_bridge_payload.json is saved.
+- cycle_report.json is saved.
+- replay_status remains SKIPPED unless explicitly enabled.
+- dry-run remains true.
