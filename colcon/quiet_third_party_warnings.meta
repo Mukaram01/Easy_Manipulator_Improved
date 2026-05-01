@@ -1,0 +1,16 @@
+{
+  "names": {
+    "osqp_eigen": {
+      "cmake-args": ["-Wno-dev"]
+    },
+    "tesseract_geometry": {
+      "cmake-args": ["-DCMAKE_CXX_FLAGS=-Wno-cpp"]
+    },
+    "tesseract_urdf": {
+      "cmake-args": ["-DCMAKE_CXX_FLAGS=-Wno-cpp"]
+    },
+    "tesseract_examples": {
+      "cmake-args": ["-DCMAKE_CXX_FLAGS=-Wno-cpp"]
+    }
+  }
+}

@@ -10,6 +10,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+function(run_grasp_execution_apply_warning_suppression target_name)
+  if(TARGET ${target_name})
+    target_compile_definitions(${target_name} PRIVATE BOOST_BIND_GLOBAL_PLACEHOLDERS)
+  endif()
+endfunction()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(emd_grasp_execution REQUIRED)
@@ -21,6 +27,8 @@ find_package(ament_index_cpp REQUIRED)
 
 add_executable(demo_node src/demo_node.cpp)
 target_include_directories(demo_node PUBLIC include)
+
+run_grasp_execution_apply_warning_suppression(demo_node)
 
 ament_target_dependencies(demo_node
   emd_grasp_execution
@@ -81,6 +89,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_explicit_release_pose_utils
     test/test_explicit_release_pose_utils.cpp)
   target_include_directories(test_explicit_release_pose_utils PUBLIC include)
+  run_grasp_execution_apply_warning_suppression(test_explicit_release_pose_utils)
   ament_target_dependencies(test_explicit_release_pose_utils
     tf2_geometry_msgs
   )
