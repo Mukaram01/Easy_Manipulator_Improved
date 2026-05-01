@@ -34,13 +34,34 @@ class GeneratedWorkcellBundleTests(unittest.TestCase):
     def test_run_bundle_build_command(self):
         summary = {
             'scene_package': 'demo',
+            'runtime_scene_package': 'ur5_2f_test',
             'task_recipe_path': '/tmp/a/task.yaml',
             'detected_objects_example_path': '/tmp/a/detected.yaml',
         }
-        cmd = build_command(summary, Path('/tmp/out'), True, True, True, True)
+        cmd = build_command(summary, Path('/tmp/out'), True, True, True, True, False, {})
         self.assertIn('--require-preflight', cmd)
         self.assertIn('--dry-run', cmd)
         self.assertIn('--no-replay', cmd)
+        self.assertIn('ur5_2f_test', cmd)
+
+    def test_run_bundle_build_command_live_mode(self):
+        summary = {'scene_package': 'demo', 'runtime_scene_package': 'ur5_2f_test', 'task_recipe_path': '/tmp/a/task.yaml'}
+        live_args = {
+            'epd_topic': '/easy_perception_deployment/epd_localize_output',
+            'epd_qos_reliability': 'best_effort',
+            'epd_qos_depth': 10,
+            'capture_timeout': 10.0,
+            'target_frame': 'world',
+            'tf_timeout': 2.0,
+            'allow_untransformed': False,
+            'preflight_live': True,
+            'preflight_check_tf': True,
+            'preflight_check_ros_topics': True,
+            'preflight_camera_frame': 'camera_depth_optical_frame',
+        }
+        cmd = build_command(summary, Path('/tmp/out'), True, True, True, True, True, live_args)
+        for token in ['--capture-live', '--epd-topic', '--epd-qos-reliability', 'best_effort', '--target-frame', 'world', '--require-transform', '--preflight-live', '--preflight-check-tf', '--preflight-check-ros-topics']:
+            self.assertIn(token, cmd)
 
     def test_missing_summary_fails_clearly(self):
         script = REPO_ROOT / 'scripts/run_generated_workcell_bundle.py'

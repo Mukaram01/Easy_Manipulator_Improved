@@ -11,8 +11,23 @@ def _load_summary(workcell: Path) -> dict:
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def build_command(summary: dict, output_dir: Path, dry_run: bool, no_replay: bool, gated: bool, as_json: bool) -> list[str]:
-    cmd = [sys.executable, str(Path(__file__).resolve().parent / 'run_generated_cell_cycle.py'), '--scene-package', summary['scene_package'], '--task-recipe', summary['task_recipe_path'], '--detected-objects', summary['detected_objects_example_path'], '--output-dir', str(output_dir), '--min-objects', '1', '--once']
+def build_command(summary: dict, output_dir: Path, dry_run: bool, no_replay: bool, gated: bool, as_json: bool, capture_live: bool, live_args: dict) -> list[str]:
+    scene_package = summary.get('runtime_scene_package') or summary.get('scene_package') or summary.get('package_name')
+    cmd = [sys.executable, str(Path(__file__).resolve().parent / 'run_generated_cell_cycle.py'), '--scene-package', scene_package, '--task-recipe', summary['task_recipe_path'], '--output-dir', str(output_dir), '--min-objects', '1', '--once']
+    if capture_live:
+        cmd += ['--capture-live', '--epd-topic', live_args['epd_topic'], '--epd-qos-reliability', live_args['epd_qos_reliability'], '--epd-qos-depth', str(live_args['epd_qos_depth']), '--capture-timeout', str(live_args['capture_timeout']), '--target-frame', live_args['target_frame'], '--tf-timeout', str(live_args['tf_timeout']), '--require-transform']
+        if live_args.get('allow_untransformed'):
+            cmd.append('--allow-untransformed')
+        if live_args.get('preflight_live'):
+            cmd.append('--preflight-live')
+        if live_args.get('preflight_check_tf'):
+            cmd.append('--preflight-check-tf')
+        if live_args.get('preflight_check_ros_topics'):
+            cmd.append('--preflight-check-ros-topics')
+        if live_args.get('preflight_camera_frame'):
+            cmd += ['--preflight-camera-frame', live_args['preflight_camera_frame']]
+    else:
+        cmd += ['--detected-objects', summary['detected_objects_example_path']]
     if dry_run:
         cmd.append('--dry-run')
     if no_replay:
@@ -31,6 +46,10 @@ def build_preview_command(workcell: Path, marker_mode: bool, as_json: bool, task
         cmd.append('--publish-markers')
     if as_json:
         cmd.append('--json')
+    if task_flow_preview:
+        cmd += ['--task-flow-preview', str(task_flow_preview)]
+    if show_task_flow:
+        cmd.append('--show-task-flow')
     return cmd
 
 
@@ -45,6 +64,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--preview-only', action='store_true')
     p.add_argument('--preview-markers', action='store_true')
     p.add_argument('--preview-task-flow', action='store_true')
+    p.add_argument('--capture-live', action='store_true')
+    p.add_argument('--epd-topic', default='/easy_perception_deployment/epd_localize_output')
+    p.add_argument('--epd-qos-reliability', choices=('auto', 'best_effort', 'reliable'), default='best_effort')
+    p.add_argument('--epd-qos-depth', type=int, default=10)
+    p.add_argument('--capture-timeout', type=float, default=10.0)
+    p.add_argument('--target-frame', default='world')
+    p.add_argument('--tf-timeout', type=float, default=2.0)
+    p.add_argument('--require-transform', action='store_true', default=True)
+    p.add_argument('--allow-untransformed', action='store_true')
+    p.add_argument('--preflight-live', action='store_true')
+    p.add_argument('--preflight-check-tf', action='store_true')
+    p.add_argument('--preflight-check-ros-topics', action='store_true')
+    p.add_argument('--preflight-camera-frame', default='camera_depth_optical_frame')
     args = p.parse_args(argv)
     if args.preview_only or args.preview_markers:
         cmd = build_preview_command(args.workcell, args.preview_markers, args.json or args.preview_only)
@@ -54,11 +86,11 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = _load_summary(args.workcell)
     detected = Path(summary.get('detected_objects_example_path', ''))
-    if not detected.exists():
+    if not args.capture_live and not detected.exists():
         raise SystemExit(f"FAIL: missing detected objects example: {detected}")
     out = args.output_dir or (args.workcell / 'generated' / 'bundle_run')
     out.mkdir(parents=True, exist_ok=True)
-    cmd = build_command(summary, out, args.dry_run, args.no_replay, args.gated_dry_run, args.json)
+    cmd = build_command(summary, out, args.dry_run, args.no_replay, args.gated_dry_run, args.json, args.capture_live, vars(args))
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     payload = {'status': 'FAIL', 'stdout': proc.stdout, 'stderr': proc.stderr, 'command': cmd}
     if args.json and proc.stdout.strip():

@@ -494,11 +494,14 @@ def generate_package(
         f"--task-recipe {task_recipe_path} --detected-objects {detected_example_path} "
         f"--output-dir /tmp/{package_name}_gated_dry_run --min-objects 1 --once --dry-run --no-replay --require-preflight --json"
     )
+    runtime = loaded.get("runtime", {}) if isinstance(loaded.get("runtime"), dict) else {}
+    runtime_scene_package = runtime.get("scene_package")
     summary_payload = {
         "schema_version": "generated_workcell_bundle/v1",
         "package_name": package_name,
         "source_cell_definition": str(cell_definition_path),
         "scene_package": package_name,
+        "runtime_scene_package": runtime_scene_package,
         "planning_frame": str((loaded.get("cell", {}) or {}).get("planning_frame", "world")),
         "robot": loaded.get("robot", {}),
         "end_effector": loaded.get("end_effector", {}),
