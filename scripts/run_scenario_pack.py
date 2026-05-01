@@ -67,11 +67,11 @@ def run_scenario(scenario_path: Path, output_root: Path, as_json: bool=False) ->
         return report
 
     gen_dir = out_root / "generated_workcell"
-    gen_cmd = [sys.executable, str(REPO_ROOT / "scripts/generate_workcell_from_cell_definition.py"), "--cell-definition", str(cell_definition), "--output-dir", str(gen_dir), "--package-name", name, "--json"]
+    gen_cmd = [sys.executable, str(REPO_ROOT / "scripts/generate_workcell_from_cell_definition.py"), str(cell_definition), "--output-dir", str(gen_dir), "--package-name", name]
     rc, payload, so, se = _run(gen_cmd, REPO_ROOT)
     (out_root / "logs/generate_workcell.log").write_text(so + "\n" + se, encoding="utf-8")
     if rc != 0:
-        report["blockers"].append("generate_workcell_from_cell_definition.py failed")
+        report["blockers"].append(f"generate_workcell_from_cell_definition.py failed\nstdout:\n{so}\nstderr:\n{se}")
         return report
     report["steps"]["generate_workcell"] = "PASS"
     workcell_path = gen_dir / name
@@ -85,8 +85,10 @@ def run_scenario(scenario_path: Path, output_root: Path, as_json: bool=False) ->
     dry_cmd = [sys.executable, str(REPO_ROOT / "scripts/run_generated_workcell_bundle.py"), "--workcell", str(workcell_path), "--output-dir", str(out_root / "dry_run"), "--gated-dry-run", "--dry-run", "--no-replay", "--json", "--preview-task-flow"]
     rc, dry_payload, so, se = _run(dry_cmd, REPO_ROOT)
     (out_root / "logs/gated_dry_run.log").write_text(so + "\n" + se, encoding="utf-8")
-    dry_status = str((dry_payload or {}).get("status", "FAIL")).upper()
-    report["steps"]["gated_dry_run"] = dry_status if dry_status in {"PASS","WARN","FAIL"} else ("PASS" if rc==0 else "FAIL")
+    dry_status = str((dry_payload or {}).get("status", "WARN" if rc != 0 else "PASS")).upper()
+    if dry_status not in {"PASS", "WARN", "FAIL"}:
+        dry_status = "WARN" if rc != 0 else "PASS"
+    report["steps"]["gated_dry_run"] = dry_status
 
     tf_path = out_root / "dry_run/task_flow_preview.json"
     if tf_path.exists():

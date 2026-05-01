@@ -25,3 +25,35 @@ python3 scripts/run_scenario_matrix.py \
 ```
 
 PASS/WARN/FAIL/SKIPPED are reported per scenario and aggregated in `scenario_matrix_report.json`.
+
+## MVP live scenario (single coherent path)
+
+Use `scenario_packs/ur5_2f_live_garbage_sorting.yaml` for one aligned UR5 + Robotiq 2F + D435i path with runtime scene package `ur5_2f_test`.
+
+```bash
+python3 scripts/run_scenario_pack.py \
+  --scenario scenario_packs/ur5_2f_live_garbage_sorting.yaml \
+  --output-root /tmp/scenario_runs \
+  --json
+```
+
+Then run live dry-run (still no physical motion):
+
+```bash
+python3 scripts/run_generated_workcell_bundle.py \
+  --workcell /tmp/scenario_runs/ur5_2f_live_garbage_sorting/generated_workcell/ur5_2f_live_garbage_sorting \
+  --output-dir /tmp/ur5_2f_live_run \
+  --capture-live \
+  --epd-topic /easy_perception_deployment/epd_localize_output \
+  --epd-qos-reliability best_effort \
+  --target-frame world \
+  --require-transform \
+  --gated-dry-run \
+  --dry-run \
+  --no-replay \
+  --preflight-live \
+  --preflight-check-tf \
+  --preflight-check-ros-topics \
+  --preview-task-flow \
+  --json
+```

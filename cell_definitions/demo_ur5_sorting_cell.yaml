@@ -19,6 +19,8 @@ camera:
   id: d435i_overhead
   type: d435i
   frame: camera_color_optical_frame
+runtime:
+  scene_package: ur5_2f_test
 environment:
   frame: world
   support_surfaces:

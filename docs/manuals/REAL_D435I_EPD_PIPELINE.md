@@ -163,3 +163,58 @@ This is required for physical sorting workflows (e.g., colour/shape/garbage bins
 - safety validation
 - IO validation
 - physical robot commissioning
+
+## Exact MVP command sequence (UR5+2F, live dry-run only)
+
+> Safety: this flow is **dry-run/preview only**. Keep `safe_for_robot_motion: false`, use `--dry-run --no-replay`, and do not send controller goals.
+
+1. Launch RealSense:
+```bash
+ros2 launch realsense2_camera rs_launch.py
+```
+2. Launch EPD:
+```bash
+ros2 launch easy_perception_deployment run.launch.py
+```
+3. Verify topics:
+```bash
+ros2 topic list | grep -E 'camera|easy_perception_deployment'
+```
+4. Verify TF world -> camera_depth_optical_frame:
+```bash
+ros2 run tf2_ros tf2_echo world camera_depth_optical_frame
+```
+5. Generate workcell bundle:
+```bash
+python3 scripts/generate_workcell_from_cell_definition.py \
+  cell_definitions/demo_ur5_sorting_cell.yaml \
+  --output-dir /tmp/generated_workcells \
+  --package-name ur5_2f_live_garbage_sorting
+```
+6. Run generated bundle in live dry-run mode:
+```bash
+python3 scripts/run_generated_workcell_bundle.py \
+  --workcell /tmp/generated_workcells/ur5_2f_live_garbage_sorting \
+  --output-dir /tmp/ur5_2f_live_run \
+  --capture-live \
+  --epd-topic /easy_perception_deployment/epd_localize_output \
+  --epd-qos-reliability best_effort \
+  --target-frame world \
+  --require-transform \
+  --gated-dry-run \
+  --dry-run \
+  --no-replay \
+  --preflight-live \
+  --preflight-check-tf \
+  --preflight-check-ros-topics \
+  --preview-task-flow \
+  --json
+```
+7. Preview task-flow markers in RViz:
+```bash
+python3 scripts/preview_generated_workcell_bundle.py \
+  --workcell /tmp/generated_workcells/ur5_2f_live_garbage_sorting \
+  --show-task-flow \
+  --task-flow-preview /tmp/ur5_2f_live_run/task_flow_preview.json \
+  --publish-markers
+```

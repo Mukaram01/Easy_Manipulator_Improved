@@ -34,6 +34,14 @@ class ScenarioPackTests(unittest.TestCase):
             report.write_text(json.dumps(rep), encoding='utf-8')
             self.assertTrue(report.exists())
             self.assertFalse(rep['safe_for_robot_motion'])
+            self.assertIn(rep['steps']['generate_workcell'], {'PASS', 'WARN'})
+            self.assertIn(rep['steps']['visual_preview'], {'PASS', 'WARN'})
+            self.assertIn(rep['steps']['gated_dry_run'], {'PASS', 'WARN'})
+
+    def test_live_scenario_pack_validates(self):
+        s, errs = load_and_validate_scenario(ROOT / 'scenario_packs/ur5_2f_live_garbage_sorting.yaml')
+        self.assertEqual(errs, [])
+        self.assertEqual(s['expected']['allowed_destinations'], ['plastic_dest', 'metal_dest', 'reject_dest'])
 
     def test_command_builders_and_discovery(self):
         self.assertIn('run_scenario_pack.py', ' '.join(build_run_scenario_pack_command('a.yaml', '/tmp/o')))

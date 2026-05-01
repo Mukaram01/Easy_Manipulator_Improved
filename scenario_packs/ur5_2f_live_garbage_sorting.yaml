@@ -1,0 +1,23 @@
+schema_version: scenario_pack/v1
+name: ur5_2f_live_garbage_sorting
+description: UR5 + Robotiq 2F live dry-run scenario using D435i/EPD and ur5_2f_test runtime scene.
+enabled: true
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur5
+  end_effector: robotiq_2f
+  runtime_scene_package: ur5_2f_test
+  camera: d435i
+  task_type: sort_by_class
+  min_detected_objects: 1
+  allowed_destinations: [plastic_dest, metal_dest, reject_dest]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+    - generated/generated_detected_objects_example.yaml
+    - generated/generated_destinations.yaml
+    - generated/generated_environment_objects.yaml
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Dry-run preview only. Physical robot motion is disabled.
