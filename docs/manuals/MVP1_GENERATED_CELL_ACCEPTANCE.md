@@ -411,3 +411,25 @@ Recommended flow: (1) generate bundle, (2) run visual preview, (3) verify table/
 6. This is dry-run intent preview only (`safe_for_robot_motion=false`) and does not move the robot.
 7. Future milestone: MoveIt simulation trajectory preview.
 
+
+## Studio Lite
+
+Studio Lite is the first operator-facing window for the generated-workcell acceptance loop:
+- validate cell definition,
+- generate bundle,
+- preview visuals,
+- run gated dry-run,
+- inspect reports.
+
+Important boundaries:
+- It does **not** replace Workcell Builder.
+- It does **not** add a second scene authoring path.
+- It does **not** command robot motion.
+- It does not require live D435i for offline usage.
+
+Launch:
+```bash
+python3 scripts/studio_lite.py
+```
+
+This is a deliberate Lite step toward a fuller Studio UX later.

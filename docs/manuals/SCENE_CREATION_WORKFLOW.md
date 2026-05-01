@@ -88,3 +88,15 @@ Use `python3 scripts/preview_generated_workcell_bundle.py --workcell <path> --js
 6. This is dry-run intent preview only (`safe_for_robot_motion=false`) and does not move the robot.
 7. Future milestone: MoveIt simulation trajectory preview.
 
+
+## Studio Lite
+
+Studio Lite (`scripts/studio_lite.py`) is the first operator workflow window for generated bundles. It reuses existing scripts and does not replace Workcell Builder.
+
+- Uses `validate_cell_definition.py` and `generate_workcell_from_cell_definition.py` for generation.
+- Uses `preview_generated_workcell_bundle.py` for JSON and marker preview.
+- Uses `run_generated_workcell_bundle.py --gated-dry-run --json` for safe dry-run checks.
+- Shows report paths, blockers, warnings, and selected object/destination fields.
+- Keeps robot motion disabled (`safe_for_robot_motion: false`).
+
+Use Studio Lite for generate/preview/preflight/report inspection while backend authoring stays in Workcell Builder.
