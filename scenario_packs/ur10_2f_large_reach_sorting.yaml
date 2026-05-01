@@ -1,0 +1,19 @@
+schema_version: scenario_pack/v1
+name: ur10_2f_large_reach_sorting
+description: UR10 large-reach sorting scenario placeholder.
+enabled: false
+disabled_reason: No UR10 cell definition currently available in repository fixtures.
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur10
+  end_effector: robotiq_2f
+  task_type: sorting
+  min_detected_objects: 1
+  allowed_destinations: [output_bin]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Disabled until UR10-compatible cell definitions/layouts are added.

@@ -109,3 +109,6 @@ Use Studio Lite for generate/preview/preflight/report inspection while backend a
 - Operator Runtime does **not** expose editing or generation controls and never enables robot motion/replay/controller publishing.
 - Both roles use the same generated bundle format and the same backend scripts (no duplicate scene system, no second planning backend).
 - Bundle approval is an internal workflow marker only, not a safety certification. Physical robot execution remains disabled.
+
+## Scenario packs
+See `docs/manuals/INDUSTRIAL_SCENARIO_PACKS.md` for generated-cell scenario validation flows.

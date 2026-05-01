@@ -1,0 +1,22 @@
+schema_version: scenario_pack/v1
+name: ur5_2f_colour_sorting
+description: UR5 with Robotiq 2F colour sorting across bins.
+enabled: true
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur5
+  end_effector: robotiq_2f
+  task_type: sort_by_colour
+  min_detected_objects: 1
+  allowed_object_labels: [red, blue, unknown]
+  allowed_destinations: [red_bin, blue_bin, reject_bin]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+    - generated/generated_detected_objects_example.yaml
+    - generated/generated_destinations.yaml
+    - generated/generated_environment_objects.yaml
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Offline generated scenario only. No robot motion.

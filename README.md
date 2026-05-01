@@ -1426,3 +1426,5 @@ This is a “Studio Lite” step only; fuller drag/drop Studio workflows come la
 - Operator Runtime does **not** expose editing or generation controls and never enables robot motion/replay/controller publishing.
 - Both roles use the same generated bundle format and the same backend scripts (no duplicate scene system, no second planning backend).
 - Bundle approval is an internal workflow marker only, not a safety certification. Physical robot execution remains disabled.
+
+- Added scenario pack runner and matrix references (see `docs/manuals/INDUSTRIAL_SCENARIO_PACKS.md`).
