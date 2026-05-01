@@ -8,8 +8,14 @@ import subprocess
 import sys
 import threading
 from dataclasses import dataclass
+import argparse
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.workcell_roles import ROLE_DEVELOPER, ROLE_OPERATOR, can_role_do
+except ModuleNotFoundError:
+    from workcell_roles import ROLE_DEVELOPER, ROLE_OPERATOR, can_role_do
 
 NO_MOTION_BANNER = "NO ROBOT MOTION - Studio Lite is offline preflight only"
 SAFE_FOR_ROBOT_MOTION_TEXT = "safe_for_robot_motion: false"
@@ -126,11 +132,12 @@ def _open_or_print_path(path: Path) -> str:
 
 
 class StudioLiteApp:
-    def __init__(self, root: Any, tk: Any, ttk: Any, filedialog: Any) -> None:
+    def __init__(self, root: Any, tk: Any, ttk: Any, filedialog: Any, role: str = ROLE_DEVELOPER) -> None:
         self.root = root
         self.tk = tk
         self.ttk = ttk
         self.filedialog = filedialog
+        self.role = role
         self.root.title("Studio Lite")
         self.queue: queue.Queue[tuple[str, str]] = queue.Queue()
 
@@ -141,6 +148,7 @@ class StudioLiteApp:
         self.status = tk.StringVar(value=STATUS_NOT_RUN)
         self.last_command = tk.StringVar(value="")
         self.last_exit = tk.StringVar(value="")
+        self.role_text = tk.StringVar(value=f"role: {self.role}")
 
         self._build_ui()
         self.root.after(100, self._poll)
@@ -156,27 +164,37 @@ class StudioLiteApp:
         self.ttk.Label(frm, text=NO_MOTION_BANNER, foreground="red").grid(row=r, column=0, columnspan=4, sticky="w")
         r += 1
         self.ttk.Label(frm, text="Status").grid(row=r, column=0, sticky="w")
+        self.ttk.Label(frm, textvariable=self.role_text).grid(row=r, column=3, sticky="e")
         self.ttk.Label(frm, textvariable=self.status).grid(row=r, column=1, sticky="w")
         self.ttk.Label(frm, text=SAFE_FOR_ROBOT_MOTION_TEXT).grid(row=r, column=2, columnspan=2, sticky="w")
         r += 1
 
         self.ttk.Label(frm, text="Cell definition").grid(row=r, column=0, sticky="w")
-        self.ttk.Entry(frm, textvariable=self.cell_definition, width=80).grid(row=r, column=1, sticky="ew")
-        self.ttk.Button(frm, text="Browse", command=self._browse_cell).grid(row=r, column=2, sticky="w")
+        cell_entry = self.ttk.Entry(frm, textvariable=self.cell_definition, width=80)
+        cell_entry.grid(row=r, column=1, sticky="ew")
+        browse_btn = self.ttk.Button(frm, text="Browse", command=self._browse_cell)
+        browse_btn.grid(row=r, column=2, sticky="w")
         r += 1
         self.ttk.Label(frm, text="Output dir").grid(row=r, column=0, sticky="w")
-        self.ttk.Entry(frm, textvariable=self.output_dir, width=80).grid(row=r, column=1, sticky="ew")
+        out_entry = self.ttk.Entry(frm, textvariable=self.output_dir, width=80)
+        out_entry.grid(row=r, column=1, sticky="ew")
         r += 1
         self.ttk.Label(frm, text="Package name").grid(row=r, column=0, sticky="w")
-        self.ttk.Entry(frm, textvariable=self.package_name, width=80).grid(row=r, column=1, sticky="ew")
+        pkg_entry = self.ttk.Entry(frm, textvariable=self.package_name, width=80)
+        pkg_entry.grid(row=r, column=1, sticky="ew")
         r += 1
-        self.ttk.Button(frm, text="Validate Cell Definition", command=lambda: self._run(build_validate_cell_definition_command(self.cell_definition.get()))).grid(row=r, column=0, sticky="w")
-        self.ttk.Button(frm, text="Generate Workcell Bundle", command=self._generate_bundle).grid(row=r, column=1, sticky="w")
+        if can_role_do(self.role, "validate_cell_definition"):
+            self.ttk.Button(frm, text="Validate Cell Definition", command=lambda: self._run(build_validate_cell_definition_command(self.cell_definition.get()))).grid(row=r, column=0, sticky="w")
+        if can_role_do(self.role, "generate_workcell"):
+            self.ttk.Button(frm, text="Generate Workcell Bundle", command=self._generate_bundle).grid(row=r, column=1, sticky="w")
         r += 1
 
         self.ttk.Label(frm, text="Bundle path").grid(row=r, column=0, sticky="w")
         self.ttk.Entry(frm, textvariable=self.bundle_path, width=80).grid(row=r, column=1, sticky="ew")
         self.ttk.Button(frm, text="Load Bundle", command=self._load_bundle).grid(row=r, column=2, sticky="w")
+        if not can_role_do(self.role, "edit_runtime_config"):
+            for widget in (cell_entry, browse_btn, out_entry, pkg_entry):
+                widget.state(["disabled"])
         self.ttk.Button(frm, text="Show Bundle Summary", command=lambda: self._report(_bundle_paths(self.bundle_path.get()).summary)).grid(row=r, column=3, sticky="w")
         r += 1
 
@@ -226,6 +244,13 @@ class StudioLiteApp:
             self.log.insert("end", "Missing required files:\n" + "\n".join(missing) + "\n")
         else:
             self.status.set(STATUS_PASS)
+        try:
+            summary = json.loads(p.summary.read_text(encoding="utf-8"))
+            approval_status = ((summary.get("approval") or {}).get("status") or "unapproved").lower()
+            if approval_status != "approved":
+                self.log.insert("end", "Bundle is not approved for production. Dry-run/preflight only.\n")
+        except Exception:
+            pass
 
     def _show_rviz_cmd(self) -> None:
         cfg = Path(__file__).resolve().parents[1] / "rviz" / "generated_workcell_preview.rviz"
@@ -268,6 +293,16 @@ class StudioLiteApp:
             pass
 
 
+def get_visible_capabilities(role: str) -> dict[str, bool]:
+    return {
+        "show_validate": can_role_do(role, "validate_cell_definition"),
+        "show_generate": can_role_do(role, "generate_workcell"),
+        "allow_runtime_edit": can_role_do(role, "edit_runtime_config"),
+        "no_motion_banner": NO_MOTION_BANNER,
+        "safe_for_robot_motion": SAFE_FOR_ROBOT_MOTION_TEXT,
+    }
+
+
 def main() -> int:
     try:
         import tkinter as tk
@@ -275,8 +310,15 @@ def main() -> int:
     except Exception as exc:
         print(f"FAIL: tkinter unavailable: {exc}")
         return 1
+    parser = argparse.ArgumentParser(description="Studio Lite")
+    parser.add_argument("--role", choices=[ROLE_DEVELOPER, ROLE_OPERATOR], default=ROLE_DEVELOPER)
+    parser.add_argument("--workcell", default="")
+    args = parser.parse_args()
     root = tk.Tk()
-    StudioLiteApp(root, tk, ttk, filedialog)
+    app = StudioLiteApp(root, tk, ttk, filedialog, role=args.role)
+    if args.workcell:
+        app.bundle_path.set(args.workcell)
+        app._load_bundle()
     root.mainloop()
     return 0
 

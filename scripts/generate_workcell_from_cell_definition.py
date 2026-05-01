@@ -510,6 +510,7 @@ def generate_package(
         "warnings": warnings,
         "blockers": [],
         "recommended_commands": {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
+        "approval": {"status": "unapproved", "approved_by": None, "approved_at": None, "notes": ""},
     }
     summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     command_script_path.write_text(

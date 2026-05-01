@@ -28,6 +28,8 @@ class GeneratedWorkcellBundleTests(unittest.TestCase):
             self.assertIn('--require-preflight', cmd_txt)
             self.assertIn('--dry-run', cmd_txt)
             self.assertIn('--no-replay', cmd_txt)
+            summary = json.loads((pkg / 'generated_workcell_summary.json').read_text(encoding='utf-8'))
+            self.assertEqual(summary['approval']['status'], 'unapproved')
 
     def test_run_bundle_build_command(self):
         summary = {
