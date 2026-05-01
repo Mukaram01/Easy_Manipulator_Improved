@@ -78,3 +78,13 @@ Use `generate_workcell_from_cell_definition.py` then run `run_generated_workcell
 ## Visual preview of a generated workcell
 
 Use `python3 scripts/preview_generated_workcell_bundle.py --workcell <path> --json` to produce `generated/visual_preview_summary.json`, then optionally publish markers to `/generated_workcell/markers` for RViz checks of tables, bins, objects, destinations, and task pick/release highlights. Motion remains disabled.
+
+## Visual task-flow preview
+1. Generate the workcell bundle.
+2. Run gated dry-run (`run_generated_workcell_bundle.py --gated-dry-run --json`).
+3. Open visual preview (`preview_generated_workcell_bundle.py --show-task-flow --task-flow-preview <dry-run-output>/task_flow_preview.json --json`).
+4. Review selected object, pick pose, destination, and release pose in the trace.
+5. Check warnings/blockers before any future execution workflow.
+6. This is dry-run intent preview only (`safe_for_robot_motion=false`) and does not move the robot.
+7. Future milestone: MoveIt simulation trajectory preview.
+

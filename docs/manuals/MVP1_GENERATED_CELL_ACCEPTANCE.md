@@ -401,3 +401,13 @@ Generated packages now include `generated/generated_workcell_summary.json`, dete
 ## Visual preview of a generated workcell
 
 Recommended flow: (1) generate bundle, (2) run visual preview, (3) verify table/bin/object/destination placement, (4) run gated dry-run, (5) keep motion disabled. Future Studio tooling can replace manual YAML editing; this preview does not replace Workcell Builder.
+
+## Visual task-flow preview
+1. Generate the workcell bundle.
+2. Run gated dry-run (`run_generated_workcell_bundle.py --gated-dry-run --json`).
+3. Open visual preview (`preview_generated_workcell_bundle.py --show-task-flow --task-flow-preview <dry-run-output>/task_flow_preview.json --json`).
+4. Review selected object, pick pose, destination, and release pose in the trace.
+5. Check warnings/blockers before any future execution workflow.
+6. This is dry-run intent preview only (`safe_for_robot_motion=false`) and does not move the robot.
+7. Future milestone: MoveIt simulation trajectory preview.
+
