@@ -63,7 +63,7 @@ def _dims(raw: Any, defaults: tuple[float, float, float]) -> dict[str, float]:
         return {"x": float(raw[0]), "y": float(raw[1]), "z": float(raw[2])}
     return {"x": defaults[0], "y": defaults[1], "z": defaults[2]}
 
-def build_marker_specs(summary: dict[str, Any], env: dict[str, Any], dest: dict[str, Any], detected: dict[str, Any], selected_object: str | None, selected_destination: str | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def build_marker_specs(summary: dict[str, Any], env: dict[str, Any], dest: dict[str, Any], detected: dict[str, Any], selected_object: str | None, selected_destination: str | None, task_flow: dict[str, Any] | None = None, show_task_flow: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     planning_frame = summary.get("planning_frame", "world")
     markers: list[dict[str, Any]] = []
 
@@ -90,6 +90,19 @@ def build_marker_specs(summary: dict[str, Any], env: dict[str, Any], dest: dict[
         markers.append({"ns": "task", "type": "arrow", "id": 300, "frame_id": planning_frame, "pose": _pose_from(selected_obj), "scale": {"x": 0.15, "y": 0.02, "z": 0.02}, "color": {"r": 1.0, "g": 0.1, "b": 0.1, "a": 1.0}, "label": "pick"})
     if selected_dest:
         markers.append({"ns": "task", "type": "arrow", "id": 301, "frame_id": planning_frame, "pose": _pose_from(selected_dest), "scale": {"x": 0.15, "y": 0.02, "z": 0.02}, "color": {"r": 0.1, "g": 1.0, "b": 0.1, "a": 1.0}, "label": "release"})
+
+    if show_task_flow and task_flow:
+        steps = task_flow.get('steps') or []
+        for idx, step in enumerate(steps, start=1):
+            xyz = step.get('xyz') or [0.0, 0.0, 0.0]
+            pose = {'x': float(xyz[0]), 'y': float(xyz[1]), 'z': float(xyz[2]), 'qx': 0.0, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0}
+            markers.append({"ns": "task_flow_steps", "type": "sphere", "id": 400 + idx, "frame_id": planning_frame, "pose": pose, "scale": {"x": 0.03, "y": 0.03, "z": 0.03}, "color": {"r": 0.9, "g": 0.2, "b": 0.9, "a": 1.0}, "label": f"{step.get('index', idx)}:{step.get('name','step')}"})
+            if idx < len(steps):
+                nxt = steps[idx]
+                nxyz = nxt.get('xyz') or xyz
+                arrow_pose = {'x': float(xyz[0]), 'y': float(xyz[1]), 'z': float(xyz[2]), 'qx': 0.0, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0}
+                markers.append({"ns": "task_flow_links", "type": "arrow", "id": 500 + idx, "frame_id": planning_frame, "pose": arrow_pose, "scale": {"x": max(0.05, abs(float(nxyz[0])-float(xyz[0]))), "y": 0.01, "z": 0.01}, "color": {"r": 0.7, "g": 0.7, "b": 0.2, "a": 1.0}, "label": f"{step.get('name')}->{nxt.get('name')}"})
+        task_preview['task_flow_steps'] = len(steps)
 
     return markers, task_preview
 
@@ -141,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--publish-markers", action="store_true")
     p.add_argument("--marker-topic", default="/generated_workcell/markers")
     p.add_argument("--show-task", action="store_true")
+    p.add_argument('--task-flow-preview', type=Path)
+    p.add_argument('--show-task-flow', action='store_true')
     p.add_argument("--selected-object")
     p.add_argument("--selected-destination")
     args = p.parse_args(argv)
@@ -151,7 +166,10 @@ def main(argv: list[str] | None = None) -> int:
     dest = _load_yaml(gen / "generated_destinations.yaml", required=True)
     detected = _load_yaml(gen / "generated_detected_objects_example.yaml", required=False)
 
-    markers, task = build_marker_specs(summary, env, dest, detected, args.selected_object if args.show_task else None, args.selected_destination if args.show_task else None)
+    task_flow = _load_json(args.task_flow_preview) if args.task_flow_preview else None
+    sel_obj = args.selected_object if args.show_task else (task_flow.get('selected_object') if task_flow else None)
+    sel_dest = args.selected_destination if args.show_task else (task_flow.get('selected_destination') if task_flow else None)
+    markers, task = build_marker_specs(summary, env, dest, detected, sel_obj, sel_dest, task_flow=task_flow, show_task_flow=args.show_task_flow)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "workcell": str(args.workcell),
@@ -161,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
         "destinations_visualized": len(dest.get("destinations", []) or []),
         "detected_objects_visualized": len(detected.get("objects", detected.get("detected_objects", [])) or []),
         "task_preview": task,
+        "task_flow_preview_path": str(args.task_flow_preview) if args.task_flow_preview else None,
+        "task_flow_marker_count": len([m for m in markers if str(m.get("ns","")).startswith("task_flow")]),
         "warnings": [],
         "blockers": [],
         "marker_specs": markers,

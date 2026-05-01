@@ -18,13 +18,13 @@ def build_command(summary: dict, output_dir: Path, dry_run: bool, no_replay: boo
     if no_replay:
         cmd.append('--no-replay')
     if gated:
-        cmd.append('--require-preflight')
+        cmd += ['--require-preflight', '--write-task-flow-preview']
     if as_json:
         cmd.append('--json')
     return cmd
 
 
-def build_preview_command(workcell: Path, marker_mode: bool, as_json: bool) -> list[str]:
+def build_preview_command(workcell: Path, marker_mode: bool, as_json: bool, task_flow_preview: Path | None = None, show_task_flow: bool = False) -> list[str]:
     script = Path(__file__).resolve().parent / 'preview_generated_workcell_bundle.py'
     cmd = [sys.executable, str(script), '--workcell', str(workcell)]
     if marker_mode:
@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--json', action='store_true')
     p.add_argument('--preview-only', action='store_true')
     p.add_argument('--preview-markers', action='store_true')
+    p.add_argument('--preview-task-flow', action='store_true')
     args = p.parse_args(argv)
     if args.preview_only or args.preview_markers:
         cmd = build_preview_command(args.workcell, args.preview_markers, args.json or args.preview_only)
@@ -66,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
     (out / 'bundle_run_report.json').write_text(json.dumps(payload, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+    if args.preview_task_flow and args.gated_dry_run:
+        tf_path = out / 'task_flow_preview.json'
+        preview_cmd = build_preview_command(args.workcell, args.preview_markers, True, task_flow_preview=tf_path, show_task_flow=True)
+        subprocess.run(preview_cmd, capture_output=True, text=True, check=False)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

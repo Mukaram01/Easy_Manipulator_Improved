@@ -33,6 +33,66 @@ def _pick_selected_object(detected: dict[str, Any], acceptance: dict[str, Any]) 
     return objects[0] if objects else None
 
 
+
+
+def _extract_xyz_rpy(pose: dict[str, Any]) -> tuple[list[float], list[float]]:
+    xyz = pose.get("xyz") if isinstance(pose, dict) else None
+    rpy = pose.get("rpy") if isinstance(pose, dict) else None
+    if not (isinstance(xyz, list) and len(xyz) == 3):
+        pos = pose.get("position") if isinstance(pose, dict) else {}
+        if isinstance(pos, dict):
+            xyz = [float(pos.get("x", 0.0)), float(pos.get("y", 0.0)), float(pos.get("z", 0.0))]
+        else:
+            xyz = [0.0, 0.0, 0.0]
+    xyz = [float(v) for v in xyz]
+    if not (isinstance(rpy, list) and len(rpy) == 3):
+        rpy = [0.0, 0.0, 0.0]
+    return xyz, [float(v) for v in rpy]
+
+
+def _build_task_flow_preview(args: argparse.Namespace, acceptance: dict[str, Any], selected_obj: dict[str, Any] | None, cycle_warnings: list[str]) -> dict[str, Any]:
+    warnings = list(cycle_warnings)
+    blockers = list(acceptance.get('blockers', []) or [])
+    selected_pose = (selected_obj or {}).get('pose') if isinstance(selected_obj, dict) else {}
+    raw_pose = (selected_obj or {}).get('raw_pose') if isinstance(selected_obj, dict) else {}
+    pose_src = selected_pose if isinstance(selected_pose, dict) and selected_pose else raw_pose if isinstance(raw_pose, dict) else {}
+    if (pose_src.get('frame_id') and pose_src.get('frame_id') != 'world'):
+        warnings.append(f"Selected object pose frame '{pose_src.get('frame_id')}' not normalized to world; using best-available pose.")
+    pick_xyz, pick_rpy = _extract_xyz_rpy(pose_src)
+    destination = acceptance.get('destination_selected')
+    release_pose = acceptance.get('destination_pose') if isinstance(acceptance.get('destination_pose'), dict) else {}
+    if not release_pose:
+        candidates = acceptance.get('destination_candidates') or []
+        if candidates and isinstance(candidates[0], dict):
+            release_pose = candidates[0].get('pose') if isinstance(candidates[0].get('pose'), dict) else {}
+        if not release_pose:
+            release_pose = {'xyz': [pick_xyz[0] + 0.2, pick_xyz[1], pick_xyz[2]], 'rpy': [0.0, 0.0, 0.0], 'frame_id': 'world'}
+            warnings.append('Destination release pose missing; using fallback release strategy offset from pick pose.')
+            if not destination:
+                blockers.append('No destination selected for release step.')
+    release_xyz, release_rpy = _extract_xyz_rpy(release_pose)
+    steps = [
+        {'index': 1, 'name': 'selected_object', 'type': 'object', 'frame': 'world', 'xyz': pick_xyz, 'rpy': pick_rpy},
+        {'index': 2, 'name': 'approach_pick', 'type': 'approach', 'frame': 'world', 'xyz': [pick_xyz[0], pick_xyz[1], pick_xyz[2] + 0.08], 'rpy': pick_rpy},
+        {'index': 3, 'name': 'pick', 'type': 'pick', 'frame': 'world', 'xyz': pick_xyz, 'rpy': pick_rpy},
+        {'index': 4, 'name': 'lift', 'type': 'lift', 'frame': 'world', 'xyz': [pick_xyz[0], pick_xyz[1], pick_xyz[2] + 0.12], 'rpy': pick_rpy},
+        {'index': 5, 'name': 'place_release', 'type': 'release', 'frame': 'world', 'xyz': release_xyz, 'rpy': release_rpy},
+        {'index': 6, 'name': 'retreat', 'type': 'retreat', 'frame': 'world', 'xyz': [release_xyz[0], release_xyz[1], release_xyz[2] + 0.10], 'rpy': release_rpy},
+    ]
+    return {
+        'schema_version': 'task_flow_preview/v1',
+        'scene_package': args.scene_package,
+        'task_recipe': str(args.task_recipe),
+        'selected_object': acceptance.get('selected_object'),
+        'selected_object_class': (selected_obj or {}).get('class_id') if isinstance(selected_obj, dict) else None,
+        'selected_destination': destination,
+        'planning_frame': 'world',
+        'steps': steps,
+        'warnings': warnings,
+        'blockers': blockers,
+        'safe_for_robot_motion': False,
+    }
+
 def _run_preflight(args: argparse.Namespace, detected_input: Path | None) -> dict[str, Any]:
     preflight_report_path = args.preflight_report_path or (args.output_dir / "cell_readiness_preflight_report.json")
     preflight_script = Path(__file__).resolve().parent / 'run_cell_readiness_check.py'
@@ -105,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--preflight-target-frame', default='world')
     p.add_argument('--preflight-camera-frame', default='camera_depth_optical_frame')
     p.add_argument('--preflight-report-path', type=Path)
+    p.add_argument('--write-task-flow-preview', action=argparse.BooleanOptionalAction, default=True)
     args = p.parse_args(argv)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -215,6 +276,11 @@ def main(argv: list[str] | None = None) -> int:
     raw_pose_frame = raw_pose.get("frame_id") if isinstance(raw_pose, dict) else None
     transform_meta = (((detected_data.get("source") or {}).get("transform")) if isinstance(detected_data.get("source"), dict) else {}) or {}
 
+    task_flow_preview_path = args.output_dir / 'task_flow_preview.json'
+    if args.write_task_flow_preview:
+        task_flow_preview = _build_task_flow_preview(args, acceptance, selected_obj, acceptance.get('warnings', []) + warnings)
+        task_flow_preview_path.write_text(json.dumps(task_flow_preview, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
     cycle_report = {
         'status': acceptance['status'] if rc == 0 else 'FAIL',
         'scene_package': args.scene_package,
@@ -233,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         'transform_status': transform_meta.get('status'),
         'transform_message': transform_meta.get('message'),
         'chosen_destination': acceptance.get('destination_selected'),
+        'selected_destination': acceptance.get('destination_selected'),
         'payload_path': str(payload_path),
         'replay_status': replay_status,
         'replay_message': replay_message,
@@ -240,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
         'blockers': acceptance.get('blockers', []),
         'warnings': acceptance.get('warnings', []) + warnings,
         'acceptance': acceptance,
+        'task_flow_preview_path': str(task_flow_preview_path) if args.write_task_flow_preview else None,
     }
     if preflight_result.get("enabled") and preflight_result["status"] == "WARN" and cycle_report['status'] != 'FAIL':
         cycle_report['status'] = 'WARN'
@@ -253,6 +321,9 @@ def main(argv: list[str] | None = None) -> int:
             "status": final_status,
             "safe_for_robot_motion": False,
             "next_recommended_action": "Dry-run only. Resolve blockers/warnings before any future motion-enabled workflow.",
+            "selected_object": cycle_report.get("selected_object"),
+            "selected_destination": cycle_report.get("selected_destination"),
+            "task_flow_preview_path": cycle_report.get("task_flow_preview_path"),
         },
     }
     (args.output_dir / 'cell_cycle_gated_report.json').write_text(json.dumps(gated_report, indent=2, sort_keys=True) + '\n', encoding='utf-8')

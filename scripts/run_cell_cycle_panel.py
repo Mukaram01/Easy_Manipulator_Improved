@@ -141,6 +141,11 @@ def build_preview_generated_workcell_bundle_command(workcell_path: str, publish_
         cmd.append("--publish-markers")
     return cmd
 
+def build_preview_task_flow_command(workcell_path: str, output_dir: str) -> list[str]:
+    script = Path(__file__).resolve().parent / 'preview_generated_workcell_bundle.py'
+    task_flow_path = Path(output_dir) / 'task_flow_preview.json'
+    return [sys.executable, str(script), '--workcell', workcell_path, '--show-task-flow', '--task-flow-preview', str(task_flow_path), '--json']
+
 def parse_cycle_report(output_dir: Path) -> CycleReportSummary:
     report_path = output_dir / "cycle_report.json"
     generated = {
