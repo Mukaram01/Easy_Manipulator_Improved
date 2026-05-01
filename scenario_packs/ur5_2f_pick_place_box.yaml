@@ -1,0 +1,22 @@
+schema_version: scenario_pack/v1
+name: ur5_2f_pick_place_box
+description: UR5 with Robotiq 2F pick-place box flow into output zone.
+enabled: true
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur5
+  end_effector: robotiq_2f
+  task_type: pick_place
+  min_detected_objects: 1
+  allowed_object_labels: [box]
+  allowed_destinations: [place_zone, output_bin]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+    - generated/generated_detected_objects_example.yaml
+    - generated/generated_destinations.yaml
+    - generated/generated_environment_objects.yaml
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Offline generated scenario only. No robot motion.

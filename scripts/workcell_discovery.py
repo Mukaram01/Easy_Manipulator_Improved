@@ -47,6 +47,18 @@ class CellDefinitionRecord:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ScenarioPackRecord:
+    name: str
+    path: str
+    enabled: bool
+    robot: str | None
+    end_effector: str | None
+    task_type: str | None
+    cell_definition: str | None
+    warnings: list[str] = field(default_factory=list)
+
+
 def _iter_scene_dirs() -> list[Path]:
     roots = [REPO_ROOT / "install" / "share", REPO_ROOT / "scenes", REPO_ROOT / "src"]
     extra_patterns = [
@@ -167,8 +179,41 @@ def discover_all() -> dict[str, list[dict[str, Any]]]:
         "task_recipes": [asdict(r) for r in discover_task_recipes()],
         "detected_objects": [asdict(r) for r in discover_detected_objects()],
         "cell_definitions": [asdict(r) for r in discover_cell_definitions()],
+        "scenario_packs": [asdict(r) for r in discover_scenario_packs()],
         "generated_workcell_summaries": discover_generated_workcell_summaries(),
     }
+
+
+def discover_scenario_packs() -> list[ScenarioPackRecord]:
+    base = REPO_ROOT / "scenario_packs"
+    records: list[ScenarioPackRecord] = []
+    if not base.exists():
+        return records
+    for path in [*base.glob("*.yaml"), *base.glob("*.yml")]:
+        data, err = _load_structured_file(path)
+        if err:
+            records.append(ScenarioPackRecord(path.stem, str(path), False, None, None, None, None, [f"parse error: {err}"]))
+            continue
+        if not data or data.get("schema_version") != "scenario_pack/v1":
+            continue
+        expected = data.get("expected") if isinstance(data.get("expected"), dict) else {}
+        warnings: list[str] = []
+        cell_definition = data.get("cell_definition")
+        if cell_definition and not (REPO_ROOT / str(cell_definition)).exists():
+            warnings.append("referenced cell_definition missing")
+        records.append(
+            ScenarioPackRecord(
+                name=str(data.get("name", path.stem)),
+                path=str(path),
+                enabled=bool(data.get("enabled", True)),
+                robot=expected.get("robot"),
+                end_effector=expected.get("end_effector"),
+                task_type=expected.get("task_type"),
+                cell_definition=cell_definition,
+                warnings=warnings,
+            )
+        )
+    return sorted(records, key=lambda r: r.name)
 
 
 def discover_cell_definitions() -> list[CellDefinitionRecord]:

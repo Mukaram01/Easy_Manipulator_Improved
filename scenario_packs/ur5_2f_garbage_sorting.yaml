@@ -1,0 +1,22 @@
+schema_version: scenario_pack/v1
+name: ur5_2f_garbage_sorting
+description: UR5 with Robotiq 2F sorting bottle/can/reject into bins.
+enabled: true
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur5
+  end_effector: robotiq_2f
+  task_type: garbage_sorting
+  min_detected_objects: 1
+  allowed_object_labels: [bottle, can, reject]
+  allowed_destinations: [plastic_bin, metal_bin, reject_bin]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+    - generated/generated_detected_objects_example.yaml
+    - generated/generated_destinations.yaml
+    - generated/generated_environment_objects.yaml
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Offline generated scenario only. No robot motion.

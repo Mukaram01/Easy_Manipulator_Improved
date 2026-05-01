@@ -89,6 +89,16 @@ def build_preview_task_flow_command(workcell_path: str, task_flow_preview_path: 
     ]
 
 
+def build_run_scenario_pack_command(scenario: str, output_root: str) -> list[str]:
+    script = Path(__file__).resolve().parent / "run_scenario_pack.py"
+    return [sys.executable, str(script), "--scenario", scenario, "--output-root", output_root, "--json"]
+
+
+def build_run_scenario_matrix_command(scenario_dir: str, output_root: str) -> list[str]:
+    script = Path(__file__).resolve().parent / "run_scenario_matrix.py"
+    return [sys.executable, str(script), "--scenario-dir", scenario_dir, "--output-root", output_root, "--json"]
+
+
 @dataclass
 class BundlePaths:
     root: Path

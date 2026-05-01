@@ -1,0 +1,20 @@
+schema_version: scenario_pack/v1
+name: ur5_suction_pick_place
+description: UR5 suction placeholder scenario using existing generated pipeline.
+enabled: false
+disabled_reason: Existing demo cell definitions in this repo do not yet model suction end-effector paths.
+cell_definition: cell_definitions/demo_ur5_sorting_cell.yaml
+expected:
+  robot: ur5
+  end_effector: suction
+  task_type: pick_place
+  min_detected_objects: 1
+  allowed_object_labels: [flat_part]
+  allowed_destinations: [output_zone]
+  required_outputs:
+    - generated/generated_workcell_summary.json
+  dry_run:
+    expected_status: [PASS, WARN]
+    safe_for_robot_motion: false
+notes:
+  - Disabled placeholder for future suction-capable cell definitions.

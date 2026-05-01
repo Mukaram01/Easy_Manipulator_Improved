@@ -442,3 +442,6 @@ This is a deliberate Lite step toward a fuller Studio UX later.
 - Operator Runtime does **not** expose editing or generation controls and never enables robot motion/replay/controller publishing.
 - Both roles use the same generated bundle format and the same backend scripts (no duplicate scene system, no second planning backend).
 - Bundle approval is an internal workflow marker only, not a safety certification. Physical robot execution remains disabled.
+
+## Scenario matrix validation
+Use `scripts/run_scenario_pack.py` and `scripts/run_scenario_matrix.py` to validate generated-cell acceptance in offline dry-run mode only.
