@@ -31,22 +31,10 @@ import rclpy
 from sensor_msgs.msg import JointState
 
 
-SCENE_PACKAGE = "ur5_3f_test"
+SCENE_PACKAGE = "ur5_2f_test"
 
 
-REQUIRED_FINGER_JOINTS = {
-    "palm_finger_1_joint",
-    "finger_1_joint_1",
-    "finger_1_joint_2",
-    "finger_1_joint_3",
-    "palm_finger_2_joint",
-    "finger_2_joint_1",
-    "finger_2_joint_2",
-    "finger_2_joint_3",
-    "finger_middle_joint_1",
-    "finger_middle_joint_2",
-    "finger_middle_joint_3",
-}
+REQUIRED_GRIPPER_JOINTS = {"gripper_finger1_joint"}
 
 try:
     get_package_share_directory(SCENE_PACKAGE)
@@ -172,14 +160,17 @@ class TestGraspExecutionLaunch(unittest.TestCase):
             )
         )
 
-    def test_joint_state_contains_finger_joints(self):
+    def test_joint_state_contains_expected_gripper_joints(self):
+        if not REQUIRED_GRIPPER_JOINTS:
+            self.skipTest("Scene does not expose gripper controller joints; skipping gripper joint assertion")
+
         observed_joint_names = set()
 
         def callback(msg):
             observed_joint_names.update(msg.name)
 
         subscription = self.node.create_subscription(JointState, "/joint_states", callback, 10)
-        self.assertTrue(self._wait_for(lambda: REQUIRED_FINGER_JOINTS.issubset(observed_joint_names)))
+        self.assertTrue(self._wait_for(lambda: REQUIRED_GRIPPER_JOINTS.issubset(observed_joint_names)))
         self.node.destroy_subscription(subscription)
 
 

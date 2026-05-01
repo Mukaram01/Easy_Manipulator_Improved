@@ -1,3 +1,17 @@
+// Copyright 2026 Mukaram
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef RUN_GRASP_EXECUTION__HOME_RETURN_UTILS_HPP_
 #define RUN_GRASP_EXECUTION__HOME_RETURN_UTILS_HPP_
 
@@ -75,10 +89,7 @@ inline SafeJointStateResolution parse_safe_joint_state_parameter(
 {
   const std::vector<double> empty_default;
   if (parameter.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET) {
-    return {
-      empty_default,
-      "Parameter '" + param_name + "' is set but has no value (blank/null). Using empty safe joint state."
-    };
+    return {empty_default, std::nullopt};
   }
 
   if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
