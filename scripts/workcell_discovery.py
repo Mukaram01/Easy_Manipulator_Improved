@@ -209,6 +209,7 @@ def discover_generated_workcell_summaries() -> list[dict[str, Any]]:
                     "detected_objects_example_path": data.get("detected_objects_example_path"),
                     "warnings": data.get("warnings", []),
                     "blockers": data.get("blockers", []),
+                    "approval_status": ((data.get("approval") or {}).get("status") or "unapproved"),
                     "status": "FAIL" if data.get("blockers") else ("WARN" if data.get("warnings") else "PASS"),
                 }
             )

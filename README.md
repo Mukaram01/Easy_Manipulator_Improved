@@ -1417,3 +1417,12 @@ Studio Lite supports:
 5. Report path inspection/open helpers.
 
 This is a “Studio Lite” step only; fuller drag/drop Studio workflows come later.
+
+
+## Developer Studio vs Operator Runtime
+
+- **Developer Studio (developer/integrator role):** validate cell definitions, generate workcell bundles, preview environment/task flow, run preflight and gated dry-runs, inspect reports.
+- **Operator Runtime (operator role):** load generated bundles (including approved bundles), view summaries, preview environment/task flow, run preflight and gated dry-runs, inspect warnings/blockers/reports.
+- Operator Runtime does **not** expose editing or generation controls and never enables robot motion/replay/controller publishing.
+- Both roles use the same generated bundle format and the same backend scripts (no duplicate scene system, no second planning backend).
+- Bundle approval is an internal workflow marker only, not a safety certification. Physical robot execution remains disabled.
