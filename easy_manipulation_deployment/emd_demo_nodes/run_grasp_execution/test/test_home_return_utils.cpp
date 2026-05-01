@@ -1,3 +1,17 @@
+// Copyright 2026 Mukaram
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <gtest/gtest.h>
 
 #include <rclcpp/parameter.hpp>
@@ -22,7 +36,7 @@ TEST(TestHomeReturnUtils, FailureReasonIncludesAttemptAndStep)
   EXPECT_NE(reason.find("no valid plan returned by MoveIt"), std::string::npos);
 }
 
-TEST(TestHomeReturnUtils, ParseSafeJointStateParamMissingFallsBackToEmptyWithoutWarning)
+TEST(TestHomeReturnUtils, ParseSafeJointStateParamNotSetFallsBackToEmptyWithoutWarning)
 {
   const rclcpp::Parameter missing_param("home_return.safe_joint_state");
   const auto resolution = run_grasp_execution::parse_safe_joint_state_parameter(
@@ -30,8 +44,7 @@ TEST(TestHomeReturnUtils, ParseSafeJointStateParamMissingFallsBackToEmptyWithout
     "home_return.safe_joint_state");
 
   EXPECT_TRUE(resolution.value.empty());
-  ASSERT_TRUE(resolution.warning_message.has_value());
-  EXPECT_NE(resolution.warning_message->find("blank/null"), std::string::npos);
+  EXPECT_FALSE(resolution.warning_message.has_value());
 }
 
 TEST(TestHomeReturnUtils, ParseSafeJointStateParamEmptyListIsAccepted)
@@ -84,4 +97,15 @@ TEST(TestHomeReturnUtils, SafeIntermediateSkipWarningForEmptyList)
     true, {}, 6, "arm");
   ASSERT_TRUE(warning.has_value());
   EXPECT_NE(warning->find("safe_joint_state is empty"), std::string::npos);
+}
+
+TEST(TestHomeReturnUtils, ParseSafeJointStateParamMissingFallsBackToEmptyWithoutWarning)
+{
+  const rclcpp::Parameter missing_param;
+  const auto resolution = run_grasp_execution::parse_safe_joint_state_parameter(
+    missing_param,
+    "home_return.safe_joint_state");
+
+  EXPECT_TRUE(resolution.value.empty());
+  EXPECT_FALSE(resolution.warning_message.has_value());
 }
