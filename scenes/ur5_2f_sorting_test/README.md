@@ -13,9 +13,9 @@ The scene includes a table, two destination bins (`bin_a`, `bin_b`), and three p
 ## Physical layout
 
 - The workbench (`table_`) is fixed to `world` and serves as the support surface.
-- The UR5 base is mounted at realistic table height and offset to one side of the workbench.
-- `bin_a`, `bin_b`, and `reject_bin` are all visible collision bins placed on the table surface.
-- `item_red`, `item_blue`, and `item_green` are all initialized on top of the table surface (not floating).
+- The `world` frame represents the floor, and the UR5 base is floor-mounted (not floating) beside the table for a believable reach envelope.
+- `bin_a`, `bin_b`, and `reject_bin` are shallow destination trays placed on the tabletop in a reachable sorting row.
+- `item_red`, `item_blue`, and `item_green` are initialized in a dedicated pickup area with center heights computed from tabletop height, so they sit on the surface without sinking.
 - Release offsets are set so generated drop poses remain above each bin opening.
 
 ## Sorting manifest
