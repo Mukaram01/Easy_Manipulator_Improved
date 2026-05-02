@@ -52,10 +52,10 @@
 #include "moveit/collision_detection/collision_common.h"
 #include "moveit/planning_scene_monitor/planning_scene_monitor.h"
 #include "tf2_eigen/tf2_eigen.hpp"
-#include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
-#include "run_grasp_execution/grasp_candidate_utils.hpp"
-#include "run_grasp_execution/home_return_utils.hpp"
 #include "run_grasp_execution/explicit_release_pose_utils.hpp"
+#include "run_grasp_execution/grasp_candidate_utils.hpp"
+#include "run_grasp_execution/grasp_precheck_collision_filter.hpp"
+#include "run_grasp_execution/home_return_utils.hpp"
 
 
 namespace grasp_execution
@@ -387,12 +387,21 @@ std::vector<double> resolve_safe_joint_state_param(
   const std::string & param_name)
 {
   const std::vector<double> empty_default;
-  rclcpp::Parameter parameter;
-  if (!node->get_parameter(param_name, parameter)) {
-    RCLCPP_INFO(
+  rclcpp::Parameter parameter(param_name);
+  try {
+    if (!node->get_parameter(param_name, parameter)) {
+      RCLCPP_INFO(
+        logger,
+        "Parameter '%s' is not set. Using empty safe joint state.",
+        param_name.c_str());
+      return empty_default;
+    }
+  } catch (const rclcpp::exceptions::InvalidParameterValueException & e) {
+    RCLCPP_WARN(
       logger,
-      "Parameter '%s' is not set. Using empty safe joint state.",
-      param_name.c_str());
+      "Parameter '%s' is declared without a value (%s). Using empty safe joint state.",
+      param_name.c_str(),
+      e.what());
     return empty_default;
   }
 
@@ -1594,8 +1603,8 @@ public:
       demo_ = std::make_shared<grasp_execution::Demo>(
         base_node_, grasp_execution::GRASP_EXECUTION_PACKAGE,
         grasp_execution::GRASP_TASK_TOPIC, grasp_execution::GRASP_REQUEST_TOPIC);
-      std::string workcell_context_filepath =
-        this->get_parameter("workcell_context").as_string();
+      std::string workcell_context_filepath;
+      this->get_parameter_or<std::string>("workcell_context", workcell_context_filepath, "");
       if (!std::filesystem::path(workcell_context_filepath).is_absolute()) {
         workcell_context_filepath =
           (std::filesystem::path(
