@@ -126,3 +126,16 @@ TEST(TestHomeReturnUtils, ParseSafeJointStateParamMissingFallsBackToEmptyWithout
   EXPECT_TRUE(resolution.value.empty());
   EXPECT_FALSE(resolution.warning_message.has_value());
 }
+
+TEST(TestHomeReturnUtils, ParseSafeJointStateParamValuelessOverrideFallsBackToEmptyWithoutWarning)
+{
+  const rclcpp::Parameter valueless_override(
+    "home_return.safe_joint_state",
+    rclcpp::ParameterValue());
+  const auto resolution = run_grasp_execution::parse_safe_joint_state_parameter(
+    valueless_override,
+    "home_return.safe_joint_state");
+
+  EXPECT_TRUE(resolution.value.empty());
+  EXPECT_FALSE(resolution.warning_message.has_value());
+}
