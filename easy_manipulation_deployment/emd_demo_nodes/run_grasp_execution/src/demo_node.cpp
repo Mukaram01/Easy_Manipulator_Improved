@@ -387,8 +387,17 @@ std::vector<double> resolve_safe_joint_state_param(
   const std::string & param_name)
 {
   const std::vector<double> empty_default;
-  if (!node->has_parameter(param_name)) {
-    return node->declare_parameter<std::vector<double>>(param_name, empty_default);
+  try {
+    if (!node->has_parameter(param_name)) {
+      return node->declare_parameter<std::vector<double>>(param_name, empty_default);
+    }
+  } catch (const rclcpp::exceptions::InvalidParameterValueException & e) {
+    RCLCPP_WARN(
+      logger,
+      "Parameter '%s' is present but has no usable value (%s). Using empty safe joint state.",
+      param_name.c_str(),
+      e.what());
+    return empty_default;
   }
 
   rclcpp::Parameter parameter;
@@ -403,10 +412,7 @@ std::vector<double> resolve_safe_joint_state_param(
   const auto resolution =
     run_grasp_execution::parse_safe_joint_state_parameter(parameter, param_name);
   if (resolution.warning_message.has_value()) {
-    RCLCPP_WARN(
-      logger,
-      "%s",
-      resolution.warning_message->c_str());
+    RCLCPP_WARN(logger, "%s", resolution.warning_message->c_str());
   }
   return resolution.value;
 }

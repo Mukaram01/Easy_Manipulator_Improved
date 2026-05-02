@@ -70,6 +70,23 @@ TEST(TestHomeReturnUtils, ParseSafeJointStateParamWrongTypeStringFallsBackToEmpt
   EXPECT_NE(resolution.warning_message->find("type 'string'"), std::string::npos);
 }
 
+
+TEST(TestHomeReturnUtils, ParseSafeJointStateParamValidListIsReturned)
+{
+  const rclcpp::Parameter param(
+    "home_return.safe_joint_state",
+    std::vector<double>{0.1, -0.2, 1.5});
+  const auto resolution = run_grasp_execution::parse_safe_joint_state_parameter(
+    param,
+    "home_return.safe_joint_state");
+
+  ASSERT_EQ(resolution.value.size(), 3u);
+  EXPECT_DOUBLE_EQ(resolution.value[0], 0.1);
+  EXPECT_DOUBLE_EQ(resolution.value[1], -0.2);
+  EXPECT_DOUBLE_EQ(resolution.value[2], 1.5);
+  EXPECT_FALSE(resolution.warning_message.has_value());
+}
+
 TEST(TestHomeReturnUtils, ParseSafeJointStateParamWrongTypeIntegerFallsBackToEmptyWithWarning)
 {
   const rclcpp::Parameter param("home_return.safe_joint_state", 42);
