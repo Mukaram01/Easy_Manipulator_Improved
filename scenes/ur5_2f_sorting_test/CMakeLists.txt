@@ -12,6 +12,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
@@ -24,7 +25,16 @@ install(DIRECTORY urdf
 install(FILES
   environment.yaml
   scene_manifest.yaml
+  sorting_manifest.yaml
   README.md
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  add_test(
+    NAME ur5_2f_sorting_test_sorting_manifest_validation
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_sorting_manifest.py
+  )
+endif()
+
 ament_package()
