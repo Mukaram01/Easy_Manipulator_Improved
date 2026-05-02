@@ -2,6 +2,7 @@
 """Validation checks for ur5_2f_sorting_test sorting manifest."""
 
 from pathlib import Path
+import re
 import sys
 
 import yaml
@@ -18,6 +19,10 @@ REQUIRED_SCENE_MARKERS = (
     'link name="reject_bin"',
     'parent="table_"',
 )
+
+
+PROPERTY_PATTERN = re.compile(r'<xacro:property name="([^"]+)" value="([0-9.]+)"/>')
+ORIGIN_PATTERN = re.compile(r'<origin xyz="([^"]+)" rpy="0 0 0"/>')
 
 
 def main() -> int:
@@ -56,6 +61,11 @@ def main() -> int:
                 raise AssertionError(f"destination missing required field: {field}")
         destination_ids.add(destination["id"])
         destination_frames[destination["id"]] = destination["frame_id"]
+        offset = destination.get("release_offset_xyz_m", [0.0, 0.0, 0.0])
+        if not isinstance(offset, list) or len(offset) != 3 or offset[2] <= 0.0:
+            raise AssertionError(
+                f"destination '{destination['id']}' has invalid non-positive release_offset z"
+            )
 
     for route in routing:
         object_name = route.get("object")
@@ -77,6 +87,24 @@ def main() -> int:
     for marker in REQUIRED_SCENE_MARKERS:
         if marker not in scene_xacro_text:
             raise AssertionError(f"scene.urdf.xacro is missing required frame/link marker: {marker}")
+
+    properties = dict(PROPERTY_PATTERN.findall(scene_xacro_text))
+    table_top_z = float(properties["table_top_z"])
+
+    expected_expressions = {
+        "item_red": "${table_top_z + item_red_height / 2}",
+        "item_blue": "${table_top_z + item_blue_length / 2}",
+        "item_green": "${table_top_z + item_green_radius}",
+        "bin_a": "${table_top_z + tray_height}",
+        "bin_b": "${table_top_z + tray_height}",
+        "reject_bin": "${table_top_z + tray_height}",
+    }
+    for name, expr in expected_expressions.items():
+        if expr not in scene_xacro_text:
+            raise AssertionError(f"{name} origin is not aligned from table_top_z expression")
+
+    if table_top_z <= 0.0:
+        raise AssertionError("table_top_z must be positive")
 
     return 0
 

@@ -33,17 +33,17 @@ sorting_manifest:
     - id: bin_a
       name: Bin A
       frame_id: bin_a
-      release_offset_xyz_m: [0.0, 0.0, 0.05]
+      release_offset_xyz_m: [0.0, 0.0, 0.03]
 
     - id: bin_b
       name: Bin B
       frame_id: bin_b
-      release_offset_xyz_m: [0.0, 0.0, 0.05]
+      release_offset_xyz_m: [0.0, 0.0, 0.03]
 
     - id: reject_bin
       name: Reject Bin
       frame_id: reject_bin
-      release_offset_xyz_m: [0.0, 0.0, 0.06]
+      release_offset_xyz_m: [0.0, 0.0, 0.03]
 
   routing:
     - object: item_red

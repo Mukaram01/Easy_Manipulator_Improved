@@ -9,6 +9,17 @@
 
  <link name="world"/>
 
+ <xacro:property name="table_top_z" value="0.76"/>
+ <xacro:property name="item_red_height" value="0.08"/>
+ <xacro:property name="item_blue_length" value="0.06"/>
+ <xacro:property name="item_green_radius" value="0.025"/>
+ <xacro:property name="tray_length" value="0.22"/>
+ <xacro:property name="tray_width" value="0.18"/>
+ <xacro:property name="tray_height" value="0.07"/>
+ <xacro:property name="pickup_area_x" value="0.30"/>
+ <xacro:property name="pickup_area_y" value="0.0"/>
+ <xacro:property name="destination_area_x" value="0.48"/>
+
 <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
 
  <xacro:ur_robot
@@ -21,7 +32,7 @@
   physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
   use_fake_hardware="$(arg use_fake_hardware)">
-  <origin xyz="-0.55 0 0.76" rpy="0 0 0"/>
+  <origin xyz="-0.35 0.0 0.0" rpy="0 0 0"/>
 </xacro:ur_robot>
 
  <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
@@ -76,53 +87,53 @@
 
  <link name="bin_a">
    <visual>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
      <material name="Blue"><color rgba="0.2 0.2 0.8 0.9"/></material>
    </visual>
    <collision>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
    </collision>
  </link>
  <joint name="world_to_bin_a" type="fixed">
    <parent link="world"/>
    <child link="bin_a"/>
-   <origin xyz="0.45 -0.28 0.06" rpy="0 0 0"/>
+   <origin xyz="${destination_area_x} -0.25 ${table_top_z + tray_height}" rpy="0 0 0"/>
  </joint>
 
  <link name="bin_b">
    <visual>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
      <material name="Green"><color rgba="0.2 0.8 0.2 0.9"/></material>
    </visual>
    <collision>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
    </collision>
  </link>
  <joint name="world_to_bin_b" type="fixed">
    <parent link="world"/>
    <child link="bin_b"/>
-   <origin xyz="0.45 0.28 0.06" rpy="0 0 0"/>
+   <origin xyz="${destination_area_x} 0.0 ${table_top_z + tray_height}" rpy="0 0 0"/>
  </joint>
 
  <link name="reject_bin">
    <visual>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
      <material name="RejectBin"><color rgba="0.75 0.35 0.1 0.9"/></material>
    </visual>
    <collision>
-     <origin xyz="0 0 0" rpy="0 0 0"/>
-     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <origin xyz="0 0 ${-tray_height / 2}" rpy="0 0 0"/>
+     <geometry><box size="${tray_length} ${tray_width} ${tray_height}"/></geometry>
    </collision>
  </link>
  <joint name="world_to_reject_bin" type="fixed">
    <parent link="world"/>
    <child link="reject_bin"/>
-   <origin xyz="0.20 0.36 0.06" rpy="0 0 0"/>
+   <origin xyz="${destination_area_x} 0.25 ${table_top_z + tray_height}" rpy="0 0 0"/>
  </joint>
 
  <link name="item_red">
@@ -132,7 +143,7 @@
  <joint name="world_to_item_red" type="fixed">
    <parent link="world"/>
    <child link="item_red"/>
-   <origin xyz="0.30 -0.04 0.80" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x} ${pickup_area_y - 0.10} ${table_top_z + item_red_height / 2}" rpy="0 0 0"/>
  </joint>
 
  <link name="item_blue">
@@ -142,7 +153,7 @@
  <joint name="world_to_item_blue" type="fixed">
    <parent link="world"/>
    <child link="item_blue"/>
-   <origin xyz="0.38 0.07 0.79" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x + 0.08} ${pickup_area_y} ${table_top_z + item_blue_length / 2}" rpy="0 0 0"/>
  </joint>
 
  <link name="item_green">
@@ -152,7 +163,7 @@
  <joint name="world_to_item_green" type="fixed">
    <parent link="world"/>
    <child link="item_green"/>
-   <origin xyz="0.34 0.12 0.775" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x + 0.04} ${pickup_area_y + 0.10} ${table_top_z + item_green_radius}" rpy="0 0 0"/>
  </joint>
 
 </robot>
