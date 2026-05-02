@@ -1,0 +1,141 @@
+<?xml version="1.0" ?> 
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_test">
+
+ <xacro:arg name="ur_type" default="ur5"/>
+ <xacro:arg name="name" default="$(arg ur_type)"/>
+ <xacro:arg name="tf_prefix" default=""/>
+ <xacro:arg name="use_fake_hardware" default="true"/>
+
+ <link name="world"/>
+
+<xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+<xacro:ur_robot
+  name="$(arg name)"
+  tf_prefix="$(arg tf_prefix)"
+  parent="world"
+  safety_limits="true"
+  joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
+  kinematics_parameters_file="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"
+  physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
+  visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
+  use_fake_hardware="$(arg use_fake_hardware)">
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</xacro:ur_robot>
+
+ <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
+ <xacro:robotiq_85_gripper prefix="" parent="tool0">
+	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
+ </xacro:robotiq_85_gripper>
+
+ <xacro:if value="$(arg use_fake_hardware)">
+   <ros2_control name="RobotiqGripperHardware" type="system">
+     <hardware>
+       <plugin>mock_components/GenericSystem</plugin>
+     </hardware>
+     <joint name="gripper_finger1_joint">
+       <command_interface name="position" />
+       <state_interface name="position">
+         <param name="initial_value">0.0</param>
+       </state_interface>
+       <state_interface name="velocity">
+         <param name="initial_value">0.0</param>
+       </state_interface>
+     </joint>
+   </ros2_control>
+ </xacro:if>
+
+ <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
+ <xacro:table prefix="" parent="world">
+	<origin xyz="0 0 0" rpy="0 0 0"/>
+ </xacro:table>
+ 
+ <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+ <xacro:arg name="use_nominal_extrinsics" default="true" />
+ <xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
+    <origin xyz="-0.58 0.12 0.655" rpy="0 1.57079506 0"/>
+ </xacro:sensor_d435i>
+
+
+ <link name="camera_frame" />
+ <joint name="d435i_to_camera" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_frame"/>
+    <!--origin xyz="0 0 0" rpy="0 0 3.14159"/-->
+    <origin xyz="0 0 0" rpy="1.57079506 0 1.57079506"/>
+ </joint>
+ 
+ <link name="ee_palm" />
+ <joint name="base_to_palm" type="fixed">
+    <parent link="tool0"/>
+    <child link="ee_palm"/>
+    <origin xyz="0 0 0.14" rpy="0 0 0"/>
+ </joint>
+
+
+ <link name="bin_a">
+   <visual>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <material name="Blue"><color rgba="0.2 0.2 0.8 0.9"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+   </collision>
+ </link>
+ <joint name="world_to_bin_a" type="fixed">
+   <parent link="world"/>
+   <child link="bin_a"/>
+   <origin xyz="0.45 -0.28 0.06" rpy="0 0 0"/>
+ </joint>
+
+ <link name="bin_b">
+   <visual>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <material name="Green"><color rgba="0.2 0.8 0.2 0.9"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+   </collision>
+ </link>
+ <joint name="world_to_bin_b" type="fixed">
+   <parent link="world"/>
+   <child link="bin_b"/>
+   <origin xyz="0.45 0.28 0.06" rpy="0 0 0"/>
+ </joint>
+
+ <link name="item_red">
+   <visual><geometry><box size="0.04 0.04 0.08"/></geometry><material name="Red"><color rgba="0.9 0.1 0.1 1.0"/></material></visual>
+   <collision><geometry><box size="0.04 0.04 0.08"/></geometry></collision>
+ </link>
+ <joint name="world_to_item_red" type="fixed">
+   <parent link="world"/>
+   <child link="item_red"/>
+   <origin xyz="0.30 -0.04 0.78" rpy="0 0 0"/>
+ </joint>
+
+ <link name="item_blue">
+   <visual><geometry><cylinder length="0.06" radius="0.02"/></geometry><material name="BlueItem"><color rgba="0.1 0.3 0.9 1.0"/></material></visual>
+   <collision><geometry><cylinder length="0.06" radius="0.02"/></geometry></collision>
+ </link>
+ <joint name="world_to_item_blue" type="fixed">
+   <parent link="world"/>
+   <child link="item_blue"/>
+   <origin xyz="0.38 0.07 0.77" rpy="0 0 0"/>
+ </joint>
+
+ <link name="item_green">
+   <visual><geometry><sphere radius="0.025"/></geometry><material name="GreenItem"><color rgba="0.1 0.8 0.3 1.0"/></material></visual>
+   <collision><geometry><sphere radius="0.025"/></geometry></collision>
+ </link>
+ <joint name="world_to_item_green" type="fixed">
+   <parent link="world"/>
+   <child link="item_green"/>
+   <origin xyz="0.34 0.12 0.765" rpy="0 0 0"/>
+ </joint>
+
+</robot>
