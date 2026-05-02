@@ -12,26 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <Eigen/Geometry>
+
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <cmath>
+#include <filesystem>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <regex>
+#include <set>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
-#include <algorithm>
-#include <filesystem>
-#include <sstream>
-#include <thread>
-#include <set>
-#include <map>
-#include <regex>
-#include <stdexcept>
-#include <unordered_set>
-#include <unordered_map>
-#include <cctype>
-#include <cmath>
-#include <mutex>
 
-#include <Eigen/Geometry>
 #include <boost/algorithm/string/join.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -105,9 +106,10 @@ struct GraspReadinessProfile
 
 std::string to_lower_copy(std::string value)
 {
-  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
+  std::transform(
+    value.begin(), value.end(), value.begin(), [](unsigned char c) {
+      return static_cast<char>(std::tolower(c));
+    });
   return value;
 }
 
@@ -211,7 +213,7 @@ bool wait_for_required_grasp_readiness(
   while (std::chrono::steady_clock::now() < end_time) {
     executor.spin_some();
 
-    for (auto it = missing_frames.begin(); it != missing_frames.end();) {
+    for (auto it = missing_frames.begin(); it != missing_frames.end(); ) {
       if (tf_buffer.canTransform(normalized_planning_frame, *it, tf2::TimePointZero)) {
         it = missing_frames.erase(it);
       } else {
@@ -220,8 +222,10 @@ bool wait_for_required_grasp_readiness(
     }
 
     if (missing_joints.empty() && missing_frames.empty()) {
-      RCLCPP_INFO(node->get_logger(),
-        "Readiness checks passed: all required finger joints and %s->finger_*_link_* TF frames are available.",
+      RCLCPP_INFO(
+        node->get_logger(),
+        "Readiness checks passed: all required finger joints and "
+        "%s->finger_*_link_* TF frames are available.",
         normalized_planning_frame.c_str());
       return true;
     }
@@ -457,7 +461,8 @@ public:
     grasp_execution::declare_or_get_param<bool>(
       use_explicit_release_pose_, "use_explicit_release_pose", node, node->get_logger(), true);
     grasp_execution::declare_or_get_param<bool>(
-      use_destination_release_, "use_destination_release", node, node->get_logger(), use_explicit_release_pose_);
+      use_destination_release_, "use_destination_release", node,
+      node->get_logger(), use_explicit_release_pose_);
     use_explicit_release_pose_ = use_destination_release_;
     grasp_execution::declare_or_get_param<std::string>(
       explicit_release_pose_source_,
@@ -646,9 +651,15 @@ public:
         auto task = std::make_unique<emd_msgs::msg::GraspTask>();
         task->task_id = gen_uuid();
         task->grasp_targets = req->grasp_targets;
-        const bool success = order_schedule(std::move(task), true);
+        const bool success = order_schedule(
+          std::move(
+            task), true);
         res->success = success;
-        res->message = success ? "Execution completed successfully." : get_and_clear_last_failure_message();
+        if (success) {
+          res->message = "Execution completed successfully.";
+        } else {
+          res->message = get_and_clear_last_failure_message();
+        }
       });
   }
 
@@ -659,7 +670,8 @@ public:
     explicit_release_pose_by_target_id_.clear();
     std::unordered_map<size_t, run_grasp_execution::ExplicitReleasePoseEntry> explicit_by_index;
     if (explicit_release_pose_adapter_loaded_) {
-      const size_t max_count = std::min(explicit_release_entries_.size(), msg->grasp_targets.size());
+      const size_t max_count =
+        std::min(explicit_release_entries_.size(), msg->grasp_targets.size());
       for (size_t i = 0; i < max_count; ++i) {
         explicit_by_index.emplace(i, explicit_release_entries_[i]);
       }
@@ -760,7 +772,7 @@ public:
     std::string grasp_frame = "";
     std::string planning_group = "";
 
-    const emd_msgs::msg::GraspMethod *selected_method = nullptr;
+    const emd_msgs::msg::GraspMethod * selected_method = nullptr;
     for (const auto & method : target->grasp_methods) {
       for (auto & group : get_workcell_context().groups) {
         for (auto & ee : group.second.end_effectors) {
@@ -849,7 +861,8 @@ public:
     try {
       release_pose = get_curr_pose(moveit_link);
     } catch (const std::exception & ex) {
-      RCLCPP_ERROR(node_->get_logger(), "Failed to get current pose for target %s: %s",
+      RCLCPP_ERROR(
+        node_->get_logger(), "Failed to get current pose for target %s: %s",
         target_id.c_str(), ex.what());
       return false;
     }
@@ -900,7 +913,8 @@ public:
         target_id, pose_index, candidate_poses.size(), planning_group, moveit_link, grasp_frame,
         grasp_pose, moveit_goal_pose, rejection_reason);
       if (!precheck_ok) {
-        ++rejection_summary[run_grasp_execution::categorize_candidate_rejection_reason(rejection_reason)];
+        ++rejection_summary[run_grasp_execution::categorize_candidate_rejection_reason(
+            rejection_reason)];
         last_rejection_reason = rejection_reason;
         RCLCPP_WARN(
           node_->get_logger(),
@@ -952,7 +966,8 @@ public:
       last_rejection_reason = "planner failure";
       RCLCPP_WARN(
         node_->get_logger(),
-        "Grasp planning/execution failed for target %s using candidate %zu/%zu. Trying next candidate.",
+        "Grasp planning/execution failed for target %s using candidate %zu/%zu. "
+        "Trying next candidate.",
         target_id.c_str(), pose_index + 1, candidate_poses.size());
     }
 
@@ -1012,7 +1027,8 @@ public:
     }
     RCLCPP_INFO(
       node_->get_logger(),
-      "Release strategy target=%s strategy=%s destination_id=%s destination_name=%s source_object_id=%s pose=%s",
+      "Release strategy target=%s strategy=%s destination_id=%s "
+      "destination_name=%s source_object_id=%s pose=%s",
       target_id.c_str(),
       release_decision.strategy.c_str(),
       release_decision.destination_id.c_str(),
@@ -1028,10 +1044,13 @@ public:
     if (!release_result && release_decision.strategy == "explicit_destination_pose" &&
       fallback_to_legacy_release_)
     {
-      const auto legacy_release_pose = make_legacy_release_pose(release_pose, selected_moveit_grasp_pose);
+      const auto legacy_release_pose = make_legacy_release_pose(
+        release_pose,
+        selected_moveit_grasp_pose);
       RCLCPP_WARN(
         node_->get_logger(),
-        "Destination-aware release planning failed for target %s. Falling back to legacy_offset strategy.",
+        "Destination-aware release planning failed for target %s. "
+        "Falling back to legacy_offset strategy.",
         target_id.c_str());
       release_result = this->plan_and_execute_job(
         options,
@@ -1109,14 +1128,17 @@ private:
       if (source == "bridge_payload") {
         RCLCPP_WARN(
           node_->get_logger(),
-          "explicit_release_pose_source=bridge_payload requested but explicit_release_pose_bridge_payload_path is empty.");
+          "explicit_release_pose_source=bridge_payload requested but "
+          "explicit_release_pose_bridge_payload_path is empty.");
       }
       return;
     }
     const auto load_result =
-      run_grasp_execution::load_explicit_release_pose_bridge_payload(explicit_release_pose_bridge_payload_path_);
+      run_grasp_execution::load_explicit_release_pose_bridge_payload(
+      explicit_release_pose_bridge_payload_path_);
     if (!load_result.loaded) {
-      RCLCPP_WARN(node_->get_logger(), "Explicit release adapter disabled: %s", load_result.error.c_str());
+      RCLCPP_WARN(
+        node_->get_logger(), "Explicit release adapter disabled: %s", load_result.error.c_str());
       return;
     }
     explicit_release_pose_adapter_loaded_ = true;
@@ -1167,7 +1189,8 @@ private:
     const auto destination_frame = grasp_execution::sanitize_frame_id(entry.frame_id);
     if (destination_frame.empty()) {
       if (destination_release_require_frame_) {
-        decision.fallback_reason = "destination frame is empty and destination_release_require_frame=true.";
+        decision.fallback_reason =
+          "destination frame is empty and destination_release_require_frame=true.";
         return decision;
       }
       RCLCPP_WARN(
@@ -1198,7 +1221,8 @@ private:
       }
       RCLCPP_WARN(
         node_->get_logger(),
-        "Explicit destination pose frame mismatch target=%s frame=%s planning_frame=%s (policy=warn_and_use).",
+        "Explicit destination pose frame mismatch target=%s frame=%s "
+        "planning_frame=%s (policy=warn_and_use).",
         target_id.c_str(),
         destination_frame.c_str(),
         planning_frame_.c_str());
@@ -1233,7 +1257,8 @@ private:
   std::string get_and_clear_last_failure_message()
   {
     std::lock_guard<std::mutex> lock(last_failure_mutex_);
-    const std::string message = last_failure_message_.empty() ? "Execution failed." : last_failure_message_;
+    const std::string message =
+      last_failure_message_.empty() ? "Execution failed." : last_failure_message_;
     last_failure_message_.clear();
     return message;
   }
@@ -1278,7 +1303,8 @@ private:
         RCLCPP_WARN(
           node_->get_logger(),
           "Candidate %zu/%zu target=%s: grasp frame conversion unavailable "
-          "(moveit_link='%s' exists=%s, grasp_frame='%s' exists=%s). Falling back to legacy behaviour.",
+          "(moveit_link='%s' exists=%s, grasp_frame='%s' exists=%s). "
+          "Falling back to legacy behaviour.",
           candidate_index + 1, candidate_total, target_id.c_str(),
           moveit_link.c_str(), moveit_link_model ? "true" : "false",
           grasp_frame.c_str(), grasp_frame_model ? "true" : "false");
@@ -1558,7 +1584,7 @@ private:
   bool explicit_release_pose_adapter_loaded_{false};
   std::vector<run_grasp_execution::ExplicitReleasePoseEntry> explicit_release_entries_;
   std::unordered_map<std::string, run_grasp_execution::ExplicitReleasePoseEntry>
-    explicit_release_pose_by_target_id_;
+  explicit_release_pose_by_target_id_;
   bool home_return_use_safe_intermediate_{false};
   int home_return_max_attempts_{5};
   std::vector<double> home_return_safe_joint_state_;
@@ -1608,12 +1634,13 @@ public:
       if (!std::filesystem::path(workcell_context_filepath).is_absolute()) {
         workcell_context_filepath =
           (std::filesystem::path(
-             ament_index_cpp::get_package_share_directory("run_grasp_execution")) /
-           workcell_context_filepath)
-            .string();
+            ament_index_cpp::get_package_share_directory("run_grasp_execution")) /
+          workcell_context_filepath)
+          .string();
       }
       if (!demo_->init_from_yaml(workcell_context_filepath)) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to initialize workcell context from '%s'",
+        RCLCPP_ERROR(
+          this->get_logger(), "Failed to initialize workcell context from '%s'",
           workcell_context_filepath.c_str());
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
@@ -1642,8 +1669,10 @@ public:
       if (!grasp_execution::validate_required_finger_link_frames_in_robot_description(
           base_node_, readiness_profile.require_robotiq_3f_checks, readiness_profile.description))
       {
-        RCLCPP_ERROR(this->get_logger(),
-          "URDF finger link validation failed; frame names must exactly match the installed gripper model.");
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "URDF finger link validation failed; frame names must exactly match "
+          "the installed gripper model.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
       const auto readiness_timeout_s = this->declare_parameter<int>(
@@ -1652,12 +1681,15 @@ public:
           base_node_, planning_frame, readiness_profile.require_robotiq_3f_checks,
           readiness_profile.description, std::chrono::seconds(readiness_timeout_s)))
       {
-        RCLCPP_ERROR(this->get_logger(),
-          "Startup readiness checks failed; aborting configure before enabling octomap/shape masking.");
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Startup readiness checks failed; aborting configure before enabling "
+          "octomap/shape masking.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
       if (!demo_->start_world_geometry_monitor()) {
-        RCLCPP_ERROR(this->get_logger(),
+        RCLCPP_ERROR(
+          this->get_logger(),
           "Failed to start world geometry monitor after readiness checks.");
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
       }
@@ -1701,22 +1733,41 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::NodeOptions node_options;
-  node_options.automatically_declare_parameters_from_overrides(true);
-  auto node = std::make_shared<DemoLifecycleNode>(node_options);
+  int exit_code = 0;
 
-  node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
-  node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
+  try {
+    rclcpp::NodeOptions node_options;
+    node_options.automatically_declare_parameters_from_overrides(true);
+    auto node = std::make_shared<DemoLifecycleNode>(node_options);
 
-  rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node->get_node_base_interface());
-  // Also spin the internal ROS node used by the Demo so that grasp task
-  // subscriptions and service callbacks are actually processed.
-  if (auto base_node = node->get_base_node()) {
-    executor.add_node(base_node->get_node_base_interface());
+    node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
+    node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE);
+
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node->get_node_base_interface());
+
+    // Also spin the internal ROS node used by the Demo so that grasp task
+    // subscriptions and service callbacks are actually processed.
+    if (auto base_node = node->get_base_node()) {
+      executor.add_node(base_node->get_node_base_interface());
+    }
+
+    executor.spin();
+  } catch (const rclcpp::exceptions::RCLError & ex) {
+    if (rclcpp::ok()) {
+      std::cerr << "Unhandled ROS error in demo_node: " << ex.what() << std::endl;
+      exit_code = 1;
+    }
+  } catch (const std::exception & ex) {
+    if (rclcpp::ok()) {
+      std::cerr << "Unhandled exception in demo_node: " << ex.what() << std::endl;
+      exit_code = 1;
+    }
   }
-  executor.spin();
 
-  rclcpp::shutdown();
-  return 0;
+  if (rclcpp::ok()) {
+    rclcpp::shutdown();
+  }
+
+  return exit_code;
 }

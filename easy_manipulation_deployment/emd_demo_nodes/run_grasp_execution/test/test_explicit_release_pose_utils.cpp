@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gtest/gtest.h>
+
 #include <fstream>
 #include <string>
-
-#include <gtest/gtest.h>
 
 #include "run_grasp_execution/explicit_release_pose_utils.hpp"
 
@@ -41,7 +41,8 @@ TEST(ExplicitReleasePoseUtilsTest, NormalizesObjectIdHashes)
 
 TEST(ExplicitReleasePoseUtilsTest, LoadsValidDestinationPose)
 {
-  const auto path = write_temp_payload(R"JSON({
+  const auto path = write_temp_payload(
+    R"JSON({
     "grasp_task": {
       "grasp_targets": [
         {
@@ -68,7 +69,8 @@ TEST(ExplicitReleasePoseUtilsTest, LoadsValidDestinationPose)
 
 TEST(ExplicitReleasePoseUtilsTest, MalformedPoseDoesNotCrash)
 {
-  const auto path = write_temp_payload(R"JSON({
+  const auto path = write_temp_payload(
+    R"JSON({
     "grasp_task": {
       "grasp_targets": [
         {
@@ -91,7 +93,8 @@ TEST(ExplicitReleasePoseUtilsTest, MalformedPoseDoesNotCrash)
 
 TEST(ExplicitReleasePoseUtilsTest, MissingFrameStillParsesPoseForPolicyHandling)
 {
-  const auto path = write_temp_payload(R"JSON({
+  const auto path = write_temp_payload(
+    R"JSON({
     "grasp_task": {
       "grasp_targets": [
         {

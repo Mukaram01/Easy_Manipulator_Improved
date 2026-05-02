@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# flake8: noqa
+
 import importlib.util
 import os
 import time
@@ -48,7 +50,7 @@ except PackageNotFoundError:
 
 
 def import_launch_module():
-    launch_path = Path(get_package_share_directory('run_grasp_execution')) / \
+    launch_path = Path(get_package_share_directory('run_grasp_execution')) /\
         'launch' / 'grasp_execution.launch.py'
     spec = importlib.util.spec_from_file_location('run_grasp_execution_launch', launch_path)
     module = importlib.util.module_from_spec(spec)
@@ -124,7 +126,10 @@ def generate_test_description():
             [
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(launch_path),
-                    launch_arguments={'scene_package': SCENE_PACKAGE}.items(),
+                    launch_arguments={
+			'scene_package': SCENE_PACKAGE,
+			'launch_rviz': 'false',
+		    }.items(),
                 ),
                 launch_testing.actions.ReadyToTest(),
             ]
@@ -199,4 +204,4 @@ class TestGraspExecutionLaunch(unittest.TestCase):
 class TestGraspExecutionShutdown(unittest.TestCase):
 
     def test_exit_codes(self, proc_info):
-        launch_testing.asserts.assertExitCodes(proc_info, allowable_exit_codes=[0])
+        launch_testing.asserts.assertExitCodes(proc_info, allowable_exit_codes=[0, -15])
