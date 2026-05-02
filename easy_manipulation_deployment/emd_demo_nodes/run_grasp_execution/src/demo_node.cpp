@@ -784,20 +784,51 @@ public:
     const auto & grasp_method = *selected_method;
     const std::string & ee_brand = grasp_method.ee_id;
 
+    double collide_step_length = 0.0;
+    grasp_execution::declare_or_get_param<double>(
+      collide_step_length,
+      "planning_strategy.cartesian_planning.collide_step_length",
+      node_,
+      node_->get_logger(),
+      0.01);
+    double move_step_length = 0.0;
+    grasp_execution::declare_or_get_param<double>(
+      move_step_length,
+      "planning_strategy.cartesian_planning.move_step_length",
+      node_,
+      node_->get_logger(),
+      0.01);
+    int backtrack_steps = 0;
+    grasp_execution::declare_or_get_param<int>(
+      backtrack_steps,
+      "planning_strategy.cartesian_non_deterministic_hybrid.backtrack_steps",
+      node_,
+      node_->get_logger(),
+      2);
+    int hybrid_max_attempts = 0;
+    grasp_execution::declare_or_get_param<int>(
+      hybrid_max_attempts,
+      "planning_strategy.cartesian_non_deterministic_hybrid.max_planning_tries",
+      node_,
+      node_->get_logger(),
+      2);
+    int non_deterministic_max_attempts = 0;
+    grasp_execution::declare_or_get_param<int>(
+      non_deterministic_max_attempts,
+      "planning_strategy.non_deterministic.max_planning_tries",
+      node_,
+      node_->get_logger(),
+      2);
+
     grasp_execution::GraspExecutionContext options;
     options.world_frame = planning_frame_;
     options.planning_group = planning_group;
     options.ee_link = moveit_link;
-    options.move_to_collide_step_size = node_->get_parameter(
-      "planning_strategy.cartesian_planning.collide_step_length").as_double();
-    options.cartesian_step_size = static_cast<float>(node_->get_parameter(
-        "planning_strategy.cartesian_planning.move_step_length").as_double());
-    options.backtrack_steps = node_->get_parameter(
-      "planning_strategy.cartesian_non_deterministic_hybrid.backtrack_steps").as_int();
-    options.hybrid_max_attempts = node_->get_parameter(
-      "planning_strategy.cartesian_non_deterministic_hybrid.max_planning_tries").as_int();
-    options.non_deterministic_max_attempts = node_->get_parameter(
-      "planning_strategy.non_deterministic.max_planning_tries").as_int();
+    options.move_to_collide_step_size = collide_step_length;
+    options.cartesian_step_size = static_cast<float>(move_step_length);
+    options.backtrack_steps = backtrack_steps;
+    options.hybrid_max_attempts = hybrid_max_attempts;
+    options.non_deterministic_max_attempts = non_deterministic_max_attempts;
     options.clearance = clearance;
 
     // Exit if brand name not found.
