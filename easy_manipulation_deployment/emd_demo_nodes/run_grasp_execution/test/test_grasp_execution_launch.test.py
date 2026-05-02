@@ -17,10 +17,10 @@ import importlib.util
 import os
 import time
 import unittest
-import xml.etree.ElementTree as ET
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
-from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 import launch
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -31,10 +31,10 @@ import rclpy
 from sensor_msgs.msg import JointState
 
 
-SCENE_PACKAGE = "ur5_2f_test"
+SCENE_PACKAGE = 'ur5_2f_test'
 
 
-REQUIRED_GRIPPER_JOINTS = {"gripper_finger1_joint"}
+REQUIRED_GRIPPER_JOINTS = {'gripper_finger1_joint'}
 
 try:
     get_package_share_directory(SCENE_PACKAGE)
@@ -43,8 +43,8 @@ except PackageNotFoundError:
 
 
 def import_launch_module():
-    launch_path = Path(get_package_share_directory("run_grasp_execution")) / "launch" / "grasp_execution.launch.py"
-    spec = importlib.util.spec_from_file_location("run_grasp_execution_launch", launch_path)
+    launch_path = Path(get_package_share_directory('run_grasp_execution')) / 'launch' / 'grasp_execution.launch.py'
+    spec = importlib.util.spec_from_file_location('run_grasp_execution_launch', launch_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -53,7 +53,7 @@ def import_launch_module():
 
 def test_missing_scene_package_error_message():
     module = import_launch_module()
-    missing_scene = "missing_scene_package"
+    missing_scene = 'missing_scene_package'
     with pytest.raises(RuntimeError, match=rf"Scene package '{missing_scene}' was not found") as exc_info:
         module.resolve_scene_package_share_dir(missing_scene)
     assert "build/source your generated scene package first" in str(exc_info.value)
@@ -62,8 +62,8 @@ def test_missing_scene_package_error_message():
 def test_scene_srdf_injections_are_scoped_and_exclude_table_workbench_rules():
     module = import_launch_module()
     scene_package = SCENE_PACKAGE
-    robot_description_xml = module.load_file(scene_package, "urdf/scene.urdf.xacro")
-    srdf_xml = module.load_file(scene_package, "urdf/arm_hand.srdf.xacro")
+    robot_description_xml = module.load_file(scene_package, 'urdf/scene.urdf.xacro')
+    srdf_xml = module.load_file(scene_package, 'urdf/arm_hand.srdf.xacro')
 
     pairs_to_inject = module._compute_conservative_srdf_disable_collision_injections(
         robot_description_xml=robot_description_xml,
@@ -85,11 +85,11 @@ def test_scene_srdf_injections_are_scoped_and_exclude_table_workbench_rules():
 
 def test_scene_srdf_no_blanket_robot_vs_table_disable_rules():
     module = import_launch_module()
-    srdf_xml = module.load_file(SCENE_PACKAGE, "urdf/arm_hand.srdf.xacro")
+    srdf_xml = module.load_file(SCENE_PACKAGE, 'urdf/arm_hand.srdf.xacro')
     srdf_root = ET.fromstring(srdf_xml)
-    for element in srdf_root.findall("disable_collisions"):
-        link1 = (element.attrib.get("link1", "") or "").lower()
-        link2 = (element.attrib.get("link2", "") or "").lower()
+    for element in srdf_root.findall('disable_collisions'):
+        link1 = (element.attrib.get('link1', '') or '').lower()
+        link2 = (element.attrib.get('link2', '') or '').lower()
         if "table" not in link1 and "table" not in link2 and "workbench" not in link1 and "workbench" not in link2:
             continue
         assert "wrist" not in link1 and "wrist" not in link2
@@ -100,9 +100,9 @@ def test_scene_srdf_no_blanket_robot_vs_table_disable_rules():
 @pytest.mark.launch_test
 def generate_test_description():
     launch_path = os.path.join(
-        get_package_share_directory("run_grasp_execution"),
-        "launch",
-        "grasp_execution.launch.py",
+        get_package_share_directory('run_grasp_execution'),
+        'launch',
+        'grasp_execution.launch.py',
     )
     return (
         launch.LaunchDescription(
@@ -128,7 +128,7 @@ class TestGraspExecutionLaunch(unittest.TestCase):
         rclpy.shutdown()
 
     def setUp(self):
-        self.node = rclpy.create_node("test_grasp_execution_launch")
+        self.node = rclpy.create_node('test_grasp_execution_launch')
 
     def tearDown(self):
         self.node.destroy_node()
@@ -147,14 +147,14 @@ class TestGraspExecutionLaunch(unittest.TestCase):
         )
 
     def test_required_nodes(self):
-        for node_name in ["grasp_execution_node", "robot_state_publisher"]:
+        for node_name in ['grasp_execution_node', 'robot_state_publisher']:
             self.assertTrue(self._wait_for(lambda: self._node_available(node_name)))
 
     def test_joint_states_topic_published(self):
         self.assertTrue(
             self._wait_for(
                 lambda: any(
-                    topic_name == "/joint_states"
+                    topic_name == '/joint_states'
                     for topic_name, _types in self.node.get_topic_names_and_types()
                 )
             )
@@ -162,14 +162,17 @@ class TestGraspExecutionLaunch(unittest.TestCase):
 
     def test_joint_state_contains_expected_gripper_joints(self):
         if not REQUIRED_GRIPPER_JOINTS:
-            self.skipTest("Scene does not expose gripper controller joints; skipping gripper joint assertion")
+            self.skipTest(
+                'Scene does not expose gripper controller joints; '
+                'skipping gripper joint assertion'
+            )
 
         observed_joint_names = set()
 
         def callback(msg):
             observed_joint_names.update(msg.name)
 
-        subscription = self.node.create_subscription(JointState, "/joint_states", callback, 10)
+        subscription = self.node.create_subscription(JointState, '/joint_states', callback, 10)
         self.assertTrue(self._wait_for(lambda: REQUIRED_GRIPPER_JOINTS.issubset(observed_joint_names)))
         self.node.destroy_subscription(subscription)
 
