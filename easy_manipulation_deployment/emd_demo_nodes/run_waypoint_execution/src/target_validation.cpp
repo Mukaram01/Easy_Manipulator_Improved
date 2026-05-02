@@ -23,8 +23,8 @@ bool validate_grasp_target_selection(
   const rclcpp::Logger & logger,
   const emd_msgs::msg::GraspTarget::SharedPtr & target,
   const std::string & target_id,
-  const emd_msgs::msg::GraspMethod *& grasp_method,
-  const geometry_msgs::msg::PoseStamped *& grasp_pose)
+  const emd_msgs::msg::GraspMethod * & grasp_method,
+  const geometry_msgs::msg::PoseStamped * & grasp_pose)
 {
   grasp_method = nullptr;
   grasp_pose = nullptr;
