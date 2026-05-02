@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <gtest/gtest.h>
+#include <vector>
 
 #include <rclcpp/parameter.hpp>
 
-#include <vector>
+#include <gtest/gtest.h>
 
 #include "run_grasp_execution/home_return_utils.hpp"
 
@@ -69,7 +69,6 @@ TEST(TestHomeReturnUtils, ParseSafeJointStateParamWrongTypeStringFallsBackToEmpt
   ASSERT_TRUE(resolution.warning_message.has_value());
   EXPECT_NE(resolution.warning_message->find("type 'string'"), std::string::npos);
 }
-
 
 TEST(TestHomeReturnUtils, ParseSafeJointStateParamValidListIsReturned)
 {

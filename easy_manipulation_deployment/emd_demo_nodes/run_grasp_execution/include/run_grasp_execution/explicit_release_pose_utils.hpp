@@ -22,10 +22,11 @@
 #include <utility>
 #include <vector>
 
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <tf2/LinearMath/Quaternion.h>
+
+#include <boost/property_tree/json_parser.hpp>
+#include <boost/property_tree/ptree.hpp>
 
 namespace run_grasp_execution
 {
@@ -109,7 +110,8 @@ inline std::optional<std::array<double, 4>> read_vec4(
   return out;
 }
 
-inline ExplicitReleasePoseLoadResult load_explicit_release_pose_bridge_payload(const std::string & path)
+inline ExplicitReleasePoseLoadResult load_explicit_release_pose_bridge_payload(
+  const std::string & path)
 {
   ExplicitReleasePoseLoadResult result;
   if (path.empty()) {
@@ -147,7 +149,8 @@ inline ExplicitReleasePoseLoadResult load_explicit_release_pose_bridge_payload(c
 
     const auto pose_node = target.get_child_optional("destination_pose");
     if (!pose_node.has_value()) {
-      result.warnings.push_back("Missing destination_pose for object_id='" + entry.object_id + "'.");
+      result.warnings.push_back(
+        "Missing destination_pose for object_id='" + entry.object_id + "'.");
       result.entries.push_back(entry);
       continue;
     }
@@ -158,7 +161,8 @@ inline ExplicitReleasePoseLoadResult load_explicit_release_pose_bridge_payload(c
     const auto rpy = read_vec3(pose_node.value(), "rpy");
 
     if (!xyz.has_value()) {
-      result.warnings.push_back("Malformed destination_pose.xyz for object_id='" + entry.object_id + "'.");
+      result.warnings.push_back(
+        "Malformed destination_pose.xyz for object_id='" + entry.object_id + "'.");
       result.entries.push_back(entry);
       continue;
     }
@@ -181,14 +185,16 @@ inline ExplicitReleasePoseLoadResult load_explicit_release_pose_bridge_payload(c
       entry.pose.orientation.z = q.z();
       entry.pose.orientation.w = q.w();
     } else {
-      result.warnings.push_back("Missing destination_pose orientation for object_id='" + entry.object_id + "'.");
+      result.warnings.push_back(
+        "Missing destination_pose orientation for object_id='" + entry.object_id + "'.");
       result.entries.push_back(entry);
       continue;
     }
 
     entry.valid_pose = is_finite_pose(entry.pose);
     if (!entry.valid_pose) {
-      result.warnings.push_back("Non-finite destination pose for object_id='" + entry.object_id + "'.");
+      result.warnings.push_back(
+        "Non-finite destination pose for object_id='" + entry.object_id + "'.");
     }
 
     result.entries.push_back(entry);

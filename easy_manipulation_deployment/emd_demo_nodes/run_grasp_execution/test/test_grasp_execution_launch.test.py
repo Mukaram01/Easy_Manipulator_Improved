@@ -17,17 +17,22 @@ import importlib.util
 import os
 import time
 import unittest
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+
 import launch
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
 import launch_testing
 import launch_testing.actions
+
 import pytest
+
 import rclpy
+
 from sensor_msgs.msg import JointState
 
 
@@ -39,11 +44,12 @@ REQUIRED_GRIPPER_JOINTS = {'gripper_finger1_joint'}
 try:
     get_package_share_directory(SCENE_PACKAGE)
 except PackageNotFoundError:
-    pytest.skip(f"{SCENE_PACKAGE} package not available", allow_module_level=True)
+    pytest.skip(f'{SCENE_PACKAGE} package not available', allow_module_level=True)
 
 
 def import_launch_module():
-    launch_path = Path(get_package_share_directory('run_grasp_execution')) / 'launch' / 'grasp_execution.launch.py'
+    launch_path = Path(get_package_share_directory('run_grasp_execution')) / \
+        'launch' / 'grasp_execution.launch.py'
     spec = importlib.util.spec_from_file_location('run_grasp_execution_launch', launch_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -54,9 +60,12 @@ def import_launch_module():
 def test_missing_scene_package_error_message():
     module = import_launch_module()
     missing_scene = 'missing_scene_package'
-    with pytest.raises(RuntimeError, match=rf"Scene package '{missing_scene}' was not found") as exc_info:
+    with pytest.raises(
+        RuntimeError,
+        match=rf"Scene package '{missing_scene}' was not found",
+    ) as exc_info:
         module.resolve_scene_package_share_dir(missing_scene)
-    assert "build/source your generated scene package first" in str(exc_info.value)
+    assert 'build/source your generated scene package first' in str(exc_info.value)
 
 
 def test_scene_srdf_injections_are_scoped_and_exclude_table_workbench_rules():
@@ -70,17 +79,18 @@ def test_scene_srdf_injections_are_scoped_and_exclude_table_workbench_rules():
         srdf_xml=srdf_xml,
     )
     allowed_pairs = {
-        tuple(sorted(("base_link", "base_link_inertia"))),
-        tuple(sorted(("base_link_inertia", "shoulder_link"))),
-        tuple(sorted(("forearm_link", "wrist_2_link"))),
+        tuple(sorted(('base_link', 'base_link_inertia'))),
+        tuple(sorted(('base_link_inertia', 'shoulder_link'))),
+        tuple(sorted(('forearm_link', 'wrist_2_link'))),
     }
 
-    injected_pair_set = {tuple(sorted((link1, link2))) for link1, link2, _reason in pairs_to_inject}
+    injected_pair_set = {tuple(sorted((link1, link2)))
+                         for link1, link2, _reason in pairs_to_inject}
     assert injected_pair_set.issubset(allowed_pairs)
     for link1, link2, _reason in pairs_to_inject:
-        text = f"{link1} {link2}".lower()
-        assert "table" not in text
-        assert "workbench" not in text
+        text = f'{link1} {link2}'.lower()
+        assert 'table' not in text
+        assert 'workbench' not in text
 
 
 def test_scene_srdf_no_blanket_robot_vs_table_disable_rules():
@@ -90,11 +100,16 @@ def test_scene_srdf_no_blanket_robot_vs_table_disable_rules():
     for element in srdf_root.findall('disable_collisions'):
         link1 = (element.attrib.get('link1', '') or '').lower()
         link2 = (element.attrib.get('link2', '') or '').lower()
-        if "table" not in link1 and "table" not in link2 and "workbench" not in link1 and "workbench" not in link2:
+        if (
+            'table' not in link1 and
+            'table' not in link2 and
+            'workbench' not in link1 and
+            'workbench' not in link2
+        ):
             continue
-        assert "wrist" not in link1 and "wrist" not in link2
-        assert "forearm" not in link1 and "forearm" not in link2
-        assert "upper_arm" not in link1 and "upper_arm" not in link2
+        assert 'wrist' not in link1 and 'wrist' not in link2
+        assert 'forearm' not in link1 and 'forearm' not in link2
+        assert 'upper_arm' not in link1 and 'upper_arm' not in link2
 
 
 @pytest.mark.launch_test
@@ -109,7 +124,7 @@ def generate_test_description():
             [
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(launch_path),
-                    launch_arguments={"scene_package": SCENE_PACKAGE}.items(),
+                    launch_arguments={'scene_package': SCENE_PACKAGE}.items(),
                 ),
                 launch_testing.actions.ReadyToTest(),
             ]
@@ -119,6 +134,7 @@ def generate_test_description():
 
 
 class TestGraspExecutionLaunch(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
@@ -173,11 +189,14 @@ class TestGraspExecutionLaunch(unittest.TestCase):
             observed_joint_names.update(msg.name)
 
         subscription = self.node.create_subscription(JointState, '/joint_states', callback, 10)
-        self.assertTrue(self._wait_for(lambda: REQUIRED_GRIPPER_JOINTS.issubset(observed_joint_names)))
+        self.assertTrue(
+            self._wait_for(
+                lambda: REQUIRED_GRIPPER_JOINTS.issubset(observed_joint_names)))
         self.node.destroy_subscription(subscription)
 
 
 @launch_testing.post_shutdown_test()
 class TestGraspExecutionShutdown(unittest.TestCase):
+
     def test_exit_codes(self, proc_info):
         launch_testing.asserts.assertExitCodes(proc_info, allowable_exit_codes=[0])

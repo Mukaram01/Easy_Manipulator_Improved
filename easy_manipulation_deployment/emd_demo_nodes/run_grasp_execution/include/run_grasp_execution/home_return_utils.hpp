@@ -15,10 +15,10 @@
 #ifndef RUN_GRASP_EXECUTION__HOME_RETURN_UTILS_HPP_
 #define RUN_GRASP_EXECUTION__HOME_RETURN_UTILS_HPP_
 
+#include <exception>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
-#include <exception>
 
 #include "rclcpp/parameter.hpp"
 
@@ -95,7 +95,8 @@ inline SafeJointStateResolution parse_safe_joint_state_parameter(
   if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
     return {
       empty_default,
-      "Parameter '" + param_name + "' has type '" + parameter_type_to_string(parameter.get_type()) +
+      "Parameter '" + param_name + "' has type '" +
+      parameter_type_to_string(parameter.get_type()) +
       "' but expected 'double_array'. Using empty safe joint state."
     };
   }
@@ -121,8 +122,9 @@ inline std::optional<std::string> safe_intermediate_skip_warning(
     return std::nullopt;
   }
   if (safe_joint_state.empty()) {
-    return "[HomeReturn] home_return.use_safe_intermediate=true but home_return.safe_joint_state is empty. "
-           "Skipping safe intermediate and continuing to home.";
+    return "[HomeReturn] home_return.use_safe_intermediate=true but "
+           "home_return.safe_joint_state is empty. Skipping safe intermediate "
+           "and continuing to home.";
   }
   if (safe_joint_state.size() != manipulator_dof) {
     return "[HomeReturn] home_return.safe_joint_state has " +
