@@ -525,6 +525,28 @@ def write_temp_yaml_params(data, prefix="ros2_controllers_"):
     return path
 
 
+def sanitize_grasp_execution_params(grasp_execution_params):
+    node_section = grasp_execution_params.get('grasp_execution_node')
+    if not isinstance(node_section, dict):
+        return grasp_execution_params
+
+    ros_params = node_section.get('ros__parameters')
+    if not isinstance(ros_params, dict):
+        return grasp_execution_params
+
+    home_return = ros_params.get('home_return')
+    if home_return is None:
+        home_return = {}
+        ros_params['home_return'] = home_return
+    if not isinstance(home_return, dict):
+        return grasp_execution_params
+
+    safe_joint_state = home_return.get('safe_joint_state')
+    if safe_joint_state in (None, ''):
+        home_return['safe_joint_state'] = []
+    return grasp_execution_params
+
+
 def require_yaml_mapping(data, field_name, package_name, file_name):
     if not isinstance(data, dict):
         raise RuntimeError(
@@ -925,8 +947,14 @@ def launch_setup(context, *args, **kwargs):
         f"Generated sanitized sensors params file at '{sensors_yaml}' with octomap_frame='{planning_frame}'."
     )
 
-    grasp_execution_yaml = os.path.join(run_share, "config", "grasp_execution.yaml")
-    rviz_config_file = os.path.join(run_share, "config", "grasp_execution.rviz")
+    grasp_execution_config = sanitize_grasp_execution_params(
+        load_yaml(PACKAGE_NAME, 'config/grasp_execution.yaml')
+    )
+    grasp_execution_yaml = write_temp_yaml_params(
+        grasp_execution_config,
+        prefix='grasp_execution_',
+    )
+    rviz_config_file = os.path.join(run_share, 'config', 'grasp_execution.rviz')
 
     grasp_execution_demo_node = Node(
         name="grasp_execution_node",
