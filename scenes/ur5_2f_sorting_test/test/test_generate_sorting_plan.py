@@ -28,6 +28,15 @@ def main() -> int:
         if mapping not in output:
             raise AssertionError(f"expected mapping not found in output: {mapping}")
 
+    if "item_green -> reject_bin" not in output:
+        raise AssertionError("item_green reject route not present in dry-run output")
+
+    if "destination_frame: bin_a" in output.split("item_green -> reject_bin", maxsplit=1)[-1]:
+        raise AssertionError("item_green resolved to wrong destination frame (bin_a)")
+
+    if "destination_frame: reject_bin" not in output:
+        raise AssertionError("item_green did not resolve to destination_frame: reject_bin")
+
     return 0
 
 

@@ -42,8 +42,8 @@ sorting_manifest:
 
     - id: reject_bin
       name: Reject Bin
-      frame_id: bin_a
-      release_offset_xyz_m: [0.0, 0.0, 0.10]
+      frame_id: reject_bin
+      release_offset_xyz_m: [0.0, 0.0, 0.06]
 
   routing:
     - object: item_red

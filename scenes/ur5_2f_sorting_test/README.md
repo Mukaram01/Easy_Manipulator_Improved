@@ -10,6 +10,14 @@ ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_
 
 The scene includes a table, two destination bins (`bin_a`, `bin_b`), and three placeholder items.
 
+## Physical layout
+
+- The workbench (`table_`) is fixed to `world` and serves as the support surface.
+- The UR5 base is mounted at realistic table height and offset to one side of the workbench.
+- `bin_a`, `bin_b`, and `reject_bin` are all visible collision bins placed on the table surface.
+- `item_red`, `item_blue`, and `item_green` are all initialized on top of the table surface (not floating).
+- Release offsets are set so generated drop poses remain above each bin opening.
+
 ## Sorting manifest
 
 This scene now includes a scene-local sorting manifest at `sorting_manifest.yaml`.
@@ -33,7 +41,7 @@ A scene-local helper script generates a dry-run task list from the manifest:
 ros2 run ur5_2f_sorting_test generate_sorting_plan
 ```
 
-This helper only prints a plan and metadata for each object route.
+This helper only prints a dry-run plan and metadata for each object route.
 It does **not** execute robot motion, perception, grasp planning, or hardware control.
 
 Example output:
@@ -56,10 +64,10 @@ Manifest: /.../sorting_manifest.yaml
    release_offset_xyz_m: [0.000, 0.000, 0.050]
 3. item_green -> reject_bin
    source_frame: item_green
-   destination_frame: bin_a
+   destination_frame: reject_bin
    approximate_size_m: [0.050, 0.050, 0.050]
    pick_hint: top_grasp
-   release_offset_xyz_m: [0.000, 0.000, 0.100]
+   release_offset_xyz_m: [0.000, 0.000, 0.060]
 ```
 
 ## Validation

@@ -11,7 +11,7 @@
 
 <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
 
-<xacro:ur_robot
+ <xacro:ur_robot
   name="$(arg name)"
   tf_prefix="$(arg tf_prefix)"
   parent="world"
@@ -21,7 +21,7 @@
   physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
   use_fake_hardware="$(arg use_fake_hardware)">
-  <origin xyz="0 0 0" rpy="0 0 0"/>
+  <origin xyz="-0.55 0 0.76" rpy="0 0 0"/>
 </xacro:ur_robot>
 
  <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
@@ -108,6 +108,23 @@
    <origin xyz="0.45 0.28 0.06" rpy="0 0 0"/>
  </joint>
 
+ <link name="reject_bin">
+   <visual>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+     <material name="RejectBin"><color rgba="0.75 0.35 0.1 0.9"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 0" rpy="0 0 0"/>
+     <geometry><box size="0.22 0.18 0.12"/></geometry>
+   </collision>
+ </link>
+ <joint name="world_to_reject_bin" type="fixed">
+   <parent link="world"/>
+   <child link="reject_bin"/>
+   <origin xyz="0.20 0.36 0.06" rpy="0 0 0"/>
+ </joint>
+
  <link name="item_red">
    <visual><geometry><box size="0.04 0.04 0.08"/></geometry><material name="Red"><color rgba="0.9 0.1 0.1 1.0"/></material></visual>
    <collision><geometry><box size="0.04 0.04 0.08"/></geometry></collision>
@@ -115,7 +132,7 @@
  <joint name="world_to_item_red" type="fixed">
    <parent link="world"/>
    <child link="item_red"/>
-   <origin xyz="0.30 -0.04 0.78" rpy="0 0 0"/>
+   <origin xyz="0.30 -0.04 0.80" rpy="0 0 0"/>
  </joint>
 
  <link name="item_blue">
@@ -125,7 +142,7 @@
  <joint name="world_to_item_blue" type="fixed">
    <parent link="world"/>
    <child link="item_blue"/>
-   <origin xyz="0.38 0.07 0.77" rpy="0 0 0"/>
+   <origin xyz="0.38 0.07 0.79" rpy="0 0 0"/>
  </joint>
 
  <link name="item_green">
@@ -135,7 +152,7 @@
  <joint name="world_to_item_green" type="fixed">
    <parent link="world"/>
    <child link="item_green"/>
-   <origin xyz="0.34 0.12 0.765" rpy="0 0 0"/>
+   <origin xyz="0.34 0.12 0.775" rpy="0 0 0"/>
  </joint>
 
 </robot>

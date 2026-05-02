@@ -9,6 +9,15 @@ import yaml
 
 REQUIRED_OBJECT_FIELDS = ("id", "frame_id", "destination")
 REQUIRED_DESTINATION_FIELDS = ("id", "frame_id")
+REQUIRED_SCENE_MARKERS = (
+    'link name="item_red"',
+    'link name="item_blue"',
+    'link name="item_green"',
+    'link name="bin_a"',
+    'link name="bin_b"',
+    'link name="reject_bin"',
+    'parent="table_"',
+)
 
 
 def main() -> int:
@@ -40,11 +49,13 @@ def main() -> int:
         object_ids.add(obj["id"])
 
     destination_ids = set()
+    destination_frames = {}
     for destination in destinations:
         for field in REQUIRED_DESTINATION_FIELDS:
             if not destination.get(field):
                 raise AssertionError(f"destination missing required field: {field}")
         destination_ids.add(destination["id"])
+        destination_frames[destination["id"]] = destination["frame_id"]
 
     for route in routing:
         object_name = route.get("object")
@@ -55,6 +66,17 @@ def main() -> int:
             raise AssertionError(
                 f"routing destination '{destination_name}' is not defined in destinations"
             )
+        if destination_frames[destination_name] != destination_name:
+            raise AssertionError(
+                f"routing destination '{destination_name}' resolves to mismatched frame_id "
+                f"'{destination_frames[destination_name]}'"
+            )
+
+    scene_xacro_path = Path(__file__).resolve().parents[1] / "urdf" / "scene.urdf.xacro"
+    scene_xacro_text = scene_xacro_path.read_text(encoding="utf-8")
+    for marker in REQUIRED_SCENE_MARKERS:
+        if marker not in scene_xacro_text:
+            raise AssertionError(f"scene.urdf.xacro is missing required frame/link marker: {marker}")
 
     return 0
 
