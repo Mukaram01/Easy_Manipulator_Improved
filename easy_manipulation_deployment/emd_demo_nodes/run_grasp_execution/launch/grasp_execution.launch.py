@@ -29,11 +29,11 @@ from launch_ros.actions import Node
 import xacro
 import yaml
 
-DEFAULT_SCENE_PACKAGE_CANDIDATES = ("ur5_3f_test", "ur5_2f_test", "ur5_airpick4_test", "suction_test")
-PACKAGE_NAME = "run_grasp_execution"
-SCENE_PACKAGE_ARGUMENT = "scene_package"
-MOVEIT_CONFIG_PACKAGE_ARGUMENT = "moveit_config_package"
-PLANNING_FRAME_ARGUMENT = "planning_frame"
+DEFAULT_SCENE_PACKAGE_CANDIDATES = ('ur5_3f_test', 'ur5_2f_test', 'ur5_airpick4_test', 'suction_test')
+PACKAGE_NAME = 'run_grasp_execution'
+SCENE_PACKAGE_ARGUMENT = 'scene_package'
+MOVEIT_CONFIG_PACKAGE_ARGUMENT = 'moveit_config_package'
+PLANNING_FRAME_ARGUMENT = 'planning_frame'
 
 
 GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR = {
@@ -1056,11 +1056,17 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Launch in debug mode")
-    scene_description = "Scene package containing urdf/scene.urdf.xacro and urdf/arm_hand.srdf.xacro"
+    debug_arg = DeclareLaunchArgument(
+        'debug',
+        default_value='false',
+        description='Launch in debug mode',
+    )
+    scene_description = (
+        'Scene package containing urdf/scene.urdf.xacro and urdf/arm_hand.srdf.xacro'
+    )
     scene_arg_kwargs = {
-        "description": scene_description,
-        "default_value": DEFAULT_SCENE_PACKAGE if DEFAULT_SCENE_PACKAGE is not None else "ur5_3f_test",
+        'description': scene_description,
+        'default_value': DEFAULT_SCENE_PACKAGE if DEFAULT_SCENE_PACKAGE is not None else 'ur5_3f_test',
     }
 
     return LaunchDescription(
@@ -1069,18 +1075,23 @@ def generate_launch_description():
             DeclareLaunchArgument(SCENE_PACKAGE_ARGUMENT, **scene_arg_kwargs),
             DeclareLaunchArgument(
                 MOVEIT_CONFIG_PACKAGE_ARGUMENT,
-                default_value="ur5_moveit_config",
-                description="MoveIt config package containing config/{kinematics,joint_limits,ompl_planning}.yaml",
+                default_value='ur5_moveit_config',
+                description=(
+                    'MoveIt config package containing '
+                    'config/{kinematics,joint_limits,ompl_planning}.yaml'
+                ),
             ),
             DeclareLaunchArgument(
                 PLANNING_FRAME_ARGUMENT,
-                default_value="world",
-                description="Canonical planning/reference frame shared by grasp execution and octomap.",
+                default_value='world',
+                description=(
+                    'Canonical planning/reference frame shared by grasp execution and octomap.'
+                ),
             ),
             DeclareLaunchArgument(
-                "launch_rviz",
-                default_value="true",
-                description="Launch RViz for grasp execution visualization.",
+                'launch_rviz',
+                default_value='true',
+                description='Launch RViz for grasp execution visualization.',
             ),
             OpaqueFunction(function=launch_setup),
         ]
