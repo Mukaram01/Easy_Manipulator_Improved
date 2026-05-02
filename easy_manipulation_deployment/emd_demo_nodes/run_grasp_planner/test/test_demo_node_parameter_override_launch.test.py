@@ -62,8 +62,8 @@ def generate_test_description():
     )
 
 
-
 class TestDemoNodeParameterOverrideLaunch(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
@@ -99,9 +99,13 @@ class TestDemoNodeParameterOverrideLaunch(unittest.TestCase):
 
 
 @launch_testing.post_shutdown_test()
-
 class TestDemoNodeParameterOverrideShutdown(unittest.TestCase):
+
     def test_demo_node_exits_cleanly(self, proc_info, demo_node):
         # demo_node can exit with SIGABRT during forced launch shutdown due to
         # rclcpp context teardown races seen on Humble test environments.
-        launch_testing.asserts.assertExitCodes(proc_info, process=demo_node, allowable_exit_codes=[0, -6])
+        launch_testing.asserts.assertExitCodes(
+            proc_info,
+            process=demo_node,
+            allowable_exit_codes=[0, -6],
+        )

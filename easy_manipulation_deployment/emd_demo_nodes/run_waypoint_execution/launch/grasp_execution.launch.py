@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import os
+from pathlib import Path
 import re
 import tempfile
-from pathlib import Path
 
-from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -45,9 +45,9 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
         atexit.register(lambda p=urdf_path: Path(p).unlink(missing_ok=True))
     else:
         urdf_path = Path(urdf_path)
-        if not urdf_path.name or urdf_path.name in {".", ".."}:
+        if not urdf_path.name or urdf_path.name in {'.', '..'}:
             raise ValueError('urdf_path must not be empty')
-        urdf_path = str(urdf_path.with_suffix(".urdf"))
+        urdf_path = str(urdf_path.with_suffix('.urdf'))
         directory = os.path.dirname(urdf_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -56,7 +56,7 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
     # whitespace artefacts (extra text nodes in <joint>/<link> elements) and
     # the mandatory XML declaration that toprettyxml() injects.
     doc = xacro.process_file(xacro_path, mappings=mappings)
-    with open(urdf_path, "w", encoding="utf-8") as out:
+    with open(urdf_path, 'w', encoding='utf-8') as out:
         out.write(doc.toxml())
 
     return urdf_path
@@ -70,15 +70,15 @@ def load_file(package_name, file_path, mappings=None):
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            if target.suffix == ".xacro":
-                temp_urdf_path = Path(tmpdir) / target.with_suffix(".urdf").name
+            if target.suffix == '.xacro':
+                temp_urdf_path = Path(tmpdir) / target.with_suffix('.urdf').name
                 temp_urdf_path = Path(
                     to_urdf(str(absolute_file_path), str(temp_urdf_path), mappings)
                 )
             else:
                 temp_urdf_path = absolute_file_path
 
-            with Path(temp_urdf_path).open("r", encoding="utf-8") as file:
+            with Path(temp_urdf_path).open('r', encoding='utf-8') as file:
                 return file.read()
     except Exception:
         return None
@@ -91,7 +91,7 @@ def load_yaml(package_name, file_path):
 
 
 def _extract_scene_xacro_args(xacro_file_path):
-    text = Path(xacro_file_path).read_text(encoding="utf-8")
+    text = Path(xacro_file_path).read_text(encoding='utf-8')
     return set(re.findall(r"<xacro:arg\s+name=['\"]([^'\"]+)['\"]", text))
 
 
@@ -107,8 +107,8 @@ def _extract_ur_robot_macro_params():
     if not ur_macro_path.exists():
         return set()
 
-    text = ur_macro_path.read_text(encoding="utf-8")
-    call_start = text.find("<xacro:macro")
+    text = ur_macro_path.read_text(encoding='utf-8')
+    call_start = text.find('<xacro:macro')
     if call_start == -1:
         return set()
 
@@ -116,12 +116,16 @@ def _extract_ur_robot_macro_params():
     if ur_robot_block_start == -1:
         return set()
 
-    params_match = re.search(r'params\s*=\s*["\'](.*?)["\']', text[ur_robot_block_start:], re.DOTALL)
+    params_match = re.search(
+        r'params\s*=\s*["\'](.*?)["\']',
+        text[ur_robot_block_start:],
+        re.DOTALL,
+    )
     if not params_match:
         return set()
 
     raw_params = params_match.group(1).split()
-    return {token.lstrip("*") for token in raw_params if token and ":=" not in token}
+    return {token.lstrip('*') for token in raw_params if token and ':=' not in token}
 
 
 def generate_launch_description():
@@ -158,7 +162,11 @@ def generate_launch_description():
     robot_description_semantic_config = load_file(scene_pkg, 'urdf/arm_hand.srdf.xacro')
     robot_description_semantic = {'robot_description_semantic': robot_description_semantic_config}
 
-    kinematics_yaml = {'robot_description_kinematics': load_yaml('ur5_moveit_config', 'config/kinematics.yaml')}
+    kinematics_yaml = {
+        'robot_description_kinematics': load_yaml(
+            'ur5_moveit_config', 'config/kinematics.yaml'
+        )
+    }
 
     ompl_planning_pipeline_config = {
         'ompl': {
@@ -260,19 +268,19 @@ def generate_launch_description():
 
     # Load controllers
     load_controllers = []
-    for controller in ["ur5_arm_controller", "joint_state_broadcaster"]:
+    for controller in ['ur5_arm_controller', 'joint_state_broadcaster']:
         load_controllers += [
             ExecuteProcess(
                 cmd=[
-                    "ros2",
-                    "run",
-                    "controller_manager",
-                    "spawner",
+                    'ros2',
+                    'run',
+                    'controller_manager',
+                    'spawner',
                     controller,
-                    "--controller-manager",
-                    "/controller_manager",
+                    '--controller-manager',
+                    '/controller_manager',
                 ],
-                output="screen",
+                output='screen',
             )
         ]
 
