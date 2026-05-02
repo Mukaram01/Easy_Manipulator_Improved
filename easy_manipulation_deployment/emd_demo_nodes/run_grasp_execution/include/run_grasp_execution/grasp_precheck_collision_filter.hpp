@@ -50,10 +50,14 @@ inline CollisionFilterResult filter_grasp_precheck_collision_pairs(
 {
   CollisionFilterResult result;
   for (const auto & pair : collision_pairs) {
-    const bool first_is_touch_link = allowed_touch_links.find(pair.first) != allowed_touch_links.end();
-    const bool second_is_touch_link = allowed_touch_links.find(pair.second) != allowed_touch_links.end();
-    const bool first_is_allowed_id = allowed_collision_ids.find(pair.first) != allowed_collision_ids.end();
-    const bool second_is_allowed_id = allowed_collision_ids.find(pair.second) != allowed_collision_ids.end();
+    const bool first_is_touch_link =
+      allowed_touch_links.find(pair.first) != allowed_touch_links.end();
+    const bool second_is_touch_link =
+      allowed_touch_links.find(pair.second) != allowed_touch_links.end();
+    const bool first_is_allowed_id =
+      allowed_collision_ids.find(pair.first) != allowed_collision_ids.end();
+    const bool second_is_allowed_id =
+      allowed_collision_ids.find(pair.second) != allowed_collision_ids.end();
 
     const bool is_allowed_pair =
       (first_is_touch_link && second_is_allowed_id) ||
