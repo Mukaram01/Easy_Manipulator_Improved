@@ -387,24 +387,11 @@ std::vector<double> resolve_safe_joint_state_param(
   const std::string & param_name)
 {
   const std::vector<double> empty_default;
-  try {
-    if (!node->has_parameter(param_name)) {
-      return node->declare_parameter<std::vector<double>>(param_name, empty_default);
-    }
-  } catch (const rclcpp::exceptions::InvalidParameterValueException & e) {
-    RCLCPP_WARN(
-      logger,
-      "Parameter '%s' is present but has no usable value (%s). Using empty safe joint state.",
-      param_name.c_str(),
-      e.what());
-    return empty_default;
-  }
-
   rclcpp::Parameter parameter;
   if (!node->get_parameter(param_name, parameter)) {
-    RCLCPP_WARN(
+    RCLCPP_INFO(
       logger,
-      "Could not read parameter '%s'. Using empty safe joint state.",
+      "Parameter '%s' is not set. Using empty safe joint state.",
       param_name.c_str());
     return empty_default;
   }
