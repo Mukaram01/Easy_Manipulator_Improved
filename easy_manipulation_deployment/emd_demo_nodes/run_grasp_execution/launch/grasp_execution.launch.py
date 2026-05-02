@@ -544,8 +544,8 @@ def sanitize_grasp_execution_params(grasp_execution_params):
         return grasp_execution_params
 
     safe_joint_state = home_return.get('safe_joint_state')
-    if safe_joint_state in (None, ''):
-        home_return['safe_joint_state'] = []
+    if safe_joint_state in (None, '') or safe_joint_state == []:
+        home_return.pop('safe_joint_state', None)
     return grasp_execution_params
 
 

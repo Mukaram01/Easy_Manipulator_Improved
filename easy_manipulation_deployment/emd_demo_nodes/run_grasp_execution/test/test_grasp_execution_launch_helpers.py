@@ -853,3 +853,42 @@ def test_launch_setup_wraps_scene_metadata_parse_errors_with_argument_context(
     assert 'scene_package=\x27scene_pkg\x27' in message
     assert 'moveit_config_package=\x27moveit_pkg\x27' in message
     assert 'planning_frame=\x27world\x27' in message
+
+
+@pytest.mark.parametrize(
+    'safe_joint_state',
+    [None, '', []],
+)
+def test_sanitize_grasp_execution_params_removes_empty_safe_joint_state(
+    grasp_launch_module,
+    safe_joint_state,
+):
+    params = {
+        'grasp_execution_node': {
+            'ros__parameters': {
+                'home_return': {'safe_joint_state': safe_joint_state},
+            }
+        }
+    }
+
+    sanitized = grasp_launch_module.sanitize_grasp_execution_params(params)
+
+    assert 'safe_joint_state' not in sanitized['grasp_execution_node']['ros__parameters']['home_return']
+
+
+def test_sanitize_grasp_execution_params_preserves_non_empty_safe_joint_state(grasp_launch_module):
+    params = {
+        'grasp_execution_node': {
+            'ros__parameters': {
+                'home_return': {'safe_joint_state': [0.0, -1.57, 1.57]},
+            }
+        }
+    }
+
+    sanitized = grasp_launch_module.sanitize_grasp_execution_params(params)
+
+    assert sanitized['grasp_execution_node']['ros__parameters']['home_return']['safe_joint_state'] == [
+        0.0,
+        -1.57,
+        1.57,
+    ]
