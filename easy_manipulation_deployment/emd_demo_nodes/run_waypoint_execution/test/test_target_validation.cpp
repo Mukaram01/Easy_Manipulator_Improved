@@ -32,7 +32,8 @@ TEST(TargetValidation, RejectsNullTarget)
   const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
   const geometry_msgs::msg::PoseStamped * grasp_pose = nullptr;
 
-  EXPECT_FALSE(run_waypoint_execution::validate_grasp_target_selection(
+  EXPECT_FALSE(
+    run_waypoint_execution::validate_grasp_target_selection(
       rclcpp::get_logger("test_target_validation"),
       nullptr,
       "target-null",
@@ -49,7 +50,8 @@ TEST(TargetValidation, RejectsEmptyGraspMethods)
   const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
   const geometry_msgs::msg::PoseStamped * grasp_pose = nullptr;
 
-  EXPECT_FALSE(run_waypoint_execution::validate_grasp_target_selection(
+  EXPECT_FALSE(
+    run_waypoint_execution::validate_grasp_target_selection(
       rclcpp::get_logger("test_target_validation"),
       target,
       "target-empty-methods",
@@ -68,7 +70,8 @@ TEST(TargetValidation, RejectsEmptyGraspPoses)
   const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
   const geometry_msgs::msg::PoseStamped * grasp_pose = nullptr;
 
-  EXPECT_FALSE(run_waypoint_execution::validate_grasp_target_selection(
+  EXPECT_FALSE(
+    run_waypoint_execution::validate_grasp_target_selection(
       rclcpp::get_logger("test_target_validation"),
       target,
       "target-empty-poses",
@@ -88,7 +91,8 @@ TEST(TargetValidation, AcceptsValidFirstSelection)
   const emd_msgs::msg::GraspMethod * grasp_method = nullptr;
   const geometry_msgs::msg::PoseStamped * grasp_pose = nullptr;
 
-  EXPECT_TRUE(run_waypoint_execution::validate_grasp_target_selection(
+  EXPECT_TRUE(
+    run_waypoint_execution::validate_grasp_target_selection(
       rclcpp::get_logger("test_target_validation"),
       target,
       "target-valid",
@@ -110,7 +114,8 @@ TEST(TargetValidation, RejectsUnknownEndEffectorMapping)
   std::string ee_link = "stale_link";
   double clearance = 0.42;
 
-  EXPECT_FALSE(run_waypoint_execution::resolve_end_effector_mapping(
+  EXPECT_FALSE(
+    run_waypoint_execution::resolve_end_effector_mapping(
       workcell_context, "unknown-ee-id", planning_group, ee_link, clearance));
   EXPECT_TRUE(planning_group.empty());
   EXPECT_TRUE(ee_link.empty());

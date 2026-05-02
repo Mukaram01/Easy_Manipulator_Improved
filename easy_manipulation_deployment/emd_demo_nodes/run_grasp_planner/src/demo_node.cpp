@@ -69,8 +69,8 @@ int main(int argc, char * argv[])
 
   const auto point_cloud_topic =
     get_parameter_or(
-      node, "camera_parameters.point_cloud_topic",
-      std::string("/camera/camera/depth/color/points"));
+    node, "camera_parameters.point_cloud_topic",
+    std::string("/camera/camera/depth/color/points"));
 
   rclcpp::executors::MultiThreadedExecutor executor;
   #if EPD_ENABLED == 1
@@ -101,7 +101,8 @@ int main(int argc, char * argv[])
     if (!detection_topic.empty()) {
       RCLCPP_INFO(LOGGER_DEMO, "EPD detection adapter enabled.");
       adapter_node = std::make_shared<grasp_planner::EpdDetectionAdapter>(node_options);
-      adapter_node->set_parameters({
+      adapter_node->set_parameters(
+      {
         rclcpp::Parameter("camera_parameters.fx", camera_fx),
         rclcpp::Parameter("camera_parameters.fy", camera_fy),
         rclcpp::Parameter("camera_parameters.ppx", camera_ppx),
