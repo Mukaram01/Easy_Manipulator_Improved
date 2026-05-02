@@ -36,6 +36,7 @@ PACKAGE_NAME = 'run_grasp_execution'
 SCENE_PACKAGE_ARGUMENT = 'scene_package'
 MOVEIT_CONFIG_PACKAGE_ARGUMENT = 'moveit_config_package'
 PLANNING_FRAME_ARGUMENT = 'planning_frame'
+SPAWN_ARM_CONTROLLER_ARGUMENT = 'spawn_arm_controller'
 
 
 GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR = {
@@ -1039,7 +1040,11 @@ def launch_setup(context, *args, **kwargs):
     )
 
     spawn_joint_state = TimerAction(period=2.0, actions=[joint_state_spawner])
-    spawn_arm = TimerAction(period=2.5, actions=[arm_spawner])
+    spawn_arm = TimerAction(
+        period=2.5,
+        actions=[arm_spawner],
+        condition=IfCondition(LaunchConfiguration(SPAWN_ARM_CONTROLLER_ARGUMENT)),
+    )
 
     launch_actions = [
         robot_state_publisher,
@@ -1122,6 +1127,11 @@ def generate_launch_description():
                 'launch_rviz',
                 default_value='true',
                 description='Launch RViz for grasp execution visualization.',
+            ),
+            DeclareLaunchArgument(
+                SPAWN_ARM_CONTROLLER_ARGUMENT,
+                default_value='true',
+                description='Spawn ur5_arm_controller via controller_manager spawner.',
             ),
             OpaqueFunction(function=launch_setup),
         ]
