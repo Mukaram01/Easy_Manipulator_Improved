@@ -30,10 +30,21 @@ install(FILES
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/generate_sorting_plan.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME generate_sorting_plan
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_sorting_manifest.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_generate_sorting_plan_output
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_sorting_plan.py
   )
 endif()
 
