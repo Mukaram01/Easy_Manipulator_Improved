@@ -873,7 +873,8 @@ def test_sanitize_grasp_execution_params_removes_empty_safe_joint_state(
 
     sanitized = grasp_launch_module.sanitize_grasp_execution_params(params)
 
-    assert 'safe_joint_state' not in sanitized['grasp_execution_node']['ros__parameters']['home_return']
+    home_return = sanitized['grasp_execution_node']['ros__parameters']['home_return']
+    assert 'safe_joint_state' not in home_return
 
 
 def test_sanitize_grasp_execution_params_preserves_non_empty_safe_joint_state(grasp_launch_module):
@@ -887,7 +888,8 @@ def test_sanitize_grasp_execution_params_preserves_non_empty_safe_joint_state(gr
 
     sanitized = grasp_launch_module.sanitize_grasp_execution_params(params)
 
-    assert sanitized['grasp_execution_node']['ros__parameters']['home_return']['safe_joint_state'] == [
+    home_return = sanitized['grasp_execution_node']['ros__parameters']['home_return']
+    assert home_return['safe_joint_state'] == [
         0.0,
         -1.57,
         1.57,
