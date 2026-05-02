@@ -127,9 +127,10 @@ def generate_test_description():
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(launch_path),
                     launch_arguments={
-			'scene_package': SCENE_PACKAGE,
-			'launch_rviz': 'false',
-		    }.items(),
+                        'scene_package': SCENE_PACKAGE,
+                        'launch_rviz': 'false',
+                        'spawn_arm_controller': 'false',
+                    }.items(),
                 ),
                 launch_testing.actions.ReadyToTest(),
             ]
