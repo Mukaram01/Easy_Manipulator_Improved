@@ -1,0 +1,54 @@
+sorting_manifest:
+  version: 1
+  scene: ur5_2f_sorting_test
+  description: >-
+    Scene-local sorting configuration for object-to-bin routing metadata.
+
+  objects:
+    - id: item_red
+      label: red_item
+      class_name: part
+      frame_id: item_red
+      approximate_size_m: [0.05, 0.05, 0.05]
+      pick_hint: top_grasp
+      destination: bin_a
+
+    - id: item_blue
+      label: blue_item
+      class_name: part
+      frame_id: item_blue
+      approximate_size_m: [0.05, 0.05, 0.05]
+      pick_hint: top_grasp
+      destination: bin_b
+
+    - id: item_green
+      label: green_item
+      class_name: part
+      frame_id: item_green
+      approximate_size_m: [0.05, 0.05, 0.05]
+      pick_hint: top_grasp
+      destination: reject_bin
+
+  destinations:
+    - id: bin_a
+      name: Bin A
+      frame_id: bin_a
+      release_offset_xyz_m: [0.0, 0.0, 0.05]
+
+    - id: bin_b
+      name: Bin B
+      frame_id: bin_b
+      release_offset_xyz_m: [0.0, 0.0, 0.05]
+
+    - id: reject_bin
+      name: Reject Bin
+      frame_id: bin_a
+      release_offset_xyz_m: [0.0, 0.0, 0.10]
+
+  routing:
+    - object: item_red
+      destination: bin_a
+    - object: item_blue
+      destination: bin_b
+    - object: item_green
+      destination: reject_bin
