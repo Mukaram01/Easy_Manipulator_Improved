@@ -19,9 +19,9 @@ from pathlib import Path
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
 
 import xacro
 
@@ -38,7 +38,7 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
 
     if urdf_path is None:
         fd, urdf_path = tempfile.mkstemp(
-            prefix=f"{Path(xacro_path).stem}_", suffix=".urdf"
+            prefix=f'{Path(xacro_path).stem}_', suffix='.urdf'
         )
         os.close(fd)
         # Register cleanup so the temp file is removed when the launch process exits.
@@ -46,7 +46,7 @@ def to_urdf(xacro_path, urdf_path=None, mappings=None):
     else:
         urdf_path = Path(urdf_path)
         if not urdf_path.name or urdf_path.name in {".", ".."}:
-            raise ValueError("urdf_path must not be empty")
+            raise ValueError('urdf_path must not be empty')
         urdf_path = str(urdf_path.with_suffix(".urdf"))
         directory = os.path.dirname(urdf_path)
         if directory:
@@ -97,7 +97,11 @@ def _extract_scene_xacro_args(xacro_file_path):
 
 def _extract_ur_robot_macro_params():
     try:
-        ur_macro_path = Path(get_package_share_directory("ur_description")) / "urdf" / "ur_macro.xacro"
+        ur_macro_path = (
+            Path(get_package_share_directory('ur_description'))
+            / 'urdf'
+            / 'ur_macro.xacro'
+        )
     except PackageNotFoundError:
         return set()
     if not ur_macro_path.exists():
@@ -132,8 +136,6 @@ def generate_launch_description():
 
     # Keep compatibility across UR package updates by only forwarding mappings
     # accepted by both the scene xacro and ur_description's ur_robot macro.
-    scene_xacro_path = Path(get_package_share_directory(scene_pkg)) / 'urdf' / 'scene.urdf.xacro'
-    scene_args = _extract_scene_xacro_args(scene_xacro_path)
     ur_robot_args = _extract_ur_robot_macro_params()
     initial_position_mappings = {}
     if 'initial_positions_file' in ur_robot_args:
@@ -241,18 +243,18 @@ def generate_launch_description():
 
     # ros2_control using FakeSystem as hardware
     ros2_controllers_path = os.path.join(
-        get_package_share_directory("ur5_moveit_config"),
-        "config",
-        "ur5_ros_controllers.yaml",
+        get_package_share_directory('ur5_moveit_config'),
+        'config',
+        'ur5_ros_controllers.yaml',
     )
     ros2_control_node = Node(
-        package="controller_manager",
-        executable="ros2_control_node",
+        package='controller_manager',
+        executable='ros2_control_node',
         parameters=[ros2_controllers_path],
-        remappings=[("~/robot_description", "/robot_description")],
+        remappings=[('~/robot_description', '/robot_description')],
         output={
-            "stdout": "screen",
-            "stderr": "screen",
+            'stdout': 'screen',
+            'stderr': 'screen',
         },
     )
 
