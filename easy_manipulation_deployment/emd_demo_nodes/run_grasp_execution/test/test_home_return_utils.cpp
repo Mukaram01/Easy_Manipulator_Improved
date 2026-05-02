@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gtest/gtest.h>
+
 #include <vector>
 
 #include <rclcpp/parameter.hpp>
-
-#include <gtest/gtest.h>
 
 #include "run_grasp_execution/home_return_utils.hpp"
 

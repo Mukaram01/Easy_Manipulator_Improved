@@ -68,7 +68,9 @@ grasp_execution_node:
     home_return:
       use_safe_intermediate: false
       max_attempts: 5
-      safe_joint_state: []
+      # Keep this key omitted by default. In ROS 2 Humble an empty YAML list can
+      # be treated as an untyped parameter and abort node startup.
+      # safe_joint_state: [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]
       planning_time: 2.0
 
     # Optional simple workspace filter to reject unreachable grasp candidates

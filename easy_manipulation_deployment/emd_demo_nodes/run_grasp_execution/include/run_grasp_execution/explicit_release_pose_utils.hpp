@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <tf2/LinearMath/Quaternion.h>
+
 #include <array>
 #include <cmath>
 #include <fstream>
@@ -22,11 +24,9 @@
 #include <utility>
 #include <vector>
 
-#include <geometry_msgs/msg/pose.hpp>
-#include <tf2/LinearMath/Quaternion.h>
-
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 
 namespace run_grasp_execution
 {
