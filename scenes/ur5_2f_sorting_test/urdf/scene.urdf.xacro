@@ -1,4 +1,4 @@
-<?xml version="1.0" ?> 
+<?xml version="1.0" ?>
 
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_test">
 
@@ -9,18 +9,69 @@
 
  <link name="world"/>
 
- <xacro:property name="table_top_z" value="0.76"/>
- <xacro:property name="item_red_height" value="0.08"/>
- <xacro:property name="item_blue_length" value="0.06"/>
- <xacro:property name="item_green_radius" value="0.025"/>
+ <xacro:property name="floor_z" value="0.0"/>
+ <xacro:property name="table_length" value="1.20"/>
+ <xacro:property name="table_width" value="0.70"/>
+ <xacro:property name="table_height" value="0.74"/>
+ <xacro:property name="table_top_thickness" value="0.04"/>
+ <xacro:property name="table_top_z" value="${floor_z + table_height}"/>
  <xacro:property name="tray_length" value="0.22"/>
  <xacro:property name="tray_width" value="0.18"/>
  <xacro:property name="tray_height" value="0.07"/>
- <xacro:property name="pickup_area_x" value="0.30"/>
+ <xacro:property name="item_red_height" value="0.08"/>
+ <xacro:property name="item_blue_length" value="0.06"/>
+ <xacro:property name="item_green_radius" value="0.025"/>
+ <xacro:property name="pickup_area_x" value="0.32"/>
  <xacro:property name="pickup_area_y" value="0.0"/>
- <xacro:property name="destination_area_x" value="0.48"/>
+ <xacro:property name="destination_area_x" value="0.50"/>
+ <xacro:property name="table_leg_size" value="0.07"/>
+ <xacro:property name="robot_plate_length" value="0.28"/>
+ <xacro:property name="robot_plate_width" value="0.28"/>
+ <xacro:property name="robot_plate_thickness" value="0.03"/>
 
-<xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+ <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+ <link name="table_">
+   <visual>
+     <origin xyz="0 0 ${-(table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
+     <geometry><box size="${table_length} ${table_width} ${table_height - table_top_thickness}"/></geometry>
+     <material name="TableCabinet"><color rgba="0.46 0.33 0.24 1.0"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 ${-(table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
+     <geometry><box size="${table_length} ${table_width} ${table_height - table_top_thickness}"/></geometry>
+   </collision>
+   <visual>
+     <origin xyz="0 0 ${table_top_thickness / 2}" rpy="0 0 0"/>
+     <geometry><box size="${table_length} ${table_width} ${table_top_thickness}"/></geometry>
+     <material name="TableTop"><color rgba="0.55 0.40 0.28 1.0"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 ${table_top_thickness / 2}" rpy="0 0 0"/>
+     <geometry><box size="${table_length} ${table_width} ${table_top_thickness}"/></geometry>
+   </collision>
+ </link>
+
+ <joint name="world_to_table" type="fixed">
+   <parent link="world"/>
+   <child link="table_"/>
+   <origin xyz="0.15 0 ${table_top_z}" rpy="0 0 0"/>
+ </joint>
+
+ <link name="robot_mount_plate">
+   <visual>
+     <geometry><box size="${robot_plate_length} ${robot_plate_width} ${robot_plate_thickness}"/></geometry>
+     <material name="RobotPlate"><color rgba="0.25 0.25 0.25 1.0"/></material>
+   </visual>
+   <collision>
+     <geometry><box size="${robot_plate_length} ${robot_plate_width} ${robot_plate_thickness}"/></geometry>
+   </collision>
+ </link>
+ <joint name="table_to_robot_mount_plate" type="fixed">
+   <parent link="table_"/>
+   <child link="robot_mount_plate"/>
+   <origin xyz="-0.44 0.0 ${robot_plate_thickness / 2}" rpy="0 0 0"/>
+ </joint>
 
  <xacro:ur_robot
   name="$(arg name)"
@@ -32,12 +83,12 @@
   physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
   visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
   use_fake_hardware="$(arg use_fake_hardware)">
-  <origin xyz="-0.35 0.0 0.0" rpy="0 0 0"/>
-</xacro:ur_robot>
+  <origin xyz="-0.29 0.0 ${table_top_z + robot_plate_thickness}" rpy="0 0 0"/>
+ </xacro:ur_robot>
 
  <xacro:include filename="$(find robotiq_85_description)/urdf/robotiq_85_gripper.urdf.xacro"/>
  <xacro:robotiq_85_gripper prefix="" parent="tool0">
-	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
+ 	<origin xyz="0 0 0" rpy="1.5707 -1.5707 0"/>
  </xacro:robotiq_85_gripper>
 
  <xacro:if value="$(arg use_fake_hardware)">
@@ -57,15 +108,10 @@
    </ros2_control>
  </xacro:if>
 
- <xacro:include filename="$(find workbench_description)/urdf/table.urdf.xacro"/>
- <xacro:table prefix="" parent="world">
-	<origin xyz="0 0 0" rpy="0 0 0"/>
- </xacro:table>
- 
  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
  <xacro:arg name="use_nominal_extrinsics" default="true" />
  <xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
-    <origin xyz="-0.58 0.12 0.655" rpy="0 1.57079506 0"/>
+    <origin xyz="-0.58 0.12 0.62" rpy="0 1.57079506 0"/>
  </xacro:sensor_d435i>
 
 
@@ -73,17 +119,15 @@
  <joint name="d435i_to_camera" type="fixed">
     <parent link="camera_link"/>
     <child link="camera_frame"/>
-    <!--origin xyz="0 0 0" rpy="0 0 3.14159"/-->
     <origin xyz="0 0 0" rpy="1.57079506 0 1.57079506"/>
  </joint>
- 
+
  <link name="ee_palm" />
  <joint name="base_to_palm" type="fixed">
     <parent link="tool0"/>
     <child link="ee_palm"/>
     <origin xyz="0 0 0.14" rpy="0 0 0"/>
  </joint>
-
 
  <link name="bin_a">
    <visual>

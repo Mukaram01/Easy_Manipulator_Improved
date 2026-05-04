@@ -21,8 +21,7 @@ REQUIRED_SCENE_MARKERS = (
 )
 
 
-PROPERTY_PATTERN = re.compile(r'<xacro:property name="([^"]+)" value="([0-9.]+)"/>')
-ORIGIN_PATTERN = re.compile(r'<origin xyz="([^"]+)" rpy="0 0 0"/>')
+PROPERTY_PATTERN = re.compile(r'<xacro:property name="([^"]+)" value="([^"]+)"/>')
 
 
 def main() -> int:
@@ -89,7 +88,29 @@ def main() -> int:
             raise AssertionError(f"scene.urdf.xacro is missing required frame/link marker: {marker}")
 
     properties = dict(PROPERTY_PATTERN.findall(scene_xacro_text))
-    table_top_z = float(properties["table_top_z"])
+    required_properties = (
+        "floor_z",
+        "table_length",
+        "table_width",
+        "table_height",
+        "table_top_thickness",
+        "table_top_z",
+        "tray_length",
+        "tray_width",
+        "tray_height",
+        "item_red_height",
+        "item_blue_length",
+        "item_green_radius",
+    )
+    for property_name in required_properties:
+        if property_name not in properties:
+            raise AssertionError(f"missing xacro property: {property_name}")
+
+    if properties["floor_z"] != "0.0":
+        raise AssertionError("floor_z must be deterministic and equal to 0.0")
+
+    if properties["table_top_z"] != "${floor_z + table_height}":
+        raise AssertionError("table_top_z must be deterministic from floor_z + table_height")
 
     expected_expressions = {
         "item_red": "${table_top_z + item_red_height / 2}",
@@ -103,8 +124,15 @@ def main() -> int:
         if expr not in scene_xacro_text:
             raise AssertionError(f"{name} origin is not aligned from table_top_z expression")
 
-    if table_top_z <= 0.0:
-        raise AssertionError("table_top_z must be positive")
+    required_layout_snippets = (
+        "<link name=\"table_\">",
+        "<joint name=\"world_to_table\" type=\"fixed\">",
+        "<origin xyz=\"0.15 0 ${table_top_z}\" rpy=\"0 0 0\"/>",
+        "<origin xyz=\"0 0 ${-tray_height / 2}\" rpy=\"0 0 0\"/>",
+    )
+    for snippet in required_layout_snippets:
+        if snippet not in scene_xacro_text:
+            raise AssertionError(f"scene.urdf.xacro missing deterministic layout snippet: {snippet}")
 
     return 0
 
