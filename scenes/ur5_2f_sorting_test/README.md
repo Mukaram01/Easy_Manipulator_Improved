@@ -12,11 +12,12 @@ The scene includes a table, two destination bins (`bin_a`, `bin_b`), and three p
 
 ## Physical layout
 
-- The workbench (`table_`) is fixed to `world` and serves as the support surface.
-- The `world` frame represents the floor, and the UR5 base is floor-mounted (not floating) beside the table for a believable reach envelope.
-- `bin_a`, `bin_b`, and `reject_bin` are shallow destination trays placed on the tabletop in a reachable sorting row.
-- `item_red`, `item_blue`, and `item_green` are initialized in a dedicated pickup area with center heights computed from tabletop height, so they sit on the surface without sinking.
-- Release offsets are set so generated drop poses remain above each bin opening.
+- The `world` frame is the floor (`z = 0.0`), and `table_` is a self-contained workbench model fixed to the floor with deterministic dimensions and top height.
+- The workbench uses an explicit base/body and top slab, so the table is visibly supported and its top surface is exactly `table_top_z`.
+- The UR5 is table-mounted on a visible mounting plate; the robot base origin is set to `table_top_z + plate_thickness` to avoid any floating appearance.
+- `item_red`, `item_blue`, and `item_green` are initialized in the pickup area with center heights derived from `table_top_z` plus half-height/radius so they sit on the tabletop.
+- `bin_a`, `bin_b`, and `reject_bin` form a sorting row of shallow trays; each bin frame is at the tray opening and tray geometry is offset downward so tray bottoms rest on the tabletop.
+- This package remains dry-run only for sorting-plan generation and does not execute robot motion yet.
 
 ## Sorting manifest
 
