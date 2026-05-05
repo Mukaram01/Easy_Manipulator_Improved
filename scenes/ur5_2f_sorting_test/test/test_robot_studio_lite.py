@@ -33,6 +33,18 @@ def main() -> int:
     if dashboard.get("handoff_preview", {}).get("execution_ready_preview") is not True:
         raise AssertionError("handoff_preview.execution_ready_preview must be true")
 
+
+    next_commands = dashboard.get("next_commands", [])
+    joined_commands = "\n".join(next_commands)
+    for token in (
+        "run_grasp_execution",
+        "grasp_execution.launch.py",
+        "scene_package:=ur5_2f_sorting_test",
+        "launch_rviz:=true",
+    ):
+        if token not in joined_commands:
+            raise AssertionError(f"missing next command token: {token}")
+
     quick_result = subprocess.run([sys.executable, str(script_path), "--quick", "--json"], check=True, capture_output=True, text=True)
     quick_dashboard = json.loads(quick_result.stdout)
     if quick_dashboard.get("layout_validation", {}).get("status") != "skipped_quick_mode":

@@ -121,7 +121,7 @@ def build_dashboard(args: argparse.Namespace) -> dict:
             "execution_enabled": False,
         },
         "next_commands": [
-            "ros2 launch ur5_2f_sorting_test demo.launch.py",
+            "ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true",
             "ros2 run ur5_2f_sorting_test generate_sorting_runtime_plan --json",
             "ros2 run ur5_2f_sorting_test generate_bridge_payload_from_detections --detections <path> --json",
             "ros2 run ur5_2f_sorting_test preview_sorting_execution_handoff --from-static-manifest --json",
