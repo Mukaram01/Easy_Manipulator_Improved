@@ -84,6 +84,19 @@ def _validate(payload: dict[str, Any], scene_package: str) -> tuple[list[str], l
     return warnings, errors
 
 
+
+
+def _count_grasp_targets(payload: dict[str, Any]) -> int:
+    targets = payload.get("grasp_task", {}).get("grasp_targets", [])
+    return len(targets) if isinstance(targets, list) else 0
+
+
+def _format_runtime_response(success: bool, message: str, task_id: str, grasp_targets_count: int) -> str:
+    return (
+        f"service response: success={success} message={message!r} "
+        f"task_id={task_id!r} grasp_targets={grasp_targets_count}"
+    )
+
 def _send_runtime(payload: dict[str, Any], args: argparse.Namespace) -> tuple[bool, str]:
     try:
         import rclpy
@@ -93,7 +106,7 @@ def _send_runtime(payload: dict[str, Any], args: argparse.Namespace) -> tuple[bo
         from geometry_msgs.msg import PoseStamped
         from shape_msgs.msg import SolidPrimitive
     except Exception as exc:
-        return False, f"Runtime endpoint unavailable: ROS imports failed ({exc})."
+        return False, f"runtime_send_diagnostic: service unavailable (ros_import_failed): {exc}"
 
     def make_pose(data: dict[str, Any]) -> Any:
         msg = PoseStamped()
@@ -132,18 +145,26 @@ def _send_runtime(payload: dict[str, Any], args: argparse.Namespace) -> tuple[bo
             pub = node.create_publisher(GraspTask, args.topic_name, 10)
             rclpy.spin_once(node, timeout_sec=0.1)
             pub.publish(task)
-            return True, f"Published grasp task to topic '{args.topic_name}'."
+            return True, f"runtime_send_diagnostic: topic publish succeeded: topic='{args.topic_name}' task_id={task.task_id!r} grasp_targets={len(task.grasp_targets)}"
         client = node.create_client(GraspRequest, args.service_name)
         if not client.wait_for_service(timeout_sec=3.0):
-            return False, f"Runtime endpoint unavailable: service '{args.service_name}' not available."
+            return False, f"runtime_send_diagnostic: service unavailable: service='{args.service_name}'"
         req = GraspRequest.Request()
         req.grasp_targets = task.grasp_targets
         fut = client.call_async(req)
         rclpy.spin_until_future_complete(node, fut, timeout_sec=float(args.service_timeout_sec))
         if not fut.done() or fut.result() is None:
-            return False, f"Runtime endpoint unavailable: service '{args.service_name}' timed out."
+            return False, f"runtime_send_diagnostic: service timeout: service='{args.service_name}' timeout_sec={float(args.service_timeout_sec):.1f}"
         res = fut.result()
-        return bool(res.success), str(res.message)
+        msg = _format_runtime_response(
+            bool(getattr(res, "success", False)),
+            str(getattr(res, "message", "")),
+            str(getattr(res, "task_id", task.task_id)),
+            len(getattr(res, "grasp_targets", [])),
+        )
+        return bool(getattr(res, "success", False)), f"runtime_send_diagnostic: {msg}"
+    except Exception as exc:
+        return False, f"runtime_send_diagnostic: service call exception: {exc}"
     finally:
         node.destroy_node()
         rclpy.shutdown()
