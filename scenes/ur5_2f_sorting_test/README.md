@@ -295,3 +295,34 @@ ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_
 ```
 
 A future PR can add an explicit/manual execution trigger only after this preparation layer is stable.
+
+## Manual static sorting executor
+
+First explicit guarded bridge from static sorting preparation to runtime execution handoff:
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor
+```
+
+Manual enable preview (still no robot motion):
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor --manual-enable-execution
+```
+
+Execution request (must be explicitly enabled first):
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor --manual-enable-execution --execute
+```
+
+Safety behavior:
+
+- Default mode is safe dry-run only.
+- `--manual-enable-execution` alone still does not move the robot.
+- `--execute` is blocked unless `--manual-enable-execution` is also provided.
+- The tool will not guess/invent unknown execution APIs.
+- If runtime interfaces are missing, it fails safely and instructs the user to launch:
+  `ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true`
+
+This adapter does not auto-launch `run_grasp_execution`, does not auto-start RViz, does not require live EPD, and does not request robot motion by default.
