@@ -85,6 +85,12 @@ install(PROGRAMS
   RENAME prepare_static_sorting_execution
 )
 
+install(PROGRAMS
+  scripts/manual_static_sorting_executor.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME manual_static_sorting_executor
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -134,6 +140,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_prepare_static_sorting_execution
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_prepare_static_sorting_execution.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_manual_static_sorting_executor
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_manual_static_sorting_executor.py
   )
 endif()
 
