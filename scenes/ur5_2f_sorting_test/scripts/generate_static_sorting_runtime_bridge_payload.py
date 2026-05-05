@@ -6,21 +6,50 @@ import argparse, json
 from pathlib import Path
 import sys
 
+import importlib.machinery
 import importlib.util
 
 SCHEMA_VERSION = "emd_grasp_bridge_payload/v1"
 SCENE_PACKAGE = "ur5_2f_sorting_test"
 
 
-def _load_runtime_plan_module():
-    p = Path(__file__).resolve().parent / "generate_sorting_runtime_plan.py"
-    spec = importlib.util.spec_from_file_location("_runtime_plan", p)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
+def _load_sibling_script_module(module_name: str):
+    """Load a sibling helper script from source tree or installed ROS 2 layout."""
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / f"{module_name}.py",
+        script_dir / module_name,
+    ]
 
-runtime_plan = _load_runtime_plan_module()
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+
+        unique_name = f"_ur5_2f_sorting_test_{module_name}"
+
+        if candidate.suffix == ".py":
+            spec = importlib.util.spec_from_file_location(unique_name, candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        loader = importlib.machinery.SourceFileLoader(unique_name, str(candidate))
+        spec = importlib.util.spec_from_loader(unique_name, loader)
+        if spec is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        return module
+
+    searched = ", ".join(str(candidate) for candidate in candidates)
+    raise ModuleNotFoundError(
+        f"Could not load sibling script module '{module_name}'. Searched: {searched}"
+    )
+
+
+runtime_plan = _load_sibling_script_module("generate_sorting_runtime_plan")
 
 
 def _fallback_pose(frame_id: str, index: int) -> dict:
