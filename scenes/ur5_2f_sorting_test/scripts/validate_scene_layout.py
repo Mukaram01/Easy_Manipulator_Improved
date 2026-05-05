@@ -124,10 +124,11 @@ def _find_joint_origin(root: ET.Element, joint_name: str, variables: dict[str, f
 
 def main() -> int:
     xacro_path = _resolve_scene_xacro()
+    raw_root = ET.parse(xacro_path).getroot()
     root = _load_xml_root(xacro_path)
 
     properties: dict[str, float] = {}
-    for prop in root.findall(f"{XACRO_NS}property"):
+    for prop in raw_root.findall(f"{XACRO_NS}property"):
         name = prop.get("name")
         value = prop.get("value")
         if name and value:
@@ -159,9 +160,9 @@ def main() -> int:
         "item_green": table_top_z,
     }
     item_joints = {
-        "item_red": "world_to_item_red",
-        "item_blue": "world_to_item_blue",
-        "item_green": "world_to_item_green",
+        "item_red": "table_to_item_red",
+        "item_blue": "table_to_item_blue",
+        "item_green": "table_to_item_green",
     }
     item_heights = {
         "item_red": properties["item_red_height"],
@@ -170,34 +171,38 @@ def main() -> int:
     }
 
     bins = {
-        "bin_a": "world_to_bin_a",
-        "bin_b": "world_to_bin_b",
-        "reject_bin": "world_to_reject_bin",
+        "bin_a": "table_to_bin_a",
+        "bin_b": "table_to_bin_b",
+        "reject_bin": "table_to_reject_bin",
     }
 
     report_lines = [f"scene: {xacro_path}", f"table_top_z: {table_top_z:.3f}"]
 
     for item, joint in item_joints.items():
-        center_z = _find_joint_origin(root, joint, properties)[2]
-        bottom_z = center_z - item_heights[item] / 2.0
-        ok = math.isclose(bottom_z, expected_item_bottoms[item], abs_tol=EPS)
+        center_z_local = _find_joint_origin(root, joint, properties)[2]
+        bottom_z_local = center_z_local - item_heights[item] / 2.0
+        bottom_z = table_top_z + bottom_z_local
+        ok = math.isclose(bottom_z_local, 0.0, abs_tol=EPS)
         if not ok:
-            raise AssertionError(f"{item} bottom_z {bottom_z} does not equal table_top_z {table_top_z}")
-        report_lines.append(f"{item}: bottom_z={bottom_z:.3f} OK")
+            raise AssertionError(f"{item} bottom local z {bottom_z_local} does not equal tabletop local z 0.0")
+        report_lines.append(f"{item}: bottom_z={bottom_z:.3f} local_bottom_z={bottom_z_local:.3f} OK")
 
     tray_height = properties["tray_height"]
     tray_length = properties["tray_length"]
     tray_width = properties["tray_width"]
     tray_wall_thickness = properties["tray_wall_thickness"]
     for bin_name, joint in bins.items():
-        frame_z = _find_joint_origin(root, joint, properties)[2]
-        tray_bottom_z = frame_z - tray_wall_thickness
-        if not math.isclose(tray_bottom_z, table_top_z, abs_tol=EPS):
+        frame_z_local = _find_joint_origin(root, joint, properties)[2]
+        tray_bottom_z_local = frame_z_local - tray_height
+        tray_bottom_z = table_top_z + tray_bottom_z_local
+        if not math.isclose(frame_z_local, tray_height, abs_tol=EPS):
+            raise AssertionError(f"{bin_name} frame local z {frame_z_local} does not equal tray_height {tray_height}")
+        if not math.isclose(tray_bottom_z_local, 0.0, abs_tol=EPS):
             raise AssertionError(
-                f"{bin_name} tray bottom {tray_bottom_z} does not equal table_top_z {table_top_z}"
+                f"{bin_name} tray bottom local z {tray_bottom_z_local} does not equal tabletop local z 0.0"
             )
-        report_lines.append(f"{bin_name}: tray_bottom_z={tray_bottom_z:.3f} OK")
-        report_lines.append(f"{bin_name}: frame_at_tray_opening=YES")
+        report_lines.append(f"{bin_name}: tray_bottom_z={tray_bottom_z:.3f} local_bottom_z={tray_bottom_z_local:.3f} OK")
+        report_lines.append(f"{bin_name}: frame_at_tray_opening=YES local_frame_z={frame_z_local:.3f}")
 
 
 
@@ -246,6 +251,9 @@ def main() -> int:
 
     if root.find("link[@name='robot_mount_plate']") is None:
         raise AssertionError("robot_mount_plate missing for table-mounted robot")
+    report_lines.append("robot_mount_plate_link: OK")
+    if root.find("joint[@name='table_to_robot_mount_plate']") is None:
+        raise AssertionError("table_to_robot_mount_plate joint missing")
 
     robot_origin_z = None
     for ur_robot in root.findall(f"{XACRO_NS}ur_robot"):
@@ -259,6 +267,10 @@ def main() -> int:
     if robot_origin_z + EPS < table_top_z:
         raise AssertionError("robot base origin is below table top/floor unexpectedly")
     report_lines.append("robot_mount: OK")
+
+    if root.find("link[@name='camera_link']") is None and root.find("link[@name='camera_frame']") is None:
+        raise AssertionError("camera link/frame missing")
+    report_lines.append("camera_mount: OK")
 
     print("\n".join(report_lines))
     return 0
