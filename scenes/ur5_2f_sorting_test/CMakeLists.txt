@@ -103,6 +103,12 @@ install(PROGRAMS
   RENAME static_sorting_runtime_smoke_test
 )
 
+install(PROGRAMS
+  scripts/static_sorting_sequence_runner.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME static_sorting_sequence_runner
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -167,6 +173,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_static_sorting_runtime_smoke_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_static_sorting_runtime_smoke_test.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_static_sorting_sequence_runner
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_static_sorting_sequence_runner.py
   )
 endif()
 
