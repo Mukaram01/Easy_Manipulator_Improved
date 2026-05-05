@@ -67,6 +67,12 @@ ur5_arm_controller      joint_trajectory_controller/JointTrajectoryController  a
     if m._parse_controller_state(sample) != "active":
         raise AssertionError("controller parser failed to detect active state")
 
+    coloured_sample = """\x1b[92mjoint_state_broadcaster\x1b[0m joint_state_broadcaster/JointStateBroadcaster          \x1b[92mactive\x1b[0m
+\x1b[92mur5_arm_controller     \x1b[0m joint_trajectory_controller/JointTrajectoryController  \x1b[92mactive\x1b[0m
+"""
+    if m._parse_controller_state(coloured_sample) != "active":
+        raise AssertionError("controller parser failed to detect ANSI-coloured active state")
+
     runtime_required = _run(script_path, "--json", "--require-active-runtime", check=False)
     runtime_report = json.loads(runtime_required.stdout)
     if runtime_required.returncode == 0:

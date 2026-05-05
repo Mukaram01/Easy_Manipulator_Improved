@@ -7,7 +7,9 @@ import argparse
 import importlib.machinery
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -80,12 +82,38 @@ def _initial_runtime_checks() -> dict:
     }
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _strip_ansi(value: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", value)
+
+
 def _run_ros2(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(["ros2", *args], check=False, capture_output=True, text=True, timeout=4)
+    env = os.environ.copy()
+    env.update(
+        {
+            "NO_COLOR": "1",
+            "CLICOLOR": "0",
+            "CLICOLOR_FORCE": "0",
+            "PY_COLORS": "0",
+            "RCUTILS_COLORIZED_OUTPUT": "0",
+            "TERM": "dumb",
+        }
+    )
+    return subprocess.run(
+        ["ros2", *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=4,
+        env=env,
+    )
 
 
 def _parse_controller_state(list_controllers_stdout: str, controller_name: str = "ur5_arm_controller") -> str:
-    for raw_line in list_controllers_stdout.splitlines():
+    clean_stdout = _strip_ansi(list_controllers_stdout)
+    for raw_line in clean_stdout.splitlines():
         line = raw_line.strip()
         if not line:
             continue
