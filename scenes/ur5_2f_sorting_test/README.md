@@ -225,3 +225,39 @@ ros2 run ur5_2f_sorting_test preview_sorting_execution_handoff \
 ```
 
 This tool is still dry-run only and does not move the robot. It validates the bridge payload and previews the execution handoff contract for review. Live EPD integration and robot execution remain separate future steps.
+
+## Robot Studio Lite
+
+The first lightweight Robot Studio workflow wrapper is now available as a scene-local CLI dashboard:
+
+```bash
+ros2 run ur5_2f_sorting_test robot_studio_lite
+```
+
+JSON dashboard output:
+
+```bash
+ros2 run ur5_2f_sorting_test robot_studio_lite --json
+```
+
+Use a custom offline `detected_objects/v1` file:
+
+```bash
+ros2 run ur5_2f_sorting_test robot_studio_lite --detections <path>
+```
+
+Robot Studio Lite provides one dry-run view of:
+
+- scene health (`validate_scene_layout`)
+- static manifest routing
+- offline detections routing
+- bridge payload summary
+- guarded execution handoff preview
+
+Safety guardrails are explicit:
+
+- it does **not** move the robot
+- it does **not** call live EPD
+- it does **not** enable execution
+
+This launcher is intended for developer/operator readiness checks before any future live integration steps.
