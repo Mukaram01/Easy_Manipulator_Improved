@@ -3,6 +3,7 @@
 
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from unittest.mock import patch
@@ -26,7 +27,12 @@ def main() -> int:
 
     def fake_run(cmd):
         if "generate_static_sorting_runtime_bridge_payload" in " ".join(cmd):
-            payload_path.write_text("{}", encoding="utf-8")
+            if "--target" in cmd:
+                target = cmd[cmd.index("--target") + 1]
+                payload = {"summary": {"target_filter_applied": True}, "grasp_task": {"grasp_targets": [{"object_id": target}]}}
+            else:
+                payload = {"summary": {"target_filter_applied": False}, "grasp_task": {"grasp_targets": [{"object_id": "item_red"}, {"object_id": "item_blue"}, {"object_id": "item_green"}]}}
+            payload_path.write_text(json.dumps(payload), encoding="utf-8")
         return R(0)
 
     base_args = dict(json=True, output=None, prepare_output=None, skip_send_dry_run_validation=False, runtime_payload=None,
@@ -49,6 +55,12 @@ def main() -> int:
         args = argparse.Namespace(**base_args, require_active_runtime=False, manual_enable_execution=True, execute=True, confirm_runtime_send=False)
         rep, rc = m.build_report(args)
         assert rc != 0 and rep["result"]["status"] == "blocked"
+
+        target_args = argparse.Namespace(**{**base_args, "targets": ["item_red"]}, require_active_runtime=False, manual_enable_execution=False, execute=False, confirm_runtime_send=False)
+        rep, rc = m.build_report(target_args)
+        assert rc == 0
+        assert rep["payload"]["target_count"] == 1
+        assert rep["payload"]["target_filter_applied"] is True
 
     commands = []
     def fake_run_send(cmd):
