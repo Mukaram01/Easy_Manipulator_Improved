@@ -281,6 +281,17 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         report["payload_validation"]["dry_run_replay_status"] = "skipped"
         report["warnings"].append("Dry-run validation was skipped by explicit override; sending may move the robot in active runtime.")
 
+    if args.require_active_runtime:
+        checks, warnings = _runtime_checks(args.service_name, args.topic_name)
+        report["runtime_checks"] = checks
+        report["warnings"].extend(warnings)
+        runtime_ready = checks["grasp_execution_node"] == "present" and checks["joint_states"] == "present" and checks["controller_manager"] == "present" and checks["ur5_arm_controller"] == "active"
+        interface_ready = checks["grasp_requests_service"] == "present" if args.ros_interface == "service" else checks["grasp_tasks_topic"] == "present"
+        if not (runtime_ready and interface_ready):
+            report["result"] = {"status": "runtime_missing"}
+            report["warnings"].append("Runtime missing or incomplete; safe block before send.")
+            return report, 2
+
     if args.execute and args.manual_enable_execution and not args.confirm_runtime_send:
         report["result"] = {"status": "blocked"}
         report["warnings"].append("Execution blocked: --confirm-runtime-send is required before any runtime send.")
@@ -293,16 +304,6 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
     if not final_send_flags:
         report["result"] = {"status": "dry_run_only"}
         return report, 0
-
-    checks, warnings = _runtime_checks(args.service_name, args.topic_name)
-    report["runtime_checks"] = checks
-    report["warnings"].extend(warnings)
-    runtime_ready = checks["grasp_execution_node"] == "present" and checks["joint_states"] == "present" and checks["controller_manager"] == "present" and checks["ur5_arm_controller"] == "active"
-    interface_ready = checks["grasp_requests_service"] == "present" if args.ros_interface == "service" else checks["grasp_tasks_topic"] == "present"
-    if not (runtime_ready and interface_ready):
-        report["result"] = {"status": "runtime_missing"}
-        report["warnings"].append("Runtime missing or incomplete; safe block before send.")
-        return report, 2
 
     send_cmd = _build_replay_cmd(replay_script, payload_path, args, dry_run=False)
     report["execution_attempted"] = True
