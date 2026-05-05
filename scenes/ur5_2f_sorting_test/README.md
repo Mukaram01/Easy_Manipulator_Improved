@@ -8,15 +8,15 @@ Minimal sorting-cell scene for UR5 + Robotiq 2F.
 ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true
 ```
 
-The scene includes a table, two destination bins (`bin_a`, `bin_b`), and three placeholder items.
+The scene includes a workbench table, a destination tray row (`bin_a`, `bin_b`, `reject_bin`), and three pickup items.
 
 ## Physical layout
 
 - The `world` frame is the floor (`z = 0.0`), and `table_` is a self-contained workbench model fixed to the floor with deterministic dimensions and top height.
 - The workbench uses an explicit base/body and top slab, so the table is visibly supported and its top surface is exactly `table_top_z`.
 - The UR5 is table-mounted on a visible mounting plate; the robot base origin is set to `table_top_z + plate_thickness` to avoid any floating appearance.
-- `item_red`, `item_blue`, and `item_green` are initialized in the pickup area with center heights derived from `table_top_z` plus half-height/radius so they sit on the tabletop.
-- `bin_a`, `bin_b`, and `reject_bin` form a sorting row of shallow trays; each bin frame is at the tray opening and tray geometry is offset downward so tray bottoms rest on the tabletop.
+- `item_red`, `item_blue`, and `item_green` are initialized in a neat pickup row on the workbench top with center heights derived from `table_top_z` plus half-height/radius so they sit directly on the tabletop.
+- `bin_a`, `bin_b`, and `reject_bin` form a sorting destination row of shallow open trays (base + four walls); each bin frame is at the tray opening/top-center and tray geometry is offset downward so tray bottoms rest on the tabletop.
 - This package remains dry-run only for sorting-plan generation and does not execute robot motion yet.
 
 ## Sorting manifest

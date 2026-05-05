@@ -133,7 +133,7 @@ def main() -> int:
         if name and value:
             properties[name] = _parse_value(value, properties)
 
-    for required in ("floor_z", "table_height", "table_top_z", "tray_height"):
+    for required in ("floor_z", "table_height", "table_top_z", "tray_height", "tray_length", "tray_width", "tray_wall_thickness"):
         if required not in properties:
             raise AssertionError(f"missing required property '{required}'")
 
@@ -186,15 +186,55 @@ def main() -> int:
         report_lines.append(f"{item}: bottom_z={bottom_z:.3f} OK")
 
     tray_height = properties["tray_height"]
+    tray_length = properties["tray_length"]
+    tray_width = properties["tray_width"]
+    tray_wall_thickness = properties["tray_wall_thickness"]
     for bin_name, joint in bins.items():
         frame_z = _find_joint_origin(root, joint, properties)[2]
-        tray_bottom_z = frame_z - tray_height
+        tray_bottom_z = frame_z - tray_wall_thickness
         if not math.isclose(tray_bottom_z, table_top_z, abs_tol=EPS):
             raise AssertionError(
                 f"{bin_name} tray bottom {tray_bottom_z} does not equal table_top_z {table_top_z}"
             )
         report_lines.append(f"{bin_name}: tray_bottom_z={tray_bottom_z:.3f} OK")
         report_lines.append(f"{bin_name}: frame_at_tray_opening=YES")
+
+
+
+    def _radius(name: str) -> float:
+        if name == "item_red":
+            return math.sqrt((0.04 / 2.0) ** 2 + (0.04 / 2.0) ** 2)
+        if name == "item_blue":
+            return 0.02
+        return properties["item_green_radius"]
+
+    item_xy: dict[str, tuple[float, float]] = {}
+    for item, joint in item_joints.items():
+        x, y, _ = _find_joint_origin(root, joint, properties)
+        item_xy[item] = (x, y)
+    item_names = list(item_xy.keys())
+    for i, a in enumerate(item_names):
+        for b in item_names[i + 1:]:
+            ax, ay = item_xy[a]
+            bx, by = item_xy[b]
+            distance = math.hypot(ax - bx, ay - by)
+            min_distance = _radius(a) + _radius(b)
+            if distance + EPS < min_distance:
+                raise AssertionError(f"pickup items overlap: {a} and {b}")
+    report_lines.append("pickup_items_non_overlapping: YES")
+
+    bin_xy: dict[str, tuple[float, float]] = {}
+    for bin_name, joint in bins.items():
+        x, y, _ = _find_joint_origin(root, joint, properties)
+        bin_xy[bin_name] = (x, y)
+    bin_names = list(bin_xy.keys())
+    for i, a in enumerate(bin_names):
+        for b in bin_names[i + 1:]:
+            ax, ay = bin_xy[a]
+            bx, by = bin_xy[b]
+            if abs(ax - bx) + EPS < tray_length and abs(ay - by) + EPS < tray_width:
+                raise AssertionError(f"destination trays overlap: {a} and {b}")
+    report_lines.append("destination_trays_non_overlapping: YES")
 
     manifest_path = xacro_path.parents[1] / "sorting_manifest.yaml"
     if manifest_path.exists():
