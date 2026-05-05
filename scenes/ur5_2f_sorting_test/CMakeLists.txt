@@ -26,7 +26,9 @@ install(FILES
   environment.yaml
   scene_manifest.yaml
   sorting_manifest.yaml
+  config/sorting_manifest.yaml
   README.md
+  docs/static_sorting_scene_contract.md
   fixtures/detected_objects_sample.json
   DESTINATION share/${PROJECT_NAME}
 )
@@ -109,6 +111,12 @@ install(PROGRAMS
   RENAME static_sorting_sequence_runner
 )
 
+install(PROGRAMS
+  scripts/validate_static_sorting_scene_contract.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME validate_static_sorting_scene_contract
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -178,6 +186,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_static_sorting_sequence_runner
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_static_sorting_sequence_runner.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_validate_static_sorting_scene_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_validate_static_sorting_scene_contract.py
   )
 endif()
 
