@@ -207,9 +207,29 @@ def _default_report(args: argparse.Namespace) -> dict:
         "target_count": 0,
         "selected_targets": [],
         "result": {"status": "dry_run_only"},
+        "runtime_send": {"executed": False, "command": [], "exit_code": None, "stdout_tail": "", "stderr_tail": "", "classified_failure_reason": "not_executed"},
         "warnings": [],
     }
 
+
+
+
+def _tail_text(text: str, max_chars: int = 1200) -> str:
+    text = (text or "").strip()
+    return text[-max_chars:]
+
+
+def _classify_runtime_send_failure(stdout: str, stderr: str) -> str:
+    blob = f"{stdout}\n{stderr}".lower()
+    if "service timeout" in blob or "timed out" in blob:
+        return "service_timeout"
+    if "success=false" in blob or "service response: success=false" in blob:
+        return "service_response_false"
+    if "service unavailable" in blob or "not available" in blob:
+        return "service_unavailable"
+    if "service call exception" in blob or "exception" in blob:
+        return "service_exception"
+    return "unknown_runtime_send_failure"
 
 def _generate_payload(path: Path, targets: list[str] | None) -> None:
     cmd = ["ros2", "run", SCENE_PACKAGE, "generate_static_sorting_runtime_bridge_payload", "--output", str(path)]
@@ -323,12 +343,23 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
     report["execution_attempted"] = True
     report["robot_motion_requested"] = True
     send = _run_subprocess(send_cmd)
+    stdout_tail = _tail_text(send.stdout)
+    stderr_tail = _tail_text(send.stderr)
+    failure_reason = "none" if send.returncode == 0 else _classify_runtime_send_failure(send.stdout, send.stderr)
+    report["runtime_send"] = {
+        "executed": True,
+        "command": send_cmd,
+        "exit_code": send.returncode,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
+        "classified_failure_reason": failure_reason,
+    }
     if send.returncode == 0:
-        report["result"] = {"status": "sent_to_runtime"}
+        report["result"] = {"status": "runtime_send_succeeded"}
         return report, 0
-    report["result"] = {"status": "runtime_send_failed"}
-    if send.stderr.strip():
-        report["warnings"].append(send.stderr.strip())
+    report["result"] = {"status": "runtime_send_failed", "reason": failure_reason}
+    if stderr_tail:
+        report["warnings"].append(stderr_tail)
     return report, 2
 
 

@@ -78,6 +78,7 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         "robot_motion_requested": False,
         "final_send_command": _executor_command(args, targets),
         "final_send_command_executed": False,
+        "runtime_send": {"executed": False, "message": "No runtime send executed in dry-run mode."},
         "launch_command": _launch_command(payload_output),
         "execution_command": _executor_command(args, targets),
         "warnings": [],
@@ -104,6 +105,10 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         rep["runtime_check_status"] = "pass" if payload.get("result", {}).get("status") != "runtime_missing" else "runtime_missing"
     rep["robot_motion_requested"] = bool(payload.get("robot_motion_requested", False))
     rep["final_send_command_executed"] = bool(payload.get("execution_attempted", False))
+    rep["manual_executor_result"] = payload.get("result", {})
+    rep["manual_executor_command"] = payload.get("runtime_send", {}).get("command", [])
+    if payload.get("execution_attempted", False):
+        rep["runtime_send"] = payload.get("runtime_send", {"executed": True})
 
     for t in payload.get("grasp_task", {}).get("grasp_targets", []):
         rep["targets"].append({
