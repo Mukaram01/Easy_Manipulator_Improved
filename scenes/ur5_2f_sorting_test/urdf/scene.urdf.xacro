@@ -32,7 +32,7 @@
 
  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
 
- <!-- Workbench frame: table_ is the main contact link; top surface z is table_top_z. -->
+ <!-- Workbench frame semantics: table_ frame is tabletop top-surface center (z=0 at top). -->
  <link name="table_">
    <visual>
      <origin xyz="0 0 ${-table_top_thickness - (table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
@@ -112,8 +112,24 @@
 
  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
  <xacro:arg name="use_nominal_extrinsics" default="true" />
+ <link name="camera_mast">
+   <visual>
+     <origin xyz="0 0 0.32" rpy="0 0 0"/>
+     <geometry><cylinder radius="0.01" length="0.64"/></geometry>
+     <material name="CameraMast"><color rgba="0.2 0.2 0.2 1.0"/></material>
+   </visual>
+   <collision>
+     <origin xyz="0 0 0.32" rpy="0 0 0"/>
+     <geometry><cylinder radius="0.01" length="0.64"/></geometry>
+   </collision>
+ </link>
+ <joint name="table_to_camera_mast" type="fixed">
+   <parent link="table_"/>
+   <child link="camera_mast"/>
+   <origin xyz="-0.18 0.28 0.0" rpy="0 0 0"/>
+ </joint>
  <xacro:sensor_d435i parent="table_" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
-    <origin xyz="-0.58 0.12 0.62" rpy="0 1.57079506 0"/>
+    <origin xyz="-0.18 0.10 0.62" rpy="0 1.57079506 0"/>
  </xacro:sensor_d435i>
 
 
@@ -229,7 +245,7 @@
  <joint name="table_to_item_red" type="fixed">
    <parent link="table_"/>
    <child link="item_red"/>
-   <origin xyz="${pickup_area_x} ${pickup_area_y - 0.12} ${item_red_height / 2}" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x} ${pickup_area_y} ${item_red_height / 2}" rpy="0 0 0"/>
  </joint>
 
  <link name="item_blue">
@@ -239,7 +255,7 @@
  <joint name="table_to_item_blue" type="fixed">
    <parent link="table_"/>
    <child link="item_blue"/>
-   <origin xyz="${pickup_area_x} ${pickup_area_y} ${item_blue_length / 2}" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x + 0.08} ${pickup_area_y} ${item_blue_length / 2}" rpy="0 0 0"/>
  </joint>
 
  <link name="item_green">
@@ -249,7 +265,7 @@
  <joint name="table_to_item_green" type="fixed">
    <parent link="table_"/>
    <child link="item_green"/>
-   <origin xyz="${pickup_area_x} ${pickup_area_y + 0.12} ${item_green_radius}" rpy="0 0 0"/>
+   <origin xyz="${pickup_area_x + 0.16} ${pickup_area_y} ${item_green_radius}" rpy="0 0 0"/>
  </joint>
 
 </robot>
