@@ -65,6 +65,56 @@ def main() -> int:
         assert any("--dry-run" in c for c in commands)
         assert any("--dry-run" not in c and "replay.py" in " ".join(c) for c in commands)
 
+    runtime_calls = []
+    def fake_runtime_checks(_service_name, _topic_name):
+        runtime_calls.append(True)
+        return {"checked": True, "grasp_execution_node": "present", "joint_states": "present", "controller_manager": "present", "ur5_arm_controller": "active", "grasp_requests_service": "present", "grasp_tasks_topic": "present"}, []
+
+    with patch.object(m, "_run_subprocess", side_effect=fake_run), patch.object(m, "_find_replay_script", return_value=Path("/tmp/replay.py")), patch.object(
+        m, "_runtime_checks", side_effect=fake_runtime_checks
+    ):
+        args = argparse.Namespace(**base_args, require_active_runtime=True, manual_enable_execution=False, execute=False, confirm_runtime_send=False)
+        rep, rc = m.build_report(args)
+        assert rc == 0 and rep["result"]["status"] == "dry_run_only"
+        assert rep["runtime_checks"]["checked"] is True
+        assert len(runtime_calls) == 1
+        assert rep["execution_attempted"] is False and rep["robot_motion_requested"] is False
+
+        args = argparse.Namespace(**base_args, require_active_runtime=True, manual_enable_execution=True, execute=True, confirm_runtime_send=False)
+        rep, rc = m.build_report(args)
+        assert rc != 0 and rep["result"]["status"] == "blocked"
+        assert rep["runtime_checks"]["checked"] is True
+        assert rep["execution_attempted"] is False and rep["robot_motion_requested"] is False
+
+    with patch.object(m, "_run_subprocess", side_effect=fake_run), patch.object(m, "_find_replay_script", return_value=Path("/tmp/replay.py")), patch.object(
+        m, "_runtime_checks", return_value=({"checked": True, "grasp_execution_node": "missing", "joint_states": "missing", "controller_manager": "missing", "ur5_arm_controller": "missing", "grasp_requests_service": "missing", "grasp_tasks_topic": "missing"}, [])
+    ):
+        args = argparse.Namespace(**base_args, require_active_runtime=True, manual_enable_execution=False, execute=False, confirm_runtime_send=False)
+        rep, rc = m.build_report(args)
+        assert rc == 2 and rep["result"]["status"] == "runtime_missing"
+        assert rep["runtime_checks"]["checked"] is True
+        assert rep["execution_attempted"] is False and rep["robot_motion_requested"] is False
+
+        args = argparse.Namespace(**base_args, require_active_runtime=True, manual_enable_execution=True, execute=True, confirm_runtime_send=True)
+        rep, rc = m.build_report(args)
+        assert rc == 2 and rep["result"]["status"] == "runtime_missing"
+        assert rep["execution_attempted"] is False and rep["robot_motion_requested"] is False
+
+    send_commands = []
+    def fake_run_record(cmd):
+        send_commands.append(cmd)
+        return R(0)
+
+    with patch.object(m, "_run_subprocess", side_effect=fake_run_record), patch.object(m, "_find_replay_script", return_value=Path("/tmp/replay.py")), patch.object(
+        m, "_runtime_checks", return_value=({"checked": True, "grasp_execution_node": "present", "joint_states": "present", "controller_manager": "present", "ur5_arm_controller": "active", "grasp_requests_service": "present", "grasp_tasks_topic": "present"}, [])
+    ):
+        args = argparse.Namespace(**base_args, require_active_runtime=True, manual_enable_execution=True, execute=True, confirm_runtime_send=True)
+        rep, rc = m.build_report(args)
+        assert rc == 0 and rep["result"]["status"] == "sent_to_runtime"
+        dry_idx = next(i for i, c in enumerate(send_commands) if "--dry-run" in c)
+        send_idx = next(i for i, c in enumerate(send_commands) if "--dry-run" not in c and "replay.py" in " ".join(c))
+        assert dry_idx < send_idx
+
     return 0
 
 
