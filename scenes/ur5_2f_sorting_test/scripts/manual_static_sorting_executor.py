@@ -84,6 +84,20 @@ def _run_ros2(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["ros2", *args], check=False, capture_output=True, text=True, timeout=4)
 
 
+def _parse_controller_state(list_controllers_stdout: str, controller_name: str = "ur5_arm_controller") -> str:
+    for raw_line in list_controllers_stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        columns = line.split()
+        if not columns or columns[0] != controller_name:
+            continue
+        if len(columns) >= 3:
+            return columns[2].strip().lower()
+        return "inactive"
+    return "missing"
+
+
 def _runtime_checks() -> tuple[dict, list[str]]:
     checks = _initial_runtime_checks()
     warnings: list[str] = []
@@ -102,18 +116,9 @@ def _runtime_checks() -> tuple[dict, list[str]]:
         services = set(line.strip() for line in service_out.stdout.splitlines() if line.strip()) if service_out.returncode == 0 else set()
         checks["controller_manager"] = "present" if any("controller_manager" in svc for svc in services) else "missing"
 
-        checks["ur5_arm_controller"] = "inactive"
         ctrl_out = _run_ros2(["control", "list_controllers"])
         if ctrl_out.returncode == 0:
-            seen = False
-            for line in ctrl_out.stdout.splitlines():
-                if not line.strip().startswith("ur5_arm_controller"):
-                    continue
-                seen = True
-                checks["ur5_arm_controller"] = "active" if " active" in f" {line} " else "inactive"
-                break
-            if not seen:
-                checks["ur5_arm_controller"] = "missing"
+            checks["ur5_arm_controller"] = _parse_controller_state(ctrl_out.stdout)
         else:
             checks["ur5_arm_controller"] = "missing"
             warnings.append("ros2 control CLI unavailable; ur5_arm_controller status treated as missing.")
@@ -196,6 +201,8 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         report["result"] = {"status": "ready_for_manual_runtime"}
         report["warnings"].append("Execution is enabled, but robot motion is still blocked until you also pass --execute.")
         report["warnings"].append("Next explicit command: ros2 run ur5_2f_sorting_test manual_static_sorting_executor --manual-enable-execution --execute")
+        report["warnings"].append("Generate runtime-shaped payload: ros2 run ur5_2f_sorting_test generate_static_sorting_runtime_bridge_payload --output /tmp/ur5_2f_sorting_runtime_bridge_payload.json")
+        report["warnings"].append("Validate payload only (no send): python3 scripts/replay_emd_bridge_payload.py --payload /tmp/ur5_2f_sorting_runtime_bridge_payload.json --scene-package ur5_2f_sorting_test --dry-run")
 
     must_check_runtime = args.require_active_runtime or args.execute
     if must_check_runtime:
@@ -219,6 +226,7 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         report["mode"] = "execution_requested"
         report["result"] = {"status": "execution_api_missing"}
         report["warnings"].append("Execution API call was intentionally skipped: no documented dry-run/test-safe execution API was found.")
+        report["warnings"].append("Future manual send command only (not executed): python3 scripts/replay_emd_bridge_payload.py --payload /tmp/ur5_2f_sorting_runtime_bridge_payload.json --scene-package ur5_2f_sorting_test --ros-interface service --service-name grasp_requests")
         report["warnings"].append("No robot motion was requested. This adapter will not guess or call unknown services/actions.")
         return report, 2
 

@@ -55,6 +55,18 @@ def main() -> int:
     if invalid.returncode == 0:
         raise AssertionError("invalid target must fail")
 
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("m", script_path)
+    m = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(m)
+    sample = """joint_state_broadcaster      joint_state_broadcaster/JointStateBroadcaster  active
+ur5_arm_controller      joint_trajectory_controller/JointTrajectoryController  active
+"""
+    if m._parse_controller_state(sample) != "active":
+        raise AssertionError("controller parser failed to detect active state")
+
     runtime_required = _run(script_path, "--json", "--require-active-runtime", check=False)
     runtime_report = json.loads(runtime_required.stdout)
     if runtime_required.returncode == 0:
