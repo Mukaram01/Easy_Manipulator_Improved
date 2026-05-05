@@ -224,6 +224,8 @@ def _build_replay_cmd(replay_script: Path, payload: Path, args: argparse.Namespa
     cmd = [sys.executable, str(replay_script), "--payload", str(payload), "--scene-package", SCENE_PACKAGE, "--ros-interface", args.ros_interface]
     if args.ros_interface == "service":
         cmd += ["--service-name", args.service_name]
+        if not dry_run:
+            cmd += ["--service-timeout-sec", "60.0"]
     else:
         cmd += ["--topic-name", args.topic_name]
     if dry_run:

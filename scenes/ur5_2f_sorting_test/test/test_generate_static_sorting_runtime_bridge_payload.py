@@ -23,13 +23,27 @@ def main() -> int:
         grasp_xyz = t["grasp_methods"][0]["grasp_poses"][0]["xyz"]
         assert grasp_xyz != [0.0, 0.0, 0.0]
         assert grasp_xyz[2] > 0.0
+        assert t["destination_pose"]["frame_id"] == "world"
+
+    expected_world_xy = {
+        "bin_a": [0.59, -0.24],
+        "bin_b": [0.59, 0.0],
+        "reject_bin": [0.59, 0.24],
+    }
+    for t in targets:
+        expected_xy = expected_world_xy[t["destination_id"]]
+        got = t["destination_pose"]["xyz"]
+        assert got[:2] == expected_xy
+        assert got[2] == 0.97
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)/'payload.json'
         subprocess.run([sys.executable, str(script), '--output', str(out)], check=True)
         loaded = json.loads(out.read_text())
         assert loaded['schema_version'] == 'emd_grasp_bridge_payload/v1'
-        subprocess.run([sys.executable, str(replay), '--payload', str(out), '--scene-package', 'ur5_2f_sorting_test', '--dry-run'], check=True, capture_output=True, text=True)
+        replay_dry = subprocess.run([sys.executable, str(replay), '--payload', str(out), '--scene-package', 'ur5_2f_sorting_test', '--dry-run'], check=True, capture_output=True, text=True)
+        assert "dest_frame=world" in replay_dry.stdout
+        assert "release=destination-aware" in replay_dry.stdout
         single = subprocess.run([sys.executable, str(script), '--target', 'item_red', '--json'], check=True, capture_output=True, text=True)
         single_payload = json.loads(single.stdout)
         single_targets = single_payload["grasp_task"]["grasp_targets"]

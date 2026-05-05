@@ -139,7 +139,7 @@ def _send_runtime(payload: dict[str, Any], args: argparse.Namespace) -> tuple[bo
         req = GraspRequest.Request()
         req.grasp_targets = task.grasp_targets
         fut = client.call_async(req)
-        rclpy.spin_until_future_complete(node, fut, timeout_sec=5.0)
+        rclpy.spin_until_future_complete(node, fut, timeout_sec=float(args.service_timeout_sec))
         if not fut.done() or fut.result() is None:
             return False, f"Runtime endpoint unavailable: service '{args.service_name}' timed out."
         res = fut.result()
@@ -158,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--ros-interface", choices=["service", "topic"], default="service")
     parser.add_argument("--service-name", default="grasp_requests")
+    parser.add_argument("--service-timeout-sec", type=float, default=60.0)
     parser.add_argument("--topic-name", default="grasp_tasks")
     parser.add_argument("--frame-id", default="base_link")
     args = parser.parse_args(argv)

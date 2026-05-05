@@ -76,6 +76,7 @@ def main() -> int:
         assert rep["execution_attempted"] is True and rep["robot_motion_requested"] is True
         assert any("--dry-run" in c for c in commands)
         assert any("--dry-run" not in c and "replay.py" in " ".join(c) for c in commands)
+        assert any("--dry-run" not in c and "--service-timeout-sec" in c and "60.0" in c for c in commands)
 
     runtime_calls = []
     def fake_runtime_checks(_service_name, _topic_name):
@@ -126,6 +127,8 @@ def main() -> int:
         dry_idx = next(i for i, c in enumerate(send_commands) if "--dry-run" in c)
         send_idx = next(i for i, c in enumerate(send_commands) if "--dry-run" not in c and "replay.py" in " ".join(c))
         assert dry_idx < send_idx
+        assert "--service-timeout-sec" in send_commands[send_idx]
+        assert "60.0" in send_commands[send_idx]
 
     return 0
 

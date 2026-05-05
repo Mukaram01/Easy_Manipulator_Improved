@@ -14,6 +14,13 @@ SCENE_PACKAGE = "ur5_2f_sorting_test"
 GRASP_CLEARANCE_ABOVE_OBJECT_M = 0.02
 PREGRASP_CLEARANCE_M = 0.05
 RELEASE_CLEARANCE_M = 0.03
+WORLD_TO_TABLE = [0.15, 0.0, 0.74]
+STATIC_WORLD_RELEASE_Z_M = 0.97
+STATIC_DESTINATION_WORLD_XY = {
+    "bin_a": [WORLD_TO_TABLE[0] + 0.44, WORLD_TO_TABLE[1] - 0.24],
+    "bin_b": [WORLD_TO_TABLE[0] + 0.44, WORLD_TO_TABLE[1] + 0.0],
+    "reject_bin": [WORLD_TO_TABLE[0] + 0.44, WORLD_TO_TABLE[1] + 0.24],
+}
 
 
 def _load_sibling_script_module(module_name: str):
@@ -90,7 +97,8 @@ def build_payload(
         if place is None:
             continue
         obj_frame = pick.get("object_frame", object_id)
-        dest_frame = place.get("destination_frame", place.get("destination_id"))
+        dest_id = place.get("destination_id")
+        dest_frame = "world"
         target_pose = _fallback_pose(obj_frame, idx)
         destination_pose = _fallback_pose(dest_frame, idx + 10)
         obj_size = pick.get("approximate_size_m", [0.05, 0.05, 0.05])
@@ -98,9 +106,9 @@ def build_payload(
         grasp_offset = [0.0, 0.0, round((object_height * 0.5) + GRASP_CLEARANCE_ABOVE_OBJECT_M, 3)]
         pregrasp_offset = [0.0, 0.0, round(grasp_offset[2] + PREGRASP_CLEARANCE_M, 3)]
         release_offset = [0.0, 0.0, round(RELEASE_CLEARANCE_M, 3)]
-        rel = place.get("release_offset_xyz_m", [0.0, 0.0, 0.03])
-        if isinstance(rel, list) and len(rel) == 3:
-            destination_pose["xyz"] = [destination_pose["xyz"][0], destination_pose["xyz"][1], round(destination_pose["xyz"][2] + float(rel[2]) + RELEASE_CLEARANCE_M, 3)]
+        world_xy = STATIC_DESTINATION_WORLD_XY.get(str(dest_id))
+        if world_xy is not None:
+            destination_pose["xyz"] = [round(float(world_xy[0]), 3), round(float(world_xy[1]), 3), round(STATIC_WORLD_RELEASE_Z_M, 3)]
         warnings.append(f"Using deterministic fallback xyz/rpy for object '{object_id}' and destination '{place.get('destination_id')}'.")
 
         targets.append({
