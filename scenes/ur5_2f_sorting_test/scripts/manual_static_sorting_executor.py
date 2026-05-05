@@ -151,12 +151,42 @@ def _load_targets(selected: list[str] | None) -> list[dict]:
     return [by_id[target] for target in selected]
 
 
+def _candidate_replay_script_paths() -> list[Path]:
+    """Return likely replay script locations for source-tree and installed ROS layouts."""
+    script_path = Path(__file__).resolve()
+    roots: list[Path] = []
+
+    env_root = os.environ.get("EMD_REPO_ROOT")
+    if env_root:
+        roots.append(Path(env_root).expanduser())
+
+    roots.append(Path.cwd().resolve())
+    roots.extend(Path.cwd().resolve().parents)
+    roots.append(script_path.parent)
+    roots.extend(script_path.parents)
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        for candidate in (
+            root / "scripts" / "replay_emd_bridge_payload.py",
+            root / "src" / "easy_manipulation_deployment" / "scripts" / "replay_emd_bridge_payload.py",
+        ):
+            candidate = candidate.resolve()
+            if candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
+    return candidates
+
+
 def _find_replay_script() -> Path:
-    repo_root = Path(__file__).resolve().parents[3]
-    path = repo_root / "scripts" / "replay_emd_bridge_payload.py"
-    if not path.exists():
-        raise ManualExecutorError("Could not locate scripts/replay_emd_bridge_payload.py from repository root.")
-    return path
+    for candidate in _candidate_replay_script_paths():
+        if candidate.exists():
+            return candidate
+    searched = "\n  - ".join(str(p) for p in _candidate_replay_script_paths())
+    raise ManualExecutorError(
+        "Could not locate scripts/replay_emd_bridge_payload.py. Searched:\n  - " + searched
+    )
 
 
 def _default_report(args: argparse.Namespace) -> dict:
@@ -298,7 +328,14 @@ def _print_text(report: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    report, exit_code = build_report(args)
+    try:
+        report, exit_code = build_report(args)
+    except ManualExecutorError as exc:
+        report = _default_report(args)
+        report["result"] = {"status": "failed_safely"}
+        report["warnings"].append(str(exc))
+        exit_code = 2
+
     if args.prepare_output is not None:
         _write_json(args.prepare_output, {"schema": "manual_static_sorting_prepare_output/v1", "scene_package": SCENE_PACKAGE, "selected_targets": report["selected_targets"], "target_count": report["target_count"]})
     if args.output is not None:
