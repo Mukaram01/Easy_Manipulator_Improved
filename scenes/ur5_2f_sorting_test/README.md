@@ -12,11 +12,12 @@ The scene includes a workbench table, a destination tray row (`bin_a`, `bin_b`, 
 
 ## Physical layout
 
-- The `world` frame is the floor (`z = 0.0`), and `table_` is a self-contained workbench model fixed to the floor with deterministic dimensions and top height.
-- The workbench uses an explicit base/body and top slab, so the table is visibly supported and its top surface is exactly `table_top_z`.
+- The `world` frame is the floor (`z = 0.0`), and `table_` is the tabletop top-surface center frame fixed to `z = table_top_z`.
+- The workbench uses an explicit body and top slab geometry offset downward from `table_`, so objects on `table_` local `z = 0` are physically on the tabletop.
 - The UR5 is table-mounted on a visible mounting plate; the robot base origin is set to `table_top_z + plate_thickness` to avoid any floating appearance.
-- `item_red`, `item_blue`, and `item_green` are initialized in a neat pickup row on the workbench top with center heights derived from `table_top_z` plus half-height/radius so they sit directly on the tabletop.
-- `bin_a`, `bin_b`, and `reject_bin` form a sorting destination row of shallow open trays (base + four walls); each bin frame is at the tray opening/top-center and tray geometry is offset downward so tray bottoms rest on the tabletop.
+- `item_red`, `item_blue`, and `item_green` are fixed children of `table_`; each item local `z` is set from half-height/radius so bottoms are exactly on tabletop local `z = 0`.
+- `bin_a`, `bin_b`, and `reject_bin` are fixed children of `table_`; each tray frame is at opening/top-center (`local z = tray_height`) and tray geometry extends downward so tray bottoms rest at tabletop local `z = 0`.
+- The RealSense camera is mounted above the pickup/sorting area (with a visible mast support) and oriented to look down toward the work area.
 - This package remains dry-run only for sorting-plan generation and does not execute robot motion yet.
 
 ## Sorting manifest
