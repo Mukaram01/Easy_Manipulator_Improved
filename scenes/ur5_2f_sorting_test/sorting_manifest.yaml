@@ -52,3 +52,12 @@ sorting_manifest:
       destination: bin_b
     - object: item_green
       destination: reject_bin
+  class_routing:
+    red_block: bin_a
+    blue_block: bin_b
+    green_block: reject_bin
+
+  class_routing_defaults:
+    unknown_class_destination: reject_bin
+    low_confidence_destination: reject_bin
+

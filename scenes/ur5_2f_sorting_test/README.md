@@ -97,6 +97,31 @@ This tool is **dry-run only**. It does not move the robot, does not call `run_gr
 
 ## Dry-run EMD bridge payload preview
 
+
+### Offline EPD-style detected_objects fixture path
+
+Generate `runtime_execution_plan/v1` from an offline `detected_objects/v1` fixture:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_runtime_plan_from_detections \
+  --detections <path-to-detected_objects_v1.json>
+```
+
+JSON output:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_runtime_plan_from_detections \
+  --detections <path-to-detected_objects_v1.json> \
+  --json
+```
+
+Architecture split:
+- EPD detects/classifies objects and provides pose/frame metadata.
+- EMD owns label-to-bin routing using scene configuration (`sorting_manifest.yaml`).
+- Robo Studio is expected to eventually edit/generate these routing rules and scene metadata.
+
+This path stays dry-run/offline and does not require ROS topic/service publishing or live EPD/camera inputs.
+
 Convert a `runtime_execution_plan/v1` into a scene-local `emd_grasp_bridge_payload/v1` preview:
 
 ```bash
