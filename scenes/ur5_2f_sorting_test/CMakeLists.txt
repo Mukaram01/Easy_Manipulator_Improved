@@ -48,6 +48,12 @@ install(PROGRAMS
   RENAME generate_sorting_runtime_plan
 )
 
+install(PROGRAMS
+  scripts/generate_sorting_emd_bridge_payload.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME generate_sorting_emd_bridge_payload
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -67,6 +73,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_generate_sorting_runtime_plan
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_sorting_runtime_plan.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_generate_sorting_emd_bridge_payload
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_sorting_emd_bridge_payload.py
   )
 endif()
 

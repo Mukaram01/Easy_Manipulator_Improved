@@ -95,6 +95,38 @@ ros2 run ur5_2f_sorting_test generate_sorting_runtime_plan --output /tmp/runtime
 
 This tool is **dry-run only**. It does not move the robot, does not call `run_grasp_execution`, does not publish ROS grasp tasks, and does not integrate perception.
 
+## Dry-run EMD bridge payload preview
+
+Convert a `runtime_execution_plan/v1` into a scene-local `emd_grasp_bridge_payload/v1` preview:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_emd_bridge_payload
+```
+
+Use an existing runtime plan JSON as input:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_emd_bridge_payload --runtime-plan /tmp/runtime_plan.json
+```
+
+Print full payload JSON:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_emd_bridge_payload --json
+```
+
+Write payload JSON to a file:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_emd_bridge_payload --output /tmp/emd_bridge_payload.json
+```
+
+This bridge payload generator is **dry-run only** and remains offline/reviewable. It does **not** execute robot motion, does **not** publish ROS grasp tasks, does **not** call `run_grasp_execution`, and does **not** use live EPD detections yet.
+
+Future integration path (guarded, not enabled yet):
+
+`EPD detected objects -> runtime_execution_plan/v1 -> emd_grasp_bridge_payload/v1 -> guarded EMD execution`
+
 ## Validate physical layout
 
 Run the deterministic scene-layout validator before RViz or execution integration:
