@@ -25,6 +25,8 @@ def main() -> int:
         "bin_a: tray_bottom_z=",
         "bin_b: tray_bottom_z=",
         "reject_bin: tray_bottom_z=",
+        "pickup_items_non_overlapping: YES",
+        "destination_trays_non_overlapping: YES",
         "robot_mount: OK",
     )
     for marker in required:
