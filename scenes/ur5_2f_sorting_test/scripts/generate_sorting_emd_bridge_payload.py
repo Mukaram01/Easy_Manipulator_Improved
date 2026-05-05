@@ -4,11 +4,48 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 from pathlib import Path
 import sys
 
-import generate_sorting_runtime_plan as runtime_plan
+
+def _load_runtime_plan_module():
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / "generate_sorting_runtime_plan.py",
+        script_dir / "generate_sorting_runtime_plan",
+    ]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+
+        module_name = f"_sorting_runtime_plan_{candidate.name.replace('.', '_')}"
+        if candidate.suffix == ".py":
+            spec = importlib.util.spec_from_file_location(module_name, candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        loader = importlib.machinery.SourceFileLoader(module_name, str(candidate))
+        spec = importlib.util.spec_from_loader(module_name, loader)
+        if spec is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        return module
+
+    raise ModuleNotFoundError(
+        "Unable to load sibling runtime plan helper from "
+        f"{candidates[0].name} or {candidates[1].name}"
+    )
+
+
+runtime_plan = _load_runtime_plan_module()
 
 SCHEMA = "emd_grasp_bridge_payload/v1"
 SOURCE_SCHEMA = "runtime_execution_plan/v1"
