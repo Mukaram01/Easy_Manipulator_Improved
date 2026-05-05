@@ -198,3 +198,30 @@ Run package-local checks:
 colcon test --packages-select ur5_2f_sorting_test --event-handlers console_direct+
 colcon test-result --verbose
 ```
+
+## Guarded execution handoff preview
+
+Validate and preview what would be handed to execution from `emd_grasp_bridge_payload/v1` without requesting any robot motion.
+
+Generate from static manifest chain:
+
+```bash
+ros2 run ur5_2f_sorting_test preview_sorting_execution_handoff --from-static-manifest
+```
+
+Generate from offline detections fixture chain:
+
+```bash
+ros2 run ur5_2f_sorting_test preview_sorting_execution_handoff \
+  --detections <path-to-detected_objects_sample.json>
+```
+
+Print handoff preview JSON:
+
+```bash
+ros2 run ur5_2f_sorting_test preview_sorting_execution_handoff \
+  --detections <path-to-detected_objects_sample.json> \
+  --json
+```
+
+This tool is still dry-run only and does not move the robot. It validates the bridge payload and previews the execution handoff contract for review. Live EPD integration and robot execution remain separate future steps.
