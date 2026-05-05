@@ -1,0 +1,32 @@
+{
+  "schema": "detected_objects/v1",
+  "source": "offline_fixture",
+  "camera_frame": "camera_color_optical_frame",
+  "planning_frame": "world",
+  "objects": [
+    {
+      "id": "det_red_001",
+      "class_label": "red_block",
+      "confidence": 0.95,
+      "frame_id": "item_red",
+      "pose_source": "scene_frame",
+      "approximate_size_m": [0.05, 0.05, 0.05]
+    },
+    {
+      "id": "det_blue_001",
+      "class_label": "blue_block",
+      "confidence": 0.94,
+      "frame_id": "item_blue",
+      "pose_source": "scene_frame",
+      "approximate_size_m": [0.05, 0.05, 0.05]
+    },
+    {
+      "id": "det_green_001",
+      "class_label": "green_block",
+      "confidence": 0.91,
+      "frame_id": "item_green",
+      "pose_source": "scene_frame",
+      "approximate_size_m": [0.05, 0.05, 0.05]
+    }
+  ]
+}

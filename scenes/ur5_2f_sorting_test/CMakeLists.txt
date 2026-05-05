@@ -27,6 +27,7 @@ install(FILES
   scene_manifest.yaml
   sorting_manifest.yaml
   README.md
+  fixtures/detected_objects_sample.json
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -54,6 +55,12 @@ install(PROGRAMS
   RENAME generate_sorting_emd_bridge_payload
 )
 
+install(PROGRAMS
+  scripts/generate_runtime_plan_from_detections.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME generate_runtime_plan_from_detections
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -78,6 +85,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_generate_sorting_emd_bridge_payload
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_sorting_emd_bridge_payload.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_generate_runtime_plan_from_detections
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_runtime_plan_from_detections.py
   )
 endif()
 
