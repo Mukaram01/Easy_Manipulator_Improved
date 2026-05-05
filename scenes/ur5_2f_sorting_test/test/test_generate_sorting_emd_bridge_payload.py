@@ -3,8 +3,10 @@
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 
 
 def main() -> int:
@@ -13,6 +15,7 @@ def main() -> int:
         / "scripts"
         / "generate_sorting_emd_bridge_payload.py"
     )
+    runtime_plan_script = script_path.parent / "generate_sorting_runtime_plan.py"
 
     subprocess.run([sys.executable, str(script_path)], check=True, capture_output=True, text=True)
 
@@ -68,6 +71,40 @@ def main() -> int:
     warnings = payload.get("warnings")
     if not isinstance(warnings, list) or not any("No live EPD detections used" in w for w in warnings):
         raise AssertionError("missing dry-run warning about live EPD detections")
+
+    runtime_plan_result = subprocess.run(
+        [sys.executable, str(runtime_plan_script), "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    runtime_plan_data = json.loads(runtime_plan_result.stdout)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_scripts = Path(tmp_dir)
+        payload_script_copy = tmp_scripts / "generate_sorting_emd_bridge_payload.py"
+        runtime_plan_copy = tmp_scripts / "generate_sorting_runtime_plan"
+        runtime_plan_json = tmp_scripts / "runtime_plan.json"
+
+        shutil.copy2(script_path, payload_script_copy)
+        shutil.copy2(runtime_plan_script, runtime_plan_copy)
+        runtime_plan_json.write_text(json.dumps(runtime_plan_data), encoding="utf-8")
+
+        installed_layout_result = subprocess.run(
+            [
+                sys.executable,
+                str(payload_script_copy),
+                "--runtime-plan",
+                str(runtime_plan_json),
+                "--json",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        installed_layout_payload = json.loads(installed_layout_result.stdout)
+        if installed_layout_payload.get("schema") != "emd_grasp_bridge_payload/v1":
+            raise AssertionError("installed-layout schema mismatch")
 
     return 0
 
