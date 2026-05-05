@@ -894,3 +894,79 @@ def test_sanitize_grasp_execution_params_preserves_non_empty_safe_joint_state(gr
         -1.57,
         1.57,
     ]
+
+
+def test_launch_setup_propagates_explicit_release_pose_launch_arguments(
+    grasp_launch_module,
+    monkeypatch,
+):
+    captured_grasp_execution_config = {}
+
+    class FakeLaunchConfiguration:
+        def __init__(self, name):
+            self.name = name
+
+        def perform(self, context):
+            return context[self.name]
+
+    monkeypatch.setattr(grasp_launch_module, 'LaunchConfiguration', FakeLaunchConfiguration)
+    monkeypatch.setattr(grasp_launch_module, 'get_package_share_directory', lambda _package: '/tmp/fake_share')
+    monkeypatch.setattr(grasp_launch_module, 'resolve_scene_package_share_dir', lambda _scene_package: '/tmp/fake')
+    monkeypatch.setattr(grasp_launch_module, 'resolve_required_package_share_dir', lambda *_args, **_kwargs: '/tmp/fake')
+    monkeypatch.setattr(grasp_launch_module, 'load_scene_environment', lambda _scene: {'end_effector': {}})
+    monkeypatch.setattr(grasp_launch_module, 'resolve_gripper_controller_joints', lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(grasp_launch_module, '_extract_scene_xacro_args', lambda _path: set())
+    monkeypatch.setattr(grasp_launch_module, '_extract_ur_robot_macro_params', lambda: set())
+    monkeypatch.setattr(grasp_launch_module, 'load_file', lambda *_args, **_kwargs: '<robot name="demo"></robot>')
+    monkeypatch.setattr(grasp_launch_module, '_normalize_srdf_for_ur_base_inertia', lambda _a, b, _c: b)
+    monkeypatch.setattr(
+        grasp_launch_module,
+        'build_workcell_context_for_scene',
+        lambda *_args, **_kwargs: ({'workcell_context': {}}, 'robotiq_2f', 'tool0', 'tool0'),
+    )
+    monkeypatch.setattr(grasp_launch_module, '_extract_link_names_from_urdf', lambda _xml: {'tool0'})
+    monkeypatch.setattr(
+        grasp_launch_module,
+        'validate_and_normalize_workcell_end_effector_frames',
+        lambda *_args, **_kwargs: ('robotiq_2f', 'tool0', 'tool0'),
+    )
+    monkeypatch.setattr(grasp_launch_module, 'build_workcell_context', lambda *_args, **_kwargs: {'ctx': 'ok'})
+    monkeypatch.setattr(grasp_launch_module, 'require_yaml_mapping', lambda data, *_args, **_kwargs: data)
+    monkeypatch.setattr(grasp_launch_module, 'align_gripper_controller_joints', lambda *_args, **_kwargs: None)
+
+    def fake_load_yaml(package_name, file_path):
+        if package_name == grasp_launch_module.PACKAGE_NAME and file_path == 'config/grasp_execution.yaml':
+            return {'grasp_execution_node': {'ros__parameters': {}}}
+        return {'grasp_execution_node': {'ros__parameters': {}}}
+
+    monkeypatch.setattr(grasp_launch_module, 'load_yaml', fake_load_yaml)
+
+    def fake_write_temp_yaml_params(data, prefix='tmp_'):
+        if prefix == 'grasp_execution_':
+            captured_grasp_execution_config.clear()
+            captured_grasp_execution_config.update(data)
+        return f'/tmp/{prefix}params.yaml'
+
+    monkeypatch.setattr(grasp_launch_module, 'write_temp_yaml_params', fake_write_temp_yaml_params)
+    monkeypatch.setattr(grasp_launch_module, 'Node', lambda *args, **kwargs: ('node', kwargs))
+    monkeypatch.setattr(grasp_launch_module, 'ExecuteProcess', lambda *args, **kwargs: ('process', kwargs))
+    monkeypatch.setattr(grasp_launch_module, 'TimerAction', lambda *args, **kwargs: ('timer', kwargs))
+    monkeypatch.setattr(grasp_launch_module, 'IfCondition', lambda value: value)
+    monkeypatch.setattr(grasp_launch_module, 'PythonExpression', lambda expr: expr)
+
+    grasp_launch_module.launch_setup(
+        {
+            grasp_launch_module.SCENE_PACKAGE_ARGUMENT: 'scene_pkg',
+            grasp_launch_module.MOVEIT_CONFIG_PACKAGE_ARGUMENT: 'moveit_pkg',
+            grasp_launch_module.PLANNING_FRAME_ARGUMENT: 'world',
+            grasp_launch_module.EXPLICIT_RELEASE_POSE_SOURCE_ARGUMENT: 'bridge_payload',
+            grasp_launch_module.EXPLICIT_RELEASE_POSE_BRIDGE_PAYLOAD_PATH_ARGUMENT: '/tmp/payload.json',
+            'debug': 'false',
+            'launch_rviz': 'false',
+            grasp_launch_module.SPAWN_ARM_CONTROLLER_ARGUMENT: 'false',
+        }
+    )
+
+    ros_params = captured_grasp_execution_config['grasp_execution_node']['ros__parameters']
+    assert ros_params['explicit_release_pose_source'] == 'bridge_payload'
+    assert ros_params['explicit_release_pose_bridge_payload_path'] == '/tmp/payload.json'

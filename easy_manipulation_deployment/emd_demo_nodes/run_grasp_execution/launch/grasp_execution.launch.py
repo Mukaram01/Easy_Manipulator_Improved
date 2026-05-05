@@ -37,6 +37,8 @@ SCENE_PACKAGE_ARGUMENT = 'scene_package'
 MOVEIT_CONFIG_PACKAGE_ARGUMENT = 'moveit_config_package'
 PLANNING_FRAME_ARGUMENT = 'planning_frame'
 SPAWN_ARM_CONTROLLER_ARGUMENT = 'spawn_arm_controller'
+EXPLICIT_RELEASE_POSE_SOURCE_ARGUMENT = 'explicit_release_pose_source'
+EXPLICIT_RELEASE_POSE_BRIDGE_PAYLOAD_PATH_ARGUMENT = 'explicit_release_pose_bridge_payload_path'
 
 
 GRIPPER_CONTROLLER_JOINTS_BY_END_EFFECTOR = {
@@ -748,6 +750,12 @@ def launch_setup(context, *args, **kwargs):
         )
     moveit_config_package = LaunchConfiguration(MOVEIT_CONFIG_PACKAGE_ARGUMENT).perform(context)
     planning_frame = LaunchConfiguration(PLANNING_FRAME_ARGUMENT).perform(context).strip()
+    explicit_release_pose_source = LaunchConfiguration(
+        EXPLICIT_RELEASE_POSE_SOURCE_ARGUMENT
+    ).perform(context)
+    explicit_release_pose_bridge_payload_path = LaunchConfiguration(
+        EXPLICIT_RELEASE_POSE_BRIDGE_PAYLOAD_PATH_ARGUMENT
+    ).perform(context)
     if not planning_frame:
         raise RuntimeError(
             f"Launch argument '{PLANNING_FRAME_ARGUMENT}' resolved to an empty frame after trimming whitespace."
@@ -953,6 +961,12 @@ def launch_setup(context, *args, **kwargs):
     grasp_execution_config = sanitize_grasp_execution_params(
         load_yaml(PACKAGE_NAME, 'config/grasp_execution.yaml')
     )
+    grasp_execution_node = grasp_execution_config.setdefault("grasp_execution_node", {})
+    grasp_execution_ros_params = grasp_execution_node.setdefault("ros__parameters", {})
+    grasp_execution_ros_params["explicit_release_pose_source"] = explicit_release_pose_source
+    grasp_execution_ros_params[
+        "explicit_release_pose_bridge_payload_path"
+    ] = explicit_release_pose_bridge_payload_path
     grasp_execution_yaml = write_temp_yaml_params(
         grasp_execution_config,
         prefix='grasp_execution_',
@@ -1132,6 +1146,16 @@ def generate_launch_description():
                 SPAWN_ARM_CONTROLLER_ARGUMENT,
                 default_value='true',
                 description='Spawn ur5_arm_controller via controller_manager spawner.',
+            ),
+            DeclareLaunchArgument(
+                EXPLICIT_RELEASE_POSE_SOURCE_ARGUMENT,
+                default_value='auto',
+                description='Explicit release pose source selection for grasp execution.',
+            ),
+            DeclareLaunchArgument(
+                EXPLICIT_RELEASE_POSE_BRIDGE_PAYLOAD_PATH_ARGUMENT,
+                default_value='',
+                description='Path to runtime bridge payload used by explicit release pose adapter.',
             ),
             OpaqueFunction(function=launch_setup),
         ]
