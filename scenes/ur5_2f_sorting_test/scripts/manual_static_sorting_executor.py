@@ -12,17 +12,12 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 SCHEMA = "manual_static_sorting_executor/v1"
 SCENE_PACKAGE = "ur5_2f_sorting_test"
-LAUNCH_COMMAND = [
-    "ros2",
-    "launch",
-    "run_grasp_execution",
-    "grasp_execution.launch.py",
-    "scene_package:=ur5_2f_sorting_test",
-    "launch_rviz:=true",
-]
+DEFAULT_SERVICE = "grasp_requests"
+DEFAULT_TOPIC = "grasp_tasks"
 
 
 class ManualExecutorError(RuntimeError):
@@ -60,6 +55,9 @@ def _load_sibling_script_module(module_name: str):
 runtime_plan = _load_sibling_script_module("generate_sorting_runtime_plan")
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
@@ -68,6 +66,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--require-active-runtime", action="store_true", help="Require active runtime checks to pass")
     parser.add_argument("--manual-enable-execution", action="store_true", help="Explicitly enable execution mode")
     parser.add_argument("--execute", action="store_true", help="Request execution attempt (still safety-gated)")
+    parser.add_argument("--confirm-runtime-send", action="store_true", help="Final confirmation required before runtime send")
+    parser.add_argument("--skip-send-dry-run-validation", action="store_true", help="Skip dry-run replay validation before runtime send")
+    parser.add_argument("--runtime-payload", type=Path, help="Use an existing runtime-compatible payload")
+    parser.add_argument("--payload-output", type=Path, help="Write generated payload to this path")
+    parser.add_argument("--ros-interface", choices=["service", "topic"], default="service")
+    parser.add_argument("--service-name", default=DEFAULT_SERVICE)
+    parser.add_argument("--topic-name", default=DEFAULT_TOPIC)
     parser.add_argument("--target", action="append", dest="targets", help="Optional object_id filter; repeat for multiple")
     return parser.parse_args(argv)
 
@@ -79,10 +84,9 @@ def _initial_runtime_checks() -> dict:
         "joint_states": "unknown",
         "controller_manager": "unknown",
         "ur5_arm_controller": "unknown",
+        "grasp_requests_service": "unknown",
+        "grasp_tasks_topic": "unknown",
     }
-
-
-ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def _strip_ansi(value: str) -> str:
@@ -91,91 +95,53 @@ def _strip_ansi(value: str) -> str:
 
 def _run_ros2(args: list[str]) -> subprocess.CompletedProcess:
     env = os.environ.copy()
-    env.update(
-        {
-            "NO_COLOR": "1",
-            "CLICOLOR": "0",
-            "CLICOLOR_FORCE": "0",
-            "PY_COLORS": "0",
-            "RCUTILS_COLORIZED_OUTPUT": "0",
-            "TERM": "dumb",
-        }
-    )
-    return subprocess.run(
-        ["ros2", *args],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=4,
-        env=env,
-    )
+    env.update({"NO_COLOR": "1", "CLICOLOR": "0", "CLICOLOR_FORCE": "0", "PY_COLORS": "0", "RCUTILS_COLORIZED_OUTPUT": "0", "TERM": "dumb"})
+    return subprocess.run(["ros2", *args], check=False, capture_output=True, text=True, timeout=6, env=env)
+
+
+def _run_subprocess(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=False, capture_output=True, text=True)
 
 
 def _parse_controller_state(list_controllers_stdout: str, controller_name: str = "ur5_arm_controller") -> str:
     clean_stdout = _strip_ansi(list_controllers_stdout)
     for raw_line in clean_stdout.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        columns = line.split()
-        if not columns or columns[0] != controller_name:
-            continue
-        if len(columns) >= 3:
-            return columns[2].strip().lower()
-        return "inactive"
+        cols = raw_line.strip().split()
+        if cols and cols[0] == controller_name:
+            return cols[2].strip().lower() if len(cols) >= 3 else "inactive"
     return "missing"
 
 
-def _runtime_checks() -> tuple[dict, list[str]]:
+def _runtime_checks(service_name: str, topic_name: str) -> tuple[dict, list[str]]:
     checks = _initial_runtime_checks()
     warnings: list[str] = []
     checks["checked"] = True
-
     try:
-        node_out = _run_ros2(["node", "list"])
-        nodes = set(line.strip() for line in node_out.stdout.splitlines() if line.strip()) if node_out.returncode == 0 else set()
+        nodes = set(line.strip() for line in _run_ros2(["node", "list"]).stdout.splitlines() if line.strip())
+        topics = set(line.strip() for line in _run_ros2(["topic", "list"]).stdout.splitlines() if line.strip())
+        services = set(line.strip() for line in _run_ros2(["service", "list"]).stdout.splitlines() if line.strip())
+        ctrl = _run_ros2(["control", "list_controllers"])
         checks["grasp_execution_node"] = "present" if "/grasp_execution_node" in nodes else "missing"
-
-        topic_out = _run_ros2(["topic", "list"])
-        topics = set(line.strip() for line in topic_out.stdout.splitlines() if line.strip()) if topic_out.returncode == 0 else set()
         checks["joint_states"] = "present" if "/joint_states" in topics else "missing"
-
-        service_out = _run_ros2(["service", "list"])
-        services = set(line.strip() for line in service_out.stdout.splitlines() if line.strip()) if service_out.returncode == 0 else set()
         checks["controller_manager"] = "present" if any("controller_manager" in svc for svc in services) else "missing"
-
-        ctrl_out = _run_ros2(["control", "list_controllers"])
-        if ctrl_out.returncode == 0:
-            checks["ur5_arm_controller"] = _parse_controller_state(ctrl_out.stdout)
-        else:
-            checks["ur5_arm_controller"] = "missing"
-            warnings.append("ros2 control CLI unavailable; ur5_arm_controller status treated as missing.")
-
+        checks["grasp_requests_service"] = "present" if f"/{service_name}" in services else "missing"
+        checks["grasp_tasks_topic"] = "present" if f"/{topic_name}" in topics else "missing"
+        checks["ur5_arm_controller"] = _parse_controller_state(ctrl.stdout) if ctrl.returncode == 0 else "missing"
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         warnings.append(f"ROS runtime checks unavailable: {exc}")
-        checks["grasp_execution_node"] = "missing"
-        checks["joint_states"] = "missing"
-        checks["controller_manager"] = "missing"
-        checks["ur5_arm_controller"] = "missing"
-
+        for key in checks:
+            if key != "checked":
+                checks[key] = "missing"
     return checks, warnings
 
 
 def _load_targets(selected: list[str] | None) -> list[dict]:
     manifest = runtime_plan.load_manifest(runtime_plan.find_manifest_path())
     plan = runtime_plan.build_runtime_plan(manifest)
-    all_targets = []
-    for step in plan.get("steps", []):
-        if step.get("type") != "pick":
-            continue
-        all_targets.append(
-            {
-                "object_id": step.get("object_id"),
-                "object_frame": step.get("object_frame"),
-                "pick_hint": step.get("pick_hint"),
-                "destination_id": step.get("destination_id"),
-            }
-        )
+    all_targets = [
+        {"object_id": step.get("object_id"), "object_frame": step.get("object_frame"), "pick_hint": step.get("pick_hint"), "destination_id": step.get("destination_id")}
+        for step in plan.get("steps", []) if step.get("type") == "pick"
+    ]
     by_id = {t.get("object_id"): t for t in all_targets}
     if not selected:
         return all_targets
@@ -185,80 +151,140 @@ def _load_targets(selected: list[str] | None) -> list[dict]:
     return [by_id[target] for target in selected]
 
 
-def _default_report() -> dict:
+def _find_replay_script() -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    path = repo_root / "scripts" / "replay_emd_bridge_payload.py"
+    if not path.exists():
+        raise ManualExecutorError("Could not locate scripts/replay_emd_bridge_payload.py from repository root.")
+    return path
+
+
+def _default_report(args: argparse.Namespace) -> dict:
     return {
         "schema": SCHEMA,
         "scene_package": SCENE_PACKAGE,
-        "mode": "dry_run",
-        "execution_enabled": False,
-        "execute_requested": False,
+        "execution_enabled": bool(args.manual_enable_execution),
+        "execute_requested": bool(args.execute),
+        "runtime_send_confirmed": bool(args.confirm_runtime_send),
         "execution_attempted": False,
         "robot_motion_requested": False,
+        "ros_interface": args.ros_interface,
+        "service_name": args.service_name,
+        "topic_name": args.topic_name,
+        "payload": {"path": "", "source": "generated"},
+        "payload_validation": {"dry_run_replay_status": "skipped", "command": []},
+        "runtime_checks": _initial_runtime_checks(),
         "target_count": 0,
         "selected_targets": [],
-        "launch_command": LAUNCH_COMMAND,
-        "runtime_checks": _initial_runtime_checks(),
         "result": {"status": "dry_run_only"},
         "warnings": [],
     }
 
 
+def _generate_payload(path: Path) -> None:
+    cmd = ["ros2", "run", SCENE_PACKAGE, "generate_static_sorting_runtime_bridge_payload", "--output", str(path)]
+    result = _run_subprocess(cmd)
+    if result.returncode != 0:
+        raise ManualExecutorError(f"Payload generation failed: {' '.join(cmd)} :: {result.stderr.strip() or result.stdout.strip()}")
+
+
+def _build_replay_cmd(replay_script: Path, payload: Path, args: argparse.Namespace, dry_run: bool) -> list[str]:
+    cmd = [sys.executable, str(replay_script), "--payload", str(payload), "--scene-package", SCENE_PACKAGE, "--ros-interface", args.ros_interface]
+    if args.ros_interface == "service":
+        cmd += ["--service-name", args.service_name]
+    else:
+        cmd += ["--topic-name", args.topic_name]
+    if dry_run:
+        cmd.append("--dry-run")
+    return cmd
+
+
 def build_report(args: argparse.Namespace) -> tuple[dict, int]:
-    report = _default_report()
-    report["execution_enabled"] = bool(args.manual_enable_execution)
-    report["execute_requested"] = bool(args.execute)
-
-    try:
-        selected_targets = _load_targets(args.targets)
-    except ManualExecutorError as exc:
-        report["result"] = {"status": "blocked"}
-        report["warnings"].append(str(exc))
-        return report, 2
-
+    report = _default_report(args)
+    selected_targets = _load_targets(args.targets)
     report["selected_targets"] = selected_targets
     report["target_count"] = len(selected_targets)
 
+    final_send_flags = args.require_active_runtime and args.manual_enable_execution and args.execute and args.confirm_runtime_send
     if args.execute and not args.manual_enable_execution:
-        report["mode"] = "execution_requested"
         report["result"] = {"status": "blocked"}
         report["warnings"].append("Execution blocked: --execute requires --manual-enable-execution.")
         return report, 2
-
-    if args.manual_enable_execution and not args.execute:
-        report["mode"] = "manual_enabled"
-        report["result"] = {"status": "ready_for_manual_runtime"}
-        report["warnings"].append("Execution is enabled, but robot motion is still blocked until you also pass --execute.")
-        report["warnings"].append("Next explicit command: ros2 run ur5_2f_sorting_test manual_static_sorting_executor --manual-enable-execution --execute")
-        report["warnings"].append("Generate runtime-shaped payload: ros2 run ur5_2f_sorting_test generate_static_sorting_runtime_bridge_payload --output /tmp/ur5_2f_sorting_runtime_bridge_payload.json")
-        report["warnings"].append("Validate payload only (no send): python3 scripts/replay_emd_bridge_payload.py --payload /tmp/ur5_2f_sorting_runtime_bridge_payload.json --scene-package ur5_2f_sorting_test --dry-run")
-
-    must_check_runtime = args.require_active_runtime or args.execute
-    if must_check_runtime:
-        checks, warnings = _runtime_checks()
-        report["runtime_checks"] = checks
-        report["warnings"].extend(warnings)
-        runtime_ready = (
-            checks["grasp_execution_node"] == "present"
-            and checks["joint_states"] == "present"
-            and checks["controller_manager"] == "present"
-            and checks["ur5_arm_controller"] == "active"
-        )
-        if not runtime_ready:
-            report["result"] = {"status": "runtime_missing"}
-            report["warnings"].append(
-                "Launch the scene first with: ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true"
-            )
-            return report, 2
-
-    if args.execute and args.manual_enable_execution:
-        report["mode"] = "execution_requested"
-        report["result"] = {"status": "execution_api_missing"}
-        report["warnings"].append("Execution API call was intentionally skipped: no documented dry-run/test-safe execution API was found.")
-        report["warnings"].append("Future manual send command only (not executed): python3 scripts/replay_emd_bridge_payload.py --payload /tmp/ur5_2f_sorting_runtime_bridge_payload.json --scene-package ur5_2f_sorting_test --ros-interface service --service-name grasp_requests")
-        report["warnings"].append("No robot motion was requested. This adapter will not guess or call unknown services/actions.")
+    if args.confirm_runtime_send and (not args.execute or not args.manual_enable_execution):
+        report["result"] = {"status": "blocked"}
+        report["warnings"].append("Execution blocked: --confirm-runtime-send requires --manual-enable-execution and --execute.")
+        return report, 2
+    if args.skip_send_dry_run_validation and not final_send_flags:
+        report["result"] = {"status": "blocked"}
+        report["warnings"].append("Execution blocked: --skip-send-dry-run-validation is only allowed with full guarded send flags.")
         return report, 2
 
-    return report, 0
+    # payload source
+    if args.runtime_payload:
+        payload_path = args.runtime_payload
+        if not payload_path.exists():
+            report["result"] = {"status": "failed_safely"}
+            report["warnings"].append(f"Provided payload does not exist: {payload_path}")
+            return report, 2
+        report["payload"] = {"path": str(payload_path), "source": "provided"}
+    else:
+        payload_path = args.payload_output if args.payload_output else Path(tempfile.gettempdir()) / "ur5_2f_sorting_runtime_bridge_payload.json"
+        _generate_payload(payload_path)
+        report["payload"] = {"path": str(payload_path), "source": "generated"}
+
+    replay_script = _find_replay_script()
+    dry_run_cmd = _build_replay_cmd(replay_script, payload_path, args, dry_run=True)
+    report["payload_validation"]["command"] = dry_run_cmd
+
+    should_validate = not (args.skip_send_dry_run_validation and final_send_flags)
+    if should_validate:
+        dry = _run_subprocess(dry_run_cmd)
+        if dry.returncode != 0:
+            report["payload_validation"]["dry_run_replay_status"] = "fail"
+            report["result"] = {"status": "payload_validation_failed"}
+            report["warnings"].append("Dry-run replay validation failed; payload will not be sent.")
+            if dry.stderr.strip():
+                report["warnings"].append(dry.stderr.strip())
+            return report, 2
+        report["payload_validation"]["dry_run_replay_status"] = "pass"
+    else:
+        report["payload_validation"]["dry_run_replay_status"] = "skipped"
+        report["warnings"].append("Dry-run validation was skipped by explicit override; sending may move the robot in active runtime.")
+
+    if args.execute and args.manual_enable_execution and not args.confirm_runtime_send:
+        report["result"] = {"status": "blocked"}
+        report["warnings"].append("Execution blocked: --confirm-runtime-send is required before any runtime send.")
+        return report, 2
+    if args.manual_enable_execution and not args.execute:
+        report["result"] = {"status": "ready_for_manual_runtime"}
+        report["warnings"].append("Ready for manual runtime send. Final command may send to /grasp_requests and move the robot in active runtime.")
+        report["warnings"].append("Next command: ros2 run ur5_2f_sorting_test manual_static_sorting_executor --require-active-runtime --manual-enable-execution --execute --confirm-runtime-send")
+        return report, 0
+    if not final_send_flags:
+        report["result"] = {"status": "dry_run_only"}
+        return report, 0
+
+    checks, warnings = _runtime_checks(args.service_name, args.topic_name)
+    report["runtime_checks"] = checks
+    report["warnings"].extend(warnings)
+    runtime_ready = checks["grasp_execution_node"] == "present" and checks["joint_states"] == "present" and checks["controller_manager"] == "present" and checks["ur5_arm_controller"] == "active"
+    interface_ready = checks["grasp_requests_service"] == "present" if args.ros_interface == "service" else checks["grasp_tasks_topic"] == "present"
+    if not (runtime_ready and interface_ready):
+        report["result"] = {"status": "runtime_missing"}
+        report["warnings"].append("Runtime missing or incomplete; safe block before send.")
+        return report, 2
+
+    send_cmd = _build_replay_cmd(replay_script, payload_path, args, dry_run=False)
+    report["execution_attempted"] = True
+    report["robot_motion_requested"] = True
+    send = _run_subprocess(send_cmd)
+    if send.returncode == 0:
+        report["result"] = {"status": "sent_to_runtime"}
+        return report, 0
+    report["result"] = {"status": "runtime_send_failed"}
+    if send.stderr.strip():
+        report["warnings"].append(send.stderr.strip())
+    return report, 2
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -267,57 +293,20 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _print_text(report: dict) -> None:
-    print("Manual static sorting executor report")
-    print(f"scene_package: {report['scene_package']}")
-    print(f"schema: {report['schema']}")
-    print(f"mode: {report['mode']}")
-    print(f"execution_enabled: {report['execution_enabled']}")
-    print(f"execute_requested: {report['execute_requested']}")
-    print(f"execution_attempted: {report['execution_attempted']}")
-    print(f"robot_motion_requested: {report['robot_motion_requested']}")
-    print(f"target_count: {report['target_count']}")
-    print("selected_targets:")
-    for target in report["selected_targets"]:
-        print(f"  - {target['object_id']} -> {target['destination_id']}")
-    print("launch_command:")
-    print("  " + " ".join(report["launch_command"]))
-    print("available_ros_checks:")
-    print("  - ros2 node list")
-    print("  - ros2 topic list")
-    print("  - ros2 service list")
-    print("  - ros2 control list_controllers")
-    print("runtime_checks:")
-    for key, value in report["runtime_checks"].items():
-        print(f"  {key}: {value}")
-    print(f"result_status: {report['result']['status']}")
-    print("warnings:")
-    for warning in report["warnings"]:
-        print(f"  - {warning}")
+    print(json.dumps(report, indent=2))
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     report, exit_code = build_report(args)
-
     if args.prepare_output is not None:
-        _write_json(
-            args.prepare_output,
-            {
-                "schema": "manual_static_sorting_prepare_output/v1",
-                "scene_package": SCENE_PACKAGE,
-                "selected_targets": report["selected_targets"],
-                "target_count": report["target_count"],
-            },
-        )
-
+        _write_json(args.prepare_output, {"schema": "manual_static_sorting_prepare_output/v1", "scene_package": SCENE_PACKAGE, "selected_targets": report["selected_targets"], "target_count": report["target_count"]})
     if args.output is not None:
         _write_json(args.output, report)
-
     if args.json:
         print(json.dumps(report, indent=2))
     else:
         _print_text(report)
-
     return exit_code
 
 

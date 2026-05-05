@@ -352,3 +352,45 @@ python3 scripts/replay_emd_bridge_payload.py \
 ```
 
 This does **not** move the robot. It only creates the runtime-shaped bridge payload expected by `replay_emd_bridge_payload.py`. A later PR can add an explicit manual send path to `/grasp_requests` after dry-run replay validation is stable.
+
+## Guarded runtime send
+
+Default behavior stays dry-run only and never sends to runtime:
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor
+```
+
+Runtime readiness check (still no send):
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor \
+  --require-active-runtime \
+  --json
+```
+
+Blocked preview (missing final confirmation):
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor \
+  --require-active-runtime \
+  --manual-enable-execution \
+  --execute
+```
+
+Final guarded send (manual confirmation required):
+
+```bash
+ros2 run ur5_2f_sorting_test manual_static_sorting_executor \
+  --require-active-runtime \
+  --manual-enable-execution \
+  --execute \
+  --confirm-runtime-send
+```
+
+Notes:
+- The final command may send to `/grasp_requests` (or publish `/grasp_tasks` if `--ros-interface topic` is used).
+- Runtime must already be launched and healthy before the final command.
+- Verify RViz and scene safety before using final send.
+- Use simulation/mock runtime only at this stage.
+- No live EPD integration is involved yet.
