@@ -4,12 +4,49 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 from pathlib import Path
 import sys
 
-import generate_runtime_plan_from_detections as runtime_plan_from_detections
-import generate_sorting_emd_bridge_payload as bridge_payload_generator
+
+def _load_sibling_script_module(module_name: str):
+    """Load a sibling helper script from source or installed ROS 2 executable layout."""
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / f"{module_name}.py",
+        script_dir / module_name,
+    ]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+
+        unique_name = f"_ur5_2f_sorting_test_{module_name}"
+
+        if candidate.suffix == ".py":
+            spec = importlib.util.spec_from_file_location(unique_name, candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        loader = importlib.machinery.SourceFileLoader(unique_name, str(candidate))
+        spec = importlib.util.spec_from_loader(unique_name, loader)
+        if spec is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        return module
+
+    searched = ", ".join(str(candidate) for candidate in candidates)
+    raise ModuleNotFoundError(f"Could not load sibling script module '{module_name}'. Searched: {searched}")
+
+
+runtime_plan_from_detections = _load_sibling_script_module("generate_runtime_plan_from_detections")
+bridge_payload_generator = _load_sibling_script_module("generate_sorting_emd_bridge_payload")
 
 WARNING_TEXT = "Offline detected_objects/v1 fixture used; no live EPD call was made."
 
