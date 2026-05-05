@@ -152,6 +152,27 @@ Future integration path (guarded, not enabled yet):
 
 `EPD detected objects -> runtime_execution_plan/v1 -> emd_grasp_bridge_payload/v1 -> guarded EMD execution`
 
+## Offline EPD-style detections to EMD bridge payload
+
+Generate `emd_grasp_bridge_payload/v1` directly from offline `detected_objects/v1` input:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_bridge_payload_from_detections --detections <path>
+```
+
+Print final payload JSON:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_bridge_payload_from_detections --detections <path> --json
+```
+
+Optional outputs:
+
+- `--runtime-plan-output <path>` writes intermediate `runtime_execution_plan/v1`
+- `--output <path>` writes final `emd_grasp_bridge_payload/v1`
+
+This is the offline/dry-run path. Future live EPD integration will replace only the input boundary (`detected_objects/v1` source), while EMD routing and bridge payload generation remain reviewable and deterministic.
+
 ## Validate physical layout
 
 Run the deterministic scene-layout validator before RViz or execution integration:

@@ -61,6 +61,12 @@ install(PROGRAMS
   RENAME generate_runtime_plan_from_detections
 )
 
+install(PROGRAMS
+  scripts/generate_bridge_payload_from_detections.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME generate_bridge_payload_from_detections
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -90,6 +96,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_generate_runtime_plan_from_detections
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_runtime_plan_from_detections.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_generate_bridge_payload_from_detections
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_bridge_payload_from_detections.py
   )
 endif()
 
