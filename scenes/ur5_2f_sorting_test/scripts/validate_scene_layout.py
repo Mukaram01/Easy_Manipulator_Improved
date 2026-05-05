@@ -103,12 +103,8 @@ def _resolve_scene_xacro() -> Path:
 
 
 def _load_xml_root(xacro_path: Path) -> ET.Element:
-    if shutil.which("xacro"):
-        try:
-            expanded = subprocess.check_output(["xacro", str(xacro_path)], text=True)
-            return ET.fromstring(expanded)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"xacro expansion failed for {xacro_path}: {exc}") from exc
+    # Parse the raw xacro source. The validator needs xacro:property tags;
+    # those disappear after xacro expansion.
     return ET.parse(xacro_path).getroot()
 
 
@@ -159,9 +155,9 @@ def main() -> int:
         "item_green": table_top_z,
     }
     item_joints = {
-        "item_red": "world_to_item_red",
-        "item_blue": "world_to_item_blue",
-        "item_green": "world_to_item_green",
+        "item_red": "table_to_item_red",
+        "item_blue": "table_to_item_blue",
+        "item_green": "table_to_item_green",
     }
     item_heights = {
         "item_red": properties["item_red_height"],
@@ -170,16 +166,16 @@ def main() -> int:
     }
 
     bins = {
-        "bin_a": "world_to_bin_a",
-        "bin_b": "world_to_bin_b",
-        "reject_bin": "world_to_reject_bin",
+        "bin_a": "table_to_bin_a",
+        "bin_b": "table_to_bin_b",
+        "reject_bin": "table_to_reject_bin",
     }
 
     report_lines = [f"scene: {xacro_path}", f"table_top_z: {table_top_z:.3f}"]
 
     for item, joint in item_joints.items():
         center_z = _find_joint_origin(root, joint, properties)[2]
-        bottom_z = center_z - item_heights[item] / 2.0
+        bottom_z = table_top_z + center_z - item_heights[item] / 2.0
         ok = math.isclose(bottom_z, expected_item_bottoms[item], abs_tol=EPS)
         if not ok:
             raise AssertionError(f"{item} bottom_z {bottom_z} does not equal table_top_z {table_top_z}")
@@ -191,7 +187,7 @@ def main() -> int:
     tray_wall_thickness = properties["tray_wall_thickness"]
     for bin_name, joint in bins.items():
         frame_z = _find_joint_origin(root, joint, properties)[2]
-        tray_bottom_z = frame_z - tray_wall_thickness
+        tray_bottom_z = table_top_z + frame_z - tray_height
         if not math.isclose(tray_bottom_z, table_top_z, abs_tol=EPS):
             raise AssertionError(
                 f"{bin_name} tray bottom {tray_bottom_z} does not equal table_top_z {table_top_z}"
