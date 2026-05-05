@@ -73,6 +73,28 @@ Manifest: /.../sorting_manifest.yaml
 ```
 
 
+## Dry-run runtime execution plan preview
+
+Generate a scene-local `runtime_execution_plan/v1` preview from `sorting_manifest.yaml`:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_runtime_plan
+```
+
+Print full JSON to stdout:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_runtime_plan --json
+```
+
+Write JSON to a file:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_sorting_runtime_plan --output /tmp/runtime_plan.json
+```
+
+This tool is **dry-run only**. It does not move the robot, does not call `run_grasp_execution`, does not publish ROS grasp tasks, and does not integrate perception.
+
 ## Validate physical layout
 
 Run the deterministic scene-layout validator before RViz or execution integration:
