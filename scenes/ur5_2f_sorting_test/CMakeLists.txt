@@ -79,6 +79,12 @@ install(PROGRAMS
   RENAME robot_studio_lite
 )
 
+install(PROGRAMS
+  scripts/prepare_static_sorting_execution.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME prepare_static_sorting_execution
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -123,6 +129,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_robot_studio_lite
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_robot_studio_lite.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_prepare_static_sorting_execution
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_prepare_static_sorting_execution.py
   )
 endif()
 

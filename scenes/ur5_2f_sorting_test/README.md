@@ -261,3 +261,37 @@ Safety guardrails are explicit:
 - it does **not** enable execution
 
 This launcher is intended for developer/operator readiness checks before any future live integration steps.
+
+
+## Static sorting execution preparation
+
+Prepare static sorting execution artifacts and validation outputs without requesting robot motion:
+
+```bash
+ros2 run ur5_2f_sorting_test prepare_static_sorting_execution
+```
+
+JSON report output:
+
+```bash
+ros2 run ur5_2f_sorting_test prepare_static_sorting_execution --json
+```
+
+Manual execution-enabled preparation (still no robot motion) and print launch command:
+
+```bash
+ros2 run ur5_2f_sorting_test prepare_static_sorting_execution --manual-enable-execution --print-launch-command
+```
+
+This command remains safe by default and in manual-enable mode:
+
+- it does **not** move the robot
+- it does **not** call `ros2 launch` automatically
+- it prepares and validates handoff artifacts for manual review
+- user must manually run and verify RViz using:
+
+```bash
+ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true
+```
+
+A future PR can add an explicit/manual execution trigger only after this preparation layer is stable.
