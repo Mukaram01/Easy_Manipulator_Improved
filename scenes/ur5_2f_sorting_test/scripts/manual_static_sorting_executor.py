@@ -211,8 +211,10 @@ def _default_report(args: argparse.Namespace) -> dict:
     }
 
 
-def _generate_payload(path: Path) -> None:
+def _generate_payload(path: Path, targets: list[str] | None) -> None:
     cmd = ["ros2", "run", SCENE_PACKAGE, "generate_static_sorting_runtime_bridge_payload", "--output", str(path)]
+    for target in targets or []:
+        cmd += ["--target", target]
     result = _run_subprocess(cmd)
     if result.returncode != 0:
         raise ManualExecutorError(f"Payload generation failed: {' '.join(cmd)} :: {result.stderr.strip() or result.stdout.strip()}")
@@ -259,8 +261,18 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         report["payload"] = {"path": str(payload_path), "source": "provided"}
     else:
         payload_path = args.payload_output if args.payload_output else Path(tempfile.gettempdir()) / "ur5_2f_sorting_runtime_bridge_payload.json"
-        _generate_payload(payload_path)
+        _generate_payload(payload_path, args.targets)
         report["payload"] = {"path": str(payload_path), "source": "generated"}
+
+    payload_json = json.loads(payload_path.read_text(encoding="utf-8"))
+    grasp_targets = payload_json.get("grasp_task", {}).get("grasp_targets", [])
+    payload_target_ids = [t.get("object_id") for t in grasp_targets]
+    report["payload"]["target_filter_applied"] = payload_json.get("summary", {}).get("target_filter_applied", False)
+    report["payload"]["target_count"] = len(grasp_targets)
+    if args.targets and set(payload_target_ids) != {t.get("object_id") for t in selected_targets}:
+        report["result"] = {"status": "failed_safely"}
+        report["warnings"].append("Generated payload targets do not match selected targets.")
+        return report, 2
 
     replay_script = _find_replay_script()
     dry_run_cmd = _build_replay_cmd(replay_script, payload_path, args, dry_run=True)

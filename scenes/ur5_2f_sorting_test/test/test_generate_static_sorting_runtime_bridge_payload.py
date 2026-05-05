@@ -19,6 +19,10 @@ def main() -> int:
     assert ids == {'item_red','item_blue','item_green'}
     dests = {t['destination_id'] for t in targets}
     assert dests == {'bin_a','bin_b','reject_bin'}
+    for t in targets:
+        grasp_xyz = t["grasp_methods"][0]["grasp_poses"][0]["xyz"]
+        assert grasp_xyz != [0.0, 0.0, 0.0]
+        assert grasp_xyz[2] > 0.0
 
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)/'payload.json'
@@ -26,6 +30,12 @@ def main() -> int:
         loaded = json.loads(out.read_text())
         assert loaded['schema_version'] == 'emd_grasp_bridge_payload/v1'
         subprocess.run([sys.executable, str(replay), '--payload', str(out), '--scene-package', 'ur5_2f_sorting_test', '--dry-run'], check=True, capture_output=True, text=True)
+        single = subprocess.run([sys.executable, str(script), '--target', 'item_red', '--json'], check=True, capture_output=True, text=True)
+        single_payload = json.loads(single.stdout)
+        single_targets = single_payload["grasp_task"]["grasp_targets"]
+        assert len(single_targets) == 1
+        assert single_targets[0]["object_id"] == "item_red"
+        assert single_payload["summary"]["target_filter_applied"] is True
     return 0
 
 if __name__ == '__main__':
