@@ -36,6 +36,12 @@ install(PROGRAMS
   RENAME generate_sorting_plan
 )
 
+install(PROGRAMS
+  scripts/validate_scene_layout.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME validate_scene_layout
+)
+
 if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_sorting_manifest_validation
@@ -45,6 +51,11 @@ if(BUILD_TESTING)
   add_test(
     NAME ur5_2f_sorting_test_generate_sorting_plan_output
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_generate_sorting_plan.py
+  )
+
+  add_test(
+    NAME ur5_2f_sorting_test_validate_scene_layout
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_validate_scene_layout.py
   )
 endif()
 

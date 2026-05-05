@@ -71,6 +71,17 @@ Manifest: /.../sorting_manifest.yaml
    release_offset_xyz_m: [0.000, 0.000, 0.060]
 ```
 
+
+## Validate physical layout
+
+Run the deterministic scene-layout validator before RViz or execution integration:
+
+```bash
+ros2 run ur5_2f_sorting_test validate_scene_layout
+```
+
+The report verifies table top height, item/bin contact with the tabletop, tray frame placement, positive release offsets, and robot mount consistency.
+
 ## Validation
 
 A lightweight test validates that the sorting manifest:
