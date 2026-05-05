@@ -326,3 +326,29 @@ Safety behavior:
   `ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=ur5_2f_sorting_test launch_rviz:=true`
 
 This adapter does not auto-launch `run_grasp_execution`, does not auto-start RViz, does not require live EPD, and does not request robot motion by default.
+
+## Runtime-compatible static sorting bridge payload
+
+Generate runtime-shaped payload (offline only):
+
+```bash
+ros2 run ur5_2f_sorting_test generate_static_sorting_runtime_bridge_payload --json
+```
+
+Write payload to file:
+
+```bash
+ros2 run ur5_2f_sorting_test generate_static_sorting_runtime_bridge_payload \
+  --output /tmp/ur5_2f_sorting_runtime_bridge_payload.json
+```
+
+Validate payload structure using replay dry-run (no ROS send):
+
+```bash
+python3 scripts/replay_emd_bridge_payload.py \
+  --payload /tmp/ur5_2f_sorting_runtime_bridge_payload.json \
+  --scene-package ur5_2f_sorting_test \
+  --dry-run
+```
+
+This does **not** move the robot. It only creates the runtime-shaped bridge payload expected by `replay_emd_bridge_payload.py`. A later PR can add an explicit manual send path to `/grasp_requests` after dry-run replay validation is stable.
