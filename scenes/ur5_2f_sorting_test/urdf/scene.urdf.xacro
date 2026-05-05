@@ -22,8 +22,8 @@
  <xacro:property name="item_red_height" value="0.08"/>
  <xacro:property name="item_blue_length" value="0.06"/>
  <xacro:property name="item_green_radius" value="0.025"/>
- <xacro:property name="pickup_area_x" value="0.28"/>
- <xacro:property name="pickup_area_y" value="-0.12"/>
+ <xacro:property name="pickup_area_x" value="0.12"/>
+ <xacro:property name="pickup_area_y" value="0.00"/>
  <xacro:property name="destination_area_x" value="0.44"/>
  <xacro:property name="table_leg_size" value="0.07"/>
  <xacro:property name="robot_plate_length" value="0.28"/>
@@ -35,12 +35,12 @@
  <!-- Workbench frame semantics: table_ frame is tabletop top-surface center (z=0 at top). -->
  <link name="table_">
    <visual>
-     <origin xyz="0 0 ${-(table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
+     <origin xyz="0 0 ${-table_top_thickness - (table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
      <geometry><box size="${table_length} ${table_width} ${table_height - table_top_thickness}"/></geometry>
      <material name="TableCabinet"><color rgba="0.46 0.33 0.24 1.0"/></material>
    </visual>
    <collision>
-     <origin xyz="0 0 ${-(table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
+     <origin xyz="0 0 ${-table_top_thickness - (table_height - table_top_thickness) / 2}" rpy="0 0 0"/>
      <geometry><box size="${table_length} ${table_width} ${table_height - table_top_thickness}"/></geometry>
    </collision>
    <visual>

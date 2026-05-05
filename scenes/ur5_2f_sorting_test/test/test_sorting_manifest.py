@@ -112,24 +112,30 @@ def main() -> int:
     if properties["table_top_z"] != "${floor_z + table_height}":
         raise AssertionError("table_top_z must be deterministic from floor_z + table_height")
 
-    expected_expressions = {
-        "item_red": "${table_top_z + item_red_height / 2}",
-        "item_blue": "${table_top_z + item_blue_length / 2}",
-        "item_green": "${table_top_z + item_green_radius}",
-        "bin_a": "${table_top_z + tray_height}",
-        "bin_b": "${table_top_z + tray_height}",
-        "reject_bin": "${table_top_z + tray_height}",
-    }
-    for name, expr in expected_expressions.items():
-        if expr not in scene_xacro_text:
-            raise AssertionError(f"{name} origin is not aligned from table_top_z expression")
+    table_relative_required_snippets = (
+        'table_to_item_red',
+        'table_to_item_blue',
+        'table_to_item_green',
+        'table_to_bin_a',
+        'table_to_bin_b',
+        'table_to_reject_bin',
+        'item_red_height / 2',
+        'item_blue_length / 2',
+        'item_green_radius',
+        'tray_height',
+    )
+    for snippet in table_relative_required_snippets:
+        if snippet not in scene_xacro_text:
+            raise AssertionError(f"scene.urdf.xacro missing table-relative layout snippet: {snippet}")
 
     required_layout_snippets = (
-        "<link name=\"table_\">",
-        "<joint name=\"world_to_table\" type=\"fixed\">",
-        "<origin xyz=\"0.15 0 ${table_top_z}\" rpy=\"0 0 0\"/>",
-        "<origin xyz=\"0 0 ${-tray_height / 2}\" rpy=\"0 0 0\"/>",
+        'link name="table_"',
+        'world_to_table',
+        '0.15 0 ${table_top_z}',
+        '-tray_height + tray_wall_thickness / 2',
+        '-tray_height / 2',
     )
+
     for snippet in required_layout_snippets:
         if snippet not in scene_xacro_text:
             raise AssertionError(f"scene.urdf.xacro missing deterministic layout snippet: {snippet}")

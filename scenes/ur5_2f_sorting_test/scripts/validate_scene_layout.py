@@ -103,12 +103,8 @@ def _resolve_scene_xacro() -> Path:
 
 
 def _load_xml_root(xacro_path: Path) -> ET.Element:
-    if shutil.which("xacro"):
-        try:
-            expanded = subprocess.check_output(["xacro", str(xacro_path)], text=True)
-            return ET.fromstring(expanded)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"xacro expansion failed for {xacro_path}: {exc}") from exc
+    # Parse the raw xacro source. The validator needs xacro:property tags;
+    # those disappear after xacro expansion.
     return ET.parse(xacro_path).getroot()
 
 
