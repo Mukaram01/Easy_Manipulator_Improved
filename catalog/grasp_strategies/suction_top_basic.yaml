@@ -1,0 +1,25 @@
+schema_version: grasp_strategy/v1
+grasp_strategy:
+  id: suction_top_basic
+  label: Basic Top-Down Suction
+  strategy: suction_top
+  compatible_tool_families: [suction, vacuum_array]
+  compatible_end_effector_capabilities: [onrobot_airpick_style, generic_vacuum_array]
+  approach_axis: z_down
+  orientation_mode: vertical
+  approach_distance_m: 0.12
+  retreat_distance_m: 0.10
+  allowed_roll_angles_deg: [0, 90, 180, 270]
+  allowed_yaw_angles_deg: [0, 90, 180, 270]
+  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  tool_frame_offset_rpy: [0.0, 0.0, 0.0]
+  contact:
+    type: suction
+    suction_cups: 1
+    requires_seal_check: false
+  release:
+    type: vacuum_off
+    retreat_after_release_m: 0.05
+  limitations_warnings:
+    - Requires flat enough top surface.
+    - Metadata only; not a suction reliability guarantee.

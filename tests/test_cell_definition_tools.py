@@ -46,6 +46,9 @@ class CellDefinitionValidationTests(unittest.TestCase):
     def test_valid_sort_by_colour_cell_definition_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_sort_by_colour.yaml")
         self.assertTrue(summary.ok)
+    def test_valid_sort_by_colour_with_grasp_strategy_ref_passes(self) -> None:
+        summary = self._validate_fixture("cell_definition_sort_by_colour_with_grasp_strategy.yaml")
+        self.assertTrue(summary.ok)
 
     def test_valid_sort_by_shape_cell_definition_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_sort_by_shape.yaml")
@@ -82,6 +85,20 @@ class CellDefinitionValidationTests(unittest.TestCase):
         summary = validator.validate_cell_definition(loaded, FIXTURES / "cell_definition_sort_by_colour.yaml", parser, notes)
         self.assertFalse(summary.ok)
         self.assertIn("ghost_bin", " ".join(summary.errors))
+
+    def test_unknown_grasp_strategy_warns_by_default(self) -> None:
+        loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml")
+        loaded["grasp"]["strategy_ref"] = "missing_grasp"
+        summary = validator.validate_cell_definition(loaded, FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml", parser, notes, strict=False)
+        self.assertTrue(summary.ok)
+        self.assertTrue(any("Unknown grasp strategy_ref" in w for w in summary.warnings))
+
+    def test_unknown_grasp_strategy_fails_in_strict_mode(self) -> None:
+        loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml")
+        loaded["grasp"]["strategy_ref"] = "missing_grasp"
+        summary = validator.validate_cell_definition(loaded, FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml", parser, notes, strict=True)
+        self.assertFalse(summary.ok)
+        self.assertTrue(any("Unknown grasp strategy_ref" in e for e in summary.errors))
 
 
 class CellDefinitionGenerationTests(unittest.TestCase):
@@ -415,4 +432,3 @@ class CellDefinitionCapabilityRegistryPathTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
-

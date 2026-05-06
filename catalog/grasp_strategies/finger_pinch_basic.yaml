@@ -1,0 +1,21 @@
+schema_version: grasp_strategy/v1
+grasp_strategy:
+  id: finger_pinch_basic
+  label: Basic Parallel Finger Pinch
+  strategy: pinch
+  compatible_tool_families: [finger_gripper, three_finger_gripper]
+  compatible_end_effector_capabilities: [robotiq_2f_85, robotiq_3f]
+  approach_axis: tool_z
+  orientation_mode: tool_aligned
+  approach_distance_m: 0.09
+  retreat_distance_m: 0.1
+  allowed_yaw_angles_deg: [0, 90, 180, 270]
+  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  tool_frame_offset_rpy: [0.0, 0.0, 0.0]
+  contact:
+    type: pinch
+    grip_mode: parallel
+    requires_force_limit_check: true
+  release:
+    type: fingers_open
+    retreat_after_release_m: 0.05

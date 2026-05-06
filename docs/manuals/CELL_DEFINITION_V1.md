@@ -230,3 +230,30 @@ Validation behavior:
 - Backward compatibility: cell definitions without `environment.layout` remain valid.
 
 See `docs/manuals/ENVIRONMENT_LAYOUT_V1.md`.
+
+## Optional grasp strategy
+
+Cell definitions may include an optional `grasp` block for metadata-only grasp intent. This is resolved from `catalog/grasp_strategies/` and does not change runtime motion, MoveIt planning, or execution behaviour yet.
+
+Reference form:
+```yaml
+grasp:
+  strategy_ref: suction_top_basic
+```
+
+Inline form:
+```yaml
+grasp:
+  strategy:
+    schema_version: grasp_strategy/v1
+    grasp_strategy:
+      id: inline_suction_top
+      label: Inline suction top
+      strategy: suction_top
+      approach_axis: z_down
+      orientation_mode: vertical
+      approach_distance_m: 0.1
+      retreat_distance_m: 0.1
+      contact: {type: suction}
+      release: {type: vacuum_off}
+```
