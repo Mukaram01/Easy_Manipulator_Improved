@@ -43,3 +43,16 @@ def test_bad_cell_definition_fails():
         p=_run('--cell-definition',str(Path(d)/'missing.yaml'),'--output-dir',str(Path(d)/'o'),'--title','bad')
         assert p.returncode != 0
         assert 'ERROR' in p.stderr
+
+
+def test_preview_with_task_intent_includes_task_flow():
+    with tempfile.TemporaryDirectory() as d:
+        out=Path(d)
+        cell=REPO_ROOT/'tests/fixtures/cell_definition_ur5_suction_sorting.yaml'
+        intent=REPO_ROOT/'tests/fixtures/builder_task_intent_valid.yaml'
+        p=_run('--cell-definition',str(cell),'--task-intent',str(intent),'--output-dir',str(out),'--title','TF')
+        assert p.returncode==0
+        summary=json.loads((out/'static_preview_summary.json').read_text())
+        assert 'task_flow_summary' in summary
+        html=(out/'static_preview.html').read_text()
+        assert 'Task Flow' in html and 'Pick:' in html and 'Place:' in html

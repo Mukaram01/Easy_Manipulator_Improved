@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, html, sys
+import argparse, json, html, sys, subprocess
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +30,7 @@ def _xy(v: Any):
 def _scale(x: float, y: float):
     return 450 + x*220, 320 - y*220
 
-def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) -> tuple[str, str, dict[str, Any]]:
+def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, task_flow: dict[str, Any] | None=None) -> tuple[str, str, dict[str, Any]]:
     warnings: list[str] = []
     elements = []
     approx = 0
@@ -79,6 +79,17 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) ->
                 lx,minx=min(x1,x2),max(x1,x2); ty,by=min(y1,y2),max(y1,y2)
                 elements.append(f"<rect x='{lx:.1f}' y='{ty:.1f}' width='{minx-lx:.1f}' height='{by-ty:.1f}' fill='none' stroke='#f59e0b' stroke-dasharray='4 3'/><text x='{lx+4:.1f}' y='{ty+14:.1f}' fill='#92400e'>{html.escape(str(z.get('id','zone')))}</text>")
 
+
+    if task_flow:
+        pick_id = task_flow.get('pick_source_id') or 'unknown'
+        place_id = task_flow.get('place_target_id') or 'unknown'
+        gx,gy=_scale(-0.7,-0.55); elements.append(f"<text x='{gx:.1f}' y='{gy:.1f}' fill='#111827'>Task Flow</text>")
+        elements.append(f"<text x='{gx:.1f}' y='{gy+18:.1f}' fill='#1f2937'>Pick: {html.escape(str(pick_id))}</text>")
+        elements.append(f"<text x='{gx:.1f}' y='{gy+36:.1f}' fill='#1f2937'>Place: {html.escape(str(place_id))}</text>")
+        elements.append(f"<text x='{gx:.1f}' y='{gy+54:.1f}' fill='#1f2937'>Grasp: {html.escape(str(task_flow.get('grasp_strategy')))}</text>")
+        elements.append(f"<text x='{gx:.1f}' y='{gy+72:.1f}' fill='#1f2937'>Release: {html.escape(str(task_flow.get('release_strategy')))}</text>")
+        elements.append(f"<text x='{gx:.1f}' y='{gy+90:.1f}' fill='#1f2937'>Routes: {task_flow.get('routing_rule_count',0)}</text>")
+
     builder_task_intent = cell.get('builder_task_intent') if isinstance(cell.get('builder_task_intent'), dict) else {}
     if builder_task_intent and (not builder_task_intent.get('pick') or not builder_task_intent.get('place')):
         warnings.append('Task intent is present but exact pick/place coordinates could not be resolved.')
@@ -94,6 +105,7 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) ->
         'runtime_blocked': comm.get('runtime_mode')=='preview_only',
         'warnings': warnings,
         'approximate_placements': approx,
+        'task_flow_summary': task_flow or {},
         'builder_task_intent': {
             'pick': (builder_task_intent.get('pick') or {}),
             'grasp': (builder_task_intent.get('grasp') or {}),
@@ -101,7 +113,10 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) ->
         } if builder_task_intent else {},
     }
     svg=f"<svg xmlns='http://www.w3.org/2000/svg' width='{CANVAS_W}' height='{CANVAS_H}'><rect width='100%' height='100%' fill='#f8fafc'/><text x='20' y='30' font-size='20'>{html.escape(title)}</text><text x='20' y='55'>robot={html.escape(str(summary['robot']))}, ee={html.escape(str(summary['end_effector']))}, task={html.escape(str(summary['task']))}</text>{''.join(elements)}</svg>"
-    html_doc=f"<!doctype html><html><body><h1>{html.escape(title)}</h1><p>Offline static preview approximation (not collision/safety validation).</p>{svg}<pre>{html.escape(json.dumps(summary, indent=2))}</pre></body></html>"
+    task_flow_html = ''
+    if task_flow:
+        task_flow_html = f"<h2>Task Flow</h2><pre>{html.escape(json.dumps(task_flow, indent=2))}</pre>"
+    html_doc=f"<!doctype html><html><body><h1>{html.escape(title)}</h1><p>Offline static preview approximation (not collision/safety validation).</p>{task_flow_html}{svg}<pre>{html.escape(json.dumps(summary, indent=2))}</pre></body></html>"
     return svg, html_doc, summary
 
 
@@ -111,6 +126,8 @@ def main()->int:
     ap.add_argument('--environment-layout', type=Path)
     ap.add_argument('--output-dir', required=True, type=Path)
     ap.add_argument('--title', required=True)
+    ap.add_argument('--task-intent', type=Path)
+    ap.add_argument('--task-recipe', type=Path)
     ap.add_argument('--json', action='store_true')
     a=ap.parse_args()
     try:
@@ -123,7 +140,16 @@ def main()->int:
         elif a.environment_layout:
             env={}
         a.output_dir.mkdir(parents=True, exist_ok=True)
-        svg, html_doc, summary=gen_preview(cell, env, a.title)
+        task_flow=None
+        if a.task_intent or a.task_recipe or a.environment_layout:
+            cmd=[sys.executable, str(Path(__file__).resolve().parent/'summarize_task_flow.py'), '--json']
+            if a.task_intent: cmd += ['--task-intent', str(a.task_intent)]
+            if a.task_recipe: cmd += ['--task-recipe', str(a.task_recipe)]
+            if a.environment_layout: cmd += ['--environment-layout', str(a.environment_layout)]
+            run=subprocess.run(cmd,capture_output=True,text=True,check=False)
+            try: task_flow=json.loads(run.stdout) if run.stdout.strip() else {}
+            except Exception: task_flow={}
+        svg, html_doc, summary=gen_preview(cell, env, a.title, task_flow)
         if a.environment_layout and not a.environment_layout.exists():
             summary.setdefault("warnings", []).append("environment_layout path missing; used approximate/default placement")
         (a.output_dir/'static_preview.svg').write_text(svg, encoding='utf-8')

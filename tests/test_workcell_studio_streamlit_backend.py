@@ -117,3 +117,14 @@ def test_builder_task_intent_helpers_roundtrip() -> None:
         assert backend.find_builder_task_intent(scene).endswith("workcell_builder_task_intent.yaml")
         result = backend.validate_builder_task_intent(path)
         assert result["returncode"] in {0,1}
+
+
+def test_task_flow_backend_helpers():
+    intent = backend.repo_root() / 'tests' / 'fixtures' / 'builder_task_intent_valid.yaml'
+    result = backend.summarize_task_flow(task_intent_path=intent)
+    assert result['returncode'] in {0,1}
+    with tempfile.TemporaryDirectory() as d:
+        out=Path(d)/'preview'
+        cell=backend.repo_root()/'tests'/'fixtures'/'cell_definition_pick_place.yaml'
+        pr=backend.generate_static_preview_with_task_flow(cell,out,'x',task_intent_path=intent)
+        assert pr['returncode']==0

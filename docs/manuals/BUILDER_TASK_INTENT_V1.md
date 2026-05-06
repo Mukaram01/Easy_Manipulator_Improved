@@ -34,3 +34,6 @@ safety:
   motion_started: false
   ros_launch_started: false
 ```
+
+## Task Flow Summary
+Builder task intent validation and preview now expose readiness classifications and missing fields.

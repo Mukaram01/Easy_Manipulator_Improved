@@ -374,3 +374,25 @@ def validate_builder_task_intent(task_intent_path: str | Path, scene_package: st
     cmd=[sys.executable, str(rr/"scripts"/"validate_builder_task_intent.py"), str(task_intent_path), "--json"]
     if scene_package: cmd += ["--scene-package", str(scene_package)]
     return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def summarize_task_flow(task_intent_path: str | Path | None = None, task_recipe_path: str | Path | None = None, scene_package: str | Path | None = None, environment_layout_path: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "summarize_task_flow.py"), "--json"]
+    if task_intent_path: cmd += ["--task-intent", str(task_intent_path)]
+    if task_recipe_path: cmd += ["--task-recipe", str(task_recipe_path)]
+    if scene_package: cmd += ["--scene-package", str(scene_package)]
+    if environment_layout_path: cmd += ["--environment-layout", str(environment_layout_path)]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def load_task_flow_summary(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+def generate_static_preview_with_task_flow(cell_definition_path: str | Path, output_dir: str | Path, title: str, task_intent_path: str | Path | None = None, task_recipe_path: str | Path | None = None, environment_layout_path: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "generate_workcell_static_preview.py"), "--cell-definition", str(cell_definition_path), "--output-dir", str(output_dir), "--title", title, "--json"]
+    if environment_layout_path: cmd += ["--environment-layout", str(environment_layout_path)]
+    if task_intent_path: cmd += ["--task-intent", str(task_intent_path)]
+    if task_recipe_path: cmd += ["--task-recipe", str(task_recipe_path)]
+    return _parse_json_output(run_command(cmd, cwd=rr))

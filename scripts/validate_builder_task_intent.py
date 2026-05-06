@@ -69,8 +69,19 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
         if not (scene_package/'environment.yaml').is_file(): warnings.append('scene package missing environment.yaml')
         if pick.get('id') and not _exists_in_scene(scene_package,str(pick['id'])): warnings.append(f"pick.source.id '{pick['id']}' could not be verified in scene metadata")
         if place.get('id') and not _exists_in_scene(scene_package,str(place['id'])): warnings.append(f"place.target.id '{place['id']}' could not be verified in scene metadata")
+    missing_required_fields=[]
+    if not task.get('type'): missing_required_fields.append('task.type')
+    if not pick.get('id'): missing_required_fields.append('pick.source.id')
+    if not place.get('id'): missing_required_fields.append('place.target.id')
+    if not strategy_ref and not grasp.get('inline_strategy'): missing_required_fields.append('grasp.strategy_ref')
+    suggested_next_actions=[]
+    if 'pick.source.id' in missing_required_fields: suggested_next_actions.append('Select a pick source zone.')
+    if 'place.target.id' in missing_required_fields: suggested_next_actions.append('Select a place target.')
+    if 'grasp.strategy_ref' in missing_required_fields: suggested_next_actions.append('Choose a grasp strategy.')
+    if not missing_required_fields: suggested_next_actions.append('Generate task recipe from task intent.')
+    readiness_classification='task_intent_incomplete' if missing_required_fields else 'task_intent_ready_offline'
     status='FAIL' if errors else ('WARN' if warnings else 'PASS')
-    return {"status":status,"errors":errors,"warnings":warnings,"resolved_grasp_strategy":resolved,"pick_source":pick,"place_target":place,"safety":safety,"task_intent":payload}
+    return {"status":status,"errors":errors,"warnings":warnings,"resolved_grasp_strategy":resolved,"pick_source":pick,"place_target":place,"safety":safety,"task_intent":payload,"missing_required_fields":missing_required_fields,"suggested_next_actions":suggested_next_actions,"readiness_classification":readiness_classification}
 
 def main()->int:
     ap=argparse.ArgumentParser()

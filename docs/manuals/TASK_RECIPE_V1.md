@@ -184,3 +184,6 @@ python3 scripts/validate_task_recipe.py tests/fixtures/task_recipes
 python3 scripts/validate_task_recipe.py tests/fixtures/task_recipes --json
 python3 scripts/generate_task_recipe_from_cell_definition.py tests/fixtures/cell_definition_sort_by_colour.yaml --output /tmp/task_recipe.preview.yaml
 ```
+
+## Task-flow summaries
+Generated task recipes can be summarized for visual task-flow previews and readiness checks.

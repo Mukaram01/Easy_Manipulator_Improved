@@ -1501,3 +1501,6 @@ Workcell Studio can now generate offline static preview artifacts (`static_previ
 ## Create Cell Wizard
 
 Use `python3 scripts/workcell_studio.py create-cell` for fast catalog/YAML cell creation with optional validation, static preview, and offline project bundle generation. This path is fake-hardware-first and does not start ROS launch or robot motion.
+
+## Task flow preview: pick → grasp → place
+Use `scripts/summarize_task_flow.py` and static preview task-flow markers for offline readiness diagnostics.

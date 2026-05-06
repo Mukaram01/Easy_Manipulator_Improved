@@ -57,3 +57,6 @@ Demo Gallery and Builder Scene Import now surface static preview artifacts when 
 ## Create Cell flow
 
 The Streamlit app now includes **Create Cell** for selecting catalog robot/tool/sensor/task/grasp strategy and generating `cell_definition.yaml`, `environment_layout.yaml`, summary files, static preview, and optional bundle outputs. Incompatible combos can be marked preview-only with explicit warnings.
+
+## Task Flow Summary panel
+Shows readiness classification, pick/place/grasp/release, routing, and offline safety/preview diagnostics.
