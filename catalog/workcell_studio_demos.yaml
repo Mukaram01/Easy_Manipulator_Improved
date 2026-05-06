@@ -1,0 +1,33 @@
+schema_version: workcell_studio_demo_catalog/v1
+demos:
+  - id: ur5_2f_sorting_demo
+    title: UR5 + Robotiq 2F Sorting Demo
+    description: Baseline fake-hardware Workcell Studio demo using UR5 and 2-finger gripper.
+    cell_definition: tests/fixtures/cell_definition_pick_place.yaml
+    runtime_mode: fake_hardware_ready
+    investor_visible: true
+    tags: [ur5, robotiq_2f, sorting, fake_hardware, baseline]
+
+  - id: ur5_suction_sorting_demo
+    title: UR5 + Suction Sorting Demo
+    description: Baseline suction metadata/demo path with runtime IO disabled.
+    cell_definition: tests/fixtures/cell_definition_ur5_suction_sorting.yaml
+    runtime_mode: fake_hardware_ready
+    investor_visible: true
+    tags: [ur5, suction, sorting, grasp_strategy]
+
+  - id: generic_cartesian_suction_preview
+    title: Generic Cartesian/Gantry + Suction Preview
+    description: Preview-only generated cell for non-UR robot-family planning and customer concept demos.
+    cell_definition: tests/fixtures/cell_definition_generic_cartesian_suction_sorting.yaml
+    runtime_mode: preview_only
+    investor_visible: true
+    tags: [cartesian, gantry, suction, preview_only]
+
+  - id: generic_delta_suction_preview
+    title: Generic Delta + Suction Preview
+    description: Preview-only generated cell for fast delta robot concept demos.
+    cell_definition: tests/fixtures/cell_definition_generic_delta_suction_sorting.yaml
+    runtime_mode: preview_only
+    investor_visible: true
+    tags: [delta, suction, preview_only]

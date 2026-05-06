@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+DEMO_CATALOG_PATH = REPO_ROOT / "catalog" / "workcell_studio_demos.yaml"
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        if str(SCRIPT_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPT_DIR))
+        import validate_cell_definition as yaml_support
+
+        loaded, _, _ = yaml_support.load_yaml(path)
+        return loaded if isinstance(loaded, dict) else {}
 
 
 def _run_json(cmd: list[str], label: str) -> tuple[int, dict[str, Any]]:
@@ -18,20 +35,133 @@ def _run_json(cmd: list[str], label: str) -> tuple[int, dict[str, Any]]:
     try:
         payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
     except Exception:
-        payload = {
-            "result": "FAIL",
-            "errors": [f"{label} returned non-JSON output", proc.stdout.strip(), proc.stderr.strip()],
-        }
+        payload = {"result": "FAIL", "errors": [f"{label} returned non-JSON output", proc.stdout.strip(), proc.stderr.strip()]}
     payload.setdefault("stdout", proc.stdout.strip())
     payload.setdefault("stderr", proc.stderr.strip())
     payload.setdefault("returncode", proc.returncode)
     return proc.returncode, payload
 
 
+def load_demo_catalog() -> list[dict[str, Any]]:
+    if not DEMO_CATALOG_PATH.is_file():
+        return []
+    payload = _load_yaml(DEMO_CATALOG_PATH)
+    demos = payload.get("demos") if isinstance(payload.get("demos"), list) else []
+    out = []
+    for item in demos:
+        if isinstance(item, dict) and item.get("id") and item.get("cell_definition"):
+            out.append(item)
+    return out
+
+
+def list_demos(args: argparse.Namespace) -> int:
+    demos = load_demo_catalog()
+    if args.json:
+        print(json.dumps({"catalog": str(DEMO_CATALOG_PATH), "demos": demos}, indent=2))
+        return 0
+    print("Workcell Studio Demo Gallery")
+    print(f"Catalog: {DEMO_CATALOG_PATH}")
+    for demo in demos:
+        tags = ",".join(demo.get("tags", []))
+        print(f"- {demo['id']}: {demo.get('title','')} | runtime_mode={demo.get('runtime_mode','unknown')} | tags=[{tags}]")
+    return 0
+
+
+def generate_demo_bundle(args: argparse.Namespace) -> int:
+    demos = load_demo_catalog()
+    by_id = {d["id"]: d for d in demos}
+    selected = demos if args.all else ([by_id.get(args.demo_id)] if args.demo_id else [])
+    selected = [s for s in selected if s]
+    if not selected:
+        print(json.dumps({"result": "FAIL", "error": f"Unknown or missing demo id: {args.demo_id}"}, indent=2))
+        return 2
+
+    output_root = args.output_dir.resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    failures = []
+    for demo in selected:
+        demo_dir = output_root / demo["id"]
+        if demo_dir.exists() and args.force:
+            shutil.rmtree(demo_dir)
+        demo_dir.mkdir(parents=True, exist_ok=True)
+        cell_def = (REPO_ROOT / demo["cell_definition"]).resolve()
+        if not cell_def.is_file():
+            msg = f"Missing cell_definition for demo {demo['id']}: {cell_def}"
+            failures.append(msg)
+            if not args.continue_on_error:
+                print(msg)
+                return 3
+            continue
+
+        _, val = _run_json([sys.executable, str(SCRIPT_DIR / "validate_cell_definition.py"), str(cell_def), "--json"], "validate")
+        if val.get("result") == "FAIL":
+            msg = f"Invalid cell_definition for demo {demo['id']}"
+            failures.append(msg)
+            if not args.continue_on_error:
+                print(msg)
+                return 4
+
+        project_rc = subprocess.run([
+            sys.executable, str(SCRIPT_DIR / "create_workcell_project.py"),
+            "--cell-definition", str(cell_def), "--output-dir", str(demo_dir), "--force"
+        ], capture_output=True, text=True, check=False)
+
+        copied_cell = demo_dir / "cell_definition.yaml"
+        shutil.copy2(cell_def, copied_cell)
+        manifests = list(demo_dir.glob("*/project_manifest.json"))
+        project_path = str(manifests[0].parent) if manifests else ""
+        summary = {
+            "result": "PASS" if project_rc.returncode == 0 else "FAIL",
+            "demo": demo,
+            "runtime_mode": demo.get("runtime_mode"),
+            "preview_only": demo.get("runtime_mode") == "preview_only",
+            "source_cell_definition": str(cell_def),
+            "copied_cell_definition": str(copied_cell),
+            "generated_project_path": project_path,
+            "dashboard_path": str(manifests[0].parent / "dashboard" / "index.html") if manifests else "",
+            "preflight_report_path": str(manifests[0].parent / "reports" / "validation_summary.md") if manifests else "",
+            "next_commands_path": str(demo_dir / "next_commands.md"),
+            "stdout": project_rc.stdout.strip(),
+            "stderr": project_rc.stderr.strip(),
+        }
+        (demo_dir / "demo_bundle_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        (demo_dir / "demo_bundle_summary.md").write_text(
+            "# Demo Bundle Summary\n\n"
+            f"- Demo id: `{demo['id']}`\n"
+            f"- Title: `{demo.get('title','')}`\n"
+            f"- Runtime mode: `{demo.get('runtime_mode','unknown')}`\n"
+            f"- Preview only: `{summary['preview_only']}`\n"
+            f"- Generated project path: `{project_path or '(none)'}`\n"
+            f"- Dashboard: `{summary['dashboard_path'] or '(none)'}`\n"
+            f"- Preflight report: `{summary['preflight_report_path'] or '(none)'}`\n",
+            encoding="utf-8",
+        )
+        (demo_dir / "next_commands.md").write_text(
+            "# Next Commands\n\n```bash\n"
+            "python3 scripts/workcell_studio.py list-demos\n"
+            f"python3 scripts/workcell_studio.py generate-demo-bundle --demo-id {demo['id']} --output-dir {output_root} --force\n"
+            f"python3 scripts/validate_cell_definition.py {copied_cell} --json\n"
+            "```\n",
+            encoding="utf-8",
+        )
+        if project_rc.returncode != 0:
+            failures.append(f"Project generation failed for {demo['id']}")
+            if not args.continue_on_error:
+                return 5
+
+    if failures and not args.continue_on_error:
+        return 6
+    if failures:
+        print(json.dumps({"result": "WARN", "failures": failures}, indent=2))
+        return 1
+    print(json.dumps({"result": "PASS", "generated": [d["id"] for d in selected], "output_dir": str(output_root)}, indent=2))
+    return 0
+
+
 def _scene_name(path: Path) -> str:
     return path.name
 
-
+# existing import_builder_scene unchanged below
 def import_builder_scene(args: argparse.Namespace) -> int:
     scene_pkg = args.scene_package.resolve()
     output_dir = args.output_dir.resolve()
@@ -182,6 +312,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
+    demos_list = sub.add_parser("list-demos", help="List curated Workcell Studio demos")
+    demos_list.add_argument("--json", action="store_true")
+    demos_list.set_defaults(func=list_demos)
+
+    demos_gen = sub.add_parser("generate-demo-bundle", help="Generate one or all curated demo bundles")
+    demos_gen.add_argument("--demo-id", type=str)
+    demos_gen.add_argument("--all", action="store_true")
+    demos_gen.add_argument("--output-dir", type=Path, required=True)
+    demos_gen.add_argument("--force", action="store_true")
+    demos_gen.add_argument("--continue-on-error", action="store_true")
+    demos_gen.set_defaults(func=generate_demo_bundle)
+
     import_parser = sub.add_parser("import-builder-scene", help="Import a workcell_builder-generated scene package")
     import_parser.add_argument("--scene-package", type=Path, required=True)
     import_parser.add_argument("--output-dir", type=Path, required=True)
@@ -190,7 +332,6 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--generate-project", action="store_true")
     import_parser.set_defaults(func=import_builder_scene)
     return parser
-
 
 def main() -> int:
     parser = _build_parser()
