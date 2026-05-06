@@ -12,6 +12,15 @@ Modular ROS 2 manipulation packages for grasp planning, grasp execution, and wor
 
 This package was tested with [easy_perception_deployment](https://github.com/ros-industrial/easy_perception_deployment), but any perception system publishing compatible ROS 2 messages will work.
 
+
+## Workcell Studio
+
+Workcell Studio is the internal configurable robotic-cell platform direction in this repository. It focuses on generating, validating, and integrating reusable workcell artifacts while preserving safe default workflows (fake hardware first, offline/dry-run validation first).
+
+Sorting is one scenario template inside Workcell Studio, not the product itself.
+
+Roadmap: `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`
+
 ## Contents
 
 - [Supported platform](#supported-platform)
