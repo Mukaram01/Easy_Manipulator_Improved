@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import", "Demo Gallery"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Demo Gallery", "Create Cell"],
 )
 
 if workflow == "Catalog browser":
@@ -113,3 +113,26 @@ if workflow == "Demo Gallery":
     if col2.button("Generate all demo bundles"):
         result = backend.generate_demo_bundle(output_dir=output_dir, all_demos=True, force=True, continue_on_error=True)
         st.json(result.get("json") or result)
+
+if workflow == "Create Cell":
+    st.header("Create Cell")
+    choices = backend.resolve_catalog_choices()
+    robot = st.selectbox("Robot", [x["id"] for x in choices["robots"]])
+    ee = st.selectbox("End effector", [x["id"] for x in choices["end_effectors"]])
+    sensor = st.selectbox("Sensor", [x["id"] for x in choices["sensors"]])
+    task = st.selectbox("Task", [x["id"] for x in choices["tasks"]])
+    grasp = st.selectbox("Grasp strategy", [x["id"] for x in choices["grasp_strategies"]])
+    cell_id = st.text_input("Cell ID", value="my_first_cell")
+    output_dir = st.text_input("Output directory", value="/tmp/workcell_studio_create_cell")
+    validate = st.checkbox("Validate", value=True)
+    preview = st.checkbox("Generate static preview", value=True)
+    bundle = st.checkbox("Generate project/demo bundle", value=False)
+    allow = st.checkbox("Allow incompatible as preview-only", value=False)
+    if st.button("Create cell"):
+        result = backend.create_cell(cell_id, robot, ee, sensor, task, grasp, output_dir, validate=validate, preview=preview, generate_bundle=bundle, allow_incompatible=allow, force=True)
+        st.json(result.get("json") or result)
+        summary = result.get("summary", {})
+        st.subheader("Create Cell Summary")
+        st.json(summary.get("summary", {}))
+        if summary.get("markdown"):
+            st.markdown(summary["markdown"])

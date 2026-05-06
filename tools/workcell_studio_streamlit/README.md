@@ -53,3 +53,7 @@ Safety notes:
 ## Static preview artifacts
 
 Demo Gallery and Builder Scene Import now surface static preview artifacts when generated. These previews are offline approximations for quick review only; RViz/MoveIt remains the real planning/visualisation path.
+
+## Create Cell flow
+
+The Streamlit app now includes **Create Cell** for selecting catalog robot/tool/sensor/task/grasp strategy and generating `cell_definition.yaml`, `environment_layout.yaml`, summary files, static preview, and optional bundle outputs. Incompatible combos can be marked preview-only with explicit warnings.

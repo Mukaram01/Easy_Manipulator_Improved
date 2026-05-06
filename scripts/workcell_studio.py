@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,94 @@ def _generate_static_preview(cell_def: Path, output_dir: Path, title: str, envir
     if environment_layout:
         cmd.extend(["--environment-layout", str(environment_layout)])
     return _run_json(cmd, "static preview")
+
+
+def _catalog_index() -> dict[str, dict[str, dict[str, Any]]]:
+    def _entries(group: str, key: str) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for path in sorted((REPO_ROOT / "catalog" / "capabilities" / group).glob("*.yaml")):
+            payload = _load_yaml(path)
+            data = payload.get(key, {}) if isinstance(payload.get(key), dict) else {}
+            if data.get("id"):
+                out[data["id"]] = {"id": data["id"], "family": data.get("family"), "compatible_families": data.get("compatible_tool_families") or data.get("supported_task_families") or []}
+        return out
+    grasp: dict[str, dict[str, Any]] = {}
+    for path in sorted((REPO_ROOT / "catalog" / "grasp_strategies").glob("*.yaml")):
+        payload = _load_yaml(path)
+        data = payload.get("grasp_strategy", {}) if isinstance(payload.get("grasp_strategy"), dict) else {}
+        if data.get("id"):
+            grasp[data["id"]] = {"id": data["id"], "compatible_families": data.get("compatible_tool_families") or []}
+    return {"robots": _entries("robots", "robot"), "end_effectors": _entries("end_effectors", "end_effector"), "sensors": _entries("sensors", "sensor"), "tasks": _entries("tasks", "task"), "grasp_strategies": grasp}
+
+
+def _resolve(group: str, value: str, ids: dict[str, dict[str, Any]]) -> tuple[str, list[str]]:
+    aliases = {"robotiq_2f": "robotiq_2f_85", "suction": "onrobot_airpick_style", "realsense_d435i": "intel_realsense_d435i", "sort_by_colour": "task_magnetic_pick_place"}
+    resolved = aliases.get(value, value)
+    if resolved not in ids:
+        raise ValueError(f"Unknown {group}: {value}")
+    out = []
+    if resolved != value:
+        out.append(f"Resolved alias '{value}' -> '{resolved}'")
+    return resolved, out
+
+
+def _default_environment_layout(cell_id: str, sensor_id: str, task_id: str) -> dict[str, Any]:
+    assets = [{"id": "main_table", "asset_ref": "table_standard_1200", "type": "table", "pose": {"frame": "world", "xyz": [0.5, 0.0, 0.0], "rpy": [0, 0, 0]}}, {"id": "overhead_sensor", "asset_ref": sensor_id, "type": "sensor", "pose": {"frame": "world", "xyz": [0.65, 0.0, 1.2], "rpy": [0, 0, 0]}}]
+    if "conveyor" in task_id:
+        assets.append({"id": "optional_conveyor", "asset_ref": "conveyor_2m", "type": "conveyor", "pose": {"frame": "world", "xyz": [1.2, 0.0, 0.0], "rpy": [0, 0, 0]}})
+    return {"schema_version": "environment_layout/v1", "layout_id": f"{cell_id}_layout", "metadata": {"name": f"{cell_id} generated layout", "generated_defaults": True, "placement_accuracy": "approximate_defaults_for_preview_only"}, "assets": assets, "zones": [{"id": "pick_zone", "type": "pick", "frame": "world", "bounds_xyz": {"min": [0.2, -0.5, 0.35], "max": [0.8, -0.1, 0.75]}}, {"id": "bin_a_zone", "type": "place", "frame": "world", "bounds_xyz": {"min": [0.55, 0.2, 0.35], "max": [0.8, 0.45, 0.75]}}, {"id": "bin_b_zone", "type": "place", "frame": "world", "bounds_xyz": {"min": [0.55, -0.45, 0.35], "max": [0.8, -0.2, 0.75]}}]}
+
+
+def create_cell(args: argparse.Namespace) -> int:
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    import create_cell_definition_wizard as wizard
+    out = args.output_dir.resolve()
+    if out.exists() and args.force:
+        shutil.rmtree(out)
+    out.mkdir(parents=True, exist_ok=True)
+    idx = _catalog_index()
+    warnings: list[str] = []
+    robot_id, w = _resolve("robot", args.robot, idx["robots"]); warnings += w
+    ee_id, w = _resolve("end_effector", args.end_effector, idx["end_effectors"]); warnings += w
+    sensor_id, w = _resolve("sensor", args.sensor, idx["sensors"]); warnings += w
+    task_id, w = _resolve("task", args.task, idx["tasks"]); warnings += w
+    grasp_id, w = _resolve("grasp_strategy", args.grasp_strategy, idx["grasp_strategies"]); warnings += w
+    blockers = []
+    compat = "compatible"
+    allowed_fams = idx["end_effectors"][ee_id]["compatible_families"] or []
+    robot_family = idx["robots"][robot_id].get("family")
+    if allowed_fams and robot_family and robot_family not in allowed_fams:
+        blockers.append(f"Tool {ee_id} incompatible with robot family {robot_family}")
+    grasp_fams = idx["grasp_strategies"][grasp_id]["compatible_families"] or []
+    if grasp_fams and idx["end_effectors"][ee_id].get("family") not in grasp_fams:
+        blockers.append(f"Grasp {grasp_id} incompatible with end-effector family")
+    if blockers and not args.allow_incompatible:
+        print(json.dumps({"result": "FAIL", "blockers": blockers}, indent=2))
+        return 2
+    if blockers:
+        compat = "incompatible_allowed_preview_only"
+    cell_def_data = {"schema_version": "cell_definition/v1", "cell": {"id": args.cell_id, "name": args.cell_id, "description": "Generated by Workcell Studio create-cell wizard"}, "robot": wizard.ROBOT_PRESETS.get(args.robot, wizard.ROBOT_PRESETS["ur5"]), "end_effector": {"id": ee_id, "type": "suction" if "suction" in ee_id or "airpick" in ee_id else "finger", "brand": "catalog", "grasp_frame": "tool0", "allowed_touch_links": []}, "camera": {"id": sensor_id, "type": "depth_camera", "frame": "camera_depth_optical_frame"}, "environment": {"frame": "world", "support_surfaces": [{"id": "table_main", "type": "table", "frame": "world", "pose_xyz": [0.0, 0.0, 0.0], "pose_rpy": [0, 0, 0], "dimensions": [1.0, 1.0, 0.05]}]}, "objects": [{"id": "spawn_object", "class": "box", "shape": "box", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": [0.05, 0.05, 0.05], "pose_xyz": [0.45, 0.0, 0.08], "pose_rpy": [0, 0, 0]}], "task": {"id": task_id, "type": "sort_by_colour", "source_object": "spawn_object", "destinations": [{"id": "bin_a", "frame": "world", "pose_xyz": [0.30, 0.30, 0.1], "pose_rpy": [0, 0, 0]}, {"id": "bin_b", "frame": "world", "pose_xyz": [0.30, -0.30, 0.1], "pose_rpy": [0, 0, 0]}], "rules": [{"id": "route_default", "when": {"always": True}, "destination": "bin_a"}]}, "grasp": {"strategy_ref": grasp_id}, "commissioning": {"self_test_enabled": True, "export_bundle": True, "require_operator_review": True}}
+    cell_def_path = out / "cell_definition.yaml"
+    cell_def_path.write_text(wizard.to_yaml_text(cell_def_data), encoding="utf-8")
+    layout_path = out / "environment_layout.yaml"
+    layout_path.write_text(wizard.to_yaml_text(_default_environment_layout(args.cell_id, sensor_id, task_id)), encoding="utf-8")
+    validation = {}
+    if args.validate:
+        _, validation = _run_json([sys.executable, str(SCRIPT_DIR / "validate_cell_definition.py"), str(cell_def_path), "--json"], "validate")
+    preview = {}
+    if args.preview:
+        _, preview = _generate_static_preview(cell_def_path, out / "preview", args.cell_id, layout_path)
+    bundle_path = ""
+    if args.generate_bundle:
+        subprocess.run([sys.executable, str(SCRIPT_DIR / "create_workcell_project.py"), "--cell-definition", str(cell_def_path), "--output-dir", str(out / "project"), "--force"], check=False)
+        bundle_path = str(out / "project")
+    runtime_mode = "fake_hardware_ready" if robot_id == "ur5" and not blockers else "preview_only"
+    summary = {"selected": {"robot": args.robot, "end_effector": args.end_effector, "sensor": args.sensor, "task": args.task, "grasp_strategy": args.grasp_strategy}, "resolved_catalog_ids": {"robot": robot_id, "end_effector": ee_id, "sensor": sensor_id, "task": task_id, "grasp_strategy": grasp_id}, "compatibility_status": compat, "warnings": warnings, "blockers": blockers, "cell_definition_path": str(cell_def_path), "environment_layout_path": str(layout_path), "validation": validation, "preview_paths": {"svg": str(out / "preview" / "static_preview.svg"), "html": str(out / "preview" / "static_preview.html"), "summary_json": str(out / "preview" / "static_preview_summary.json")}, "generated_bundle_project_path": bundle_path, "runtime_mode": runtime_mode, "safety_status": {"fake_hardware_default": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False}}
+    (out / "create_cell_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (out / "create_cell_summary.md").write_text("# Create Cell Summary\n\n- Runtime mode: `%s`\n- Compatibility: `%s`\n- Cell definition: `%s`\n- Environment layout: `%s`\n" % (runtime_mode, compat, cell_def_path, layout_path), encoding="utf-8")
+    print(json.dumps({"result": "PASS", "summary": str(out / "create_cell_summary.json")}, indent=2))
+    return 0
 
 def load_demo_catalog() -> list[dict[str, Any]]:
     if not DEMO_CATALOG_PATH.is_file():
@@ -358,6 +447,20 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--validate", action="store_true")
     import_parser.add_argument("--generate-project", action="store_true")
     import_parser.set_defaults(func=import_builder_scene)
+    cc = sub.add_parser("create-cell", help="Create a catalog-driven cell_definition + environment layout + optional preview/bundle")
+    cc.add_argument("--cell-id", required=True)
+    cc.add_argument("--robot", required=True)
+    cc.add_argument("--end-effector", required=True)
+    cc.add_argument("--sensor", required=True)
+    cc.add_argument("--task", required=True)
+    cc.add_argument("--grasp-strategy", required=True)
+    cc.add_argument("--output-dir", type=Path, required=True)
+    cc.add_argument("--validate", action="store_true")
+    cc.add_argument("--preview", action="store_true")
+    cc.add_argument("--generate-bundle", action="store_true")
+    cc.add_argument("--allow-incompatible", action="store_true")
+    cc.add_argument("--force", action="store_true")
+    cc.set_defaults(func=create_cell)
     return parser
 
 def main() -> int:

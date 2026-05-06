@@ -59,3 +59,7 @@ High-level ownership boundaries:
 ## Curated Demo Catalog
 
 `catalog/workcell_studio_demos.yaml` defines investor/customer-friendly offline demo templates. Generated demo bundles are strictly offline/demo/validation artifacts and do not alter runtime robot behavior or launch behavior. Preview-only demos support sales/concept visualization and must not be treated as real runtime support.
+
+## Create-cell wizard
+
+`workcell_builder` remains the visual scene editor. `workcell_studio.py create-cell` is a fast catalog-driven YAML creation path that generates cell definition/layout, validates, produces static previews, and can optionally emit offline bundle artifacts.
