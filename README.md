@@ -1450,3 +1450,8 @@ This is a “Studio Lite” step only; fuller drag/drop Studio workflows come la
 - Bundle approval is an internal workflow marker only, not a safety certification. Physical robot execution remains disabled.
 
 - Added scenario pack runner and matrix references (see `docs/manuals/INDUSTRIAL_SCENARIO_PACKS.md`).
+
+
+## Builder scene exports for Workcell Studio
+
+`workcell_builder` remains the primary visual workflow. Generated scenes can now export portable Workcell Studio source files using `scripts/export_builder_scene_to_cell_definition.py`. The export writes `generated/cell_definition.yaml`, `generated/environment_layout.yaml`, and `generated/builder_export_summary.json`. These files are for offline commissioning and backend tooling, and are not proof of reachability or runtime safety. Keep fake-hardware-first defaults and runtime send disabled unless separately commissioned.

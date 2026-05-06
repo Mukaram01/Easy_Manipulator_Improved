@@ -54,3 +54,10 @@ def test_validator_accepts_scene_with_metadata_and_warns_without_metadata():
       warn = validator.validate_scene(root)
       assert warn['ok'] is True
       assert any('optional' in c['check'] for c in warn['checks'])
+
+
+def test_scene_builder_readme_and_export_helper_are_documented():
+    text = (REPO_ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
+    assert "export_workcell_studio_sources.sh" in text
+    assert "export_builder_scene_to_cell_definition.py" in text
+    assert "Export Workcell Studio source files" in text

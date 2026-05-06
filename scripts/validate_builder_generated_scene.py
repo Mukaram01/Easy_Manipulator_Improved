@@ -14,6 +14,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from capability_registry import load_structured_data
+import subprocess
 
 
 def _load_yaml_like(path: Path) -> dict[str, Any]:
@@ -54,6 +55,23 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
             if not (scene_path / obj["filepath"]).exists():
                 warnings.append(f"Object '{obj_name}' references missing asset path '{obj['filepath']}'")
 
+
+    exported_cell = scene_path / "generated" / "cell_definition.yaml"
+    exported_layout = scene_path / "generated" / "environment_layout.yaml"
+    checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file()})
+    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file()})
+    export_validation = {}
+    if exported_cell.is_file():
+        run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_cell_definition.py"), str(exported_cell), "--json"], capture_output=True, text=True, check=False)
+        export_validation["cell_definition"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
+    else:
+        warnings.append("Builder export missing generated/cell_definition.yaml (legacy scenes are allowed).")
+    if exported_layout.is_file():
+        run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_environment_layout.py"), str(exported_layout), "--json"], capture_output=True, text=True, check=False)
+        export_validation["environment_layout"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
+    else:
+        warnings.append("Builder export missing generated/environment_layout.yaml (legacy scenes are allowed).")
+
     runtime_supported = bool(metadata.get("runtime_supported", False))
     preview_only = bool(metadata.get("preview_only", False))
     fake_hw_ready = bool(metadata.get("fake_hardware_ready", True))
@@ -72,6 +90,7 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         "checks": checks,
         "warnings": warnings,
         "errors": errors,
+        "export_validation": export_validation,
         "discovered": {
             "robot_name": robot.get("name"),
             "end_effector_name": ee.get("name"),

@@ -498,6 +498,14 @@ void write_builder_validation_helper(const fs::path & scene_dir)
     out << "set -euo pipefail\n";
     out << "python3 scripts/validate_builder_generated_scene.py \"$(cd \"$(dirname \"$0\")\" && pwd)/..\"\n";
   }
+  const fs::path export_path = generated_dir / "export_workcell_studio_sources.sh";
+  std::ofstream export_out(export_path.string());
+  if (export_out.is_open()) {
+    export_out << "#!/usr/bin/env bash\n";
+    export_out << "set -euo pipefail\n";
+    export_out << "SCENE_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)/..\"\n";
+    export_out << "python3 scripts/export_builder_scene_to_cell_definition.py \"$SCENE_DIR\" --output-dir \"$SCENE_DIR/generated\" --validate\n";
+  }
 }
 
 void SceneSelect::generate_scene_package(
@@ -524,6 +532,7 @@ void SceneSelect::generate_scene_package(
     readme << "- Start with fake hardware/offline validation first.\n";
     readme << "- Preview-only robots are not runtime-ready for execution.\n";
     readme << "- Suction IO is metadata-only unless integrated separately.\n\n";
+    readme << "Export Workcell Studio source files:\n\n```bash\n./generated/export_workcell_studio_sources.sh\n```\n\n";
     readme << "Run validation:\n\n```bash\n./generated/run_builder_validation.sh\n```\n";
   }
 }

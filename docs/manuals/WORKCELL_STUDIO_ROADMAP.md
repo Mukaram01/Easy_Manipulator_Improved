@@ -50,3 +50,8 @@ High-level ownership boundaries:
 - Capability/grasp catalogs and validators are backend services used by builder generation and QA tooling.
 - CLI/wizard scripts are for automation/testing and are not a competing UI path.
 - Any future Streamlit layer is dashboard/orchestration only.
+
+
+## Builder scene exports for Workcell Studio
+
+`workcell_builder` remains the primary visual workflow. Generated scenes can now export portable Workcell Studio source files using `scripts/export_builder_scene_to_cell_definition.py`. The export writes `generated/cell_definition.yaml`, `generated/environment_layout.yaml`, and `generated/builder_export_summary.json`. These files are for offline commissioning and backend tooling, and are not proof of reachability or runtime safety. Keep fake-hardware-first defaults and runtime send disabled unless separately commissioned.
