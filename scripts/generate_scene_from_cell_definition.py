@@ -92,6 +92,45 @@ def _extract_capability_refs(cell_def: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in refs.items() if v}
 
 
+def extract_grasp_strategy_metadata(cell_def: dict[str, Any]) -> dict[str, Any] | None:
+    grasp = cell_def.get("grasp") if isinstance(cell_def.get("grasp"), dict) else None
+    if not grasp:
+        return None
+    strategy = grasp.get("strategy") if isinstance(grasp.get("strategy"), dict) else {}
+    metadata: dict[str, Any] = {"metadata_only": True, "runtime_applied": False}
+
+    for key in ("strategy_ref",):
+        value = grasp.get(key)
+        if isinstance(value, str) and value.strip():
+            metadata[key] = value
+
+    scalar_fields = (
+        "id",
+        "label",
+        "strategy",
+        "approach_axis",
+        "orientation_mode",
+        "approach_distance_m",
+        "retreat_distance_m",
+    )
+    for field in scalar_fields:
+        value = strategy.get(field)
+        if value is not None:
+            metadata[field] = value
+
+    for list_field in ("tool_families", "allowed_roll_angles_deg", "allowed_yaw_angles_deg", "limitations_warnings"):
+        value = strategy.get(list_field)
+        if isinstance(value, list) and value:
+            metadata[list_field] = value
+
+    for object_field in ("contact", "release"):
+        value = strategy.get(object_field)
+        if isinstance(value, dict) and value:
+            metadata[object_field] = value
+
+    return metadata if len(metadata) > 2 else None
+
+
 def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     cell = cell_def.get("cell", {})
     robot = cell_def.get("robot", {})
@@ -161,6 +200,9 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
             "safe_joint_state": robot.get("safe_joint_state", []),
         },
     }
+    grasp_strategy = extract_grasp_strategy_metadata(cell_def)
+    if grasp_strategy:
+        manifest["grasp_strategy"] = grasp_strategy
 
     refs = _extract_capability_refs(cell_def)
     if refs:
@@ -223,6 +265,16 @@ def _map_rule(rule: dict[str, Any]) -> dict[str, Any]:
 def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     task = cell_def.get("task", {})
     task_type = str(task.get("type", "custom"))
+    grasp_strategy = extract_grasp_strategy_metadata(cell_def)
+    strategy_type = str((grasp_strategy or {}).get("strategy", "")).lower()
+    default_methods = ["finger", "suction"]
+    if strategy_type:
+        if any(token in strategy_type for token in ("suction", "vacuum")):
+            default_methods = ["suction"]
+        elif any(token in strategy_type for token in ("pinch", "side_grip", "finger")):
+            default_methods = ["finger"]
+        elif "magnetic" in strategy_type:
+            default_methods = ["magnetic"]
     return {
         "enabled": True,
         "recipe_id": task.get("id", "generated_task"),
@@ -234,7 +286,8 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
         "pick": {
             "source": task.get("source_object", "detected_object"),
             "object_source": "self_test",
-            "allowed_grasp_methods": ["finger", "suction"],
+            "allowed_grasp_methods": default_methods,
+            **({"grasp_strategy": grasp_strategy} if grasp_strategy else {}),
         },
         "decision_rules": [
             _map_rule(rule) for rule in task.get("rules", []) if isinstance(rule, dict)
@@ -293,6 +346,22 @@ def build_commissioning_summary(cell_def: dict[str, Any], warnings: list[str], c
         lines.append("- None (direct cell_definition fields only)")
     if capability_status:
         lines.append(f"- Capability compatibility status: **{capability_status}**")
+    grasp_strategy = extract_grasp_strategy_metadata(cell_def)
+    lines.extend(["", "## Grasp strategy"])
+    if grasp_strategy:
+        lines.append(
+            f"- Selected strategy: ref=`{grasp_strategy.get('strategy_ref', '(none)')}`, "
+            f"id=`{grasp_strategy.get('id', '(none)')}`, label=`{grasp_strategy.get('label', '(none)')}`"
+        )
+        lines.append(
+            f"- Type/axis: `{grasp_strategy.get('strategy', '(unknown)')}` on `{grasp_strategy.get('approach_axis', '(unknown)')}`"
+        )
+        lines.append(
+            f"- Distances: approach=`{grasp_strategy.get('approach_distance_m', '(n/a)')}` m, retreat=`{grasp_strategy.get('retreat_distance_m', '(n/a)')}` m"
+        )
+        lines.append("- Note: metadata only; runtime execution still requires engineering review.")
+    else:
+        lines.append("- No explicit grasp strategy was selected in this cell definition.")
 
     lines.extend(
         [

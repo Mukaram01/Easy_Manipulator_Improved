@@ -8,6 +8,8 @@
 
 It reuses existing validators/generators and does not modify runtime robot behavior.
 
+Generated outputs now also preserve optional validated `grasp_strategy/v1` metadata from `cell_definition/v1` into manifests, task recipes, summaries, and bundle summary JSON for offline review. This remains metadata-only and does not change runtime execution.
+
 ## Terminology
 
 - **Template**: Preset metadata inputs used to synthesize a cell definition.

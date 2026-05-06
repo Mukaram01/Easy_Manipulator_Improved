@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import subprocess
 import tempfile
@@ -135,6 +136,21 @@ class CellDefinitionGenerationTests(unittest.TestCase):
             self.assertTrue(parser_name in {"pyyaml", "fallback"})
             self.assertTrue(isinstance(parser_notes + notes, list))
 
+    def test_grasp_strategy_metadata_propagates_to_preview_artifacts(self) -> None:
+        loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml")
+        summary = validator.validate_cell_definition(
+            loaded, FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml", parser, notes
+        )
+        self.assertTrue(summary.ok)
+        scene_manifest = generator.build_scene_manifest(loaded)
+        self.assertIn("grasp_strategy", scene_manifest)
+        self.assertTrue(scene_manifest["grasp_strategy"]["metadata_only"])
+        self.assertFalse(scene_manifest["grasp_strategy"]["runtime_applied"])
+        task_recipe = generator.build_task_recipe(loaded)
+        self.assertIn("grasp_strategy", task_recipe["pick"])
+        commissioning = generator.build_commissioning_summary(loaded, summary.warnings)
+        self.assertIn("## Grasp strategy", commissioning)
+
 
 class WorkcellPackageGenerationTests(unittest.TestCase):
     def _assert_generate_fixture(self, fixture_name: str, package_name: str) -> Path:
@@ -246,6 +262,28 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             manifest, _, _ = scene_contract_validator._read_manifest(str(manifest_path))
             status, _ = scene_contract_validator.validate_task_recipe_block(manifest)
             self.assertIn(status, {"PASS", "WARN"})
+
+    def test_grasp_strategy_metadata_propagates_to_generated_package_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            rc = workcell_generator.generate_package(
+                cell_definition_path=FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml",
+                output_dir=tmp_path,
+                package_name="generated_grasp_strategy",
+                force=False,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            package_dir = tmp_path / "generated_grasp_strategy"
+            manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
+            self.assertIn("grasp_strategy", manifest)
+            task_recipe, _, _ = scene_contract_validator._read_manifest(str(package_dir / "config" / "task_recipe.yaml"))
+            self.assertIn("grasp_strategy", task_recipe.get("pick", {}))
+            self.assertIn("Grasp strategy", (package_dir / "README.md").read_text(encoding="utf-8"))
+            summary_payload = json.loads(
+                (package_dir / "generated" / "generated_workcell_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertIn("grasp_strategy", summary_payload)
 
 
 class CellDefinitionWizardTests(unittest.TestCase):
