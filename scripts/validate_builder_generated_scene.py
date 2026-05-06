@@ -22,6 +22,14 @@ def _load_yaml_like(path: Path) -> dict[str, Any]:
     return data
 
 
+def _find_task_intent(scene_path: Path) -> Path | None:
+    for rel in ["generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"]:
+        cand = scene_path / rel
+        if cand.is_file():
+            return cand
+    return None
+
+
 def validate_scene(scene_path: Path) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -72,12 +80,26 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
     else:
         warnings.append("Builder export missing generated/environment_layout.yaml (legacy scenes are allowed).")
 
+    task_intent_report = {}
+    task_intent_path = _find_task_intent(scene_path)
+    if task_intent_path:
+        run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(task_intent_path), "--scene-package", str(scene_path), "--json"], capture_output=True, text=True, check=False)
+        task_intent_report = json.loads(run.stdout) if run.stdout.strip() else {"status": "FAIL", "errors": [run.stderr.strip()]}
+        if task_intent_report.get("status") == "FAIL":
+            errors.extend(task_intent_report.get("errors", []))
+        elif task_intent_report.get("status") == "WARN":
+            warnings.extend(task_intent_report.get("warnings", []))
+    else:
+        warnings.append("Task intent missing: physical scene only.")
+
     runtime_supported = bool(metadata.get("runtime_supported", False))
     preview_only = bool(metadata.get("preview_only", False))
     fake_hw_ready = bool(metadata.get("fake_hardware_ready", True))
 
     if preview_only:
         readiness = "preview_only"
+    elif not task_intent_path:
+        readiness = "task_intent_missing"
     elif runtime_supported:
         readiness = "runtime_ready"
     else:
@@ -91,6 +113,7 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         "warnings": warnings,
         "errors": errors,
         "export_validation": export_validation,
+        "task_intent": task_intent_report,
         "discovered": {
             "robot_name": robot.get("name"),
             "end_effector_name": ee.get("name"),

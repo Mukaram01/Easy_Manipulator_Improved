@@ -1,0 +1,5 @@
+schema: workcell_builder_task_intent/v1
+task: {id: t1, type: pick_place}
+pick: {source: {type: zone, id: pick_zone_main}}
+grasp: {strategy_ref: suction_top_basic}
+safety: {metadata_only: true, runtime_io_applied: false, motion_started: false, ros_launch_started: false}

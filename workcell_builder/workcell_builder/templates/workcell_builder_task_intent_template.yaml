@@ -1,0 +1,39 @@
+schema: workcell_builder_task_intent/v1
+scene_package: TODO_scene_package_name
+task:
+  id: default_builder_task
+  type: pick_place
+  mode: offline_preview
+pick:
+  source:
+    type: zone
+    id: TODO_pick_zone_id
+    label: TODO pick zone label
+  object_filter:
+    class_id: any
+    color: any
+grasp:
+  strategy_ref: TODO_grasp_strategy_id
+  approach_axis: z_down
+  approach_distance_m: 0.10
+  retreat_axis: z_up
+  retreat_distance_m: 0.10
+place:
+  target:
+    type: destination
+    id: TODO_place_target_id
+    label: TODO place target label
+  pose_source: fixed_target
+  release_strategy: tool_release
+  place_offset_xyz: [0.0, 0.0, 0.05]
+  retreat_axis: z_up
+  retreat_distance_m: 0.10
+routing:
+  rules:
+    - when: {color: any}
+      place_target: TODO_place_target_id
+safety:
+  metadata_only: true
+  runtime_io_applied: false
+  motion_started: false
+  ros_launch_started: false

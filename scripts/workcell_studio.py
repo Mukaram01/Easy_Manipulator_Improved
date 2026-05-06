@@ -424,6 +424,17 @@ def import_builder_scene(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def validate_builder_task(args: argparse.Namespace) -> int:
+    cmd = [sys.executable, str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(args.task_intent)]
+    if args.scene_package:
+        cmd.extend(["--scene-package", str(args.scene_package)])
+    if args.json:
+        cmd.append("--json")
+    run = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -439,6 +450,12 @@ def _build_parser() -> argparse.ArgumentParser:
     demos_gen.add_argument("--force", action="store_true")
     demos_gen.add_argument("--continue-on-error", action="store_true")
     demos_gen.set_defaults(func=generate_demo_bundle)
+
+    vbt = sub.add_parser("validate-builder-task", help="Validate builder task intent sidecar")
+    vbt.add_argument("--task-intent", type=Path, required=True)
+    vbt.add_argument("--scene-package", type=Path)
+    vbt.add_argument("--json", action="store_true")
+    vbt.set_defaults(func=validate_builder_task)
 
     import_parser = sub.add_parser("import-builder-scene", help="Import a workcell_builder-generated scene package")
     import_parser.add_argument("--scene-package", type=Path, required=True)

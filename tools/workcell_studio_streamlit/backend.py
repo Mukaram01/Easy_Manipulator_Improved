@@ -281,3 +281,64 @@ def load_create_cell_summary(output_dir: str | Path) -> dict[str, Any]:
         "summary": json.loads(js.read_text(encoding="utf-8")) if js.exists() else {},
         "markdown": md.read_text(encoding="utf-8") if md.exists() else "",
     }
+
+
+def default_builder_task_intent(scene_package: str = "") -> dict[str, Any]:
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"suction_top_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"destination","id":"bin_main"},"release_strategy":"tool_release","place_offset_xyz":[0.0,0.0,0.05]},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+
+def find_builder_task_intent(scene_package: str | Path) -> str:
+    sp=Path(scene_package)
+    for rel in ["generated/workcell_builder_task_intent.yaml","workcell_builder_task_intent.yaml"]:
+        p=sp/rel
+        if p.exists(): return str(p)
+    return ""
+
+def load_builder_task_intent(path: str | Path) -> dict[str, Any]:
+    p=Path(path)
+    if not p.exists(): return {}
+    return _load_yaml_file(p)
+
+def _yaml_scalar(v: Any) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if v is None:
+        return "null"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return json.dumps(str(v))
+
+def _to_yaml(value: Any, indent: int = 0) -> str:
+    sp = " " * indent
+    if isinstance(value, dict):
+        lines = []
+        for k, v in value.items():
+            if isinstance(v, (dict, list)):
+                lines.append(f"{sp}{k}:")
+                lines.append(_to_yaml(v, indent + 2))
+            else:
+                lines.append(f"{sp}{k}: {_yaml_scalar(v)}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        lines = []
+        for x in value:
+            if isinstance(x, (dict, list)):
+                lines.append(f"{sp}-")
+                lines.append(_to_yaml(x, indent + 2))
+            else:
+                lines.append(f"{sp}- {_yaml_scalar(x)}")
+        return "\n".join(lines)
+    return f"{sp}{_yaml_scalar(value)}"
+
+def save_builder_task_intent(path: str | Path, payload: dict[str, Any]) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if yaml is not None:
+        p.write_text(yaml.safe_dump(payload, sort_keys=False), encoding='utf-8')
+    else:
+        p.write_text(_to_yaml(payload) + "\n", encoding='utf-8')
+
+def validate_builder_task_intent(task_intent_path: str | Path, scene_package: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd=[sys.executable, str(rr/"scripts"/"validate_builder_task_intent.py"), str(task_intent_path), "--json"]
+    if scene_package: cmd += ["--scene-package", str(scene_package)]
+    return _parse_json_output(run_command(cmd, cwd=rr))
