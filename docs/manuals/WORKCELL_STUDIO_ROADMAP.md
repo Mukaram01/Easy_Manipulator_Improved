@@ -1,0 +1,43 @@
+# Workcell Studio Roadmap
+
+## Purpose
+
+Workcell Studio is the internal configurable robotic-cell platform for defining, generating, validating, and operating deployment-ready workcells. It is the product platform direction for this repository.
+
+Sorting is only one scenario template in Workcell Studio, alongside other templates such as inspection routing, reject handling, and palletizing.
+
+## Near-term visual target
+
+The near-term operator experience target is:
+
+- RViz for robot/cell visualization and planning introspection.
+- A simple web/Streamlit Studio layer for task and cell configuration, validation status, and artifact review.
+
+This keeps the baseline practical for ROS 2 Humble teams while preserving fake-hardware-first and offline/dry-run validation workflows.
+
+## Recommended simulation sequence
+
+1. **RViz + MoveIt now**
+   - Baseline for ROS 2 Humble commissioning and motion-planning workflows.
+   - Keep fake hardware and headless validation paths as defaults.
+2. **Gazebo Sim later**
+   - Add conveyors and basic physics simulation when needed.
+   - Optional extension, not a baseline requirement.
+3. **Isaac Sim later**
+   - Use for investor-grade visuals and advanced simulation demos.
+   - Optional extension, not mandatory for functional deployment.
+
+## Repository boundaries
+
+High-level ownership boundaries:
+
+- **EPD (Easy Perception Deployment)** owns perception pipelines and detected-object outputs.
+- **Easy_Manipulator_Improved** owns Workcell Studio orchestration: generation, validation, and execution integration.
+- **Generated scene packages** own launch/config output artifacts for specific workcell instances.
+
+## Scope guardrails
+
+- Preserve ROS 2 Humble as the supported baseline.
+- Do not require Gazebo Sim or Isaac Sim for core operation.
+- Preserve fake-hardware-first defaults and dry-run/offline validation language.
+- Keep runtime launch behavior backward compatible.
