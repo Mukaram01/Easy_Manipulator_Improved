@@ -85,3 +85,16 @@ ros2 launch run_grasp_execution grasp_execution.launch.py scene_package:=<packag
 ## Future direction
 
 The project manifest and bundle layout are designed to support future GUI import/export workflows and deterministic commissioning handover pipelines.
+
+## Importing a workcell_builder scene into Workcell Studio
+
+Use Workcell Studio as an orchestration/import layer on top of `workcell_builder` exports. The builder stays the visual authoring tool; Workcell Studio consumes `generated/cell_definition.yaml` + `generated/environment_layout.yaml` and produces offline validation/demo artifacts by default. Runtime execution remains guarded and fake-hardware-first.
+
+```bash
+python3 scripts/workcell_studio.py import-builder-scene \
+  --scene-package /path/to/generated_scene \
+  --output-dir /tmp/workcell_studio_import_demo \
+  --project-name demo_from_builder \
+  --validate \
+  --generate-project
+```

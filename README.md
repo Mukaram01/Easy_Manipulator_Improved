@@ -1455,3 +1455,16 @@ This is a “Studio Lite” step only; fuller drag/drop Studio workflows come la
 ## Builder scene exports for Workcell Studio
 
 `workcell_builder` remains the primary visual workflow. Generated scenes can now export portable Workcell Studio source files using `scripts/export_builder_scene_to_cell_definition.py`. The export writes `generated/cell_definition.yaml`, `generated/environment_layout.yaml`, and `generated/builder_export_summary.json`. These files are for offline commissioning and backend tooling, and are not proof of reachability or runtime safety. Keep fake-hardware-first defaults and runtime send disabled unless separately commissioned.
+
+## Importing a workcell_builder scene into Workcell Studio
+
+`workcell_builder` remains the visual editor, while Workcell Studio consumes exported `cell_definition.yaml` and `environment_layout.yaml` as canonical source YAML. Generated outputs remain offline/demo/validation artifacts by default, and runtime execution stays guarded with fake-hardware-first defaults.
+
+```bash
+python3 scripts/workcell_studio.py import-builder-scene \
+  --scene-package /path/to/generated_scene \
+  --output-dir /tmp/workcell_studio_import_demo \
+  --project-name demo_from_builder \
+  --validate \
+  --generate-project
+```
