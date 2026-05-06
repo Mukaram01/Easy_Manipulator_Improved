@@ -50,6 +50,9 @@ class CellDefinitionValidationTests(unittest.TestCase):
     def test_valid_sort_by_colour_with_grasp_strategy_ref_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_sort_by_colour_with_grasp_strategy.yaml")
         self.assertTrue(summary.ok)
+    def test_valid_ur5_suction_sorting_fixture_passes(self) -> None:
+        summary = self._validate_fixture("cell_definition_ur5_suction_sorting.yaml")
+        self.assertTrue(summary.ok)
 
     def test_valid_sort_by_shape_cell_definition_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_sort_by_shape.yaml")
@@ -150,6 +153,18 @@ class CellDefinitionGenerationTests(unittest.TestCase):
         self.assertIn("grasp_strategy", task_recipe["pick"])
         commissioning = generator.build_commissioning_summary(loaded, summary.warnings)
         self.assertIn("## Grasp strategy", commissioning)
+    def test_suction_metadata_propagates_to_preview_artifacts(self) -> None:
+        loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_ur5_suction_sorting.yaml")
+        summary = validator.validate_cell_definition(loaded, FIXTURES / "cell_definition_ur5_suction_sorting.yaml", parser, notes)
+        self.assertTrue(summary.ok)
+        scene_manifest = generator.build_scene_manifest(loaded)
+        ee = scene_manifest["end_effector"]
+        self.assertEqual(ee["type"], "suction")
+        self.assertTrue(ee["metadata_only"])
+        self.assertFalse(ee["runtime_io_applied"])
+        task_recipe = generator.build_task_recipe(loaded)
+        self.assertEqual(task_recipe["pick"]["allowed_grasp_methods"], ["suction"])
+        self.assertIn("grasp_strategy", task_recipe["pick"])
 
 
 class WorkcellPackageGenerationTests(unittest.TestCase):
@@ -428,6 +443,29 @@ class CellDefinitionWizardTests(unittest.TestCase):
             manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
             status, _ = scene_contract_validator.validate_task_recipe_block(manifest)
             self.assertIn(status, {"PASS", "WARN"})
+
+    def test_non_interactive_ur5_suction_wizard_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            yaml_path = tmp / "ur5_suction.yaml"
+            out_dir = tmp / "generated"
+            proc = self._run(
+                "--template", "sort_by_colour",
+                "--cell-name", "UR5 Suction Sorting Demo",
+                "--cell-id", "ur5_suction_sorting_demo",
+                "--robot", "ur5",
+                "--end-effector", "suction",
+                "--camera", "realsense_d435i",
+                "--grasp-strategy", "suction_top_basic",
+                "--output", str(yaml_path),
+                "--generate-workcell",
+                "--workcell-output-dir", str(out_dir),
+                "--package-name", "generated_ur5_suction_sorting_from_wizard",
+                "--force",
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            valid = subprocess.run([sys.executable, str(self.validator_script), str(yaml_path)], capture_output=True, text=True, check=False)
+            self.assertEqual(valid.returncode, 0, msg=valid.stdout + valid.stderr)
 
     def test_expected_wizard_fixtures_validate(self) -> None:
         fixtures = [
