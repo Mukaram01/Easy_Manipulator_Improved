@@ -49,3 +49,7 @@ Safety notes:
   - `runtime_ready`: intended runtime-capable configuration.
   - `fake_hardware_ready`: safe demo/validation default.
   - `preview_only`: concept/sales visualization only.
+
+## Static preview artifacts
+
+Demo Gallery and Builder Scene Import now surface static preview artifacts when generated. These previews are offline approximations for quick review only; RViz/MoveIt remains the real planning/visualisation path.

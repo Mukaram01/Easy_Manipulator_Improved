@@ -42,6 +42,14 @@ def _run_json(cmd: list[str], label: str) -> tuple[int, dict[str, Any]]:
     return proc.returncode, payload
 
 
+
+
+def _generate_static_preview(cell_def: Path, output_dir: Path, title: str, environment_layout: Path | None = None) -> tuple[int, dict[str, Any]]:
+    cmd = [sys.executable, str(SCRIPT_DIR / "generate_workcell_static_preview.py"), "--cell-definition", str(cell_def), "--output-dir", str(output_dir), "--title", title, "--json"]
+    if environment_layout:
+        cmd.extend(["--environment-layout", str(environment_layout)])
+    return _run_json(cmd, "static preview")
+
 def load_demo_catalog() -> list[dict[str, Any]]:
     if not DEMO_CATALOG_PATH.is_file():
         return []
@@ -108,6 +116,8 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
 
         copied_cell = demo_dir / "cell_definition.yaml"
         shutil.copy2(cell_def, copied_cell)
+        preview_dir = demo_dir / "preview"
+        _, preview_payload = _generate_static_preview(cell_def, preview_dir, demo.get("title", demo["id"]))
         manifests = list(demo_dir.glob("*/project_manifest.json"))
         project_path = str(manifests[0].parent) if manifests else ""
         summary = {
@@ -121,6 +131,10 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
             "dashboard_path": str(manifests[0].parent / "dashboard" / "index.html") if manifests else "",
             "preflight_report_path": str(manifests[0].parent / "reports" / "validation_summary.md") if manifests else "",
             "next_commands_path": str(demo_dir / "next_commands.md"),
+            "preview_svg": str(preview_dir / "static_preview.svg"),
+            "preview_html": str(preview_dir / "static_preview.html"),
+            "preview_summary_json": str(preview_dir / "static_preview_summary.json"),
+            "preview_warnings": preview_payload.get("warnings", []),
             "stdout": project_rc.stdout.strip(),
             "stderr": project_rc.stderr.strip(),
         }
@@ -133,7 +147,10 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
             f"- Preview only: `{summary['preview_only']}`\n"
             f"- Generated project path: `{project_path or '(none)'}`\n"
             f"- Dashboard: `{summary['dashboard_path'] or '(none)'}`\n"
-            f"- Preflight report: `{summary['preflight_report_path'] or '(none)'}`\n",
+            f"- Preflight report: `{summary['preflight_report_path'] or '(none)'}`\n"
+            f"- Preview SVG: `{summary['preview_svg']}`\n"
+            f"- Preview HTML: `{summary['preview_html']}`\n"
+            f"- Preview Summary JSON: `{summary['preview_summary_json']}`\n",
             encoding="utf-8",
         )
         (demo_dir / "next_commands.md").write_text(
@@ -141,6 +158,7 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
             "python3 scripts/workcell_studio.py list-demos\n"
             f"python3 scripts/workcell_studio.py generate-demo-bundle --demo-id {demo['id']} --output-dir {output_root} --force\n"
             f"python3 scripts/validate_cell_definition.py {copied_cell} --json\n"
+            f"python3 scripts/generate_workcell_static_preview.py --cell-definition {copied_cell} --output-dir {preview_dir} --title '{demo.get("title",demo["id"])}'\n"
             "```\n",
             encoding="utf-8",
         )
@@ -252,6 +270,9 @@ def import_builder_scene(args: argparse.Namespace) -> int:
             if preflight_rel:
                 preflight_report_path = str(manifest_candidates[0].parent / preflight_rel)
 
+    preview_dir = output_dir / "preview"
+    _, preview_payload = _generate_static_preview(cell_def, preview_dir, f"Builder Import: {_scene_name(scene_pkg)}", env_layout)
+
     builder_readiness = (validations.get("builder_scene", {}) or {}).get("readiness")
     safety = {
         "fake_hardware_default": True,
@@ -270,6 +291,10 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         "dashboard_path": dashboard_path,
         "preflight_report_path": preflight_report_path,
         "safety_status": safety,
+        "preview_svg": str(preview_dir / "static_preview.svg"),
+        "preview_html": str(preview_dir / "static_preview.html"),
+        "preview_summary_json": str(preview_dir / "static_preview_summary.json"),
+        "preview_warnings": preview_payload.get("warnings", []),
         "next_commands": [
             f"python3 scripts/validate_builder_generated_scene.py {scene_pkg} --json",
             f"python3 scripts/validate_cell_definition.py {cell_def} --json",
@@ -292,6 +317,8 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         f"- Environment layout: `{env_layout}`",
         f"- Generated project path: `{generated_project_path or '(not generated)'}`",
         f"- Runtime status: `{safety['runtime_status']}`",
+        f"- Preview SVG: `{summary['preview_svg']}`",
+        f"- Preview HTML: `{summary['preview_html']}`",
         "",
         "## Validation",
         f"- Builder scene: `{(validations.get('builder_scene', {}) or {}).get('ok', 'not-run')}`",

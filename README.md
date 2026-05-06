@@ -1493,3 +1493,7 @@ Use curated offline demos and export demo bundles:
 - `python3 scripts/workcell_studio.py generate-demo-bundle --all --output-dir /tmp/workcell_studio_all_demos --force --continue-on-error`
 
 Demo bundles are offline/demo/validation artifacts only. Preview-only demos are for concept visualization and are not runtime-ready.
+
+## Static Workcell Preview
+
+Workcell Studio can now generate offline static preview artifacts (`static_preview.svg`, `static_preview.html`, `static_preview_summary.json`) from `cell_definition.yaml` (+ optional `environment_layout.yaml`). These are fast investor/demo visuals only and do not replace RViz/MoveIt collision checking, safety validation, or runtime execution.

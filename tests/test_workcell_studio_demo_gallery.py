@@ -50,6 +50,10 @@ def test_generate_demo_bundle_for_ur5_suction() -> None:
     assert (bundle / "demo_bundle_summary.md").is_file()
     assert (bundle / "cell_definition.yaml").is_file()
     assert (bundle / "next_commands.md").is_file()
+    assert (bundle / "preview" / "static_preview.svg").is_file()
+    assert (bundle / "preview" / "static_preview.html").is_file()
+    payload = json.loads((bundle / "demo_bundle_summary.json").read_text(encoding="utf-8"))
+    assert payload.get("preview_svg") and payload.get("preview_html") and payload.get("preview_summary_json")
     assert list(bundle.glob("*/project_manifest.json"))
 
 

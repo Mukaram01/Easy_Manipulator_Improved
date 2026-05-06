@@ -220,3 +220,22 @@ def load_demo_bundle_summary(bundle_dir: str | Path) -> dict[str, Any]:
     if js.exists():
         out["summary"] = json.loads(js.read_text(encoding="utf-8"))
     return out
+
+
+def generate_static_preview(cell_definition_path: str | Path, output_dir: str | Path, title: str, environment_layout_path: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "generate_workcell_static_preview.py"), "--cell-definition", str(cell_definition_path), "--output-dir", str(output_dir), "--title", title, "--json"]
+    if environment_layout_path:
+        cmd.extend(["--environment-layout", str(environment_layout_path)])
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def load_static_preview_summary(preview_dir: str | Path) -> dict[str, Any]:
+    p = Path(preview_dir)
+    js = p / "static_preview_summary.json"
+    return json.loads(js.read_text(encoding="utf-8")) if js.exists() else {}
+
+
+def read_preview_html(preview_dir: str | Path) -> str:
+    html_path = Path(preview_dir) / "static_preview.html"
+    return html_path.read_text(encoding="utf-8") if html_path.exists() else ""

@@ -71,3 +71,13 @@ def test_missing_input_handling_returns_structured_error() -> None:
     missing_scene = backend.import_builder_scene("/tmp/definitely_missing_scene", "/tmp/out", "demo")
     assert not missing_scene["ok"]
     assert "does not exist" in missing_scene["error"]
+
+
+def test_static_preview_backend_helpers() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "preview"
+        fixture = backend.repo_root() / "tests" / "fixtures" / "cell_definition_pick_place.yaml"
+        result = backend.generate_static_preview(fixture, out, "Backend Preview")
+        assert result["returncode"] == 0
+        summary = backend.load_static_preview_summary(out)
+        assert summary.get("title") == "Backend Preview"
