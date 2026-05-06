@@ -96,14 +96,18 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
     preview_only = bool(metadata.get("preview_only", False))
     fake_hw_ready = bool(metadata.get("fake_hardware_ready", True))
 
+    suggested_actions=[]
     if not task_intent_path:
         readiness = "physical_scene_only"
+        suggested_actions.append('Create builder task intent to define pick/place/grasp.')
     elif task_intent_report.get("status") == "FAIL":
         readiness = "task_intent_incomplete"
+        suggested_actions.append('Complete missing required task intent fields.')
     elif (scene_path / "generated" / "task_recipe_from_builder_intent.yaml").is_file():
         readiness = "task_recipe_generated"
     else:
         readiness = "task_intent_ready_offline"
+        suggested_actions.append('Generate task recipe from builder task intent.')
     if preview_only:
         readiness_runtime = "preview_only"
     elif not runtime_supported and fake_hw_ready:
@@ -115,6 +119,8 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         "scene_path": str(scene_path),
         "ok": len(errors) == 0,
         "readiness": readiness,
+        "readiness_classification": readiness,
+        "suggested_next_actions": suggested_actions,
         "runtime_readiness": readiness_runtime,
         "checks": checks,
         "warnings": warnings,

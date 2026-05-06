@@ -25,3 +25,8 @@ def test_unknown_grasp_warns():
 def test_safety_conservative_required():
     payload=json.loads(_run('builder_task_intent_valid.yaml').stdout)
     s=payload['safety']; assert s['metadata_only'] is True and s['runtime_io_applied'] is False and s['motion_started'] is False and s['ros_launch_started'] is False
+
+
+def test_validator_additional_fields_present():
+    payload=json.loads(_run('builder_task_intent_missing_pick.yaml').stdout)
+    assert 'missing_required_fields' in payload and 'suggested_next_actions' in payload and 'readiness_classification' in payload

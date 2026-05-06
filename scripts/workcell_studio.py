@@ -360,9 +360,15 @@ def import_builder_scene(args: argparse.Namespace) -> int:
                 preflight_report_path = str(manifest_candidates[0].parent / preflight_rel)
 
     preview_dir = output_dir / "preview"
-    _, preview_payload = _generate_static_preview(cell_def, preview_dir, f"Builder Import: {_scene_name(scene_pkg)}", env_layout)
     recipe_gen = ((export_payload.get("task_recipe_generation", {}) if isinstance(export_payload, dict) else {}) or {})
     task_intent = ((export_payload.get("builder_task_intent", {}) if isinstance(export_payload, dict) else {}) or {})
+    task_intent_path = Path(task_intent.get('source_file', generated_dir / 'workcell_builder_task_intent.yaml')) if isinstance(task_intent, dict) and task_intent else None
+    task_recipe_path = generated_dir / 'task_recipe_from_builder_intent.yaml'
+    cmd=[sys.executable, str(SCRIPT_DIR / 'generate_workcell_static_preview.py'), '--cell-definition', str(cell_def), '--output-dir', str(preview_dir), '--title', f"Builder Import: {_scene_name(scene_pkg)}", '--json']
+    if env_layout: cmd += ['--environment-layout', str(env_layout)]
+    if task_intent_path and task_intent_path.exists(): cmd += ['--task-intent', str(task_intent_path)]
+    if task_recipe_path.exists(): cmd += ['--task-recipe', str(task_recipe_path)]
+    _, preview_payload = _run_json(cmd, 'static preview')
     if task_intent and recipe_gen.get("status") != "PASS":
         recipe_path = generated_dir / "task_recipe_from_builder_intent.yaml"
         rc, recipe_gen = _run_json([sys.executable, str(SCRIPT_DIR / "convert_builder_task_intent_to_task_recipe.py"), "--task-intent", str(Path(task_intent.get("source_file", generated_dir / "workcell_builder_task_intent.yaml"))), "--output", str(recipe_path), "--scene-package", str(scene_pkg), "--validate", "--json"], "task recipe conversion")
@@ -403,6 +409,10 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         "grasp_strategy": recipe_gen.get("grasp_strategy"),
         "release_strategy": recipe_gen.get("release_strategy"),
         "routing_rule_count": recipe_gen.get("routing_rule_count", 0),
+        "task_flow_summary": preview_payload.get("task_flow_summary", {}),
+        "readiness_classification": (preview_payload.get("task_flow_summary", {}) or {}).get("readiness_classification", builder_readiness),
+        "missing_required_fields": (preview_payload.get("task_flow_summary", {}) or {}).get("missing_required_fields", []),
+        "visual_resolution": (preview_payload.get("task_flow_summary", {}) or {}).get("visual_resolution", {}),
         "task_recipe_safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
         "next_commands": [
             f"python3 scripts/validate_builder_generated_scene.py {scene_pkg} --json",

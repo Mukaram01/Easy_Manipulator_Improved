@@ -80,3 +80,13 @@ def test_missing_scene_package_fails() -> None:
         proc = _run("import-builder-scene", "--scene-package", str(Path(d) / "missing"), "--output-dir", str(out), "--project-name", "demo", "--validate")
         assert proc.returncode != 0
         assert "does not exist" in (proc.stdout + proc.stderr)
+
+
+def test_import_summary_has_task_flow_summary():
+    with tempfile.TemporaryDirectory() as d:
+        scene=Path(d)/'scene'; scene.mkdir(); _write_scene(scene)
+        out=Path(d)/'out'
+        proc=_run('import-builder-scene','--scene-package',str(scene),'--output-dir',str(out),'--project-name','demo','--validate')
+        assert proc.returncode==0
+        summary=json.loads((out/'workcell_studio_import_summary.json').read_text(encoding='utf-8'))
+        assert 'task_flow_summary' in summary or 'readiness_classification' in summary
