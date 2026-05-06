@@ -18,8 +18,8 @@ All contracts include `schema_version` and use versioned identifiers:
 - `task_capability/v1`
 - `environment_asset/v1`
 
-Shipping Workcell Studio catalog lives under `catalog/capabilities/`.
-Regression fixtures remain under `tests/fixtures/capabilities/`.
+Shipping Workcell Studio catalog lives under `catalog/capabilities/` and is the default capability registry for offline tooling.
+Regression fixtures remain under `tests/fixtures/capabilities/` for backward-compatible tests.
 
 ---
 
@@ -35,6 +35,8 @@ Regression fixtures remain under `tests/fixtures/capabilities/`.
 - `catalog/capabilities/environment_assets/`
 
 `tests/fixtures/capabilities/` remains a regression-fixture set for validator and tooling tests.
+
+The capability loader scans recursively, so nested folders like `catalog/capabilities/robots/*.yaml` and legacy flat fixtures like `tests/fixtures/capabilities/*.yaml` are both supported.
 
 All capability files remain offline metadata only and do not alter ROS 2 launch, MoveIt planning, grasp execution, EPD, or robot-motion runtime behavior.
 
@@ -266,3 +268,12 @@ This is intentionally metadata-only and does not alter runtime launch/planning/p
 - `environment_layout/v1` describes where those existing assets are placed in a specific cell.
 
 This separation prepares future GUI import/export workflows while keeping runtime behavior unchanged in this phase.
+
+
+## Cell definition validation examples
+
+```bash
+python3 scripts/validate_cell_definition.py tests/fixtures/cell_definition_sort_by_colour.yaml
+python3 scripts/validate_cell_definition.py tests/fixtures/cell_definition_sort_by_colour.yaml --capabilities-dir catalog/capabilities
+python3 scripts/validate_cell_definition.py tests/fixtures/cell_definition_sort_by_colour.yaml --capabilities-dir tests/fixtures/capabilities
+```
