@@ -79,6 +79,10 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) ->
                 lx,minx=min(x1,x2),max(x1,x2); ty,by=min(y1,y2),max(y1,y2)
                 elements.append(f"<rect x='{lx:.1f}' y='{ty:.1f}' width='{minx-lx:.1f}' height='{by-ty:.1f}' fill='none' stroke='#f59e0b' stroke-dasharray='4 3'/><text x='{lx+4:.1f}' y='{ty+14:.1f}' fill='#92400e'>{html.escape(str(z.get('id','zone')))}</text>")
 
+    builder_task_intent = cell.get('builder_task_intent') if isinstance(cell.get('builder_task_intent'), dict) else {}
+    if builder_task_intent and (not builder_task_intent.get('pick') or not builder_task_intent.get('place')):
+        warnings.append('Task intent is present but exact pick/place coordinates could not be resolved.')
+
     summary={
         'title': title,
         'robot': robot.get('model','unknown'),
@@ -90,6 +94,11 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str) ->
         'runtime_blocked': comm.get('runtime_mode')=='preview_only',
         'warnings': warnings,
         'approximate_placements': approx,
+        'builder_task_intent': {
+            'pick': (builder_task_intent.get('pick') or {}),
+            'grasp': (builder_task_intent.get('grasp') or {}),
+            'place': (builder_task_intent.get('place') or {}),
+        } if builder_task_intent else {},
     }
     svg=f"<svg xmlns='http://www.w3.org/2000/svg' width='{CANVAS_W}' height='{CANVAS_H}'><rect width='100%' height='100%' fill='#f8fafc'/><text x='20' y='30' font-size='20'>{html.escape(title)}</text><text x='20' y='55'>robot={html.escape(str(summary['robot']))}, ee={html.escape(str(summary['end_effector']))}, task={html.escape(str(summary['task']))}</text>{''.join(elements)}</svg>"
     html_doc=f"<!doctype html><html><body><h1>{html.escape(title)}</h1><p>Offline static preview approximation (not collision/safety validation).</p>{svg}<pre>{html.escape(json.dumps(summary, indent=2))}</pre></body></html>"

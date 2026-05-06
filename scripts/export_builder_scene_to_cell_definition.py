@@ -89,10 +89,30 @@ def _write_structured(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(_to_yaml(payload) + "\n", encoding="utf-8")
 
 
+def _find_task_intent(scene_path: Path) -> Path | None:
+    for rel in ["generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"]:
+        cand = scene_path / rel
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _validate_task_intent(task_intent_path: Path, scene_path: Path) -> dict[str, Any]:
+    cmd = ["python3", str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(task_intent_path), "--scene-package", str(scene_path), "--grasp-strategies-dir", str(scene_path.parent / "catalog" / "grasp_strategies"), "--json"]
+    run = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        return json.loads(run.stdout) if run.stdout.strip() else {"status": "FAIL", "errors": [run.stderr.strip()]}
+    except Exception:
+        return {"status": "FAIL", "errors": [run.stdout.strip() or run.stderr.strip()]}
+
+
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
     warnings: list[str] = []
+    task_intent_path = _find_task_intent(scene_path)
+    builder_task_intent: dict[str, Any] = {}
+    task_intent_validation: dict[str, Any] = {}
 
     robot_env = env.get("robot") if isinstance(env.get("robot"), dict) else {}
     ee_env = env.get("end_effector") if isinstance(env.get("end_effector"), dict) else {}
@@ -184,6 +204,24 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     if robot_meta.get("preview_only"):
         warnings.append("Selected robot is preview_only; runtime execution remains blocked.")
 
+    if task_intent_path:
+        task_intent_validation = _validate_task_intent(task_intent_path, scene_path)
+        if task_intent_validation.get("status") == "FAIL":
+            warnings.append("Builder task intent validation failed; preserving metadata for review.")
+        ti = task_intent_validation.get("task_intent", {})
+        builder_task_intent = {
+            "schema": ti.get("schema"),
+            "source_file": str(task_intent_path),
+            "pick": ti.get("pick"),
+            "grasp": ti.get("grasp"),
+            "place": ti.get("place"),
+            "routing": ti.get("routing"),
+            "safety": ti.get("safety"),
+        }
+        cell_def["builder_task_intent"] = builder_task_intent
+    else:
+        warnings.append("No builder task intent file found; exported scene has physical layout metadata but no pick/place/grasp task intent.")
+
     cell_path = output_dir / "cell_definition.yaml"
     layout_path = output_dir / "environment_layout.yaml"
     _write_structured(cell_path, cell_def)
@@ -196,6 +234,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "warnings": warnings,
         "exported_files": [str(cell_path), str(layout_path)],
         "validation": {},
+        "builder_task_intent": builder_task_intent,
+        "task_intent_validation": task_intent_validation,
     }
 
     if validate:

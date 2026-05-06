@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse, json
+from pathlib import Path
+from typing import Any
+import sys
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from capability_registry import load_structured_data
+try:
+    import yaml
+except Exception:
+    yaml=None
+
+def _load(path: Path)->dict[str,Any]:
+    if yaml is not None:
+        try:
+            data=yaml.safe_load(path.read_text(encoding="utf-8"))
+            return data if isinstance(data,dict) else {}
+        except Exception:
+            pass
+    data,_=load_structured_data(path)
+    return data if isinstance(data,dict) else {}
+
+def _exists_in_scene(scene: Path, token: str)->bool:
+    for rel in ["environment.yaml","workcell_builder_metadata.yaml","generated/environment_layout.yaml","generated/cell_definition.yaml"]:
+        p=scene/rel
+        if p.is_file() and token in p.read_text(encoding='utf-8', errors='ignore'):
+            return True
+    return False
+
+def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=None)->dict[str,Any]:
+    errors=[]; warnings=[]
+    payload=_load(path)
+    if not payload:
+        return {"status":"FAIL","errors":["Task intent YAML could not be loaded"],"warnings":[],"task_intent":{}}
+    if payload.get('schema')!='workcell_builder_task_intent/v1': errors.append('schema must be workcell_builder_task_intent/v1')
+    task=payload.get('task') if isinstance(payload.get('task'),dict) else {}
+    pick_block = payload.get('pick') if isinstance(payload.get('pick'), dict) else {}
+    place_block = payload.get('place') if isinstance(payload.get('place'), dict) else {}
+    pick = pick_block.get('source') if isinstance(pick_block.get('source'), dict) else {}
+    place = place_block.get('target') if isinstance(place_block.get('target'), dict) else {}
+    grasp=payload.get('grasp') if isinstance(payload.get('grasp'),dict) else {}
+    safety=payload.get('safety') if isinstance(payload.get('safety'),dict) else {}
+    if not task.get('type'): errors.append('task.type is required')
+    if not pick.get('id'): errors.append('pick.source.id is required')
+    if not place.get('id'): errors.append('place.target.id is required')
+    strategy_ref=grasp.get('strategy_ref')
+    if not strategy_ref and not grasp.get('inline_strategy'): errors.append('grasp.strategy_ref or grasp.inline_strategy is required')
+    for key in ['approach_distance_m','retreat_distance_m']:
+        if key in grasp:
+            try:
+                if float(grasp.get(key))<=0: errors.append(f'grasp.{key} must be positive')
+            except Exception:
+                errors.append(f'grasp.{key} must be numeric')
+    expected={"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}
+    for k,v in expected.items():
+        if safety.get(k)!=v: errors.append(f'safety.{k} must be {str(v).lower()}')
+    resolved=None
+    if strategy_ref and grasp_dir and grasp_dir.is_dir():
+        for f in grasp_dir.glob('*.yaml'):
+            txt=f.read_text(encoding='utf-8', errors='ignore')
+            if strategy_ref in txt:
+                resolved=str(f); break
+        if not resolved: warnings.append(f"grasp strategy '{strategy_ref}' not found in catalog")
+    if scene_package:
+        if not (scene_package/'package.xml').is_file(): errors.append('scene package missing package.xml')
+        if not (scene_package/'environment.yaml').is_file(): warnings.append('scene package missing environment.yaml')
+        if pick.get('id') and not _exists_in_scene(scene_package,str(pick['id'])): warnings.append(f"pick.source.id '{pick['id']}' could not be verified in scene metadata")
+        if place.get('id') and not _exists_in_scene(scene_package,str(place['id'])): warnings.append(f"place.target.id '{place['id']}' could not be verified in scene metadata")
+    status='FAIL' if errors else ('WARN' if warnings else 'PASS')
+    return {"status":status,"errors":errors,"warnings":warnings,"resolved_grasp_strategy":resolved,"pick_source":pick,"place_target":place,"safety":safety,"task_intent":payload}
+
+def main()->int:
+    ap=argparse.ArgumentParser()
+    ap.add_argument('task_intent', type=Path)
+    ap.add_argument('--scene-package', type=Path)
+    ap.add_argument('--capabilities-dir', type=Path)
+    ap.add_argument('--grasp-strategies-dir', type=Path)
+    ap.add_argument('--json', action='store_true')
+    args=ap.parse_args()
+    report=validate(args.task_intent,args.scene_package,args.grasp_strategies_dir)
+    if args.json: print(json.dumps(report,indent=2))
+    else:
+        print(f"status: {report['status']}")
+        for e in report['errors']: print(f"FAIL: {e}")
+        for w in report['warnings']: print(f"WARN: {w}")
+    return 1 if report['status']=='FAIL' else 0
+if __name__=='__main__': raise SystemExit(main())

@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import", "Demo Gallery", "Create Cell"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "Create Cell"],
 )
 
 if workflow == "Catalog browser":
@@ -84,6 +84,44 @@ elif workflow == "Builder scene import":
         if summary.get("preview_warnings"):
             st.warning("\n".join(summary.get("preview_warnings", [])))
 
+
+
+elif workflow == "Builder Task Intent":
+    st.header("Builder Task Intent")
+    st.info("This defines robot task intent only. It does not command robot motion.")
+    scene_package = st.text_input("Scene package path", value="")
+    found = backend.find_builder_task_intent(scene_package) if scene_package else ""
+    task_path = st.text_input("Task intent YAML path", value=found or (str(Path(scene_package)/"generated"/"workcell_builder_task_intent.yaml") if scene_package else "workcell_builder_task_intent.yaml"))
+    if st.button("Load task intent"):
+        st.session_state["builder_task_intent"] = backend.load_builder_task_intent(task_path)
+    if st.button("Create default task intent"):
+        st.session_state["builder_task_intent"] = backend.default_builder_task_intent(Path(scene_package).name if scene_package else "")
+    data = st.session_state.get("builder_task_intent", backend.default_builder_task_intent())
+    data.setdefault("task", {})["id"] = st.text_input("Task ID", value=data.get("task", {}).get("id", "default_builder_task"))
+    data["task"]["type"] = st.text_input("Task type", value=data.get("task", {}).get("type", "pick_place"))
+    pick = data.setdefault("pick", {}).setdefault("source", {})
+    pick["id"] = st.text_input("Pick source ID", value=pick.get("id", "pick_zone_main"))
+    of = data.setdefault("pick", {}).setdefault("object_filter", {})
+    of["class_id"] = st.text_input("Object class", value=of.get("class_id", "any"))
+    of["color"] = st.text_input("Object color", value=of.get("color", "any"))
+    grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]
+    g = data.setdefault("grasp", {})
+    g["strategy_ref"] = st.selectbox("Grasp strategy", options=grasps, index=max(0, grasps.index(g.get("strategy_ref")) if g.get("strategy_ref") in grasps else 0)) if grasps else st.text_input("Grasp strategy", value=g.get("strategy_ref", "suction_top_basic"))
+    g["approach_axis"] = st.text_input("Approach axis", value=g.get("approach_axis", "z_down"))
+    g["approach_distance_m"] = st.number_input("Approach distance (m)", value=float(g.get("approach_distance_m", 0.1)))
+    g["retreat_axis"] = st.text_input("Retreat axis", value=g.get("retreat_axis", "z_up"))
+    g["retreat_distance_m"] = st.number_input("Retreat distance (m)", value=float(g.get("retreat_distance_m", 0.1)))
+    place = data.setdefault("place", {}).setdefault("target", {})
+    place["id"] = st.text_input("Place target ID", value=place.get("id", "bin_main"))
+    data.setdefault("place", {})["release_strategy"] = st.text_input("Release strategy", value=data.get("place", {}).get("release_strategy", "tool_release"))
+    if st.button("Save task intent"):
+        backend.save_builder_task_intent(task_path, data)
+        st.success(f"Saved: {task_path}")
+    if st.button("Validate task intent"):
+        result = backend.validate_builder_task_intent(task_path, scene_package if scene_package else None)
+        st.json(result.get("json") or result)
+    st.subheader("Safety metadata")
+    st.json(data.get("safety", {}))
 
 if workflow == "Demo Gallery":
     st.header("Demo Gallery")

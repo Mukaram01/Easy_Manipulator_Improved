@@ -104,3 +104,16 @@ def test_create_cell_backend_helpers() -> None:
         assert result["returncode"] == 0
         summary = backend.load_create_cell_summary(out)
         assert summary["summary_json_path"]
+
+
+def test_builder_task_intent_helpers_roundtrip() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        scene = Path(d)/"scene"; scene.mkdir(parents=True, exist_ok=True)
+        payload = backend.default_builder_task_intent("scene")
+        path = scene/"generated"/"workcell_builder_task_intent.yaml"
+        backend.save_builder_task_intent(path, payload)
+        loaded = backend.load_builder_task_intent(path)
+        assert loaded.get("schema") == "workcell_builder_task_intent/v1"
+        assert backend.find_builder_task_intent(scene).endswith("workcell_builder_task_intent.yaml")
+        result = backend.validate_builder_task_intent(path)
+        assert result["returncode"] in {0,1}
