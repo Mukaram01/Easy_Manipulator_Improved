@@ -1,0 +1,17 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: generic_vacuum_array
+  label: Generic Vacuum Array
+  family: vacuum_array
+  compatible_robot_families: [gantry, delta, serial_6_axis]
+  required_frames: [tool0]
+  grasp_frames: [array_center]
+  contact_links: [cup_1, cup_2, cup_3, cup_4]
+  allowed_touch_links: [cup_1, cup_2, cup_3, cup_4]
+  max_object_mass_kg: 8.0
+  suction_area_mm2: 8500
+  supported_grasp_strategies: [top_down_suction]
+  required_io_signals: [vacuum_zone_a, vacuum_zone_b]
+  release_behaviour: staged_zone_release
+  limitations_warnings:
+    - Needs flat target contact area for all active cups.

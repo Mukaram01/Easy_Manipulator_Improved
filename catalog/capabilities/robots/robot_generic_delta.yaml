@@ -1,0 +1,20 @@
+schema_version: robot_capability/v1
+robot:
+  id: generic_delta_900
+  label: Generic Delta 900
+  brand: Generic
+  family: delta
+  mounting: overhead
+  planning_groups: [delta_arm]
+  base_frame: delta_base
+  tool_frames: [delta_tool]
+  default_tool_frame: delta_tool
+  named_targets: [home]
+  payload_kg: 1.2
+  reach_m: 0.9
+  workspace_description: High-speed dome envelope above conveyor
+  controller_type: high_speed_trajectory
+  supported_interfaces: [moveit, ros2_control, cartesian_path]
+  supported_task_families: [pick_place, conveyor_sorting]
+  limitations_warnings:
+    - Limited orientation control at workspace edges.

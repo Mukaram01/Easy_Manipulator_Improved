@@ -21,6 +21,8 @@ Sorting is one scenario template inside Workcell Studio, not the product itself.
 
 Roadmap: `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`
 
+Workcell Studio capability catalog lives at `catalog/capabilities/` and is the source for selectable robots, end effectors, sensors, tasks, and environment assets. It is currently metadata-only, offline-first, and safe/dry-run oriented (no robot-motion runtime changes). See `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`.
+
 ## Contents
 
 - [Supported platform](#supported-platform)

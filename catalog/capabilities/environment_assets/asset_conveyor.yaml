@@ -1,0 +1,17 @@
+schema_version: environment_asset/v1
+asset:
+  id: conveyor_2m
+  label: Belt Conveyor 2m
+  family: conveyor
+  dimensions:
+    length_m: 2.0
+    width_m: 0.5
+    height_m: 0.85
+  frame: world
+  pose: [1.5, -0.4, 0.425, 0.0, 0.0, 0.0]
+  collision_behaviour: dynamic_surface
+  mobility: static
+  import_source: vendor_model
+  mesh_path: assets/environment/conveyor_2m.stl
+  limitations_warnings:
+    - Motion surface speed configured externally.

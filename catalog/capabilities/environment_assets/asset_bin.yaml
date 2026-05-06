@@ -1,0 +1,17 @@
+schema_version: environment_asset/v1
+asset:
+  id: bin_blue_large
+  label: Blue Sorting Bin
+  family: bin
+  dimensions:
+    length_m: 0.5
+    width_m: 0.4
+    height_m: 0.35
+  frame: world
+  pose: [0.3, -0.6, 0.175, 0.0, 0.0, 0.0]
+  collision_behaviour: rigid_container
+  mobility: movable
+  import_source: internal_catalog
+  mesh_path: assets/environment/bin_blue_large.stl
+  limitations_warnings:
+    - Keep 50 mm clearance around rim for placement.
