@@ -81,3 +81,26 @@ def test_static_preview_backend_helpers() -> None:
         assert result["returncode"] == 0
         summary = backend.load_static_preview_summary(out)
         assert summary.get("title") == "Backend Preview"
+
+
+def test_create_cell_backend_helpers() -> None:
+    choices = backend.resolve_catalog_choices()
+    assert "robots" in choices and choices["robots"]
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "cell"
+        result = backend.create_cell(
+            cell_id="backend_cell",
+            robot="ur5",
+            end_effector="robotiq_2f",
+            sensor="intel_realsense_d435i",
+            task="task_magnetic_pick_place",
+            grasp_strategy="finger_pinch_basic",
+            output_dir=out,
+            validate=True,
+            preview=False,
+            generate_bundle=False,
+            force=True,
+        )
+        assert result["returncode"] == 0
+        summary = backend.load_create_cell_summary(out)
+        assert summary["summary_json_path"]

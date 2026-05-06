@@ -1497,3 +1497,7 @@ Demo bundles are offline/demo/validation artifacts only. Preview-only demos are 
 ## Static Workcell Preview
 
 Workcell Studio can now generate offline static preview artifacts (`static_preview.svg`, `static_preview.html`, `static_preview_summary.json`) from `cell_definition.yaml` (+ optional `environment_layout.yaml`). These are fast investor/demo visuals only and do not replace RViz/MoveIt collision checking, safety validation, or runtime execution.
+
+## Create Cell Wizard
+
+Use `python3 scripts/workcell_studio.py create-cell` for fast catalog/YAML cell creation with optional validation, static preview, and offline project bundle generation. This path is fake-hardware-first and does not start ROS launch or robot motion.

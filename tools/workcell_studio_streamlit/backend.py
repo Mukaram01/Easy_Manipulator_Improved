@@ -239,3 +239,45 @@ def load_static_preview_summary(preview_dir: str | Path) -> dict[str, Any]:
 def read_preview_html(preview_dir: str | Path) -> str:
     html_path = Path(preview_dir) / "static_preview.html"
     return html_path.read_text(encoding="utf-8") if html_path.exists() else ""
+
+
+def resolve_catalog_choices(root: Path | None = None) -> dict[str, list[dict[str, str]]]:
+    caps = load_capability_catalog(root)
+    grasps = load_grasp_strategy_catalog(root)
+    return {
+        "robots": [{"id": x.get("id"), "label": x.get("label") or x.get("id")} for x in caps.get("robots", []) if x.get("id")],
+        "end_effectors": [{"id": x.get("id"), "label": x.get("label") or x.get("id")} for x in caps.get("end_effectors", []) if x.get("id")],
+        "sensors": [{"id": x.get("id"), "label": x.get("label") or x.get("id")} for x in caps.get("sensors", []) if x.get("id")],
+        "tasks": [{"id": x.get("id"), "label": x.get("label") or x.get("id")} for x in caps.get("tasks", []) if x.get("id")],
+        "grasp_strategies": [{"id": x.get("id"), "label": x.get("label") or x.get("id")} for x in grasps if x.get("id")],
+    }
+
+
+def create_cell(cell_id: str, robot: str, end_effector: str, sensor: str, task: str, grasp_strategy: str, output_dir: str | Path, validate: bool = True, preview: bool = True, generate_bundle: bool = False, allow_incompatible: bool = False, force: bool = True, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "create-cell", "--cell-id", cell_id, "--robot", robot, "--end-effector", end_effector, "--sensor", sensor, "--task", task, "--grasp-strategy", grasp_strategy, "--output-dir", str(output_dir)]
+    if validate:
+        cmd.append("--validate")
+    if preview:
+        cmd.append("--preview")
+    if generate_bundle:
+        cmd.append("--generate-bundle")
+    if allow_incompatible:
+        cmd.append("--allow-incompatible")
+    if force:
+        cmd.append("--force")
+    result = _parse_json_output(run_command(cmd, cwd=rr, timeout=600))
+    result["summary"] = load_create_cell_summary(output_dir)
+    return result
+
+
+def load_create_cell_summary(output_dir: str | Path) -> dict[str, Any]:
+    out_dir = Path(output_dir)
+    js = out_dir / "create_cell_summary.json"
+    md = out_dir / "create_cell_summary.md"
+    return {
+        "summary_json_path": str(js) if js.exists() else "",
+        "summary_markdown_path": str(md) if md.exists() else "",
+        "summary": json.loads(js.read_text(encoding="utf-8")) if js.exists() else {},
+        "markdown": md.read_text(encoding="utf-8") if md.exists() else "",
+    }
