@@ -284,6 +284,10 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
                 (package_dir / "generated" / "generated_workcell_summary.json").read_text(encoding="utf-8")
             )
             self.assertIn("grasp_strategy", summary_payload)
+            self.assertTrue((package_dir / "generated" / "execution_plan.md").is_file())
+            self.assertTrue((package_dir / "generated" / "execution_plan.json").is_file())
+            warning_blob = "\n".join(summary_payload.get("warnings", []))
+            self.assertNotIn("Execution plan generation status: FAIL", warning_blob)
 
 
 class CellDefinitionWizardTests(unittest.TestCase):

@@ -366,6 +366,21 @@ def _run_optional_bundle_export(
         warnings.append(f"Optional commissioning bundle export skipped: {exc}")
 
 
+def _summarize_plan_failure(plan_result: Any, dry_result: Any, manifest_path: Path) -> str:
+    dry_status = getattr(dry_result, "status", "UNKNOWN")
+    matched_rule = getattr(plan_result, "matched_rule_id", "(n/a)") or "(n/a)"
+    destination_id = getattr(plan_result, "destination_id", "(n/a)") or "(n/a)"
+    notes = [str(n).strip() for n in getattr(plan_result, "notes", []) if str(n).strip()]
+    note_text = "; ".join(notes[:3]) if notes else "no additional notes"
+    if len(notes) > 3:
+        note_text += f"; (+{len(notes)-3} more)"
+    return (
+        f"Execution plan generation status: {getattr(plan_result, 'status', 'UNKNOWN')} "
+        f"(dry-run={dry_status}, matched_rule={matched_rule}, destination={destination_id}, "
+        f"manifest={manifest_path}, notes={note_text})"
+    )
+
+
 def generate_package(
     cell_definition_path: Path,
     output_dir: Path,
@@ -476,7 +491,7 @@ def generate_package(
                 shutil.copy2(plan_result.markdown_path, package_dir / "generated" / "execution_plan.md")
                 shutil.copy2(plan_result.json_path, package_dir / "generated" / "execution_plan.json")
             else:
-                warnings.append(f"Execution plan generation status: {plan_result.status}")
+                warnings.append(_summarize_plan_failure(plan_result, dry_result, scene_manifest_path))
         finally:
             plan_generator.OUTPUT_DIR = original_plan_dir
 

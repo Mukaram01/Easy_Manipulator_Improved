@@ -511,6 +511,15 @@ def _is_non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _is_valid_pick_grasp_strategy(value: Any) -> bool:
+    if _is_non_empty_string(value):
+        return True
+    if isinstance(value, dict):
+        strategy_ref = value.get("strategy_ref")
+        return strategy_ref is None or _is_non_empty_string(strategy_ref)
+    return False
+
+
 def _is_int_and_not_bool(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -587,8 +596,11 @@ def validate_task_recipe_block(manifest: dict[str, Any]) -> tuple[str, list[str]
                     + "."
                 )
             grasp_strategy = pick.get("grasp_strategy")
-            if grasp_strategy is not None and not _is_non_empty_string(grasp_strategy):
-                notes.append("task_recipe.pick.grasp_strategy must be non-empty string when provided.")
+            if grasp_strategy is not None and not _is_valid_pick_grasp_strategy(grasp_strategy):
+                notes.append(
+                    "task_recipe.pick.grasp_strategy must be a non-empty string, "
+                    "or a mapping with optional non-empty strategy_ref."
+                )
             allowed_methods = pick.get("allowed_grasp_methods")
             if allowed_methods is not None and not isinstance(allowed_methods, list):
                 notes.append("task_recipe.pick.allowed_grasp_methods must be a list when provided.")
