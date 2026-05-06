@@ -63,3 +63,6 @@ High-level ownership boundaries:
 ## Create-cell wizard
 
 `workcell_builder` remains the visual scene editor. `workcell_studio.py create-cell` is a fast catalog-driven YAML creation path that generates cell definition/layout, validates, produces static previews, and can optionally emit offline bundle artifacts.
+
+
+Next safe bridge: guarded RViz/MoveIt plan-preview session preparation from offline plan-preview requests, without ROS launch or motion execution.

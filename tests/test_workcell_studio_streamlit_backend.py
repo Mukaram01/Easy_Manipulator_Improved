@@ -128,3 +128,21 @@ def test_task_flow_backend_helpers():
         cell=backend.repo_root()/'tests'/'fixtures'/'cell_definition_pick_place.yaml'
         pr=backend.generate_static_preview_with_task_flow(cell,out,'x',task_intent_path=intent)
         assert pr['returncode']==0
+
+
+def test_backend_prepare_and_validate_rviz_plan_preview_session(tmp_path):
+    from tools.workcell_studio_streamlit import backend
+    recipe = tmp_path/"recipe.yaml"
+    recipe.write_text((Path(__file__).resolve().parents[1]/"tests/fixtures/task_recipes/valid_pick_place.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    req = tmp_path/"offline.yaml"
+    gen = backend.run_command(["python3", str(backend.repo_root()/"scripts"/"generate_offline_plan_preview_request.py"), "--task-recipe", str(recipe), "--output", str(req), "--allow-incomplete", "--json"], cwd=backend.repo_root())
+    assert gen["returncode"] == 0
+    out = tmp_path/"session"
+    prep = backend.prepare_rviz_plan_preview("scenes/ur5_2f_test", req, out)
+    assert prep["ok"]
+    payload = backend.load_rviz_plan_preview_session(out)
+    assert payload.get("schema") == "rviz_moveit_plan_preview_session/v1"
+    text = backend.read_suggested_commands(out)
+    assert "use_fake_hardware:=false" not in text
+    val = backend.validate_rviz_plan_preview_session(out/"rviz_moveit_plan_preview_session.json")
+    assert val["ok"]
