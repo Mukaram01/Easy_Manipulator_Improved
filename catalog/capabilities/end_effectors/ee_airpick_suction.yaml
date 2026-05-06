@@ -3,7 +3,7 @@ end_effector:
   id: onrobot_airpick_style
   label: OnRobot Airpick Style
   family: suction
-  compatible_robot_families: [serial_6_axis, collaborative_6_axis, delta]
+  compatible_robot_families: [serial_6_axis, collaborative_6_axis, delta, gantry]
   required_frames: [tool0]
   grasp_frames: [suction_tip]
   contact_links: [suction_cup]

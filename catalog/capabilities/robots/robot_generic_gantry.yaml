@@ -15,6 +15,6 @@ robot:
   workspace_description: Rectangular cartesian envelope over multi-station line
   controller_type: cartesian_controller
   supported_interfaces: [moveit, ros2_control, joint_trajectory_controller, cartesian_path]
-  supported_task_families: [palletising, machine_tending, conveyor_sorting]
+  supported_task_families: [palletising, machine_tending, conveyor_sorting, sort_by_colour, pick_place]
   limitations_warnings:
     - Dynamic acceleration constrained by bridge mass.

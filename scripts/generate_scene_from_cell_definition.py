@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import validate_cell_definition as cell_validator
+from capability_registry import load_capability_registry
 
 
 def _task_recipe_type(task_type: str) -> str:
@@ -144,15 +145,40 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
 
     ee_type = str(end_effector.get("type", "unknown")).strip().lower()
     is_suction = ee_type in {"suction", "vacuum", "vacuum_array"}
+    robot_capability_id = robot.get("capability")
+    robot_family = None
+    if isinstance(robot_capability_id, str) and robot_capability_id.strip():
+        record = load_capability_registry().get(robot_capability_id.strip())
+        if record and isinstance(record.family, str):
+            robot_family = record.family
+    if not robot_family:
+        model_lower = str(robot.get("model", "")).lower()
+        if "delta" in model_lower:
+            robot_family = "delta"
+        elif "gantry" in model_lower or "cartesian" in model_lower:
+            robot_family = "gantry"
+        else:
+            robot_family = "articulated"
+    is_placeholder_family = robot_family in {"delta", "gantry", "cartesian"}
+    runtime_blockers = [
+        "Placeholder robot family has no approved MoveIt/ros2_control runtime stack yet.",
+        "Real hardware execution is disabled for this generated template.",
+        "Motion execution requires robot-specific MoveIt/ros2_control integration.",
+    ] if is_placeholder_family else []
     manifest = {
         "schema_version": "1.0",
         "scene": {"name": cell.get("id", "generated_cell")},
         "robot": {
+            "capability": robot_capability_id,
+            "family": robot_family,
             "model": robot.get("model", "unknown"),
             "planning_group": robot.get("planning_group", "manipulator"),
             "base_frame": robot.get("base_frame", "world"),
             "ee_link": robot.get("tool_link", "tool0"),
             "home_named_target": robot.get("home_named_target", "home"),
+            "runtime_supported": not is_placeholder_family,
+            "preview_only": is_placeholder_family,
+            "runtime_blockers": runtime_blockers,
         },
         "planning": {"pipeline": "ompl", "planner_id": "RRTConnectkConfigDefault"},
         "end_effector": {
@@ -245,6 +271,8 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
         manifest["end_effector"]["release_behavior"] = end_effector.get("release_behavior", {"mode": "vacuum_off"})
         manifest["end_effector"]["metadata_only"] = True
         manifest["end_effector"]["runtime_io_applied"] = False
+    if is_placeholder_family:
+        manifest["runtime_status"] = "BLOCKED_PREVIEW_ONLY"
 
     return manifest
 

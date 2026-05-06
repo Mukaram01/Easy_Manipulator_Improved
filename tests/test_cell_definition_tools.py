@@ -53,6 +53,12 @@ class CellDefinitionValidationTests(unittest.TestCase):
     def test_valid_ur5_suction_sorting_fixture_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_ur5_suction_sorting.yaml")
         self.assertTrue(summary.ok)
+    def test_valid_generic_cartesian_suction_sorting_fixture_passes(self) -> None:
+        summary = self._validate_fixture("cell_definition_generic_cartesian_suction_sorting.yaml")
+        self.assertTrue(summary.ok)
+    def test_valid_generic_delta_suction_sorting_fixture_passes(self) -> None:
+        summary = self._validate_fixture("cell_definition_generic_delta_suction_sorting.yaml")
+        self.assertTrue(summary.ok)
 
     def test_valid_sort_by_shape_cell_definition_passes(self) -> None:
         summary = self._validate_fixture("cell_definition_sort_by_shape.yaml")
@@ -165,6 +171,15 @@ class CellDefinitionGenerationTests(unittest.TestCase):
         task_recipe = generator.build_task_recipe(loaded)
         self.assertEqual(task_recipe["pick"]["allowed_grasp_methods"], ["suction"])
         self.assertIn("grasp_strategy", task_recipe["pick"])
+    def test_placeholder_robot_preview_runtime_blockers_present(self) -> None:
+        loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_generic_delta_suction_sorting.yaml")
+        summary = validator.validate_cell_definition(loaded, FIXTURES / "cell_definition_generic_delta_suction_sorting.yaml", parser, notes)
+        self.assertTrue(summary.ok)
+        scene_manifest = generator.build_scene_manifest(loaded)
+        self.assertEqual(scene_manifest["robot"]["family"], "delta")
+        self.assertTrue(scene_manifest["robot"]["preview_only"])
+        self.assertFalse(scene_manifest["robot"]["runtime_supported"])
+        self.assertTrue(scene_manifest["robot"]["runtime_blockers"])
 
 
 class WorkcellPackageGenerationTests(unittest.TestCase):
@@ -204,6 +219,9 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
 
     def test_garbage_sorting_generates_package(self) -> None:
         self._assert_generate_fixture("cell_definition_garbage_sorting.yaml", "generated_garbage_sort")
+    def test_placeholder_templates_generate_packages(self) -> None:
+        self._assert_generate_fixture("cell_definition_generic_cartesian_suction_sorting.yaml", "generated_cart_suction")
+        self._assert_generate_fixture("cell_definition_generic_delta_suction_sorting.yaml", "generated_delta_suction")
 
     def test_dry_run_does_not_write_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
