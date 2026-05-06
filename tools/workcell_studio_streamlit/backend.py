@@ -433,3 +433,28 @@ def generate_static_preview_with_task_flow(cell_definition_path: str | Path, out
     if task_intent_path: cmd += ["--task-intent", str(task_intent_path)]
     if task_recipe_path: cmd += ["--task-recipe", str(task_recipe_path)]
     return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def prepare_rviz_plan_preview(scene_package: str | Path, plan_preview_request: str | Path, output_dir: str | Path, allow_missing_launch: bool = True, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "prepare-rviz-plan-preview", "--scene-package", str(scene_package), "--plan-preview-request", str(plan_preview_request), "--output-dir", str(output_dir), "--json"]
+    if allow_missing_launch:
+        cmd.append("--allow-missing-launch")
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def validate_rviz_plan_preview_session(session_path: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "validate-rviz-plan-preview", "--session", str(session_path), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def load_rviz_plan_preview_session(output_dir: str | Path) -> dict[str, Any]:
+    d = Path(output_dir)
+    p = d / "rviz_moveit_plan_preview_session.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def read_suggested_commands(output_dir: str | Path) -> str:
+    p = Path(output_dir) / "suggested_commands.sh"
+    return p.read_text(encoding="utf-8") if p.exists() else ""

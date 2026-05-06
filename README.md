@@ -1504,3 +1504,6 @@ Use `python3 scripts/workcell_studio.py create-cell` for fast catalog/YAML cell 
 
 ## Task flow preview: pick → grasp → place
 Use `scripts/summarize_task_flow.py` and static preview task-flow markers for offline readiness diagnostics.
+
+## Guarded RViz/MoveIt plan preview preparation
+Use `scripts/generate_rviz_moveit_plan_preview_session.py` or `scripts/workcell_studio.py prepare-rviz-plan-preview` to generate fake-hardware-only manual launch suggestions and readiness reports.

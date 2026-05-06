@@ -51,3 +51,6 @@ safety:
   moveit_service_called: false
   runtime_io_applied: false
 ```
+
+
+This request can be consumed by `rviz_moveit_plan_preview_session/v1` preparation tooling to produce guarded fake-hardware RViz/MoveIt preview session artifacts.

@@ -421,7 +421,20 @@ def import_builder_scene(args: argparse.Namespace) -> int:
             f"python3 scripts/create_workcell_project.py --cell-definition {cell_def} --output-dir {output_dir} --force",
         ],
         "export_summary": export_payload,
+        "rviz_plan_preview_session_path": "",
+        "rviz_plan_preview_suggested_commands_path": "",
     }
+
+    
+    if summary.get("generated_task_recipe_path"):
+        sess_dir = output_dir / "plan_preview_session"
+        preview_cmd = [sys.executable, str(SCRIPT_DIR / "generate_rviz_moveit_plan_preview_session.py"), "--scene-package", str(scene_pkg), "--plan-preview-request", str(generated_dir / "offline_plan_preview_request.yaml"), "--output-dir", str(sess_dir), "--allow-missing-launch", "--json"]
+        if Path(summary.get("generated_task_recipe_path")).exists():
+            req_cmd=[sys.executable, str(SCRIPT_DIR/"generate_offline_plan_preview_request.py"), "--task-recipe", summary.get("generated_task_recipe_path"), "--output", str(generated_dir / "offline_plan_preview_request.yaml"), "--validate", "--json"]
+            _run_json(req_cmd, "offline request")
+        _run_json(preview_cmd, "rviz plan preview prepare")
+        summary["rviz_plan_preview_session_path"] = str(sess_dir / "rviz_moveit_plan_preview_session.json")
+        summary["rviz_plan_preview_suggested_commands_path"] = str(sess_dir / "suggested_commands.sh")
 
     summary_json = output_dir / "workcell_studio_import_summary.json"
     summary_md = output_dir / "workcell_studio_import_summary.md"
@@ -456,6 +469,26 @@ def import_builder_scene(args: argparse.Namespace) -> int:
     return 0
 
 
+
+
+def prepare_rviz_plan_preview(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "generate_rviz_moveit_plan_preview_session.py"), "--scene-package", str(args.scene_package), "--plan-preview-request", str(args.plan_preview_request), "--output-dir", str(args.output_dir)]
+    if args.cell_definition: cmd += ["--cell-definition", str(args.cell_definition)]
+    if args.task_recipe: cmd += ["--task-recipe", str(args.task_recipe)]
+    if args.project_dir: cmd += ["--project-dir", str(args.project_dir)]
+    if args.allow_missing_launch: cmd.append("--allow-missing-launch")
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+
+def validate_rviz_plan_preview(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "validate_rviz_moveit_plan_preview_session.py"), str(args.session)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
 
 def validate_builder_task(args: argparse.Namespace) -> int:
     cmd = [sys.executable, str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(args.task_intent)]
@@ -496,6 +529,23 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--validate", action="store_true")
     import_parser.add_argument("--generate-project", action="store_true")
     import_parser.set_defaults(func=import_builder_scene)
+
+    prep = sub.add_parser("prepare-rviz-plan-preview", help="Prepare guarded fake-hardware RViz/MoveIt plan preview session artifacts")
+    prep.add_argument("--scene-package", required=True)
+    prep.add_argument("--plan-preview-request", type=Path, required=True)
+    prep.add_argument("--output-dir", type=Path, required=True)
+    prep.add_argument("--cell-definition", type=Path)
+    prep.add_argument("--task-recipe", type=Path)
+    prep.add_argument("--project-dir", type=Path)
+    prep.add_argument("--allow-missing-launch", action="store_true")
+    prep.add_argument("--json", action="store_true")
+    prep.set_defaults(func=prepare_rviz_plan_preview)
+
+    vprep = sub.add_parser("validate-rviz-plan-preview", help="Validate rviz_moveit_plan_preview_session/v1 artifacts")
+    vprep.add_argument("--session", type=Path, required=True)
+    vprep.add_argument("--json", action="store_true")
+    vprep.set_defaults(func=validate_rviz_plan_preview)
+
     cc = sub.add_parser("create-cell", help="Create a catalog-driven cell_definition + environment layout + optional preview/bundle")
     cc.add_argument("--cell-id", required=True)
     cc.add_argument("--robot", required=True)

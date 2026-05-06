@@ -60,3 +60,6 @@ The Streamlit app now includes **Create Cell** for selecting catalog robot/tool/
 
 ## Task Flow Summary panel
 Shows readiness classification, pick/place/grasp/release, routing, and offline safety/preview diagnostics.
+
+
+Includes a **Prepare RViz/MoveIt plan preview** action that only generates manual fake-hardware commands and safety/readiness reports. It does not start ROS, call MoveIt, or move hardware.
