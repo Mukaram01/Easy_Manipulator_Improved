@@ -1,0 +1,17 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: robotiq_2f_85
+  label: Robotiq 2F-85
+  family: finger_gripper
+  compatible_robot_families: [serial_6_axis, collaborative_6_axis, scara]
+  required_frames: [tool0]
+  grasp_frames: [tool0]
+  contact_links: [left_inner_finger, right_inner_finger]
+  allowed_touch_links: [left_inner_finger, right_inner_finger]
+  max_object_mass_kg: 2.0
+  opening_width_mm: 85
+  supported_grasp_strategies: [pinch, side_pick]
+  required_io_signals: [gripper_open_cmd, gripper_close_cmd]
+  release_behaviour: open_until_clear
+  limitations_warnings:
+    - Requires parallel approach for reliable pinch grasps.

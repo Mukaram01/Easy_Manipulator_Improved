@@ -1,0 +1,13 @@
+schema_version: sensor_capability/v1
+sensor:
+  id: generic_overhead_rgbd
+  label: Generic Overhead RGBD Camera
+  family: rgbd_camera
+  frames: [overhead_camera_link, overhead_optical_frame]
+  topics: [/overhead/rgb, /overhead/depth]
+  detection_outputs: [class, colour, shape, pose, confidence]
+  supported_object_attributes: [class, colour, shape, pose, size, confidence]
+  mounting: overhead
+  calibration_requirements: [extrinsics_to_world, lens_distortion]
+  limitations_warnings:
+    - Occlusion increases near tall fixtures.

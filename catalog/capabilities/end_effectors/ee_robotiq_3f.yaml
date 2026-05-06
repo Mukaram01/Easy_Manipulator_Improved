@@ -1,0 +1,17 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: robotiq_3f
+  label: Robotiq 3F
+  family: three_finger_gripper
+  compatible_robot_families: [serial_6_axis, collaborative_6_axis]
+  required_frames: [tool0]
+  grasp_frames: [tool0, palm_link]
+  contact_links: [finger_a, finger_b, finger_c]
+  allowed_touch_links: [finger_a, finger_b, finger_c]
+  max_object_mass_kg: 1.5
+  opening_width_mm: 155
+  supported_grasp_strategies: [pinch, enveloping]
+  required_io_signals: [mode_cmd, grip_cmd]
+  release_behaviour: adaptive_release
+  limitations_warnings:
+    - Enveloping grasp speed is slower than pinch mode.

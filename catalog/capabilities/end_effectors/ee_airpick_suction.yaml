@@ -1,0 +1,17 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: onrobot_airpick_style
+  label: OnRobot Airpick Style
+  family: suction
+  compatible_robot_families: [serial_6_axis, collaborative_6_axis, delta]
+  required_frames: [tool0]
+  grasp_frames: [suction_tip]
+  contact_links: [suction_cup]
+  allowed_touch_links: [suction_cup]
+  max_object_mass_kg: 0.6
+  suction_area_mm2: 900
+  supported_grasp_strategies: [top_down_suction, side_pick]
+  required_io_signals: [vacuum_on, blowoff]
+  release_behaviour: vacuum_off_with_blowoff
+  limitations_warnings:
+    - Porous surfaces reduce holding force.

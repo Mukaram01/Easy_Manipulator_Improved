@@ -1,0 +1,17 @@
+schema_version: environment_asset/v1
+asset:
+  id: cnc_tending_fixture_a
+  label: CNC Tending Fixture A
+  family: fixture
+  dimensions:
+    length_m: 0.9
+    width_m: 0.6
+    height_m: 0.2
+  frame: machine_base
+  pose: [0.2, 0.0, 0.1, 0.0, 0.0, 0.0]
+  collision_behaviour: rigid_fixture
+  mobility: attachable
+  import_source: cad_import
+  mesh_path: assets/environment/cnc_tending_fixture_a.stl
+  limitations_warnings:
+    - Validate spindle clearance before deployment.

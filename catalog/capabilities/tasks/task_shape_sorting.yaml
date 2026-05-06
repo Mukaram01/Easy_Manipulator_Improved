@@ -1,0 +1,12 @@
+schema_version: task_capability/v1
+task:
+  task_family: sort_by_shape
+  required_robot_capabilities: [planning_groups]
+  required_end_effector_capabilities: [supported_grasp_strategies]
+  required_sensor_attributes: [shape, pose, confidence]
+  required_destinations: [bin_cylinders, bin_cubes, reject_bin]
+  rule_model: shape_lookup
+  expected_validation_checks: [shape_rules_complete]
+  runtime_requirements: [shape_classifier]
+  limitations_warnings:
+    - Similar silhouettes may require multi-view sensing.

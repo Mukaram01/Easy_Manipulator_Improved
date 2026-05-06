@@ -18,7 +18,25 @@ All contracts include `schema_version` and use versioned identifiers:
 - `task_capability/v1`
 - `environment_asset/v1`
 
-Reference fixtures live under `tests/fixtures/capabilities/`.
+Shipping Workcell Studio catalog lives under `catalog/capabilities/`.
+Regression fixtures remain under `tests/fixtures/capabilities/`.
+
+---
+
+
+## Capability catalog layout
+
+`catalog/capabilities/` is now the shipping Workcell Studio catalog path:
+
+- `catalog/capabilities/robots/`
+- `catalog/capabilities/end_effectors/`
+- `catalog/capabilities/sensors/`
+- `catalog/capabilities/tasks/`
+- `catalog/capabilities/environment_assets/`
+
+`tests/fixtures/capabilities/` remains a regression-fixture set for validator and tooling tests.
+
+All capability files remain offline metadata only and do not alter ROS 2 launch, MoveIt planning, grasp execution, EPD, or robot-motion runtime behavior.
 
 ---
 
@@ -198,8 +216,9 @@ Examples:
 Validator:
 
 ```bash
+python3 scripts/validate_capability_contracts.py catalog/capabilities
+python3 scripts/validate_capability_contracts.py catalog/capabilities --json
 python3 scripts/validate_capability_contracts.py tests/fixtures/capabilities
-python3 scripts/validate_capability_contracts.py tests/fixtures/capabilities --json
 python3 scripts/validate_capability_contracts.py tests/fixtures/capabilities --strict
 ```
 
