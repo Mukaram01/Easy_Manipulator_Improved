@@ -70,12 +70,19 @@ elif workflow == "Builder scene import":
         st.write(
             {
                 "generated_project_path": summary.get("generated_project_path"),
+                "preview_svg": summary.get("preview_svg"),
+                "preview_html": summary.get("preview_html"),
                 "dashboard_path": summary.get("dashboard_path"),
                 "preflight_report_path": summary.get("preflight_report_path"),
                 "safety_status": summary.get("safety_status"),
                 "runtime_preview_blockers": (summary.get("validation", {}).get("builder_scene", {}).get("runtime_blockers", [])),
             }
         )
+        if summary.get("preview_svg") and Path(summary["preview_svg"]).exists():
+            st.subheader("Static Preview")
+            st.image(summary["preview_svg"])
+        if summary.get("preview_warnings"):
+            st.warning("\n".join(summary.get("preview_warnings", [])))
 
 
 if workflow == "Demo Gallery":
@@ -97,6 +104,12 @@ if workflow == "Demo Gallery":
         st.json(summary.get("summary", {}))
         if summary.get("markdown"):
             st.markdown(summary["markdown"])
+        payload = summary.get("summary", {})
+        if payload.get("preview_svg") and Path(payload["preview_svg"]).exists():
+            st.subheader("Static Preview")
+            st.image(payload["preview_svg"])
+        if payload.get("preview_warnings"):
+            st.warning("\n".join(payload.get("preview_warnings", [])))
     if col2.button("Generate all demo bundles"):
         result = backend.generate_demo_bundle(output_dir=output_dir, all_demos=True, force=True, continue_on_error=True)
         st.json(result.get("json") or result)

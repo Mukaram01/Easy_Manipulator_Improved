@@ -43,6 +43,8 @@ def test_import_reuses_existing_exports_and_writes_summaries() -> None:
         assert summary["validation"]["cell_definition"]
         assert summary["validation"]["environment_layout"]
         assert summary["generated_project_path"]
+        assert (out / "preview" / "static_preview.svg").is_file()
+        assert summary.get("preview_svg") and summary.get("preview_html")
 
 
 def test_import_auto_exports_missing_generated_files() -> None:

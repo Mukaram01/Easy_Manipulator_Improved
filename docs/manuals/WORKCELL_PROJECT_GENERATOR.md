@@ -98,3 +98,7 @@ python3 scripts/workcell_studio.py import-builder-scene \
   --validate \
   --generate-project
 ```
+
+## Static preview artifacts
+
+Workcell Studio now emits static SVG/HTML/JSON preview artifacts as investor/demo collateral for generated cells. These are not collision checks, safety validation, or runtime readiness proof; they are quick layout approximations before deeper RViz/MoveIt review.
