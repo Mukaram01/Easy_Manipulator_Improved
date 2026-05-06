@@ -66,6 +66,8 @@ Generated files:
 - `task_recipe.preview.yaml`
 - `commissioning_summary.md`
 
+If a `grasp` strategy is present and validated, preview/generated outputs also include a `grasp_strategy` metadata block in the scene manifest and task recipe, and a grasp section in summaries. This is offline metadata only and does not change runtime motion/planning behavior.
+
 ## Review commissioning summary
 
 `commissioning_summary.md` is written for operators and includes:

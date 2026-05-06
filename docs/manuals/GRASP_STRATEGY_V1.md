@@ -19,3 +19,18 @@ Validate:
 ```bash
 python3 scripts/validate_grasp_strategy.py catalog/grasp_strategies
 ```
+
+## Generated artifact propagation
+
+When a `cell_definition/v1` includes a validated `grasp` block (`strategy_ref` and/or inline `strategy`), generated offline artifacts now preserve a `grasp_strategy` metadata block in:
+- `scene_manifest.preview.yaml` / generated `scene_manifest.yaml`
+- `task_recipe.preview.yaml` / generated `config/task_recipe.yaml` (`pick.grasp_strategy`)
+- commissioning summary markdown
+- generated package `README.md`
+- `generated/generated_workcell_summary.json`
+
+This remains metadata-only:
+- `metadata_only: true`
+- `runtime_applied: false`
+
+Runtime behavior is unchanged; this metadata is not proof of grasp feasibility, safety, or suction success.

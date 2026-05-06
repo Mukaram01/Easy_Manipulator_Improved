@@ -191,13 +191,14 @@ ament_package()
 
 
 def _build_readme(
-    cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str], capability_summary: dict[str, Any] | None = None
+    cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str], scene_generator: Any, capability_summary: dict[str, Any] | None = None
 ) -> str:
     cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
     robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
     end_effector = cell_def.get("end_effector", {}) if isinstance(cell_def.get("end_effector"), dict) else {}
     camera = cell_def.get("camera", {}) if isinstance(cell_def.get("camera"), dict) else {}
     task = cell_def.get("task", {}) if isinstance(cell_def.get("task"), dict) else {}
+    grasp_strategy = scene_generator.extract_grasp_strategy_metadata(cell_def)
 
     capabilities = (capability_summary or {}).get("capability_refs", {}) if isinstance(capability_summary, dict) else {}
     cap_status = (capability_summary or {}).get("checks", {}).get("status") if isinstance(capability_summary, dict) else None
@@ -235,6 +236,14 @@ def _build_readme(
         lines.append("- None")
     if cap_status:
         lines.append(f"- Capability compatibility status: **{cap_status}**")
+    lines.extend(["", "## Grasp strategy"])
+    if grasp_strategy:
+        lines.append(
+            f"- Selected: ref=`{grasp_strategy.get('strategy_ref', '(none)')}`, id=`{grasp_strategy.get('id', '(none)')}`, type=`{grasp_strategy.get('strategy', '(unknown)')}`"
+        )
+        lines.append("- This is offline metadata only and is not proof of runtime grasp success.")
+    else:
+        lines.append("- No explicit grasp strategy selected in source cell definition.")
 
     lines.extend(
         [
@@ -435,7 +444,7 @@ def generate_package(
 
     (package_dir / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings, summary.capability_summary),
+        + _build_readme(loaded, package_name, cell_definition_path, package_dir, warnings, scene_generator, summary.capability_summary),
         encoding="utf-8",
     )
 
@@ -514,6 +523,7 @@ def generate_package(
         "blockers": [],
         "recommended_commands": {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
         "approval": {"status": "unapproved", "approved_by": None, "approved_at": None, "notes": ""},
+        "grasp_strategy": scene_generator.extract_grasp_strategy_metadata(loaded),
     }
     summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     command_script_path.write_text(

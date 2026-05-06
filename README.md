@@ -22,6 +22,7 @@ Sorting is one scenario template inside Workcell Studio, not the product itself.
 Roadmap: `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`
 
 Workcell Studio capability catalog lives at `catalog/capabilities/` and is now the default registry for offline capability resolution tooling. Workcell Studio also includes a grasp strategy catalog at `catalog/grasp_strategies/` for offline `grasp_strategy/v1` metadata. Both catalogs remain metadata-only, offline-first, and safe/dry-run oriented (no robot-motion runtime changes). See `docs/manuals/INDUSTRIAL_CAPABILITY_CONTRACTS.md`.
+Generated workcell artifacts now preserve selected validated grasp strategy metadata in scene manifests, task recipes, commissioning summaries, package README output, and generated bundle summary JSON; runtime robot behavior remains unchanged.
 
 ## Contents
 
