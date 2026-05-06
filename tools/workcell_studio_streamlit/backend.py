@@ -258,6 +258,43 @@ def load_generated_task_recipe(path: str | Path) -> dict[str, Any]:
 
 def summarize_task_recipe(path: str | Path) -> dict[str, Any]:
     payload = load_generated_task_recipe(path)
+
+def generate_plan_preview_request(task_recipe_path: str | Path, output_path: str | Path, cell_definition_path: str | Path | None = None, environment_layout_path: str | Path | None = None, allow_incomplete: bool = False, validate: bool = True, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "generate_offline_plan_preview_request.py"), "--task-recipe", str(task_recipe_path), "--output", str(output_path), "--json"]
+    if cell_definition_path:
+        cmd.extend(["--cell-definition", str(cell_definition_path)])
+    if environment_layout_path:
+        cmd.extend(["--environment-layout", str(environment_layout_path)])
+    if allow_incomplete:
+        cmd.append("--allow-incomplete")
+    if validate:
+        cmd.append("--validate")
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def validate_plan_preview_request(request_path: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "validate_offline_plan_preview_request.py"), str(request_path), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def load_plan_preview_request(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    return _load_yaml_file(p) if p.exists() else {}
+
+
+def summarize_plan_preview_request(path: str | Path) -> dict[str, Any]:
+    payload = load_plan_preview_request(path)
+    req = payload.get("request", {}) if isinstance(payload.get("request"), dict) else {}
+    return {
+        "schema": payload.get("schema"),
+        "pick_source": (req.get("pick") or {}).get("source_id"),
+        "place_target": (req.get("place") or {}).get("target_id"),
+        "grasp_strategy": (req.get("tool") or {}).get("grasp_strategy"),
+        "waypoint_count": len(req.get("waypoints") or []),
+        "safety": payload.get("safety", {}),
+    }
     bti = payload.get("builder_task_intent", {}) if isinstance(payload.get("builder_task_intent"), dict) else {}
     task = payload.get("task", {}) if isinstance(payload.get("task"), dict) else {}
     return {
