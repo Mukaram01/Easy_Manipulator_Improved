@@ -1484,3 +1484,12 @@ Safety/scope notes:
 - Offline validation and fake-hardware-first defaults are preserved.
 
 See `tools/workcell_studio_streamlit/README.md` for install and run commands.
+
+## Workcell Studio Demo Gallery
+
+Use curated offline demos and export demo bundles:
+- `python3 scripts/workcell_studio.py list-demos`
+- `python3 scripts/workcell_studio.py generate-demo-bundle --demo-id ur5_suction_sorting_demo --output-dir /tmp/workcell_studio_demos --force`
+- `python3 scripts/workcell_studio.py generate-demo-bundle --all --output-dir /tmp/workcell_studio_all_demos --force --continue-on-error`
+
+Demo bundles are offline/demo/validation artifacts only. Preview-only demos are for concept visualization and are not runtime-ready.

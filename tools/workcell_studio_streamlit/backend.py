@@ -175,3 +175,48 @@ def load_import_summary(output_dir: str | Path) -> dict[str, Any]:
     else:
         payload["summary"] = {}
     return payload
+
+
+def load_demo_catalog(root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    catalog = rr / "catalog" / "workcell_studio_demos.yaml"
+    if not catalog.exists():
+        return {"catalog_path": str(catalog), "demos": []}
+    payload = _load_yaml_file(catalog)
+    demos = payload.get("demos") if isinstance(payload.get("demos"), list) else []
+    return {"catalog_path": str(catalog), "demos": demos}
+
+
+def list_demos(root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "list-demos", "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def generate_demo_bundle(output_dir: str | Path, demo_id: str | None = None, all_demos: bool = False, force: bool = True, continue_on_error: bool = False, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "generate-demo-bundle", "--output-dir", str(output_dir)]
+    if all_demos:
+        cmd.append("--all")
+    elif demo_id:
+        cmd.extend(["--demo-id", demo_id])
+    if force:
+        cmd.append("--force")
+    if continue_on_error:
+        cmd.append("--continue-on-error")
+    return _parse_json_output(run_command(cmd, cwd=rr, timeout=600))
+
+
+def load_demo_bundle_summary(bundle_dir: str | Path) -> dict[str, Any]:
+    b = Path(bundle_dir)
+    js = b / "demo_bundle_summary.json"
+    md = b / "demo_bundle_summary.md"
+    out: dict[str, Any] = {
+        "summary_json_path": str(js) if js.exists() else "",
+        "summary_markdown_path": str(md) if md.exists() else "",
+        "summary": {},
+        "markdown": md.read_text(encoding="utf-8") if md.exists() else "",
+    }
+    if js.exists():
+        out["summary"] = json.loads(js.read_text(encoding="utf-8"))
+    return out

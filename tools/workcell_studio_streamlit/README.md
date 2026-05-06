@@ -29,3 +29,23 @@ streamlit run tools/workcell_studio_streamlit/app.py
 
 `workcell_builder` remains the visual editor.
 This Streamlit Studio prototype is currently an orchestration/readiness/demo UI.
+
+## Demo Gallery
+
+Open the Streamlit app and select **Demo Gallery**.
+
+Generate one demo bundle:
+- choose a demo id
+- choose output directory
+- click **Generate demo bundle**
+
+Generate all demo bundles:
+- click **Generate all demo bundles**
+
+Safety notes:
+- UI is offline-first and fake-hardware-first.
+- No robot motion commands are issued.
+- Runtime modes:
+  - `runtime_ready`: intended runtime-capable configuration.
+  - `fake_hardware_ready`: safe demo/validation default.
+  - `preview_only`: concept/sales visualization only.

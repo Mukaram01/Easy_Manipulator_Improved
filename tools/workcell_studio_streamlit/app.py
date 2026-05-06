@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Demo Gallery"],
 )
 
 if workflow == "Catalog browser":
@@ -43,7 +43,7 @@ elif workflow == "Cell definition validator":
             st.json(layout_result.get("json") or layout_result)
             st.code((layout_result.get("stdout") or "") + "\n" + (layout_result.get("stderr") or ""))
 
-else:
+elif workflow == "Builder scene import":
     st.header("Builder scene import")
     scene_package = st.text_input("Scene package path")
     output_dir = st.text_input("Output directory", value="/tmp/workcell_studio_streamlit")
@@ -76,3 +76,27 @@ else:
                 "runtime_preview_blockers": (summary.get("validation", {}).get("builder_scene", {}).get("runtime_blockers", [])),
             }
         )
+
+
+if workflow == "Demo Gallery":
+    st.header("Demo Gallery")
+    st.info("Preview-only demos are concept/demo artifacts only and are not runtime-ready.")
+    catalog = backend.load_demo_catalog()
+    demos = catalog.get("demos", [])
+    st.caption(f"Catalog: {catalog.get('catalog_path','')}")
+    st.dataframe(demos, use_container_width=True)
+    demo_ids = [d.get("id") for d in demos if isinstance(d, dict) and d.get("id")]
+    selected_demo = st.selectbox("Select demo", options=demo_ids) if demo_ids else ""
+    output_dir = st.text_input("Output directory", value="/tmp/workcell_studio_demos")
+    col1, col2 = st.columns(2)
+    if col1.button("Generate demo bundle") and selected_demo:
+        result = backend.generate_demo_bundle(output_dir=output_dir, demo_id=selected_demo, all_demos=False, force=True)
+        st.json(result.get("json") or result)
+        summary = backend.load_demo_bundle_summary(Path(output_dir) / selected_demo)
+        st.subheader("Demo bundle summary")
+        st.json(summary.get("summary", {}))
+        if summary.get("markdown"):
+            st.markdown(summary["markdown"])
+    if col2.button("Generate all demo bundles"):
+        result = backend.generate_demo_bundle(output_dir=output_dir, all_demos=True, force=True, continue_on_error=True)
+        st.json(result.get("json") or result)
