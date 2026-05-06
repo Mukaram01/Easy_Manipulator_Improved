@@ -1,0 +1,199 @@
+{
+  "schema_version": "workcell_builder_catalog/v1",
+  "robot_capabilities": [
+    {
+      "id": "generic_delta_900",
+      "label": "Generic Delta 900",
+      "family": "delta",
+      "schema": "robot_capability/v1",
+      "type": "robot",
+      "runtime_supported": true,
+      "preview_only": false
+    },
+    {
+      "id": "generic_gantry_xyz",
+      "label": "Generic Gantry XYZ",
+      "family": "gantry",
+      "schema": "robot_capability/v1",
+      "type": "robot",
+      "runtime_supported": true,
+      "preview_only": false
+    },
+    {
+      "id": "generic_scara_600",
+      "label": "Generic SCARA 600",
+      "family": "scara",
+      "schema": "robot_capability/v1",
+      "type": "robot",
+      "runtime_supported": true,
+      "preview_only": false
+    },
+    {
+      "id": "ur5",
+      "label": "Universal Robots UR5",
+      "family": "serial_6_axis",
+      "schema": "robot_capability/v1",
+      "type": "robot",
+      "runtime_supported": true,
+      "preview_only": false
+    }
+  ],
+  "end_effector_capabilities": [
+    {
+      "id": "generic_vacuum_array",
+      "label": "Generic Vacuum Array",
+      "family": "vacuum_array",
+      "schema": "end_effector_capability/v1",
+      "type": "end_effector",
+      "runtime_supported": true,
+      "preview_only": false,
+      "compatible_robot_families": [
+        "gantry",
+        "delta",
+        "serial_6_axis"
+      ]
+    },
+    {
+      "id": "onrobot_airpick_style",
+      "label": "OnRobot Airpick Style",
+      "family": "suction",
+      "schema": "end_effector_capability/v1",
+      "type": "end_effector",
+      "runtime_supported": true,
+      "preview_only": false,
+      "compatible_robot_families": [
+        "serial_6_axis",
+        "collaborative_6_axis",
+        "delta",
+        "gantry"
+      ]
+    },
+    {
+      "id": "robotiq_2f_85",
+      "label": "Robotiq 2F-85",
+      "family": "finger_gripper",
+      "schema": "end_effector_capability/v1",
+      "type": "end_effector",
+      "runtime_supported": true,
+      "preview_only": false,
+      "compatible_robot_families": [
+        "serial_6_axis",
+        "collaborative_6_axis",
+        "scara"
+      ]
+    },
+    {
+      "id": "robotiq_3f",
+      "label": "Robotiq 3F",
+      "family": "three_finger_gripper",
+      "schema": "end_effector_capability/v1",
+      "type": "end_effector",
+      "runtime_supported": true,
+      "preview_only": false,
+      "compatible_robot_families": [
+        "serial_6_axis",
+        "collaborative_6_axis"
+      ]
+    }
+  ],
+  "sensor_capabilities": [
+    {
+      "id": "generic_overhead_rgbd",
+      "label": "Generic Overhead RGBD Camera",
+      "family": "rgbd_camera",
+      "schema": "sensor_capability/v1",
+      "type": "sensor",
+      "runtime_supported": true,
+      "preview_only": false
+    },
+    {
+      "id": "intel_realsense_d435i",
+      "label": "Intel RealSense D435i",
+      "family": "rgbd_camera",
+      "schema": "sensor_capability/v1",
+      "type": "sensor",
+      "runtime_supported": true,
+      "preview_only": false
+    }
+  ],
+  "task_capabilities": [
+    {
+      "id": "task_magnetic_pick_place",
+      "label": "task_magnetic_pick_place",
+      "family": "pick_place",
+      "schema": "task_capability/v1",
+      "type": "task",
+      "runtime_supported": true,
+      "preview_only": false
+    }
+  ],
+  "grasp_strategies": [
+    {
+      "id": "finger_pinch_basic",
+      "label": "Basic Parallel Finger Pinch",
+      "schema": "grasp_strategy/v1",
+      "strategy": "pinch",
+      "compatible_tool_families": [
+        "finger_gripper",
+        "three_finger_gripper"
+      ],
+      "compatible_end_effector_capabilities": [
+        "robotiq_2f_85",
+        "robotiq_3f"
+      ],
+      "runtime_supported": false,
+      "preview_only": true
+    },
+    {
+      "id": "side_grip_basic",
+      "label": "Basic Side Grip",
+      "schema": "grasp_strategy/v1",
+      "strategy": "side_grip",
+      "compatible_tool_families": [
+        "finger_gripper",
+        "three_finger_gripper"
+      ],
+      "compatible_end_effector_capabilities": [
+        "robotiq_2f_85"
+      ],
+      "runtime_supported": false,
+      "preview_only": true
+    },
+    {
+      "id": "suction_top_basic",
+      "label": "Basic Top-Down Suction",
+      "schema": "grasp_strategy/v1",
+      "strategy": "suction_top",
+      "compatible_tool_families": [
+        "suction",
+        "vacuum_array"
+      ],
+      "compatible_end_effector_capabilities": [
+        "onrobot_airpick_style",
+        "generic_vacuum_array"
+      ],
+      "runtime_supported": false,
+      "preview_only": true
+    },
+    {
+      "id": "vacuum_array_top_basic",
+      "label": "Basic Top Vacuum Array",
+      "schema": "grasp_strategy/v1",
+      "strategy": "vacuum_array_top",
+      "compatible_tool_families": [
+        "vacuum_array",
+        "suction"
+      ],
+      "compatible_end_effector_capabilities": [
+        "generic_vacuum_array"
+      ],
+      "runtime_supported": false,
+      "preview_only": true
+    }
+  ],
+  "runtime_status_hints": {
+    "runtime_ready": "All selected components declare runtime_supported=true and no blockers.",
+    "fake_hardware_ready": "Simulation/fake hardware workflows are supported.",
+    "preview_only": "Selection contains preview-only capabilities requiring runtime integration."
+  }
+}

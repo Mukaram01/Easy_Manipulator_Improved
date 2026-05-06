@@ -41,3 +41,12 @@ High-level ownership boundaries:
 - Do not require Gazebo Sim or Isaac Sim for core operation.
 - Preserve fake-hardware-first defaults and dry-run/offline validation language.
 - Keep runtime launch behavior backward compatible.
+
+
+## Architecture guardrail
+
+- Workcell Studio does not replace `workcell_builder`; it augments it.
+- `workcell_builder` remains the primary visual scene builder/editor.
+- Capability/grasp catalogs and validators are backend services used by builder generation and QA tooling.
+- CLI/wizard scripts are for automation/testing and are not a competing UI path.
+- Any future Streamlit layer is dashboard/orchestration only.
