@@ -497,6 +497,8 @@ def _build_definition(args: argparse.Namespace) -> dict[str, Any]:
     if capability_args["environment_assets"]:
         data.setdefault("environment", {}).setdefault("assets", [])
         data["environment"]["assets"] = [{"capability": cap} for cap in capability_args["environment_assets"]]
+    if isinstance(args.grasp_strategy, str) and args.grasp_strategy.strip():
+        data["grasp"] = {"strategy_ref": args.grasp_strategy.strip()}
 
     return data
 
@@ -539,6 +541,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--end-effector-capability", type=str, help="Optional end-effector capability id")
     parser.add_argument("--sensor-capability", type=str, help="Optional sensor capability ids (comma-separated)")
     parser.add_argument("--task-capability", type=str, help="Optional task capability id")
+    parser.add_argument("--grasp-strategy", type=str, help="Optional grasp strategy reference id")
     parser.add_argument("--asset-capability", action="append", default=[], help="Optional asset capability id (repeatable)")
     parser.add_argument("--asset-capabilities", dest="asset_capabilities_csv", type=str, help="Optional asset capability ids comma-separated")
     parser.add_argument("--pick-source", type=str, default="commissioning_object", help="Source object id")

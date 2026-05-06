@@ -142,6 +142,8 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
 
     self_test_object = objects[0] if objects else {}
 
+    ee_type = str(end_effector.get("type", "unknown")).strip().lower()
+    is_suction = ee_type in {"suction", "vacuum", "vacuum_array"}
     manifest = {
         "schema_version": "1.0",
         "scene": {"name": cell.get("id", "generated_cell")},
@@ -154,10 +156,11 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
         },
         "planning": {"pipeline": "ompl", "planner_id": "RRTConnectkConfigDefault"},
         "end_effector": {
-            "type": end_effector.get("type", "unknown"),
+            "type": "vacuum_array" if ee_type == "vacuum_array" else ("suction" if is_suction else end_effector.get("type", "unknown")),
             "brand": end_effector.get("brand", "unknown"),
             "grasp_frame": end_effector.get("grasp_frame", "tool0"),
             "allowed_touch_links": end_effector.get("allowed_touch_links", []),
+            "contact_links": end_effector.get("contact_links", end_effector.get("allowed_touch_links", [])),
         },
         "frames": {
             "world": environment.get("frame", "world"),
@@ -236,6 +239,12 @@ def build_scene_manifest(cell_def: dict[str, Any], capability_summary: dict[str,
                 else 0,
                 "rules_count": len(rules) if isinstance(rules, list) else 0,
             }
+    if is_suction:
+        manifest["end_effector"]["supported_grasp_strategies"] = end_effector.get("supported_grasp_strategies", [])
+        manifest["end_effector"]["required_io_signals"] = end_effector.get("required_io_signals", [])
+        manifest["end_effector"]["release_behavior"] = end_effector.get("release_behavior", {"mode": "vacuum_off"})
+        manifest["end_effector"]["metadata_only"] = True
+        manifest["end_effector"]["runtime_io_applied"] = False
 
     return manifest
 
@@ -267,9 +276,12 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     task_type = str(task.get("type", "custom"))
     grasp_strategy = extract_grasp_strategy_metadata(cell_def)
     strategy_type = str((grasp_strategy or {}).get("strategy", "")).lower()
+    strategy_ref = str((grasp_strategy or {}).get("strategy_ref", "")).lower()
     default_methods = ["finger", "suction"]
-    if strategy_type:
+    if strategy_type or strategy_ref:
         if any(token in strategy_type for token in ("suction", "vacuum")):
+            default_methods = ["suction"]
+        elif any(token in strategy_ref for token in ("suction", "vacuum")):
             default_methods = ["suction"]
         elif any(token in strategy_type for token in ("pinch", "side_grip", "finger")):
             default_methods = ["finger"]
@@ -287,6 +299,8 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
             "source": task.get("source_object", "detected_object"),
             "object_source": "self_test",
             "allowed_grasp_methods": default_methods,
+            "runtime_note": "Suction/vacuum grasp is metadata only; runtime IO application is disabled.",
+            "runtime_io_applied": False,
             **({"grasp_strategy": grasp_strategy} if grasp_strategy else {}),
         },
         "decision_rules": [
