@@ -44,6 +44,33 @@ ROBOT_PRESETS: dict[str, dict[str, Any]] = {
         "home_named_target": "home",
         "safe_joint_state": [],
     },
+    "generic_cartesian": {
+        "model": "generic_cartesian",
+        "planning_group": "manipulator",
+        "base_frame": "world",
+        "tool_link": "tool0",
+        "home_named_target": "home",
+        "safe_joint_state": [],
+        "capability": "generic_gantry_xyz",
+    },
+    "generic_gantry": {
+        "model": "generic_gantry",
+        "planning_group": "manipulator",
+        "base_frame": "world",
+        "tool_link": "tool0",
+        "home_named_target": "home",
+        "safe_joint_state": [],
+        "capability": "generic_gantry_xyz",
+    },
+    "generic_delta": {
+        "model": "generic_delta",
+        "planning_group": "manipulator",
+        "base_frame": "world",
+        "tool_link": "tool0",
+        "home_named_target": "home",
+        "safe_joint_state": [],
+        "capability": "generic_delta_900",
+    },
 }
 
 END_EFFECTOR_PRESETS: dict[str, dict[str, Any]] = {
@@ -70,6 +97,7 @@ END_EFFECTOR_PRESETS: dict[str, dict[str, Any]] = {
         "brand": "generic",
         "grasp_frame": "suction_tip",
         "allowed_touch_links": [],
+        "capability": "onrobot_airpick_style",
     },
     "generic": {
         "id": "generic_ee",

@@ -1,0 +1,95 @@
+schema_version: cell_definition/v1
+cell:
+  id: generic_cartesian_suction_sorting_cell
+  name: Generic Cartesian Suction Sorting Cell
+  description: Preview-only generated template for gantry/cartesian + suction.
+robot:
+  model: generic_cartesian
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+  capability: generic_gantry_xyz
+end_effector:
+  id: suction
+  type: suction
+  brand: generic
+  grasp_frame: suction_tip
+  allowed_touch_links: [suction_cup]
+  contact_links: [suction_cup]
+  required_io_signals: [vacuum_enable]
+  release_behavior:
+    mode: vacuum_off
+  supported_grasp_strategies: [suction_top_basic, vacuum_array_top_basic]
+  capability: onrobot_airpick_style
+camera:
+  id: realsense_d435i
+  type: depth_camera
+  frame: camera_depth_optical_frame
+sensors:
+  - capability: intel_realsense_d435i
+environment:
+  frame: world
+  support_surfaces:
+    - id: table_main
+      type: table
+      frame: world
+      pose_xyz: [0.0, 0.0, 0.0]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [1.2, 0.8, 0.05]
+  assets:
+    - capability: table_standard_1200
+    - capability: bin_blue_large
+objects:
+  - id: part1
+    class: unknown
+    shape: box
+    color: red
+    material: plastic
+    frame: world
+    dimensions: [0.04, 0.04, 0.04]
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+task:
+  id: generic_cartesian_suction_colour_sort_task
+  type: sort_by_colour
+  capability: sort_by_colour
+  source_object: part1
+  destinations:
+    - id: red_bin
+      frame: world
+      pose_xyz: [0.3, -0.3, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: blue_bin
+      frame: world
+      pose_xyz: [0.3, -0.15, 0.1]
+      pose_rpy: [0, 0, 0]
+    - id: reject_bin
+      frame: world
+      pose_xyz: [0.3, 0.0, 0.1]
+      pose_rpy: [0, 0, 0]
+  rules:
+    - id: route_red
+      when:
+        color: red
+      destination: red_bin
+    - id: route_blue
+      when:
+        color: blue
+      destination: blue_bin
+    - id: fallback
+      when:
+        always: true
+      destination: reject_bin
+grasp:
+  strategy_ref: suction_top_basic
+commissioning:
+  self_test_enabled: true
+  export_bundle: true
+  require_operator_review: true
+  runtime_mode:
+    preview_only: true
+    runtime_supported: false
+    generated_motion_launch_supported: false
+    reason: Placeholder robot family has no approved runtime launch/control stack yet.

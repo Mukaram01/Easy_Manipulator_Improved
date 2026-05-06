@@ -15,6 +15,6 @@ robot:
   workspace_description: High-speed dome envelope above conveyor
   controller_type: high_speed_trajectory
   supported_interfaces: [moveit, ros2_control, cartesian_path]
-  supported_task_families: [pick_place, conveyor_sorting]
+  supported_task_families: [pick_place, conveyor_sorting, sort_by_colour]
   limitations_warnings:
     - Limited orientation control at workspace edges.
