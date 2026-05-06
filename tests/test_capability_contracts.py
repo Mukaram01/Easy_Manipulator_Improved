@@ -30,6 +30,45 @@ validator = _load_module(
     "validate_capability_contracts", REPO_ROOT / "scripts" / "validate_capability_contracts.py"
 )
 
+capability_registry = _load_module(
+    "capability_registry", REPO_ROOT / "scripts" / "capability_registry.py"
+)
+
+
+
+class CapabilityRegistryLoaderTests(unittest.TestCase):
+    def test_default_registry_uses_catalog(self) -> None:
+        registry = capability_registry.load_capability_registry()
+        self.assertEqual(capability_registry.DEFAULT_CAPABILITIES_DIR, CATALOG_DIR)
+        self.assertIsNotNone(registry.get("ur5"))
+        self.assertTrue(registry.get("ur5").path.is_relative_to(CATALOG_DIR))
+
+    def test_recursive_loading_from_catalog_subfolders(self) -> None:
+        registry = capability_registry.load_capability_registry(CATALOG_DIR)
+        self.assertIsNotNone(registry.get("ur5"))
+        self.assertIsNotNone(registry.get("robotiq_2f_85"))
+        self.assertIsNotNone(registry.get("intel_realsense_d435i"))
+        self.assertIsNotNone(registry.get("sort_by_colour"))
+        self.assertIsNotNone(registry.get("conveyor_2m"))
+
+    def test_fixture_registry_still_loads(self) -> None:
+        registry = capability_registry.load_capability_registry(FIXTURE_DIR)
+        self.assertIsNotNone(registry.get("ur5"))
+        self.assertIsNotNone(registry.get("robotiq_2f_85"))
+
+    def test_known_ids_present_in_default_catalog(self) -> None:
+        registry = capability_registry.load_capability_registry()
+        expected_ids = {
+            "ur5",
+            "generic_delta_900",
+            "robotiq_2f_85",
+            "onrobot_airpick_style",
+            "intel_realsense_d435i",
+            "conveyor_2m",
+            "sort_by_colour",
+        }
+        self.assertTrue(expected_ids.issubset(set(registry.ids())))
+
 
 class CapabilityFixturesTests(unittest.TestCase):
     def _assert_pass(self, target: Path) -> None:

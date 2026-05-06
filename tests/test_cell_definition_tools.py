@@ -387,3 +387,32 @@ class CellDefinitionWizardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CellDefinitionCapabilityRegistryPathTests(unittest.TestCase):
+    def test_cli_uses_default_catalog_path(self) -> None:
+        fixture = FIXTURES / "cell_definition_sort_by_colour.yaml"
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "validate_cell_definition.py"), str(fixture)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+    def test_cli_accepts_fixture_capabilities_dir(self) -> None:
+        fixture = FIXTURES / "cell_definition_sort_by_colour.yaml"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "validate_cell_definition.py"),
+                str(fixture),
+                "--capabilities-dir",
+                str(FIXTURES / "capabilities"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+

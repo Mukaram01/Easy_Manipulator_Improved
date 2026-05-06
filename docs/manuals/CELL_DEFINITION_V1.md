@@ -206,6 +206,8 @@ environment:
 ```
 
 Validation behavior:
+- By default, unresolved capability IDs are checked against `catalog/capabilities/` (shipping Workcell Studio catalog).
+- `--capabilities-dir` overrides the registry path for tests or experiments (for example `tests/fixtures/capabilities`).
 - Non-strict mode: unresolved capability IDs report WARN.
 - Strict mode (`--strict`): unresolved capability IDs report FAIL.
 - Compatibility checks are best-effort and conservative to preserve backward compatibility.

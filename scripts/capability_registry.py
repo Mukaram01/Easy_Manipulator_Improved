@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_CAPABILITIES_DIR = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "capabilities"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CAPABILITIES_DIR = REPO_ROOT / "catalog" / "capabilities"
+FIXTURE_CAPABILITIES_DIR = REPO_ROOT / "tests" / "fixtures" / "capabilities"
 
 try:  # Optional dependency
     import yaml as _pyyaml
@@ -208,7 +210,7 @@ def load_capability_registry(capabilities_dir: Path | None = None) -> Capability
         notes.append(f"Capability directory not found: {cap_dir}")
         return CapabilityRegistry(records, parser_notes=notes)
 
-    for path in sorted(cap_dir.iterdir()):
+    for path in sorted(cap_dir.rglob("*")):
         if path.suffix.lower() not in {".yaml", ".yml", ".json"} or not path.is_file():
             continue
         try:
@@ -219,6 +221,11 @@ def load_capability_registry(capabilities_dir: Path | None = None) -> Capability
             if not cap_id:
                 notes.append(f"{path.name}: skipped (missing capability id)")
                 continue
+            if cap_id in records:
+                prev = records[cap_id].path.relative_to(cap_dir) if records[cap_id].path.is_relative_to(cap_dir) else records[cap_id].path
+                curr = path.relative_to(cap_dir) if path.is_relative_to(cap_dir) else path
+                notes.append(f"duplicate capability id '{cap_id}': {prev} overwritten by {curr}")
+
             records[cap_id] = CapabilityRecord(
                 capability_id=cap_id,
                 schema_version=str(doc.get("schema_version", "")),
