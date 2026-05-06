@@ -1468,3 +1468,19 @@ python3 scripts/workcell_studio.py import-builder-scene \
   --validate \
   --generate-project
 ```
+
+## Workcell Studio Streamlit prototype
+
+A first practical Streamlit prototype is available at `tools/workcell_studio_streamlit/` as a thin UI over existing Workcell Studio backend tooling.
+
+- Catalog browser for `catalog/capabilities/` and `catalog/grasp_strategies/` metadata.
+- Cell definition and optional environment layout validation wrappers.
+- Builder scene import wrapper for `scripts/workcell_studio.py import-builder-scene` with summary and safety visibility.
+
+Safety/scope notes:
+- `workcell_builder` remains the visual scene editor.
+- This Streamlit UI is orchestration/readiness/demo only.
+- Runtime robot behavior, launch behavior, and EPD behavior are unchanged.
+- Offline validation and fake-hardware-first defaults are preserved.
+
+See `tools/workcell_studio_streamlit/README.md` for install and run commands.
