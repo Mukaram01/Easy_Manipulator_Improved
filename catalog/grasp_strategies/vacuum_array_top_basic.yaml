@@ -1,0 +1,20 @@
+schema_version: grasp_strategy/v1
+grasp_strategy:
+  id: vacuum_array_top_basic
+  label: Basic Top Vacuum Array
+  strategy: vacuum_array_top
+  compatible_tool_families: [vacuum_array, suction]
+  compatible_end_effector_capabilities: [generic_vacuum_array]
+  approach_axis: z_down
+  orientation_mode: vertical
+  approach_distance_m: 0.1
+  retreat_distance_m: 0.08
+  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  tool_frame_offset_rpy: [0.0, 0.0, 0.0]
+  contact:
+    type: vacuum_array
+    suction_cups: 4
+    requires_seal_check: false
+  release:
+    type: vacuum_off
+    retreat_after_release_m: 0.03

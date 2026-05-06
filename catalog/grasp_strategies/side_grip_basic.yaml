@@ -1,0 +1,19 @@
+schema_version: grasp_strategy/v1
+grasp_strategy:
+  id: side_grip_basic
+  label: Basic Side Grip
+  strategy: side_grip
+  compatible_tool_families: [finger_gripper, three_finger_gripper]
+  compatible_end_effector_capabilities: [robotiq_2f_85]
+  approach_axis: x_plus
+  orientation_mode: horizontal
+  approach_distance_m: 0.08
+  retreat_distance_m: 0.08
+  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  tool_frame_offset_rpy: [0.0, 0.0, 0.0]
+  contact:
+    type: side_contact
+    grip_mode: friction
+  release:
+    type: fingers_open
+    retreat_after_release_m: 0.04

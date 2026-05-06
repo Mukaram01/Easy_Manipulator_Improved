@@ -17,6 +17,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from capability_registry import DEFAULT_CAPABILITIES_DIR, load_capability_registry
 import validate_task_recipe as task_recipe_validator
+import validate_grasp_strategy as grasp_strategy_validator
 
 try:  # Optional dependency.
     import yaml as _pyyaml
@@ -49,6 +50,7 @@ class ValidationSummary:
     notes: list[str] = field(default_factory=list)
     capability_summary: dict[str, Any] = field(default_factory=dict)
     environment_layout_summary: dict[str, Any] = field(default_factory=dict)
+    grasp_strategy_summary: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -393,6 +395,7 @@ def validate_cell_definition(
     environment = defn.get("environment") if isinstance(defn.get("environment"), dict) else {}
     objects = defn.get("objects") if isinstance(defn.get("objects"), list) else []
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
+    grasp = defn.get("grasp") if isinstance(defn.get("grasp"), dict) else None
 
     if "safe_joint_state" not in robot:
         result.errors.append("robot.safe_joint_state key is required (empty list allowed when home_named_target exists).")
@@ -500,6 +503,48 @@ def validate_cell_definition(
 
     if task_type in SORTING_TASK_TYPES and not fallback_present:
         result.warnings.append("Sorting task has no explicit fallback rule with when.always=true.")
+
+    grasp_catalog_dir = Path(__file__).resolve().parents[1] / "catalog" / "grasp_strategies"
+    grasp_summary: dict[str, Any] = {"mode": "none", "status": "PASS", "ref": None, "resolved_path": None}
+    if grasp is not None:
+        grasp_summary["mode"] = "present"
+        strategy_ref = grasp.get("strategy_ref")
+        inline_strategy = grasp.get("strategy")
+        if strategy_ref and inline_strategy:
+            result.errors.append("grasp must provide either strategy_ref or strategy, not both.")
+        elif strategy_ref is not None:
+            if not isinstance(strategy_ref, str) or not strategy_ref.strip():
+                result.errors.append("grasp.strategy_ref must be a non-empty string when provided.")
+            else:
+                grasp_summary["mode"] = "strategy_ref"
+                grasp_summary["ref"] = strategy_ref
+                matches = [p for p in grasp_catalog_dir.rglob("*") if p.is_file() and p.suffix.lower() in {".yaml", ".yml", ".json"} and p.stem == strategy_ref]
+                if not matches:
+                    msg = f"Unknown grasp strategy_ref '{strategy_ref}' in catalog/grasp_strategies."
+                    (result.errors if strict else result.warnings).append(msg)
+                    grasp_summary["status"] = "FAIL" if strict else "WARN"
+                else:
+                    selected = sorted(matches)[0]
+                    grasp_summary["resolved_path"] = str(selected)
+                    doc, parser_used = grasp_strategy_validator.load_structured_data(selected)
+                    gs_result = grasp_strategy_validator.validate_doc(
+                        doc, selected, parser_used, strict=strict, capabilities_dir=capabilities_dir
+                    )
+                    result.warnings.extend([f"grasp.strategy_ref({strategy_ref}): {w}" for w in gs_result.warnings])
+                    result.errors.extend([f"grasp.strategy_ref({strategy_ref}): {e}" for e in gs_result.errors])
+        elif inline_strategy is not None:
+            if not isinstance(inline_strategy, dict):
+                result.errors.append("grasp.strategy must be a mapping when provided.")
+            else:
+                grasp_summary["mode"] = "inline"
+                gs_result = grasp_strategy_validator.validate_doc(
+                    inline_strategy, path, parser, strict=strict, capabilities_dir=capabilities_dir
+                )
+                result.warnings.extend([f"grasp.strategy: {w}" for w in gs_result.warnings])
+                result.errors.extend([f"grasp.strategy: {e}" for e in gs_result.errors])
+        else:
+            result.errors.append("grasp block must include strategy_ref or strategy.")
+    result.grasp_strategy_summary = grasp_summary
 
     recipe_ref = task.get("recipe")
     if recipe_ref is not None:
@@ -633,6 +678,7 @@ def main() -> int:
             "result": "PASS" if summary.ok and not summary.warnings else "WARN" if summary.ok else "FAIL",
             "capabilities": summary.capability_summary,
             "environment_layout": summary.environment_layout_summary,
+            "grasp_strategy": summary.grasp_strategy_summary,
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
     elif not args.quiet:
