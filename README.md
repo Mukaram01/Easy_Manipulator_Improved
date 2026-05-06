@@ -1107,6 +1107,8 @@ Required external robot descriptions on ROS 2 Humble:
 
 ### Validate generated scene
 
+Builder-generated scenes now include `workcell_builder_metadata.yaml` and `generated/run_builder_validation.sh` to connect selections to Workcell Studio catalog/readiness context. Older scenes without metadata still work, but validate as unknown/partial readiness.
+
 - Generated scenes are created under `~/workcell_ws/src/scenes/<scene_name>`.
 - Generated assets are created under `~/workcell_ws/src/assets/...`.
 - Reopening `workcell_builder` re-discovers existing scene packages under the selected `<workcell_root>/scenes`.
