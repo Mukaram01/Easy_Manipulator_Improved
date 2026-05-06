@@ -361,13 +361,25 @@ def import_builder_scene(args: argparse.Namespace) -> int:
 
     preview_dir = output_dir / "preview"
     _, preview_payload = _generate_static_preview(cell_def, preview_dir, f"Builder Import: {_scene_name(scene_pkg)}", env_layout)
+    recipe_gen = ((export_payload.get("task_recipe_generation", {}) if isinstance(export_payload, dict) else {}) or {})
+    task_intent = ((export_payload.get("builder_task_intent", {}) if isinstance(export_payload, dict) else {}) or {})
+    if task_intent and recipe_gen.get("status") != "PASS":
+        recipe_path = generated_dir / "task_recipe_from_builder_intent.yaml"
+        rc, recipe_gen = _run_json([sys.executable, str(SCRIPT_DIR / "convert_builder_task_intent_to_task_recipe.py"), "--task-intent", str(Path(task_intent.get("source_file", generated_dir / "workcell_builder_task_intent.yaml"))), "--output", str(recipe_path), "--scene-package", str(scene_pkg), "--validate", "--json"], "task recipe conversion")
 
-    builder_readiness = (validations.get("builder_scene", {}) or {}).get("readiness")
+    builder_scene_validation = (validations.get("builder_scene", {}) or {})
+    builder_readiness = builder_scene_validation.get("readiness")
+    runtime_readiness = builder_scene_validation.get("runtime_readiness")
     safety = {
         "fake_hardware_default": True,
         "runtime_io_applied": False,
-        "runtime_status": builder_readiness or "unknown",
+        "runtime_status": runtime_readiness or builder_readiness or "unknown",
     }
+    task_intent_status = "missing"
+    if task_intent:
+        task_intent_status = "present"
+    if recipe_gen.get("status") == "PASS":
+        task_intent_status = "task_recipe_generated"
 
     summary = {
         "source_scene_package": str(scene_pkg),
@@ -384,6 +396,14 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         "preview_html": str(preview_dir / "static_preview.html"),
         "preview_summary_json": str(preview_dir / "static_preview_summary.json"),
         "preview_warnings": preview_payload.get("warnings", []),
+        "task_intent_status": task_intent_status,
+        "generated_task_recipe_path": recipe_gen.get("generated_task_recipe_path", ""),
+        "pick_source": recipe_gen.get("pick_source"),
+        "place_target": recipe_gen.get("place_target"),
+        "grasp_strategy": recipe_gen.get("grasp_strategy"),
+        "release_strategy": recipe_gen.get("release_strategy"),
+        "routing_rule_count": recipe_gen.get("routing_rule_count", 0),
+        "task_recipe_safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
         "next_commands": [
             f"python3 scripts/validate_builder_generated_scene.py {scene_pkg} --json",
             f"python3 scripts/validate_cell_definition.py {cell_def} --json",
@@ -408,6 +428,8 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         f"- Runtime status: `{safety['runtime_status']}`",
         f"- Preview SVG: `{summary['preview_svg']}`",
         f"- Preview HTML: `{summary['preview_html']}`",
+        f"- Task intent status: `{task_intent_status}`",
+        f"- Generated task recipe: `{summary.get('generated_task_recipe_path') or '(none)'}`",
         "",
         "## Validation",
         f"- Builder scene: `{(validations.get('builder_scene', {}) or {}).get('ok', 'not-run')}`",

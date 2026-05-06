@@ -105,6 +105,14 @@ def _validate_task_intent(task_intent_path: Path, scene_path: Path) -> dict[str,
     except Exception:
         return {"status": "FAIL", "errors": [run.stdout.strip() or run.stderr.strip()]}
 
+def _generate_task_recipe(task_intent_path: Path, output_path: Path, scene_path: Path) -> dict[str, Any]:
+    cmd = ["python3", str(SCRIPT_DIR / "convert_builder_task_intent_to_task_recipe.py"), "--task-intent", str(task_intent_path), "--output", str(output_path), "--scene-package", str(scene_path), "--validate", "--json"]
+    run = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        return json.loads(run.stdout) if run.stdout.strip() else {"status": "FAIL", "errors": [run.stderr.strip()]}
+    except Exception:
+        return {"status": "FAIL", "errors": [run.stdout.strip() or run.stderr.strip()]}
+
 
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
@@ -113,6 +121,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     task_intent_path = _find_task_intent(scene_path)
     builder_task_intent: dict[str, Any] = {}
     task_intent_validation: dict[str, Any] = {}
+    task_recipe_generation: dict[str, Any] = {}
 
     robot_env = env.get("robot") if isinstance(env.get("robot"), dict) else {}
     ee_env = env.get("end_effector") if isinstance(env.get("end_effector"), dict) else {}
@@ -219,6 +228,9 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "safety": ti.get("safety"),
         }
         cell_def["builder_task_intent"] = builder_task_intent
+        task_recipe_generation = _generate_task_recipe(task_intent_path, output_dir / "task_recipe_from_builder_intent.yaml", scene_path)
+        if task_recipe_generation.get("status") != "PASS":
+            warnings.append("Task recipe generation from builder intent is partial or failed.")
     else:
         warnings.append("No builder task intent file found; exported scene has physical layout metadata but no pick/place/grasp task intent.")
 
@@ -236,6 +248,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "validation": {},
         "builder_task_intent": builder_task_intent,
         "task_intent_validation": task_intent_validation,
+        "task_recipe_generation": task_recipe_generation,
     }
 
     if validate:

@@ -96,19 +96,26 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
     preview_only = bool(metadata.get("preview_only", False))
     fake_hw_ready = bool(metadata.get("fake_hardware_ready", True))
 
-    if preview_only:
-        readiness = "preview_only"
-    elif not task_intent_path:
-        readiness = "task_intent_missing"
-    elif runtime_supported:
-        readiness = "runtime_ready"
+    if not task_intent_path:
+        readiness = "physical_scene_only"
+    elif task_intent_report.get("status") == "FAIL":
+        readiness = "task_intent_incomplete"
+    elif (scene_path / "generated" / "task_recipe_from_builder_intent.yaml").is_file():
+        readiness = "task_recipe_generated"
     else:
-        readiness = "fake_hardware_ready" if fake_hw_ready else "preview_only"
+        readiness = "task_intent_ready_offline"
+    if preview_only:
+        readiness_runtime = "preview_only"
+    elif not runtime_supported and fake_hw_ready:
+        readiness_runtime = "runtime_blocked_or_preview_only"
+    else:
+        readiness_runtime = "runtime_possible"
 
     return {
         "scene_path": str(scene_path),
         "ok": len(errors) == 0,
         "readiness": readiness,
+        "runtime_readiness": readiness_runtime,
         "checks": checks,
         "warnings": warnings,
         "errors": errors,

@@ -241,6 +241,38 @@ def read_preview_html(preview_dir: str | Path) -> str:
     return html_path.read_text(encoding="utf-8") if html_path.exists() else ""
 
 
+def convert_builder_task_intent_to_task_recipe(task_intent_path: str | Path, output_path: str | Path, scene_package: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "convert_builder_task_intent_to_task_recipe.py"), "--task-intent", str(task_intent_path), "--output", str(output_path), "--validate", "--json"]
+    if scene_package:
+        cmd.extend(["--scene-package", str(scene_package)])
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+
+def load_generated_task_recipe(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    return _load_yaml_file(p)
+
+
+def summarize_task_recipe(path: str | Path) -> dict[str, Any]:
+    payload = load_generated_task_recipe(path)
+    bti = payload.get("builder_task_intent", {}) if isinstance(payload.get("builder_task_intent"), dict) else {}
+    task = payload.get("task", {}) if isinstance(payload.get("task"), dict) else {}
+    return {
+        "path": str(path),
+        "task_id": task.get("id"),
+        "task_type": task.get("type"),
+        "pick_source": ((bti.get("pick", {}) or {}).get("source", {}) or {}).get("id"),
+        "place_target": ((bti.get("place", {}) or {}).get("target", {}) or {}).get("id"),
+        "grasp_strategy": (payload.get("grasp", {}) if isinstance(payload.get("grasp"), dict) else {}).get("strategy_ref"),
+        "release_strategy": bti.get("release_strategy"),
+        "routing_rules": len(task.get("rules", []) if isinstance(task.get("rules"), list) else []),
+        "safety": bti.get("safety", {}),
+    }
+
+
 def resolve_catalog_choices(root: Path | None = None) -> dict[str, list[dict[str, str]]]:
     caps = load_capability_catalog(root)
     grasps = load_grasp_strategy_catalog(root)

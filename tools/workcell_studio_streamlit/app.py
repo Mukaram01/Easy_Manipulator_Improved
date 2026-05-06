@@ -76,6 +76,8 @@ elif workflow == "Builder scene import":
                 "preflight_report_path": summary.get("preflight_report_path"),
                 "safety_status": summary.get("safety_status"),
                 "runtime_preview_blockers": (summary.get("validation", {}).get("builder_scene", {}).get("runtime_blockers", [])),
+                "generated_task_recipe_path": summary.get("generated_task_recipe_path"),
+                "readiness": (summary.get("validation", {}).get("builder_scene", {}).get("readiness")),
             }
         )
         if summary.get("preview_svg") and Path(summary["preview_svg"]).exists():
@@ -120,6 +122,12 @@ elif workflow == "Builder Task Intent":
     if st.button("Validate task intent"):
         result = backend.validate_builder_task_intent(task_path, scene_package if scene_package else None)
         st.json(result.get("json") or result)
+    st.warning("This generates offline task recipe metadata only. It does not command robot motion.")
+    if st.button("Generate task recipe"):
+        out_recipe = str(Path(scene_package) / "generated" / "task_recipe_from_builder_intent.yaml") if scene_package else "/tmp/task_recipe_from_builder_intent.yaml"
+        result = backend.convert_builder_task_intent_to_task_recipe(task_path, out_recipe, scene_package if scene_package else None)
+        st.json(result.get("json") or result)
+        st.json(backend.summarize_task_recipe(out_recipe))
     st.subheader("Safety metadata")
     st.json(data.get("safety", {}))
 
