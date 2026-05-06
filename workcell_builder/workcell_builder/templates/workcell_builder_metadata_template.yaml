@@ -1,13 +1,29 @@
-# Optional metadata companion for workcell_builder generated scenes.
-# Keep this file next to environment.yaml as workcell_builder_metadata.yaml.
-schema_version: workcell_builder_scene_metadata/v1
-robot_capability_id: null
-end_effector_capability_id: null
-grasp_strategy_id: null
-sensor_capability_id: null
-runtime_supported: false
-fake_hardware_ready: true
-preview_only: true
-runtime_blockers: []
-notes:
-  - "Populate capability identifiers when builder selection maps to catalog entries."
+schema_version: workcell_builder_metadata/v1
+generated_by: workcell_builder
+workcell_studio_compatible: true
+robot:
+  selected_name: null
+  capability_id: null
+  family: null
+  runtime_supported: false
+  preview_only: true
+end_effector:
+  selected_name: null
+  capability_id: null
+  family: null
+  required_io_signals: []
+  runtime_io_applied: false
+grasp_strategy:
+  selected_name: null
+  strategy_id: null
+  metadata_only: true
+  runtime_applied: false
+sensors: []
+environment:
+  generated_objects_count: 0
+  imported_stl_references: []
+readiness:
+  status: unknown
+  blockers: []
+  warnings:
+    - Populate capability IDs when builder selections map to catalog entries.
