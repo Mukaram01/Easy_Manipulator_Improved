@@ -170,6 +170,36 @@ fs::path root_from_override(const std::string & override_value)
   return override_path;
 }
 
+
+fs::path resolve_tool_root(const fs::path & scene_root, const fs::path & scene_dir)
+{
+  std::vector<fs::path> candidates;
+  const char * env_root = std::getenv("WORKCELL_STUDIO_REPO_ROOT");
+  if (env_root != nullptr && std::strlen(env_root) > 0) {
+    candidates.emplace_back(env_root);
+  }
+  candidates.push_back(scene_root);
+  candidates.push_back(scene_dir.parent_path());
+  candidates.push_back(scene_dir.parent_path().parent_path());
+  const char * home = std::getenv("HOME");
+  if (home != nullptr && std::strlen(home) > 0) {
+    candidates.emplace_back(fs::path(home) / "workcell_ws" / "src" / "easy_manipulation_deployment");
+  }
+
+  for (const auto & raw_candidate : candidates) {
+    if (raw_candidate.empty()) {
+      continue;
+    }
+    const fs::path candidate = raw_candidate.lexically_normal();
+    const fs::path script_path = candidate / "scripts" / "render_workcell_builder_metadata.py";
+    boost::system::error_code ec;
+    if (fs::exists(script_path, ec) && !ec) {
+      return candidate;
+    }
+  }
+  return fs::path();
+}
+
 fs::path select_scene_root(const fs::path & cwd)
 {
   std::vector<SceneRootCandidate> candidates;
@@ -689,13 +719,19 @@ void SceneSelect::generate_scene_files(Scene scene)
   std::string robot_name = scene.robot_loaded && !scene.robot_vector.empty() ? scene.robot_vector[0].name : "";
   std::string ee_name = scene.ee_loaded && !scene.ee_vector.empty() ? scene.ee_vector[0].name : "";
   const fs::path metadata_path = scene_dir / "workcell_builder_metadata.yaml";
-  const std::string cmd =
-    "python3 scripts/render_workcell_builder_metadata.py --robot \"" + robot_name +
-    "\" --end-effector \"" + ee_name + "\" --scene-path \"" + scene_dir.string() +
-    "\" --output \"" + metadata_path.string() + "\"";
-  const int metadata_rc = std::system(cmd.c_str());
-  if (metadata_rc != 0) {
-    append_warning("Workcell Studio metadata generation command failed with exit code " + std::to_string(metadata_rc) + ".");
+  const fs::path tool_root = resolve_tool_root(workcell_path, scene_dir);
+  if (tool_root.empty()) {
+    append_warning("Could not locate render_workcell_builder_metadata.py. Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment.");
+  } else {
+    const fs::path metadata_script = tool_root / "scripts" / "render_workcell_builder_metadata.py";
+    const std::string cmd =
+      "python3 \"" + metadata_script.string() + "\" --robot \"" + robot_name +
+      "\" --end-effector \"" + ee_name + "\" --scene-path \"" + scene_dir.string() +
+      "\" --output \"" + metadata_path.string() + "\"";
+    const int metadata_rc = std::system(cmd.c_str());
+    if (metadata_rc != 0) {
+      append_warning("Workcell Studio metadata generation command failed with exit code " + std::to_string(metadata_rc) + ".");
+    }
   }
   write_builder_validation_helper(scene_dir);
   append_info("Workcell Studio metadata generated/updated.");

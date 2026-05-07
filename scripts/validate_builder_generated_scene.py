@@ -47,7 +47,9 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
 
     metadata_path = scene_path / "workcell_builder_metadata.yaml"
     metadata = _load_yaml_like(metadata_path) if metadata_path.is_file() else {}
-    checks.append({"check": "workcell_builder_metadata.yaml present (optional)", "ok": metadata_path.is_file()})
+    checks.append({"check": "workcell_builder_metadata.yaml present", "ok": metadata_path.is_file(), "optional": True})
+    if not metadata_path.is_file():
+        warnings.append("workcell_builder_metadata.yaml missing (optional)")
 
     robot = env.get("robot", {}) if isinstance(env.get("robot"), dict) else {}
     ee = env.get("end_effector", {}) if isinstance(env.get("end_effector"), dict) else {}
