@@ -352,6 +352,19 @@ def load_create_cell_summary(output_dir: str | Path) -> dict[str, Any]:
     }
 
 
+
+
+def list_builder_scene_authoring_targets(scene_package: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd=[sys.executable, str(rr/"scripts"/"list_builder_scene_authoring_targets.py"), "--scene-package", str(scene_package), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def create_or_update_builder_task_intent(scene_package: str | Path, task_id: str, task_type: str, pick_source: str, place_target: str, grasp_strategy: str, output_path: str | Path | None = None, approach_axis: str = "z_down", approach_distance_m: float = 0.1, retreat_axis: str = "z_up", retreat_distance_m: float = 0.1, release_strategy: str = "tool_release", object_class: str = "any", object_color: str = "any", validate: bool = True, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd=[sys.executable, str(rr/"scripts"/"create_or_update_builder_task_intent.py"), "--scene-package", str(scene_package), "--task-id", task_id, "--task-type", task_type, "--pick-source", pick_source, "--place-target", place_target, "--grasp-strategy", grasp_strategy, "--approach-axis", approach_axis, "--approach-distance-m", str(approach_distance_m), "--retreat-axis", retreat_axis, "--retreat-distance-m", str(retreat_distance_m), "--release-strategy", release_strategy, "--object-class", object_class, "--object-color", object_color, "--json"]
+    if output_path: cmd += ["--output", str(output_path)]
+    if validate: cmd.append("--validate")
+    return _parse_json_output(run_command(cmd, cwd=rr))
 def default_builder_task_intent(scene_package: str = "") -> dict[str, Any]:
     return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"suction_top_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"destination","id":"bin_main"},"release_strategy":"tool_release","place_offset_xyz":[0.0,0.0,0.05]},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
