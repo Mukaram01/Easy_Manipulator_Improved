@@ -122,6 +122,14 @@ def main() -> int:
                 "marker_artifact": visual_markers_path,
             },
         },
+        "perception": {
+            "perception_profile": artifacts.get("perception_profile"),
+            "perception_readiness_report": artifacts.get("perception_readiness_report"),
+            "detected_object_snapshot": artifacts.get("detected_object_snapshot"),
+            "status": (manifest_json.get("perception", {}) if isinstance(manifest_json.get("perception", {}), dict) else {}).get("status", "perception_missing"),
+            "warnings": (manifest_json.get("summary", {}) if isinstance(manifest_json.get("summary", {}), dict) else {}).get("warnings", []),
+            "blockers": (manifest_json.get("summary", {}) if isinstance(manifest_json.get("summary", {}), dict) else {}).get("blockers", []),
+        },
         "safety": {
             "use_fake_hardware": True,
             "real_hardware_enabled": False,

@@ -90,6 +90,7 @@ def main() -> int:
     safety = m.get('safety', {}) if isinstance(m.get('safety'), dict) else {}
     summary = m.get('summary', {}) if isinstance(m.get('summary'), dict) else {}
     src = m.get('source', {}) if isinstance(m.get('source'), dict) else {}
+    perception = m.get('perception', {}) if isinstance(m.get('perception'), dict) else {}
 
     pack_dir = a.manifest.parent
     dashboard_dir = a.output.parent
@@ -139,6 +140,15 @@ def main() -> int:
 <p>Final readiness: <span class='badge {_safe(results.get('final_readiness','WARN'))}'>{_safe(results.get('final_readiness','WARN'))}</span> Classification: <b>{_safe(results.get('classification','unknown'))}</b></p></div>
 <div class='panel warn'><h3>Safety Banner</h3><ul><li>Offline/fake-hardware readiness review only</li><li>Fake hardware mode</li><li>No robot motion commanded</li><li>No runtime execution called</li><li>No MoveIt planning service called</li><li>No real hardware enabled</li></ul><pre>{_safe(json.dumps(safety,indent=2))}</pre></div>
 {preview_block}
+<div class='panel'><h3>Perception readiness</h3><ul>
+<li>RealSense D435i expected: <b>Yes</b></li>
+<li>EPD expected: <b>Yes</b></li>
+<li>Live camera required for offline demo: <b>No</b></li>
+<li>Detected-object replay: <b>{_safe('available' if perception.get('detected_object_snapshot_path') else 'not available')}</b></li>
+<li>No robot motion: <b>Yes</b></li>
+<li>No runtime execution: <b>Yes</b></li>
+<li>Status: <b>{_safe(perception.get('status','perception_missing'))}</b></li>
+</ul></div>
 <div class='panel'><h3>Task flow: pick → grasp → place → release</h3><ul>
 <li>pick source: {_safe(tf.get('pick_source_id','missing'))}</li><li>grasp strategy: {_safe(tf.get('grasp_strategy','missing'))}</li><li>approach/retreat: {_safe(tf.get('approach_axis', tf.get('approach','missing')))}{_safe((' '+str(tf.get('approach_distance_m'))+'m') if tf.get('approach_distance_m') is not None else '')} / {_safe(tf.get('retreat_axis', tf.get('retreat','missing')))}{_safe((' '+str(tf.get('retreat_distance_m'))+'m') if tf.get('retreat_distance_m') is not None else '')}</li><li>place target: {_safe(tf.get('place_target_id','missing'))}</li><li>release strategy: {_safe(tf.get('release_strategy','missing'))}</li><li>routing rules: {_safe(tf.get('routing_rule_count', tf.get('routing_rules','missing')))}</li>
 </ul></div>
