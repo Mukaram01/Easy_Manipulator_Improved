@@ -59,6 +59,10 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     grasp=payload.get('grasp') if isinstance(payload.get('grasp'),dict) else {}
     safety=payload.get('safety') if isinstance(payload.get('safety'),dict) else {}
     if not task.get('type'): errors.append('task.type is required')
+    task_template = payload.get('task_template') if isinstance(payload.get('task_template'), dict) else {}
+    template_id = str(task_template.get('id') or task.get('template') or '').strip()
+    if template_id in {'inspection', 'machine_tending', 'conveyor_picking'}:
+        warnings.append(f"task template '{template_id}' is preview-only; no full runtime yet")
     if not pick.get('id'): errors.append('Pick source is not selected.')
     if not pick.get('id'): errors.append('pick.source.id is required')
     if not place.get('id'):

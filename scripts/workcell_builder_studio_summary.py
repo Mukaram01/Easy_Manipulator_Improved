@@ -69,6 +69,8 @@ def summarize_builder_scene(scene_package: Path, *, source_project_path: Path | 
             "object_spawn_area": "pick_zone" in zone_types,
         },
         "task_type": ((intent.get("task") or {}).get("type") if isinstance(intent.get("task"), dict) else "unknown") or "unknown",
+        "task_template": ((intent.get("task_template") or {}).get("id") if isinstance(intent.get("task_template"), dict) else ((intent.get("task") or {}).get("template") if isinstance(intent.get("task"), dict) else "unknown")) or "unknown",
+        "task_template_metadata": intent.get("task_template") if isinstance(intent.get("task_template"), dict) else {},
         "grasp_strategy": ((intent.get("grasp") or {}).get("strategy_ref") if isinstance(intent.get("grasp"), dict) else "unknown") or "unknown",
         "generated_scene_package_path": str(scene_package),
         "use_fake_hardware_default": True,

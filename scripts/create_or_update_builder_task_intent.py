@@ -75,7 +75,7 @@ def _resolve_scene_label(scene_package: Path, target_id: str) -> tuple[str, bool
     return _readable_label(target_id), False
 
 def _default(scene_package: str) -> dict[str, Any]:
-    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview","template":"pick_place"},"task_template":{"id":"pick_place","scenario":"pick_place","runtime_status":"supported","notes":"Template metadata only; runtime remains existing pick/place and sorting flows."},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
@@ -90,6 +90,7 @@ def main() -> int:
     ap.add_argument('--scene-package', required=True, type=Path)
     ap.add_argument('--task-id', required=True)
     ap.add_argument('--task-type', required=True)
+    ap.add_argument('--task-template', default='pick_place', choices=['pick_place', 'sorting', 'inspection', 'machine_tending', 'conveyor_picking'])
     ap.add_argument('--pick-source', required=True, help='Pick source id (e.g. epd_detected_object or pick_zone_main)')
     ap.add_argument('--pick-source-type', choices=['epd_detected_object','epd_replay','fixed_object','pick_zone','perception'], default='epd_detected_object')
     ap.add_argument('--place-target', required=True)
@@ -111,7 +112,44 @@ def main() -> int:
     payload, _ = _seed(a.scene_package, a.output)
     out = a.output or (a.scene_package/'generated'/'workcell_builder_task_intent.yaml')
     payload['schema']='workcell_builder_task_intent/v1'; payload['scene_package']=a.scene_package.as_posix()
-    payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type})
+    payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type, 'template': a.task_template})
+    template_meta: dict[str, Any] = {
+        'id': a.task_template,
+        'scenario': a.task_template,
+        'runtime_status': 'supported' if a.task_template in {'pick_place', 'sorting', 'conveyor_picking'} else 'preview_only',
+    }
+    if a.task_template == 'pick_place':
+        template_meta['pick_place'] = {
+            'pick_source': a.pick_source,
+            'place_target': a.place_target,
+            'object_class': a.object_class,
+            'grasp_strategy_ref': a.grasp_strategy,
+        }
+    elif a.task_template == 'sorting':
+        template_meta['sorting'] = {
+            'source_area': a.pick_source,
+            'destination_bins': [a.place_target],
+            'classification_key': 'class_id' if a.object_class not in {'', 'any'} else 'manual',
+            'fallback_bin': a.place_target,
+        }
+    elif a.task_template == 'inspection':
+        template_meta['inspection'] = {
+            'inspection_camera': 'TODO_camera',
+            'object_pose_source': a.pick_source,
+            'pass_fail_output_target': a.place_target,
+            'warning': 'no full runtime yet',
+        }
+    elif a.task_template == 'machine_tending':
+        template_meta['machine_tending'] = {
+            'machine_pose': 'TODO_machine_pose',
+            'load_pose': a.pick_source,
+            'unload_pose': a.place_target,
+            'door_open_close': 'placeholder_only',
+            'warning': 'no full runtime yet',
+        }
+    elif a.task_template == 'conveyor_picking':
+        template_meta['conveyor_picking'] = {'source_area': a.pick_source, 'drop_target': a.place_target}
+    payload['task_template'] = template_meta
     source_type = {'epd_detected_object':'perception','epd_replay':'replay_object'}.get(a.pick_source_type, a.pick_source_type)
     payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': source_type})
     pick_label, pick_resolved = _resolve_scene_label(a.scene_package, a.pick_source)
