@@ -426,6 +426,10 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         "planning_scene_readiness_report_path": "",
         "planning_scene_readiness_markdown_path": "",
     }
+    if args.generate_readiness_pack:
+        summary["next_commands"].append(
+            f"python3 scripts/workcell_studio.py generate-readiness-pack --scene-package {scene_pkg} --output-dir {output_dir / 'readiness_pack'} --project-name {args.project_name} --validate --smoke-dry-run --force --json"
+        )
 
     
     if summary.get("generated_task_recipe_path"):
@@ -544,6 +548,21 @@ def validate_builder_task(args: argparse.Namespace) -> int:
     print(run.stdout if run.stdout else run.stderr)
     return run.returncode
 
+def generate_readiness_pack(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "generate_workcell_studio_readiness_pack.py"), "--scene-package", str(args.scene_package), "--output-dir", str(args.output_dir), "--project-name", args.project_name, "--smoke-timeout-s", str(args.smoke_timeout_s)]
+    for flag,name in [(args.validate,"--validate"),(args.prepare_rviz_preview,"--prepare-rviz-preview"),(args.smoke_dry_run,"--smoke-dry-run"),(args.smoke_execute,"--smoke-execute"),(args.strict,"--strict"),(args.continue_on_error,"--continue-on-error"),(args.force,"--force"),(args.json,"--json")]:
+        if flag: cmd.append(name)
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+def validate_readiness_pack(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "validate_workcell_studio_readiness_pack.py"), str(args.manifest)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -572,6 +591,7 @@ def _build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--project-name", type=str, required=True)
     import_parser.add_argument("--validate", action="store_true")
     import_parser.add_argument("--generate-project", action="store_true")
+    import_parser.add_argument("--generate-readiness-pack", action="store_true")
     import_parser.set_defaults(func=import_builder_scene)
 
     prep = sub.add_parser("prepare-rviz-plan-preview", help="Prepare guarded fake-hardware RViz/MoveIt plan preview session artifacts")
@@ -620,6 +640,26 @@ def _build_parser() -> argparse.ArgumentParser:
     vpsr.add_argument("--report", type=Path, required=True)
     vpsr.add_argument("--json", action="store_true")
     vpsr.set_defaults(func=validate_planning_scene_readiness)
+
+    grp = sub.add_parser("generate-readiness-pack", help="Generate Workcell Studio readiness pack")
+    grp.add_argument("--scene-package", type=Path, required=True)
+    grp.add_argument("--output-dir", type=Path, required=True)
+    grp.add_argument("--project-name", type=str, required=True)
+    grp.add_argument("--validate", action="store_true")
+    grp.add_argument("--prepare-rviz-preview", action="store_true")
+    grp.add_argument("--smoke-dry-run", action="store_true")
+    grp.add_argument("--smoke-execute", action="store_true")
+    grp.add_argument("--smoke-timeout-s", type=int, default=20)
+    grp.add_argument("--strict", action="store_true")
+    grp.add_argument("--continue-on-error", action="store_true")
+    grp.add_argument("--force", action="store_true")
+    grp.add_argument("--json", action="store_true")
+    grp.set_defaults(func=generate_readiness_pack)
+
+    vrp = sub.add_parser("validate-readiness-pack", help="Validate readiness pack manifest")
+    vrp.add_argument("--manifest", type=Path, required=True)
+    vrp.add_argument("--json", action="store_true")
+    vrp.set_defaults(func=validate_readiness_pack)
 
     cc = sub.add_parser("create-cell", help="Create a catalog-driven cell_definition + environment layout + optional preview/bundle")
     cc.add_argument("--cell-id", required=True)
