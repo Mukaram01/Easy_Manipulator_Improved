@@ -39,6 +39,19 @@ def main()->int:
   if not arts.get('task_flow_summary') or not Path(arts.get('task_flow_summary','')).exists():
    warn.append('task_flow_summary missing; dashboard must derive task flow from recipe')
 
+
+ static_summary=arts.get('static_preview',{}).get('summary') if isinstance(arts.get('static_preview'),dict) else None
+ tf_summary_path=arts.get('task_flow_summary')
+ if task_recipe and Path(task_recipe).exists() and tf_summary_path and Path(tf_summary_path).exists() and static_summary and Path(static_summary).exists():
+  try:
+   sp=json.loads(Path(static_summary).read_text(encoding='utf-8'))
+   sp_tf=sp.get('task_flow_summary',{}) if isinstance(sp.get('task_flow_summary'),dict) else {}
+   if sp_tf.get('status')=='FAIL' and 'No task input' in (sp_tf.get('errors') or []):
+    if r.get('final_readiness')=='PASS': errs.append('static preview task_flow_summary reports No task input despite task recipe')
+    else: warn.append('static preview did not receive task flow input')
+  except Exception:
+   warn.append('failed to parse static preview summary')
+
  if dashboard and Path(dashboard).exists() and task_recipe and Path(task_recipe).exists():
   txt=Path(dashboard).read_text(encoding='utf-8')
   lower=txt.lower()
