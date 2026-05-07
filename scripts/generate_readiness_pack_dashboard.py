@@ -55,15 +55,18 @@ def _derive_task_flow(task_flow: dict[str, Any], arts: dict[str, Any], manifest:
         bti = recipe.get('builder_task_intent', {}) if isinstance(recipe.get('builder_task_intent'), dict) else {}
         pick = ((bti.get('pick', {}) or {}).get('source', {}) if isinstance(bti.get('pick'), dict) else {})
         place = ((bti.get('place', {}) or {}).get('target', {}) if isinstance(bti.get('place'), dict) else {})
-        approach = ((bti.get('pick', {}) or {}).get('approach', {}) if isinstance(bti.get('pick'), dict) else {})
-        retreat = ((bti.get('pick', {}) or {}).get('retreat', {}) if isinstance(bti.get('pick'), dict) else {})
+        grasp_meta = ((bti.get('grasp', {}) or {}) if isinstance(bti.get('grasp'), dict) else {})
+        approach = {'axis': grasp_meta.get('approach_axis'), 'distance_m': grasp_meta.get('approach_distance_m')}
+        retreat = {'axis': grasp_meta.get('retreat_axis'), 'distance_m': grasp_meta.get('retreat_distance_m')}
         grasp = recipe.get('grasp', {}) if isinstance(recipe.get('grasp'), dict) else {}
         task = recipe.get('task', {}) if isinstance(recipe.get('task'), dict) else {}
         return {
             'pick_source_id': pick.get('id'),
             'grasp_strategy': grasp.get('strategy_ref') or grasp.get('inline_strategy'),
-            'approach': approach.get('axis'),
-            'retreat': retreat.get('axis'),
+            'approach_axis': approach.get('axis'),
+            'approach_distance_m': approach.get('distance_m'),
+            'retreat_axis': retreat.get('axis'),
+            'retreat_distance_m': retreat.get('distance_m'),
             'place_target_id': place.get('id'),
             'release_strategy': (bti.get('place', {}) or {}).get('release_strategy'),
             'routing_rules': len(task.get('rules', [])) if isinstance(task.get('rules'), list) else 'missing',
@@ -137,7 +140,7 @@ def main() -> int:
 <div class='panel warn'><h3>Safety Banner</h3><ul><li>Offline/fake-hardware readiness review only</li><li>No robot motion commanded</li><li>No MoveIt planning service called</li><li>No real hardware enabled</li></ul><pre>{_safe(json.dumps(safety,indent=2))}</pre></div>
 {preview_block}
 <div class='panel'><h3>Task flow: pick → grasp → place → release</h3><ul>
-<li>pick source: {_safe(tf.get('pick_source_id','missing'))}</li><li>grasp strategy: {_safe(tf.get('grasp_strategy','missing'))}</li><li>approach/retreat: {_safe(tf.get('approach','missing'))} / {_safe(tf.get('retreat','missing'))}</li><li>place target: {_safe(tf.get('place_target_id','missing'))}</li><li>release strategy: {_safe(tf.get('release_strategy','missing'))}</li><li>routing rules: {_safe(tf.get('routing_rule_count', tf.get('routing_rules','missing')))}</li>
+<li>pick source: {_safe(tf.get('pick_source_id','missing'))}</li><li>grasp strategy: {_safe(tf.get('grasp_strategy','missing'))}</li><li>approach/retreat: {_safe(tf.get('approach_axis', tf.get('approach','missing')))}{_safe((' '+str(tf.get('approach_distance_m'))+'m') if tf.get('approach_distance_m') is not None else '')} / {_safe(tf.get('retreat_axis', tf.get('retreat','missing')))}{_safe((' '+str(tf.get('retreat_distance_m'))+'m') if tf.get('retreat_distance_m') is not None else '')}</li><li>place target: {_safe(tf.get('place_target_id','missing'))}</li><li>release strategy: {_safe(tf.get('release_strategy','missing'))}</li><li>routing rules: {_safe(tf.get('routing_rule_count', tf.get('routing_rules','missing')))}</li>
 </ul></div>
 <div class='panel'><h3>Artifact status</h3><table><tr><th>Artifact</th><th>Status</th><th>Path</th></tr>
 {''.join([f"<tr><td>{_safe(n)}</td><td>{_safe(_artifact_status(pth))}</td><td><a href='{_safe(_href_for(pth, pack_dir, dashboard_dir))}'>{_safe(pth)}</a></td></tr>" if pth else f"<tr><td>{_safe(n)}</td><td>MISSING</td><td></td></tr>" for n,pth in art_rows])}

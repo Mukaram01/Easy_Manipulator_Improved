@@ -61,7 +61,16 @@ def main()->int:
         results['task_flow_status']='PASS' if rc==0 else 'WARN'
     else:
         results['task_flow_status']='WARN'
-    rc,sp=step('static_preview',[sys.executable,str(SCRIPT_DIR/'generate_workcell_static_preview.py'),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output-dir',str(paths['preview']),'--title',a.project_name,'--json'])
+    static_preview_cmd=[sys.executable,str(SCRIPT_DIR/'generate_workcell_static_preview.py'),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--output-dir',str(paths['preview']),'--title',a.project_name,'--json']
+    env_layout_path = paths['exported']/'environment_layout.yaml'
+    if env_layout_path.exists():
+        static_preview_cmd += ['--environment-layout', str(env_layout_path)]
+    copied_ti = paths['task']/ti.name
+    if copied_ti.exists():
+        static_preview_cmd += ['--task-intent', str(copied_ti)]
+    if recipe.exists():
+        static_preview_cmd += ['--task-recipe', str(recipe)]
+    rc,sp=step('static_preview',static_preview_cmd)
     art['static_preview']={'svg':str(paths['preview']/'static_preview.svg'),'html':str(paths['preview']/'static_preview.html'),'summary':str(paths['preview']/'static_preview_summary.json')}; results['static_preview_status']='PASS' if rc==0 else 'WARN'
     recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
     req=paths['plan']/'offline_plan_preview_request.yaml'

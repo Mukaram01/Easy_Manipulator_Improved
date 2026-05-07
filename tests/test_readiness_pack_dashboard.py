@@ -22,7 +22,7 @@ def test_generate_dashboard_from_pack(tmp_path: Path):
     dash = out/'readiness_dashboard.html'
     assert dash.exists()
     txt=dash.read_text(encoding='utf-8')
-    for k in ['pick_zone_main','bin_red','finger_pinch_basic','task_flow_summary.json']:
+    for k in ['pick_zone_main','bin_red','finger_pinch_basic','tool_release','z_down','z_up','task_flow_summary.json']:
         assert k in txt
     assert 'pick source: missing' not in txt
     assert "href='/tmp/" not in txt and 'href="/tmp/' not in txt
@@ -47,3 +47,13 @@ def test_streamlit_backend_dashboard_helpers(tmp_path: Path):
     assert run['returncode']==0
     assert backend.read_readiness_dashboard(out)
     assert backend.dashboard_path_from_manifest({'artifacts':{'readiness_dashboard':'abc'}})=='abc'
+
+
+
+def test_dashboard_does_not_show_unknown_or_no_task_input_when_recipe_exists(tmp_path: Path):
+    out = tmp_path/'pack_unknown'
+    scene = _mk_scene(tmp_path)
+    subprocess.run([sys.executable,'scripts/workcell_studio.py','generate-readiness-pack','--scene-package',str(scene),'--output-dir',str(out),'--project-name','demo','--validate','--smoke-dry-run','--force','--json'],check=False)
+    txt=(out/'readiness_dashboard.html').read_text(encoding='utf-8')
+    assert 'Pick: unknown' not in txt
+    assert 'No task input' not in txt

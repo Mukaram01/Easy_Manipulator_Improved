@@ -39,7 +39,7 @@ def test_pack_with_task_intent_includes_task_flow_summary(tmp_path: Path):
     shutil.copytree('scenes/ur5_2f_test', scene)
     gen = scene / 'generated'
     gen.mkdir(parents=True, exist_ok=True)
-    subprocess.run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--release-strategy','tool_release','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'],check=True)
+    subprocess.run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'],check=True)
     out = tmp_path / 'pack_task'
     run = subprocess.run([sys.executable, 'scripts/workcell_studio.py', 'generate-readiness-pack', '--scene-package', str(scene), '--output-dir', str(out), '--project-name', 'demo', '--validate', '--smoke-dry-run', '--force', '--json'], capture_output=True, text=True, check=False)
     assert run.returncode in (0,1)
@@ -47,3 +47,21 @@ def test_pack_with_task_intent_includes_task_flow_summary(tmp_path: Path):
     tf = Path(manifest['artifacts']['task_flow_summary'])
     assert tf.exists()
     assert manifest['results']['task_flow_status'] in ('PASS','WARN')
+
+
+def test_pack_static_preview_receives_task_flow(tmp_path: Path):
+    import shutil
+    scene = tmp_path / 'scene_preview'
+    shutil.copytree('scenes/ur5_2f_test', scene)
+    gen = scene / 'generated'
+    gen.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'],check=True)
+    out = tmp_path / 'pack_preview'
+    subprocess.run([sys.executable, 'scripts/workcell_studio.py', 'generate-readiness-pack', '--scene-package', str(scene), '--output-dir', str(out), '--project-name', 'demo', '--validate', '--smoke-dry-run', '--force', '--json'], check=False)
+    summary = json.loads((out/'preview'/'static_preview_summary.json').read_text(encoding='utf-8'))
+    tf = summary.get('task_flow_summary', {})
+    assert tf.get('status') in ('PASS', 'WARN')
+    assert tf.get('pick_source_id') == 'pick_zone_main'
+    assert tf.get('place_target_id') == 'bin_red'
+    assert tf.get('grasp_strategy') == 'finger_pinch_basic'
+    assert tf.get('release_strategy') == 'tool_release'

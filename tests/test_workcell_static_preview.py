@@ -55,4 +55,6 @@ def test_preview_with_task_intent_includes_task_flow():
         summary=json.loads((out/'static_preview_summary.json').read_text())
         assert 'task_flow_summary' in summary
         html=(out/'static_preview.html').read_text()
-        assert 'Task Flow' in html and 'Pick:' in html and 'Place:' in html
+        assert 'Task Flow' in html and 'Pick: pick_zone_main' in html and 'Place: bin_red' in html and 'Release: tool_release' in html
+        svg=(out/'static_preview.svg').read_text()
+        assert 'Pick: pick_zone_main' in svg and 'Place: bin_red' in svg
