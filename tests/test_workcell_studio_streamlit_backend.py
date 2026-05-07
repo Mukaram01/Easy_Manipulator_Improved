@@ -146,3 +146,14 @@ def test_backend_prepare_and_validate_rviz_plan_preview_session(tmp_path):
     assert "use_fake_hardware:=false" not in text
     val = backend.validate_rviz_plan_preview_session(out/"rviz_moveit_plan_preview_session.json")
     assert val["ok"]
+
+def test_backend_smoke_launch_helpers(tmp_path):
+    session = tmp_path / "session.json"
+    session.write_text('{"schema":"rviz_moveit_plan_preview_session/v1","source":{"scene_package":"scenes/ur5_2f_test"},"session":{"launch_allowed":false,"generated_commands_only":true},"rviz_moveit":{"suggested_launch":{"command":"python3 -c \\"print(1)\\" use_fake_hardware:=true"}},"safety":{"motion_started":false,"moveit_service_called":false,"ros_launch_started":false,"runtime_io_applied":false,"fake_hardware_required":true}}', encoding="utf-8")
+    out = tmp_path / "smoke"
+    run = backend.smoke_launch_preview(session, out, execute=False, timeout_s=2)
+    assert run["ok"]
+    report = backend.load_smoke_launch_report(out)
+    assert report.get("schema") == "fake_hardware_smoke_launch_report/v1"
+    val = backend.validate_smoke_launch_report(out / "fake_hardware_smoke_launch_report.json")
+    assert val["ok"]

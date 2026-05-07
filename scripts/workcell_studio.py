@@ -490,6 +490,21 @@ def validate_rviz_plan_preview(args: argparse.Namespace) -> int:
     print(run.stdout if run.stdout else run.stderr)
     return run.returncode
 
+def smoke_launch_preview(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "run_fake_hardware_smoke_launch.py"), "--session", str(args.session), "--output-dir", str(args.output_dir), "--timeout-s", str(args.timeout_s)]
+    cmd.append("--execute" if args.execute else "--dry-run")
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+def validate_smoke_launch_report(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "validate_fake_hardware_smoke_launch_report.py"), str(args.report)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
 def validate_builder_task(args: argparse.Namespace) -> int:
     cmd = [sys.executable, str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(args.task_intent)]
     if args.scene_package:
@@ -545,6 +560,19 @@ def _build_parser() -> argparse.ArgumentParser:
     vprep.add_argument("--session", type=Path, required=True)
     vprep.add_argument("--json", action="store_true")
     vprep.set_defaults(func=validate_rviz_plan_preview)
+    smoke = sub.add_parser("smoke-launch-preview", help="Guarded fake-hardware RViz/MoveIt smoke launch verifier")
+    smoke.add_argument("--session", type=Path, required=True)
+    smoke.add_argument("--output-dir", type=Path, required=True)
+    smoke.add_argument("--dry-run", action="store_true")
+    smoke.add_argument("--execute", action="store_true")
+    smoke.add_argument("--timeout-s", type=int, default=20)
+    smoke.add_argument("--json", action="store_true")
+    smoke.set_defaults(func=smoke_launch_preview)
+
+    vsmoke = sub.add_parser("validate-smoke-launch-report", help="Validate fake_hardware_smoke_launch_report/v1 artifacts")
+    vsmoke.add_argument("--report", type=Path, required=True)
+    vsmoke.add_argument("--json", action="store_true")
+    vsmoke.set_defaults(func=validate_smoke_launch_report)
 
     cc = sub.add_parser("create-cell", help="Create a catalog-driven cell_definition + environment layout + optional preview/bundle")
     cc.add_argument("--cell-id", required=True)

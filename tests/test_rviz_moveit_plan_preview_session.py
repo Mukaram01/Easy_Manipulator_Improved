@@ -22,6 +22,7 @@ def test_generate_and_validate_session():
         cmd=(out/'suggested_commands.sh').read_text()
         assert 'use_fake_hardware:=false' not in cmd
         assert 'use_fake_hardware:=true' in cmd
+        assert 'smoke-launch-preview' in cmd
         r3=_run('scripts/validate_rviz_moveit_plan_preview_session.py',str(out/'rviz_moveit_plan_preview_session.json'),'--json')
         assert r3.returncode==0
 

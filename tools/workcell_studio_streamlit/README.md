@@ -63,3 +63,7 @@ Shows readiness classification, pick/place/grasp/release, routing, and offline s
 
 
 Includes a **Prepare RViz/MoveIt plan preview** action that only generates manual fake-hardware commands and safety/readiness reports. It does not start ROS, call MoveIt, or move hardware.
+
+
+## Fake-hardware smoke launch
+Use dry-run by default. Execute mode is optional/manual and requires explicit confirmation. It only launches fake-hardware visualization for a timeout and does not command robot motion.
