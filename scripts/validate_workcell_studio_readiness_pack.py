@@ -4,7 +4,7 @@ import argparse,json
 from pathlib import Path
 
 def main()->int:
- p=argparse.ArgumentParser();p.add_argument('manifest',type=Path);p.add_argument('--json',action='store_true');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('manifest',type=Path);p.add_argument('--strict',action='store_true');p.add_argument('--json',action='store_true');a=p.parse_args()
  m=json.loads(a.manifest.read_text(encoding='utf-8'))
  errs=[];warn=[]
  if m.get('schema')!='workcell_studio_readiness_pack/v1': errs.append('schema invalid')
@@ -17,6 +17,19 @@ def main()->int:
  for k in ['cell_definition','environment_layout']:
   v=arts.get(k)
   if v and not Path(v).exists(): errs.append(f'missing artifact {k}')
+
+ dashboard=arts.get('readiness_dashboard')
+ if dashboard:
+  dp=Path(dashboard)
+  if not dp.exists(): errs.append('missing artifact readiness_dashboard')
+  else:
+   txt=dp.read_text(encoding='utf-8').lower()
+   for needle in ['no robot motion','not a safety certificate','workcell studio']:
+    if needle not in txt: errs.append(f'dashboard missing required wording: {needle}')
+   if 'use_fake_hardware:=false' in txt: errs.append('dashboard contains unsafe marker use_fake_hardware:=false')
+ elif a.strict:
+  warn.append('no readiness_dashboard listed')
+
  if r.get('final_readiness')=='PASS':
   for k in ['task_recipe','offline_plan_preview_request','planning_scene_readiness_report']:
    if not arts.get(k) or not Path(arts[k]).exists(): errs.append(f'PASS requires {k}')

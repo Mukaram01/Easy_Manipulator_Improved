@@ -1518,3 +1518,6 @@ Use `python3 scripts/workcell_studio.py check-planning-scene-readiness --scene-p
 
 ## Workcell Studio Readiness Pack
 Use `python3 scripts/workcell_studio.py generate-readiness-pack ...` to collect builder export, task intent/recipe/flow, static preview, offline plan preview request, RViz preview session, smoke report, and planning-scene readiness into one review folder. Offline/fake-hardware-first; no robot motion or MoveIt planning service calls by default.
+
+## Readiness Pack HTML Dashboard
+`generate-readiness-pack` now produces `readiness_dashboard.html` by default (disable via `--no-dashboard`). You can also generate it directly with `python3 scripts/workcell_studio.py generate-readiness-dashboard --manifest <manifest> --output <dashboard.html> --json`. This dashboard is offline-only review output and is not a safety certificate.

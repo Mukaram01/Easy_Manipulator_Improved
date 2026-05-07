@@ -49,3 +49,6 @@ summary:
   warnings: []
   suggested_next_actions: []
 ```
+
+## HTML dashboard artifact
+Readiness packs may include `artifacts.readiness_dashboard` pointing to `readiness_dashboard.html`. The dashboard summarizes readiness, safety flags, static preview, task flow, artifact status, blockers/warnings, and guarded next commands for offline review.

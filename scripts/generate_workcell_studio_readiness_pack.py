@@ -18,7 +18,7 @@ def main()->int:
     ap.add_argument('--scene-package',type=Path,required=True);ap.add_argument('--output-dir',type=Path,required=True);ap.add_argument('--project-name',required=True)
     ap.add_argument('--validate',action='store_true');ap.add_argument('--prepare-rviz-preview',action='store_true');ap.add_argument('--smoke-dry-run',action='store_true')
     ap.add_argument('--smoke-execute',action='store_true');ap.add_argument('--smoke-timeout-s',type=int,default=20);ap.add_argument('--strict',action='store_true')
-    ap.add_argument('--continue-on-error',action='store_true');ap.add_argument('--force',action='store_true');ap.add_argument('--json',action='store_true')
+    ap.add_argument('--continue-on-error',action='store_true');ap.add_argument('--no-dashboard',action='store_true');ap.add_argument('--force',action='store_true');ap.add_argument('--json',action='store_true')
     a=ap.parse_args(); scene=a.scene_package.resolve(); out=a.output_dir.resolve()
     if out.exists() and a.force: shutil.rmtree(out)
     out.mkdir(parents=True,exist_ok=True)
@@ -77,8 +77,17 @@ def main()->int:
     manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary}
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
-    (out/'readiness_pack_summary.md').write_text(f"# Workcell Studio Readiness Pack\n\n- Final readiness: **{results['final_readiness']}**\n- Classification: `{results.get('classification','unknown')}`\n",encoding='utf-8')
-    (out/'next_commands.md').write_text(f"python3 scripts/workcell_studio.py validate-readiness-pack --manifest {out/'readiness_pack_manifest.json'} --json\n",encoding='utf-8')
+
+    dashboard = out/'readiness_dashboard.html'
+    if not a.no_dashboard:
+        rc,db=step('dashboard',[sys.executable,str(SCRIPT_DIR/'generate_readiness_pack_dashboard.py'),'--manifest',str(out/'readiness_pack_manifest.json'),'--output',str(dashboard),'--json'])
+        if dashboard.exists():
+            art['readiness_dashboard']=str(dashboard)
+            results['readiness_dashboard_status']='PASS' if rc==0 else 'WARN'
+    manifest['artifacts']=art
+    (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
+    (out/'readiness_pack_summary.md').write_text(f"# Workcell Studio Readiness Pack\n\n- Final readiness: **{results['final_readiness']}**\n- Classification: `{results.get('classification','unknown')}`\n- Dashboard: `{art.get('readiness_dashboard','(disabled)')}`\n",encoding='utf-8')
+    (out/'next_commands.md').write_text(f"python3 scripts/workcell_studio.py validate-readiness-pack --manifest {out/'readiness_pack_manifest.json'} --json\npython3 scripts/workcell_studio.py generate-readiness-dashboard --manifest {out/'readiness_pack_manifest.json'} --output {out/'readiness_dashboard.html'} --json\n",encoding='utf-8')
     if a.json: print(json.dumps({'result':results['final_readiness'],'manifest':str(out/'readiness_pack_manifest.json')},indent=2))
     return 0 if results['final_readiness']!='FAIL' or a.continue_on_error else 2
 if __name__=='__main__': raise SystemExit(main())
