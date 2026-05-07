@@ -60,7 +60,9 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     safety=payload.get('safety') if isinstance(payload.get('safety'),dict) else {}
     if not task.get('type'): errors.append('task.type is required')
     if not pick.get('id'): errors.append('pick.source.id is required')
-    if not place.get('id'): errors.append('place.target.id is required')
+    if not place.get('id'):
+        errors.append('Place target is not selected.')
+        errors.append('place.target.id is required')
     strategy_ref=grasp.get('strategy_ref')
     if not strategy_ref and not grasp.get('inline_strategy'): errors.append('grasp.strategy_ref or grasp.inline_strategy is required')
     for key in ['approach_distance_m','retreat_distance_m']:
@@ -92,9 +94,17 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
         for rule in rules:
             if not isinstance(rule, dict):
                 continue
-            destination = rule.get('destination')
+            destination = rule.get('place_target') or rule.get('destination')
             if isinstance(destination, str) and destination and destination not in scene_ids:
-                warnings.append(f"routing rule destination '{destination}' could not be verified in scene metadata")
+                errors.append(f"routing rule target '{destination}' does not exist in scene metadata")
+        if pick.get('id') and str(pick['id']) not in scene_ids:
+            errors.append(f"selected pick source '{pick['id']}' does not exist in scene metadata")
+        if place.get('id') and str(place['id']) not in scene_ids:
+            errors.append(f"selected place target '{place['id']}' does not exist in scene metadata")
+    for token in ['TODO', 'todo', 'unset_destination']:
+        if token in json.dumps(payload):
+            errors.append('task intent contains TODO/unset placeholder values')
+            break
     missing_required_fields=[]
     if not task.get('type'): missing_required_fields.append('task.type')
     if not pick.get('id'): missing_required_fields.append('pick.source.id')

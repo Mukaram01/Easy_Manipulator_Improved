@@ -156,7 +156,7 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
     if not place_id:
         missing.append("place target missing")
     release_strategy = "tool_release"
-    routing_rules = [{"id": "default_route", "when": {"always": True}, "destination": place_id or "unset_destination"}]
+    routing_rules = [{"id": "route_any_to_selected_place", "when": {"always": True}, "place_target": place_id}]
     if not release_strategy:
         missing.append("release strategy missing")
     if not routing_rules:
@@ -167,7 +167,7 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
         "task": {"id": "default_builder_task", "type": task_type, "mode": "offline_preview"},
         "pick": {"source": {"type": "zone", "id": pick_id}},
         "grasp": {"strategy_ref": strategy, "approach_axis": "z_down", "approach_distance_m": 0.1, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
-        "place": {"target": {"type": "destination", "id": place_id}, "release_strategy": release_strategy, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
+        "place": {"target": {"type": "bin", "id": place_id}, "release_strategy": release_strategy, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
         "routing": {"rules": routing_rules},
         "safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
     }

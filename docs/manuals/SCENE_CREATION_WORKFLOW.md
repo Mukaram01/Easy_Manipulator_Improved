@@ -4,7 +4,7 @@ This manual documents the **current intended flow** for creating/importing/editi
 
 ## Scope and boundaries
 
-- `workcell_builder` remains the source GUI for scene creation/editing.
+- `workcell_builder` remains the source GUI for scene creation/editing and task authoring (`pick_place`).
 - `scenes/` stores scene packages/files.
 - `assets/` stores physical meshes/models/descriptions.
 - `environment_layout/v1` is metadata/placement helper only.
@@ -24,10 +24,12 @@ This manual documents the **current intended flow** for creating/importing/editi
 9. Add gripper/end effector configuration.
 10. Add camera/sensor frame and model references.
 11. Save scene package.
-12. Validate scene readiness (`scripts/check_scene_readiness.py`).
-13. Optionally generate/preview cell definition artifacts.
-14. Simulate.
-15. Commission/deploy in later stages.
+12. Author task intent in `workcell_builder`: select pick source, place target, grasp/release strategy, and routing rule.
+13. Export generated task intent (`generated/workcell_builder_task_intent.yaml`) from builder-authored selections.
+14. Validate scene readiness (`scripts/check_scene_readiness.py`).
+15. Optionally generate/preview cell definition artifacts.
+16. Simulate.
+17. Commission/deploy in later stages.
 
 ## Relationship between metadata layers
 
