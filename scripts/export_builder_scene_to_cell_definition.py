@@ -129,6 +129,49 @@ def _generate_plan_preview(task_recipe_path: Path, output_path: Path, cell_path:
         return {"status": "FAIL", "errors": [run.stdout.strip() or run.stderr.strip()]}
 
 
+
+
+def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], meta: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    missing=[]
+    task_type = "pick_place"
+    grasp_meta = meta.get("grasp_strategy") if isinstance(meta.get("grasp_strategy"), dict) else {}
+    strategy = grasp_meta.get("strategy_id")
+    pick_id = None
+    place_id = None
+    zones = env_layout.get("zones") if isinstance(env_layout.get("zones"), list) else []
+    targets = env_layout.get("targets") if isinstance(env_layout.get("targets"), list) else []
+    for z in zones + targets:
+        if not isinstance(z, dict):
+            continue
+        zid = z.get("id")
+        ztype = str(z.get("type", "")).lower()
+        if not pick_id and ("pick" in ztype or "pick" in str(zid).lower()):
+            pick_id = zid
+        if not place_id and ("place" in ztype or "bin" in ztype or any(k in str(zid).lower() for k in ["place","bin","drop"])):
+            place_id = zid
+    if not pick_id:
+        missing.append("pick source missing")
+    if not strategy:
+        missing.append("grasp strategy missing")
+    if not place_id:
+        missing.append("place target missing")
+    release_strategy = "tool_release"
+    routing_rules = [{"id": "default_route", "when": {"always": True}, "destination": place_id or "unset_destination"}]
+    if not release_strategy:
+        missing.append("release strategy missing")
+    if not routing_rules:
+        missing.append("routing rule missing")
+    intent = {
+        "schema": "workcell_builder_task_intent/v1",
+        "scene_package": scene_path.as_posix(),
+        "task": {"id": "default_builder_task", "type": task_type, "mode": "offline_preview"},
+        "pick": {"source": {"type": "zone", "id": pick_id}},
+        "grasp": {"strategy_ref": strategy, "approach_axis": "z_down", "approach_distance_m": 0.1, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
+        "place": {"target": {"type": "destination", "id": place_id}, "release_strategy": release_strategy, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
+        "routing": {"rules": routing_rules},
+        "safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
+    }
+    return intent, missing
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
@@ -175,6 +218,14 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         object_entries.append({"id": str(obj_name), "name": str(obj_name), "mesh": filepath, "dimensions": dims, "index": idx})
 
     authored_layout = _load_environment_layout(scene_path)
+    if not task_intent_path:
+        generated_intent, missing_msgs = _build_task_intent_from_scene(scene_path, authored_layout, meta)
+        if missing_msgs:
+            warnings.append("Builder-authored task intent is incomplete: " + ", ".join(missing_msgs))
+        else:
+            generated_task_intent_path = output_dir / "workcell_builder_task_intent.yaml"
+            _write_structured(generated_task_intent_path, generated_intent)
+            task_intent_path = generated_task_intent_path
     environment_layout = {
         "schema_version": authored_layout.get("schema_version", "environment_layout/v1"),
         "layout_id": authored_layout.get("layout_id", f"{scene_path.name}_layout"),
@@ -268,7 +319,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "scene_path": str(scene_path),
         "output_dir": str(output_dir),
         "warnings": warnings,
-        "exported_files": [str(cell_path), str(layout_path)],
+        "exported_files": [str(cell_path), str(layout_path)] + ([str(task_intent_path)] if task_intent_path else []),
         "validation": {},
         "builder_task_intent": builder_task_intent,
         "task_intent_validation": task_intent_validation,
