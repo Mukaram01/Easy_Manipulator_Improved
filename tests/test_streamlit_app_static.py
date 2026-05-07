@@ -44,6 +44,7 @@ def test_task_intent_readiness_options_present() -> None:
 
 def test_dashboard_preview_guidance_present() -> None:
     src = _source()
-    assert "Readiness dashboard path:" in src
+    assert "backend.load_readiness_pack_manifest(Path(manifest_path).parent)" in src
+    assert "http://localhost:8767/readiness_dashboard.html" in src
+    assert "may not work with sandboxed Firefox/Snap" in src
     assert "xdg-open" in src
-    assert "python3 -m http.server 8767" in src

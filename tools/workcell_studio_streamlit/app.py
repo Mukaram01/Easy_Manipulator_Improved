@@ -10,6 +10,36 @@ st.set_page_config(page_title="Workcell Studio Streamlit", layout="wide")
 st.title("Workcell Studio Streamlit Prototype")
 st.warning("Workcell Studio defaults to offline validation and fake hardware. This UI does not command robot motion.")
 
+
+def _render_readiness_pack_result(readiness_result: dict[str, object], readiness_output_dir: str) -> None:
+    st.json(readiness_result)
+    manifest_path = str(readiness_result.get("manifest") or "")
+    manifest = backend.load_readiness_pack_manifest(Path(manifest_path).parent) if manifest_path else {}
+    summary = backend.readiness_summary_from_manifest(manifest)
+    dashboard_path = summary.get("dashboard_path") or str(readiness_result.get("dashboard_path") or "")
+    final_readiness = summary.get("final_readiness") or readiness_result.get("result")
+    classification = summary.get("classification")
+
+    if manifest_path:
+        st.write(f"Manifest path: {manifest_path}")
+    if dashboard_path:
+        st.write(f"Dashboard path: {dashboard_path}")
+    st.write(f"Output dir: {readiness_output_dir}")
+    st.write(f"Final readiness: {final_readiness}")
+    st.write(f"Classification: {classification}")
+
+    st.subheader("Dashboard options")
+    if dashboard_path and Path(str(dashboard_path)).exists():
+        with st.expander("Preview readiness dashboard HTML"):
+            st.components.v1.html(Path(str(dashboard_path)).read_text(encoding="utf-8"), height=530, scrolling=True)
+    st.caption("Reliable browser flow:")
+    st.code(backend.dashboard_server_command(readiness_output_dir, 8767))
+    st.caption("Open this URL after starting the local server: http://localhost:8767/readiness_dashboard.html")
+    st.code(backend.dashboard_local_url(8767))
+    st.caption("Optional direct open command (may not work with sandboxed Firefox/Snap):")
+    if dashboard_path:
+        st.code(f"xdg-open {dashboard_path}")
+
 workflow = st.sidebar.radio(
     "Workflow",
     ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Planning Scene Readiness", "Create Cell", "Readiness Pack"],
@@ -150,21 +180,7 @@ elif workflow == "Builder Task Intent":
             strict=readiness_strict,
             continue_on_error=readiness_continue_on_error,
         ).get("json") or {}
-        st.json(readiness_result)
-        readiness_manifest_path = readiness_result.get("manifest_path")
-        readiness_dashboard_path = readiness_result.get("dashboard_path")
-        if readiness_manifest_path:
-            st.write(f"Manifest path: {readiness_manifest_path}")
-        if readiness_dashboard_path:
-            st.write(f"Readiness dashboard path: {readiness_dashboard_path}")
-        st.write(f"Output dir: {readiness_output_dir}")
-        st.write(f"Final readiness: {readiness_result.get('final_readiness')}")
-        st.write(f"Classification: {readiness_result.get('classification')}")
-        if readiness_dashboard_path and Path(readiness_dashboard_path).exists():
-            with st.expander("Preview readiness dashboard HTML"):
-                st.components.v1.html(Path(readiness_dashboard_path).read_text(encoding="utf-8"), height=530, scrolling=True)
-            st.code(f"xdg-open {readiness_dashboard_path}")
-            st.code(f"cd {readiness_output_dir} && python3 -m http.server 8767")
+        _render_readiness_pack_result(readiness_result, readiness_output_dir)
     targets = st.session_state.get("builder_targets", {})
     st.json(targets)
     grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]
@@ -206,21 +222,7 @@ elif workflow == "Builder Task Intent":
             strict=readiness_strict,
             continue_on_error=readiness_continue_on_error,
         ).get("json") or {}
-        st.json(readiness_result)
-        readiness_manifest_path = readiness_result.get("manifest_path")
-        readiness_dashboard_path = readiness_result.get("dashboard_path")
-        if readiness_manifest_path:
-            st.write(f"Manifest path: {readiness_manifest_path}")
-        if readiness_dashboard_path:
-            st.write(f"Readiness dashboard path: {readiness_dashboard_path}")
-        st.write(f"Output dir: {readiness_output_dir}")
-        st.write(f"Final readiness: {readiness_result.get('final_readiness')}")
-        st.write(f"Classification: {readiness_result.get('classification')}")
-        if readiness_dashboard_path and Path(readiness_dashboard_path).exists():
-            with st.expander("Preview readiness dashboard HTML"):
-                st.components.v1.html(Path(readiness_dashboard_path).read_text(encoding="utf-8"), height=530, scrolling=True)
-            st.code(f"xdg-open {readiness_dashboard_path}")
-            st.code(f"cd {readiness_output_dir} && python3 -m http.server 8767")
+        _render_readiness_pack_result(readiness_result, readiness_output_dir)
 
 if workflow == "Demo Gallery":
     st.header("Demo Gallery")

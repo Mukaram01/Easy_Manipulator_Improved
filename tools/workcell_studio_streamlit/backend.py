@@ -652,6 +652,27 @@ def dashboard_path_from_manifest(manifest: dict[str, Any]) -> str:
     arts = manifest.get("artifacts", {}) if isinstance(manifest.get("artifacts"), dict) else {}
     return str(arts.get("readiness_dashboard", ""))
 
+
+def dashboard_server_command(output_dir: str | Path, port: int = 8767) -> str:
+    return f"cd {Path(output_dir)} && python3 -m http.server {port}"
+
+
+def dashboard_local_url(port: int = 8767) -> str:
+    return f"http://localhost:{port}/readiness_dashboard.html"
+
+
+def readiness_summary_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    results = manifest.get("results", {}) if isinstance(manifest.get("results"), dict) else {}
+    summary = manifest.get("summary", {}) if isinstance(manifest.get("summary"), dict) else {}
+    return {
+        "final_readiness": results.get("final_readiness"),
+        "classification": results.get("classification"),
+        "dashboard_path": dashboard_path_from_manifest(manifest),
+        "manifest_path": summary.get("manifest_path"),
+        "blockers": results.get("blockers", []),
+        "warnings": results.get("warnings", []),
+    }
+
 def generate_readiness_dashboard(manifest: str | Path, output: str | Path, root: Path | None = None) -> dict[str, Any]:
     rr = root or repo_root()
     cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "generate-readiness-dashboard", "--manifest", str(manifest), "--output", str(output), "--json"]

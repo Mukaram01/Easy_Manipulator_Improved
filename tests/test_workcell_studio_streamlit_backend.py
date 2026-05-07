@@ -186,3 +186,16 @@ def test_readiness_dashboard_backend_helpers(tmp_path):
     assert run['returncode'] == 0
     assert 'Workcell Studio' in backend.read_readiness_dashboard(out)
     assert backend.dashboard_path_from_manifest({'artifacts': {'readiness_dashboard': 'x.html'}}) == 'x.html'
+
+
+def test_dashboard_server_helpers_and_manifest_summary():
+    assert backend.dashboard_server_command("/tmp/workcell_readiness_pack", 8767) == "cd /tmp/workcell_readiness_pack && python3 -m http.server 8767"
+    assert backend.dashboard_local_url(8767) == "http://localhost:8767/readiness_dashboard.html"
+    manifest = {
+        "artifacts": {"readiness_dashboard": "/tmp/workcell_readiness_pack/readiness_dashboard.html"},
+        "summary": {"manifest_path": "/tmp/workcell_readiness_pack/readiness_pack_manifest.json"},
+        "results": {"final_readiness": "PASS", "classification": "task_planning_ready", "blockers": [], "warnings": []},
+    }
+    summary = backend.readiness_summary_from_manifest(manifest)
+    assert summary["final_readiness"] == "PASS"
+    assert summary["classification"] == "task_planning_ready"
