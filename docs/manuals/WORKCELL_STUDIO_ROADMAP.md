@@ -78,3 +78,22 @@ Readiness pipeline: builder scene -> task intent -> task recipe -> task flow -> 
 - `physical_scene_only`: cell/layout metadata exists but task flow authoring is missing or incomplete.
 - `task_intent_present` / `task_preview_ready`: builder task intent exists and validates for offline preview-oriented task flow checks.
 - `runtime_ready`: only when downstream runtime safety gates, launch checks, and existing commissioning requirements pass; task intent alone does not imply runtime execution readiness.
+
+## Canonical golden builder-to-readiness demo
+
+Use `scripts/run_golden_builder_readiness_demo.py` as the canonical acceptance path for builder-generated scenes.
+
+- Offline/fake-hardware only (no runtime execution, no real robot motion).
+- Proves: builder scene validation -> Workcell Studio export -> task intent validation -> readiness pack -> static preview/dashboard.
+- Uses existing Workcell Studio scripts and safety defaults; it does not replace `workcell_builder`.
+
+Manual run:
+
+```bash
+python3 scripts/run_golden_builder_readiness_demo.py \
+  --scene-package scenes/ur5_2f_test \
+  --output-dir /tmp/golden_builder_demo \
+  --force --json
+```
+
+This demo is for repeatable regression/acceptance checks only and is not a real-hardware readiness certificate.
