@@ -90,7 +90,21 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(task_intent_path), "--scene-package", str(scene_path), "--json"], capture_output=True, text=True, check=False)
         task_intent_report = json.loads(run.stdout) if run.stdout.strip() else {"status": "FAIL", "errors": [run.stderr.strip()]}
         if task_intent_report.get("status") == "FAIL":
-            errors.extend(task_intent_report.get("errors", []))
+            missing = task_intent_report.get("missing_required_fields", [])
+            if missing:
+                mapping = {
+                    "pick.source.id": "pick source missing",
+                    "grasp.strategy_ref": "grasp strategy missing",
+                    "place.target.id": "place target missing",
+                }
+                for m in missing:
+                    warnings.append(mapping.get(m, f"task intent missing: {m}"))
+                if not ((task_intent_report.get("task_intent", {}).get("place") or {}).get("release_strategy")):
+                    warnings.append("release strategy missing")
+                if not ((task_intent_report.get("task_intent", {}).get("routing") or {}).get("rules")):
+                    warnings.append("routing rule missing")
+            else:
+                errors.extend(task_intent_report.get("errors", []))
         elif task_intent_report.get("status") == "WARN":
             warnings.extend(task_intent_report.get("warnings", []))
     else:
@@ -106,8 +120,12 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         readiness = "physical_scene_only"
         suggested_actions.append('Create builder task intent to define pick/place/grasp.')
     elif task_intent_report.get("status") == "FAIL":
-        readiness = "task_intent_incomplete"
-        suggested_actions.append('Complete missing required task intent fields.')
+        if task_intent_report.get("missing_required_fields"):
+            readiness = "physical_scene_only"
+            suggested_actions.append('Complete missing required task intent fields.')
+        else:
+            readiness = "task_intent_incomplete"
+            suggested_actions.append('Complete invalid task intent errors.')
     elif (scene_path / "generated" / "task_recipe_from_builder_intent.yaml").is_file():
         readiness = "task_recipe_generated"
     else:
