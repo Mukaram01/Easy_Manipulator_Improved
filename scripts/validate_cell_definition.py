@@ -265,8 +265,6 @@ def _extract_refs(defn: dict[str, Any]) -> dict[str, Any]:
     if not sensors and isinstance(defn.get("camera"), dict) and defn["camera"].get("capability"):
         sensors = [{"capability": defn["camera"].get("capability")}]
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
-    if not isinstance(robot.get("model"), str) or not robot.get("model", "").strip():
-        result.errors.append("robot.model must be a non-empty string.")
     environment = defn.get("environment") if isinstance(defn.get("environment"), dict) else {}
     assets = environment.get("assets") if isinstance(environment.get("assets"), list) else []
     return {
@@ -396,6 +394,9 @@ def validate_cell_definition(
     objects = defn.get("objects") if isinstance(defn.get("objects"), list) else []
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
     grasp = defn.get("grasp") if isinstance(defn.get("grasp"), dict) else None
+
+    if not isinstance(robot.get("model"), str) or not robot.get("model", "").strip():
+        result.errors.append("robot.model must be a non-empty string.")
 
     if "safe_joint_state" not in robot:
         result.errors.append("robot.safe_joint_state key is required (empty list allowed when home_named_target exists).")

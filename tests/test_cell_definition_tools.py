@@ -96,6 +96,23 @@ class CellDefinitionValidationTests(unittest.TestCase):
         self.assertFalse(summary.ok)
         self.assertIn("ghost_bin", " ".join(summary.errors))
 
+
+    def test_missing_robot_model_reports_validation_error_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fixture = Path(tmpdir) / "missing_robot_model.yaml"
+            fixture.write_text("schema_version: cell_definition/v1\ncell: {}\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "validate_cell_definition.py"), str(fixture), "--json"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 1)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["result"], "FAIL")
+            self.assertTrue(any("robot.model must be a non-empty string." in e for e in payload["errors"]))
+            self.assertNotIn("Traceback", proc.stderr + proc.stdout)
+
     def test_unknown_grasp_strategy_warns_by_default(self) -> None:
         loaded, parser, notes = validator.load_yaml(FIXTURES / "cell_definition_sort_by_colour_with_grasp_strategy.yaml")
         loaded["grasp"]["strategy_ref"] = "missing_grasp"
