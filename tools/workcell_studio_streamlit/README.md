@@ -76,3 +76,6 @@ The Streamlit UI includes a panel to run file/metadata-only planning-scene readi
 
 ## Readiness Pack page
 Provides generate/validate actions and renders final readiness, blockers/warnings, artifacts, summary markdown, and next commands.
+
+## Readiness dashboard
+The Readiness Pack page can generate and preview `readiness_dashboard.html` from a manifest. The dashboard is a review artifact only and does not execute commands.

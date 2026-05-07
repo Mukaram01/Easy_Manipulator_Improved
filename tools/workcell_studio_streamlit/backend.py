@@ -529,3 +529,20 @@ def read_readiness_pack_summary(output_dir: str | Path) -> str:
 def read_readiness_pack_next_commands(output_dir: str | Path) -> str:
     p = Path(output_dir) / "next_commands.md"
     return p.read_text(encoding="utf-8") if p.exists() else ""
+
+
+def dashboard_path_from_manifest(manifest: dict[str, Any]) -> str:
+    arts = manifest.get("artifacts", {}) if isinstance(manifest.get("artifacts"), dict) else {}
+    return str(arts.get("readiness_dashboard", ""))
+
+def generate_readiness_dashboard(manifest: str | Path, output: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "generate-readiness-dashboard", "--manifest", str(manifest), "--output", str(output), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def read_readiness_dashboard(path: str | Path, max_chars: int = 12000) -> str:
+    p = Path(path)
+    if not p.exists():
+        return ""
+    text = p.read_text(encoding="utf-8")
+    return text[:max_chars]

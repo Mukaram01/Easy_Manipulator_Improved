@@ -550,7 +550,7 @@ def validate_builder_task(args: argparse.Namespace) -> int:
 
 def generate_readiness_pack(args: argparse.Namespace) -> int:
     cmd=[sys.executable, str(SCRIPT_DIR / "generate_workcell_studio_readiness_pack.py"), "--scene-package", str(args.scene_package), "--output-dir", str(args.output_dir), "--project-name", args.project_name, "--smoke-timeout-s", str(args.smoke_timeout_s)]
-    for flag,name in [(args.validate,"--validate"),(args.prepare_rviz_preview,"--prepare-rviz-preview"),(args.smoke_dry_run,"--smoke-dry-run"),(args.smoke_execute,"--smoke-execute"),(args.strict,"--strict"),(args.continue_on_error,"--continue-on-error"),(args.force,"--force"),(args.json,"--json")]:
+    for flag,name in [(args.validate,"--validate"),(args.prepare_rviz_preview,"--prepare-rviz-preview"),(args.smoke_dry_run,"--smoke-dry-run"),(args.smoke_execute,"--smoke-execute"),(args.strict,"--strict"),(args.continue_on_error,"--continue-on-error"),(args.no_dashboard,"--no-dashboard"),(args.force,"--force"),(args.json,"--json")]:
         if flag: cmd.append(name)
     run=subprocess.run(cmd, capture_output=True, text=True, check=False)
     print(run.stdout if run.stdout else run.stderr)
@@ -559,6 +559,17 @@ def generate_readiness_pack(args: argparse.Namespace) -> int:
 def validate_readiness_pack(args: argparse.Namespace) -> int:
     cmd=[sys.executable, str(SCRIPT_DIR / "validate_workcell_studio_readiness_pack.py"), str(args.manifest)]
     if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+
+
+def generate_readiness_dashboard(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "generate_readiness_pack_dashboard.py"), "--manifest", str(args.manifest), "--output", str(args.output)]
+    for flag,name in [(args.embed_static_preview,"--embed-static-preview"),(args.strict_links,"--strict-links"),(args.json,"--json")]:
+        if flag: cmd.append(name)
+    if args.title: cmd.extend(["--title", args.title])
     run=subprocess.run(cmd, capture_output=True, text=True, check=False)
     print(run.stdout if run.stdout else run.stderr)
     return run.returncode
@@ -652,9 +663,21 @@ def _build_parser() -> argparse.ArgumentParser:
     grp.add_argument("--smoke-timeout-s", type=int, default=20)
     grp.add_argument("--strict", action="store_true")
     grp.add_argument("--continue-on-error", action="store_true")
+    grp.add_argument("--no-dashboard", action="store_true")
     grp.add_argument("--force", action="store_true")
     grp.add_argument("--json", action="store_true")
     grp.set_defaults(func=generate_readiness_pack)
+
+
+
+    grd = sub.add_parser("generate-readiness-dashboard", help="Generate readiness dashboard HTML")
+    grd.add_argument("--manifest", type=Path, required=True)
+    grd.add_argument("--output", type=Path, required=True)
+    grd.add_argument("--title", type=str, default="Workcell Studio Readiness Dashboard")
+    grd.add_argument("--embed-static-preview", action="store_true")
+    grd.add_argument("--strict-links", action="store_true")
+    grd.add_argument("--json", action="store_true")
+    grd.set_defaults(func=generate_readiness_dashboard)
 
     vrp = sub.add_parser("validate-readiness-pack", help="Validate readiness pack manifest")
     vrp.add_argument("--manifest", type=Path, required=True)

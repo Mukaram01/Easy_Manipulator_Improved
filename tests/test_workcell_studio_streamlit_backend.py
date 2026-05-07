@@ -167,3 +167,13 @@ def test_backend_planning_scene_readiness_helpers(tmp_path):
     assert payload.get("report", {}).get("schema") == "planning_scene_readiness_report/v1"
     val = backend.validate_planning_scene_readiness_report(out / "planning_scene_readiness_report.json")
     assert val["returncode"] == 0
+
+
+def test_readiness_dashboard_backend_helpers(tmp_path):
+    manifest = tmp_path/'manifest.json'
+    manifest.write_text('{"schema":"workcell_studio_readiness_pack/v1","source":{"project_name":"demo"},"artifacts":{},"results":{"final_readiness":"WARN"},"safety":{},"summary":{}}', encoding='utf-8')
+    out = tmp_path/'dashboard.html'
+    run = backend.generate_readiness_dashboard(manifest, out)
+    assert run['returncode'] == 0
+    assert 'Workcell Studio' in backend.read_readiness_dashboard(out)
+    assert backend.dashboard_path_from_manifest({'artifacts': {'readiness_dashboard': 'x.html'}}) == 'x.html'

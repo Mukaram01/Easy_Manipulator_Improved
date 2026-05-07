@@ -261,3 +261,22 @@ if workflow == "Readiness Pack":
         st.json(m.get("artifacts",{}))
         st.markdown(backend.read_readiness_pack_summary(out))
         st.code(backend.read_readiness_pack_next_commands(out))
+        dash_path = backend.dashboard_path_from_manifest(m)
+        if dash_path:
+            st.write({'dashboard_path': dash_path})
+        if st.button('Generate dashboard'):
+            target = Path(out)/'readiness_dashboard.html'
+            st.json(backend.generate_readiness_dashboard(Path(out)/'readiness_pack_manifest.json', target).get('json') or {})
+            dash_path = str(target)
+        with st.expander('Preview dashboard HTML'):
+            st.warning('Dashboard is a review artifact only. It does not execute commands.')
+            if dash_path and Path(dash_path).exists():
+                html_text = backend.read_readiness_dashboard(dash_path)
+                try:
+                    import streamlit.components.v1 as components
+                    components.html(html_text, height=500, scrolling=True)
+                except Exception:
+                    st.code(html_text[:3000])
+                st.caption(dash_path)
+            else:
+                st.caption('No dashboard file available yet.')
