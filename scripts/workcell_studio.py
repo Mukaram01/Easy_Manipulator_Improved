@@ -561,8 +561,22 @@ def generate_readiness_pack(args: argparse.Namespace) -> int:
         payload = {}
     result = str(payload.get("result", "")).upper()
     status = str(payload.get("status", "")).upper()
-    if run.returncode == 2 and (result in {"PASS", "WARN", "PARTIAL"} or status in {"PASS", "WARN", "PARTIAL"} or payload.get("manifest_path")):
-        return 0 if (result == "PASS" or status == "PASS") else 1
+    manifest_path = payload.get("manifest_path") or payload.get("manifest")
+    safety_violation = any(
+        bool(payload.get(flag))
+        for flag in (
+            "real_hardware_enabled",
+            "motion_command_sent",
+            "runtime_execution_called",
+            "moveit_plan_service_called",
+        )
+    )
+    downgraded_nonfatal = result in {"WARN", "PARTIAL"} or status in {"WARN", "PARTIAL"}
+    downgraded_pass = result == "PASS" or status == "PASS"
+    if run.returncode == 2 and not safety_violation and (
+        downgraded_pass or downgraded_nonfatal or manifest_path
+    ):
+        return 0 if downgraded_pass else 1
     return run.returncode
 
 def validate_readiness_pack(args: argparse.Namespace) -> int:
