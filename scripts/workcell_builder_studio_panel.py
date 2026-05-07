@@ -51,6 +51,7 @@ def detect_scene_context(scene_package: Path) -> dict[str, str]:
         "selected_pick_zone": str((pick.get("source") or {}).get("id", "unknown")),
         "selected_place_target": str((place.get("target") or {}).get("id", "unknown")),
         "selected_task_type": str((intent.get("task") or {}).get("type", "unknown")),
+        "selected_task_template": str((intent.get("task_template") or {}).get("id", (intent.get("task") or {}).get("template", "unknown"))),
         "selected_grasp_strategy": str(grasp.get("strategy_ref", "unknown")),
         "selected_release_strategy": str(place.get("release_strategy", "unknown")),
         "selected_routing_target": str((rules[0].get("place_target") if rules and isinstance(rules[0], dict) else "unknown")),
@@ -103,8 +104,8 @@ def panel_state_from_validation(report: dict[str, Any], scene_package: Path) -> 
         "readiness_status": report.get("readiness", report.get("readiness_classification", "unknown")),
         "preview_status": "MANUAL_ONLY",
         "safety_status": "FAKE_HARDWARE_ONLY",
-        "workflow_steps": ["Build Cell", "Define Task", "Validate", "Export", "Preview", "Review Safety"],
-        "sections": ["Cell Setup", "Pick Source", "Place Target", "Grasp Strategy", "Validation", "Export", "Preview Commands", "Safety"],
+        "workflow_steps": ["Build Cell", "Select Task Template", "Define Task", "Validate", "Export", "Preview", "Review Safety"],
+        "sections": ["Cell Setup", "Task Template", "Pick Source", "Place Target", "Grasp Strategy", "Validation", "Export", "Preview Commands", "Safety"],
         "help_text": {
             "pick_source": "Pick source: where the object comes from.",
             "epd_detected": "Use EPD detected object when the camera/perception system supplies the object pose.",
