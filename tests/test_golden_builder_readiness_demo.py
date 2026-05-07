@@ -11,7 +11,7 @@ from pathlib import Path
 
 def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     scene = tmp_path / "scene"
-    shutil.copytree("scenes/ur5_2f_test", scene)
+    shutil.copytree("scenes/ur5_2f_builder_pick_place_demo", scene)
     out = tmp_path / "golden_pack"
     run = subprocess.run([
         sys.executable,

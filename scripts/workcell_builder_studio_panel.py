@@ -14,21 +14,46 @@ def _read_yaml_like(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _find_intent(scene_package: Path) -> Path | None:
+    for rel in ("generated/workcell_builder_task_intent.yaml", "workcell_builder_task_intent.yaml"):
+        p = scene_package / rel
+        if p.is_file():
+            return p
+    return None
+
+
 def detect_scene_context(scene_package: Path) -> dict[str, str]:
     scene_package = Path(scene_package)
-    intent = _read_yaml_like(scene_package / "generated" / "workcell_builder_task_intent.yaml")
+    intent = _read_yaml_like(_find_intent(scene_package) or scene_package / "missing.yaml")
     env = _read_yaml_like(scene_package / "environment.yaml")
+    layout = _read_yaml_like(scene_package / "generated" / "environment_layout.yaml") or _read_yaml_like(scene_package / "environment_layout.yaml")
+
+    pick = intent.get("pick", {}) if isinstance(intent.get("pick"), dict) else {}
+    place = intent.get("place", {}) if isinstance(intent.get("place"), dict) else {}
+    grasp = intent.get("grasp", {}) if isinstance(intent.get("grasp"), dict) else {}
+    routing = intent.get("routing", {}) if isinstance(intent.get("routing"), dict) else {}
+    rules = routing.get("rules", []) if isinstance(routing.get("rules"), list) else []
+
+    zones = layout.get("zones", []) if isinstance(layout.get("zones"), list) else []
+    camera = next((a for a in (layout.get("assets") or []) if isinstance(a, dict) and a.get("type") == "camera"), {})
+    table = next((a for a in (layout.get("assets") or []) if isinstance(a, dict) and a.get("type") in {"table", "support_surface"}), {})
+
     return {
         "scene_package_path": str(scene_package),
         "scene_package_name": scene_package.name,
         "selected_robot": str((env.get("robot") or {}).get("name", "unknown")),
         "selected_end_effector": str((env.get("end_effector") or {}).get("name", "unknown")),
-        "selected_pick_source": str(intent.get("pick_source", "unknown")),
-        "selected_place_target": str(intent.get("place_target", "unknown")),
-        "selected_object": str(intent.get("object", "unknown")),
-        "selected_grasp_strategy": str(intent.get("grasp_strategy", "unknown")),
-        "selected_release_strategy": str(intent.get("release_strategy", "unknown")),
-        "selected_routing_target": str(intent.get("routing_target", "unknown")),
+        "selected_camera": str(camera.get("id", "unknown")),
+        "selected_table": str(table.get("id", "unknown")),
+        "selected_pick_source": str((pick.get("source") or {}).get("type", "unknown")),
+        "selected_pick_zone": str((pick.get("source") or {}).get("id", "unknown")),
+        "selected_place_target": str((place.get("target") or {}).get("id", "unknown")),
+        "selected_task_type": str((intent.get("task") or {}).get("type", "unknown")),
+        "selected_grasp_strategy": str(grasp.get("strategy_ref", "unknown")),
+        "selected_release_strategy": str(place.get("release_strategy", "unknown")),
+        "selected_routing_target": str((rules[0].get("place_target") if rules and isinstance(rules[0], dict) else "unknown")),
+        "pick_zone_count": str(sum(1 for z in zones if isinstance(z, dict) and z.get("type") == "pick_zone")),
+        "place_target_count": str(sum(1 for z in zones if isinstance(z, dict) and z.get("type") in {"bin", "place_target", "table_zone", "fixture", "conveyor_drop", "custom_pose"})),
     }
 
 
@@ -66,10 +91,6 @@ def build_grasp_flow_preview_command(scene_package_name: str, bridge_payload_pat
 def panel_state_from_validation(report: dict[str, Any], scene_package: Path) -> dict[str, Any]:
     warnings = list(report.get("warnings") or [])
     blockers = list(report.get("errors") or report.get("blockers") or [])
-    text = "\n".join(warnings + blockers)
-    for needle in ["place target", "pick source", "object", "TODO", "fallback", "missing"]:
-        if needle.lower() in text.lower():
-            pass
     return {
         **detect_scene_context(scene_package),
         "scene_validation_status": report.get("status", "UNKNOWN"),
@@ -77,6 +98,17 @@ def panel_state_from_validation(report: dict[str, Any], scene_package: Path) -> 
         "readiness_status": report.get("readiness", report.get("readiness_classification", "unknown")),
         "preview_status": "MANUAL_ONLY",
         "safety_status": "FAKE_HARDWARE_ONLY",
+        "workflow_steps": ["Build Cell", "Define Task", "Validate", "Export", "Preview", "Review Safety"],
+        "sections": ["Cell Setup", "Pick Source", "Place Target", "Grasp Strategy", "Validation", "Export", "Preview Commands", "Safety"],
+        "help_text": {
+            "pick_source": "Pick source: where the object comes from.",
+            "epd_detected": "Use EPD detected object when the camera/perception system supplies the object pose.",
+            "pick_zone": "Pick zone: area where detected objects are allowed to be picked.",
+            "place_target": "Place target: where the robot releases the object.",
+            "routing_rule": "Routing rule: decides which place target receives which object.",
+            "fake_hw": "Fake hardware preview does not move a real robot.",
+            "safety_notice": "Generated readiness reports are not safety certificates.",
+        },
         "warnings": warnings,
         "blockers": blockers,
         "safety_banner": [

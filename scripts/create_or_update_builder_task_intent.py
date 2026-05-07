@@ -33,7 +33,7 @@ def _dump(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding='utf-8')
 
 def _default(scene_package: str) -> dict[str, Any]:
-    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_main"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
@@ -48,8 +48,8 @@ def main() -> int:
     ap.add_argument('--scene-package', required=True, type=Path)
     ap.add_argument('--task-id', required=True)
     ap.add_argument('--task-type', required=True)
-    ap.add_argument('--pick-source', required=True, help='Pick source id (e.g. pick_zone_main or epd_detected_object)')
-    ap.add_argument('--pick-source-type', choices=['perception','pick_zone','fixed_object','replay_object'], default='perception')
+    ap.add_argument('--pick-source', required=True, help='Pick source id (e.g. epd_detected_object or pick_zone_main)')
+    ap.add_argument('--pick-source-type', choices=['epd_detected_object','epd_replay','fixed_object','pick_zone','perception'], default='epd_detected_object')
     ap.add_argument('--place-target', required=True)
     ap.add_argument('--grasp-strategy', required=True)
     ap.add_argument('--approach-axis', default='z_down')
@@ -70,7 +70,8 @@ def main() -> int:
     out = a.output or (a.scene_package/'generated'/'workcell_builder_task_intent.yaml')
     payload['schema']='workcell_builder_task_intent/v1'; payload['scene_package']=a.scene_package.as_posix()
     payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type})
-    payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': a.pick_source_type})
+    source_type = {'epd_detected_object':'perception','epd_replay':'replay_object'}.get(a.pick_source_type, a.pick_source_type)
+    payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': source_type})
     payload['pick'].setdefault('object_filter',{}).update({'class_id':a.object_class,'color':a.object_color})
     payload.setdefault('grasp',{}).update({'strategy_ref':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
     
@@ -87,7 +88,7 @@ def main() -> int:
     val={'status':'SKIP'}
     if a.validate:
         val = validate_intent(out, a.scene_package)
-    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'pick_source_type':a.pick_source_type,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety']}
+    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'pick_source_type':source_type,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety']}
     print(json.dumps(summary, indent=2) if a.json else f'Wrote {out}')
     return 0 if (not a.validate or val.get('status')!='FAIL') else 1
 
