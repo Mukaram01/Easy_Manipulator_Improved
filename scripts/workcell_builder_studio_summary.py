@@ -75,6 +75,8 @@ def summarize_builder_scene(scene_package: Path, *, source_project_path: Path | 
         "generated_scene_package_path": str(scene_package),
         "use_fake_hardware_default": True,
         "readiness_status": status,
+        "compatibility_status": ((metadata.get("compatibility") or {}).get("status") if isinstance(metadata.get("compatibility"), dict) else "unknown"),
+        "compatibility_reasons": ((metadata.get("compatibility") or {}).get("reasons") if isinstance(metadata.get("compatibility"), dict) else []),
         "blockers": list(validation.get("errors") or []),
         "warnings": list(validation.get("warnings") or []),
         "validation_readiness_classification": validation.get("readiness", "unknown"),

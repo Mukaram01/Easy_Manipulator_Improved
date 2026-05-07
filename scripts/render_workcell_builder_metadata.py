@@ -6,6 +6,7 @@ from typing import Any
 
 from scripts.workcell_builder_capability_catalog import load_workcell_capability_catalog
 from scripts.workcell_builder_grasp_strategy import normalize_grasp_strategy
+from scripts.workcell_builder_compatibility_matrix import evaluate_compatibility
 
 
 def _norm(text: str | None) -> str:
@@ -30,7 +31,7 @@ def _catalog_lookup(group: list[dict[str, Any]], selected_name: str | None) -> d
     return {}
 
 
-def render_metadata(robot: str | None, end_effector: str | None, sensor: str | None, grasp_strategy: str | None, scene_path: Path | None = None, grasp_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def render_metadata(robot: str | None, end_effector: str | None, sensor: str | None, grasp_strategy: str | None, scene_path: Path | None = None, grasp_config: dict[str, Any] | None = None, task_template: str | None = None, environment_assets: list[str] | None = None, custom_stl_assets: list[dict[str, Any]] | None = None, hardware_mode: str | None = "fake") -> dict[str, Any]:
     catalog = load_workcell_capability_catalog()
     robot_cat = _catalog_lookup(catalog.get("robots", []), robot)
     ee_cat = _catalog_lookup(catalog.get("end_effectors", []), end_effector)
@@ -52,7 +53,7 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
     warnings.extend(robot_cat.get("warnings", []))
     warnings.extend(ee_cat.get("warnings", []))
     warnings.extend(grasp_warnings)
-    status = "preview_only" if robot_info.get("preview_only") or ee_info.get("preview_only") else "fake_hardware_ready"
+    base_status = "preview_only" if robot_info.get("preview_only") or ee_info.get("preview_only") else "fake_hardware_ready"
     imported = []
     object_count = 0
     if scene_path:
@@ -63,6 +64,16 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
                 if "filepath:" in line:
                     imported.append(line.split("filepath:", 1)[1].strip().strip('"'))
             object_count = txt.count("filepath:")
+
+    compatibility = evaluate_compatibility(
+        robot=robot,
+        gripper_tool=end_effector,
+        task_template=task_template,
+        grasp_strategy=grasp_strategy,
+        environment_assets=environment_assets,
+        custom_stl_assets=custom_stl_assets,
+        hardware_mode=hardware_mode,
+    )
 
     return {
         "selected_capabilities": {
@@ -80,7 +91,8 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
         "grasp_strategy": {"selected_name": grasp_strategy, **grasp_payload},
         "sensors": [{"selected_name": sensor, **sensor_info}] if sensor else [],
         "environment": {"generated_objects_count": object_count, "imported_stl_references": imported},
-        "readiness": {"status": status, "blockers": [], "warnings": warnings},
+        "readiness": {"status": base_status, "blockers": [], "warnings": warnings},
+        "compatibility": compatibility.to_dict(),
     }
 
 
@@ -92,12 +104,14 @@ def main() -> int:
     ap.add_argument("--grasp-strategy")
     ap.add_argument("--scene-path", type=Path)
     ap.add_argument("--grasp-config", type=Path)
+    ap.add_argument("--task-template")
+    ap.add_argument("--hardware-mode", default="fake")
     ap.add_argument("--output", type=Path, required=True)
     args = ap.parse_args()
     grasp_config = None
     if args.grasp_config and args.grasp_config.is_file():
         grasp_config = json.loads(args.grasp_config.read_text(encoding="utf-8"))
-    data = render_metadata(args.robot, args.end_effector, args.sensor, args.grasp_strategy, args.scene_path, grasp_config)
+    data = render_metadata(args.robot, args.end_effector, args.sensor, args.grasp_strategy, args.scene_path, grasp_config, task_template=args.task_template, hardware_mode=args.hardware_mode)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return 0
