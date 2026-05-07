@@ -1514,3 +1514,7 @@ Use `scripts/workcell_studio.py smoke-launch-preview` for dry-run-first smoke ch
 ## Planning scene readiness report
 
 Use `python3 scripts/workcell_studio.py check-planning-scene-readiness --scene-package <scene> --output-dir <out> --json` to generate `planning_scene_readiness_report/v1` from files/metadata only.
+
+
+## Workcell Studio Readiness Pack
+Use `python3 scripts/workcell_studio.py generate-readiness-pack ...` to collect builder export, task intent/recipe/flow, static preview, offline plan preview request, RViz preview session, smoke report, and planning-scene readiness into one review folder. Offline/fake-hardware-first; no robot motion or MoveIt planning service calls by default.

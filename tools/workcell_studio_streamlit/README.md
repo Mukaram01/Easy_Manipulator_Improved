@@ -72,3 +72,7 @@ Use dry-run by default. Execute mode is optional/manual and requires explicit co
 ## Planning Scene Readiness panel
 
 The Streamlit UI includes a panel to run file/metadata-only planning-scene readiness checks and validate the generated report.
+
+
+## Readiness Pack page
+Provides generate/validate actions and renders final readiness, blockers/warnings, artifacts, summary markdown, and next commands.

@@ -502,3 +502,30 @@ def load_planning_scene_readiness_report(output_dir: str | Path) -> dict[str, An
     js = d / "planning_scene_readiness_report.json"
     md = d / "planning_scene_readiness_report.md"
     return {"report_json_path": str(js) if js.exists() else "", "report_markdown_path": str(md) if md.exists() else "", "report": json.loads(js.read_text(encoding="utf-8")) if js.exists() else {}}
+
+def generate_readiness_pack(scene_package: str | Path, output_dir: str | Path, project_name: str, validate: bool = True, prepare_rviz_preview: bool = False, smoke_dry_run: bool = True, strict: bool = False, continue_on_error: bool = False, smoke_execute: bool = False, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "generate-readiness-pack", "--scene-package", str(scene_package), "--output-dir", str(output_dir), "--project-name", project_name, "--force", "--json"]
+    if validate: cmd.append("--validate")
+    if prepare_rviz_preview: cmd.append("--prepare-rviz-preview")
+    if smoke_dry_run: cmd.append("--smoke-dry-run")
+    if strict: cmd.append("--strict")
+    if continue_on_error: cmd.append("--continue-on-error")
+    if smoke_execute: cmd.append("--smoke-execute")
+    return _parse_json_output(run_command(cmd, cwd=rr, timeout=600))
+
+def validate_readiness_pack(manifest: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    return _parse_json_output(run_command([sys.executable, str(rr / "scripts" / "workcell_studio.py"), "validate-readiness-pack", "--manifest", str(manifest), "--json"], cwd=rr))
+
+def load_readiness_pack_manifest(output_dir: str | Path) -> dict[str, Any]:
+    p = Path(output_dir) / "readiness_pack_manifest.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+def read_readiness_pack_summary(output_dir: str | Path) -> str:
+    p = Path(output_dir) / "readiness_pack_summary.md"
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
+def read_readiness_pack_next_commands(output_dir: str | Path) -> str:
+    p = Path(output_dir) / "next_commands.md"
+    return p.read_text(encoding="utf-8") if p.exists() else ""

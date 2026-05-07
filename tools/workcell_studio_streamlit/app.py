@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Planning Scene Readiness", "Create Cell"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Planning Scene Readiness", "Create Cell", "Readiness Pack"],
 )
 
 if workflow == "Catalog browser":
@@ -234,3 +234,30 @@ if workflow == "Create Cell":
         st.json(summary.get("summary", {}))
         if summary.get("markdown"):
             st.markdown(summary["markdown"])
+
+
+if workflow == "Readiness Pack":
+    st.header("Readiness Pack")
+    st.warning("This is an offline/fake-hardware readiness pack. It does not command robot motion or call MoveIt planning services.")
+    scene = st.text_input("Scene package path", value="scenes/ur5_2f_test")
+    out = st.text_input("Output dir", value="/tmp/workcell_readiness_pack")
+    project = st.text_input("Project name", value="demo_cell")
+    validate = st.checkbox("Validate", value=True)
+    prep = st.checkbox("Prepare RViz/MoveIt preview", value=True)
+    dry = st.checkbox("Smoke dry-run", value=True)
+    strict = st.checkbox("Strict", value=False)
+    coe = st.checkbox("Continue on error", value=False)
+    smoke_exec = st.checkbox("Enable smoke execute (guarded)", value=False)
+    confirm = st.checkbox("I confirm fake-hardware-only smoke execute") if smoke_exec else False
+    c1,c2=st.columns(2)
+    if c1.button("Generate readiness pack"):
+        res = backend.generate_readiness_pack(scene, out, project, validate=validate, prepare_rviz_preview=prep, smoke_dry_run=dry, strict=strict, continue_on_error=coe, smoke_execute=(smoke_exec and confirm))
+        st.json(res.get("json") or res)
+    if c2.button("Validate readiness pack"):
+        st.json(backend.validate_readiness_pack(Path(out)/"readiness_pack_manifest.json").get("json") or {})
+    m = backend.load_readiness_pack_manifest(out)
+    if m:
+        st.write({"final_readiness": m.get("results",{}).get("final_readiness"), "classification": m.get("results",{}).get("classification"), "blockers": m.get("summary",{}).get("blockers",[]), "warnings": m.get("summary",{}).get("warnings",[]), "suggested_next_actions": m.get("summary",{}).get("suggested_next_actions",[])})
+        st.json(m.get("artifacts",{}))
+        st.markdown(backend.read_readiness_pack_summary(out))
+        st.code(backend.read_readiness_pack_next_commands(out))
