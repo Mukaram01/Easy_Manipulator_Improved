@@ -365,6 +365,20 @@ def create_or_update_builder_task_intent(scene_package: str | Path, task_id: str
     if output_path: cmd += ["--output", str(output_path)]
     if validate: cmd.append("--validate")
     return _parse_json_output(run_command(cmd, cwd=rr))
+
+def create_or_update_environment_target(environment_layout_path: str | Path, target_id: str, target_type: str, label: str, frame: str, xyz: list[float], rpy: list[float], size: list[float], output_path: str | Path | None = None, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    out = output_path or environment_layout_path
+    cmd=[sys.executable, str(rr/"scripts"/"create_or_update_environment_target.py"), "--environment-layout", str(environment_layout_path), "--target-id", target_id, "--target-type", target_type, "--label", label, "--frame", frame, "--xyz", *[str(x) for x in xyz], "--rpy", *[str(x) for x in rpy], "--size", *[str(x) for x in size], "--output", str(out), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def load_environment_targets(environment_layout_path: str | Path) -> list[dict[str, Any]]:
+    payload = _load_yaml_file(Path(environment_layout_path))
+    return [z for z in (payload.get("zones") or []) if isinstance(z, dict) and z.get("id")]
+
+def summarize_environment_targets(environment_layout_path: str | Path) -> dict[str, Any]:
+    zones = load_environment_targets(environment_layout_path)
+    return {"pick_sources":[z.get("id") for z in zones if str(z.get("type","")).lower() in {"pick","pick_zone"}], "place_targets":[z.get("id") for z in zones if str(z.get("type","")).lower() in {"place","place_target","bin"}], "count":len(zones)}
 def default_builder_task_intent(scene_package: str = "") -> dict[str, Any]:
     return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"suction_top_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"destination","id":"bin_main"},"release_strategy":"tool_release","place_offset_xyz":[0.0,0.0,0.05]},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
