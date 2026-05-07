@@ -51,9 +51,9 @@ def main()->int:
     tf=paths['task']/'task_flow_summary.json'
     task_flow_cmd=None
     if recipe.exists():
-        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--output',str(tf),'--json']
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output',str(tf),'--json']
     elif (paths['task']/ti.name).exists():
-        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-intent',str(paths['task']/ti.name),'--output',str(tf),'--json']
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-intent',str(paths['task']/ti.name),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output',str(tf),'--json']
     if task_flow_cmd:
         rc,tfp=step('task_flow',task_flow_cmd)
         if tf.exists():

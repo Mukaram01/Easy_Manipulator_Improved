@@ -28,6 +28,13 @@ def _load_optional(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _load_environment_layout(scene_path: Path) -> dict[str, Any]:
+    for rel in ["generated/environment_layout.yaml", "environment_layout.yaml"]:
+        cand = scene_path / rel
+        loaded = _load_optional(cand)
+        if loaded:
+            return loaded
+    return {}
 
 
 def _to_yaml(value: Any, indent: int = 0) -> str:
@@ -167,17 +174,22 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         })
         object_entries.append({"id": str(obj_name), "name": str(obj_name), "mesh": filepath, "dimensions": dims, "index": idx})
 
+    authored_layout = _load_environment_layout(scene_path)
     environment_layout = {
-        "schema_version": "environment_layout/v1",
-        "layout_id": f"{scene_path.name}_layout",
-        "name": f"{scene_path.name} Builder Layout",
-        "frame": "world",
+        "schema_version": authored_layout.get("schema_version", "environment_layout/v1"),
+        "layout_id": authored_layout.get("layout_id", f"{scene_path.name}_layout"),
+        "name": authored_layout.get("name", f"{scene_path.name} Builder Layout"),
+        "frame": authored_layout.get("frame", "world"),
         "assets": assets,
         "source_metadata": {
             "generated_by": "workcell_builder",
             "raw_environment_keys": sorted(env.keys()),
         },
     }
+    if isinstance(authored_layout.get("zones"), list):
+        environment_layout["zones"] = authored_layout["zones"]
+    if isinstance(authored_layout.get("targets"), list):
+        environment_layout["targets"] = authored_layout["targets"]
 
     cell_def = {
         "schema_version": "cell_definition/v1",

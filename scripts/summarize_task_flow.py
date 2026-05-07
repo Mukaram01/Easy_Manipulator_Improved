@@ -58,9 +58,33 @@ def summarize(task_intent:Path|None=None, task_recipe:Path|None=None, scene_pack
     if not place.get('id'): missing.append('place.target.id')
     if not (grasp.get('strategy_ref') or grasp.get('inline_strategy')): missing.append('grasp.strategy_ref')
     if missing: readiness='task_intent_incomplete'
-    zones={z.get('id'):z for z in (layout.get('zones') or []) if isinstance(z,dict) and z.get('id')}
-    pick_res=bool(pick.get('id') in zones) if zones else False
-    place_res=bool(place.get('id') in zones) if zones else False
+    def _xyz_from_entry(entry: dict[str, Any]) -> list[float] | None:
+        xyz = entry.get('xyz')
+        if isinstance(xyz, list) and len(xyz) >= 3:
+            return [float(xyz[0]), float(xyz[1]), float(xyz[2])]
+        pose = entry.get('pose') if isinstance(entry.get('pose'), dict) else {}
+        pxyz = pose.get('xyz') if isinstance(pose, dict) else None
+        if isinstance(pxyz, list) and len(pxyz) >= 3:
+            return [float(pxyz[0]), float(pxyz[1]), float(pxyz[2])]
+        bounds = entry.get('bounds_xyz') if isinstance(entry.get('bounds_xyz'), dict) else {}
+        mn, mx = bounds.get('min'), bounds.get('max')
+        if isinstance(mn, list) and isinstance(mx, list) and len(mn) >= 3 and len(mx) >= 3:
+            return [float((mn[0] + mx[0]) / 2.0), float((mn[1] + mx[1]) / 2.0), float((mn[2] + mx[2]) / 2.0)]
+        return None
+
+    resolver: dict[str, list[float]] = {}
+    for container in (layout.get('zones') or [], layout.get('targets') or []):
+        if not isinstance(container, list):
+            continue
+        for entry in container:
+            if not isinstance(entry, dict) or not entry.get('id'):
+                continue
+            xyz = _xyz_from_entry(entry)
+            if xyz is not None:
+                resolver[str(entry['id'])] = xyz
+
+    pick_res=bool(str(pick.get('id')) in resolver) if resolver else False
+    place_res=bool(str(place.get('id')) in resolver) if resolver else False
     approx=not (pick_res and place_res)
     warnings=['Task flow present but exact pick/place coordinates could not be resolved.'] if approx else []
     return {'status':'FAIL' if missing else ('WARN' if warnings else 'PASS'),'readiness_classification':readiness,'task_id':task.get('id'),'task_type':task.get('type'),'pick_source_id':pick.get('id'),'place_target_id':place.get('id'),'grasp_strategy':grasp.get('strategy_ref') or grasp.get('inline_strategy'),'release_strategy':release,'approach_axis':approach.get('axis'),'approach_distance_m':approach.get('distance_m'),'retreat_axis':retreat.get('axis'),'retreat_distance_m':retreat.get('distance_m'),'routing_rules':routing,'routing_rule_count':len(routing),'missing_required_fields':missing,'suggested_next_actions':['Select a pick source zone.' if 'pick.source.id' in missing else '', 'Select a place target.' if 'place.target.id' in missing else '', 'Choose a grasp strategy.' if 'grasp.strategy_ref' in missing else '','Generate task recipe from task intent.' if not recipe else ''],'warnings':warnings,'errors':[] if not missing else [f'{m} is required' for m in missing],'safety':{'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False},'visual_resolution':{'pick_coordinates_resolved':pick_res,'place_coordinates_resolved':place_res,'approximate_coordinates_used':approx,'notes':['Used deterministic fallback coordinates for preview markers.'] if approx else []}}
