@@ -58,3 +58,24 @@ def test_readme_fallback_env_hint_present() -> None:
     assert "generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene" in text
     assert "If helpers cannot locate tooling, set:" in text
     assert "export WORKCELL_STUDIO_REPO_ROOT=~/workcell_ws/src/easy_manipulation_deployment" in text
+
+
+def test_scene_select_uses_absolute_metadata_renderer_path_resolution() -> None:
+    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    assert "python3 scripts/render_workcell_builder_metadata.py" not in text
+    assert "WORKCELL_STUDIO_REPO_ROOT" in text
+    assert "render_workcell_builder_metadata.py" in text
+    assert "resolve_tool_root(" in text
+
+
+def test_scene_select_missing_metadata_script_warning_mentions_env_var() -> None:
+    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
+    assert "Could not locate render_workcell_builder_metadata.py" in text
+    assert "Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment" in text
+
+
+def test_validate_scene_metadata_optional_is_warn_when_missing_and_pass_when_present() -> None:
+    text = (REPO_ROOT / "scripts/validate_builder_generated_scene.py").read_text(encoding="utf-8")
+    assert "workcell_builder_metadata.yaml missing (optional)" in text
+    assert "workcell_builder_metadata.yaml present" in text
+    assert "present (optional)" not in text

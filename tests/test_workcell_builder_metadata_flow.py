@@ -53,7 +53,8 @@ def test_validator_accepts_scene_with_metadata_and_warns_without_metadata():
       (root / 'workcell_builder_metadata.yaml').unlink()
       warn = validator.validate_scene(root)
       assert warn['ok'] is True
-      assert any('optional' in c['check'] for c in warn['checks'])
+      assert any(c['check'] == 'workcell_builder_metadata.yaml present' and c.get('optional') is True for c in warn['checks'])
+      assert any('workcell_builder_metadata.yaml missing (optional)' in w for w in warn['warnings'])
 
 
 def test_scene_builder_readme_and_export_helper_are_documented():
