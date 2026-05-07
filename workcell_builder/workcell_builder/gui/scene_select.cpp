@@ -491,34 +491,79 @@ void write_builder_validation_helper(const fs::path & scene_dir)
   if (!boost::filesystem::exists(generated_dir)) {
     boost::filesystem::create_directories(generated_dir);
   }
+  const auto write_tool_root_discovery = [](std::ofstream & stream) {
+      stream << "SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n";
+      stream << "SCENE_DIR=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"\n";
+      stream << "TOOL_ROOT=\"${WORKCELL_STUDIO_REPO_ROOT:-}\"\n";
+      stream << "find_tool_root() {\n";
+      stream << "  local candidate=\"$1\"\n";
+      stream << "  [ -n \"$candidate\" ] || return 1\n";
+      stream << "  if [ -f \"$candidate/scripts/workcell_studio.py\" ] && [ -f \"$candidate/scripts/validate_builder_generated_scene.py\" ]; then\n";
+      stream << "    TOOL_ROOT=\"$candidate\"\n";
+      stream << "    return 0\n";
+      stream << "  fi\n";
+      stream << "  return 1\n";
+      stream << "}\n";
+      stream << "if [ -z \"$TOOL_ROOT\" ]; then\n";
+      stream << "  for candidate in \"$PWD\" \"$SCENE_DIR\" \"$SCENE_DIR/..\" \"$SCENE_DIR/../easy_manipulation_deployment\" \"$SCENE_DIR/../../easy_manipulation_deployment\" \"$HOME/workcell_ws/src/easy_manipulation_deployment\"; do\n";
+      stream << "    if find_tool_root \"$candidate\"; then\n";
+      stream << "      break\n";
+      stream << "    fi\n";
+      stream << "  done\n";
+      stream << "fi\n";
+      stream << "if ! find_tool_root \"$TOOL_ROOT\"; then\n";
+      stream << "  echo \"Could not locate Workcell Studio scripts. Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment\" >&2\n";
+      stream << "  exit 1\n";
+      stream << "fi\n";
+    };
+  const auto set_script_permissions = [](const fs::path & script_file) {
+      boost::system::error_code ec;
+      fs::permissions(
+        script_file,
+        fs::owner_read | fs::owner_write | fs::owner_exe |
+        fs::group_read | fs::group_exe |
+        fs::others_read | fs::others_exe,
+        ec);
+      if (ec) {
+        RCLCPP_WARN(
+          rclcpp::get_logger("workcell_builder"),
+          "Failed to set executable permissions on %s: %s",
+          script_file.string().c_str(), ec.message().c_str());
+      }
+    };
   const fs::path script_path = generated_dir / "run_builder_validation.sh";
   std::ofstream out(script_path.string());
   if (out.is_open()) {
     out << "#!/usr/bin/env bash\n";
     out << "set -euo pipefail\n";
-    out << "python3 scripts/validate_builder_generated_scene.py \"$(cd \"$(dirname \"$0\")\" && pwd)/..\"\n";
+    write_tool_root_discovery(out);
+    out << "python3 \"$TOOL_ROOT/scripts/validate_builder_generated_scene.py\" \"$SCENE_DIR\"\n";
+    out.close();
+    set_script_permissions(script_path);
   }
   const fs::path export_path = generated_dir / "export_workcell_studio_sources.sh";
   std::ofstream export_out(export_path.string());
   if (export_out.is_open()) {
     export_out << "#!/usr/bin/env bash\n";
     export_out << "set -euo pipefail\n";
-    export_out << "SCENE_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)/..\"\n";
-    export_out << "python3 scripts/export_builder_scene_to_cell_definition.py \"$SCENE_DIR\" --output-dir \"$SCENE_DIR/generated\" --validate\n";
+    write_tool_root_discovery(export_out);
+    export_out << "python3 \"$TOOL_ROOT/scripts/export_builder_scene_to_cell_definition.py\" \"$SCENE_DIR\" --output-dir \"$SCENE_DIR/generated\" --validate\n";
     export_out << "if [ ! -f \"$SCENE_DIR/generated/workcell_builder_task_intent.yaml\" ]; then\n";
     export_out << "  echo \"INFO: No workcell_builder_task_intent.yaml found yet.\"\n";
     export_out << "  echo \"INFO: Author task intent via scripts/create_or_update_builder_task_intent.py or Workcell Studio helper.\"\n";
     export_out << "fi\n";
+    export_out.close();
+    set_script_permissions(export_path);
   }
   const fs::path readiness_path = generated_dir / "generate_readiness_pack.sh";
   std::ofstream readiness_out(readiness_path.string());
   if (readiness_out.is_open()) {
     readiness_out << "#!/usr/bin/env bash\n";
     readiness_out << "set -euo pipefail\n";
-    readiness_out << "SCENE_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)/..\"\n";
+    write_tool_root_discovery(readiness_out);
     readiness_out << "OUT_DIR=\"${1:-/tmp/workcell_readiness_pack}\"\n";
     readiness_out << "PROJECT_NAME=\"${2:-$(basename \"$SCENE_DIR\")}\"\n";
-    readiness_out << "python3 scripts/workcell_studio.py generate-readiness-pack \\\n";
+    readiness_out << "python3 \"$TOOL_ROOT/scripts/workcell_studio.py\" generate-readiness-pack \\\n";
     readiness_out << "  --scene-package \"$SCENE_DIR\" \\\n";
     readiness_out << "  --output-dir \"$OUT_DIR\" \\\n";
     readiness_out << "  --project-name \"$PROJECT_NAME\" \\\n";
@@ -527,6 +572,8 @@ void write_builder_validation_helper(const fs::path & scene_dir)
     readiness_out << "  --smoke-dry-run \\\n";
     readiness_out << "  --force \\\n";
     readiness_out << "  --json\n";
+    readiness_out.close();
+    set_script_permissions(readiness_path);
   }
   const fs::path dashboard_help_path = generated_dir / "open_dashboard_help.md";
   std::ofstream dashboard_help_out(dashboard_help_path.string());
@@ -537,6 +584,10 @@ void write_builder_validation_helper(const fs::path & scene_dir)
     dashboard_help_out << "```bash\ncd /tmp/workcell_readiness_pack && python3 -m http.server 8767\n```\n\n";
     dashboard_help_out << "Then open: `http://localhost:8767/readiness_dashboard.html`\n\n";
     dashboard_help_out << "Note: direct `xdg-open` may not work in sandboxed Firefox/Snap environments.\n\n";
+    dashboard_help_out << "Run generated helpers directly from any directory:\n\n";
+    dashboard_help_out << "```bash\n./generated/run_builder_validation.sh\n./generated/export_workcell_studio_sources.sh\n./generated/generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene\n```\n\n";
+    dashboard_help_out << "If scripts cannot locate tooling, set:\n\n";
+    dashboard_help_out << "```bash\nexport WORKCELL_STUDIO_REPO_ROOT=~/workcell_ws/src/easy_manipulation_deployment\n```\n\n";
     dashboard_help_out << "Dashboard output is review-only and is not a safety certificate.\n";
   }
 }
@@ -567,9 +618,10 @@ void SceneSelect::generate_scene_package(
     readme << "3. Define pick/place task intent:\n";
     readme << "   - use Workcell Studio Streamlit helper, or\n";
     readme << "   - use scripts/create_or_update_environment_target.py and scripts/create_or_update_builder_task_intent.py\n\n";
-    readme << "4. Generate readiness pack:\n\n```bash\n./generated/generate_readiness_pack.sh\n```\n\n";
+    readme << "4. Generate readiness pack:\n\n```bash\n./generated/generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene\n```\n\n";
     readme << "5. Open dashboard:\n\n```bash\ncd /tmp/workcell_readiness_pack && python3 -m http.server 8767\n```\n\n";
     readme << "http://localhost:8767/readiness_dashboard.html\n\n";
+    readme << "If helpers cannot locate tooling, set:\n\n```bash\nexport WORKCELL_STUDIO_REPO_ROOT=~/workcell_ws/src/easy_manipulation_deployment\n```\n\n";
     readme << "Safety note: offline/fake-hardware only, no robot motion, no MoveIt service call, not a safety certificate.\n";
   }
 }
