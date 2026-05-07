@@ -2,80 +2,60 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts import workcell_builder_studio_panel as panel
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENE_SELECT_CPP = REPO_ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp"
+FIXTURE_SCENE = REPO_ROOT / "scenes/ur5_2f_test"
 
 
-def test_readme_builder_instructions_present() -> None:
+def test_workcell_studio_command_panel_hints_present() -> None:
     text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "./generated/run_builder_validation.sh" in text
-    assert "./generated/export_workcell_studio_sources.sh" in text
-    assert "./generated/generate_readiness_pack.sh" in text
-    assert "python3 -m http.server 8767" in text
-    assert "offline/fake-hardware only" in text
+    assert "Workcell Studio command centre" in text
+    assert "Validate Scene" in text
+    assert "Export Workcell Studio Sources" in text
+    assert "Generate Readiness Pack" in text
+    assert "Open Static Preview" in text
+    assert "Open Readiness Dashboard" in text
+    assert "Copy RViz Preview Command" in text
+    assert "Copy Grasp Flow Preview Command" in text
 
 
-def test_generate_readiness_pack_helper_content_is_offline_safe() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "WORKCELL_STUDIO_REPO_ROOT" in text
-    assert "find_tool_root()" in text
-    assert "$TOOL_ROOT/scripts/workcell_studio.py" in text
-    assert "$TOOL_ROOT/scripts/validate_builder_generated_scene.py" in text
-    assert "$TOOL_ROOT/scripts/export_builder_scene_to_cell_definition.py" in text
-    assert "--validate" in text
-    assert "--prepare-rviz-preview" in text
-    assert "--smoke-dry-run" in text
-    assert "--scene-package \\\"$SCENE_DIR\\\"" in text
-    assert "--force" in text
-    assert "--real-hardware" not in text
-    assert "move_group" not in text
+def test_panel_backend_detects_scene_path_and_not_hardcoded() -> None:
+    context = panel.detect_scene_context(FIXTURE_SCENE)
+    assert context["scene_package_path"].endswith("scenes/ur5_2f_test")
+    other = panel.detect_scene_context(REPO_ROOT / "scenes" / "scene_1")
+    assert other["scene_package_path"].endswith("scenes/scene_1")
 
 
-def test_generated_shell_scripts_are_marked_executable() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "set_script_permissions" in text
-    assert "fs::owner_exe" in text
-    assert "fs::group_exe" in text
-    assert "fs::others_exe" in text
+def test_validation_export_and_readiness_commands() -> None:
+    validate = panel.build_validate_scene_command(FIXTURE_SCENE)
+    export_cmd = panel.build_export_sources_command(FIXTURE_SCENE)
+    readiness = panel.build_readiness_pack_command(FIXTURE_SCENE, Path("/tmp/out"), "demo")
+    assert "validate_builder_generated_scene.py" in " ".join(validate)
+    assert str(FIXTURE_SCENE) in validate
+    assert "export_workcell_studio_sources.sh" in " ".join(export_cmd)
+    assert "generate_workcell_studio_readiness_pack.py" in " ".join(readiness)
 
 
-def test_preservation_flow_hints_present() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "workcell_builder_task_intent.yaml" in text
-    assert "Author task intent via scripts/create_or_update_builder_task_intent.py" in text
-    assert "export_builder_scene_to_cell_definition.py" in text
+def test_preview_commands_are_fake_hardware_only() -> None:
+    rviz = panel.build_rviz_preview_command("my_scene")
+    grasp = panel.build_grasp_flow_preview_command("my_scene", Path("/tmp/bridge_payload.json"))
+    assert "use_fake_hardware:=true" in rviz
+    assert "use_fake_hardware:=true" in grasp
+    assert "real_hardware" not in rviz + grasp
+    assert "use_fake_hardware:=false" not in rviz + grasp
 
 
-def test_metadata_system_return_code_is_checked() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "const int metadata_rc = std::system(cmd.c_str());" in text
-    assert "if (metadata_rc != 0)" in text
-    assert "append_warning(" in text
-
-
-def test_readme_fallback_env_hint_present() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene" in text
-    assert "If helpers cannot locate tooling, set:" in text
-    assert "export WORKCELL_STUDIO_REPO_ROOT=~/workcell_ws/src/easy_manipulation_deployment" in text
-
-
-def test_scene_select_uses_absolute_metadata_renderer_path_resolution() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "python3 scripts/render_workcell_builder_metadata.py" not in text
-    assert "WORKCELL_STUDIO_REPO_ROOT" in text
-    assert "render_workcell_builder_metadata.py" in text
-    assert "resolve_tool_root(" in text
-
-
-def test_scene_select_missing_metadata_script_warning_mentions_env_var() -> None:
-    text = SCENE_SELECT_CPP.read_text(encoding="utf-8")
-    assert "Could not locate render_workcell_builder_metadata.py" in text
-    assert "Set WORKCELL_STUDIO_REPO_ROOT=/path/to/easy_manipulation_deployment" in text
-
-
-def test_validate_scene_metadata_optional_is_warn_when_missing_and_pass_when_present() -> None:
-    text = (REPO_ROOT / "scripts/validate_builder_generated_scene.py").read_text(encoding="utf-8")
-    assert "workcell_builder_metadata.yaml missing (optional)" in text
-    assert "workcell_builder_metadata.yaml present" in text
-    assert "present (optional)" not in text
+def test_warning_blocker_propagation() -> None:
+    report = {
+        "status": "FAIL",
+        "readiness": "physical_scene_only",
+        "warnings": ["TODO value found in task intent", "fallback coordinates used"],
+        "errors": ["place target missing", "pick source missing", "object missing", "exported files missing"],
+    }
+    state = panel.panel_state_from_validation(report, FIXTURE_SCENE)
+    assert state["scene_validation_status"] == "FAIL"
+    assert "fallback coordinates used" in state["warnings"]
+    assert "place target missing" in state["blockers"]
+    assert "fake hardware first" in state["safety_banner"]
