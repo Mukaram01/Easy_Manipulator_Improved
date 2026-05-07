@@ -96,26 +96,48 @@ elif workflow == "Builder Task Intent":
     if st.button("Discover scene targets"):
         st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
     st.subheader("Pick/Place Zones")
-    st.caption("Zones are metadata only. They do not move the robot.")
+    st.caption("Pick/place zones are metadata only. Saving zones does not command robot motion.")
     env_path = st.text_input("environment_layout.yaml path", value=str(Path(scene_package)/"generated"/"environment_layout.yaml"))
+    env_layout = backend.load_environment_layout(env_path)
+    env_targets = backend.list_environment_targets(env_layout)
+    ids = [t.get("id") for t in env_targets if t.get("id")]
+    selected_id = st.selectbox("Target selector", options=["<create new>"] + ids)
+    current = next((t for t in env_targets if t.get("id") == selected_id), {})
+    pose = current.get("pose", {}) if isinstance(current, dict) else {}
+    xyz = pose.get("xyz") if isinstance(pose.get("xyz"), list) else [0.45, 0.0, 0.08]
+    rpy = pose.get("rpy") if isinstance(pose.get("rpy"), list) else [0.0, 0.0, 0.0]
+    size = current.get("size") if isinstance(current.get("size"), list) else [0.3, 0.2, 0.1]
     zc1, zc2, zc3 = st.columns(3)
-    zid = zc1.text_input("target id", value="pick_zone_main")
-    ztype = zc2.selectbox("target type", options=["pick_zone","place_target"])
-    zlabel = zc3.text_input("label", value="Main pick zone")
-    frame = st.text_input("frame", value="world")
-    cxyz = st.columns(3); x = cxyz[0].number_input("x", value=0.45); y = cxyz[1].number_input("y", value=0.0); z = cxyz[2].number_input("z", value=0.08)
-    crpy = st.columns(3); rr = crpy[0].number_input("roll", value=0.0); pp = crpy[1].number_input("pitch", value=0.0); yy = crpy[2].number_input("yaw", value=0.0)
-    csize = st.columns(3); sx = csize[0].number_input("size x", value=0.3); sy = csize[1].number_input("size y", value=0.2); sz = csize[2].number_input("size z", value=0.1)
-    zb1, zb2 = st.columns(2)
+    zid = zc1.text_input("target id", value=(current.get("id") if current else "pick_zone_main"))
+    ztype = zc2.selectbox("target type", options=["pick_zone","place_target","bin"], index=["pick_zone","place_target","bin"].index(current.get("type")) if current and current.get("type") in ["pick_zone","place_target","bin"] else 0)
+    zlabel = zc3.text_input("label", value=(current.get("label") if current else "Main pick zone"))
+    frame = st.text_input("frame", value=(pose.get("frame") if isinstance(pose, dict) and pose.get("frame") else "world"))
+    cxyz = st.columns(3); x = cxyz[0].number_input("x", value=float(xyz[0]), step=0.01); y = cxyz[1].number_input("y", value=float(xyz[1]), step=0.01); z = cxyz[2].number_input("z", value=float(xyz[2]), step=0.01)
+    crpy = st.columns(3); rr = crpy[0].number_input("roll", value=float(rpy[0]), step=0.01); pp = crpy[1].number_input("pitch", value=float(rpy[1]), step=0.01); yy = crpy[2].number_input("yaw", value=float(rpy[2]), step=0.01)
+    csize = st.columns(3); sx = csize[0].number_input("size x", min_value=0.01, value=float(size[0]), step=0.01); sy = csize[1].number_input("size y", min_value=0.01, value=float(size[1]), step=0.01); sz = csize[2].number_input("size z", min_value=0.01, value=float(size[2]), step=0.01)
+    svg = backend.render_topdown_targets_svg(env_targets)
+    st.components.v1.html(svg, height=530, scrolling=False)
+    zb1, zb2, zb3, zb4 = st.columns(4)
     if zb1.button("Save/update target"):
         st.json(backend.create_or_update_environment_target(env_path, zid, ztype, zlabel, frame, [x,y,z], [rr,pp,yy], [sx,sy,sz], output_path=env_path).get("json") or {})
+        env_layout = backend.load_environment_layout(env_path)
+        env_targets = backend.list_environment_targets(env_layout)
+        st.components.v1.html(backend.render_topdown_targets_svg(env_targets), height=530, scrolling=False)
     if zb2.button("Refresh discovered targets"):
         st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
+    if zb3.button("Generate static preview"):
+        preview_dir = str(Path(scene_package) / "generated" / "static_preview")
+        cell_path = str(Path(scene_package) / "generated" / "cell_definition.yaml")
+        st.json(backend.generate_static_preview_with_task_flow(cell_path, preview_dir, "Builder Task Intent Preview", task_intent_path=output_path, environment_layout_path=env_path).get("json") or {})
+        st.caption(f"Preview HTML: {Path(preview_dir) / 'static_preview.html'}")
+    if zb4.button("Generate readiness pack"):
+        st.json(backend.generate_readiness_pack(scene_package, "/tmp/workcell_readiness_pack", "builder_intent_demo", validate=True, prepare_rviz_preview=False, smoke_dry_run=True).get("json") or {})
     targets = st.session_state.get("builder_targets", {})
     st.json(targets)
     grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]
-    pick_opts = targets.get("pick_sources") or ["pick_zone_main"]
-    place_opts = targets.get("place_targets") or ["bin_main"]
+    discovered = backend.summarize_environment_targets(env_path) if Path(env_path).exists() else {"pick_sources": [], "place_targets": []}
+    pick_opts = discovered.get("pick_sources") or targets.get("pick_sources") or ["pick_zone_main"]
+    place_opts = discovered.get("place_targets") or targets.get("place_targets") or ["bin_main"]
     task_id = st.text_input("Task id", value="sorting_task_001")
     task_type = st.text_input("Task type", value="pick_place")
     pick_source = st.selectbox("Pick source", options=pick_opts)
@@ -131,6 +153,10 @@ elif workflow == "Builder Task Intent":
     c1,c2,c3,c4 = st.columns(4)
     if c1.button("Save task intent"):
         st.json(backend.create_or_update_builder_task_intent(scene_package, task_id, task_type, pick_source, place_target, grasp, output_path=output_path, approach_axis=approach_axis, approach_distance_m=approach_dist, retreat_axis=retreat_axis, retreat_distance_m=retreat_dist, release_strategy=release_strategy, object_class=object_class, object_color=object_color, validate=False).get("json") or {})
+    if discovered.get("pick_sources") and pick_source not in discovered.get("pick_sources", []):
+        st.warning(f"Selected pick source '{pick_source}' is not present in environment_layout.yaml")
+    if discovered.get("place_targets") and place_target not in discovered.get("place_targets", []):
+        st.warning(f"Selected place target '{place_target}' is not present in environment_layout.yaml")
     if c2.button("Validate task intent"):
         st.json(backend.validate_builder_task_intent(output_path, scene_package).get("json") or {})
     if c3.button("Generate task recipe"):

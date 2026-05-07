@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -373,8 +374,97 @@ def create_or_update_environment_target(environment_layout_path: str | Path, tar
     return _parse_json_output(run_command(cmd, cwd=rr))
 
 def load_environment_targets(environment_layout_path: str | Path) -> list[dict[str, Any]]:
-    payload = _load_yaml_file(Path(environment_layout_path))
-    return [z for z in (payload.get("zones") or []) if isinstance(z, dict) and z.get("id")]
+    payload = load_environment_layout(environment_layout_path)
+    return list_environment_targets(payload)
+
+
+def load_environment_layout(path: str | Path) -> dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    return _load_yaml_file(p)
+
+
+def save_environment_layout(path: str | Path, data: dict[str, Any]) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if yaml is not None:
+        p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    else:
+        p.write_text(_to_yaml(data) + "\n", encoding="utf-8")
+
+
+def list_environment_targets(layout_or_path: dict[str, Any] | str | Path) -> list[dict[str, Any]]:
+    payload = layout_or_path if isinstance(layout_or_path, dict) else load_environment_layout(layout_or_path)
+    zones = payload.get("zones") if isinstance(payload, dict) else []
+    return [z for z in (zones or []) if isinstance(z, dict) and z.get("id")]
+
+
+def compute_scene_bounds(targets: list[dict[str, Any]]) -> dict[str, float]:
+    if not targets:
+        return {"min_x": -0.5, "max_x": 0.5, "min_y": -0.4, "max_y": 0.4}
+    min_x, max_x, min_y, max_y = 9e9, -9e9, 9e9, -9e9
+    for t in targets:
+        pose = t.get("pose", {}) if isinstance(t.get("pose"), dict) else {}
+        xyz = pose.get("xyz") if isinstance(pose.get("xyz"), list) else [0.0, 0.0, 0.0]
+        size = t.get("size") if isinstance(t.get("size"), list) else [0.2, 0.2, 0.1]
+        x = float(xyz[0]) if len(xyz) > 0 else 0.0
+        y = float(xyz[1]) if len(xyz) > 1 else 0.0
+        sx = max(float(size[0]) if len(size) > 0 else 0.2, 0.01)
+        sy = max(float(size[1]) if len(size) > 1 else 0.2, 0.01)
+        min_x = min(min_x, x - sx / 2)
+        max_x = max(max_x, x + sx / 2)
+        min_y = min(min_y, y - sy / 2)
+        max_y = max(max_y, y + sy / 2)
+    pad = 0.15
+    return {"min_x": min_x - pad, "max_x": max_x + pad, "min_y": min_y - pad, "max_y": max_y + pad}
+
+
+def render_topdown_targets_svg(targets: list[dict[str, Any]], width: int = 700, height: int = 500, scale_m_to_px: int = 500) -> str:
+    safe_targets = sorted(targets, key=lambda t: str(t.get("id", "")))
+    bounds = compute_scene_bounds(safe_targets)
+    world_w = max(bounds["max_x"] - bounds["min_x"], width / scale_m_to_px)
+    world_h = max(bounds["max_y"] - bounds["min_y"], height / scale_m_to_px)
+
+    def to_px(x: float, y: float) -> tuple[float, float]:
+        px = ((x - bounds["min_x"]) / world_w) * width
+        py = height - (((y - bounds["min_y"]) / world_h) * height)
+        return px, py
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect x="0" y="0" width="100%" height="100%" fill="#f8fafc"/>',
+    ]
+    for gx in range(0, width + 1, 50):
+        lines.append(f'<line x1="{gx}" y1="0" x2="{gx}" y2="{height}" stroke="#e2e8f0" stroke-width="1"/>')
+    for gy in range(0, height + 1, 50):
+        lines.append(f'<line x1="0" y1="{gy}" x2="{width}" y2="{gy}" stroke="#e2e8f0" stroke-width="1"/>')
+    origin_x, origin_y = to_px(0.0, 0.0)
+    lines.append(f'<line x1="0" y1="{origin_y:.2f}" x2="{width}" y2="{origin_y:.2f}" stroke="#64748b" stroke-width="1.5"/>')
+    lines.append(f'<line x1="{origin_x:.2f}" y1="0" x2="{origin_x:.2f}" y2="{height}" stroke="#64748b" stroke-width="1.5"/>')
+    lines.append(f'<text x="{min(width-60, origin_x+4):.2f}" y="{max(14, origin_y-4):.2f}" font-size="11" fill="#334155">world (0,0)</text>')
+
+    if not safe_targets:
+        lines.append('<text x="18" y="28" font-size="14" fill="#475569">No targets discovered yet.</text>')
+    for t in safe_targets:
+        tid = escape(str(t.get("id", "")))
+        ttype = str(t.get("type", ""))
+        label = escape(str(t.get("label") or tid))
+        pose = t.get("pose", {}) if isinstance(t.get("pose"), dict) else {}
+        xyz = pose.get("xyz") if isinstance(pose.get("xyz"), list) else [0.0, 0.0, 0.0]
+        x, y, z = float(xyz[0]), float(xyz[1]), float(xyz[2] if len(xyz) > 2 else 0.0)
+        size = t.get("size") if isinstance(t.get("size"), list) else [0.2, 0.2, 0.1]
+        sx = max(float(size[0]), 0.01); sy = max(float(size[1]), 0.01)
+        cx, cy = to_px(x, y)
+        rw = (sx / world_w) * width
+        rh = (sy / world_h) * height
+        rx, ry = cx - rw/2, cy - rh/2
+        color = "#16a34a" if ttype == "pick_zone" else "#2563eb" if ttype in {"place_target", "bin"} else "#7c3aed"
+        lines.append(f'<rect x="{rx:.2f}" y="{ry:.2f}" width="{rw:.2f}" height="{rh:.2f}" fill="{color}" fill-opacity="0.20" stroke="{color}" stroke-width="2"/>')
+        lines.append(f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="3" fill="{color}"/>')
+        lines.append(f'<text x="{(rx+4):.2f}" y="{max(12, ry-6):.2f}" font-size="11" fill="#0f172a">{label} ({tid}) [{escape(ttype)}] xyz=({x:.2f},{y:.2f},{z:.2f})</text>')
+    lines.append("</svg>")
+    return "\n".join(lines)
 
 def summarize_environment_targets(environment_layout_path: str | Path) -> dict[str, Any]:
     zones = load_environment_targets(environment_layout_path)
