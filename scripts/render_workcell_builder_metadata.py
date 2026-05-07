@@ -4,6 +4,8 @@ import argparse, json
 from pathlib import Path
 from typing import Any
 
+from scripts.workcell_builder_capability_catalog import load_workcell_capability_catalog
+
 
 def _norm(text: str | None) -> str:
     return (text or "").strip().lower().replace("_", " ")
@@ -17,7 +19,22 @@ def _match(name: str | None, mapping: list[tuple[list[str], dict[str, Any]]]) ->
     return {"capability_id": None, "family": None, "runtime_supported": False, "preview_only": True, "warning": f"Could not resolve catalog capability id for selection '{name}'"}
 
 
+def _catalog_lookup(group: list[dict[str, Any]], selected_name: str | None) -> dict[str, Any]:
+    selected = _norm(selected_name)
+    for item in group:
+        name = _norm(item.get("display_name"))
+        cid = _norm(item.get("capability_id"))
+        if selected and (selected in name or selected in cid):
+            return item
+    return {}
+
+
 def render_metadata(robot: str | None, end_effector: str | None, sensor: str | None, grasp_strategy: str | None, scene_path: Path | None = None) -> dict[str, Any]:
+    catalog = load_workcell_capability_catalog()
+    robot_cat = _catalog_lookup(catalog.get("robots", []), robot)
+    ee_cat = _catalog_lookup(catalog.get("end_effectors", []), end_effector)
+    sensor_cat = _catalog_lookup(catalog.get("sensors", []), sensor)
+
     robot_info = _match(robot, [
         (["ur5", "universal robot ur5", "universalrobot ur5"], {"capability_id": "ur5", "family": "articulated", "runtime_supported": True, "preview_only": False}),
         (["generic delta", "delta"], {"capability_id": "generic_delta_900", "family": "delta", "runtime_supported": False, "preview_only": True}),
@@ -30,6 +47,8 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
     sensor_info = _match(sensor, [(["realsense", "d435i"], {"capability_id": "realsense_d435i", "family": "depth_camera", "runtime_supported": True, "preview_only": False})])
 
     warnings = [x for x in [robot_info.pop("warning", None), ee_info.pop("warning", None), sensor_info.pop("warning", None)] if x]
+    warnings.extend(robot_cat.get("warnings", []))
+    warnings.extend(ee_cat.get("warnings", []))
     status = "preview_only" if robot_info.get("preview_only") or ee_info.get("preview_only") else "fake_hardware_ready"
     imported = []
     object_count = 0
@@ -43,6 +62,13 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
             object_count = txt.count("filepath:")
 
     return {
+        "selected_capabilities": {
+            "robot": {"capability_id": robot_cat.get("capability_id", robot_info.get("capability_id")), "display_name": robot_cat.get("display_name", robot)},
+            "end_effector": {"capability_id": ee_cat.get("capability_id", ee_info.get("capability_id")), "display_name": ee_cat.get("display_name", end_effector)},
+            "sensor": {"capability_id": sensor_cat.get("capability_id", sensor_info.get("capability_id")), "display_name": sensor_cat.get("display_name", sensor)},
+            "environment_assets": [],
+            "task_template": {"capability_id": None, "display_name": None},
+        },
         "schema_version": "workcell_builder_metadata/v1",
         "generated_by": "workcell_builder",
         "workcell_studio_compatible": True,

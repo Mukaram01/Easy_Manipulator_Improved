@@ -1,0 +1,13 @@
+schema_version: task_capability/v1
+task:
+  task_family: machine_tending
+  label: Machine Tending (Placeholder)
+  required_robot_capabilities: [planning_groups, named_targets]
+  required_end_effector_capabilities: [grasp_frames, release_behaviour]
+  required_sensor_attributes: [pose]
+  required_destinations: [machine_chuck, unload_bin]
+  rule_model: station_cycle
+  expected_validation_checks: [machine_station_defined]
+  runtime_requirements: [io_handshake, machine_state_interlock]
+  limitations_warnings:
+    - Placeholder template only; runtime interlocks must be implemented separately.
