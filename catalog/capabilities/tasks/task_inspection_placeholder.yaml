@@ -1,0 +1,13 @@
+schema_version: task_capability/v1
+task:
+  task_family: inspection_routing
+  label: Inspection Routing (Placeholder)
+  required_robot_capabilities: [planning_groups, base_frame]
+  required_end_effector_capabilities: [grasp_frames]
+  required_sensor_attributes: [pose, class, confidence]
+  required_destinations: [inspection_pass, inspection_fail]
+  rule_model: inspection_decision_routing
+  expected_validation_checks: [inspection_route_defined]
+  runtime_requirements: [classification_pipeline]
+  limitations_warnings:
+    - Placeholder template for preview/workflow authoring only.

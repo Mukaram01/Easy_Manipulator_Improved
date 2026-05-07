@@ -1,0 +1,17 @@
+schema_version: environment_asset/v1
+asset:
+  id: camera_mount_overhead_a
+  label: Camera Mount Overhead A
+  family: camera_mount
+  dimensions:
+    length_m: 0.4
+    width_m: 0.1
+    height_m: 1.2
+  frame: world
+  pose: [0.6, 0.0, 0.6, 0.0, 0.0, 0.0]
+  collision_behaviour: static_collision
+  mobility: static
+  import_source: internal_catalog
+  mesh_path: assets/environment/camera_mount_overhead_a.stl
+  limitations_warnings:
+    - Placeholder mount geometry; verify real bracket dimensions before deployment.
