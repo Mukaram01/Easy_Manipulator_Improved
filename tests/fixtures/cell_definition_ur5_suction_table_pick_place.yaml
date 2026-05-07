@@ -1,0 +1,17 @@
+schema_version: cell_definition/v1
+cell: {id: ur5_suction_table_pick_place_cell, name: UR5 Suction Table Pick Place, description: Demo template}
+robot: {model: ur5, planning_group: manipulator, base_frame: world, tool_link: tool0, home_named_target: home, safe_joint_state: [], capability: ur5}
+end_effector: {id: onrobot_airpick4, type: suction, brand: onrobot, grasp_frame: suction_tip, allowed_touch_links: [suction_cup], capability: onrobot_airpick_style}
+camera: {id: realsense_d435i, type: depth_camera, frame: camera_depth_optical_frame}
+environment:
+  frame: world
+  support_surfaces:
+    - {id: table_main, type: table, frame: world, pose_xyz: [0,0,0], pose_rpy: [0,0,0], dimensions: [1.2,0.8,0.05]}
+  assets:
+    - {capability: table_standard_1200}
+    - {capability: tray_small_rect}
+objects:
+  - {id: pouch, class: bag, shape: box, color: unknown, material: plastic, frame: world, dimensions: [0.05,0.05,0.02], pose_xyz: [0.5,0.0,0.08], pose_rpy: [0,0,0]}
+task: {id: suction_pick_place, type: pick_place, source_object: pouch, destinations: [{id: tray_drop, frame: world, pose_xyz: [0.3,-0.2,0.1], pose_rpy: [0,0,0]}], rules: [{id: place_default, when: {always: true}, destination: tray_drop}]}
+grasp: {strategy_ref: suction_top_basic}
+commissioning: {self_test_enabled: true, export_bundle: true, require_operator_review: true, fake_hardware_default: true, demo_template_id: ur5_suction_table_pick_place}

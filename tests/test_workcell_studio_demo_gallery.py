@@ -35,7 +35,7 @@ def test_cli_list_demos_text_and_json() -> None:
     txt = _run("list-demos")
     js = _run("list-demos", "--json")
     assert txt.returncode == 0
-    assert "ur5_suction_sorting_demo" in txt.stdout
+    assert "ur5_suction_table_pick_place" in txt.stdout
     assert js.returncode == 0
     payload = json.loads(js.stdout)
     assert "demos" in payload
@@ -43,9 +43,9 @@ def test_cli_list_demos_text_and_json() -> None:
 
 def test_generate_demo_bundle_for_ur5_suction() -> None:
     out = Path("/tmp/workcell_studio_demos_test")
-    proc = _run("generate-demo-bundle", "--demo-id", "ur5_suction_sorting_demo", "--output-dir", str(out), "--force")
+    proc = _run("generate-demo-bundle", "--demo-id", "ur5_suction_table_pick_place", "--output-dir", str(out), "--force")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    bundle = out / "ur5_suction_sorting_demo"
+    bundle = out / "ur5_suction_table_pick_place"
     assert (bundle / "demo_bundle_summary.json").is_file()
     assert (bundle / "demo_bundle_summary.md").is_file()
     assert (bundle / "cell_definition.yaml").is_file()
@@ -73,9 +73,9 @@ def test_backend_demo_wrappers_and_invalid_demo_id() -> None:
     listed = backend.list_demos()
     assert listed["ok"]
     out = Path("/tmp/workcell_studio_backend_demo")
-    generated = backend.generate_demo_bundle(out, demo_id="ur5_suction_sorting_demo")
+    generated = backend.generate_demo_bundle(out, demo_id="ur5_suction_table_pick_place")
     assert generated["ok"]
-    summary = backend.load_demo_bundle_summary(out / "ur5_suction_sorting_demo")
+    summary = backend.load_demo_bundle_summary(out / "ur5_suction_table_pick_place")
     assert summary["summary_json_path"]
 
     invalid = _run("generate-demo-bundle", "--demo-id", "missing_demo", "--output-dir", str(out), "--force")
