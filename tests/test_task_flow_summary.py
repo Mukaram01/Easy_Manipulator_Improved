@@ -16,6 +16,7 @@ def test_summarize_valid_builder_task_intent():
     assert p.returncode==0
     assert j['readiness_classification']=='task_intent_ready_offline'
     assert j['pick_source_id'] and j['place_target_id'] and j['grasp_strategy'] and j['release_strategy']
+    assert 'pick_source_type' in j
 
 
 def test_summarize_task_recipe():

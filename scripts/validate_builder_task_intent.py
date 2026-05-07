@@ -59,6 +59,7 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     grasp=payload.get('grasp') if isinstance(payload.get('grasp'),dict) else {}
     safety=payload.get('safety') if isinstance(payload.get('safety'),dict) else {}
     if not task.get('type'): errors.append('task.type is required')
+    if not pick.get('id'): errors.append('Pick source is not selected.')
     if not pick.get('id'): errors.append('pick.source.id is required')
     if not place.get('id'):
         errors.append('Place target is not selected.')
@@ -96,11 +97,18 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
                 continue
             destination = rule.get('place_target') or rule.get('destination')
             if isinstance(destination, str) and destination and destination not in scene_ids:
+                errors.append('Routing target does not exist.')
                 errors.append(f"routing rule target '{destination}' does not exist in scene metadata")
-        if pick.get('id') and str(pick['id']) not in scene_ids:
+        if pick.get('type')=='pick_zone' and pick.get('id') and str(pick['id']) not in scene_ids:
+            errors.append('Pick zone is not defined.')
             errors.append(f"selected pick source '{pick['id']}' does not exist in scene metadata")
         if place.get('id') and str(place['id']) not in scene_ids:
             errors.append(f"selected place target '{place['id']}' does not exist in scene metadata")
+    
+    if isinstance(pick.get('type'), str) and pick.get('type') not in {'perception','pick_zone','fixed_object','replay_object','zone'}:
+        errors.append('pick.source.type must be one of perception/pick_zone/fixed_object/replay_object')
+    if isinstance(place.get('type'), str) and place.get('type') in {'TODO','todo'}:
+        errors.append('place.target.type cannot be TODO')
     for token in ['TODO', 'todo', 'unset_destination']:
         if token in json.dumps(payload):
             errors.append('task intent contains TODO/unset placeholder values')

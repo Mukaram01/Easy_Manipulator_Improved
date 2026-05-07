@@ -11,12 +11,15 @@ def _run(cmd):
 
 def test_authoring_flow(tmp_path):
     out = tmp_path/'workcell_builder_task_intent.yaml'
-    r=_run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(SCENE),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--object-class','any','--object-color','red','--output',str(out),'--validate','--json'])
+    r=_run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(SCENE),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--pick-source-type','perception','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--object-class','any','--object-color','red','--output',str(out),'--validate','--json'])
     assert r.returncode==0
     payload=json.loads(r.stdout)
     assert payload['pick_source']=='pick_zone_main'
+    assert payload['pick_source_type']=='perception'
     data=backend.load_builder_task_intent(out)
     assert data['place']['target']['id']=='bin_red'
+    assert data['routing']['rules'][0]['place_target']=='bin_red'
+    assert 'TODO' not in json.dumps(data)
     assert data['safety']['metadata_only'] is True and data['safety']['motion_started'] is False
     rv=_run([sys.executable,'scripts/validate_builder_task_intent.py',str(out),'--scene-package',str(SCENE),'--json'])
     assert rv.returncode==0
