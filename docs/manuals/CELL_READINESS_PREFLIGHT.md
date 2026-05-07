@@ -56,3 +56,24 @@ The operator panel includes a **Run Preflight Check** button that runs this scri
 6. Do not proceed to replay/motion unless all blockers are clear
 
 This path is dry-run only and never executes robot motion.
+
+## 6) Golden builder-to-readiness demo + safe preview handoff
+Run the canonical golden flow:
+
+```bash
+python3 scripts/run_golden_builder_readiness_demo.py \
+  --scene-package scenes/ur5_2f_test \
+  --output-dir /tmp/golden_builder_demo \
+  --force --json
+```
+
+Then inspect `/tmp/golden_builder_demo/golden_builder_demo_summary.json` for:
+- readiness pack path,
+- static preview path,
+- dashboard path,
+- RViz/MoveIt fake-hardware preview command (when launch metadata is available),
+- explicit no-motion safety flags.
+
+If a preview command is present, run it manually only after sourcing ROS/workspace and only in fake hardware mode. The golden demo itself does not launch ROS, does not call MoveIt planning services, and does not command real robot motion.
+
+This preview demonstrates visualization/metadata readiness only. It is not proof of real hardware commissioning readiness.
