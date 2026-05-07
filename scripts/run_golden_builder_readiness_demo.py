@@ -66,15 +66,55 @@ def main() -> int:
 
     manifest = output / "readiness_pack_manifest.json"
     manifest_json = json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else {}
+    artifacts = manifest_json.get("artifacts", {})
+
+    def _path_exists(value: Any) -> bool:
+        return isinstance(value, str) and Path(value).exists()
+
+    rviz_session_path = artifacts.get("rviz_moveit_plan_preview_session")
+    rviz_session = json.loads(Path(rviz_session_path).read_text(encoding="utf-8")) if _path_exists(rviz_session_path) else {}
+    rviz_readiness = (rviz_session.get("readiness") or {}) if isinstance(rviz_session, dict) else {}
+    rviz_inputs = (((rviz_session.get("rviz_moveit") or {}).get("expected_inputs")) or {}) if isinstance(rviz_session, dict) else {}
+    plan_preview = (rviz_session.get("plan_preview") or {}) if isinstance(rviz_session, dict) else {}
+    launch_cmd = ((((rviz_session.get("rviz_moveit") or {}).get("suggested_launch")) or {}).get("command")) if isinstance(rviz_session, dict) else None
+
+    rviz_blockers = list(rviz_readiness.get("blockers") or [])
+    rviz_warnings = list(rviz_readiness.get("warnings") or [])
+    rviz_status = rviz_readiness.get("status", "WARN")
+    rviz_classification = "rviz_preview_ready" if rviz_status == "PASS" and not rviz_blockers else "rviz_preview_partial"
+
+    rviz_preview_readiness = {
+        "status": rviz_status,
+        "classification": rviz_classification,
+        "robot_description": bool(rviz_inputs.get("scene_package_exists")),
+        "end_effector_metadata": bool(plan_preview.get("grasp_strategy")),
+        "support_surface_or_table": bool(plan_preview.get("pick_source_id")),
+        "pick_zone": bool(plan_preview.get("pick_source_id")),
+        "place_zone": bool(plan_preview.get("place_target_id")),
+        "task_flow_markers": bool((manifest_json.get("artifacts", {}) or {}).get("task_flow_summary")),
+        "fake_hardware_launch_command": bool(launch_cmd),
+        "rviz_config_or_preview_markers": _path_exists(artifacts.get("static_preview", {}).get("summary") if isinstance(artifacts.get("static_preview"), dict) else None),
+        "preview_command": launch_cmd,
+        "blockers": rviz_blockers,
+        "warnings": rviz_warnings,
+    }
 
     results = {
         "result": "PASS" if manifest.exists() else "FAIL",
         "scene_package": str(scene),
         "output_dir": str(output),
         "steps": steps,
-        "artifacts": manifest_json.get("artifacts", {}),
+        "artifacts": artifacts,
         "readiness": manifest_json.get("results", {}),
-        "safety": manifest_json.get("safety", {}),
+        "rviz_moveit_preview": rviz_preview_readiness,
+        "safety": {
+            "use_fake_hardware": True,
+            "real_hardware_enabled": False,
+            "motion_command_sent": False,
+            "runtime_execution_called": False,
+            "moveit_plan_service_called": False,
+            **(manifest_json.get("safety", {}) if isinstance(manifest_json.get("safety", {}), dict) else {}),
+        },
         "next_commands": [
             f"python3 scripts/validate_builder_generated_scene.py {scene}",
             f"python3 scripts/workcell_studio.py validate-readiness-pack --manifest {manifest} --json",

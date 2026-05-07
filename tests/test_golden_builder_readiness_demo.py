@@ -40,3 +40,34 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     dashboard = Path(manifest["artifacts"]["readiness_dashboard"]).read_text(encoding="utf-8")
     assert "Task flow: pick → grasp → place → release" in dashboard
     assert "Offline/fake-hardware readiness review only" in dashboard
+
+    summary_path = out / "golden_builder_demo_summary.json"
+    assert summary_path.exists()
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    rviz = summary.get("rviz_moveit_preview", {})
+    assert isinstance(rviz, dict)
+    assert "status" in rviz
+    assert rviz.get("classification") in ("rviz_preview_ready", "rviz_preview_partial")
+    assert "robot_description" in rviz
+    assert "end_effector_metadata" in rviz
+    assert "support_surface_or_table" in rviz
+    assert "pick_zone" in rviz
+    assert "place_zone" in rviz
+    assert "task_flow_markers" in rviz
+    assert "fake_hardware_launch_command" in rviz
+    assert "rviz_config_or_preview_markers" in rviz
+
+    if rviz.get("fake_hardware_launch_command"):
+        assert isinstance(rviz.get("preview_command"), str)
+        assert "use_fake_hardware:=true" in rviz["preview_command"]
+    else:
+        assert rviz.get("classification") == "rviz_preview_partial"
+        assert rviz.get("blockers") or rviz.get("warnings")
+
+    safety = summary.get("safety", {})
+    assert safety.get("use_fake_hardware") is True
+    assert safety.get("real_hardware_enabled") is False
+    assert safety.get("motion_command_sent") is False
+    assert safety.get("runtime_execution_called") is False
+    assert safety.get("moveit_plan_service_called") is False

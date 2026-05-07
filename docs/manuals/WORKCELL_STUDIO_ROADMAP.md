@@ -97,3 +97,12 @@ python3 scripts/run_golden_builder_readiness_demo.py \
 ```
 
 This demo is for repeatable regression/acceptance checks only and is not a real-hardware readiness certificate.
+
+### Safe RViz/MoveIt fake-hardware visual preview extension
+
+The golden demo now also emits an RViz/MoveIt preview-readiness section in `golden_builder_demo_summary.json`.
+
+- It reports preview readiness for robot description, end effector metadata, support/table context, pick/place zones, task-flow markers, and fake-hardware launch metadata.
+- If a safe command can be generated, it is included as a manual command (for example with `use_fake_hardware:=true`).
+- If preview metadata is incomplete, the summary is explicitly classified `rviz_preview_partial` and lists concrete blockers/warnings.
+- This remains offline/no-motion by default and does **not** call runtime execution or send robot motion commands.
