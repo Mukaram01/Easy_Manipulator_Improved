@@ -108,3 +108,17 @@ def test_pack_preserves_authored_targets_and_resolves_coordinates(tmp_path: Path
     dashboard = (out/'readiness_dashboard.html').read_text(encoding='utf-8')
     assert 'pick_zone_main' in dashboard
     assert 'bin_red' in dashboard
+
+def test_pack_visual_markers_and_safety_banner(tmp_path: Path):
+    out = tmp_path / "pack_visual"
+    run = subprocess.run([sys.executable, "scripts/workcell_studio.py", "generate-readiness-pack", "--scene-package", "scenes/ur5_2f_test", "--output-dir", str(out), "--project-name", "demo", "--validate", "--smoke-dry-run", "--force", "--json"], capture_output=True, text=True, check=False)
+    assert run.returncode in (0, 1)
+    manifest = json.loads((out / "readiness_pack_manifest.json").read_text(encoding="utf-8"))
+    marker_path = Path(manifest["artifacts"]["static_preview"]["markers"])
+    assert marker_path.exists()
+    markers = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert markers.get("task_flow_marker_count", 0) > 0
+    names = {m.get("name") for m in markers.get("markers", []) if isinstance(m, dict)}
+    assert "pick_zone_source" in names and "place_zone_target" in names
+    preview_summary = json.loads((out / "preview" / "static_preview_summary.json").read_text(encoding="utf-8"))
+    assert preview_summary.get("safety_banner_present") is True

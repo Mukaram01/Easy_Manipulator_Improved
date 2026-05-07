@@ -83,6 +83,9 @@ def main() -> int:
     rviz_status = rviz_readiness.get("status", "WARN")
     rviz_classification = "rviz_preview_ready" if rviz_status == "PASS" and not rviz_blockers else "rviz_preview_partial"
 
+    visual_markers_path = artifacts.get("static_preview", {}).get("markers") if isinstance(artifacts.get("static_preview"), dict) else None
+    visual_markers = json.loads(Path(visual_markers_path).read_text(encoding="utf-8")) if _path_exists(visual_markers_path) else {}
+
     rviz_preview_readiness = {
         "status": rviz_status,
         "classification": rviz_classification,
@@ -107,6 +110,18 @@ def main() -> int:
         "artifacts": artifacts,
         "readiness": manifest_json.get("results", {}),
         "rviz_moveit_preview": rviz_preview_readiness,
+        "visual_preview": {
+            "present": bool(visual_markers),
+            "marker_count": int(visual_markers.get("marker_count", 0)) if isinstance(visual_markers, dict) else 0,
+            "task_flow_marker_count": int(visual_markers.get("task_flow_marker_count", 0)) if isinstance(visual_markers, dict) else 0,
+            "safety_banner_present": bool((json.loads(Path(artifacts.get("static_preview", {}).get("summary", "")).read_text(encoding="utf-8")) if _path_exists(artifacts.get("static_preview", {}).get("summary") if isinstance(artifacts.get("static_preview"), dict) else None) else {}).get("safety_banner_present", False)),
+            "paths": {
+                "dashboard": artifacts.get("readiness_dashboard"),
+                "static_preview_html": artifacts.get("static_preview", {}).get("html") if isinstance(artifacts.get("static_preview"), dict) else None,
+                "static_preview_svg": artifacts.get("static_preview", {}).get("svg") if isinstance(artifacts.get("static_preview"), dict) else None,
+                "marker_artifact": visual_markers_path,
+            },
+        },
         "safety": {
             "use_fake_hardware": True,
             "real_hardware_enabled": False,
