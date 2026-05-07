@@ -54,6 +54,8 @@ def summarize_builder_scene(scene_package: Path, *, source_project_path: Path | 
     validation = validate_scene(scene_package)
     status = _status_from_validation(validation)
 
+    custom_stl_assets = metadata.get("custom_stl_assets", []) if isinstance(metadata.get("custom_stl_assets"), list) else []
+
     summary = {
         "project_name": scene_package.name,
         "cell_name": scene_package.name,
@@ -83,6 +85,7 @@ def summarize_builder_scene(scene_package: Path, *, source_project_path: Path | 
         "generator": {"name": "workcell_builder", "version": metadata.get("generator_version", "unknown")},
         "source_builder_project_path": str(source_project_path or scene_package),
         "no_runtime_execution_default": True,
+        "custom_stl_assets": custom_stl_assets,
     }
     return summary
 
