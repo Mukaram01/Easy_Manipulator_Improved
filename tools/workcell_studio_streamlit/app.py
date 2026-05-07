@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "Create Cell"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Create Cell"],
 )
 
 if workflow == "Catalog browser":
@@ -159,6 +159,28 @@ if workflow == "Demo Gallery":
     if col2.button("Generate all demo bundles"):
         result = backend.generate_demo_bundle(output_dir=output_dir, all_demos=True, force=True, continue_on_error=True)
         st.json(result.get("json") or result)
+
+if workflow == "RViz Plan Preview":
+    st.header("RViz/MoveIt Plan Preview")
+    session_path = st.text_input("Session JSON path", value="/tmp/rviz_plan_preview_session/rviz_moveit_plan_preview_session.json")
+    smoke_output = st.text_input("Smoke output dir", value="/tmp/fake_hardware_smoke")
+    timeout_s = st.number_input("Timeout seconds", min_value=1, value=20)
+    c1, c2 = st.columns(2)
+    if c1.button("Dry-run smoke check"):
+        result = backend.smoke_launch_preview(session_path, smoke_output, execute=False, timeout_s=int(timeout_s))
+        st.json(result.get("json") or result)
+    st.warning("This starts a fake-hardware ROS launch for a short timeout. It must not be used with real hardware.")
+    confirm = st.checkbox("I understand this is fake-hardware-only and no robot motion will be commanded.")
+    if c2.button("Execute fake-hardware smoke launch", disabled=not confirm):
+        result = backend.smoke_launch_preview(session_path, smoke_output, execute=True, timeout_s=int(timeout_s))
+        st.json(result.get("json") or result)
+    report = backend.load_smoke_launch_report(smoke_output)
+    if report:
+        st.subheader("Smoke report")
+        st.json({"status": (report.get("result") or {}).get("status"), "warnings": (report.get("result") or {}).get("warnings", []), "errors": (report.get("result") or {}).get("errors", []), "safety": report.get("safety", {})})
+        logs = backend.read_smoke_launch_logs(smoke_output)
+        st.code("STDOUT:\n" + logs.get("stdout", ""))
+        st.code("STDERR:\n" + logs.get("stderr", ""))
 
 if workflow == "Create Cell":
     st.header("Create Cell")

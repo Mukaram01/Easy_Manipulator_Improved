@@ -458,3 +458,24 @@ def load_rviz_plan_preview_session(output_dir: str | Path) -> dict[str, Any]:
 def read_suggested_commands(output_dir: str | Path) -> str:
     p = Path(output_dir) / "suggested_commands.sh"
     return p.read_text(encoding="utf-8") if p.exists() else ""
+
+def smoke_launch_preview(session_path: str | Path, output_dir: str | Path, execute: bool = False, timeout_s: int = 20, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "smoke-launch-preview", "--session", str(session_path), "--output-dir", str(output_dir), "--timeout-s", str(timeout_s), "--json"]
+    cmd.append("--execute" if execute else "--dry-run")
+    return _parse_json_output(run_command(cmd, cwd=rr, timeout=max(120, timeout_s + 30)))
+
+def validate_smoke_launch_report(report_path: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "validate-smoke-launch-report", "--report", str(report_path), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def load_smoke_launch_report(output_dir: str | Path) -> dict[str, Any]:
+    p = Path(output_dir) / "fake_hardware_smoke_launch_report.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+def read_smoke_launch_logs(output_dir: str | Path, max_chars: int = 4000) -> dict[str, str]:
+    d = Path(output_dir)
+    out = (d / "captured_stdout.log").read_text(encoding="utf-8") if (d / "captured_stdout.log").exists() else ""
+    err = (d / "captured_stderr.log").read_text(encoding="utf-8") if (d / "captured_stderr.log").exists() else ""
+    return {"stdout": out[-max_chars:], "stderr": err[-max_chars:]}

@@ -1507,3 +1507,6 @@ Use `scripts/summarize_task_flow.py` and static preview task-flow markers for of
 
 ## Guarded RViz/MoveIt plan preview preparation
 Use `scripts/generate_rviz_moveit_plan_preview_session.py` or `scripts/workcell_studio.py prepare-rviz-plan-preview` to generate fake-hardware-only manual launch suggestions and readiness reports.
+
+## Fake-hardware smoke launch check
+Use `scripts/workcell_studio.py smoke-launch-preview` for dry-run-first smoke checks. Use `--execute` only for optional fake-hardware short-timeout launch. This does not plan or execute robot motion and must not be used with real hardware.
