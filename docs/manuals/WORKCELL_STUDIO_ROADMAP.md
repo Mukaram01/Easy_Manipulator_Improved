@@ -66,3 +66,5 @@ High-level ownership boundaries:
 
 
 Next safe bridge: guarded RViz/MoveIt plan-preview session preparation from offline plan-preview requests, without ROS launch or motion execution.
+
+- builder scene -> task intent -> task recipe -> offline plan request -> RViz preview session -> smoke launch -> planning scene readiness

@@ -423,6 +423,8 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         "export_summary": export_payload,
         "rviz_plan_preview_session_path": "",
         "rviz_plan_preview_suggested_commands_path": "",
+        "planning_scene_readiness_report_path": "",
+        "planning_scene_readiness_markdown_path": "",
     }
 
     
@@ -435,6 +437,13 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         _run_json(preview_cmd, "rviz plan preview prepare")
         summary["rviz_plan_preview_session_path"] = str(sess_dir / "rviz_moveit_plan_preview_session.json")
         summary["rviz_plan_preview_suggested_commands_path"] = str(sess_dir / "suggested_commands.sh")
+
+    if summary.get("generated_task_recipe_path"):
+        read_dir = output_dir / "planning_scene_readiness"
+        read_cmd = [sys.executable, str(SCRIPT_DIR / "check_planning_scene_readiness.py"), "--scene-package", str(scene_pkg), "--output-dir", str(read_dir), "--task-recipe", str(summary.get("generated_task_recipe_path")), "--plan-preview-request", str(generated_dir / "offline_plan_preview_request.yaml"), "--plan-preview-session", str(sess_dir / "rviz_moveit_plan_preview_session.json"), "--json"]
+        _run_json(read_cmd, "planning scene readiness")
+        summary["planning_scene_readiness_report_path"] = str(read_dir / "planning_scene_readiness_report.json")
+        summary["planning_scene_readiness_markdown_path"] = str(read_dir / "planning_scene_readiness_report.md")
 
     summary_json = output_dir / "workcell_studio_import_summary.json"
     summary_md = output_dir / "workcell_studio_import_summary.md"
@@ -500,6 +509,26 @@ def smoke_launch_preview(args: argparse.Namespace) -> int:
 
 def validate_smoke_launch_report(args: argparse.Namespace) -> int:
     cmd=[sys.executable, str(SCRIPT_DIR / "validate_fake_hardware_smoke_launch_report.py"), str(args.report)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+
+
+def check_planning_scene_readiness(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "check_planning_scene_readiness.py"), "--scene-package", str(args.scene_package), "--output-dir", str(args.output_dir)]
+    for key,flag in [("cell_definition","--cell-definition"),("task_recipe","--task-recipe"),("plan_preview_request","--plan-preview-request"),("plan_preview_session","--plan-preview-session"),("smoke_report","--smoke-report")]:
+        v=getattr(args,key,None)
+        if v: cmd += [flag, str(v)]
+    if args.strict: cmd.append("--strict")
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+def validate_planning_scene_readiness(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR / "validate_planning_scene_readiness_report.py"), str(args.report)]
     if args.json: cmd.append("--json")
     run=subprocess.run(cmd, capture_output=True, text=True, check=False)
     print(run.stdout if run.stdout else run.stderr)
@@ -573,6 +602,24 @@ def _build_parser() -> argparse.ArgumentParser:
     vsmoke.add_argument("--report", type=Path, required=True)
     vsmoke.add_argument("--json", action="store_true")
     vsmoke.set_defaults(func=validate_smoke_launch_report)
+
+
+    cpsr = sub.add_parser("check-planning-scene-readiness", help="Check file/metadata planning scene readiness artifacts")
+    cpsr.add_argument("--scene-package", type=Path, required=True)
+    cpsr.add_argument("--output-dir", type=Path, required=True)
+    cpsr.add_argument("--cell-definition", type=Path)
+    cpsr.add_argument("--task-recipe", type=Path)
+    cpsr.add_argument("--plan-preview-request", type=Path)
+    cpsr.add_argument("--plan-preview-session", type=Path)
+    cpsr.add_argument("--smoke-report", type=Path)
+    cpsr.add_argument("--strict", action="store_true")
+    cpsr.add_argument("--json", action="store_true")
+    cpsr.set_defaults(func=check_planning_scene_readiness)
+
+    vpsr = sub.add_parser("validate-planning-scene-readiness", help="Validate planning_scene_readiness_report/v1 artifact")
+    vpsr.add_argument("--report", type=Path, required=True)
+    vpsr.add_argument("--json", action="store_true")
+    vpsr.set_defaults(func=validate_planning_scene_readiness)
 
     cc = sub.add_parser("create-cell", help="Create a catalog-driven cell_definition + environment layout + optional preview/bundle")
     cc.add_argument("--cell-id", required=True)

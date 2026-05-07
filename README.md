@@ -1510,3 +1510,7 @@ Use `scripts/generate_rviz_moveit_plan_preview_session.py` or `scripts/workcell_
 
 ## Fake-hardware smoke launch check
 Use `scripts/workcell_studio.py smoke-launch-preview` for dry-run-first smoke checks. Use `--execute` only for optional fake-hardware short-timeout launch. This does not plan or execute robot motion and must not be used with real hardware.
+
+## Planning scene readiness report
+
+Use `python3 scripts/workcell_studio.py check-planning-scene-readiness --scene-package <scene> --output-dir <out> --json` to generate `planning_scene_readiness_report/v1` from files/metadata only.

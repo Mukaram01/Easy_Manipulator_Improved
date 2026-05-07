@@ -67,3 +67,8 @@ Includes a **Prepare RViz/MoveIt plan preview** action that only generates manua
 
 ## Fake-hardware smoke launch
 Use dry-run by default. Execute mode is optional/manual and requires explicit confirmation. It only launches fake-hardware visualization for a timeout and does not command robot motion.
+
+
+## Planning Scene Readiness panel
+
+The Streamlit UI includes a panel to run file/metadata-only planning-scene readiness checks and validate the generated report.

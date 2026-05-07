@@ -1,0 +1,125 @@
+{
+  "base_frame": "world",
+  "destination_action": "place",
+  "destination_id": "cylinder_bin",
+  "destination_pose": {
+    "frame_id": "world",
+    "pose_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "pose_xyz": [
+      0.35,
+      0.2,
+      0.1
+    ]
+  },
+  "end_effector_brand": "robotiq",
+  "end_effector_type": "finger",
+  "grasp_frame": "ee_palm",
+  "matched_rule_id": "cylinder_to_cylinder_bin",
+  "moveit_link": "tool0",
+  "notes": [
+    "PyYAML not available: using built-in fallback parser.",
+    "PyYAML not available: using built-in fallback parser.",
+    "Dry-run resolved a matching rule, destination, and action."
+  ],
+  "object_attributes": {
+    "class": "part",
+    "colour": "unknown",
+    "material": "plastic",
+    "shape": "cylinder"
+  },
+  "object_id": "detected_object",
+  "planning_group": "manipulator",
+  "scene": "generated_sort_shape",
+  "steps": [
+    {
+      "action": "resolve_object",
+      "description": "Use self_test object for offline commissioning.",
+      "id": "acquire_object",
+      "offline_runtime_status": "offline-only",
+      "type": "perception_or_self_test"
+    },
+    {
+      "action": "select_strategy",
+      "description": "Select grasp strategy for end effector.",
+      "id": "select_grasp_strategy",
+      "offline_runtime_status": "offline-only",
+      "type": "grasp_selection"
+    },
+    {
+      "action": "plan_pre_grasp",
+      "description": "Plan safe approach to pre-grasp pose.",
+      "id": "move_to_pre_grasp",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    },
+    {
+      "action": "plan_grasp_approach",
+      "description": "Plan final approach to grasp pose.",
+      "id": "move_to_grasp",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    },
+    {
+      "action": "close_gripper",
+      "description": "Engage the selected end effector.",
+      "id": "close_end_effector",
+      "offline_runtime_status": "runtime-target",
+      "type": "end_effector_action"
+    },
+    {
+      "action": "attach_collision_object",
+      "description": "Attach object to end-effector link.",
+      "id": "attach_object",
+      "offline_runtime_status": "runtime-target",
+      "type": "planning_scene_update"
+    },
+    {
+      "action": "plan_pre_place",
+      "description": "Move toward destination approach pose.",
+      "id": "move_to_pre_place",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    },
+    {
+      "action": "plan_place",
+      "description": "Move to destination pose.",
+      "id": "move_to_place",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    },
+    {
+      "action": "open_gripper",
+      "description": "Release object at destination.",
+      "id": "release_object",
+      "offline_runtime_status": "runtime-target",
+      "type": "end_effector_action"
+    },
+    {
+      "action": "detach_collision_object",
+      "description": "Detach object from end-effector link.",
+      "id": "detach_object",
+      "offline_runtime_status": "runtime-target",
+      "type": "planning_scene_update"
+    },
+    {
+      "action": "plan_retreat",
+      "description": "Retreat from placement pose.",
+      "id": "retreat",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    },
+    {
+      "action": "plan_return_home",
+      "description": "Return to configured safe home state.",
+      "id": "return_home",
+      "offline_runtime_status": "runtime-target",
+      "type": "motion_plan"
+    }
+  ],
+  "task_recipe_id": "shape_sorting_task",
+  "task_type": "sort"
+}

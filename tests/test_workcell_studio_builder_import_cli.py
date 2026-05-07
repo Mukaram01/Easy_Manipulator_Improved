@@ -102,3 +102,4 @@ def test_import_summary_references_plan_preview_session_when_generated() -> None
         assert proc.returncode==0
         summary=json.loads((out/"workcell_studio_import_summary.json").read_text(encoding="utf-8"))
         assert "rviz_plan_preview_session_path" in summary
+        assert "planning_scene_readiness_report_path" in summary

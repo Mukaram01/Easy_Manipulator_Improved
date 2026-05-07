@@ -479,3 +479,26 @@ def read_smoke_launch_logs(output_dir: str | Path, max_chars: int = 4000) -> dic
     out = (d / "captured_stdout.log").read_text(encoding="utf-8") if (d / "captured_stdout.log").exists() else ""
     err = (d / "captured_stderr.log").read_text(encoding="utf-8") if (d / "captured_stderr.log").exists() else ""
     return {"stdout": out[-max_chars:], "stderr": err[-max_chars:]}
+
+
+def check_planning_scene_readiness(scene_package: str | Path, output_dir: str | Path, cell_definition: str | Path | None = None, task_recipe: str | Path | None = None, plan_preview_request: str | Path | None = None, plan_preview_session: str | Path | None = None, smoke_report: str | Path | None = None, strict: bool = False, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "check-planning-scene-readiness", "--scene-package", str(scene_package), "--output-dir", str(output_dir), "--json"]
+    if cell_definition: cmd += ["--cell-definition", str(cell_definition)]
+    if task_recipe: cmd += ["--task-recipe", str(task_recipe)]
+    if plan_preview_request: cmd += ["--plan-preview-request", str(plan_preview_request)]
+    if plan_preview_session: cmd += ["--plan-preview-session", str(plan_preview_session)]
+    if smoke_report: cmd += ["--smoke-report", str(smoke_report)]
+    if strict: cmd.append("--strict")
+    return _parse_json_output(run_command(cmd, cwd=rr, timeout=300))
+
+def validate_planning_scene_readiness_report(report: str | Path, root: Path | None = None) -> dict[str, Any]:
+    rr = root or repo_root()
+    cmd = [sys.executable, str(rr / "scripts" / "workcell_studio.py"), "validate-planning-scene-readiness", "--report", str(report), "--json"]
+    return _parse_json_output(run_command(cmd, cwd=rr))
+
+def load_planning_scene_readiness_report(output_dir: str | Path) -> dict[str, Any]:
+    d = Path(output_dir)
+    js = d / "planning_scene_readiness_report.json"
+    md = d / "planning_scene_readiness_report.md"
+    return {"report_json_path": str(js) if js.exists() else "", "report_markdown_path": str(md) if md.exists() else "", "report": json.loads(js.read_text(encoding="utf-8")) if js.exists() else {}}
