@@ -130,3 +130,23 @@ def test_pack_visual_markers_and_safety_banner(tmp_path: Path):
     dashboard = (out / "readiness_dashboard.html").read_text(encoding="utf-8")
     assert "Perception → Task Bridge Preview" in dashboard
     assert "Bridge Payload → RViz/MoveIt Plan Preview" in dashboard
+
+
+def test_generate_readiness_pack_non_usage_exit_codes(tmp_path: Path):
+    for scene in ("scenes/ur5_2f_builder_pick_place_demo", "scenes/ur5_2f_test"):
+        out = tmp_path / scene.split('/')[-1]
+        run = subprocess.run([
+            sys.executable,
+            "scripts/workcell_studio.py",
+            "generate-readiness-pack",
+            "--scene-package", scene,
+            "--output-dir", str(out),
+            "--project-name", "demo",
+            "--validate",
+            "--smoke-dry-run",
+            "--force",
+            "--json",
+        ], capture_output=True, text=True, check=False)
+        assert run.returncode in (0, 1)
+        assert run.returncode != 2
+
