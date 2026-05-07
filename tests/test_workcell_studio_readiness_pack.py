@@ -65,3 +65,46 @@ def test_pack_static_preview_receives_task_flow(tmp_path: Path):
     assert tf.get('place_target_id') == 'bin_red'
     assert tf.get('grasp_strategy') == 'finger_pinch_basic'
     assert tf.get('release_strategy') == 'tool_release'
+
+
+def test_pack_preserves_authored_targets_and_resolves_coordinates(tmp_path: Path):
+    import shutil
+    import yaml
+    scene = tmp_path / 'scene_authored_targets'
+    shutil.copytree('scenes/ur5_2f_test', scene)
+    gen = scene / 'generated'
+    gen.mkdir(parents=True, exist_ok=True)
+    layout = gen / 'environment_layout.yaml'
+
+    subprocess.run([sys.executable,'scripts/create_or_update_environment_target.py','--environment-layout',str(layout),'--target-id','pick_zone_main','--target-type','pick_zone','--label','Main pick zone','--frame','world','--xyz','0.45','0.00','0.08','--rpy','0','0','0','--size','0.30','0.20','0.10','--output',str(layout),'--json'], check=True)
+    subprocess.run([sys.executable,'scripts/create_or_update_environment_target.py','--environment-layout',str(layout),'--target-id','bin_red','--target-type','place_target','--label','Red bin','--frame','world','--xyz','0.35','0.35','0.10','--rpy','0','0','0','--size','0.20','0.20','0.15','--output',str(layout),'--json'], check=True)
+    subprocess.run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'],check=True)
+
+    out = tmp_path / 'pack_authored_targets'
+    run = subprocess.run([sys.executable, 'scripts/workcell_studio.py', 'generate-readiness-pack', '--scene-package', str(scene), '--output-dir', str(out), '--project-name', 'demo', '--validate', '--smoke-dry-run', '--force', '--json'], capture_output=True, text=True, check=False)
+    assert run.returncode in (0,1)
+
+    exported_layout = yaml.safe_load((out/'exported'/'environment_layout.yaml').read_text(encoding='utf-8'))
+    zone_ids = {z.get('id') for z in (exported_layout.get('zones') or []) if isinstance(z, dict)}
+    target_ids = {z.get('id') for z in (exported_layout.get('targets') or []) if isinstance(z, dict)}
+    assert 'pick_zone_main' in zone_ids and 'bin_red' in zone_ids
+    assert 'pick_zone_main' in target_ids and 'bin_red' in target_ids
+
+    tf = json.loads((out/'task'/'task_flow_summary.json').read_text(encoding='utf-8'))
+    vr = tf.get('visual_resolution', {})
+    assert vr.get('pick_coordinates_resolved') is True
+    assert vr.get('place_coordinates_resolved') is True
+    assert vr.get('approximate_coordinates_used') is False
+    assert 'Task flow present but exact pick/place coordinates could not be resolved.' not in (tf.get('warnings') or [])
+
+    preview = json.loads((out/'preview'/'static_preview_summary.json').read_text(encoding='utf-8'))
+    pvr = (preview.get('task_flow_summary') or {}).get('visual_resolution', {})
+    assert pvr.get('pick_coordinates_resolved') is True
+    assert pvr.get('place_coordinates_resolved') is True
+    assert pvr.get('approximate_coordinates_used') is False
+    preview_warnings = json.dumps(preview)
+    assert 'exact pick/place coordinates could not be resolved' not in preview_warnings
+
+    dashboard = (out/'readiness_dashboard.html').read_text(encoding='utf-8')
+    assert 'pick_zone_main' in dashboard
+    assert 'bin_red' in dashboard
