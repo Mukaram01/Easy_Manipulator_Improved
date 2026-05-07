@@ -30,6 +30,13 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     assert Path(manifest["artifacts"]["builder_task_intent"]).exists()
     assert Path(manifest["artifacts"]["task_flow_summary"]).exists()
     assert Path(manifest["artifacts"]["readiness_dashboard"]).exists()
+    marker_path = Path(manifest["artifacts"]["static_preview"]["markers"])
+    assert marker_path.exists()
+    marker_payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker_names = {m.get("name") for m in marker_payload.get("markers", []) if isinstance(m, dict)}
+    assert "pick_zone_source" in marker_names
+    assert "place_zone_target" in marker_names
+    assert any(str(name).startswith("task_flow") for name in marker_names)
 
     assert manifest["results"]["task_intent_status"] == "PASS"
     assert manifest["results"].get("classification") != "physical_scene_only"
@@ -44,6 +51,12 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     summary_path = out / "golden_builder_demo_summary.json"
     assert summary_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    visual = summary.get("visual_preview", {})
+    assert visual.get("present") is True
+    assert visual.get("marker_count", 0) > 0
+    assert visual.get("task_flow_marker_count", 0) > 0
+    assert visual.get("safety_banner_present") is True
 
     rviz = summary.get("rviz_moveit_preview", {})
     assert isinstance(rviz, dict)

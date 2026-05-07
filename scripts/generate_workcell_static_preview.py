@@ -30,7 +30,19 @@ def _xy(v: Any):
 def _scale(x: float, y: float):
     return 450 + x*220, 320 - y*220
 
-def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, task_flow: dict[str, Any] | None=None) -> tuple[str, str, dict[str, Any]]:
+
+def _marker(name: str, marker_type: str, frame: str, pose_xyz: list[float], dims: list[float], label: str, category: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "marker_type": marker_type,
+        "frame": frame,
+        "pose": {"xyz": [float(pose_xyz[0]), float(pose_xyz[1]), float(pose_xyz[2])], "rpy": [0.0, 0.0, 0.0]},
+        "dimensions": {"x": float(dims[0]), "y": float(dims[1]), "z": float(dims[2])},
+        "label": label,
+        "category": category,
+    }
+
+def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, task_flow: dict[str, Any] | None=None) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
     warnings: list[str] = []
     elements = []
     approx = 0
@@ -38,11 +50,13 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
     ee = (cell.get('end_effector') or {})
     task = (cell.get('task') or {})
     comm = (cell.get('commissioning') or {})
+    markers: list[dict[str, Any]] = []
 
     # robot marker
     rx, ry = 0.0, 0.0
     sx, sy = _scale(rx, ry)
     elements.append(f"<circle cx='{sx:.1f}' cy='{sy:.1f}' r='26' fill='#0f766e'/><text x='{sx:.1f}' y='{sy+5:.1f}' text-anchor='middle' fill='white'>Robot</text>")
+    markers.append(_marker("robot_base", "sphere", "world", [rx, ry, 0.0], [0.1, 0.1, 0.1], "Robot Base", "layout"))
 
     surfaces = ((cell.get('environment') or {}).get('support_surfaces') or [])
     for i,s in enumerate(surfaces[:3]):
@@ -55,6 +69,7 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
         w,h=float(dim[0]),float(dim[1])
         cx,cy=_scale(x,y)
         elements.append(f"<rect x='{cx-w*110:.1f}' y='{cy-h*110:.1f}' width='{w*220:.1f}' height='{h*220:.1f}' fill='none' stroke='#334155' stroke-width='2'/><text x='{cx:.1f}' y='{cy:.1f}' text-anchor='middle'>Table:{html.escape(str(s.get('id','surface')))}</text>")
+        markers.append(_marker(f"table_{s.get('id','surface')}", "cube", "world", [x, y, float(dim[2]) * 0.5], [w, h, float(dim[2])], f"Table {s.get('id','surface')}", "layout"))
 
     dests = task.get('destinations') if isinstance(task.get('destinations'), list) else []
     for i,d in enumerate(dests[:6]):
@@ -65,10 +80,12 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
             x,y=0.5, -0.4 + i*0.15
         cx,cy=_scale(x,y)
         elements.append(f"<rect x='{cx-34:.1f}' y='{cy-20:.1f}' width='68' height='40' fill='#bfdbfe' stroke='#1d4ed8'/><text x='{cx:.1f}' y='{cy+4:.1f}' text-anchor='middle'>Bin:{html.escape(str(d.get('id','dest')))}</text>")
+        markers.append(_marker(f"place_zone_{d.get('id','dest')}", "cube", "world", [x, y, 0.05], [0.2, 0.2, 0.1], f"Place Zone {d.get('id','dest')}", "task-flow"))
 
     cam = cell.get('camera') if isinstance(cell.get('camera'), dict) else {}
     cx,cy=_scale(-0.55,0.55)
     elements.append(f"<polygon points='{cx},{cy-18} {cx-14},{cy+12} {cx+14},{cy+12}' fill='#a855f7'/><text x='{cx:.1f}' y='{cy+28:.1f}' text-anchor='middle'>Camera</text>")
+    markers.append(_marker("camera_pose", "arrow", "world", [-0.55, 0.55, 0.4], [0.15, 0.03, 0.03], "Camera Pose", "layout"))
 
     if env and isinstance(env.get('zones'), list):
         for z in env['zones'][:4]:
@@ -89,6 +106,17 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
         elements.append(f"<text x='{gx:.1f}' y='{gy+54:.1f}' fill='#1f2937'>Grasp: {html.escape(str(task_flow.get('grasp_strategy')))}</text>")
         elements.append(f"<text x='{gx:.1f}' y='{gy+72:.1f}' fill='#1f2937'>Release: {html.escape(str(task_flow.get('release_strategy')))}</text>")
         elements.append(f"<text x='{gx:.1f}' y='{gy+90:.1f}' fill='#1f2937'>Routes: {task_flow.get('routing_rule_count',0)}</text>")
+        pick_xyz = (task_flow.get('pick_pose_xyz') or [0.35, -0.2, 0.08])
+        place_xyz = (task_flow.get('place_pose_xyz') or [0.35, 0.35, 0.10])
+        markers.extend([
+            _marker("pick_zone_source", "cube", "world", pick_xyz, [0.2, 0.2, 0.1], f"Pick Zone {task_flow.get('pick_source_id','unknown')}", "task-flow"),
+            _marker("grasp_point", "sphere", "world", pick_xyz, [0.04, 0.04, 0.04], f"Grasp {task_flow.get('grasp_strategy','unknown')}", "task-flow"),
+            _marker("place_zone_target", "cube", "world", place_xyz, [0.2, 0.2, 0.1], f"Place Zone {task_flow.get('place_target_id','unknown')}", "task-flow"),
+            _marker("release_point", "sphere", "world", place_xyz, [0.04, 0.04, 0.04], f"Release {task_flow.get('release_strategy','unknown')}", "task-flow"),
+            _marker("approach_vector", "arrow", "world", [pick_xyz[0], pick_xyz[1], pick_xyz[2] + 0.12], [0.12, 0.02, 0.02], f"Approach {task_flow.get('approach_distance_m','?')}m", "task-flow"),
+            _marker("retreat_vector", "arrow", "world", [pick_xyz[0], pick_xyz[1], pick_xyz[2] + 0.02], [0.10, 0.02, 0.02], f"Retreat {task_flow.get('retreat_distance_m','?')}m", "task-flow"),
+            _marker("task_flow_pick_to_place", "arrow", "world", pick_xyz, [max(0.05, abs(float(place_xyz[0]) - float(pick_xyz[0]))), 0.02, 0.02], "Pick → Grasp → Place → Release", "task-flow"),
+        ])
 
     builder_task_intent = cell.get('builder_task_intent') if isinstance(cell.get('builder_task_intent'), dict) else {}
     if builder_task_intent and (not builder_task_intent.get('pick') or not builder_task_intent.get('place')):
@@ -103,6 +131,7 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
         'safety_status': {'fake_hardware_default': bool(comm.get('fake_hardware_default', True)), 'require_operator_review': bool(comm.get('require_operator_review', False))},
         'preview_only': comm.get('runtime_mode')=='preview_only' or bool(cell.get('preview_only', False)),
         'runtime_blocked': comm.get('runtime_mode')=='preview_only',
+        'safety_banner_present': True,
         'warnings': warnings,
         'approximate_placements': approx,
         'task_flow_summary': task_flow or {},
@@ -117,7 +146,8 @@ def gen_preview(cell: dict[str, Any], env: dict[str, Any] | None, title: str, ta
     if task_flow:
         task_flow_html = f"<h2>Task Flow</h2><pre>{html.escape(json.dumps(task_flow, indent=2))}</pre>"
     html_doc=f"<!doctype html><html><body><h1>{html.escape(title)}</h1><p>Offline static preview approximation (not collision/safety validation).</p>{task_flow_html}{svg}<pre>{html.escape(json.dumps(summary, indent=2))}</pre></body></html>"
-    return svg, html_doc, summary
+    marker_payload = {"schema": "workcell_visual_markers/v1", "markers": markers, "marker_count": len(markers), "task_flow_marker_count": len([m for m in markers if m.get('category') == 'task-flow'])}
+    return svg, html_doc, summary, marker_payload
 
 
 def main()->int:
@@ -149,12 +179,13 @@ def main()->int:
             run=subprocess.run(cmd,capture_output=True,text=True,check=False)
             try: task_flow=json.loads(run.stdout) if run.stdout.strip() else {}
             except Exception: task_flow={}
-        svg, html_doc, summary=gen_preview(cell, env, a.title, task_flow)
+        svg, html_doc, summary, marker_payload=gen_preview(cell, env, a.title, task_flow)
         if a.environment_layout and not a.environment_layout.exists():
             summary.setdefault("warnings", []).append("environment_layout path missing; used approximate/default placement")
         (a.output_dir/'static_preview.svg').write_text(svg, encoding='utf-8')
         (a.output_dir/'static_preview.html').write_text(html_doc, encoding='utf-8')
         (a.output_dir/'static_preview_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
+        (a.output_dir/'visual_markers.json').write_text(json.dumps(marker_payload, indent=2)+'\n', encoding='utf-8')
         if a.json:
             print(json.dumps(summary, indent=2))
         return 0

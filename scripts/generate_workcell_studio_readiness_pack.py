@@ -71,7 +71,7 @@ def main()->int:
     if recipe.exists():
         static_preview_cmd += ['--task-recipe', str(recipe)]
     rc,sp=step('static_preview',static_preview_cmd)
-    art['static_preview']={'svg':str(paths['preview']/'static_preview.svg'),'html':str(paths['preview']/'static_preview.html'),'summary':str(paths['preview']/'static_preview_summary.json')}; results['static_preview_status']='PASS' if rc==0 else 'WARN'
+    art['static_preview']={'svg':str(paths['preview']/'static_preview.svg'),'html':str(paths['preview']/'static_preview.html'),'summary':str(paths['preview']/'static_preview_summary.json'),'markers':str(paths['preview']/'visual_markers.json')}; results['static_preview_status']='PASS' if rc==0 else 'WARN'
     recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
     req=paths['plan']/'offline_plan_preview_request.yaml'
     session=paths['plan']/'rviz_moveit_plan_preview_session.json'

@@ -77,3 +77,20 @@ Then inspect `/tmp/golden_builder_demo/golden_builder_demo_summary.json` for:
 If a preview command is present, run it manually only after sourcing ROS/workspace and only in fake hardware mode. The golden demo itself does not launch ROS, does not call MoveIt planning services, and does not command real robot motion.
 
 This preview demonstrates visualization/metadata readiness only. It is not proof of real hardware commissioning readiness.
+
+## 7) Golden demo visual markers and preview meaning
+
+The golden readiness demo now emits `preview/visual_markers.json` and records a `visual_preview` section in `golden_builder_demo_summary.json`.
+
+Marker groups:
+- **layout markers**: robot base, table/support surface, camera pose.
+- **task-flow markers**: pick zone/source, grasp point, place zone/target, release point, approach vector, retreat vector, and pick→place flow arrow.
+- **safety markers/metadata**: fake hardware + offline preview + no motion + no runtime execution constraints.
+
+Open the static preview and dashboard manually:
+- `preview/static_preview.html`
+- `readiness_dashboard.html`
+
+Use the RViz/MoveIt preview command manually from the summary only after sourcing ROS 2/workspace. The demo itself does **not** auto-launch RViz, does **not** call MoveIt planning services, and does **not** command robot motion.
+
+Visual preview artifacts are communication aids and do **not** certify real-hardware commissioning readiness.
