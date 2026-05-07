@@ -33,7 +33,7 @@ def _dump(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding='utf-8')
 
 def _default(scene_package: str) -> dict[str, Any]:
-    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"destination","id":"bin_main"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_main"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
@@ -72,8 +72,15 @@ def main() -> int:
     payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source})
     payload['pick'].setdefault('object_filter',{}).update({'class_id':a.object_class,'color':a.object_color})
     payload.setdefault('grasp',{}).update({'strategy_ref':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
+    payload.setdefault('pick',{}).setdefault('source',{}).setdefault('type', 'zone')
     payload.setdefault('place',{}).setdefault('target',{}).update({'id':a.place_target})
+    payload['place'].setdefault('target',{}).setdefault('type', 'bin')
     payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
+    payload.setdefault('routing', {})['rules'] = [{
+        'id': 'route_any_to_selected_place',
+        'when': {'object_class': a.object_class, 'object_color': a.object_color},
+        'place_target': a.place_target,
+    }]
     payload['safety']={'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False}
     _dump(out, payload)
     val={'status':'SKIP'}

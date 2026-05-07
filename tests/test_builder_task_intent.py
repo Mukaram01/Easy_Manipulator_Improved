@@ -15,6 +15,8 @@ def test_missing_pick_fails():
 
 def test_missing_place_fails():
     r=_run('builder_task_intent_missing_place.yaml'); assert r.returncode!=0
+    payload=json.loads(r.stdout)
+    assert "Place target is not selected." in payload.get("errors", [])
 
 def test_unknown_grasp_warns():
     p=REPO_ROOT/'tests'/'fixtures'/'builder_task_intent_valid.yaml'

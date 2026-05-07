@@ -1,0 +1,101 @@
+scene:
+  name: ur5_2f_builder_pick_place_demo
+
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: base_link
+  ee_link: gripper_base_link
+  home_named_target: home
+
+end_effector:
+  type: finger
+  brand: robotiq_85_gripper
+  grasp_frame: gripper_base_link
+  allowed_touch_links:
+    - gripper_base_link
+    - gripper_finger1_knuckle_link
+    - gripper_finger2_knuckle_link
+    - gripper_finger1_finger_link
+    - gripper_finger2_finger_link
+    - gripper_finger1_inner_knuckle_link
+    - gripper_finger2_inner_knuckle_link
+    - gripper_finger1_finger_tip_link
+    - gripper_finger2_finger_tip_link
+
+environment:
+  support_surface_link: table
+
+perception:
+  input_frame_options:
+    - world
+    - base_link
+
+self_test:
+  # Commissioning defaults for deterministic offline checks.
+  # Tune these values for each physical workcell before production.
+  enabled: true
+  object:
+    id: commissioning_box
+    shape: box
+    dimensions: [0.05, 0.05, 0.05]
+    frame_id: world
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    attributes:
+      class: "part"
+      colour: "red"
+      shape: "box"
+      material: "plastic"
+  expected:
+    min_grasp_candidates: 1
+    allow_simulated_execution: true
+
+task_recipe:
+  # Future runtime/UI contract example plus commissioning defaults.
+  # Metadata-only in this release: validation/reporting only.
+  id: colour_sort_demo
+  name: Colour Sort Demo
+  type: sort
+  enabled: true
+  inputs:
+    perception_source: epd
+    required_attributes: [class, colour, shape]
+  pick:
+    object_source: perception
+    grasp_strategy: auto
+    allowed_grasp_methods: [finger]
+  decision_rules:
+    - id: red_to_bin_a
+      when:
+        attribute: colour
+        equals: red
+      destination: bin_a
+    - id: blue_to_bin_b
+      when:
+        attribute: colour
+        equals: blue
+      destination: bin_b
+    - id: default_reject
+      when:
+        default: true
+      destination: reject_bin
+  destinations:
+    - id: bin_a
+      frame_id: world
+      pose_xyz: [0.35, -0.35, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: bin_b
+      frame_id: world
+      pose_xyz: [0.35, 0.35, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: place
+    - id: reject_bin
+      frame_id: world
+      pose_xyz: [0.20, 0.0, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+      action: reject
+  expected:
+    allow_offline_validation: true
+    min_valid_destinations: 1
