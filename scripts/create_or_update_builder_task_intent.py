@@ -32,6 +32,48 @@ def _dump(path: Path, payload: dict[str, Any]) -> None:
     else:
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding='utf-8')
 
+def _readable_label(identifier: str) -> str:
+    return " ".join(part.capitalize() for part in str(identifier).replace("-", "_").split("_") if part)
+
+def _extract_label_map(payload: dict[str, Any]) -> dict[str, str]:
+    label_map: dict[str, str] = {}
+    for key in ("zones", "targets", "objects", "assets"):
+        items = payload.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            label = item.get("label") or item.get("name")
+            if item_id and isinstance(label, str) and label.strip():
+                label_map[str(item_id)] = label.strip()
+    meta = payload.get("metadata")
+    if isinstance(meta, dict):
+        labels = meta.get("labels")
+        if isinstance(labels, dict):
+            for key, value in labels.items():
+                if key and isinstance(value, str) and value.strip():
+                    label_map[str(key)] = value.strip()
+    return label_map
+
+def _resolve_scene_label(scene_package: Path, target_id: str) -> tuple[str, bool]:
+    candidates = [
+        scene_package / "generated" / "environment_layout.yaml",
+        scene_package / "exported" / "environment_layout.yaml",
+        scene_package / "workcell_builder_metadata.yaml",
+        scene_package / "scene_metadata.yaml",
+        scene_package / "environment.yaml",
+    ]
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        payload = _load(candidate)
+        label = _extract_label_map(payload).get(target_id)
+        if label:
+            return label, True
+    return _readable_label(target_id), False
+
 def _default(scene_package: str) -> dict[str, Any]:
     return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview"},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
@@ -72,11 +114,15 @@ def main() -> int:
     payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type})
     source_type = {'epd_detected_object':'perception','epd_replay':'replay_object'}.get(a.pick_source_type, a.pick_source_type)
     payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': source_type})
+    pick_label, pick_resolved = _resolve_scene_label(a.scene_package, a.pick_source)
+    payload['pick']['source']['label'] = pick_label
     payload['pick'].setdefault('object_filter',{}).update({'class_id':a.object_class,'color':a.object_color})
     payload.setdefault('grasp',{}).update({'strategy_ref':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
     
     payload.setdefault('place',{}).setdefault('target',{}).update({'id':a.place_target})
     payload['place'].setdefault('target',{}).setdefault('type', 'place_target')
+    place_label, place_resolved = _resolve_scene_label(a.scene_package, a.place_target)
+    payload['place']['target']['label'] = place_label
     payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
     payload.setdefault('routing', {})['rules'] = [{
         'id': 'route_any_to_selected_place',
@@ -88,7 +134,12 @@ def main() -> int:
     val={'status':'SKIP'}
     if a.validate:
         val = validate_intent(out, a.scene_package)
-    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'pick_source_type':source_type,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety']}
+    warnings: list[str] = []
+    if not pick_resolved:
+        warnings.append(f"pick source label metadata missing for '{a.pick_source}', derived readable label used")
+    if not place_resolved:
+        warnings.append(f"place target label metadata missing for '{a.place_target}', derived readable label used")
+    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'pick_source_type':source_type,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety'],'warnings':warnings}
     print(json.dumps(summary, indent=2) if a.json else f'Wrote {out}')
     return 0 if (not a.validate or val.get('status')!='FAIL') else 1
 

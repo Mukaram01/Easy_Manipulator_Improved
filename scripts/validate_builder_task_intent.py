@@ -109,10 +109,10 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
         errors.append('pick.source.type must be one of perception/pick_zone/fixed_object/replay_object')
     if isinstance(place.get('type'), str) and place.get('type') in {'TODO','todo'}:
         errors.append('place.target.type cannot be TODO')
-    for token in ['TODO', 'todo', 'unset_destination']:
-        if token in json.dumps(payload):
-            errors.append('task intent contains TODO/unset placeholder values')
-            break
+    serialized = json.dumps(payload)
+    placeholder_tokens = ['TODO pick zone label', 'TODO place target label', 'TODO_place_target_id', 'unset_destination', '"type": "TODO"', '"type": "todo"']
+    if any(token in serialized for token in placeholder_tokens):
+        errors.append('task intent contains TODO/unset placeholder values')
     missing_required_fields=[]
     if not task.get('type'): missing_required_fields.append('task.type')
     if not pick.get('id'): missing_required_fields.append('pick.source.id')

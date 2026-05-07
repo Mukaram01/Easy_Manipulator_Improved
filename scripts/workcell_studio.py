@@ -555,6 +555,14 @@ def generate_readiness_pack(args: argparse.Namespace) -> int:
         if flag: cmd.append(name)
     run=subprocess.run(cmd, capture_output=True, text=True, check=False)
     print(run.stdout if run.stdout else run.stderr)
+    try:
+        payload = json.loads(run.stdout) if run.stdout.strip() else {}
+    except Exception:
+        payload = {}
+    result = str(payload.get("result", "")).upper()
+    status = str(payload.get("status", "")).upper()
+    if run.returncode == 2 and (result in {"PASS", "WARN", "PARTIAL"} or status in {"PASS", "WARN", "PARTIAL"} or payload.get("manifest_path")):
+        return 0 if (result == "PASS" or status == "PASS") else 1
     return run.returncode
 
 def validate_readiness_pack(args: argparse.Namespace) -> int:
