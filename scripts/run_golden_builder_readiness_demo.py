@@ -130,6 +130,14 @@ def main() -> int:
             "warnings": (manifest_json.get("summary", {}) if isinstance(manifest_json.get("summary", {}), dict) else {}).get("warnings", []),
             "blockers": (manifest_json.get("summary", {}) if isinstance(manifest_json.get("summary", {}), dict) else {}).get("blockers", []),
         },
+        "perception_bridge": {
+            "emd_bridge_payload_preview": artifacts.get("emd_bridge_payload_preview"),
+            "perception_bridge_preview_report": artifacts.get("perception_bridge_preview_report"),
+            "status": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("status", "bridge_preview_missing"),
+            "warnings": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("warnings", []),
+            "blockers": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("blockers", []),
+            "safety_flags": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("safety_flags", {}),
+        },
         "safety": {
             "use_fake_hardware": True,
             "real_hardware_enabled": False,

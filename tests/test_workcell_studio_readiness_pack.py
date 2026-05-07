@@ -13,6 +13,10 @@ def test_generate_and_validate_readiness_pack(tmp_path: Path):
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["schema"] == "workcell_studio_readiness_pack/v1"
     assert payload["safety"]["motion_command_sent"] is False
+    assert "perception_bridge" in payload
+    assert payload["perception_bridge"]["status"] in ("bridge_preview_ready", "bridge_preview_partial", "bridge_preview_blocked")
+    if "emd_bridge_payload_preview" in payload["artifacts"]:
+        assert Path(payload["artifacts"]["emd_bridge_payload_preview"]).exists()
     vrun = subprocess.run([sys.executable, "scripts/workcell_studio.py", "validate-readiness-pack", "--manifest", str(manifest), "--json"], capture_output=True, text=True, check=False)
     assert vrun.returncode == 0
 
@@ -122,3 +126,5 @@ def test_pack_visual_markers_and_safety_banner(tmp_path: Path):
     assert "pick_zone_source" in names and "place_zone_target" in names
     preview_summary = json.loads((out / "preview" / "static_preview_summary.json").read_text(encoding="utf-8"))
     assert preview_summary.get("safety_banner_present") is True
+    dashboard = (out / "readiness_dashboard.html").read_text(encoding="utf-8")
+    assert "Perception → Task Bridge Preview" in dashboard

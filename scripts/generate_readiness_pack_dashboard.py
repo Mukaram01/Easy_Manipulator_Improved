@@ -91,6 +91,10 @@ def main() -> int:
     summary = m.get('summary', {}) if isinstance(m.get('summary'), dict) else {}
     src = m.get('source', {}) if isinstance(m.get('source'), dict) else {}
     perception = m.get('perception', {}) if isinstance(m.get('perception'), dict) else {}
+    perception_bridge = m.get('perception_bridge', {}) if isinstance(m.get('perception_bridge'), dict) else {}
+    bridge_payload = _load_structured(Path(arts.get('emd_bridge_payload_preview', ''))) if arts.get('emd_bridge_payload_preview') else {}
+    bridge_object = bridge_payload.get('selected_object', {}) if isinstance(bridge_payload.get('selected_object'), dict) else {}
+    bridge_task = bridge_payload.get('task_bridge', {}) if isinstance(bridge_payload.get('task_bridge'), dict) else {}
 
     pack_dir = a.manifest.parent
     dashboard_dir = a.output.parent
@@ -119,6 +123,8 @@ def main() -> int:
         ('RViz/MoveIt plan preview session', arts.get('rviz_moveit_plan_preview_session', '')),
         ('smoke report', arts.get('fake_hardware_smoke_launch_report', '')),
         ('planning scene readiness report', arts.get('planning_scene_readiness_report', '')),
+        ('emd bridge payload preview', arts.get('emd_bridge_payload_preview', '')),
+        ('perception bridge preview report', arts.get('perception_bridge_preview_report', '')),
     ]
 
     preview_block = ''
@@ -148,6 +154,16 @@ def main() -> int:
 <li>No robot motion: <b>Yes</b></li>
 <li>No runtime execution: <b>Yes</b></li>
 <li>Status: <b>{_safe(perception.get('status','perception_missing'))}</b></li>
+</ul></div>
+<div class='panel'><h3>Perception → Task Bridge Preview</h3><ul>
+<li>Detected object label/class: {_safe(bridge_object.get('label', 'missing'))}</li>
+<li>Confidence: {_safe(bridge_object.get('confidence', 'missing'))}</li>
+<li>Route result: {_safe(bridge_task.get('routing_result', 'missing'))}</li>
+<li>Pick source: {_safe(bridge_task.get('pick_source', 'missing'))}</li>
+<li>Grasp strategy: {_safe(bridge_task.get('grasp_strategy', 'missing'))}</li>
+<li>Place target: {_safe(bridge_task.get('place_target', 'missing'))}</li>
+<li>Bridge preview status: <b>{_safe(perception_bridge.get('status', 'bridge_preview_missing'))}</b></li>
+<li>Safety: no robot motion / no runtime execution: <b>Yes</b></li>
 </ul></div>
 <div class='panel'><h3>Task flow: pick → grasp → place → release</h3><ul>
 <li>pick source: {_safe(tf.get('pick_source_id','missing'))}</li><li>grasp strategy: {_safe(tf.get('grasp_strategy','missing'))}</li><li>approach/retreat: {_safe(tf.get('approach_axis', tf.get('approach','missing')))}{_safe((' '+str(tf.get('approach_distance_m'))+'m') if tf.get('approach_distance_m') is not None else '')} / {_safe(tf.get('retreat_axis', tf.get('retreat','missing')))}{_safe((' '+str(tf.get('retreat_distance_m'))+'m') if tf.get('retreat_distance_m') is not None else '')}</li><li>place target: {_safe(tf.get('place_target_id','missing'))}</li><li>release strategy: {_safe(tf.get('release_strategy','missing'))}</li><li>routing rules: {_safe(tf.get('routing_rule_count', tf.get('routing_rules','missing')))}</li>
