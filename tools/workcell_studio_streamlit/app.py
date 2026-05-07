@@ -90,46 +90,38 @@ elif workflow == "Builder scene import":
 
 elif workflow == "Builder Task Intent":
     st.header("Builder Task Intent")
-    st.info("This defines robot task intent only. It does not command robot motion.")
-    scene_package = st.text_input("Scene package path", value="")
-    found = backend.find_builder_task_intent(scene_package) if scene_package else ""
-    task_path = st.text_input("Task intent YAML path", value=found or (str(Path(scene_package)/"generated"/"workcell_builder_task_intent.yaml") if scene_package else "workcell_builder_task_intent.yaml"))
-    if st.button("Load task intent"):
-        st.session_state["builder_task_intent"] = backend.load_builder_task_intent(task_path)
-    if st.button("Create default task intent"):
-        st.session_state["builder_task_intent"] = backend.default_builder_task_intent(Path(scene_package).name if scene_package else "")
-    data = st.session_state.get("builder_task_intent", backend.default_builder_task_intent())
-    data.setdefault("task", {})["id"] = st.text_input("Task ID", value=data.get("task", {}).get("id", "default_builder_task"))
-    data["task"]["type"] = st.text_input("Task type", value=data.get("task", {}).get("type", "pick_place"))
-    pick = data.setdefault("pick", {}).setdefault("source", {})
-    pick["id"] = st.text_input("Pick source ID", value=pick.get("id", "pick_zone_main"))
-    of = data.setdefault("pick", {}).setdefault("object_filter", {})
-    of["class_id"] = st.text_input("Object class", value=of.get("class_id", "any"))
-    of["color"] = st.text_input("Object color", value=of.get("color", "any"))
+    st.info("This defines task intent only. It does not command robot motion.")
+    scene_package = st.text_input("Scene package path", value="scenes/ur5_2f_test")
+    output_path = st.text_input("Task intent output path", value=str(Path(scene_package) / "generated" / "workcell_builder_task_intent.yaml") if scene_package else "")
+    if st.button("Discover scene targets"):
+        st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
+    targets = st.session_state.get("builder_targets", {})
+    st.json(targets)
     grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]
-    g = data.setdefault("grasp", {})
-    g["strategy_ref"] = st.selectbox("Grasp strategy", options=grasps, index=max(0, grasps.index(g.get("strategy_ref")) if g.get("strategy_ref") in grasps else 0)) if grasps else st.text_input("Grasp strategy", value=g.get("strategy_ref", "suction_top_basic"))
-    g["approach_axis"] = st.text_input("Approach axis", value=g.get("approach_axis", "z_down"))
-    g["approach_distance_m"] = st.number_input("Approach distance (m)", value=float(g.get("approach_distance_m", 0.1)))
-    g["retreat_axis"] = st.text_input("Retreat axis", value=g.get("retreat_axis", "z_up"))
-    g["retreat_distance_m"] = st.number_input("Retreat distance (m)", value=float(g.get("retreat_distance_m", 0.1)))
-    place = data.setdefault("place", {}).setdefault("target", {})
-    place["id"] = st.text_input("Place target ID", value=place.get("id", "bin_main"))
-    data.setdefault("place", {})["release_strategy"] = st.text_input("Release strategy", value=data.get("place", {}).get("release_strategy", "tool_release"))
-    if st.button("Save task intent"):
-        backend.save_builder_task_intent(task_path, data)
-        st.success(f"Saved: {task_path}")
-    if st.button("Validate task intent"):
-        result = backend.validate_builder_task_intent(task_path, scene_package if scene_package else None)
-        st.json(result.get("json") or result)
-    st.warning("This generates offline task recipe metadata only. It does not command robot motion.")
-    if st.button("Generate task recipe"):
-        out_recipe = str(Path(scene_package) / "generated" / "task_recipe_from_builder_intent.yaml") if scene_package else "/tmp/task_recipe_from_builder_intent.yaml"
-        result = backend.convert_builder_task_intent_to_task_recipe(task_path, out_recipe, scene_package if scene_package else None)
-        st.json(result.get("json") or result)
-        st.json(backend.summarize_task_recipe(out_recipe))
-    st.subheader("Safety metadata")
-    st.json(data.get("safety", {}))
+    pick_opts = targets.get("pick_sources") or ["pick_zone_main"]
+    place_opts = targets.get("place_targets") or ["bin_main"]
+    task_id = st.text_input("Task id", value="sorting_task_001")
+    task_type = st.text_input("Task type", value="pick_place")
+    pick_source = st.selectbox("Pick source", options=pick_opts)
+    place_target = st.selectbox("Place target", options=place_opts)
+    grasp = st.selectbox("Grasp strategy", options=grasps or ["finger_pinch_basic"])
+    object_class = st.text_input("Object class", value="any")
+    object_color = st.text_input("Object color", value="red")
+    approach_axis = st.text_input("Approach axis", value="z_down")
+    approach_dist = st.number_input("Approach distance (m)", value=0.12)
+    retreat_axis = st.text_input("Retreat axis", value="z_up")
+    retreat_dist = st.number_input("Retreat distance (m)", value=0.10)
+    release_strategy = st.text_input("Release strategy", value="tool_release")
+    c1,c2,c3,c4 = st.columns(4)
+    if c1.button("Save task intent"):
+        st.json(backend.create_or_update_builder_task_intent(scene_package, task_id, task_type, pick_source, place_target, grasp, output_path=output_path, approach_axis=approach_axis, approach_distance_m=approach_dist, retreat_axis=retreat_axis, retreat_distance_m=retreat_dist, release_strategy=release_strategy, object_class=object_class, object_color=object_color, validate=False).get("json") or {})
+    if c2.button("Validate task intent"):
+        st.json(backend.validate_builder_task_intent(output_path, scene_package).get("json") or {})
+    if c3.button("Generate task recipe"):
+        out_recipe = str(Path(scene_package)/"generated"/"task_recipe_from_builder_intent.yaml") if scene_package else "/tmp/task_recipe_from_builder_intent.yaml"
+        st.json(backend.convert_builder_task_intent_to_task_recipe(output_path, out_recipe, scene_package).get("json") or {})
+    if c4.button("Generate readiness pack"):
+        st.json(backend.generate_readiness_pack(scene_package, "/tmp/workcell_readiness_pack", "builder_intent_demo", validate=True, prepare_rviz_preview=False, smoke_dry_run=True).get("json") or {})
 
 if workflow == "Demo Gallery":
     st.header("Demo Gallery")

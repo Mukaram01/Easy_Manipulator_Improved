@@ -575,6 +575,23 @@ def generate_readiness_dashboard(args: argparse.Namespace) -> int:
     print(run.stdout if run.stdout else run.stderr)
     return run.returncode
 
+
+
+def list_builder_targets(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR/"list_builder_scene_authoring_targets.py"), "--scene-package", str(args.scene_package)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
+
+def author_builder_task(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR/"create_or_update_builder_task_intent.py"), "--scene-package", str(args.scene_package), "--task-id", args.task_id, "--task-type", args.task_type, "--pick-source", args.pick_source, "--place-target", args.place_target, "--grasp-strategy", args.grasp_strategy, "--approach-axis", args.approach_axis, "--approach-distance-m", str(args.approach_distance_m), "--retreat-axis", args.retreat_axis, "--retreat-distance-m", str(args.retreat_distance_m), "--release-strategy", args.release_strategy, "--object-class", args.object_class, "--object-color", args.object_color]
+    if args.output: cmd += ["--output", str(args.output)]
+    if args.validate: cmd.append("--validate")
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -699,6 +716,30 @@ def _build_parser() -> argparse.ArgumentParser:
     cc.add_argument("--allow-incompatible", action="store_true")
     cc.add_argument("--force", action="store_true")
     cc.set_defaults(func=create_cell)
+    lbt = sub.add_parser("list-builder-targets", help="List candidate builder scene authoring targets")
+    lbt.add_argument("--scene-package", type=Path, required=True)
+    lbt.add_argument("--json", action="store_true")
+    lbt.set_defaults(func=list_builder_targets)
+
+    abt = sub.add_parser("author-builder-task", help="Create or update builder task intent")
+    abt.add_argument("--scene-package", type=Path, required=True)
+    abt.add_argument("--task-id", required=True)
+    abt.add_argument("--task-type", required=True)
+    abt.add_argument("--pick-source", required=True)
+    abt.add_argument("--place-target", required=True)
+    abt.add_argument("--grasp-strategy", required=True)
+    abt.add_argument("--approach-axis", default="z_down")
+    abt.add_argument("--approach-distance-m", type=float, default=0.1)
+    abt.add_argument("--retreat-axis", default="z_up")
+    abt.add_argument("--retreat-distance-m", type=float, default=0.1)
+    abt.add_argument("--release-strategy", default="tool_release")
+    abt.add_argument("--object-class", default="any")
+    abt.add_argument("--object-color", default="any")
+    abt.add_argument("--output", type=Path)
+    abt.add_argument("--validate", action="store_true")
+    abt.add_argument("--json", action="store_true")
+    abt.set_defaults(func=author_builder_task)
+
     return parser
 
 def main() -> int:
