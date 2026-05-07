@@ -269,11 +269,19 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
 
 
 def _build_preview_bundle(scene_pkg: Path, output_dir: Path, summary: dict[str, Any], export_payload: dict[str, Any], preview_payload: dict[str, Any]) -> Path:
-    bundle_dir = output_dir / "preview_bundle"
+    bundle_dir = output_dir / "studio_pack"
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
     builder_export_summary = bundle_dir / "builder_export_summary.json"
     builder_export_summary.write_text(json.dumps(export_payload or {}, indent=2) + "\n", encoding="utf-8")
+
+    for name, src in {
+        "cell_definition.yaml": summary.get("cell_definition_path"),
+        "environment_layout.yaml": summary.get("environment_layout_path"),
+        "task_recipe.yaml": summary.get("generated_task_recipe_path"),
+    }.items():
+        if src and Path(str(src)).is_file():
+            shutil.copy2(Path(str(src)), bundle_dir / name)
 
     preview_svg_src = Path(summary.get("preview_svg", ""))
     preview_html_src = Path(summary.get("preview_html", ""))
@@ -292,12 +300,42 @@ def _build_preview_bundle(scene_pkg: Path, output_dir: Path, summary: dict[str, 
     readiness = str(summary.get("readiness_classification") or "unknown").upper()
     final = "FAIL" if readiness.startswith("FAIL") else ("WARN" if readiness.startswith("WARN") or missing or placeholders else "OK")
 
+    selected_assets = {
+        "robots": [((export_payload.get("builder_task_intent", {}) or {}).get("pick", {}) or {}).get("source", {}).get("id")],
+        "grippers": [((export_payload.get("builder_task_intent", {}) or {}).get("grasp", {}) or {}).get("strategy_ref")],
+        "tools": [summary.get("grasp_strategy")],
+        "sensors": ["adapter_metadata_only"],
+        "environment_assets": ["environment_layout.yaml"],
+        "objects": [a.get("id") for a in (((preview_payload.get("task_flow_summary", {}) or {}).get("objects", [])) if isinstance((preview_payload.get("task_flow_summary", {}) or {}).get("objects", []), list) else [])],
+        "custom_stls": [],
+    }
+    selected_assets = {k: [x for x in v if x] for k, v in selected_assets.items()}
+    custom_stl_dir = bundle_dir / "custom_stl_assets"
+    custom_stl_dir.mkdir(parents=True, exist_ok=True)
+    for stl in scene_pkg.glob("**/*.stl"):
+        if "generated" in stl.parts:
+            continue
+        rel = stl.relative_to(scene_pkg)
+        target = custom_stl_dir / rel.name
+        shutil.copy2(stl, target)
+        selected_assets["custom_stls"].append(str(target.relative_to(bundle_dir)))
+    (bundle_dir / "selected_assets.json").write_text(json.dumps(selected_assets, indent=2) + "\n", encoding="utf-8")
+
+    compatibility_report = {
+        "result": "PASS" if final in {"OK", "WARN"} else "FAIL",
+        "fake_hardware_default": True,
+        "real_hardware_enabled_by_default": False,
+        "perception_mode": "future_adapter_metadata_only",
+    }
+    (bundle_dir / "compatibility_report.json").write_text(json.dumps(compatibility_report, indent=2) + "\n", encoding="utf-8")
+
     readiness_md = bundle_dir / "readiness_summary.md"
     readiness_md.write_text(
         "# Readiness Summary\n\n"
         f"- Final readiness: **{final}**\n"
         "- Hardware mode default: `fake_hardware`\n"
         "- No-motion safety statement: `No launch, motion commands, or MoveIt services were executed by export.`\n"
+        "- Safety defaults: `Offline/fake hardware first; no real hardware enabled by default.`\n"
         f"- Missing fields: `{missing or ['none']}`\n"
         f"- Unsupported placeholders: `{placeholders or ['none']}`\n",
         encoding="utf-8",
@@ -329,6 +367,12 @@ def _build_preview_bundle(scene_pkg: Path, output_dir: Path, summary: dict[str, 
     ]
     (bundle_dir / "generated_launch_commands.md").write_text("\n".join(launch_lines) + "\n", encoding="utf-8")
 
+    summary_payload = {
+        "bundle_type": "workcell_studio_pack",
+        "bundle_dir": str(bundle_dir),
+        "generated_artifacts": sorted([p.name for p in bundle_dir.iterdir()]),
+    }
+    (bundle_dir / "builder_export_summary.json").write_text(json.dumps({**(export_payload or {}), "studio_pack": summary_payload}, indent=2) + "\n", encoding="utf-8")
     return bundle_dir
 def _scene_name(path: Path) -> str:
     return path.name
