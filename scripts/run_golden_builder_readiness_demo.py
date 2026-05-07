@@ -138,6 +138,14 @@ def main() -> int:
             "blockers": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("blockers", []),
             "safety_flags": (manifest_json.get("perception_bridge", {}) if isinstance(manifest_json.get("perception_bridge", {}), dict) else {}).get("safety_flags", {}),
         },
+        "plan_preview_handoff": {
+            "bridge_payload_plan_preview_handoff": artifacts.get("bridge_payload_plan_preview_handoff"),
+            "status": (manifest_json.get("plan_preview_handoff", {}) if isinstance(manifest_json.get("plan_preview_handoff", {}), dict) else {}).get("status", "plan_preview_blocked"),
+            "command": (manifest_json.get("plan_preview_handoff", {}) if isinstance(manifest_json.get("plan_preview_handoff", {}), dict) else {}).get("command"),
+            "warnings": (manifest_json.get("plan_preview_handoff", {}) if isinstance(manifest_json.get("plan_preview_handoff", {}), dict) else {}).get("warnings", []),
+            "blockers": (manifest_json.get("plan_preview_handoff", {}) if isinstance(manifest_json.get("plan_preview_handoff", {}), dict) else {}).get("blockers", []),
+            "safety_flags": (manifest_json.get("plan_preview_handoff", {}) if isinstance(manifest_json.get("plan_preview_handoff", {}), dict) else {}).get("safety_flags", {}),
+        },
         "safety": {
             "use_fake_hardware": True,
             "real_hardware_enabled": False,

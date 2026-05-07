@@ -107,3 +107,30 @@ This artifact is **preview-only** and explicitly sets: dry-run, no robot motion,
   - keep `fallback_to_legacy_release:=true` to safely recover when destination pose is missing, malformed, wrong-frame, or unreachable.
 - synthesized grasp poses are conservative first-pass placeholders.
 - this bridge is not full production sequencing or a safety certification layer.
+
+## Bridge payload → RViz/MoveIt plan-preview handoff (guarded offline)
+
+The golden readiness flow now emits `generated/bridge_payload_plan_preview_handoff.json`.
+
+What it means:
+- it links the offline `generated/emd_bridge_payload_preview.json` artifact to the existing fake-hardware RViz/MoveIt preview metadata,
+- it may provide a **manual-only** preview command when launch metadata exists,
+- it preserves strict safety flags (`fake_hardware_default=true`, `real_hardware_enabled=false`, `motion_command_sent=false`, `runtime_execution_called=false`, `moveit_plan_service_called=false`).
+
+Manual preview command usage (example shape, generated per-scene):
+
+```bash
+ros2 launch <scene_pkg> demo.launch.py use_fake_hardware:=true launch_rviz:=true \
+  explicit_release_pose_source:=bridge_payload \
+  explicit_release_pose_bridge_payload_path:=<scene>/generated/emd_bridge_payload_preview.json
+```
+
+What this proves:
+- the bridge payload preview is structured well enough to hand into plan-preview metadata,
+- fake-hardware-first preview command generation is available where launch metadata is known.
+
+What this does **not** prove:
+- no runtime execution path was called,
+- no robot motion was executed,
+- no MoveIt planning service call was executed,
+- it is **not** certification of real-hardware readiness.

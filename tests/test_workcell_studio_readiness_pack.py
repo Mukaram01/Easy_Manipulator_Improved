@@ -15,6 +15,7 @@ def test_generate_and_validate_readiness_pack(tmp_path: Path):
     assert payload["safety"]["motion_command_sent"] is False
     assert "perception_bridge" in payload
     assert payload["perception_bridge"]["status"] in ("bridge_preview_ready", "bridge_preview_partial", "bridge_preview_blocked")
+    assert payload["plan_preview_handoff"]["status"] in ("plan_preview_ready", "plan_preview_partial", "plan_preview_blocked")
     if "emd_bridge_payload_preview" in payload["artifacts"]:
         assert Path(payload["artifacts"]["emd_bridge_payload_preview"]).exists()
     vrun = subprocess.run([sys.executable, "scripts/workcell_studio.py", "validate-readiness-pack", "--manifest", str(manifest), "--json"], capture_output=True, text=True, check=False)
@@ -128,3 +129,4 @@ def test_pack_visual_markers_and_safety_banner(tmp_path: Path):
     assert preview_summary.get("safety_banner_present") is True
     dashboard = (out / "readiness_dashboard.html").read_text(encoding="utf-8")
     assert "Perception → Task Bridge Preview" in dashboard
+    assert "Bridge Payload → RViz/MoveIt Plan Preview" in dashboard

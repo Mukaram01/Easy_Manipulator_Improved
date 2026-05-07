@@ -180,6 +180,22 @@ def main()->int:
         rc,rv=step('rviz_session',[sys.executable,str(SCRIPT_DIR/'generate_rviz_moveit_plan_preview_session.py'),'--scene-package',str(scene),'--plan-preview-request',str(req),'--output-dir',str(paths['plan']),'--allow-missing-launch','--json'])
         art['rviz_moveit_plan_preview_session']=str(session); results['rviz_preview_session_status']='PASS' if rc==0 else 'WARN'
     else: results['rviz_preview_session_status']='WARN'
+
+    handoff_path = scene / 'generated' / 'bridge_payload_plan_preview_handoff.json'
+    if bridge_payload.exists():
+        rc, handoff = step('bridge_plan_preview_handoff', [
+            sys.executable, str(SCRIPT_DIR / 'generate_bridge_payload_plan_preview_handoff.py'),
+            '--bridge-payload', str(bridge_payload),
+            '--rviz-session', str(session),
+            '--scene-package', str(scene),
+            '--output', str(handoff_path),
+            '--json',
+        ])
+        art['bridge_payload_plan_preview_handoff'] = str(handoff_path)
+        results['bridge_payload_plan_preview_handoff_status'] = 'PASS' if rc == 0 else 'WARN'
+    else:
+        results['bridge_payload_plan_preview_handoff_status'] = 'WARN'
+
     if a.smoke_execute: safety['smoke_execute_used']=True
     if a.smoke_dry_run or a.smoke_execute:
         cmd=[sys.executable,str(SCRIPT_DIR/'run_fake_hardware_smoke_launch.py'),'--session',str(session),'--output-dir',str(paths['smoke']),'--timeout-s',str(a.smoke_timeout_s),'--json', '--execute' if a.smoke_execute else '--dry-run']
@@ -207,7 +223,24 @@ def main()->int:
         'blockers': (perception_bridge_report.get('blockers') if isinstance(perception_bridge_report, dict) else []),
         'safety_flags': {'real_hardware_enabled': False, 'motion_command_sent': False, 'runtime_execution_called': False, 'moveit_plan_service_called': False, 'preview_only': True},
     }
-    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section,'perception_bridge':perception_bridge_section}
+
+    handoff_report = _read_json(handoff_path) if handoff_path.exists() else {}
+    plan_preview_handoff_section = {
+        'handoff_path': str(handoff_path),
+        'status': handoff_report.get('status', 'plan_preview_blocked'),
+        'command': handoff_report.get('preview_command'),
+        'warnings': handoff_report.get('warnings', []),
+        'blockers': handoff_report.get('blockers', []),
+        'safety_flags': handoff_report.get('safety_flags', {
+            'fake_hardware_default': True,
+            'real_hardware_enabled': False,
+            'motion_command_sent': False,
+            'runtime_execution_called': False,
+            'moveit_plan_service_called': False,
+        }),
+    }
+
+    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section,'perception_bridge':perception_bridge_section,'plan_preview_handoff':plan_preview_handoff_section}
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
 
