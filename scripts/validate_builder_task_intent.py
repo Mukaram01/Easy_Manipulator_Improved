@@ -30,6 +30,21 @@ def _exists_in_scene(scene: Path, token: str)->bool:
             return True
     return False
 
+def _load_scene_layout_ids(scene: Path) -> set[str]:
+    ids: set[str] = set()
+    for rel in ["generated/environment_layout.yaml", "environment_layout.yaml", "workcell_builder_metadata.yaml"]:
+        p = scene / rel
+        if not p.is_file():
+            continue
+        payload = _load(p)
+        for key in ("zones", "targets", "objects", "assets"):
+            items = payload.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict) and item.get("id"):
+                        ids.add(str(item.get("id")))
+    return ids
+
 def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=None)->dict[str,Any]:
     errors=[]; warnings=[]
     payload=_load(path)
@@ -67,8 +82,19 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     if scene_package:
         if not (scene_package/'package.xml').is_file(): errors.append('scene package missing package.xml')
         if not (scene_package/'environment.yaml').is_file(): warnings.append('scene package missing environment.yaml')
-        if pick.get('id') and not _exists_in_scene(scene_package,str(pick['id'])): warnings.append(f"pick.source.id '{pick['id']}' could not be verified in scene metadata")
-        if place.get('id') and not _exists_in_scene(scene_package,str(place['id'])): warnings.append(f"place.target.id '{place['id']}' could not be verified in scene metadata")
+        scene_ids = _load_scene_layout_ids(scene_package)
+        if pick.get('id') and str(pick['id']) not in scene_ids and not _exists_in_scene(scene_package,str(pick['id'])):
+            warnings.append(f"pick.source.id '{pick['id']}' could not be verified in scene metadata")
+        if place.get('id') and str(place['id']) not in scene_ids and not _exists_in_scene(scene_package,str(place['id'])):
+            warnings.append(f"place.target.id '{place['id']}' could not be verified in scene metadata")
+        routing = payload.get('routing') if isinstance(payload.get('routing'), dict) else {}
+        rules = routing.get('rules') if isinstance(routing.get('rules'), list) else []
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            destination = rule.get('destination')
+            if isinstance(destination, str) and destination and destination not in scene_ids:
+                warnings.append(f"routing rule destination '{destination}' could not be verified in scene metadata")
     missing_required_fields=[]
     if not task.get('type'): missing_required_fields.append('task.type')
     if not pick.get('id'): missing_required_fields.append('pick.source.id')

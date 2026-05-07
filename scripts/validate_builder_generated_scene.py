@@ -83,6 +83,7 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         warnings.append("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh")
 
     task_intent_report = {}
+    task_flow_summary: dict[str, Any] = {}
     task_intent_check = {"check": "generated/workcell_builder_task_intent.yaml present", "ok": False, "optional": True}
     task_intent_path = _find_task_intent(scene_path)
     if task_intent_path:
@@ -107,6 +108,14 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
                 errors.extend(task_intent_report.get("errors", []))
         elif task_intent_report.get("status") == "WARN":
             warnings.extend(task_intent_report.get("warnings", []))
+        flow_cmd = ["python3", str(SCRIPT_DIR / "summarize_task_flow.py"), "--task-intent", str(task_intent_path), "--environment-layout", str(exported_layout if exported_layout.is_file() else (scene_path / "environment_layout.yaml")), "--json"]
+        flow_run = subprocess.run(flow_cmd, capture_output=True, text=True, check=False)
+        task_flow_summary = json.loads(flow_run.stdout) if flow_run.stdout.strip() else {}
+        vr = task_flow_summary.get("visual_resolution", {}) if isinstance(task_flow_summary, dict) else {}
+        if not vr.get("pick_coordinates_resolved", False):
+            warnings.append("pick coordinates could not be resolved from scene/layout metadata")
+        if not vr.get("place_coordinates_resolved", False):
+            warnings.append("place coordinates could not be resolved from scene/layout metadata")
     else:
         warnings.append("Task intent missing: physical scene only.")
     checks.append(task_intent_check)
@@ -150,6 +159,7 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
         "errors": errors,
         "export_validation": export_validation,
         "task_intent": task_intent_report,
+        "task_flow_summary": task_flow_summary,
         "discovered": {
             "robot_name": robot.get("name"),
             "end_effector_name": ee.get("name"),

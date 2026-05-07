@@ -37,3 +37,13 @@ safety:
 
 ## Task Flow Summary
 Builder task intent validation and preview now expose readiness classifications and missing fields.
+
+
+## Readiness levels
+
+- **Visual scene ready**: robot/support assets and metadata load; no runtime calls.
+- **Task-planning ready**: pick/place IDs resolve to authored layout coordinates and routing rules resolve.
+- **Grasp-flow preview ready**: offline preview artifacts (task flow, bridge payload previews, RViz prep) are generated in fake-hardware mode.
+- **Real hardware ready**: separate commissioning stage, outside this metadata-only workflow.
+
+> `run_grasp_execution` remains a manual next step only when supported by the target cell/runtime.

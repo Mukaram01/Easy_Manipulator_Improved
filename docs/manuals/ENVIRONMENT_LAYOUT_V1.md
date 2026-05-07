@@ -82,3 +82,15 @@ No runtime ROS launch behavior, MoveIt planning behavior, grasp execution behavi
 ## Builder scene exports for Workcell Studio
 
 `workcell_builder` remains the primary visual workflow. Generated scenes can now export portable Workcell Studio source files using `scripts/export_builder_scene_to_cell_definition.py`. The export writes `generated/cell_definition.yaml`, `generated/environment_layout.yaml`, and `generated/builder_export_summary.json`. These files are for offline commissioning and backend tooling, and are not proof of reachability or runtime safety. Keep fake-hardware-first defaults and runtime send disabled unless separately commissioned.
+
+
+## Authoring pick/place geometry for builder exports
+
+To make Workcell Studio previews resolve exact coordinates (no fallback), author these entities with stable IDs:
+
+- `zones[]`: pick zones (`id`, `label`, `frame`, `pose.xyz`, `pose.rpy`, `dimensions`)
+- `targets[]`: place targets/bins (`id`, `label`, `frame`, `pose.xyz`, `pose.rpy`, `dimensions`)
+- `objects[]`: objects (`id`, `class`/`label`/`color`, `frame`, `pose`, `dimensions` or mesh reference)
+- optional `camera` pose for preview/readiness reporting
+
+Builder task intent and routing should reference these IDs directly (for example `pick_zone_main` and `bin_red`).

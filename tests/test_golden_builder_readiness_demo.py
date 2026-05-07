@@ -4,6 +4,8 @@ import json
 import shutil
 import subprocess
 import sys
+
+import yaml
 from pathlib import Path
 
 
@@ -36,9 +38,18 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     marker_names = {m.get("name") for m in marker_payload.get("markers", []) if isinstance(m, dict)}
     assert "pick_zone_source" in marker_names
     assert "place_zone_target" in marker_names
+    exported_layout = yaml.safe_load(Path(manifest["artifacts"]["environment_layout"]).read_text(encoding="utf-8"))
+    assert "pick_zone_main" in json.dumps(exported_layout)
+    assert "bin_red" in json.dumps(exported_layout)
+    assert "red_box_001" in json.dumps(exported_layout)
     assert any(str(name).startswith("task_flow") for name in marker_names)
 
     assert manifest["results"]["task_intent_status"] == "PASS"
+    ti = json.loads(Path(manifest["artifacts"]["task_flow_summary"]).read_text(encoding="utf-8"))
+    assert ti.get("pick_source_id") == "pick_zone_main"
+    assert ti.get("place_target_id") == "bin_red"
+    assert ti.get("visual_resolution", {}).get("approximate_coordinates_used") is False
+    assert "TODO" not in json.dumps(ti)
     assert manifest["results"].get("classification") != "physical_scene_only"
     assert manifest["safety"]["real_hardware_enabled"] is False
     assert manifest["safety"]["motion_command_sent"] is False

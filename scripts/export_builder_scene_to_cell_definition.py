@@ -241,6 +241,10 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         environment_layout["zones"] = authored_layout["zones"]
     if isinstance(authored_layout.get("targets"), list):
         environment_layout["targets"] = authored_layout["targets"]
+    if isinstance(authored_layout.get("objects"), list):
+        environment_layout["objects"] = authored_layout["objects"]
+    if isinstance(authored_layout.get("camera"), dict):
+        environment_layout["camera"] = authored_layout["camera"]
 
     cell_def = {
         "schema_version": "cell_definition/v1",
