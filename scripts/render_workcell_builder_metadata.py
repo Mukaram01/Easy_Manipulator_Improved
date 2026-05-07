@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.workcell_builder_capability_catalog import load_workcell_capability_catalog
+from scripts.workcell_builder_grasp_strategy import normalize_grasp_strategy
 
 
 def _norm(text: str | None) -> str:
@@ -29,7 +30,7 @@ def _catalog_lookup(group: list[dict[str, Any]], selected_name: str | None) -> d
     return {}
 
 
-def render_metadata(robot: str | None, end_effector: str | None, sensor: str | None, grasp_strategy: str | None, scene_path: Path | None = None) -> dict[str, Any]:
+def render_metadata(robot: str | None, end_effector: str | None, sensor: str | None, grasp_strategy: str | None, scene_path: Path | None = None, grasp_config: dict[str, Any] | None = None) -> dict[str, Any]:
     catalog = load_workcell_capability_catalog()
     robot_cat = _catalog_lookup(catalog.get("robots", []), robot)
     ee_cat = _catalog_lookup(catalog.get("end_effectors", []), end_effector)
@@ -45,10 +46,12 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
         (["airpick", "suction", "onrobot"], {"capability_id": "onrobot_airpick_style", "family": "suction", "runtime_supported": False, "preview_only": True, "required_io_signals": ["vacuum_enable", "vacuum_feedback"]}),
     ])
     sensor_info = _match(sensor, [(["realsense", "d435i"], {"capability_id": "realsense_d435i", "family": "depth_camera", "runtime_supported": True, "preview_only": False})])
+    grasp_payload, grasp_warnings = normalize_grasp_strategy({"strategy_id": grasp_strategy, **(grasp_config or {})}, ee_info)
 
     warnings = [x for x in [robot_info.pop("warning", None), ee_info.pop("warning", None), sensor_info.pop("warning", None)] if x]
     warnings.extend(robot_cat.get("warnings", []))
     warnings.extend(ee_cat.get("warnings", []))
+    warnings.extend(grasp_warnings)
     status = "preview_only" if robot_info.get("preview_only") or ee_info.get("preview_only") else "fake_hardware_ready"
     imported = []
     object_count = 0
@@ -74,7 +77,7 @@ def render_metadata(robot: str | None, end_effector: str | None, sensor: str | N
         "workcell_studio_compatible": True,
         "robot": {"selected_name": robot, **robot_info},
         "end_effector": {"selected_name": end_effector, **ee_info, "runtime_io_applied": False},
-        "grasp_strategy": {"selected_name": grasp_strategy, "strategy_id": grasp_strategy, "metadata_only": True, "runtime_applied": False},
+        "grasp_strategy": {"selected_name": grasp_strategy, **grasp_payload},
         "sensors": [{"selected_name": sensor, **sensor_info}] if sensor else [],
         "environment": {"generated_objects_count": object_count, "imported_stl_references": imported},
         "readiness": {"status": status, "blockers": [], "warnings": warnings},
@@ -88,9 +91,13 @@ def main() -> int:
     ap.add_argument("--sensor")
     ap.add_argument("--grasp-strategy")
     ap.add_argument("--scene-path", type=Path)
+    ap.add_argument("--grasp-config", type=Path)
     ap.add_argument("--output", type=Path, required=True)
     args = ap.parse_args()
-    data = render_metadata(args.robot, args.end_effector, args.sensor, args.grasp_strategy, args.scene_path)
+    grasp_config = None
+    if args.grasp_config and args.grasp_config.is_file():
+        grasp_config = json.loads(args.grasp_config.read_text(encoding="utf-8"))
+    data = render_metadata(args.robot, args.end_effector, args.sensor, args.grasp_strategy, args.scene_path, grasp_config)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return 0

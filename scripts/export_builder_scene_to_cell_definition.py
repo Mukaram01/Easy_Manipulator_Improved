@@ -14,6 +14,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from capability_registry import load_structured_data
+from workcell_builder_grasp_strategy import normalize_grasp_strategy
 
 try:
     import yaml as _pyyaml
@@ -135,6 +136,8 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
     missing=[]
     task_type = "pick_place"
     grasp_meta = meta.get("grasp_strategy") if isinstance(meta.get("grasp_strategy"), dict) else {}
+    ee_meta = meta.get("end_effector") if isinstance(meta.get("end_effector"), dict) else {}
+    normalized_grasp, grasp_warnings = normalize_grasp_strategy(grasp_meta, ee_meta)
     strategy = grasp_meta.get("strategy_id")
     pick_id = None
     place_id = None
@@ -166,7 +169,7 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
         "scene_package": scene_path.as_posix(),
         "task": {"id": "default_builder_task", "type": task_type, "mode": "offline_preview"},
         "pick": {"source": {"type": "zone", "id": pick_id}},
-        "grasp": {"strategy_ref": strategy, "approach_axis": "z_down", "approach_distance_m": 0.1, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
+        "grasp": {"strategy_ref": strategy, "approach_axis": normalized_grasp.get("approach_axis", "z_down"), "orientation_mode": normalized_grasp.get("orientation_mode", "auto_align"), "approach_distance_m": normalized_grasp.get("approach_distance_m", 0.1), "retreat_axis": "z_up", "retreat_distance_m": normalized_grasp.get("retreat_distance_m", 0.1), "allowed_roll_angles_deg": normalized_grasp.get("allowed_roll_angles_deg", [0.0]), "allowed_yaw_angles_deg": normalized_grasp.get("allowed_yaw_angles_deg", [0.0, 180.0]), "gripper_tcp_offset": normalized_grasp.get("gripper_tcp_offset", {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}), "suction_cups": normalized_grasp.get("suction_cups")},
         "place": {"target": {"type": "bin", "id": place_id}, "release_strategy": release_strategy, "retreat_axis": "z_up", "retreat_distance_m": 0.1},
         "routing": {"rules": routing_rules},
         "safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
@@ -189,6 +192,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     robot_meta = meta.get("robot") if isinstance(meta.get("robot"), dict) else {}
     ee_meta = meta.get("end_effector") if isinstance(meta.get("end_effector"), dict) else {}
     grasp_meta = meta.get("grasp_strategy") if isinstance(meta.get("grasp_strategy"), dict) else {}
+    ee_meta = meta.get("end_effector") if isinstance(meta.get("end_effector"), dict) else {}
+    normalized_grasp, grasp_warnings = normalize_grasp_strategy(grasp_meta, ee_meta)
     sensors_meta = meta.get("sensors") if isinstance(meta.get("sensors"), list) else []
 
     robot_name = robot_env.get("name") or robot_meta.get("selected_name") or "unknown_robot"
@@ -280,9 +285,11 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "destinations": [{"id": "default_drop", "frame": "world", "pose_xyz": [0.4, 0.0, 0.2], "pose_rpy": [0.0, 0.0, 0.0]}],
             "rules": [{"id": "default_rule", "when": {"always": True}, "destination": "default_drop"}],
         },
-        "grasp": {"strategy_ref": grasp_meta.get("strategy_id")},
+        "grasp": {"strategy_ref": normalized_grasp.get("strategy_id"), "strategy": normalized_grasp},
         "commissioning": {"self_test_enabled": True, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
     }
+
+    warnings.extend(grasp_warnings)
 
     if not robot_meta.get("capability_id"):
         warnings.append("Robot capability is unknown; review required before runtime commissioning.")

@@ -58,7 +58,7 @@ def convert(task_intent_path: Path, scene_package: Path | None = None) -> tuple[
             'destinations': [{'id': place.get('id') or '', 'frame': 'world', 'pose_xyz': place_block.get('offset_xyz') or [0.4, 0.0, 0.2], 'pose_rpy': [0.0, 0.0, 0.0]}],
             'rules': routing.get('rules') if isinstance(routing.get('rules'), list) else [],
         },
-        'grasp': {'strategy_ref': grasp.get('strategy_ref')},
+        'grasp': {'strategy_ref': grasp.get('strategy_ref'), 'orientation_mode': grasp.get('orientation_mode'), 'approach_axis': grasp.get('approach_axis'), 'approach_distance_m': grasp.get('approach_distance_m'), 'retreat_distance_m': grasp.get('retreat_distance_m'), 'allowed_roll_angles_deg': grasp.get('allowed_roll_angles_deg'), 'allowed_yaw_angles_deg': grasp.get('allowed_yaw_angles_deg'), 'gripper_tcp_offset': grasp.get('gripper_tcp_offset'), 'suction_cups': grasp.get('suction_cups')},
         'builder_task_intent': {
             'source_file': str(task_intent_path),
             'pick': payload.get('pick') or {},
