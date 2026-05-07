@@ -1,0 +1,17 @@
+schema: detected_objects_snapshot/v1
+source: epd_replay
+capture:
+  timestamp: '2026-05-07T00:00:00Z'
+  note: offline golden demo snapshot
+frame_id: world
+objects:
+  - id: obj_001
+    label: box
+    confidence: 0.97
+    frame_id: world
+    pose:
+      xyz: [0.45, 0.0, 0.08]
+      rpy: [0.0, 0.0, 0.0]
+    size:
+      xyz: [0.04, 0.04, 0.06]
+    pick_zone_ref: pick_zone_main

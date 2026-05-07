@@ -218,3 +218,11 @@ python3 scripts/preview_generated_workcell_bundle.py \
   --task-flow-preview /tmp/ur5_2f_live_run/task_flow_preview.json \
   --publish-markers
 ```
+
+## Golden demo perception-ready (offline)
+
+The golden Workcell Studio readiness demo now emits `generated/perception_profile.yaml` and `generated/perception_readiness_report.json` for offline perception-readiness checks. The profile captures expected RealSense D435i topics, expected EPD output topics, expected frames, and safety-mode defaults (`perception_only`, no motion, no runtime execution, fake hardware default).
+
+Offline replay is validated with `tests/fixtures/perception/detected_objects_snapshot_golden.yaml` so CI can verify perception mapping without launching live RealSense or EPD nodes. This is a dry-run readiness signal only and is **not** live hardware certification.
+
+Live validation later will require explicit runtime bring-up and guarded commissioning checks; this change does not command robot motion.

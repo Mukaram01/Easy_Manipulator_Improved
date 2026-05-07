@@ -13,6 +13,73 @@ def _run_json(cmd:list[str], label:str)->tuple[int,dict[str,Any]]:
     data.setdefault("stdout",p.stdout.strip());data.setdefault("stderr",p.stderr.strip());data.setdefault("returncode",p.returncode)
     return p.returncode,data
 
+
+
+def _write_perception_profile(scene: Path) -> Path:
+    generated = scene / 'generated'
+    generated.mkdir(parents=True, exist_ok=True)
+    profile_path = generated / 'perception_profile.yaml'
+    snapshot = Path('tests/fixtures/perception/detected_objects_snapshot_golden.yaml').resolve()
+    profile = {
+        'schema': 'workcell_perception_profile/v1',
+        'sensor': {'type': 'realsense_d435i', 'camera_frame': 'camera_color_optical_frame'},
+        'topics': {
+            'rgb': '/camera/color/image_raw',
+            'depth': '/camera/aligned_depth_to_color/image_raw',
+            'camera_info': '/camera/color/camera_info',
+            'point_cloud': '/camera/depth/color/points',
+            'epd_localization_output': '/epd/localisation/detected_objects',
+            'epd_tracking_output': '/epd/tracking/detected_objects',
+        },
+        'expected_snapshot_path': str(snapshot),
+        'frames': {'object_frame': 'world', 'scene_frame': 'world'},
+        'qos_notes': 'Use sensor-data QoS for camera topics when available; use reliable QoS for EPD outputs where supported.',
+        'safety_mode': {
+            'perception_only': True,
+            'no_robot_motion': True,
+            'no_runtime_execution': True,
+            'fake_hardware_default': True,
+        },
+    }
+    import yaml  # type: ignore
+    profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding='utf-8')
+    return profile_path
+
+
+def _generate_perception_readiness(profile_path: Path, snapshot_path: Path, output: Path) -> tuple[str, list[str], list[str]]:
+    import yaml  # type: ignore
+    prof = yaml.safe_load(profile_path.read_text(encoding='utf-8')) if profile_path.exists() else {}
+    snap = yaml.safe_load(snapshot_path.read_text(encoding='utf-8')) if snapshot_path.exists() else {}
+    warnings, blockers = [], []
+    obj = ((snap.get('objects') or [{}])[0]) if isinstance(snap, dict) else {}
+    frame_ok = isinstance(obj, dict) and obj.get('frame_id') == ((prof.get('frames') or {}).get('scene_frame') if isinstance(prof, dict) else None)
+    if not frame_ok:
+        warnings.append('Detected object frame does not match scene frame')
+    label = obj.get('label') if isinstance(obj, dict) else None
+    routeable = isinstance(label, str) and bool(label.strip())
+    pose = obj.get('pose', {}) if isinstance(obj, dict) else {}
+    xyz = pose.get('xyz', []) if isinstance(pose, dict) else []
+    in_pick_zone_hint = isinstance(xyz, list) and len(xyz) == 3 and 0.0 <= float(xyz[0]) <= 1.5 and -1.0 <= float(xyz[1]) <= 1.0
+    status = 'perception_replay_ready'
+    if not routeable:
+        blockers.append('Object label/class missing for routing check')
+        status = 'perception_partial'
+    report = {
+        'schema': 'perception_readiness_report/v1',
+        'status': status if not blockers else 'perception_partial',
+        'profile_path': str(profile_path),
+        'detected_object_snapshot': str(snapshot_path),
+        'checks': {
+            'frame_match': frame_ok,
+            'label_routeable': routeable,
+            'pose_inside_pick_zone_hint': bool(in_pick_zone_hint),
+        },
+        'safety': {'dry_run_only': True, 'motion_command_sent': False, 'runtime_execution_called': False, 'perception_only': True},
+        'warnings': warnings,
+        'blockers': blockers,
+    }
+    output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    return report['status'], warnings, blockers
 def main()->int:
     ap=argparse.ArgumentParser()
     ap.add_argument('--scene-package',type=Path,required=True);ap.add_argument('--output-dir',type=Path,required=True);ap.add_argument('--project-name',required=True)
@@ -20,6 +87,7 @@ def main()->int:
     ap.add_argument('--smoke-execute',action='store_true');ap.add_argument('--smoke-timeout-s',type=int,default=20);ap.add_argument('--strict',action='store_true')
     ap.add_argument('--continue-on-error',action='store_true');ap.add_argument('--no-dashboard',action='store_true');ap.add_argument('--force',action='store_true');ap.add_argument('--json',action='store_true')
     a=ap.parse_args(); scene=a.scene_package.resolve(); out=a.output_dir.resolve()
+    perception_profile_path = _write_perception_profile(scene)
     if out.exists() and a.force: shutil.rmtree(out)
     out.mkdir(parents=True,exist_ok=True)
     paths={"exported":out/'exported',"task":out/'task',"preview":out/'preview',"plan":out/'plan_preview',"smoke":out/'smoke_launch',"read":out/'planning_scene_readiness','logs':out/'logs'}
@@ -30,8 +98,16 @@ def main()->int:
         rc,p=_run_json(cmd,name); logs[name]={"cmd":cmd,"payload":p};
         if rc!=0 and hard: summary['blockers'].append(f"{name} failed")
         return rc,p
+    art['perception_profile']=str(perception_profile_path)
+    snapshot_path = Path('tests/fixtures/perception/detected_objects_snapshot_golden.yaml').resolve()
+    art['detected_object_snapshot']=str(snapshot_path)
+    pr_status, pr_warnings, pr_blockers = _generate_perception_readiness(perception_profile_path, snapshot_path, scene/'generated'/'perception_readiness_report.json')
+    art['perception_readiness_report']=str(scene/'generated'/'perception_readiness_report.json')
+    results['perception_status']=pr_status
     rc,scene_v=step('validate_scene',[sys.executable,str(SCRIPT_DIR/'validate_builder_generated_scene.py'),str(scene),'--json'],hard=True)
     results['builder_scene_validation']='PASS' if scene_v.get('ok') else 'FAIL'
+    rc,ppv=step('validate_perception_profile',[sys.executable,str(SCRIPT_DIR/'validate_perception_profile.py'),str(perception_profile_path),'--json'])
+    results['perception_profile_validation']='PASS' if rc==0 else 'FAIL'
     gen=scene/'generated'; gen.mkdir(exist_ok=True)
     rc,exp=step('export_scene',[sys.executable,str(SCRIPT_DIR/'export_builder_scene_to_cell_definition.py'),str(scene),'--output-dir',str(paths['exported'])],hard=True)
     for f in ['cell_definition.yaml','environment_layout.yaml','builder_export_summary.json']:
@@ -90,13 +166,18 @@ def main()->int:
     else: results['smoke_launch_status']='SKIPPED'
     rc,pr=step('planning_readiness',[sys.executable,str(SCRIPT_DIR/'check_planning_scene_readiness.py'),'--scene-package',str(scene),'--output-dir',str(paths['read']),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--json']+(['--task-recipe',str(recipe)] if recipe.exists() else [])+(['--plan-preview-request',str(req)] if req.exists() else [])+(['--plan-preview-session',str(session)] if session.exists() else [])+(['--strict'] if a.strict else []))
     art['planning_scene_readiness_report']=str(paths['read']/'planning_scene_readiness_report.json'); results['planning_scene_readiness']='PASS' if rc==0 else 'WARN'
+    if pr_warnings:
+        summary['warnings'].extend(pr_warnings)
+    if pr_blockers:
+        summary['blockers'].extend(pr_blockers)
     if any(safety.values()) and (safety['motion_command_sent'] or safety['moveit_plan_service_called'] or safety['runtime_execution_called'] or safety['real_hardware_enabled']):
         results['final_readiness']='FAIL';summary['blockers'].append('Unsafe flags detected')
     elif results['builder_scene_validation']=='FAIL': results['final_readiness']='FAIL'
     elif not ti.exists(): results['final_readiness']='WARN'; results['classification']='physical_scene_only'
     elif recipe.exists() and req.exists() and (paths['read']/'planning_scene_readiness_report.json').exists() and results['planning_scene_readiness']=='PASS': results['final_readiness']='PASS'; results['classification']='task_planning_ready'
     else: results['final_readiness']='WARN'; results['classification']='partial_task_pipeline'
-    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary}
+    perception_section={'perception_profile_path':str(perception_profile_path),'detected_object_snapshot_path':str(snapshot_path),'perception_readiness_report_path':str(scene/'generated'/'perception_readiness_report.json'),'status':pr_status,'topic_frame_checks':{'profile_valid':results.get('perception_profile_validation')=='PASS'},'safety_flags':{'real_hardware_enabled':False,'motion_command_sent':False,'runtime_execution_called':False,'perception_only':True}}
+    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section}
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
 
