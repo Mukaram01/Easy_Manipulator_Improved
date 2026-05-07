@@ -242,12 +242,13 @@ def generate_demo_bundle(args: argparse.Namespace) -> int:
             f"- Preview Summary JSON: `{summary['preview_summary_json']}`\n",
             encoding="utf-8",
         )
+        demo_title = demo.get("title", demo["id"])
         (demo_dir / "next_commands.md").write_text(
             "# Next Commands\n\n```bash\n"
             "python3 scripts/workcell_studio.py list-demos\n"
             f"python3 scripts/workcell_studio.py generate-demo-bundle --demo-id {demo['id']} --output-dir {output_root} --force\n"
             f"python3 scripts/validate_cell_definition.py {copied_cell} --json\n"
-            f"python3 scripts/generate_workcell_static_preview.py --cell-definition {copied_cell} --output-dir {preview_dir} --title '{demo.get("title",demo["id"])}'\n"
+            f"python3 scripts/generate_workcell_static_preview.py --cell-definition {copied_cell} --output-dir {preview_dir} --title '{demo_title}'\n"
             "```\n",
             encoding="utf-8",
         )
