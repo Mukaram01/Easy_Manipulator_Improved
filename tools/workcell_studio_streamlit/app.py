@@ -93,7 +93,7 @@ elif workflow == "Builder Task Intent":
     st.info("This defines task intent only. It does not command robot motion.")
     scene_package = st.text_input("Scene package path", value="scenes/ur5_2f_test")
     output_path = st.text_input("Task intent output path", value=str(Path(scene_package) / "generated" / "workcell_builder_task_intent.yaml") if scene_package else "")
-    if st.button("Discover scene targets"):
+    if st.button("Discover scene targets", key="builder_discover_scene_targets"):
         st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
     st.subheader("Pick/Place Zones")
     st.caption("Pick/place zones are metadata only. Saving zones does not command robot motion.")
@@ -118,20 +118,53 @@ elif workflow == "Builder Task Intent":
     svg = backend.render_topdown_targets_svg(env_targets)
     st.components.v1.html(svg, height=530, scrolling=False)
     zb1, zb2, zb3, zb4 = st.columns(4)
-    if zb1.button("Save/update target"):
+    if zb1.button("Save/update target", key="zones_save_update_target"):
         st.json(backend.create_or_update_environment_target(env_path, zid, ztype, zlabel, frame, [x,y,z], [rr,pp,yy], [sx,sy,sz], output_path=env_path).get("json") or {})
         env_layout = backend.load_environment_layout(env_path)
         env_targets = backend.list_environment_targets(env_layout)
         st.components.v1.html(backend.render_topdown_targets_svg(env_targets), height=530, scrolling=False)
-    if zb2.button("Refresh discovered targets"):
+    if zb2.button("Refresh discovered targets", key="zones_refresh_discovered_targets"):
         st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
-    if zb3.button("Generate static preview"):
+    if zb3.button("Generate static preview", key="zones_generate_static_preview"):
         preview_dir = str(Path(scene_package) / "generated" / "static_preview")
         cell_path = str(Path(scene_package) / "generated" / "cell_definition.yaml")
         st.json(backend.generate_static_preview_with_task_flow(cell_path, preview_dir, "Builder Task Intent Preview", task_intent_path=output_path, environment_layout_path=env_path).get("json") or {})
         st.caption(f"Preview HTML: {Path(preview_dir) / 'static_preview.html'}")
-    if zb4.button("Generate readiness pack"):
-        st.json(backend.generate_readiness_pack(scene_package, "/tmp/workcell_readiness_pack", "builder_intent_demo", validate=True, prepare_rviz_preview=False, smoke_dry_run=True).get("json") or {})
+    readiness_output_dir = st.text_input("Readiness pack output dir", value="/tmp/workcell_readiness_pack")
+    readiness_project_name = st.text_input("Readiness pack project name", value="builder_intent_demo")
+    rpc1, rpc2, rpc3 = st.columns(3)
+    readiness_validate = rpc1.checkbox("Validate readiness pack", value=True)
+    readiness_prepare_rviz_preview = rpc2.checkbox("Prepare RViz/MoveIt preview", value=True)
+    readiness_smoke_dry_run = rpc3.checkbox("Smoke dry-run", value=True)
+    rpc4, rpc5 = st.columns(2)
+    readiness_strict = rpc4.checkbox("Strict readiness checks", value=False)
+    readiness_continue_on_error = rpc5.checkbox("Continue on error", value=False)
+    if zb4.button("Generate readiness pack from current scene", key="zones_generate_readiness_pack"):
+        readiness_result = backend.generate_readiness_pack(
+            scene_package,
+            readiness_output_dir,
+            readiness_project_name,
+            validate=readiness_validate,
+            prepare_rviz_preview=readiness_prepare_rviz_preview,
+            smoke_dry_run=readiness_smoke_dry_run,
+            strict=readiness_strict,
+            continue_on_error=readiness_continue_on_error,
+        ).get("json") or {}
+        st.json(readiness_result)
+        readiness_manifest_path = readiness_result.get("manifest_path")
+        readiness_dashboard_path = readiness_result.get("dashboard_path")
+        if readiness_manifest_path:
+            st.write(f"Manifest path: {readiness_manifest_path}")
+        if readiness_dashboard_path:
+            st.write(f"Readiness dashboard path: {readiness_dashboard_path}")
+        st.write(f"Output dir: {readiness_output_dir}")
+        st.write(f"Final readiness: {readiness_result.get('final_readiness')}")
+        st.write(f"Classification: {readiness_result.get('classification')}")
+        if readiness_dashboard_path and Path(readiness_dashboard_path).exists():
+            with st.expander("Preview readiness dashboard HTML"):
+                st.components.v1.html(Path(readiness_dashboard_path).read_text(encoding="utf-8"), height=530, scrolling=True)
+            st.code(f"xdg-open {readiness_dashboard_path}")
+            st.code(f"cd {readiness_output_dir} && python3 -m http.server 8767")
     targets = st.session_state.get("builder_targets", {})
     st.json(targets)
     grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]
@@ -151,19 +184,43 @@ elif workflow == "Builder Task Intent":
     retreat_dist = st.number_input("Retreat distance (m)", value=0.10)
     release_strategy = st.text_input("Release strategy", value="tool_release")
     c1,c2,c3,c4 = st.columns(4)
-    if c1.button("Save task intent"):
+    if c1.button("Save task intent", key="task_intent_save"):
         st.json(backend.create_or_update_builder_task_intent(scene_package, task_id, task_type, pick_source, place_target, grasp, output_path=output_path, approach_axis=approach_axis, approach_distance_m=approach_dist, retreat_axis=retreat_axis, retreat_distance_m=retreat_dist, release_strategy=release_strategy, object_class=object_class, object_color=object_color, validate=False).get("json") or {})
     if discovered.get("pick_sources") and pick_source not in discovered.get("pick_sources", []):
         st.warning(f"Selected pick source '{pick_source}' is not present in environment_layout.yaml")
     if discovered.get("place_targets") and place_target not in discovered.get("place_targets", []):
         st.warning(f"Selected place target '{place_target}' is not present in environment_layout.yaml")
-    if c2.button("Validate task intent"):
+    if c2.button("Validate task intent", key="task_intent_validate"):
         st.json(backend.validate_builder_task_intent(output_path, scene_package).get("json") or {})
-    if c3.button("Generate task recipe"):
+    if c3.button("Generate task recipe", key="task_intent_generate_recipe"):
         out_recipe = str(Path(scene_package)/"generated"/"task_recipe_from_builder_intent.yaml") if scene_package else "/tmp/task_recipe_from_builder_intent.yaml"
         st.json(backend.convert_builder_task_intent_to_task_recipe(output_path, out_recipe, scene_package).get("json") or {})
-    if c4.button("Generate readiness pack"):
-        st.json(backend.generate_readiness_pack(scene_package, "/tmp/workcell_readiness_pack", "builder_intent_demo", validate=True, prepare_rviz_preview=False, smoke_dry_run=True).get("json") or {})
+    if c4.button("Generate readiness pack after task intent", key="task_intent_generate_readiness_pack"):
+        readiness_result = backend.generate_readiness_pack(
+            scene_package,
+            readiness_output_dir,
+            readiness_project_name,
+            validate=readiness_validate,
+            prepare_rviz_preview=readiness_prepare_rviz_preview,
+            smoke_dry_run=readiness_smoke_dry_run,
+            strict=readiness_strict,
+            continue_on_error=readiness_continue_on_error,
+        ).get("json") or {}
+        st.json(readiness_result)
+        readiness_manifest_path = readiness_result.get("manifest_path")
+        readiness_dashboard_path = readiness_result.get("dashboard_path")
+        if readiness_manifest_path:
+            st.write(f"Manifest path: {readiness_manifest_path}")
+        if readiness_dashboard_path:
+            st.write(f"Readiness dashboard path: {readiness_dashboard_path}")
+        st.write(f"Output dir: {readiness_output_dir}")
+        st.write(f"Final readiness: {readiness_result.get('final_readiness')}")
+        st.write(f"Classification: {readiness_result.get('classification')}")
+        if readiness_dashboard_path and Path(readiness_dashboard_path).exists():
+            with st.expander("Preview readiness dashboard HTML"):
+                st.components.v1.html(Path(readiness_dashboard_path).read_text(encoding="utf-8"), height=530, scrolling=True)
+            st.code(f"xdg-open {readiness_dashboard_path}")
+            st.code(f"cd {readiness_output_dir} && python3 -m http.server 8767")
 
 if workflow == "Demo Gallery":
     st.header("Demo Gallery")
