@@ -592,6 +592,13 @@ def author_builder_task(args: argparse.Namespace) -> int:
     run=subprocess.run(cmd, capture_output=True, text=True, check=False)
     print(run.stdout if run.stdout else run.stderr)
     return run.returncode
+
+def author_environment_target(args: argparse.Namespace) -> int:
+    cmd=[sys.executable, str(SCRIPT_DIR/"create_or_update_environment_target.py"), "--environment-layout", str(args.environment_layout), "--target-id", args.target_id, "--target-type", args.target_type, "--label", args.label, "--frame", args.frame, "--xyz", *[str(x) for x in args.xyz], "--rpy", *[str(x) for x in args.rpy], "--size", *[str(x) for x in args.size], "--output", str(args.output)]
+    if args.json: cmd.append("--json")
+    run=subprocess.run(cmd, capture_output=True, text=True, check=False)
+    print(run.stdout if run.stdout else run.stderr)
+    return run.returncode
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -739,6 +746,18 @@ def _build_parser() -> argparse.ArgumentParser:
     abt.add_argument("--validate", action="store_true")
     abt.add_argument("--json", action="store_true")
     abt.set_defaults(func=author_builder_task)
+    aet = sub.add_parser("author-environment-target", help="Create or update environment pick/place target")
+    aet.add_argument("--environment-layout", type=Path, required=True)
+    aet.add_argument("--target-id", required=True)
+    aet.add_argument("--target-type", choices=["pick_zone","place_target","bin"], required=True)
+    aet.add_argument("--label", default="")
+    aet.add_argument("--frame", default="world")
+    aet.add_argument("--xyz", nargs=3, type=float, required=True)
+    aet.add_argument("--rpy", nargs=3, type=float, required=True)
+    aet.add_argument("--size", nargs=3, type=float, required=True)
+    aet.add_argument("--output", type=Path, required=True)
+    aet.add_argument("--json", action="store_true")
+    aet.set_defaults(func=author_environment_target)
 
     return parser
 

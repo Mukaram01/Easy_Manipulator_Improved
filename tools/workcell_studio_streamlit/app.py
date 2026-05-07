@@ -95,6 +95,22 @@ elif workflow == "Builder Task Intent":
     output_path = st.text_input("Task intent output path", value=str(Path(scene_package) / "generated" / "workcell_builder_task_intent.yaml") if scene_package else "")
     if st.button("Discover scene targets"):
         st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
+    st.subheader("Pick/Place Zones")
+    st.caption("Zones are metadata only. They do not move the robot.")
+    env_path = st.text_input("environment_layout.yaml path", value=str(Path(scene_package)/"generated"/"environment_layout.yaml"))
+    zc1, zc2, zc3 = st.columns(3)
+    zid = zc1.text_input("target id", value="pick_zone_main")
+    ztype = zc2.selectbox("target type", options=["pick_zone","place_target"])
+    zlabel = zc3.text_input("label", value="Main pick zone")
+    frame = st.text_input("frame", value="world")
+    cxyz = st.columns(3); x = cxyz[0].number_input("x", value=0.45); y = cxyz[1].number_input("y", value=0.0); z = cxyz[2].number_input("z", value=0.08)
+    crpy = st.columns(3); rr = crpy[0].number_input("roll", value=0.0); pp = crpy[1].number_input("pitch", value=0.0); yy = crpy[2].number_input("yaw", value=0.0)
+    csize = st.columns(3); sx = csize[0].number_input("size x", value=0.3); sy = csize[1].number_input("size y", value=0.2); sz = csize[2].number_input("size z", value=0.1)
+    zb1, zb2 = st.columns(2)
+    if zb1.button("Save/update target"):
+        st.json(backend.create_or_update_environment_target(env_path, zid, ztype, zlabel, frame, [x,y,z], [rr,pp,yy], [sx,sy,sz], output_path=env_path).get("json") or {})
+    if zb2.button("Refresh discovered targets"):
+        st.session_state["builder_targets"] = backend.list_builder_scene_authoring_targets(scene_package).get("json", {})
     targets = st.session_state.get("builder_targets", {})
     st.json(targets)
     grasps = [x["id"] for x in backend.resolve_catalog_choices().get("grasp_strategies", [])]

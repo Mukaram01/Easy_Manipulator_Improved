@@ -58,7 +58,7 @@ def summarize(task_intent:Path|None=None, task_recipe:Path|None=None, scene_pack
     if not place.get('id'): missing.append('place.target.id')
     if not (grasp.get('strategy_ref') or grasp.get('inline_strategy')): missing.append('grasp.strategy_ref')
     if missing: readiness='task_intent_incomplete'
-    zones={z.get('id') for z in (layout.get('zones') or []) if isinstance(z,dict)}
+    zones={z.get('id'):z for z in (layout.get('zones') or []) if isinstance(z,dict) and z.get('id')}
     pick_res=bool(pick.get('id') in zones) if zones else False
     place_res=bool(place.get('id') in zones) if zones else False
     approx=not (pick_res and place_res)

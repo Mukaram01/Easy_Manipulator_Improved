@@ -168,6 +168,15 @@ def test_backend_planning_scene_readiness_helpers(tmp_path):
     val = backend.validate_planning_scene_readiness_report(out / "planning_scene_readiness_report.json")
     assert val["returncode"] == 0
 
+def test_backend_environment_target_wrappers(tmp_path):
+    layout = tmp_path/"environment_layout.yaml"
+    res = backend.create_or_update_environment_target(layout, "pick_zone_main", "pick_zone", "Main", "world", [0.45,0,0.08], [0,0,0], [0.3,0.2,0.1], output_path=layout)
+    assert res["returncode"] == 0
+    targets = backend.load_environment_targets(layout)
+    assert any(t.get("id") == "pick_zone_main" for t in targets)
+    summary = backend.summarize_environment_targets(layout)
+    assert "pick_zone_main" in summary["pick_sources"]
+
 
 def test_readiness_dashboard_backend_helpers(tmp_path):
     manifest = tmp_path/'manifest.json'
