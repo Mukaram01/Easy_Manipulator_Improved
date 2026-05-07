@@ -19,6 +19,7 @@ def test_workcell_studio_command_panel_hints_present() -> None:
     assert "Open Readiness Dashboard" in text
     assert "Copy RViz Preview Command" in text
     assert "Copy Grasp Flow Preview Command" in text
+    assert "builder_export_summary.json" in text
 
 
 def test_panel_backend_detects_scene_path_and_not_hardcoded() -> None:
@@ -59,3 +60,11 @@ def test_warning_blocker_propagation() -> None:
     assert "fallback coordinates used" in state["warnings"]
     assert "place target missing" in state["blockers"]
     assert "fake hardware first" in state["safety_banner"]
+
+
+def test_panel_state_includes_studio_summary() -> None:
+    report = {"status": "WARN", "readiness": "task_intent_ready_offline", "warnings": ["x"], "errors": []}
+    state = panel.panel_state_from_validation(report, FIXTURE_SCENE)
+    assert state["summary_panel_title"] == "Workcell Studio Summary"
+    assert state["studio_summary"]["selected_robot"]
+    assert state["studio_summary"]["readiness_status"] in {"OK", "WARN", "FAIL"}
