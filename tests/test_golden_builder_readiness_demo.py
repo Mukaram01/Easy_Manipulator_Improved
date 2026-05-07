@@ -84,3 +84,7 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     assert safety.get("motion_command_sent") is False
     assert safety.get("runtime_execution_called") is False
     assert safety.get("moveit_plan_service_called") is False
+    bridge = summary.get("perception_bridge", {})
+    assert bridge.get("status") in ("bridge_preview_ready", "bridge_preview_partial", "bridge_preview_blocked")
+    assert Path(bridge.get("emd_bridge_payload_preview")).exists()
+    assert Path(bridge.get("perception_bridge_preview_report")).exists()

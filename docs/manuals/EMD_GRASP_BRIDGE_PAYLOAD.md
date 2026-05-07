@@ -70,6 +70,29 @@ python3 scripts/convert_runtime_plan_to_emd_grasp.py \
 
 If ROS Python modules are unavailable, status is `FAIL` with an explicit error message.
 
+## Perception replay to bridge preview (offline-only)
+
+Golden demo readiness now includes an **offline adapter preview**:
+
+- input replay snapshot: `detected_objects_snapshot/v1` (EPD-style)
+- output preview payload: `generated/emd_bridge_payload_preview.json`
+- output report: `generated/perception_bridge_preview_report.json`
+
+Run manually:
+
+```bash
+python3 scripts/generate_perception_bridge_preview.py \
+  --perception-profile <scene>/generated/perception_profile.yaml \
+  --detected-objects tests/fixtures/perception/detected_objects_snapshot_golden.yaml \
+  --task-intent <scene>/generated/workcell_builder_task_intent.yaml \
+  --environment-layout <pack>/exported/environment_layout.yaml \
+  --output-payload <scene>/generated/emd_bridge_payload_preview.json \
+  --output-report <scene>/generated/perception_bridge_preview_report.json \
+  --json
+```
+
+This artifact is **preview-only** and explicitly sets: dry-run, no robot motion, no runtime execution, no MoveIt plan service calls, and no real hardware enablement. It is not published to ROS topics/services and does not execute grasp runtime behavior.
+
 ## Limitations
 
 - The current EMD runtime request (`emd_msgs/srv/GraspRequest`) and target message (`emd_msgs/msg/GraspTarget`) do not carry an explicit release/place destination pose field.

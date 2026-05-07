@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+
 def _run_json(cmd:list[str], label:str)->tuple[int,dict[str,Any]]:
     p=subprocess.run(cmd,capture_output=True,text=True,check=False)
     try:data=json.loads(p.stdout) if p.stdout.strip() else {}
@@ -104,6 +107,8 @@ def main()->int:
     pr_status, pr_warnings, pr_blockers = _generate_perception_readiness(perception_profile_path, snapshot_path, scene/'generated'/'perception_readiness_report.json')
     art['perception_readiness_report']=str(scene/'generated'/'perception_readiness_report.json')
     results['perception_status']=pr_status
+    bridge_payload = scene / 'generated' / 'emd_bridge_payload_preview.json'
+    bridge_report = scene / 'generated' / 'perception_bridge_preview_report.json'
     rc,scene_v=step('validate_scene',[sys.executable,str(SCRIPT_DIR/'validate_builder_generated_scene.py'),str(scene),'--json'],hard=True)
     results['builder_scene_validation']='PASS' if scene_v.get('ok') else 'FAIL'
     rc,ppv=step('validate_perception_profile',[sys.executable,str(SCRIPT_DIR/'validate_perception_profile.py'),str(perception_profile_path),'--json'])
@@ -123,6 +128,22 @@ def main()->int:
         if recipe.exists(): art['task_recipe']=str(recipe); results['task_recipe_status']='PASS' if rc==0 else 'WARN'
     else:
         results['task_intent_status']='WARN'; summary['warnings'].append('Missing task intent (physical scene only)')
+    if ti.exists() and (paths['exported'] / 'environment_layout.yaml').exists():
+        rc, pb = step('perception_bridge_preview', [
+            sys.executable, str(SCRIPT_DIR / 'generate_perception_bridge_preview.py'),
+            '--perception-profile', str(perception_profile_path),
+            '--detected-objects', str(snapshot_path),
+            '--task-intent', str(ti),
+            '--environment-layout', str(paths['exported'] / 'environment_layout.yaml'),
+            '--output-payload', str(bridge_payload),
+            '--output-report', str(bridge_report),
+            '--json',
+        ])
+        art['emd_bridge_payload_preview'] = str(bridge_payload)
+        art['perception_bridge_preview_report'] = str(bridge_report)
+        results['perception_bridge_status'] = 'PASS' if rc == 0 else 'WARN'
+    else:
+        results['perception_bridge_status'] = 'WARN'
 
     tf=paths['task']/'task_flow_summary.json'
     task_flow_cmd=None
@@ -176,8 +197,17 @@ def main()->int:
     elif not ti.exists(): results['final_readiness']='WARN'; results['classification']='physical_scene_only'
     elif recipe.exists() and req.exists() and (paths['read']/'planning_scene_readiness_report.json').exists() and results['planning_scene_readiness']=='PASS': results['final_readiness']='PASS'; results['classification']='task_planning_ready'
     else: results['final_readiness']='WARN'; results['classification']='partial_task_pipeline'
+    perception_bridge_report = _read_json(bridge_report) if bridge_report.exists() else {}
     perception_section={'perception_profile_path':str(perception_profile_path),'detected_object_snapshot_path':str(snapshot_path),'perception_readiness_report_path':str(scene/'generated'/'perception_readiness_report.json'),'status':pr_status,'topic_frame_checks':{'profile_valid':results.get('perception_profile_validation')=='PASS'},'safety_flags':{'real_hardware_enabled':False,'motion_command_sent':False,'runtime_execution_called':False,'perception_only':True}}
-    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section}
+    perception_bridge_section = {
+        'payload_preview_path': str(bridge_payload),
+        'report_path': str(bridge_report),
+        'status': (perception_bridge_report.get('status') if isinstance(perception_bridge_report, dict) and perception_bridge_report.get('status') else 'bridge_preview_blocked'),
+        'warnings': (perception_bridge_report.get('warnings') if isinstance(perception_bridge_report, dict) else []),
+        'blockers': (perception_bridge_report.get('blockers') if isinstance(perception_bridge_report, dict) else []),
+        'safety_flags': {'real_hardware_enabled': False, 'motion_command_sent': False, 'runtime_execution_called': False, 'moveit_plan_service_called': False, 'preview_only': True},
+    }
+    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section,'perception_bridge':perception_bridge_section}
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
 
