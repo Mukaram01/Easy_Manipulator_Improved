@@ -92,6 +92,7 @@ def main() -> int:
     src = m.get('source', {}) if isinstance(m.get('source'), dict) else {}
     perception = m.get('perception', {}) if isinstance(m.get('perception'), dict) else {}
     perception_bridge = m.get('perception_bridge', {}) if isinstance(m.get('perception_bridge'), dict) else {}
+    plan_preview_handoff = m.get('plan_preview_handoff', {}) if isinstance(m.get('plan_preview_handoff'), dict) else {}
     bridge_payload = _load_structured(Path(arts.get('emd_bridge_payload_preview', ''))) if arts.get('emd_bridge_payload_preview') else {}
     bridge_object = bridge_payload.get('selected_object', {}) if isinstance(bridge_payload.get('selected_object'), dict) else {}
     bridge_task = bridge_payload.get('task_bridge', {}) if isinstance(bridge_payload.get('task_bridge'), dict) else {}
@@ -125,6 +126,7 @@ def main() -> int:
         ('planning scene readiness report', arts.get('planning_scene_readiness_report', '')),
         ('emd bridge payload preview', arts.get('emd_bridge_payload_preview', '')),
         ('perception bridge preview report', arts.get('perception_bridge_preview_report', '')),
+        ('bridge payload plan preview handoff', arts.get('bridge_payload_plan_preview_handoff', '')),
     ]
 
     preview_block = ''
@@ -164,6 +166,15 @@ def main() -> int:
 <li>Place target: {_safe(bridge_task.get('place_target', 'missing'))}</li>
 <li>Bridge preview status: <b>{_safe(perception_bridge.get('status', 'bridge_preview_missing'))}</b></li>
 <li>Safety: no robot motion / no runtime execution: <b>Yes</b></li>
+</ul></div>
+
+<div class='panel'><h3>Bridge Payload → RViz/MoveIt Plan Preview</h3><ul>
+<li>Bridge payload available: <b>{_safe('Yes' if arts.get('emd_bridge_payload_preview') else 'No')}</b></li>
+<li>Handoff status: <b>{_safe(plan_preview_handoff.get('status', 'plan_preview_blocked'))}</b></li>
+<li>Manual preview command: <pre>{_safe(plan_preview_handoff.get('command', 'blocked or metadata missing'))}</pre></li>
+<li>Blockers: {_safe(', '.join(plan_preview_handoff.get('blockers', [])) or 'none')}</li>
+<li>Warnings: {_safe(', '.join(plan_preview_handoff.get('warnings', [])) or 'none')}</li>
+<li><b>This does not execute robot motion.</b></li>
 </ul></div>
 <div class='panel'><h3>Task flow: pick → grasp → place → release</h3><ul>
 <li>pick source: {_safe(tf.get('pick_source_id','missing'))}</li><li>grasp strategy: {_safe(tf.get('grasp_strategy','missing'))}</li><li>approach/retreat: {_safe(tf.get('approach_axis', tf.get('approach','missing')))}{_safe((' '+str(tf.get('approach_distance_m'))+'m') if tf.get('approach_distance_m') is not None else '')} / {_safe(tf.get('retreat_axis', tf.get('retreat','missing')))}{_safe((' '+str(tf.get('retreat_distance_m'))+'m') if tf.get('retreat_distance_m') is not None else '')}</li><li>place target: {_safe(tf.get('place_target_id','missing'))}</li><li>release strategy: {_safe(tf.get('release_strategy','missing'))}</li><li>routing rules: {_safe(tf.get('routing_rule_count', tf.get('routing_rules','missing')))}</li>

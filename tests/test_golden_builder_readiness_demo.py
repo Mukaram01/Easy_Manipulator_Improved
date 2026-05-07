@@ -88,3 +88,7 @@ def test_golden_builder_readiness_demo_end_to_end(tmp_path: Path) -> None:
     assert bridge.get("status") in ("bridge_preview_ready", "bridge_preview_partial", "bridge_preview_blocked")
     assert Path(bridge.get("emd_bridge_payload_preview")).exists()
     assert Path(bridge.get("perception_bridge_preview_report")).exists()
+
+    handoff = summary.get("plan_preview_handoff", {})
+    assert handoff.get("status") in ("plan_preview_ready", "plan_preview_partial", "plan_preview_blocked")
+    assert Path(handoff.get("bridge_payload_plan_preview_handoff")).exists()
