@@ -1,0 +1,17 @@
+schema_version: cell_definition/v1
+cell: {id: ur5_suction_conveyor_placeholder_cell, name: UR5 Suction Conveyor Placeholder, description: Demo template}
+robot: {model: ur5, planning_group: manipulator, base_frame: world, tool_link: tool0, home_named_target: home, safe_joint_state: [], capability: ur5}
+end_effector: {id: onrobot_airpick4, type: suction, brand: onrobot, grasp_frame: suction_tip, allowed_touch_links: [suction_cup], capability: onrobot_airpick_style}
+camera: {id: realsense_d435i, type: depth_camera, frame: camera_depth_optical_frame}
+environment:
+  frame: world
+  support_surfaces:
+    - {id: table_main, type: table, frame: world, pose_xyz: [0,0,0], pose_rpy: [0,0,0], dimensions: [1.2,0.8,0.05]}
+  assets:
+    - {capability: conveyor_placeholder}
+    - {capability: bin_blue_large}
+objects:
+  - {id: carton, class: box, shape: box, color: unknown, material: cardboard, frame: world, dimensions: [0.06,0.04,0.03], pose_xyz: [0.6,0.0,0.09], pose_rpy: [0,0,0]}
+task: {id: conveyor_pick_place, type: pick_place, source_object: carton, destinations: [{id: exit_bin, frame: world, pose_xyz: [0.2,-0.3,0.1], pose_rpy: [0,0,0]}], rules: [{id: place_default, when: {always: true}, destination: exit_bin}]}
+grasp: {strategy_ref: suction_top_basic}
+commissioning: {self_test_enabled: true, export_bundle: true, require_operator_review: true, fake_hardware_default: true, demo_template_id: ur5_suction_conveyor_placeholder}

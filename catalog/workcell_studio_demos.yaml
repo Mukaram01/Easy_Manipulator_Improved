@@ -1,33 +1,139 @@
 schema_version: workcell_studio_demo_catalog/v1
 demos:
-  - id: ur5_2f_sorting_demo
-    title: UR5 + Robotiq 2F Sorting Demo
-    description: Baseline fake-hardware Workcell Studio demo using UR5 and 2-finger gripper.
-    cell_definition: tests/fixtures/cell_definition_pick_place.yaml
+  - id: ur5_2f_table_pick_place
+    title: UR5 + Robotiq 2F Table Pick/Place
+    description: Supported UR5 fake-hardware starter for table-based pick and place.
+    cell_definition: tests/fixtures/cell_definition_ur5_2f_table_pick_place.yaml
     runtime_mode: fake_hardware_ready
-    investor_visible: true
-    tags: [ur5, robotiq_2f, sorting, fake_hardware, baseline]
+    compatibility_status: supported
+    fake_hardware_default: true
+    preview_only: false
+    notes:
+      - Existing UR5 fake-hardware path only; no real robot execution enabled.
+    warnings: []
+    tags: [ur5, robotiq_2f, pick_place, table, supported]
 
-  - id: ur5_suction_sorting_demo
-    title: UR5 + Suction Sorting Demo
-    description: Baseline suction metadata/demo path with runtime IO disabled.
-    cell_definition: tests/fixtures/cell_definition_ur5_suction_sorting.yaml
+  - id: ur5_2f_sorting_three_bins
+    title: UR5 + Robotiq 2F Sorting (3 bins)
+    description: Supported UR5 fake-hardware starter for sorting into three bins.
+    cell_definition: tests/fixtures/cell_definition_ur5_2f_sorting_three_bins.yaml
     runtime_mode: fake_hardware_ready
-    investor_visible: true
-    tags: [ur5, suction, sorting, grasp_strategy]
+    compatibility_status: supported
+    fake_hardware_default: true
+    preview_only: false
+    notes:
+      - Uses existing UR5 path and default routing task as a sorting baseline.
+    warnings: []
+    tags: [ur5, robotiq_2f, sorting, bins, supported]
 
-  - id: generic_cartesian_suction_preview
-    title: Generic Cartesian/Gantry + Suction Preview
-    description: Preview-only generated cell for non-UR robot-family planning and customer concept demos.
-    cell_definition: tests/fixtures/cell_definition_generic_cartesian_suction_sorting.yaml
-    runtime_mode: preview_only
-    investor_visible: true
-    tags: [cartesian, gantry, suction, preview_only]
+  - id: ur5_suction_table_pick_place
+    title: UR5 + Suction Table Pick/Place
+    description: Supported UR5 fake-hardware starter for suction top-pick and place.
+    cell_definition: tests/fixtures/cell_definition_ur5_suction_table_pick_place.yaml
+    runtime_mode: fake_hardware_ready
+    compatibility_status: supported
+    fake_hardware_default: true
+    preview_only: false
+    notes:
+      - Runtime IO remains disabled; metadata-only suction defaults.
+    warnings:
+      - Vacuum hardware actuation is not executed in this template.
+    tags: [ur5, suction, pick_place, table, supported]
 
-  - id: generic_delta_suction_preview
-    title: Generic Delta + Suction Preview
-    description: Preview-only generated cell for fast delta robot concept demos.
-    cell_definition: tests/fixtures/cell_definition_generic_delta_suction_sorting.yaml
+  - id: ur5_suction_conveyor_placeholder
+    title: UR5 + Suction Conveyor Placeholder
+    description: UR5 conveyor-oriented starter with visual conveyor placeholder only.
+    cell_definition: tests/fixtures/cell_definition_ur5_suction_conveyor_placeholder.yaml
+    runtime_mode: fake_hardware_ready
+    compatibility_status: supported
+    fake_hardware_default: true
+    preview_only: false
+    notes:
+      - Conveyor is represented as a static placeholder asset.
+    warnings:
+      - Conveyor tracking/runtime integration is intentionally not enabled.
+    tags: [ur5, suction, conveyor, placeholder, supported]
+
+  - id: generic_delta_suction_preview_sorting
+    title: Generic Delta + Suction Preview Sorting
+    description: Preview-only concept starter for high-speed delta sorting.
+    cell_definition: tests/fixtures/cell_definition_generic_delta_suction_preview_sorting.yaml
     runtime_mode: preview_only
-    investor_visible: true
-    tags: [delta, suction, preview_only]
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Concept-only scene for layout/task review.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [delta, suction, sorting, preview_only]
+
+  - id: generic_cartesian_gantry_suction_preview_pick_place
+    title: Generic Cartesian Gantry + Suction Preview Pick/Place
+    description: Preview-only concept starter for cartesian gantry pick/place.
+    cell_definition: tests/fixtures/cell_definition_generic_cartesian_gantry_suction_preview_pick_place.yaml
+    runtime_mode: preview_only
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Concept-only gantry layout with editable assets and poses.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [cartesian, gantry, suction, pick_place, preview_only]
+
+  - id: inspection_station_preview
+    title: Inspection Station Preview
+    description: Preview-only inspection station starter with camera-first setup.
+    cell_definition: tests/fixtures/cell_definition_inspection_station_preview.yaml
+    runtime_mode: preview_only
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Visual validation flow only; no inspection runtime pipeline.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [inspection, camera, fixture, preview_only]
+
+  - id: machine_tending_preview
+    title: Machine Tending Preview
+    description: Preview-only machine tending starter with machine fixture placeholder.
+    cell_definition: tests/fixtures/cell_definition_machine_tending_preview.yaml
+    runtime_mode: preview_only
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Machine door/chuck signals are represented as placeholders.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [machine_tending, fixture, preview_only]
+
+  - id: palletising_preview
+    title: Palletising Preview
+    description: Preview-only palletising starter with pallet and tray placeholders.
+    cell_definition: tests/fixtures/cell_definition_palletising_preview.yaml
+    runtime_mode: preview_only
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Stack logic is illustrative only.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [palletising, trays, preview_only]
+
+  - id: bin_picking_preview
+    title: Bin Picking Preview
+    description: Preview-only bin picking starter with deep-bin fixture setup.
+    cell_definition: tests/fixtures/cell_definition_bin_picking_preview.yaml
+    runtime_mode: preview_only
+    compatibility_status: warn_preview_only
+    fake_hardware_default: true
+    preview_only: true
+    notes:
+      - Perception-assisted grasping remains concept-only.
+    warnings:
+      - Preview-only template; runtime execution remains blocked.
+    tags: [bin_picking, perception, preview_only]

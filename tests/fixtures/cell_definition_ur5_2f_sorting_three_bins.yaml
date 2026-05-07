@@ -1,0 +1,10 @@
+schema_version: cell_definition/v1
+cell: {id: ur5_2f_sorting_three_bins_cell, name: UR5 2F Sorting Three Bins, description: Demo template}
+robot: {model: ur5, planning_group: manipulator, base_frame: world, tool_link: tool0, home_named_target: home, safe_joint_state: [], capability: ur5}
+end_effector: {id: robotiq_2f_85, type: finger, brand: robotiq, grasp_frame: ee_palm, allowed_touch_links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link], capability: robotiq_2f_85}
+camera: {id: realsense_d435i, type: depth_camera, frame: camera_depth_optical_frame}
+environment: {frame: world, support_surfaces: [{id: table_main, type: table, frame: world, pose_xyz: [0,0,0], pose_rpy: [0,0,0], dimensions: [1.2,0.8,0.05]}], assets: [{capability: table_standard_1200}, {capability: bin_blue_large}, {capability: bin_blue_large}]}
+objects: [{id: part, class: box, shape: box, color: red, material: plastic, frame: world, dimensions: [0.04,0.04,0.04], pose_xyz: [0.45,0,0.08], pose_rpy: [0,0,0]}]
+task: {id: sort_three_bins, type: sort_by_colour, source_object: part, destinations: [{id: bin_red, frame: world, pose_xyz: [0.3,-0.3,0.1], pose_rpy: [0,0,0]}, {id: bin_blue, frame: world, pose_xyz: [0.3,-0.1,0.1], pose_rpy: [0,0,0]}, {id: bin_reject, frame: world, pose_xyz: [0.3,0.1,0.1], pose_rpy: [0,0,0]}], rules: [{id: route_red, when: {color: red}, destination: bin_red}, {id: fallback, when: {always: true}, destination: bin_reject}]}
+grasp: {strategy_ref: finger_pinch_basic}
+commissioning: {self_test_enabled: true, export_bundle: true, require_operator_review: true, fake_hardware_default: true, demo_template_id: ur5_2f_sorting_three_bins}

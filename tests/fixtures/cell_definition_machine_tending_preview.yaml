@@ -1,0 +1,17 @@
+schema_version: cell_definition/v1
+cell: {id: machine_tending_preview_cell, name: machine_tending_preview, description: Preview-only demo template}
+robot: {model: generic_delta, planning_group: manipulator, base_frame: world, tool_link: tool0, home_named_target: home, safe_joint_state: [], capability: generic_delta_900}
+end_effector: {id: onrobot_airpick_style, type: suction, brand: generic, grasp_frame: suction_tip, allowed_touch_links: [suction_cup], capability: onrobot_airpick_style}
+camera: {id: realsense_d435i, type: depth_camera, frame: camera_depth_optical_frame}
+environment:
+  frame: world
+  support_surfaces:
+    - {id: table_main, type: table, frame: world, pose_xyz: [0,0,0], pose_rpy: [0,0,0], dimensions: [1.2,0.8,0.05]}
+  assets:
+    - {capability: table_standard_1200}
+    - {capability: fixture_placeholder}
+objects:
+  - {id: part, class: unknown, shape: box, color: unknown, material: unknown, frame: world, dimensions: [0.04,0.04,0.04], pose_xyz: [0.45,0.0,0.08], pose_rpy: [0,0,0]}
+task: {id: machine_tending_preview_task, type: pick_place, source_object: part, destinations: [{id: zone_a, frame: world, pose_xyz: [0.3,-0.3,0.1], pose_rpy: [0,0,0]}], rules: [{id: place_default, when: {always: true}, destination: zone_a}]}
+grasp: {strategy_ref: suction_top_basic}
+commissioning: {self_test_enabled: true, export_bundle: true, require_operator_review: true, fake_hardware_default: true, preview_only: true, demo_template_id: machine_tending_preview, runtime_note: Preview only concept template}
