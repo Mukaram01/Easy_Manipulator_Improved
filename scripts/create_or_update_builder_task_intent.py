@@ -48,7 +48,8 @@ def main() -> int:
     ap.add_argument('--scene-package', required=True, type=Path)
     ap.add_argument('--task-id', required=True)
     ap.add_argument('--task-type', required=True)
-    ap.add_argument('--pick-source', required=True)
+    ap.add_argument('--pick-source', required=True, help='Pick source id (e.g. pick_zone_main or epd_detected_object)')
+    ap.add_argument('--pick-source-type', choices=['perception','pick_zone','fixed_object','replay_object'], default='perception')
     ap.add_argument('--place-target', required=True)
     ap.add_argument('--grasp-strategy', required=True)
     ap.add_argument('--approach-axis', default='z_down')
@@ -69,12 +70,12 @@ def main() -> int:
     out = a.output or (a.scene_package/'generated'/'workcell_builder_task_intent.yaml')
     payload['schema']='workcell_builder_task_intent/v1'; payload['scene_package']=a.scene_package.as_posix()
     payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type})
-    payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source})
+    payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': a.pick_source_type})
     payload['pick'].setdefault('object_filter',{}).update({'class_id':a.object_class,'color':a.object_color})
     payload.setdefault('grasp',{}).update({'strategy_ref':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
-    payload.setdefault('pick',{}).setdefault('source',{}).setdefault('type', 'zone')
+    
     payload.setdefault('place',{}).setdefault('target',{}).update({'id':a.place_target})
-    payload['place'].setdefault('target',{}).setdefault('type', 'bin')
+    payload['place'].setdefault('target',{}).setdefault('type', 'place_target')
     payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
     payload.setdefault('routing', {})['rules'] = [{
         'id': 'route_any_to_selected_place',
@@ -86,7 +87,7 @@ def main() -> int:
     val={'status':'SKIP'}
     if a.validate:
         val = validate_intent(out, a.scene_package)
-    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety']}
+    summary={'result':'PASS','output_path':str(out),'validation':val,'pick_source':a.pick_source,'pick_source_type':a.pick_source_type,'place_target':a.place_target,'grasp_strategy':a.grasp_strategy,'release_strategy':a.release_strategy,'safety':payload['safety']}
     print(json.dumps(summary, indent=2) if a.json else f'Wrote {out}')
     return 0 if (not a.validate or val.get('status')!='FAIL') else 1
 
