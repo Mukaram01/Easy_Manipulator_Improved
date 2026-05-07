@@ -157,3 +157,13 @@ def test_backend_smoke_launch_helpers(tmp_path):
     assert report.get("schema") == "fake_hardware_smoke_launch_report/v1"
     val = backend.validate_smoke_launch_report(out / "fake_hardware_smoke_launch_report.json")
     assert val["ok"]
+
+
+def test_backend_planning_scene_readiness_helpers(tmp_path):
+    out = tmp_path / "readiness"
+    run = backend.check_planning_scene_readiness("scenes/ur5_2f_test", out)
+    assert run["returncode"] == 0
+    payload = backend.load_planning_scene_readiness_report(out)
+    assert payload.get("report", {}).get("schema") == "planning_scene_readiness_report/v1"
+    val = backend.validate_planning_scene_readiness_report(out / "planning_scene_readiness_report.json")
+    assert val["returncode"] == 0

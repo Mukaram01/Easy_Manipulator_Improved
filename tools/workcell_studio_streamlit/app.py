@@ -12,7 +12,7 @@ st.warning("Workcell Studio defaults to offline validation and fake hardware. Th
 
 workflow = st.sidebar.radio(
     "Workflow",
-    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Create Cell"],
+    ["Catalog browser", "Cell definition validator", "Builder scene import", "Builder Task Intent", "Demo Gallery", "RViz Plan Preview", "Planning Scene Readiness", "Create Cell"],
 )
 
 if workflow == "Catalog browser":
@@ -181,6 +181,36 @@ if workflow == "RViz Plan Preview":
         logs = backend.read_smoke_launch_logs(smoke_output)
         st.code("STDOUT:\n" + logs.get("stdout", ""))
         st.code("STDERR:\n" + logs.get("stderr", ""))
+
+
+if workflow == "Planning Scene Readiness":
+    st.header("Planning Scene Readiness")
+    st.warning("This is file/metadata readiness only. It does not call MoveIt, start ROS, or move the robot.")
+    scene = st.text_input("Scene package path", value="scenes/ur5_2f_test")
+    out = st.text_input("Output dir", value="/tmp/planning_scene_readiness")
+    cell = st.text_input("Cell definition path (optional)", value="")
+    recipe = st.text_input("Task recipe path (optional)", value="")
+    req = st.text_input("Offline plan preview request path (optional)", value="")
+    sess = st.text_input("RViz plan preview session path (optional)", value="")
+    smoke = st.text_input("Smoke report path (optional)", value="")
+    strict = st.checkbox("Strict mode", value=False)
+    c1,c2=st.columns(2)
+    if c1.button("Check planning-scene readiness"):
+        result = backend.check_planning_scene_readiness(scene, out, cell_definition=cell or None, task_recipe=recipe or None, plan_preview_request=req or None, plan_preview_session=sess or None, smoke_report=smoke or None, strict=strict)
+        st.json(result.get("json") or result)
+    if c2.button("Validate readiness report"):
+        result = backend.validate_planning_scene_readiness_report(Path(out)/"planning_scene_readiness_report.json")
+        st.json(result.get("json") or result)
+    loaded = backend.load_planning_scene_readiness_report(out)
+    rep = loaded.get("report", {})
+    if rep:
+        st.subheader("Readiness")
+        st.write({"readiness": ((rep.get("result") or {}).get("readiness")), "classification": ((rep.get("result") or {}).get("classification")), "blockers": ((rep.get("result") or {}).get("blockers")), "warnings": ((rep.get("result") or {}).get("warnings")), "suggested_next_actions": ((rep.get("result") or {}).get("suggested_next_actions"))})
+        st.subheader("Key detected fields")
+        checks = rep.get("checks") or {}
+        st.write({"launch_file_detected": ((checks.get("scene_package") or {}).get("launch_file_exists")), "robot_detected": ((checks.get("robot") or {}).get("robot_model_detected")), "tool_detected": ((checks.get("tool") or {}).get("end_effector_detected")), "pick_place_grasp": {"pick": ((checks.get("task") or {}).get("pick_source_id")), "place": ((checks.get("task") or {}).get("place_target_id")), "grasp": ((checks.get("task") or {}).get("grasp_strategy"))}, "waypoint_count": ((checks.get("task") or {}).get("waypoint_count")), "plan_preview_session_status": ((checks.get("planning") or {}).get("rviz_expected")), "smoke_report_status": ((checks.get("smoke") or {}).get("smoke_status"))})
+        st.subheader("Safety flags")
+        st.json((checks.get("safety") or {}))
 
 if workflow == "Create Cell":
     st.header("Create Cell")

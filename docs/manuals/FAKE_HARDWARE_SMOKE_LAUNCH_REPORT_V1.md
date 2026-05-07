@@ -48,3 +48,6 @@ result:
   errors: []
   suggested_next_actions: []
 ```
+
+
+Readiness integration: `planning_scene_readiness_report/v1` can consume fake-hardware smoke result artifacts.
