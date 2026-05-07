@@ -60,8 +60,11 @@ def summarize(task_intent:Path|None=None, task_recipe:Path|None=None, scene_pack
     return {'status':'FAIL' if missing else ('WARN' if warnings else 'PASS'),'readiness_classification':readiness,'task_id':task.get('id'),'task_type':task.get('type'),'pick_source_id':pick.get('id'),'place_target_id':place.get('id'),'grasp_strategy':grasp.get('strategy_ref') or grasp.get('inline_strategy'),'release_strategy':release,'routing_rules':routing,'routing_rule_count':len(routing),'missing_required_fields':missing,'suggested_next_actions':['Select a pick source zone.' if 'pick.source.id' in missing else '', 'Select a place target.' if 'place.target.id' in missing else '', 'Choose a grasp strategy.' if 'grasp.strategy_ref' in missing else '','Generate task recipe from task intent.' if not recipe else ''],'warnings':warnings,'errors':[] if not missing else [f'{m} is required' for m in missing],'safety':{'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False},'visual_resolution':{'pick_coordinates_resolved':pick_res,'place_coordinates_resolved':place_res,'approximate_coordinates_used':approx,'notes':['Used deterministic fallback coordinates for preview markers.'] if approx else []}}
 
 def main()->int:
-    ap=argparse.ArgumentParser(); ap.add_argument('--task-intent',type=Path); ap.add_argument('--task-recipe',type=Path); ap.add_argument('--scene-package',type=Path); ap.add_argument('--environment-layout',type=Path); ap.add_argument('--json',action='store_true'); a=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument('--task-intent',type=Path); ap.add_argument('--task-recipe',type=Path); ap.add_argument('--scene-package',type=Path); ap.add_argument('--environment-layout',type=Path); ap.add_argument('--output',type=Path); ap.add_argument('--json',action='store_true'); a=ap.parse_args()
     out=summarize(a.task_intent,a.task_recipe,a.scene_package,a.environment_layout)
+    if a.output:
+        a.output.parent.mkdir(parents=True, exist_ok=True)
+        a.output.write_text(json.dumps(out, indent=2)+"\n", encoding='utf-8')
     print(json.dumps(out,indent=2) if a.json else out)
     return 1 if out.get('status')=='FAIL' else 0
 if __name__=='__main__': raise SystemExit(main())

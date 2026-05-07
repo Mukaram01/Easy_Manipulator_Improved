@@ -33,6 +33,19 @@ def main()->int:
  if r.get('final_readiness')=='PASS':
   for k in ['task_recipe','offline_plan_preview_request','planning_scene_readiness_report']:
    if not arts.get(k) or not Path(arts[k]).exists(): errs.append(f'PASS requires {k}')
+
+ task_recipe=arts.get('task_recipe')
+ if task_recipe and Path(task_recipe).exists() and r.get('final_readiness')=='PASS':
+  if not arts.get('task_flow_summary') or not Path(arts.get('task_flow_summary','')).exists():
+   warn.append('task_flow_summary missing; dashboard must derive task flow from recipe')
+
+ if dashboard and Path(dashboard).exists() and task_recipe and Path(task_recipe).exists():
+  txt=Path(dashboard).read_text(encoding='utf-8')
+  lower=txt.lower()
+  if not any(x in txt for x in ['pick_zone_main','pick source']): errs.append('dashboard missing pick flow label/value')
+  if not any(x in txt for x in ['finger_pinch_basic','grasp strategy']): errs.append('dashboard missing grasp flow label/value')
+  if not any(x in txt for x in ['bin_red','place target']): errs.append('dashboard missing place flow label/value')
+  if 'href="/tmp/' in lower or "href='/tmp/" in lower: errs.append('dashboard contains absolute /tmp href for internal artifacts')
  out={'result':'FAIL' if errs else ('WARN' if warn else 'PASS'),'errors':errs,'warnings':warn}
  if a.json: print(json.dumps(out,indent=2))
  else: print(out['result'])

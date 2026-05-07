@@ -38,16 +38,29 @@ def main()->int:
         src=paths['exported']/f
         art[{'cell_definition.yaml':'cell_definition','environment_layout.yaml':'environment_layout','builder_export_summary.json':'builder_export_summary'}[f]]=str(src)
     ti=gen/'workcell_builder_task_intent.yaml'
+    recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
     if ti.exists():
         shutil.copy2(ti,paths['task']/ti.name); art['builder_task_intent']=str(paths['task']/ti.name)
         rc,tiv=step('validate_task_intent',[sys.executable,str(SCRIPT_DIR/'validate_builder_task_intent.py'),str(ti),'--scene-package',str(scene),'--json'])
         results['task_intent_status']='PASS' if rc==0 else 'WARN'
-        recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
         rc,conv=step('convert_task_intent',[sys.executable,str(SCRIPT_DIR/'convert_builder_task_intent_to_task_recipe.py'),'--task-intent',str(ti),'--output',str(recipe),'--scene-package',str(scene),'--validate','--json'])
         if recipe.exists(): art['task_recipe']=str(recipe); results['task_recipe_status']='PASS' if rc==0 else 'WARN'
-        tf=paths['task']/'task_flow_summary.json'; rc,tfp=step('task_flow',[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--output',str(tf),'--json']); art['task_flow_summary']=str(tf); results['task_flow_status']='PASS' if rc==0 else 'WARN'
     else:
         results['task_intent_status']='WARN'; summary['warnings'].append('Missing task intent (physical scene only)')
+
+    tf=paths['task']/'task_flow_summary.json'
+    task_flow_cmd=None
+    if recipe.exists():
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-recipe',str(recipe),'--output',str(tf),'--json']
+    elif (paths['task']/ti.name).exists():
+        task_flow_cmd=[sys.executable,str(SCRIPT_DIR/'summarize_task_flow.py'),'--task-intent',str(paths['task']/ti.name),'--output',str(tf),'--json']
+    if task_flow_cmd:
+        rc,tfp=step('task_flow',task_flow_cmd)
+        if tf.exists():
+            art['task_flow_summary']=str(tf)
+        results['task_flow_status']='PASS' if rc==0 else 'WARN'
+    else:
+        results['task_flow_status']='WARN'
     rc,sp=step('static_preview',[sys.executable,str(SCRIPT_DIR/'generate_workcell_static_preview.py'),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--environment-layout',str(paths['exported']/'environment_layout.yaml'),'--output-dir',str(paths['preview']),'--title',a.project_name,'--json'])
     art['static_preview']={'svg':str(paths['preview']/'static_preview.svg'),'html':str(paths['preview']/'static_preview.html'),'summary':str(paths['preview']/'static_preview_summary.json')}; results['static_preview_status']='PASS' if rc==0 else 'WARN'
     recipe=paths['task']/'task_recipe_from_builder_intent.yaml'
@@ -78,6 +91,8 @@ def main()->int:
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
 
+    (out/'next_commands.md').write_text(f"python3 scripts/workcell_studio.py validate-readiness-pack --manifest {out/'readiness_pack_manifest.json'} --json\npython3 scripts/workcell_studio.py generate-readiness-dashboard --manifest {out/'readiness_pack_manifest.json'} --output {out/'readiness_dashboard.html'} --json\n",encoding='utf-8')
+
     dashboard = out/'readiness_dashboard.html'
     if not a.no_dashboard:
         rc,db=step('dashboard',[sys.executable,str(SCRIPT_DIR/'generate_readiness_pack_dashboard.py'),'--manifest',str(out/'readiness_pack_manifest.json'),'--output',str(dashboard),'--json'])
@@ -87,7 +102,6 @@ def main()->int:
     manifest['artifacts']=art
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_summary.md').write_text(f"# Workcell Studio Readiness Pack\n\n- Final readiness: **{results['final_readiness']}**\n- Classification: `{results.get('classification','unknown')}`\n- Dashboard: `{art.get('readiness_dashboard','(disabled)')}`\n",encoding='utf-8')
-    (out/'next_commands.md').write_text(f"python3 scripts/workcell_studio.py validate-readiness-pack --manifest {out/'readiness_pack_manifest.json'} --json\npython3 scripts/workcell_studio.py generate-readiness-dashboard --manifest {out/'readiness_pack_manifest.json'} --output {out/'readiness_dashboard.html'} --json\n",encoding='utf-8')
     if a.json: print(json.dumps({'result':results['final_readiness'],'manifest':str(out/'readiness_pack_manifest.json')},indent=2))
     return 0 if results['final_readiness']!='FAIL' or a.continue_on_error else 2
 if __name__=='__main__': raise SystemExit(main())

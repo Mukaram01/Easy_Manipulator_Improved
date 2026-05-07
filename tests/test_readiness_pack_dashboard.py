@@ -1,17 +1,34 @@
 from __future__ import annotations
-import json, subprocess, sys
+import json, subprocess, sys, shutil
 from pathlib import Path
 from tools.workcell_studio_streamlit import backend
 
 
+def _mk_scene(tmp_path: Path) -> Path:
+    scene = tmp_path / 'scene'
+    shutil.copytree('scenes/ur5_2f_test', scene)
+    gen = scene / 'generated'
+    gen.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--approach-axis','z_down','--approach-distance-m','0.12','--retreat-axis','z_up','--retreat-distance-m','0.10','--release-strategy','tool_release','--object-class','any','--object-color','red','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'
+    ], check=True)
+    return scene
+
+
 def test_generate_dashboard_from_pack(tmp_path: Path):
     out = tmp_path/'pack'
-    subprocess.run([sys.executable,'scripts/workcell_studio.py','generate-readiness-pack','--scene-package','scenes/ur5_2f_test','--output-dir',str(out),'--project-name','demo','--validate','--smoke-dry-run','--force','--json'],check=False)
+    scene = _mk_scene(tmp_path)
+    subprocess.run([sys.executable,'scripts/workcell_studio.py','generate-readiness-pack','--scene-package',str(scene),'--output-dir',str(out),'--project-name','demo','--validate','--smoke-dry-run','--force','--json'],check=False)
     dash = out/'readiness_dashboard.html'
     assert dash.exists()
     txt=dash.read_text(encoding='utf-8')
-    for k in ['Workcell Studio','Final readiness','No robot motion','not a safety certificate','Artifact status']:
+    for k in ['pick_zone_main','bin_red','finger_pinch_basic','task_flow_summary.json']:
         assert k in txt
+    assert 'pick source: missing' not in txt
+    assert "href='/tmp/" not in txt and 'href="/tmp/' not in txt
+    assert 'preview/static_preview.svg' in txt
+    assert 'preview/static_preview.html' in txt
+    assert 'No next_commands.md found' not in txt
 
 
 def test_generate_dashboard_missing_artifacts(tmp_path: Path):

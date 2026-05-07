@@ -31,3 +31,19 @@ def test_no_dashboard_option_and_generate_dashboard_cli(tmp_path: Path):
     assert not (out/'readiness_dashboard.html').exists()
     rerun = subprocess.run([sys.executable,'scripts/workcell_studio.py','generate-readiness-dashboard','--manifest',str(out/'readiness_pack_manifest.json'),'--output',str(out/'readiness_dashboard_regenerated.html'),'--json'], capture_output=True, text=True, check=False)
     assert rerun.returncode == 0
+
+
+def test_pack_with_task_intent_includes_task_flow_summary(tmp_path: Path):
+    import shutil
+    scene = tmp_path / 'scene'
+    shutil.copytree('scenes/ur5_2f_test', scene)
+    gen = scene / 'generated'
+    gen.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable,'scripts/create_or_update_builder_task_intent.py','--scene-package',str(scene),'--task-id','sorting_task_001','--task-type','pick_place','--pick-source','pick_zone_main','--place-target','bin_red','--grasp-strategy','finger_pinch_basic','--release-strategy','tool_release','--output',str(gen/'workcell_builder_task_intent.yaml'),'--validate','--json'],check=True)
+    out = tmp_path / 'pack_task'
+    run = subprocess.run([sys.executable, 'scripts/workcell_studio.py', 'generate-readiness-pack', '--scene-package', str(scene), '--output-dir', str(out), '--project-name', 'demo', '--validate', '--smoke-dry-run', '--force', '--json'], capture_output=True, text=True, check=False)
+    assert run.returncode in (0,1)
+    manifest = json.loads((out/'readiness_pack_manifest.json').read_text(encoding='utf-8'))
+    tf = Path(manifest['artifacts']['task_flow_summary'])
+    assert tf.exists()
+    assert manifest['results']['task_flow_status'] in ('PASS','WARN')
