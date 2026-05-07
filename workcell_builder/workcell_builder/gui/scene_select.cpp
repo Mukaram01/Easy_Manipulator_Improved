@@ -652,11 +652,12 @@ void SceneSelect::generate_scene_package(
     readme << "Next steps:\n";
     readme << "1. Validate builder scene:\n\n```bash\n./generated/run_builder_validation.sh\n```\n\n";
     readme << "2. Export Workcell Studio source files:\n\n```bash\n./generated/export_workcell_studio_sources.sh\n```\n\n";
-    readme << "3. Define pick/place task intent:\n";
+    readme << "3. Review generated summary metadata: `generated/builder_export_summary.json`\n\n";
+    readme << "4. Define pick/place task intent:\n";
     readme << "   - use Workcell Studio Streamlit helper, or\n";
     readme << "   - use scripts/create_or_update_environment_target.py and scripts/create_or_update_builder_task_intent.py\n\n";
-    readme << "4. Generate readiness pack:\n\n```bash\n./generated/generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene\n```\n\n";
-    readme << "5. Open dashboard:\n\n```bash\ncd /tmp/workcell_readiness_pack && python3 -m http.server 8767\n```\n\n";
+    readme << "5. Generate readiness pack:\n\n```bash\n./generated/generate_readiness_pack.sh /tmp/workcell_readiness_pack test_scene\n```\n\n";
+    readme << "6. Open dashboard:\n\n```bash\ncd /tmp/workcell_readiness_pack && python3 -m http.server 8767\n```\n\n";
     readme << "http://localhost:8767/readiness_dashboard.html\n\n";
     readme << "If helpers cannot locate tooling, set:\n\n```bash\nexport WORKCELL_STUDIO_REPO_ROOT=~/workcell_ws/src/easy_manipulation_deployment\n```\n\n";
     readme << "Safety note: offline/fake-hardware only, no robot motion, no MoveIt service call, not a safety certificate.\n";

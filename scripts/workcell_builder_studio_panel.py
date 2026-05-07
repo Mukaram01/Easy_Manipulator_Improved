@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from scripts.workcell_builder_studio_summary import summarize_builder_scene
+
 
 def _read_yaml_like(path: Path) -> dict[str, Any]:
     try:
@@ -91,8 +93,11 @@ def build_grasp_flow_preview_command(scene_package_name: str, bridge_payload_pat
 def panel_state_from_validation(report: dict[str, Any], scene_package: Path) -> dict[str, Any]:
     warnings = list(report.get("warnings") or [])
     blockers = list(report.get("errors") or report.get("blockers") or [])
+    summary = summarize_builder_scene(scene_package)
     return {
         **detect_scene_context(scene_package),
+        "studio_summary": summary,
+        "summary_panel_title": "Workcell Studio Summary",
         "scene_validation_status": report.get("status", "UNKNOWN"),
         "export_status": "READY" if (Path(scene_package) / "generated" / "export_workcell_studio_sources.sh").exists() else "MISSING",
         "readiness_status": report.get("readiness", report.get("readiness_classification", "unknown")),
