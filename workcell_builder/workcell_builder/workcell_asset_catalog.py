@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any
+
+VALID_CUSTOM_STL_CATEGORIES = {"object", "environment_asset", "fixture", "machine", "bin", "conveyor_visual", "tool_visual", "safety_visual", "custom_visual"}
+VALID_CUSTOM_STL_EXTENSIONS = {".stl", ".dae", ".obj"}
+VALID_CUSTOM_STL_COLLISION_MODES = {"visual_only", "bounding_box_collision", "mesh_collision"}
 
 import yaml
 
@@ -62,23 +66,61 @@ def grouped_selection(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]
 
 @dataclass
 class CustomStlMetadata:
-    file_path: str
+    source_path: str
     display_name: str
-    category: str = "custom"
-    scale: list[float] | None = None
-    xyz: list[float] | None = None
-    rpy: list[float] | None = None
-    collision_enabled: bool = True
-    visual_only: bool = False
+    category: str = "custom_visual"
+    copied_asset_path: str | None = None
+    scale: list[float] = field(default_factory=lambda: [1.0, 1.0, 1.0])
+    xyz: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    rpy: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    collision_mode: str = "bounding_box_collision"
+    support_status: str = "supported"
     notes: str = ""
+
+    def validate(self) -> list[str]:
+        errors: list[str] = []
+        path = Path(self.source_path)
+        if not path.is_file():
+            errors.append(f"source_path does not exist: {self.source_path}")
+        if path.suffix.lower() not in VALID_CUSTOM_STL_EXTENSIONS:
+            errors.append("source_path must have one of extensions: .stl, .dae, .obj")
+        if self.category not in VALID_CUSTOM_STL_CATEGORIES:
+            errors.append(f"invalid category: {self.category}")
+        if self.collision_mode not in VALID_CUSTOM_STL_COLLISION_MODES:
+            errors.append(f"invalid collision mode: {self.collision_mode}")
+        if len(self.scale) != 3 or any(s <= 0 for s in self.scale):
+            errors.append("scale must be a 3-element vector with values > 0")
+        if len(self.xyz) != 3:
+            errors.append("xyz must contain exactly 3 values")
+        if len(self.rpy) != 3:
+            errors.append("rpy must contain exactly 3 values")
+        return errors
+
+    def _effective_collision_mode(self) -> str:
+        if self.collision_mode == "mesh_collision":
+            return "bounding_box_collision"
+        return self.collision_mode
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data.setdefault("scale", [1.0, 1.0, 1.0])
-        data.setdefault("xyz", [0.0, 0.0, 0.0])
-        data.setdefault("rpy", [0.0, 0.0, 0.0])
+        if self.collision_mode == "mesh_collision":
+            note = "mesh_collision requested but not supported in lightweight builder; fallback to bounding_box_collision"
+            data["support_status"] = "warn"
+            data["collision_mode"] = self._effective_collision_mode()
+            data["notes"] = f"{self.notes}; {note}" if self.notes else note
         return data
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "CustomStlMetadata":
-        return cls(**payload)
+        remapped = dict(payload)
+        # Backward compatibility
+        if "source_path" not in remapped and "file_path" in remapped:
+            remapped["source_path"] = remapped.pop("file_path")
+        if "collision_mode" not in remapped:
+            if remapped.pop("visual_only", False):
+                remapped["collision_mode"] = "visual_only"
+            elif remapped.pop("collision_enabled", True):
+                remapped["collision_mode"] = "bounding_box_collision"
+        remapped.pop("collision_enabled", None)
+        remapped.pop("visual_only", None)
+        return cls(**remapped)
