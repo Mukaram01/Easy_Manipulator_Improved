@@ -53,7 +53,8 @@ def test_builder_validator_warns_for_legacy_scene_without_exports() -> None:
         )
         payload = json.loads(out.stdout)
         assert payload["ok"] is True
-        assert any("legacy scenes" in w for w in payload["warnings"])
+        assert any("generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh" in w for w in payload["warnings"])
+        assert any("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh" in w for w in payload["warnings"])
 
 
 def test_preview_only_metadata_emits_warning() -> None:

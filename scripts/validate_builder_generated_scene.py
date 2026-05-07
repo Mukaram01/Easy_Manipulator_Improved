@@ -68,23 +68,25 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
 
     exported_cell = scene_path / "generated" / "cell_definition.yaml"
     exported_layout = scene_path / "generated" / "environment_layout.yaml"
-    checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file()})
-    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file()})
+    checks.append({"check": "generated/cell_definition.yaml present", "ok": exported_cell.is_file(), "optional": True})
+    checks.append({"check": "generated/environment_layout.yaml present", "ok": exported_layout.is_file(), "optional": True})
     export_validation = {}
     if exported_cell.is_file():
         run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_cell_definition.py"), str(exported_cell), "--json"], capture_output=True, text=True, check=False)
         export_validation["cell_definition"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
     else:
-        warnings.append("Builder export missing generated/cell_definition.yaml (legacy scenes are allowed).")
+        warnings.append("generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh")
     if exported_layout.is_file():
         run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_environment_layout.py"), str(exported_layout), "--json"], capture_output=True, text=True, check=False)
         export_validation["environment_layout"] = json.loads(run.stdout) if run.stdout.strip() else {"result": "FAIL"}
     else:
-        warnings.append("Builder export missing generated/environment_layout.yaml (legacy scenes are allowed).")
+        warnings.append("generated/environment_layout.yaml missing; run ./generated/export_workcell_studio_sources.sh")
 
     task_intent_report = {}
+    task_intent_check = {"check": "generated/workcell_builder_task_intent.yaml present", "ok": False, "optional": True}
     task_intent_path = _find_task_intent(scene_path)
     if task_intent_path:
+        task_intent_check["ok"] = True
         run = subprocess.run(["python3", str(SCRIPT_DIR / "validate_builder_task_intent.py"), str(task_intent_path), "--scene-package", str(scene_path), "--json"], capture_output=True, text=True, check=False)
         task_intent_report = json.loads(run.stdout) if run.stdout.strip() else {"status": "FAIL", "errors": [run.stderr.strip()]}
         if task_intent_report.get("status") == "FAIL":
@@ -93,6 +95,7 @@ def validate_scene(scene_path: Path) -> dict[str, Any]:
             warnings.extend(task_intent_report.get("warnings", []))
     else:
         warnings.append("Task intent missing: physical scene only.")
+    checks.append(task_intent_check)
 
     runtime_supported = bool(metadata.get("runtime_supported", False))
     preview_only = bool(metadata.get("preview_only", False))
@@ -154,7 +157,13 @@ def main() -> int:
         print(f"Scene: {report['scene_path']}")
         print(f"Readiness: {report['readiness']}")
         for c in report["checks"]:
-            print(f" - {'PASS' if c['ok'] else 'FAIL'}: {c['check']}")
+            if c["ok"]:
+                state = "PASS"
+            elif c.get("optional"):
+                state = "WARN"
+            else:
+                state = "FAIL"
+            print(f" - {state}: {c['check']}")
         for w in report["warnings"]:
             print(f" - WARN: {w}")
         for e in report["errors"]:
