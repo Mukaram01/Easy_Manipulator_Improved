@@ -15,3 +15,9 @@ end_effector:
   release_behaviour: open_until_clear
   limitations_warnings:
     - Requires parallel approach for reliable pinch grasps.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  asset_package: robotiq_85_description
+  urdf_or_xacro: assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro
+  moveit_config_package: robotiq_85_moveit_config

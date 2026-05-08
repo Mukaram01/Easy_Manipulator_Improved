@@ -11,3 +11,8 @@ sensor:
   calibration_requirements: [intrinsics, hand_eye_if_robot_relative]
   limitations_warnings:
     - IR interference can reduce depth quality on reflective parts.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  asset_package: realsense2_description
+  urdf_or_xacro: assets/environment/realsense2_description/urdf/_d435i.urdf.xacro

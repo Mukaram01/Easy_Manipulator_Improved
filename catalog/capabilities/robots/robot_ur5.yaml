@@ -18,3 +18,25 @@ robot:
   supported_task_families: [pick_place, sort_by_colour, sort_by_shape, machine_tending]
   limitations_warnings:
     - Demonstration metadata only.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  runtime_mode_default: fake_hardware
+  asset_package: ur5_description
+  urdf_or_xacro: assets/robots/universal_robot/ur5_moveit_config/config/ur5.ros2_control.xacro
+  moveit_config_package: ur5_moveit_config
+  has_description_package: true
+  has_moveit_config: true
+  has_fake_hardware_config: true
+  has_ros2_control_config: true
+  has_supported_demo_launch: true
+  default_planning_group: manipulator
+  flange_frame: tool0
+  tcp_frame: tool0
+  driver_package: ur_robot_driver
+  driver_repo: https://github.com/UniversalRobots/Universal_Robots_ROS_Driver
+  driver_status: optional_later
+  real_hardware_status: guarded_later
+  real_hardware_guard_required: true
+  required_hardware_interface: ros2_control
+  real_hardware_notes: Metadata only; no real driver dependencies are enabled by default.

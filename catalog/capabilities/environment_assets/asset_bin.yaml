@@ -15,3 +15,7 @@ asset:
   mesh_path: assets/environment/bin_blue_large.stl
   limitations_warnings:
     - Keep 50 mm clearance around rim for placement.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  mesh_path: assets/environment/workbench_description/meshes/visual/table.stl
