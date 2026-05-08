@@ -3,21 +3,42 @@ end_effector:
   id: onrobot_airpick_style
   label: OnRobot Airpick Style
   family: suction
-  compatible_robot_families: [serial_6_axis, collaborative_6_axis, delta, gantry]
-  required_frames: [tool0]
-  grasp_frames: [suction_tip]
-  contact_links: [suction_cup]
-  allowed_touch_links: [suction_cup]
+  compatible_robot_families:
+  - serial_6_axis
+  - collaborative_6_axis
+  - delta
+  - gantry
+  required_frames:
+  - tool0
+  grasp_frames:
+  - suction_tip
+  contact_links:
+  - suction_cup
+  allowed_touch_links:
+  - suction_cup
   max_object_mass_kg: 0.6
   suction_area_mm2: 900
-  supported_grasp_strategies: [top_down_suction, side_pick]
-  required_io_signals: [vacuum_on, blowoff]
+  supported_grasp_strategies:
+  - top_down_suction
+  - side_pick
+  required_io_signals:
+  - vacuum_on
+  - blowoff
   release_behaviour: vacuum_off_with_blowoff
   limitations_warnings:
-    - Porous surfaces reduce holding force.
-
-  support_status: supported
-  runtime_status: fake_hardware_only
+  - Porous surfaces reduce holding force.
+  support_status: warn
+  runtime_status: warn_partial
   asset_package: onrobot_airpick4_description
   urdf_or_xacro: assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro
   moveit_config_package: onrobot_airpick4_moveit_config
+  fake_hardware_status: ready
+  real_hardware_status: optional_later
+  driver_status: optional_later
+  category: tool
+  display_name: OnRobot AirPick/AirPick4
+  tcp_frame: suction_tip
+  compatible_grasp_strategies:
+  - suction_top
+  - suction_top_basic
+  - auto

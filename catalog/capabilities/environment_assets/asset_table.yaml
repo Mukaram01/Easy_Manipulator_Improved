@@ -8,15 +8,27 @@ asset:
     width_m: 0.8
     height_m: 0.9
   frame: world
-  pose: [0.8, 0.0, 0.45, 0.0, 0.0, 0.0]
+  pose:
+  - 0.8
+  - 0.0
+  - 0.45
+  - 0.0
+  - 0.0
+  - 0.0
   collision_behaviour: static_collision
   mobility: static
   import_source: internal_catalog
   mesh_path: assets/environment/table_standard.stl
   limitations_warnings:
-    - Payload limit depends on selected table model.
-
+  - Payload limit depends on selected table model.
   support_status: supported
-  runtime_status: fake_hardware_only
+  runtime_status: supported
   asset_package: workbench_description
   urdf_or_xacro: assets/environment/workbench_description/urdf/table.urdf.xacro
+  category: environment
+  display_name: Workbench/Table
+  fake_hardware_status: ready
+  real_hardware_status: n/a
+  driver_status: optional_later
+  mesh_paths:
+  - assets/environment/workbench_description/meshes/visual/table.stl

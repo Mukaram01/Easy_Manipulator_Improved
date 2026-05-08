@@ -5,22 +5,36 @@ robot:
   brand: Universal Robots
   family: serial_6_axis
   mounting: floor
-  planning_groups: [manipulator]
+  planning_groups:
+  - manipulator
   base_frame: base_link
-  tool_frames: [tool0, ee_link]
+  tool_frames:
+  - tool0
+  - ee_link
   default_tool_frame: tool0
-  named_targets: [home, ready, stow]
+  named_targets:
+  - home
+  - ready
+  - stow
   payload_kg: 5.0
   reach_m: 0.85
   workspace_description: Cylindrical workstation envelope
   controller_type: position_trajectory
-  supported_interfaces: [moveit, ros2_control, joint_trajectory_controller, cartesian_path, named_targets]
-  supported_task_families: [pick_place, sort_by_colour, sort_by_shape, machine_tending]
+  supported_interfaces:
+  - moveit
+  - ros2_control
+  - joint_trajectory_controller
+  - cartesian_path
+  - named_targets
+  supported_task_families:
+  - pick_place
+  - sort_by_colour
+  - sort_by_shape
+  - machine_tending
   limitations_warnings:
-    - Demonstration metadata only.
-
+  - Demonstration metadata only.
   support_status: supported
-  runtime_status: fake_hardware_only
+  runtime_status: supported
   runtime_mode_default: fake_hardware
   asset_package: ur5_description
   urdf_or_xacro: assets/robots/universal_robot/ur5_moveit_config/config/ur5.ros2_control.xacro
@@ -36,7 +50,11 @@ robot:
   driver_package: ur_robot_driver
   driver_repo: https://github.com/UniversalRobots/Universal_Robots_ROS_Driver
   driver_status: optional_later
-  real_hardware_status: guarded_later
+  real_hardware_status: optional_later
   real_hardware_guard_required: true
   required_hardware_interface: ros2_control
   real_hardware_notes: Metadata only; no real driver dependencies are enabled by default.
+  fake_hardware_status: ready
+  planning_group: manipulator
+  category: robot
+  display_name: Universal Robots UR5

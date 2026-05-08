@@ -8,14 +8,25 @@ asset:
     width_m: 0.4
     height_m: 0.35
   frame: world
-  pose: [0.3, -0.6, 0.175, 0.0, 0.0, 0.0]
+  pose:
+  - 0.3
+  - -0.6
+  - 0.175
+  - 0.0
+  - 0.0
+  - 0.0
   collision_behaviour: rigid_container
   mobility: movable
   import_source: internal_catalog
-  mesh_path: assets/environment/bin_blue_large.stl
-  limitations_warnings:
-    - Keep 50 mm clearance around rim for placement.
-
-  support_status: supported
-  runtime_status: fake_hardware_only
   mesh_path: assets/environment/workbench_description/meshes/visual/table.stl
+  limitations_warnings:
+  - Keep 50 mm clearance around rim for placement.
+  support_status: supported
+  runtime_status: supported
+  category: environment
+  display_name: Sorting Bin
+  fake_hardware_status: ready
+  real_hardware_status: n/a
+  driver_status: optional_later
+  mesh_paths:
+  - assets/environment/workbench_description/meshes/visual/table.stl

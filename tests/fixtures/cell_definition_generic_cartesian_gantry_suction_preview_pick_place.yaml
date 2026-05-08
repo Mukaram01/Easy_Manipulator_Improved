@@ -135,6 +135,6 @@ commissioning:
     generated_motion_launch_supported: false
     reason: Placeholder robot family has no approved runtime launch/control stack
       yet.
-  demo_template_id: generic_cartesian_gantry_suction_preview_pick_place
+  demo_template_id: delta_suction_preview_sorting
   fake_hardware_default: true
   preview_only: true
