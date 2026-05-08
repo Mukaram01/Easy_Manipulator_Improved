@@ -1,0 +1,32 @@
+asset_roots:
+  - assets
+  - scenes
+catalog_roots:
+  - catalog
+  - workcell_studio_catalog
+package_exposure:
+  mode: single_source
+known_ros_packages:
+  - ur5_description
+  - ur5_moveit_config
+  - robotiq_85_description
+  - onrobot_airpick4_description
+supported_package_names:
+  - ur5_description
+  - ur5_moveit_config
+  - robotiq_85_description
+  - realsense2_description
+preview_only_package_names:
+  - fanuc_description
+  - fanuc_moveit_config
+  - robot_generic_delta
+  - robot_generic_gantry
+ignored_paths:
+  - epd_Improved
+optional_driver_packages:
+  - ur_robot_driver
+  - abb_driver_placeholder
+  - fanuc_driver_placeholder
+rules:
+  no_duplicate_colcon_packages: true
+  fake_hardware_default: true

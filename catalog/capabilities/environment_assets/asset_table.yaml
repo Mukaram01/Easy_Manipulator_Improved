@@ -15,3 +15,8 @@ asset:
   mesh_path: assets/environment/table_standard.stl
   limitations_warnings:
     - Payload limit depends on selected table model.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  asset_package: workbench_description
+  urdf_or_xacro: assets/environment/workbench_description/urdf/table.urdf.xacro

@@ -15,3 +15,9 @@ end_effector:
   release_behaviour: vacuum_off_with_blowoff
   limitations_warnings:
     - Porous surfaces reduce holding force.
+
+  support_status: supported
+  runtime_status: fake_hardware_only
+  asset_package: onrobot_airpick4_description
+  urdf_or_xacro: assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro
+  moveit_config_package: onrobot_airpick4_moveit_config
