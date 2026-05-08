@@ -684,3 +684,119 @@ def read_readiness_dashboard(path: str | Path, max_chars: int = 12000) -> str:
         return ""
     text = p.read_text(encoding="utf-8")
     return text[:max_chars]
+
+
+MANUAL_AUTHORING_MODE = "manual_cell_authoring"
+
+
+def default_pick_roi() -> dict[str, Any]:
+    return {
+        "id": "camera_pick_roi",
+        "type": "camera_pointcloud_roi",
+        "camera_asset_id": "realsense_d435i",
+        "pointcloud_topic": "/camera/depth/color/points",
+        "frame_id": "base_link",
+        "crop_box": {"x_min": 0.25, "x_max": 0.85, "y_min": -0.40, "y_max": 0.40, "z_min": 0.02, "z_max": 0.35},
+        "filters": {
+            "min_height_above_table": 0.0,
+            "max_height_above_table": 0.35,
+            "min_cluster_size": 80,
+            "max_cluster_size": 25000,
+            "voxel_leaf_size": 0.005,
+            "remove_table_plane": True,
+            "remove_floor": True,
+        },
+        "transform_status": {"requires_tf": True, "camera_to_base_required": True},
+    }
+
+
+def default_manual_authoring_state(cell_id: str = "manual_cell") -> dict[str, Any]:
+    return {
+        "schema": "workcell_builder_manual_authoring/v1",
+        "mode": MANUAL_AUTHORING_MODE,
+        "fake_hardware_default": True,
+        "cell": {"id": cell_id, "name": cell_id},
+        "selected_assets": [],
+        "placements": [],
+        "pick_sources": [default_pick_roi()],
+        "place_targets": [{"id": "bin_main", "role": "bin", "pose": {"frame": "world", "xyz": [0.70, -0.2, 0.8], "rpy": [0, 0, 0]}, "allowed_orientation_mode": "upright"}],
+        "task": {"type": "pick_place", "supported": True, "preview_only": False},
+        "grasp": {"strategy": "auto", "approach_distance": 0.10, "retreat_distance": 0.10, "approach_axis": "z_down", "orientation_mode": "free"},
+    }
+
+
+def validate_pick_roi(roi: dict[str, Any]) -> list[dict[str, str]]:
+    issues: list[dict[str, str]] = []
+    crop = roi.get("crop_box", {}) if isinstance(roi.get("crop_box"), dict) else {}
+    for axis in ("x", "y", "z"):
+        lo = crop.get(f"{axis}_min")
+        hi = crop.get(f"{axis}_max")
+        if lo is None or hi is None:
+            issues.append({"level": "FAIL", "code": "missing_crop_bound", "message": f"Missing {axis} crop bounds."})
+            continue
+        if float(lo) >= float(hi):
+            issues.append({"level": "FAIL", "code": "invalid_crop_box", "message": f"{axis}_min must be less than {axis}_max."})
+    if not roi.get("frame_id"):
+        issues.append({"level": "FAIL", "code": "missing_pick_roi_frame", "message": "Pick ROI frame is required."})
+    return issues
+
+
+def authoring_validation_report(state: dict[str, Any]) -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    assets = state.get("selected_assets", []) if isinstance(state.get("selected_assets"), list) else []
+    roles = {str(a.get("role")) for a in assets if isinstance(a, dict)}
+    if "robot_base" not in roles:
+        issues.append({"level": "FAIL", "code": "missing_robot", "message": "Missing robot."})
+    if not ({"gripper", "tool"} & roles):
+        issues.append({"level": "FAIL", "code": "missing_tool", "message": "Missing gripper/tool."})
+    if "support_surface" not in roles:
+        issues.append({"level": "FAIL", "code": "missing_support_surface", "message": "Missing table/support surface."})
+    pick_sources = state.get("pick_sources", []) if isinstance(state.get("pick_sources"), list) else []
+    if not pick_sources:
+        issues.append({"level": "FAIL", "code": "missing_pick_area", "message": "Missing pick area."})
+    for src in pick_sources:
+        if isinstance(src, dict) and src.get("type") == "camera_pointcloud_roi":
+            issues.extend(validate_pick_roi(src))
+    if not (state.get("place_targets") or []):
+        issues.append({"level": "FAIL", "code": "missing_place_target", "message": "Missing place target."})
+    if any(bool(a.get("preview_only")) for a in assets if isinstance(a, dict)):
+        issues.append({"level": "WARN", "code": "preview_only_asset", "message": "Preview-only asset selected."})
+    status = "OK"
+    if any(i["level"] == "FAIL" for i in issues):
+        status = "FAIL"
+    elif issues:
+        status = "WARN"
+    return {"status": status, "issues": issues, "ingredients_ready": "FAIL" not in [i["level"] for i in issues if i["code"].startswith("missing_")], "cell_ready": status != "FAIL", "runtime_ready": status == "OK" and not any(i["code"] == "preview_only_asset" for i in issues)}
+
+
+def export_manual_authoring_bundle(state: dict[str, Any], output_dir: str | Path) -> dict[str, str]:
+    out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
+    selected = state.get("selected_assets", [])
+    placements = state.get("placements", [])
+    pick_sources = state.get("pick_sources", [])
+    place_targets = state.get("place_targets", [])
+    task = state.get("task", {})
+    grasp = state.get("grasp", {})
+    cell_id = ((state.get("cell") or {}).get("id") or "manual_cell")
+    cell_def = {"schema_version": "cell_definition/v1", "cell": state.get("cell", {"id": cell_id}), "pick_sources": pick_sources, "task": task, "grasp": grasp}
+    env = {"schema_version": "environment_layout/v1", "layout_id": f"{cell_id}_layout", "assets": placements}
+    recipe = {"schema_version": "task_recipe/v1", "task": task, "pick_source_refs": [s.get("id") for s in pick_sources if isinstance(s, dict)], "place_target_refs": [p.get("id") for p in place_targets if isinstance(p, dict)], "grasp": grasp}
+    compat = authoring_validation_report(state)
+    summary = {"mode": state.get("mode"), "fake_hardware_default": bool(state.get("fake_hardware_default", True)), "runtime_generation_allowed": compat.get("runtime_ready", False), "preview_only": not compat.get("runtime_ready", False)}
+    files = {
+        "cell_definition.yaml": cell_def,
+        "environment_layout.yaml": env,
+        "task_recipe.yaml": recipe,
+        "selected_assets.json": selected,
+        "compatibility_report.json": compat,
+        "builder_export_summary.json": summary,
+    }
+    written = {}
+    for name, payload in files.items():
+        path = out / name
+        if name.endswith('.yaml'):
+            save_environment_layout(path, payload)
+        else:
+            path.write_text(json.dumps(payload, indent=2) + "\n", encoding='utf-8')
+        written[name] = str(path)
+    return written
