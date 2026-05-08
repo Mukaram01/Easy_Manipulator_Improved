@@ -24,6 +24,9 @@ struct SceneSelectPathResolution
 };
 
 SceneSelectPathResolution resolve_scene_select_paths(const Workcell & workcell);
+SceneSelectPathResolution resolve_scene_select_paths(
+  const Workcell & workcell,
+  const boost::filesystem::path & preferred_root);
 
 }  // namespace workcell_builder
 

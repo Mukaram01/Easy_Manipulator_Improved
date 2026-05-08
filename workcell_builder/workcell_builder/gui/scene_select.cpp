@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QLineEdit>
+#include <QFileDialog>
 #include <QListWidgetItem>
 #include <QTreeWidgetItem>
 #include <boost/filesystem.hpp>
@@ -454,12 +455,10 @@ void SceneSelect::load_workcell(Workcell workcell_input)
 {
   workcell = workcell_input;
 
-  const auto resolution = workcell_builder::resolve_scene_select_paths(workcell);
+  const auto resolution = workcell_builder::resolve_scene_select_paths(workcell, workcell_path);
   templates_path = resolution.paths.templates_path;
   if (!resolution.success) {
-    workcell_path.clear();
-    scenes_path.clear();
-    assets_path.clear();
+    configure_startup_fallback_paths();
     show_invalid_workcell_error(resolution.error);
     return;
   }
@@ -472,6 +471,21 @@ void SceneSelect::load_workcell(Workcell workcell_input)
   }
   discover_scene_packages_on_startup();
   refresh_scenes(0, false);
+}
+
+void SceneSelect::update_scene_browser_status(const std::string & note)
+{
+  const int count = static_cast<int>(workcell.scene_vector.size());
+  const QString stamp = QDateTime::currentDateTime().toString(Qt::ISODate);
+  QString text = QString("Scenes folder: %1\nAssets folder: %2\nNumber of scenes found: %3\nLast refresh: %4")
+    .arg(QString::fromStdString(path_or_placeholder(scenes_path)))
+    .arg(QString::fromStdString(path_or_placeholder(assets_path)))
+    .arg(count)
+    .arg(stamp);
+  if (!note.empty()) {
+    text += "\n" + QString::fromStdString(note);
+  }
+  ui->scene_browser_status->setText(text);
 }
 
 void SceneSelect::discover_scene_packages_on_startup()
@@ -499,14 +513,15 @@ void SceneSelect::discover_scene_packages_on_startup()
     }
     const std::string scene_name = entry.path().filename().string();
     const fs::path package_xml = entry.path() / "package.xml";
-    const fs::path cmake_lists = entry.path() / "CMakeLists.txt";
-    const fs::path urdf_dir = entry.path() / "urdf";
+    const fs::path scene_manifest = entry.path() / "scene_manifest.yaml";
     const fs::path environment_yaml = entry.path() / "environment.yaml";
+    const fs::path urdf_xacro = entry.path() / "urdf" / "scene.urdf.xacro";
+    const fs::path demo_launch = entry.path() / "launch" / "demo.launch.py";
 
-    if (!fs::exists(package_xml) || !fs::exists(cmake_lists) || !fs::is_directory(urdf_dir)) {
-      append_info(
-        "Skipped scene directory '" + scene_name +
-        "': missing one of [package.xml, CMakeLists.txt, urdf/].");
+    const bool has_markers = fs::exists(package_xml) || fs::exists(scene_manifest) ||
+      fs::exists(environment_yaml) || fs::exists(urdf_xacro) || fs::exists(demo_launch);
+    if (!has_markers) {
+      append_info("Skipped scene directory '" + scene_name + "': no scene package markers found.");
       continue;
     }
     if (known_scenes.find(scene_name) != known_scenes.end()) {
@@ -535,6 +550,11 @@ void SceneSelect::discover_scene_packages_on_startup()
     ++discovered_count;
   }
   append_info("Discovered scene packages: " + std::to_string(discovered_count));
+  if (discovered_count == 0 && workcell.scene_vector.empty()) {
+    append_warning("No scene packages found. Expected scenes under " + scenes_path.string() +
+      ". Use Browse Scenes Folder or create a new cell.");
+  }
+  update_scene_browser_status();
 }
 void SceneSelect::on_add_scene_clicked()
 {
@@ -552,7 +572,28 @@ void SceneSelect::on_add_scene_clicked()
     generate_scene_package(
       scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
     refresh_scenes(workcell.scene_vector.size() - 1, true);
+    update_scene_browser_status("Created new scene at: " + (scenes_path / scene_window.scene.name).string());
   }
+}
+
+void SceneSelect::on_browse_scenes_folder_clicked()
+{
+  const QString selected = QFileDialog::getExistingDirectory(
+    this, "Select Scenes Folder", QString::fromStdString(path_or_placeholder(scenes_path)));
+  if (selected.isEmpty()) return;
+  scenes_path = fs::path(selected.toStdString());
+  workcell_path = scenes_path.parent_path();
+  assets_path = workcell_path / "assets";
+  workcell.scene_vector.clear();
+  discover_scene_packages_on_startup();
+  refresh_scenes(0, false);
+}
+
+void SceneSelect::on_refresh_scenes_button_clicked()
+{
+  workcell.scene_vector.clear();
+  discover_scene_packages_on_startup();
+  refresh_scenes(0, false);
 }
 
 

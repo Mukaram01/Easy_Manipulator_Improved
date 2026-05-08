@@ -28,3 +28,10 @@ EPD controls are intentionally not part of workcell_builder. EPD remains a separ
 
 ## Fake-Hardware First
 Default launch command guidance is safe simulation (fake hardware). Real hardware launch is not default.
+
+
+## Scene browser defaults
+- The GUI now resolves repo/workspace roots and shows scenes from `scenes/` by default.
+- Status text shows scenes folder path, assets folder path, count, and last refresh.
+- Actions: **Browse Scenes Folder** and **Refresh Scenes**.
+- New cells default to `scenes/<safe_name>` and do not silently overwrite existing packages.
