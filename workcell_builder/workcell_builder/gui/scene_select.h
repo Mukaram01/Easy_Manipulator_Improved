@@ -85,6 +85,8 @@ private slots:
   void on_open_output_folder_clicked();
   void on_show_readiness_report_clicked();
   void on_copy_fake_hardware_launch_command_clicked();
+  void on_browse_scenes_folder_clicked();
+  void on_refresh_scenes_button_clicked();
 
 private:
   enum class MessageLevel
@@ -109,6 +111,7 @@ private:
   void configure_startup_fallback_paths();
   void show_invalid_workcell_error(const std::string & error_message);
   void discover_scene_packages_on_startup();
+  void update_scene_browser_status(const std::string & note = "");
 
   int scaffold_scene_index_ = -1;
 };

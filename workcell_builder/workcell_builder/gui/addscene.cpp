@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <regex>
+#include <cctype>
 
 #include "gui/addscene.h"
 #include "gui/ui_addscene.h"
@@ -501,13 +503,25 @@ bool AddScene::CheckSceneName()
   std::string initial_name = ui->scene_name->text().toStdString();
   std::string final_name;
   if (initial_name.find_first_not_of(' ') != std::string::npos) {
-    for(int i = 0 ; i < static_cast<int>(initial_name.length()); i++){
-        if(isspace(initial_name[i])){
-            final_name += "_";
+    for (char c : initial_name) {
+      if (isspace(c)) {
+        final_name += "_";
+      } else {
+        const char lc = static_cast<char>(std::tolower(c));
+        if ((lc >= 'a' && lc <= 'z') || (lc >= '0' && lc <= '9') || lc == '_') {
+          final_name += lc;
         }
-        else{
-            final_name += std::tolower(initial_name[i]);
-        }
+      }
+    }
+    while (final_name.find("__") != std::string::npos) {
+      final_name = std::regex_replace(final_name, std::regex("__"), "_");
+    }
+    if (!final_name.empty() && std::isdigit(final_name.front())) {
+      final_name = "scene_" + final_name;
+    }
+    if (final_name.empty()) {
+      ui->scene_errors->append("<font color='red'> Scene name must contain letters/numbers/underscore. </font>");
+      return false;
     }
     ui->scene_name->setText(QString::fromStdString(final_name));
     const boost::filesystem::path target_scene_dir = scenes_path / final_name;
