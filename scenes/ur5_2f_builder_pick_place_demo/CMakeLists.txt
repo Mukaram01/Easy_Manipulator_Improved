@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(ur5_2f_test)
+project(ur5_2f_builder_pick_place_demo)
 
 # Default to C++14
 if(NOT CMAKE_CXX_STANDARD)
