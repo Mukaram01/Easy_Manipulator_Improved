@@ -6,7 +6,7 @@
   <property name="windowTitle"><string>Workcell Studio Builder</string></property>
   <layout class="QVBoxLayout" name="rootLayout">
    <item>
-    <widget class="QLabel" name="fake_hardware_default_label"><property name="text"><string><b>Safety mode:</b> Fake hardware by default (real hardware launch is not the default).</string></property></widget>
+    <widget class="QLabel" name="fake_hardware_default_label"><property name="text"><string>Safety mode: Fake hardware by default (real hardware launch is not the default).</string></property></widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="mainLayout">
