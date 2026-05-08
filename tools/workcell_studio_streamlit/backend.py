@@ -721,7 +721,16 @@ def default_manual_authoring_state(cell_id: str = "manual_cell") -> dict[str, An
         "pick_sources": [default_pick_roi()],
         "place_targets": [{"id": "bin_main", "role": "bin", "pose": {"frame": "world", "xyz": [0.70, -0.2, 0.8], "rpy": [0, 0, 0]}, "allowed_orientation_mode": "upright"}],
         "task": {"type": "pick_place", "supported": True, "preview_only": False},
-        "grasp": {"strategy": "auto", "approach_distance": 0.10, "retreat_distance": 0.10, "approach_axis": "z_down", "orientation_mode": "free"},
+        "grasp": {
+            "strategy": "auto",
+            "approach_distance": 0.10,
+            "retreat_distance": 0.10,
+            "approach_axis": "z_down",
+            "orientation_mode": "free",
+            "allowed_roll_angles": [0.0],
+            "allowed_yaw_angles": [0.0, 180.0],
+            "tcp_offset": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+        },
     }
 
 
@@ -738,6 +747,17 @@ def validate_pick_roi(roi: dict[str, Any]) -> list[dict[str, str]]:
             issues.append({"level": "FAIL", "code": "invalid_crop_box", "message": f"{axis}_min must be less than {axis}_max."})
     if not roi.get("frame_id"):
         issues.append({"level": "FAIL", "code": "missing_pick_roi_frame", "message": "Pick ROI frame is required."})
+    if not str(roi.get("camera_asset_id", "")).strip():
+        issues.append({"level": "FAIL", "code": "missing_camera_asset", "message": "Camera asset id is required for camera ROI."})
+    if not str(roi.get("pointcloud_topic", "")).strip():
+        issues.append({"level": "FAIL", "code": "missing_pointcloud_topic", "message": "Pointcloud topic is required."})
+    filters = roi.get("filters", {}) if isinstance(roi.get("filters"), dict) else {}
+    if float(filters.get("voxel_leaf_size", 0.0)) < 0:
+        issues.append({"level": "FAIL", "code": "negative_voxel_size", "message": "voxel_leaf_size cannot be negative."})
+    min_cluster = int(filters.get("min_cluster_size", 0))
+    max_cluster = int(filters.get("max_cluster_size", 0))
+    if min_cluster <= 0 or max_cluster < min_cluster:
+        issues.append({"level": "FAIL", "code": "invalid_cluster_limits", "message": "Cluster limits are invalid."})
     return issues
 
 
@@ -747,7 +767,7 @@ def authoring_validation_report(state: dict[str, Any]) -> dict[str, Any]:
     roles = {str(a.get("role")) for a in assets if isinstance(a, dict)}
     if "robot_base" not in roles:
         issues.append({"level": "FAIL", "code": "missing_robot", "message": "Missing robot."})
-    if not ({"gripper", "tool"} & roles):
+    if not ({"gripper", "tool", "end_effector"} & roles):
         issues.append({"level": "FAIL", "code": "missing_tool", "message": "Missing gripper/tool."})
     if "support_surface" not in roles:
         issues.append({"level": "FAIL", "code": "missing_support_surface", "message": "Missing table/support surface."})
@@ -757,6 +777,8 @@ def authoring_validation_report(state: dict[str, Any]) -> dict[str, Any]:
     for src in pick_sources:
         if isinstance(src, dict) and src.get("type") == "camera_pointcloud_roi":
             issues.extend(validate_pick_roi(src))
+            if "camera" not in roles:
+                issues.append({"level": "WARN", "code": "camera_roi_no_camera_asset", "message": "Camera ROI selected but no camera role asset found."})
     if not (state.get("place_targets") or []):
         issues.append({"level": "FAIL", "code": "missing_place_target", "message": "Missing place target."})
     if any(bool(a.get("preview_only")) for a in assets if isinstance(a, dict)):
@@ -782,7 +804,22 @@ def export_manual_authoring_bundle(state: dict[str, Any], output_dir: str | Path
     env = {"schema_version": "environment_layout/v1", "layout_id": f"{cell_id}_layout", "assets": placements}
     recipe = {"schema_version": "task_recipe/v1", "task": task, "pick_source_refs": [s.get("id") for s in pick_sources if isinstance(s, dict)], "place_target_refs": [p.get("id") for p in place_targets if isinstance(p, dict)], "grasp": grasp}
     compat = authoring_validation_report(state)
-    summary = {"mode": state.get("mode"), "fake_hardware_default": bool(state.get("fake_hardware_default", True)), "runtime_generation_allowed": compat.get("runtime_ready", False), "preview_only": not compat.get("runtime_ready", False)}
+    preview_metadata = {
+        "asset_boxes": [
+            {
+                "id": a.get("id"),
+                "role": a.get("role"),
+                "pose": (a.get("pose") if isinstance(a.get("pose"), dict) else {}),
+                "scale": a.get("scale", 1.0),
+                "collision_mode": a.get("collision_mode", "bounding_box"),
+            }
+            for a in placements if isinstance(a, dict)
+        ],
+        "pick_roi_box": [s for s in pick_sources if isinstance(s, dict) and s.get("type") == "camera_pointcloud_roi"],
+        "place_target_markers": [p for p in place_targets if isinstance(p, dict)],
+        "warnings": [i.get("message") for i in compat.get("issues", []) if i.get("level") == "WARN"],
+    }
+    summary = {"mode": state.get("mode"), "fake_hardware_default": bool(state.get("fake_hardware_default", True)), "runtime_generation_allowed": compat.get("runtime_ready", False), "preview_only": not compat.get("runtime_ready", False), "preview_metadata": preview_metadata}
     files = {
         "cell_definition.yaml": cell_def,
         "environment_layout.yaml": env,
