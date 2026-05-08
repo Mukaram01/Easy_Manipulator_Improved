@@ -21,6 +21,9 @@
 #include <QUrl>
 #include <QApplication>
 #include <QClipboard>
+#include <QLineEdit>
+#include <QListWidgetItem>
+#include <QTreeWidgetItem>
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
@@ -315,6 +318,39 @@ SceneSelect::SceneSelect(QWidget * parent)
 {
   ui->setupUi(this);
   templates_path = get_default_templates_directory();
+
+  ui->asset_category_tree->setHeaderLabel("Asset Categories");
+  const std::vector<QString> categories = {
+    "Robots", "Grippers & Tools", "Cameras & Sensors", "Tables & Workbenches",
+    "Bins & Totes", "Conveyors", "Fixtures & Jigs", "Machines", "Safety",
+    "Objects", "Custom STL", "Preview-only Robots", "Preview-only Assets"};
+  for (const auto & category : categories) {
+    auto * item = new QTreeWidgetItem(ui->asset_category_tree);
+    item->setText(0, category);
+  }
+
+  ui->recommended_starter_list->addItems({
+    "UR5", "Robotiq 2F", "Workbench/Table", "Cube Small", "Small Bin", "RealSense D435i visual asset"});
+
+  ui->fake_hardware_default_label->setToolTip(
+    "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
+  ui->asset_search_filter->setToolTip("Filter assets by id, display name, or tag.");
+  ui->perception_roi_tab->setToolTip("Pointcloud ROI crop filters for pick-area metadata.");
+  ui->layout_help->setToolTip("Collision mode options: visual-only, bounding-box collision, mesh collision.");
+
+  connect(ui->asset_search_filter, &QLineEdit::textChanged, this, [this](const QString & text) {
+    const QString needle = text.trimmed();
+    for (int i = 0; i < ui->asset_category_tree->topLevelItemCount(); ++i) {
+      QTreeWidgetItem * item = ui->asset_category_tree->topLevelItem(i);
+      const bool visible = needle.isEmpty() || item->text(0).contains(needle, Qt::CaseInsensitive);
+      item->setHidden(!visible);
+    }
+    for (int i = 0; i < ui->recommended_starter_list->count(); ++i) {
+      QListWidgetItem * item = ui->recommended_starter_list->item(i);
+      const bool visible = needle.isEmpty() || item->text().contains(needle, Qt::CaseInsensitive);
+      item->setHidden(!visible);
+    }
+  });
 }
 
 SceneSelect::~SceneSelect()

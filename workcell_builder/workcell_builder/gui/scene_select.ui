@@ -2,173 +2,55 @@
 <ui version="4.0">
  <class>SceneSelect</class>
  <widget class="QDialog" name="SceneSelect">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>391</width>
-    <height>371</height>
-   </rect>
-  </property>
-  <property name="windowTitle">
-   <string>Scene Selection</string>
-  </property>
-  <layout class="QVBoxLayout" name="verticalLayout_3">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1180</width><height>760</height></rect></property>
+  <property name="windowTitle"><string>Workcell Studio Builder</string></property>
+  <layout class="QVBoxLayout" name="rootLayout">
    <item>
-    <layout class="QVBoxLayout" name="verticalLayout">
+    <widget class="QLabel" name="fake_hardware_default_label"><property name="text"><string><b>Safety mode:</b> Fake hardware by default (real hardware launch is not the default).</string></property></widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="mainLayout">
      <item>
-      <widget class="QPushButton" name="add_scene">
-       <property name="toolTip">
-        <string>Create a new scene configuration</string>
-       </property>
-       <property name="text">
-        <string>Add New Scene</string>
-       </property>
+      <widget class="QGroupBox" name="asset_browser_group"><property name="title"><string>Asset Browser</string></property>
+       <layout class="QVBoxLayout" name="assetBrowserLayout">
+        <item><widget class="QLineEdit" name="asset_search_filter"><property name="placeholderText"><string>Search assets (ur, fanuc, bin, suction, conveyor, camera, box)</string></property></widget></item>
+        <item><widget class="QTreeWidget" name="asset_category_tree"><column><property name="text"><string>Category</string></property></column></widget></item>
+        <item><widget class="QListWidget" name="recommended_starter_list"><property name="toolTip"><string>Recommended Starter Set: UR5, Robotiq 2F, Workbench/Table, Cube Small, Small Bin, RealSense D435i visual asset.</string></property></widget></item>
+       </layout>
       </widget>
      </item>
      <item>
-      <layout class="QHBoxLayout" name="horizontalLayout">
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_2">
-         <item>
-          <widget class="QComboBox" name="scene_list"/>
-         </item>
-         <item>
-          <layout class="QVBoxLayout" name="verticalLayout_2">
-           <item>
-            <widget class="QPushButton" name="edit_scene">
-             <property name="toolTip">
-              <string>Modify the selected scene</string>
-             </property>
-             <property name="text">
-              <string>Edit Scene</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="delete_scene">
-             <property name="toolTip">
-              <string>Delete the selected scene</string>
-             </property>
-             <property name="text">
-              <string>Delete Scene</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </item>
-     <item>
-      <layout class="QHBoxLayout" name="horizontalLayout_3"/>
-     </item>
-     <item>
-      <widget class="QPushButton" name="generate_yaml">
-       <property name="toolTip">
-        <string>Generate a YAML configuration file for all scenes</string>
-       </property>
-       <property name="text">
-        <string>Generate YAML File for Scenes</string>
-       </property>
+      <widget class="QTabWidget" name="workflow_tabs">
+       <widget class="QWidget" name="start_tab"><attribute name="title"><string>Start</string></attribute><layout class="QVBoxLayout" name="startLayout">
+        <item><widget class="QLineEdit" name="cell_name"><property name="placeholderText"><string>Cell Name</string></property></widget></item>
+        <item><widget class="QLineEdit" name="output_folder"><property name="placeholderText"><string>Output Folder</string></property></widget></item>
+        <item><widget class="QPushButton" name="add_scene"><property name="text"><string>New Cell</string></property></widget></item>
+        <item><widget class="QComboBox" name="scene_list"/></item>
+        <item><widget class="QPushButton" name="edit_scene"><property name="text"><string>Open Cell</string></property></widget></item>
+        <item><widget class="QPushButton" name="generate_yaml"><property name="text"><string>Save Cell</string></property></widget></item>
+       </layout></widget>
+       <widget class="QWidget" name="ingredients_tab"><attribute name="title"><string>Ingredients</string></attribute><layout class="QVBoxLayout" name="ingredientsLayout"><item><widget class="QLabel" name="ingredients_help"><property name="text"><string>Robot, Gripper/Tool, Camera/Sensor, Environment Assets, Objects/STLs.</string></property></widget></item></layout></widget>
+       <widget class="QWidget" name="layout_tab"><attribute name="title"><string>Layout</string></attribute><layout class="QVBoxLayout" name="layoutLayout"><item><widget class="QLabel" name="layout_help"><property name="text"><string>Asset placement, XYZ/RPY editor, scale/dimensions, role, and collision mode.</string></property></widget></item></layout></widget>
+       <widget class="QWidget" name="task_tab"><attribute name="title"><string>Task</string></attribute><layout class="QVBoxLayout" name="taskLayout"><item><widget class="QLabel" name="task_help"><property name="text"><string>Pick/place, sorting, inspection preview-only, machine tending preview-only.</string></property></widget></item></layout></widget>
+       <widget class="QWidget" name="perception_roi_tab"><attribute name="title"><string>Perception ROI</string></attribute><layout class="QFormLayout" name="roiLayout"><item row="0" column="0"><widget class="QLabel" name="roi_title"><property name="text"><string>Camera Pick Area / Pointcloud Crop Box</string></property></widget></item><item row="1" column="0"><widget class="QLabel" name="roi_left"><property name="text"><string>Left boundary</string></property></widget></item><item row="1" column="1"><widget class="QDoubleSpinBox" name="roi_x_min"/></item><item row="2" column="0"><widget class="QLabel" name="roi_right"><property name="text"><string>Right boundary</string></property></widget></item><item row="2" column="1"><widget class="QDoubleSpinBox" name="roi_x_max"/></item><item row="3" column="0"><widget class="QLabel" name="roi_front"><property name="text"><string>Front boundary</string></property></widget></item><item row="3" column="1"><widget class="QDoubleSpinBox" name="roi_y_min"/></item><item row="4" column="0"><widget class="QLabel" name="roi_back"><property name="text"><string>Back boundary</string></property></widget></item><item row="4" column="1"><widget class="QDoubleSpinBox" name="roi_y_max"/></item><item row="5" column="0"><widget class="QLabel" name="roi_lower"><property name="text"><string>Lower height</string></property></widget></item><item row="5" column="1"><widget class="QDoubleSpinBox" name="roi_z_min"/></item><item row="6" column="0"><widget class="QLabel" name="roi_upper"><property name="text"><string>Upper height</string></property></widget></item><item row="6" column="1"><widget class="QDoubleSpinBox" name="roi_z_max"/></item></layout></widget>
+       <widget class="QWidget" name="grasp_tab"><attribute name="title"><string>Grasp</string></attribute><layout class="QVBoxLayout" name="graspLayout"><item><widget class="QLabel" name="grasp_help"><property name="text"><string>Auto, finger_top, finger_side, suction_top, approach/retreat, TCP offset.</string></property></widget></item></layout></widget>
+       <widget class="QWidget" name="validate_generate_tab"><attribute name="title"><string>Validate &amp; Generate</string></attribute><layout class="QVBoxLayout" name="generateLayout">
+        <item><widget class="QPushButton" name="validate_cell"><property name="text"><string>Validate Cell</string></property></widget></item>
+        <item><widget class="QPushButton" name="generate_canonical_files"><property name="toolTip"><string>Export YAML files used by Workcell Studio.</string></property><property name="text"><string>Generate Canonical Files</string></property></widget></item>
+        <item><widget class="QPushButton" name="generate_workcell_package"><property name="text"><string>Generate Workcell Package</string></property></widget></item>
+        <item><widget class="QPushButton" name="generate_studio_pack"><property name="toolTip"><string>Create preview, readiness report, and launch commands.</string></property><property name="text"><string>Generate Studio Pack</string></property></widget></item>
+        <item><widget class="QPushButton" name="open_preview"><property name="text"><string>Open Preview</string></property></widget></item>
+        <item><widget class="QPushButton" name="open_output_folder"><property name="text"><string>Open Output Folder</string></property></widget></item>
+        <item><widget class="QPushButton" name="show_readiness_report"><property name="text"><string>Show Readiness Report</string></property></widget></item>
+        <item><widget class="QPushButton" name="copy_fake_hardware_launch_command"><property name="toolTip"><string>Safe simulation launch command.</string></property><property name="text"><string>Copy Safe Simulation Launch Command</string></property></widget></item>
+       </layout></widget>
       </widget>
      </item>
-     <item>
-      <widget class="QPushButton" name="generate_files">
-       <property name="toolTip">
-        <string>Generate ROS 2 package files from the YAML configuration</string>
-       </property>
-       <property name="text">
-        <string>Generate Files from YAML</string>
-       </property>
-      </widget>
-     </item>
-
-     <item>
-      <widget class="QPushButton" name="validate_cell">
-       <property name="text"><string>Validate Cell</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="generate_canonical_files">
-       <property name="text"><string>Generate Canonical Files</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="generate_workcell_package">
-       <property name="text"><string>Generate Workcell Package</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="generate_studio_pack">
-       <property name="text"><string>Generate Studio Pack</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="open_preview">
-       <property name="text"><string>Open Preview</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="open_output_folder">
-       <property name="text"><string>Open Output Folder</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="show_readiness_report">
-       <property name="text"><string>Show Readiness Report</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="copy_fake_hardware_launch_command">
-       <property name="text"><string>Copy Fake-Hardware Launch Command</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="refresh_asset_catalog">
-       <property name="text"><string>Refresh Asset Catalog</string></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="clear_logs">
-       <property name="toolTip">
-        <string>Clear the message log</string>
-       </property>
-       <property name="text">
-        <string>Clear Messages</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QTextBrowser" name="error_workcell"/>
-     </item>
-     <item>
-      <layout class="QHBoxLayout" name="horizontalLayout_4">
-       <item>
-        <widget class="QPushButton" name="back">
-         <property name="toolTip">
-          <string>Return to workspace selection</string>
-         </property>
-         <property name="text">
-          <string>Back</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="exit">
-         <property name="toolTip">
-          <string>Close the application</string>
-         </property>
-         <property name="text">
-          <string>Exit</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </item>
+     <item><widget class="QGroupBox" name="inspector_group"><property name="title"><string>Inspector</string></property><layout class="QVBoxLayout" name="inspectorLayout"><item><widget class="QLabel" name="inspector_help"><property name="text"><string>Select an asset or workflow step to inspect details and badges: Supported, Fake-hardware ready, Preview only, Missing mesh, Unsupported runtime.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item><item><widget class="QPushButton" name="refresh_asset_catalog"><property name="text"><string>Refresh Asset Catalog</string></property></widget></item><item><widget class="QPushButton" name="delete_scene"><property name="text"><string>Delete Cell</string></property></widget></item><item><widget class="QPushButton" name="generate_files"><property name="text"><string>Generate Files from YAML</string></property></widget></item></layout></widget></item>
     </layout>
    </item>
+   <item><widget class="QTextBrowser" name="error_workcell"/></item>
+   <item><layout class="QHBoxLayout" name="footerLayout"><item><widget class="QPushButton" name="clear_logs"><property name="text"><string>Clear Messages</string></property></widget></item><item><widget class="QPushButton" name="back"><property name="text"><string>Back</string></property></widget></item><item><widget class="QPushButton" name="exit"><property name="text"><string>Exit</string></property></widget></item></layout></item>
   </layout>
  </widget>
  <resources/>
