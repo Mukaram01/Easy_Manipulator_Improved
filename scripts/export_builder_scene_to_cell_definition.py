@@ -175,6 +175,12 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
         "safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
     }
     return intent, missing
+def _task_type_from_meta(meta: dict[str, Any]) -> str:
+    task = meta.get("task_template") if isinstance(meta.get("task_template"), dict) else {}
+    selected = str(task.get("selected") or task.get("id") or "pick_place").strip().lower()
+    mapping={"pick_place":"pick_place","sorting":"sorting","inspection":"inspection","machine_tending":"machine_tending","conveyor_picking":"conveyor_picking","palletising":"palletising","bin_picking":"bin_picking"}
+    return mapping.get(selected, "pick_place")
+
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
@@ -198,6 +204,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
 
     robot_name = robot_env.get("name") or robot_meta.get("selected_name") or "unknown_robot"
     ee_name = ee_env.get("name") or ee_meta.get("selected_name") or "unknown_end_effector"
+    task_type = _task_type_from_meta(meta)
 
     assets: list[dict[str, Any]] = []
     object_entries: list[dict[str, Any]] = []
@@ -280,7 +287,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],
         "task": {
             "id": "default_task",
-            "type": "pick_place",
+            "type": task_type,
             "source_object": object_entries[0]["id"] if object_entries else "unknown_object",
             "destinations": [{"id": "default_drop", "frame": "world", "pose_xyz": [0.4, 0.0, 0.2], "pose_rpy": [0.0, 0.0, 0.0]}],
             "rules": [{"id": "default_rule", "when": {"always": True}, "destination": "default_drop"}],
@@ -319,8 +326,15 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
 
     cell_path = output_dir / "cell_definition.yaml"
     layout_path = output_dir / "environment_layout.yaml"
+    selected_assets_path = output_dir / "selected_assets.json"
+    compatibility_path = output_dir / "compatibility_report.json"
     _write_structured(cell_path, cell_def)
     _write_structured(layout_path, environment_layout)
+    selected_assets = {"robot": robot_name, "end_effector": ee_name, "sensor": sensors_meta[0] if sensors_meta else None, "environment_assets": [a.get("id") for a in assets], "custom_stl_assets": [a.get("source",{}).get("path") for a in assets if isinstance(a.get("source"), dict) and a.get("source",{}).get("path")], "task_template": task_type, "grasp_strategy": normalized_grasp.get("strategy_id"), "fake_hardware_default": True, "project_name": scene_path.name}
+    selected_assets_path.write_text(json.dumps(selected_assets, indent=2)+"\n", encoding="utf-8")
+    compatibility_result = "WARN" if robot_meta.get("preview_only") else "OK"
+    compatibility_report = {"status": compatibility_result, "runtime_supported": not bool(robot_meta.get("preview_only")), "preview_only": bool(robot_meta.get("preview_only")), "fake_hardware_default": True, "real_hardware_default": False, "warnings": [w for w in warnings if "preview_only" in w or "unknown" in w.lower()]}
+    compatibility_path.write_text(json.dumps(compatibility_report, indent=2)+"\n", encoding="utf-8")
     recipe_path = output_dir / "task_recipe_from_builder_intent.yaml"
     if recipe_path.is_file():
         plan_preview_generation = _generate_plan_preview(recipe_path, output_dir / "offline_plan_preview_request.yaml", cell_path, layout_path)
@@ -330,7 +344,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "scene_path": str(scene_path),
         "output_dir": str(output_dir),
         "warnings": warnings,
-        "exported_files": [str(cell_path), str(layout_path)] + ([str(task_intent_path)] if task_intent_path else []),
+        "exported_files": [str(cell_path), str(layout_path), str(selected_assets_path), str(compatibility_path)] + ([str(task_intent_path)] if task_intent_path else []),
         "validation": {},
         "builder_task_intent": builder_task_intent,
         "task_intent_validation": task_intent_validation,
