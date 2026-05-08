@@ -40,9 +40,10 @@ def test_preview_only_templates_are_honest() -> None:
             assert "warn" in str(demo.get("compatibility_status", "")).lower()
 
 
-def test_ur5_templates_remain_supported_only() -> None:
+def test_ur5_templates_have_honest_status() -> None:
     ur5_demos = [d for d in _load().get("demos", []) if d["id"].startswith("ur5_")]
     assert len(ur5_demos) == 4
-    for demo in ur5_demos:
-        assert demo.get("runtime_mode") == "fake_hardware_ready"
-        assert demo.get("compatibility_status") == "supported"
+    by_id={d["id"]:d for d in ur5_demos}
+    assert by_id["ur5_2f_table_pick_place"].get("compatibility_status") == "supported"
+    assert by_id["ur5_2f_sorting_three_bins"].get("compatibility_status") == "supported"
+    assert "warn" in str(by_id["ur5_suction_table_pick_place"].get("compatibility_status","")).lower()

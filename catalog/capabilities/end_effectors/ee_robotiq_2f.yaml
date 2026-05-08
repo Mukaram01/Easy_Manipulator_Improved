@@ -3,21 +3,43 @@ end_effector:
   id: robotiq_2f_85
   label: Robotiq 2F-85
   family: finger_gripper
-  compatible_robot_families: [serial_6_axis, collaborative_6_axis, scara]
-  required_frames: [tool0]
-  grasp_frames: [tool0]
-  contact_links: [left_inner_finger, right_inner_finger]
-  allowed_touch_links: [left_inner_finger, right_inner_finger]
+  compatible_robot_families:
+  - serial_6_axis
+  - collaborative_6_axis
+  - scara
+  required_frames:
+  - tool0
+  grasp_frames:
+  - tool0
+  contact_links:
+  - left_inner_finger
+  - right_inner_finger
+  allowed_touch_links:
+  - left_inner_finger
+  - right_inner_finger
   max_object_mass_kg: 2.0
   opening_width_mm: 85
-  supported_grasp_strategies: [pinch, side_pick]
-  required_io_signals: [gripper_open_cmd, gripper_close_cmd]
+  supported_grasp_strategies:
+  - pinch
+  - side_pick
+  required_io_signals:
+  - gripper_open_cmd
+  - gripper_close_cmd
   release_behaviour: open_until_clear
   limitations_warnings:
-    - Requires parallel approach for reliable pinch grasps.
-
+  - Requires parallel approach for reliable pinch grasps.
   support_status: supported
-  runtime_status: fake_hardware_only
+  runtime_status: supported
   asset_package: robotiq_85_description
   urdf_or_xacro: assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro
   moveit_config_package: robotiq_85_moveit_config
+  fake_hardware_status: ready
+  real_hardware_status: optional_later
+  driver_status: optional_later
+  category: tool
+  display_name: Robotiq 2F-85
+  tcp_frame: tool0
+  compatible_grasp_strategies:
+  - finger_top
+  - auto
+  - finger_pinch_basic
