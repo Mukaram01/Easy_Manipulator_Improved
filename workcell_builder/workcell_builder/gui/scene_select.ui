@@ -126,6 +126,11 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="refresh_asset_catalog">
+       <property name="text"><string>Refresh Asset Catalog</string></property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="clear_logs">
        <property name="toolTip">
         <string>Clear the message log</string>
