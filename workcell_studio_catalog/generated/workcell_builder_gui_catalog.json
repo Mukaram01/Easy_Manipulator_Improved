@@ -1,2613 +1,3047 @@
 {
-  "robots": [
+  "workflow_sections": [
+    "Start",
+    "Ingredients",
+    "Layout",
+    "Task",
+    "Perception ROI",
+    "Grasp",
+    "Validate & Generate",
+    "Status"
+  ],
+  "asset_categories": [
+    "Bins & Totes",
+    "Cameras & Sensors",
+    "Conveyors",
+    "Custom STL",
+    "Fixtures & Jigs",
+    "Grippers & Tools",
+    "Machines",
+    "Objects",
+    "Preview-only Assets",
+    "Preview-only Robots",
+    "Robots",
+    "Safety",
+    "Tables & Workbenches"
+  ],
+  "recommended_starter_assets": [
+    "UR5",
+    "Robotiq 2F",
+    "Workbench/Table",
+    "Cube Small",
+    "Small Bin",
+    "RealSense D435i visual asset"
+  ],
+  "assets": [
     {
       "id": "ur3",
       "display_name": "Ur3",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur3e",
       "display_name": "Ur3E",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur5",
       "display_name": "Ur5",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "supported",
       "runtime_status": "supported",
-      "package_name": "workcell_builder",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur5e",
       "display_name": "Ur5E",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur10",
       "display_name": "Ur10",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur10e",
       "display_name": "Ur10E",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur16e",
       "display_name": "Ur16E",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur20",
       "display_name": "Ur20",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ur30",
       "display_name": "Ur30",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "fanuc_lr_mate_200id",
       "display_name": "Fanuc Lr Mate 200Id",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "fanuc_m10ia",
       "display_name": "Fanuc M10Ia",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "fanuc_m20ia",
       "display_name": "Fanuc M20Ia",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "fanuc_crx_10ia",
       "display_name": "Fanuc Crx 10Ia",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "fanuc_crx_20ia",
       "display_name": "Fanuc Crx 20Ia",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "abb_irb_120",
       "display_name": "Abb Irb 120",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "abb_irb_1200",
       "display_name": "Abb Irb 1200",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "abb_irb_1600",
       "display_name": "Abb Irb 1600",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "abb_gofa",
       "display_name": "Abb Gofa",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "abb_yumi",
       "display_name": "Abb Yumi",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "kuka_kr6",
       "display_name": "Kuka Kr6",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "kuka_kr10",
       "display_name": "Kuka Kr10",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "kuka_lbr_iiwa",
       "display_name": "Kuka Lbr Iiwa",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "kuka_lbr_med",
       "display_name": "Kuka Lbr Med",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "motoman_gp7",
       "display_name": "Motoman Gp7",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "motoman_gp12",
       "display_name": "Motoman Gp12",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "motoman_gp25",
       "display_name": "Motoman Gp25",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "motoman_hc10",
       "display_name": "Motoman Hc10",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "franka_panda",
       "display_name": "Franka Panda",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "kinova_gen3",
       "display_name": "Kinova Gen3",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "xarm6",
       "display_name": "Xarm6",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "xarm7",
       "display_name": "Xarm7",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "dobot_cr5",
       "display_name": "Dobot Cr5",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "dobot_cr10",
       "display_name": "Dobot Cr10",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "elephant_my_cobot",
       "display_name": "Elephant My Cobot",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "elephant_my_arm",
       "display_name": "Elephant My Arm",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "ufactory_lite6",
       "display_name": "Ufactory Lite6",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_6dof_aliexpress_arm",
       "display_name": "Generic 6Dof Aliexpress Arm",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "homemade_3d_printed_6dof_arm",
       "display_name": "Homemade 3D Printed 6Dof Arm",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_scara",
       "display_name": "Generic Scara",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_delta_robot",
       "display_name": "Generic Delta Robot",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_cartesian_gantry",
       "display_name": "Generic Cartesian Gantry",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_3_axis_cartesian",
       "display_name": "Generic 3 Axis Cartesian",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
+      ],
+      "notes": "Catalog entry for Workcell Studio."
     },
     {
       "id": "generic_4_axis_palletizer",
       "display_name": "Generic 4 Axis Palletizer",
-      "category": "robots",
-      "family": "robot_arm",
+      "category": "Robots",
+      "group": "Robots",
+      "folder": "robot_arm",
+      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Catalog entry for Workcell Studio.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "robot",
         "arm"
-      ]
-    }
-  ],
-  "grippers": [
+      ],
+      "notes": "Catalog entry for Workcell Studio."
+    },
     {
       "id": "robotiq_2f_85",
       "display_name": "Robotiq 2F 85",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "supported",
       "runtime_status": "fake_hardware_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "robotiq_2f_140",
       "display_name": "Robotiq 2F 140",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "robotiq_3f",
       "display_name": "Robotiq 3F",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "onrobot_rg2",
       "display_name": "Onrobot Rg2",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "onrobot_rg6",
       "display_name": "Onrobot Rg6",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "schunk_egp",
       "display_name": "Schunk Egp",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "schunk_egk",
       "display_name": "Schunk Egk",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "schunk_pg",
       "display_name": "Schunk Pg",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "weiss_wsg_50",
       "display_name": "Weiss Wsg 50",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_parallel_jaw_small",
       "display_name": "Generic Parallel Jaw Small",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_parallel_jaw_large",
       "display_name": "Generic Parallel Jaw Large",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_3_finger_gripper",
       "display_name": "Generic 3 Finger Gripper",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_servo_gripper",
       "display_name": "Generic Servo Gripper",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "onrobot_airpick",
       "display_name": "Onrobot Airpick",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "fake_hardware_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "onrobot_airpick4",
       "display_name": "Onrobot Airpick4",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "fake_hardware_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "onrobot_vgc10",
       "display_name": "Onrobot Vgc10",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "piab_single_cup",
       "display_name": "Piab Single Cup",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "piab_multi_cup",
       "display_name": "Piab Multi Cup",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_single_suction_cup",
       "display_name": "Generic Single Suction Cup",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_dual_suction_cup",
       "display_name": "Generic Dual Suction Cup",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_4_cup_vacuum_array",
       "display_name": "Generic 4 Cup Vacuum Array",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_8_cup_vacuum_array",
       "display_name": "Generic 8 Cup Vacuum Array",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_foam_vacuum_gripper",
       "display_name": "Generic Foam Vacuum Gripper",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "generic_vacuum_plate",
       "display_name": "Generic Vacuum Plate",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "magnetic_gripper_placeholder",
       "display_name": "Magnetic Gripper Placeholder",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "soft_gripper_placeholder",
       "display_name": "Soft Gripper Placeholder",
-      "category": "end_effectors",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
-    {
-      "id": "welding_torch_placeholder",
-      "display_name": "Welding Torch Placeholder",
-      "category": "end_effectors",
-      "family": "gripper",
-      "support_status": "placeholder",
-      "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
-      "tags": [
-        "gripper"
-      ]
-    },
-    {
-      "id": "glue_dispenser_placeholder",
-      "display_name": "Glue Dispenser Placeholder",
-      "category": "end_effectors",
-      "family": "gripper",
-      "support_status": "placeholder",
-      "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
-      "tags": [
-        "gripper"
-      ]
-    }
-  ],
-  "tools": [
     {
       "id": "tool_changer_placeholder",
       "display_name": "Tool Changer Placeholder",
-      "category": "tools",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "screwdriver_tool_placeholder",
       "display_name": "Screwdriver Tool Placeholder",
-      "category": "tools",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "inspection_camera_tool_placeholder",
       "display_name": "Inspection Camera Tool Placeholder",
-      "category": "tools",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "barcode_scanner_tool_placeholder",
       "display_name": "Barcode Scanner Tool Placeholder",
-      "category": "tools",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
+      ],
+      "notes": "Selection metadata only."
+    },
+    {
+      "id": "welding_torch_placeholder",
+      "display_name": "Welding Torch Placeholder",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "placeholder",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "gripper"
+      ],
+      "notes": "Selection metadata only."
+    },
+    {
+      "id": "glue_dispenser_placeholder",
+      "display_name": "Glue Dispenser Placeholder",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "placeholder",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "gripper"
+      ],
+      "notes": "Selection metadata only."
     },
     {
       "id": "spindle_tool_placeholder",
       "display_name": "Spindle Tool Placeholder",
-      "category": "tools",
-      "family": "gripper",
+      "category": "Grippers & Tools",
+      "group": "Grippers & Tools",
+      "folder": "gripper",
+      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
       "support_status": "placeholder",
       "runtime_status": "placeholder",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Selection metadata only.",
+      "preview_only": false,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
       "tags": [
         "gripper"
-      ]
-    }
-  ],
-  "objects": [
-    {
-      "id": "small_bin",
-      "display_name": "Small Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
+      ],
+      "notes": "Selection metadata only."
     },
-    {
-      "id": "medium_bin",
-      "display_name": "Medium Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "large_bin",
-      "display_name": "Large Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "euro_box",
-      "display_name": "Euro Box",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "tote_box",
-      "display_name": "Tote Box",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "klt_bin",
-      "display_name": "Klt Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "sorting_bin_red",
-      "display_name": "Sorting Bin Red",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "sorting_bin_green",
-      "display_name": "Sorting Bin Green",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "sorting_bin_blue",
-      "display_name": "Sorting Bin Blue",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "reject_bin",
-      "display_name": "Reject Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "pass_bin",
-      "display_name": "Pass Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "fail_bin",
-      "display_name": "Fail Bin",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "pallet",
-      "display_name": "Pallet",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "pallet_stack",
-      "display_name": "Pallet Stack",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "shelf_rack",
-      "display_name": "Shelf Rack",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "small_parts_rack",
-      "display_name": "Small Parts Rack",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "tray_stack",
-      "display_name": "Tray Stack",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "cardboard_box",
-      "display_name": "Cardboard Box",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "crate",
-      "display_name": "Crate",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "dunnage_tray",
-      "display_name": "Dunnage Tray",
-      "category": "environment",
-      "family": "environment",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "environment"
-      ]
-    },
-    {
-      "id": "cube_small",
-      "display_name": "Cube Small",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "cube_large",
-      "display_name": "Cube Large",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "cylinder_small",
-      "display_name": "Cylinder Small",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "cylinder_large",
-      "display_name": "Cylinder Large",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "bottle",
-      "display_name": "Bottle",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "can",
-      "display_name": "Can",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "pouch",
-      "display_name": "Pouch",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "box",
-      "display_name": "Box",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "parcel",
-      "display_name": "Parcel",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "gear_placeholder",
-      "display_name": "Gear Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "bracket_placeholder",
-      "display_name": "Bracket Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "washer_placeholder",
-      "display_name": "Washer Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "bolt_placeholder",
-      "display_name": "Bolt Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "plastic_part_placeholder",
-      "display_name": "Plastic Part Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "metal_part_placeholder",
-      "display_name": "Metal Part Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "food_pack_placeholder",
-      "display_name": "Food Pack Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "medical_tray_placeholder",
-      "display_name": "Medical Tray Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "electronics_part_placeholder",
-      "display_name": "Electronics Part Placeholder",
-      "category": "objects",
-      "family": "object",
-      "support_status": "placeholder",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Demo object placeholder.",
-      "tags": [
-        "object"
-      ]
-    },
-    {
-      "id": "cube_placeholder",
-      "display_name": "Cube Placeholder",
-      "category": "objects",
-      "family": "placeholder",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "",
-      "thumbnail_path": "",
-      "notes": "Primitive placeholder for GUI visibility.",
-      "tags": [
-        "placeholder"
-      ]
-    },
-    {
-      "id": "bin_placeholder",
-      "display_name": "Bin Placeholder",
-      "category": "objects",
-      "family": "placeholder",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "",
-      "thumbnail_path": "",
-      "notes": "Primitive placeholder for GUI visibility.",
-      "tags": [
-        "placeholder"
-      ]
-    }
-  ],
-  "tables": [
     {
       "id": "basic_table_small",
       "display_name": "Basic Table Small",
-      "category": "environment",
-      "family": "environment",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "environment"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "basic_table_large",
       "display_name": "Basic Table Large",
-      "category": "environment",
-      "family": "environment",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "environment"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "aluminium_profile_table",
       "display_name": "Aluminium Profile Table",
-      "category": "environment",
-      "family": "environment",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "environment"
-      ]
-    }
-  ],
-  "workbenches": [
+      ],
+      "notes": "Environment asset placeholder."
+    },
     {
       "id": "workbench",
       "display_name": "Workbench",
-      "category": "environment",
-      "family": "environment",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "environment"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "mobile_workbench",
       "display_name": "Mobile Workbench",
-      "category": "environment",
-      "family": "environment",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "environment"
-      ]
-    }
-  ],
-  "sensors": [
-    {
-      "id": "realsense_d435i",
-      "display_name": "Realsense D435I",
-      "category": "sensors",
-      "family": "sensors",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "sensors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
-      "id": "overhead_rgbd_camera_placeholder",
-      "display_name": "Overhead Rgbd Camera Placeholder",
-      "category": "sensors",
-      "family": "sensors",
+      "id": "machine_side_table",
+      "display_name": "Machine Side Table",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
-        "sensors"
-      ]
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
-      "id": "area_scan_camera_placeholder",
-      "display_name": "Area Scan Camera Placeholder",
-      "category": "sensors",
-      "family": "sensors",
+      "id": "small_bin",
+      "display_name": "Small Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
-        "sensors"
-      ]
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
-      "id": "line_scan_camera_placeholder",
-      "display_name": "Line Scan Camera Placeholder",
-      "category": "sensors",
-      "family": "sensors",
+      "id": "medium_bin",
+      "display_name": "Medium Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
-        "sensors"
-      ]
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
-      "id": "barcode_scanner_placeholder",
-      "display_name": "Barcode Scanner Placeholder",
-      "category": "sensors",
-      "family": "sensors",
+      "id": "large_bin",
+      "display_name": "Large Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
-        "sensors"
-      ]
-    }
-  ],
-  "cameras": [],
-  "conveyors": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "euro_box",
+      "display_name": "Euro Box",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "tote_box",
+      "display_name": "Tote Box",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "klt_bin",
+      "display_name": "Klt Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "sorting_bin_red",
+      "display_name": "Sorting Bin Red",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "sorting_bin_green",
+      "display_name": "Sorting Bin Green",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "sorting_bin_blue",
+      "display_name": "Sorting Bin Blue",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "reject_bin",
+      "display_name": "Reject Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "pass_bin",
+      "display_name": "Pass Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "fail_bin",
+      "display_name": "Fail Bin",
+      "category": "Bins & Totes",
+      "group": "Bins & Totes",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
     {
       "id": "conveyor_1m_placeholder",
       "display_name": "Conveyor 1M Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "conveyor_2m_placeholder",
       "display_name": "Conveyor 2M Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "belt_conveyor_placeholder",
       "display_name": "Belt Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "roller_conveyor_placeholder",
       "display_name": "Roller Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "indexing_conveyor_placeholder",
       "display_name": "Indexing Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "outfeed_conveyor_placeholder",
       "display_name": "Outfeed Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "infeed_conveyor_placeholder",
       "display_name": "Infeed Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "conveyors",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "conveyors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "conveyors"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
-    {
-      "id": "conveyor_placeholder",
-      "display_name": "Conveyor Placeholder",
-      "category": "conveyors",
-      "family": "placeholder",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "",
-      "thumbnail_path": "",
-      "notes": "Primitive placeholder for GUI visibility.",
-      "tags": [
-        "placeholder"
-      ]
-    }
-  ],
-  "fixtures": [
     {
       "id": "simple_fixture_plate",
       "display_name": "Simple Fixture Plate",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "peg_fixture",
       "display_name": "Peg Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "vice_fixture",
       "display_name": "Vice Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "nest_fixture",
       "display_name": "Nest Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "locating_pins_fixture",
       "display_name": "Locating Pins Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "tray_fixture",
       "display_name": "Tray Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "part_holder_fixture",
       "display_name": "Part Holder Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "adjustable_stop_fixture",
       "display_name": "Adjustable Stop Fixture",
-      "category": "fixtures",
-      "family": "fixtures",
+      "category": "Tables & Workbenches",
+      "group": "Tables & Workbenches",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "fixtures"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
-    {
-      "id": "emergency_stop_pedestal",
-      "display_name": "Emergency Stop Pedestal",
-      "category": "fixtures",
-      "family": "fixtures",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "fixtures"
-      ]
-    },
-    {
-      "id": "camera_mount_placeholder",
-      "display_name": "Camera Mount Placeholder",
-      "category": "fixtures",
-      "family": "placeholder",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "",
-      "thumbnail_path": "",
-      "notes": "Primitive placeholder for GUI visibility.",
-      "tags": [
-        "placeholder"
-      ]
-    }
-  ],
-  "machines": [
-    {
-      "id": "machine_side_table",
-      "display_name": "Machine Side Table",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "cnc_machine_placeholder",
-      "display_name": "Cnc Machine Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "lathe_placeholder",
-      "display_name": "Lathe Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "injection_moulding_machine_placeholder",
-      "display_name": "Injection Moulding Machine Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "press_machine_placeholder",
-      "display_name": "Press Machine Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "test_station_placeholder",
-      "display_name": "Test Station Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "inspection_station_placeholder",
-      "display_name": "Inspection Station Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    },
-    {
-      "id": "packaging_machine_placeholder",
-      "display_name": "Packaging Machine Placeholder",
-      "category": "machines",
-      "family": "machines",
-      "support_status": "preview_only",
-      "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
-      "tags": [
-        "machines"
-      ]
-    }
-  ],
-  "safety": [
     {
       "id": "safety_fence_panel",
       "display_name": "Safety Fence Panel",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "safety_gate",
       "display_name": "Safety Gate",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "light_curtain",
       "display_name": "Light Curtain",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "emergency_stop_pedestal",
+      "display_name": "Emergency Stop Pedestal",
+      "category": "Fixtures & Jigs",
+      "group": "Fixtures & Jigs",
+      "folder": "fixtures",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "fixtures"
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "floor_marking_zone",
       "display_name": "Floor Marking Zone",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "robot_keepout_zone",
       "display_name": "Robot Keepout Zone",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "operator_zone",
       "display_name": "Operator Zone",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "realsense_d435i",
+      "display_name": "Realsense D435I",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "sensors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "sensors"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "overhead_rgbd_camera_placeholder",
+      "display_name": "Overhead Rgbd Camera Placeholder",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "sensors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "sensors"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "area_scan_camera_placeholder",
+      "display_name": "Area Scan Camera Placeholder",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "sensors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "sensors"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "line_scan_camera_placeholder",
+      "display_name": "Line Scan Camera Placeholder",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "sensors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "sensors"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "barcode_scanner_placeholder",
+      "display_name": "Barcode Scanner Placeholder",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "sensors",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "sensors"
+      ],
+      "notes": "Environment asset placeholder."
     },
     {
       "id": "safety_scanner_placeholder",
       "display_name": "Safety Scanner Placeholder",
-      "category": "safety",
-      "family": "safety",
+      "category": "Safety",
+      "group": "Safety",
+      "folder": "safety",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
       "support_status": "preview_only",
       "runtime_status": "preview_only",
-      "package_name": "",
-      "urdf_or_xacro": "",
-      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
-      "thumbnail_path": "",
-      "notes": "Environment asset placeholder.",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
       "tags": [
         "safety"
-      ]
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "cnc_machine_placeholder",
+      "display_name": "Cnc Machine Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "lathe_placeholder",
+      "display_name": "Lathe Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "injection_moulding_machine_placeholder",
+      "display_name": "Injection Moulding Machine Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "press_machine_placeholder",
+      "display_name": "Press Machine Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "test_station_placeholder",
+      "display_name": "Test Station Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "inspection_station_placeholder",
+      "display_name": "Inspection Station Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "packaging_machine_placeholder",
+      "display_name": "Packaging Machine Placeholder",
+      "category": "Machines",
+      "group": "Machines",
+      "folder": "machines",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "machines"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "pallet",
+      "display_name": "Pallet",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "pallet_stack",
+      "display_name": "Pallet Stack",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "shelf_rack",
+      "display_name": "Shelf Rack",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "small_parts_rack",
+      "display_name": "Small Parts Rack",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "tray_stack",
+      "display_name": "Tray Stack",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "cardboard_box",
+      "display_name": "Cardboard Box",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "crate",
+      "display_name": "Crate",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "dunnage_tray",
+      "display_name": "Dunnage Tray",
+      "category": "Custom STL",
+      "group": "Custom STL",
+      "folder": "environment",
+      "mesh_path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+      "support_status": "preview_only",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "tags": [
+        "environment"
+      ],
+      "notes": "Environment asset placeholder."
+    },
+    {
+      "id": "cube_small",
+      "display_name": "Cube Small",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "cube_large",
+      "display_name": "Cube Large",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "cylinder_small",
+      "display_name": "Cylinder Small",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "cylinder_large",
+      "display_name": "Cylinder Large",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "bottle",
+      "display_name": "Bottle",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "can",
+      "display_name": "Can",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "pouch",
+      "display_name": "Pouch",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "box",
+      "display_name": "Box",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "parcel",
+      "display_name": "Parcel",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "gear_placeholder",
+      "display_name": "Gear Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "bracket_placeholder",
+      "display_name": "Bracket Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "washer_placeholder",
+      "display_name": "Washer Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "bolt_placeholder",
+      "display_name": "Bolt Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "plastic_part_placeholder",
+      "display_name": "Plastic Part Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "metal_part_placeholder",
+      "display_name": "Metal Part Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "food_pack_placeholder",
+      "display_name": "Food Pack Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "medical_tray_placeholder",
+      "display_name": "Medical Tray Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "electronics_part_placeholder",
+      "display_name": "Electronics Part Placeholder",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "object",
+      "mesh_path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+      "support_status": "placeholder",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "mesh_collision",
+      "dimensions": {},
+      "tags": [
+        "object"
+      ],
+      "notes": "Demo object placeholder."
+    },
+    {
+      "id": "conveyor_1m",
+      "display_name": "Conveyor 1m",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "placeholders",
+      "mesh_path": "assets/environment/conveyors/meshes/conveyor_1m.stl",
+      "support_status": "supported",
+      "runtime_status": "fake_hardware_ready",
+      "preview_only": false,
+      "collision_mode_default": "bounding_box_collision",
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "tags": [
+        "placeholder",
+        "conveyors"
+      ],
+      "notes": "Local generated placeholder mesh for GUI catalog."
+    },
+    {
+      "id": "conveyor_2m",
+      "display_name": "Conveyor 2m",
+      "category": "Conveyors",
+      "group": "Conveyors",
+      "folder": "placeholders",
+      "mesh_path": "assets/environment/conveyors/meshes/conveyor_2m.stl",
+      "support_status": "supported",
+      "runtime_status": "fake_hardware_ready",
+      "preview_only": false,
+      "collision_mode_default": "bounding_box_collision",
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "tags": [
+        "placeholder",
+        "conveyors"
+      ],
+      "notes": "Local generated placeholder mesh for GUI catalog."
+    },
+    {
+      "id": "box_large",
+      "display_name": "Box Large",
+      "category": "Objects",
+      "group": "Objects",
+      "folder": "placeholders",
+      "mesh_path": "assets/objects/primitives/meshes/box_large.stl",
+      "support_status": "supported",
+      "runtime_status": "fake_hardware_ready",
+      "preview_only": false,
+      "collision_mode_default": "bounding_box_collision",
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "tags": [
+        "placeholder",
+        "objects"
+      ],
+      "notes": "Local generated placeholder mesh for GUI catalog."
+    },
+    {
+      "id": "overhead_camera_placeholder",
+      "display_name": "Overhead Camera Placeholder",
+      "category": "Cameras & Sensors",
+      "group": "Cameras & Sensors",
+      "folder": "placeholders",
+      "mesh_path": "assets/environment/cameras/meshes/overhead_camera_placeholder.stl",
+      "support_status": "supported",
+      "runtime_status": "preview_only",
+      "preview_only": true,
+      "collision_mode_default": "bounding_box_collision",
+      "dimensions": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "tags": [
+        "placeholder",
+        "cameras & sensors"
+      ],
+      "notes": "Local generated placeholder mesh for GUI catalog."
     }
-  ],
-  "custom": []
+  ]
 }
