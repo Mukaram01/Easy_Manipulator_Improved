@@ -4,6 +4,41 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+DEFAULTS={
+    "robot":{"role":"robot_base","pose":{"x":0,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"mesh_collision","support_status":"supported"},
+    "end_effector":{"role":"end_effector","pose":{"x":0,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"mesh_collision","support_status":"supported"},
+    "support_surface":{"role":"support_surface","pose":{"x":0.6,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"bounding_box","support_status":"supported"},
+    "pick_object":{"role":"pick_object","pose":{"x":0.45,"y":0,"z":0.2,"roll":0,"pitch":0,"yaw":0},"collision_mode":"bounding_box","support_status":"supported"},
+    "place_target":{"role":"place_target","pose":{"x":0.5,"y":-0.35,"z":0.2,"roll":0,"pitch":0,"yaw":0},"collision_mode":"bounding_box","support_status":"supported"},
+    "camera":{"role":"camera","pose":{"x":0.5,"y":0,"z":0.8,"roll":0,"pitch":-0.6,"yaw":0},"collision_mode":"visual_only","support_status":"supported"},
+    "conveyor":{"role":"conveyor","pose":{"x":0.7,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"bounding_box","support_status":"preview_only"},
+}
+
+def add_asset_to_cell(state:dict[str,Any], asset_id:str, category:str, role:str|None=None, name:str|None=None)->dict[str,Any]:
+    assets=state.setdefault("current_cell_assets",[])
+    key=role or category
+    defaults=DEFAULTS.get(key, {"role": role or "visual_object", "pose": {"x":0,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0}, "collision_mode":"visual_only", "support_status":"supported"})
+    entry={"asset_id":asset_id,"name":name or asset_id,"category":category,"role":defaults["role"],"pose":dict(defaults["pose"]),"collision_mode":defaults["collision_mode"],"support_status":defaults["support_status"],"source":"catalog"}
+    assets.append(entry)
+    selected=state.setdefault("selected",{})
+    selected_map={"robot_base":"robot","end_effector":"tool","support_surface":"support_surface","pick_object":"pick_area","place_target":"place_target","camera":"camera"}
+    if entry["role"] in selected_map:
+        selected[selected_map[entry["role"]]]=entry["asset_id"]
+    return entry
+
+def duplicate_selected_asset(state:dict[str,Any], index:int)->dict[str,Any]:
+    src=state.setdefault("current_cell_assets",[])[index]
+    dup=json.loads(json.dumps(src))
+    dup["name"]=f"{src['name']}_copy"
+    state["current_cell_assets"].append(dup)
+    return dup
+
+def remove_selected_asset(state:dict[str,Any], index:int)->None:
+    state.setdefault("current_cell_assets",[]).pop(index)
+
+def import_custom_stl(state:dict[str,Any], filepath:str, collision_mode:str="visual_only")->dict[str,Any]:
+    return add_asset_to_cell(state, asset_id=Path(filepath).stem, category="custom_stl", role="visual_object", name=Path(filepath).name) | {"source_file":filepath,"collision_mode":collision_mode}
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -45,7 +80,7 @@ def validate_manual_cell_state(state:dict[str,Any])->dict[str,Any]:
     if selected.get("robot") and selected.get("tool"):
         compat=state.get("compatibility",{}).get("robot_tool",True)
         if not compat: issues.append({"severity":"FAIL","code":"robot_tool_incompatible","message":"Selected robot/tool are incompatible"})
-    if state.get("preview_only_assets"):
+    if state.get("preview_only_assets") or any(a.get("support_status")=="preview_only" for a in state.get("current_cell_assets",[])):
         issues.append({"severity":"WARN","code":"preview_only_assets","message":"Selection includes preview-only assets"})
     if state.get("custom_stl_collision_mode") == "visual_only":
         issues.append({"severity":"WARN","code":"custom_stl_visual_only","message":"Custom STL collision mode is visual-only"})
@@ -59,13 +94,14 @@ def validate_manual_cell_state(state:dict[str,Any])->dict[str,Any]:
 def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
     output_dir.mkdir(parents=True,exist_ok=True)
     val=validate_manual_cell_state(state)
+    assets=state.get("current_cell_assets",[])
     files={
-        "cell_definition.yaml": "cell_definition: {}\n",
-        "environment_layout.yaml": "environment_layout: {}\n",
+        "cell_definition.yaml": "cell_definition:\n  assets: %d\n"%len(assets),
+        "environment_layout.yaml": "environment_layout:\n  placed_assets: %d\n"%len(assets),
         "task_recipe.yaml": "task_recipe: {}\n",
     }
     for name,content in files.items(): (output_dir/name).write_text(content,encoding="utf-8")
-    (output_dir/"selected_assets.json").write_text(json.dumps(state.get("selected",{}),indent=2),encoding="utf-8")
+    (output_dir/"selected_assets.json").write_text(json.dumps({"selected":state.get("selected",{}),"current_cell_assets":assets},indent=2),encoding="utf-8")
     (output_dir/"compatibility_report.json").write_text(json.dumps({"fake_hardware_default":True,"preview_only":bool(state.get("preview_only_assets"))},indent=2),encoding="utf-8")
     (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()])},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}

@@ -51,7 +51,14 @@ QJsonObject run_gui_self_test()
     {"open_output_folder", "Open Output Folder"},
     {"show_readiness_report", "Show Readiness Report"},
     {"copy_fake_hardware_launch_command", "Copy Fake-Hardware Launch Command"},
-    {"refresh_asset_catalog", "Refresh Asset Catalog"}
+    {"refresh_asset_catalog", "Refresh Asset Catalog"},
+    {"set_as_robot", "Set as Robot"},
+    {"set_as_end_effector", "Set as End Effector"},
+    {"add_as_support_surface", "Add as Support Surface"},
+    {"add_as_pick_object", "Add as Pick Object"},
+    {"import_custom_stl", "Import Custom STL"},
+    {"remove_selected_asset", "Remove Selected Asset"},
+    {"duplicate_selected_asset", "Duplicate Selected Asset"}
   };
 
   for (const auto & action : required_actions) {
