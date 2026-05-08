@@ -3,8 +3,16 @@ from __future__ import annotations
 import argparse, json
 from pathlib import Path
 from typing import Any
+import sys
 
-from scripts.workcell_builder_capability_catalog import load_workcell_capability_catalog
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+try:
+    from scripts.workcell_builder_capability_catalog import load_workcell_capability_catalog
+except ModuleNotFoundError:
+    from scripts.workcell_builder_capability_matrix import load_workcell_capability_catalog
 from scripts.workcell_builder_grasp_strategy import normalize_grasp_strategy
 from scripts.workcell_builder_compatibility_matrix import evaluate_compatibility
 
