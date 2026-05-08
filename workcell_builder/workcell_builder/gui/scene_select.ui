@@ -84,6 +84,47 @@
        </property>
       </widget>
      </item>
+
+     <item>
+      <widget class="QPushButton" name="validate_cell">
+       <property name="text"><string>Validate Cell</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="generate_canonical_files">
+       <property name="text"><string>Generate Canonical Files</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="generate_workcell_package">
+       <property name="text"><string>Generate Workcell Package</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="generate_studio_pack">
+       <property name="text"><string>Generate Studio Pack</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="open_preview">
+       <property name="text"><string>Open Preview</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="open_output_folder">
+       <property name="text"><string>Open Output Folder</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="show_readiness_report">
+       <property name="text"><string>Show Readiness Report</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="copy_fake_hardware_launch_command">
+       <property name="text"><string>Copy Fake-Hardware Launch Command</string></property>
+      </widget>
+     </item>
      <item>
       <widget class="QPushButton" name="clear_logs">
        <property name="toolTip">

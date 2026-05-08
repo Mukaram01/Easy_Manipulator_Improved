@@ -16,6 +16,11 @@
 #include <QKeyEvent>
 #include <QCoreApplication>
 #include <QDateTime>
+
+#include <QDesktopServices>
+#include <QUrl>
+#include <QApplication>
+#include <QClipboard>
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
@@ -1497,4 +1502,58 @@ void SceneSelect::on_clear_logs_clicked()
 {
   clear_messages();
   append_info("Message log cleared.");
+}
+
+
+void SceneSelect::on_validate_cell_clicked()
+{
+  append_info("Validate Cell triggered. Use generated backend workflow for headless checks.");
+}
+
+void SceneSelect::on_generate_canonical_files_clicked()
+{
+  append_info("Generate Canonical Files triggered.");
+}
+
+void SceneSelect::on_generate_workcell_package_clicked()
+{
+  append_info("Generate Workcell Package triggered (fake-hardware-first).");
+}
+
+void SceneSelect::on_generate_studio_pack_clicked()
+{
+  append_info("Generate Studio Pack triggered.");
+}
+
+void SceneSelect::on_open_preview_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  const fs::path html = scene_dir / "generated" / "environment_preview.html";
+  if (!fs::exists(html)) {
+    append_warning("No preview found. Generate Studio Pack first.");
+    return;
+  }
+  QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string())));
+}
+
+void SceneSelect::on_open_output_folder_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection() / "generated";
+  if (!fs::exists(scene_dir)) {
+    append_warning("No output folder found yet.");
+    return;
+  }
+  QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(scene_dir.string())));
+}
+
+void SceneSelect::on_show_readiness_report_clicked()
+{
+  append_info("Readiness Report: open generated/readiness_summary.md after Studio Pack generation.");
+}
+
+void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
+{
+  const QString cmd("ros2 launch <scene_package> demo.launch.py use_fake_hardware:=true");
+  QApplication::clipboard()->setText(cmd);
+  append_success("Copied fake-hardware launch command to clipboard.");
 }

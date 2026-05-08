@@ -77,6 +77,14 @@ private slots:
   void on_exit_clicked();
 
   void on_clear_logs_clicked();
+  void on_validate_cell_clicked();
+  void on_generate_canonical_files_clicked();
+  void on_generate_workcell_package_clicked();
+  void on_generate_studio_pack_clicked();
+  void on_open_preview_clicked();
+  void on_open_output_folder_clicked();
+  void on_show_readiness_report_clicked();
+  void on_copy_fake_hardware_launch_command_clicked();
 
 private:
   enum class MessageLevel
