@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 import yaml
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo
+from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -401,6 +401,12 @@ def _write_robot_description_file(scene_name, robot_description_config):
 
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
+
+    publish_workcell_markers = LaunchConfiguration("publish_workcell_markers")
+    publish_collision_objects = LaunchConfiguration("publish_collision_objects")
+    show_task_flow = LaunchConfiguration("show_task_flow")
+    show_grasp_markers = LaunchConfiguration("show_grasp_markers")
+
     enable_octomap = LaunchConfiguration("enable_octomap")
     octomap_resolution = LaunchConfiguration("octomap_resolution")
     octomap_pointcloud_topic = LaunchConfiguration("octomap_pointcloud_topic")
@@ -641,6 +647,28 @@ def _launch_setup(context):
         ],
     )
 
+
+    workcell_marker_publisher = ExecuteProcess(
+        cmd=[
+            "python3",
+            os.path.join(get_package_share_directory(scene_pkg), "launch", "workcell_visual_scene_publisher.py"),
+            "--scene-name", scene_pkg,
+            "--show-task-flow", show_task_flow,
+            "--show-grasp-markers", show_grasp_markers,
+        ],
+        condition=None,
+        output="screen",
+    )
+
+    collision_object_publisher = ExecuteProcess(
+        cmd=[
+            "python3",
+            os.path.join(get_package_share_directory(scene_pkg), "launch", "workcell_collision_scene_publisher.py"),
+            "--scene-name", scene_pkg,
+        ],
+        output="screen",
+    )
+
     return [
         octomap_launch_message,
         static_tf,
@@ -648,6 +676,8 @@ def _launch_setup(context):
         joint_state_publisher,
         move_group,
         rviz_node,
+        workcell_marker_publisher,
+        collision_object_publisher,
     ]
 
 
@@ -676,6 +706,26 @@ def generate_launch_description():
             "octomap_max_range",
             default_value="2.5",
             description="Maximum point cloud range (m) used for octomap updates.",
+        ),
+        DeclareLaunchArgument(
+            "publish_workcell_markers",
+            default_value="true",
+            description="Publish Workcell Studio MarkerArray preview overlays.",
+        ),
+        DeclareLaunchArgument(
+            "publish_collision_objects",
+            default_value="true",
+            description="Publish static planning-scene collision objects for environment assets.",
+        ),
+        DeclareLaunchArgument(
+            "show_task_flow",
+            default_value="true",
+            description="Show task-flow arrows in workcell markers.",
+        ),
+        DeclareLaunchArgument(
+            "show_grasp_markers",
+            default_value="true",
+            description="Show grasp approach/retreat intent markers.",
         ),
         DeclareLaunchArgument(
             "use_fake_hardware",
