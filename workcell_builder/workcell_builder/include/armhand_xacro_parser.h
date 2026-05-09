@@ -38,6 +38,16 @@ void generate_armhand_xacro(
     "_gripper.srdf.xacro\" />\n\n";
   MyFile << "  <xacro:" + robot.name + "/>\n\n";
   MyFile << "  <xacro:" + ee.name + "_gripper/>\n\n";
+  if (robot.name == "ur5") {
+    MyFile << "  <group name=\"manipulator\">\n";
+    MyFile << "    <joint name=\"shoulder_pan_joint\"/>\n";
+    MyFile << "    <joint name=\"shoulder_lift_joint\"/>\n";
+    MyFile << "    <joint name=\"elbow_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_1_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_2_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_3_joint\"/>\n";
+    MyFile << "  </group>\n\n";
+  }
 
   // For now we will only disable the base link of the  gripepr with all links of the robot.
   // Will change in the future if collisions with other links of the ee happens
@@ -58,6 +68,16 @@ void generate_armhand_xacro(
     "_moveit_config)/config/" +
     robot.name + ".srdf.xacro\" />\n\n";
   MyFile << "  <xacro:" + robot.name + "/>\n\n";
+  if (robot.name == "ur5") {
+    MyFile << "  <group name=\"manipulator\">\n";
+    MyFile << "    <joint name=\"shoulder_pan_joint\"/>\n";
+    MyFile << "    <joint name=\"shoulder_lift_joint\"/>\n";
+    MyFile << "    <joint name=\"elbow_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_1_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_2_joint\"/>\n";
+    MyFile << "    <joint name=\"wrist_3_joint\"/>\n";
+    MyFile << "  </group>\n\n";
+  }
   MyFile << "\n\n</robot>";
 }
 
