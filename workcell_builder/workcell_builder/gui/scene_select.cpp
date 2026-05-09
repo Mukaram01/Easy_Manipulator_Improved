@@ -312,6 +312,9 @@ fs::path select_scene_root(const fs::path & cwd)
 
 }  // namespace
 
+bool ensure_minimal_environment_yaml(const fs::path & scene_dir, const std::string & scene_name);
+void refresh_scene_manifest_if_missing(const fs::path & scene_dir, const std::string & scene_name);
+
 
 SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
