@@ -19,6 +19,38 @@ GRASP_STRATEGIES={"auto","finger_top","finger_side","suction_top","suction_side"
 APPROACH_AXES={"x_plus","x_minus","y_plus","y_minus","z_up","z_down"}
 PLACEHOLDER_TEMPLATES={"sorting_placeholder","inspection_placeholder","machine_tending_placeholder"}
 
+
+
+def default_perception_profile(state:dict[str,Any])->dict[str,Any]:
+    return {
+        "perception": {
+            "enabled": False,
+            "provider": "epd",
+            "camera": {
+                "model": "realsense_d435i",
+                "frame_id": "camera_color_optical_frame",
+                "rgb_topic": "/camera/camera/color/image_raw",
+                "depth_topic": "/camera/camera/depth/image_rect_raw",
+                "camera_info_topic": "/camera/camera/color/camera_info",
+                "pointcloud_topic": "/camera/camera/depth/color/points",
+            },
+            "epd": {
+                "mode": "localization",
+                "localization_topic": "/easy_perception_deployment/epd_localize_output",
+                "tracking_topic": "/easy_perception_deployment/epd_tracking_output",
+                "object_detection_topic": "/processor/epd_p2_output",
+                "object_tracking_topic": "/processor/epd_p3_output",
+                "qos": {"reliability": "best_effort", "depth": 1, "durability": "volatile"},
+            },
+            "object_mapping": {"default_pick_object_ref": "object_1", "class_to_task_target": {}},
+            "dry_run": {"enabled": True, "snapshot_output": "detected_objects_snapshot.json", "bridge_payload_output": "runtime_bridge_payload.json"},
+        }
+    }
+
+
+def default_sample_detected_objects()->dict[str,Any]:
+    return {"schema_version":"detected_objects/v1","source":"epd","frame_id":"camera_color_optical_frame","timestamp":None,"objects":[{"id":"obj_001","label":"cube","confidence":0.92,"pose":{"xyz":[0.45,0.10,0.22],"rpy":[0.0,0.0,0.0]},"dimensions_xyz":[0.05,0.05,0.05],"tracking_id":None}]}
+
 def default_task_grasp_config()->dict[str,Any]:
     return {"task":{"template":"pick_place","pick":{"source_ref":"","object_ref":""},"place":{"target_ref":""},"routing":{"mode":"direct"},"release":{"strategy":"open_gripper_or_disable_suction"},"runtime_ready":True},"grasp":{"strategy":"auto","approach_axis":"z_down","orientation_mode":"vertical","approach_distance_m":0.12,"retreat_distance_m":0.1,"allowed_roll_angles_deg":[0.0],"allowed_yaw_angles_deg":[0.0,90.0,180.0,270.0],"tool_offset_xyz":[0.0,0.0,0.0],"tool_offset_rpy":[0.0,0.0,0.0],"suction_cups":None}}
 
@@ -183,7 +215,10 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
     (output_dir/"compatibility_report.json").write_text(json.dumps({"fake_hardware_default":True,"preview_only":bool(state.get("preview_only_assets"))},indent=2),encoding="utf-8")
     scene_manifest={"schema_version":"scene_manifest/v1","generated_by":"workcell_builder","selected_assets":selected_payload["selected"],"task":composer.get("task",{}),"grasp":composer.get("grasp",{}),"fake_hardware_default":state.get("fake_hardware_default",True)}
     (output_dir/"scene_manifest.yaml").write_text(json.dumps(scene_manifest,indent=2)+"\n",encoding="utf-8")
-    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest,"task_grasp_summary":{"template":(composer.get("task",{}).get("template")),"grasp_strategy":(composer.get("grasp",{}).get("strategy"))}},indent=2),encoding="utf-8")
+    (output_dir/"perception_profile.yaml").write_text(json.dumps(default_perception_profile(state),indent=2)+"\n",encoding="utf-8")
+    (output_dir/"sample_detected_objects.yaml").write_text(json.dumps(default_sample_detected_objects(),indent=2)+"\n",encoding="utf-8")
+    (output_dir/"runtime_bridge_payload.sample.json").write_text(json.dumps({"schema_version":"emd_grasp_bridge_payload/v1","source":"perception_replay","dry_run_only":True,"targets":[]},indent=2)+"\n",encoding="utf-8")
+    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest,"task_grasp_summary":{"template":(composer.get("task",{}).get("template")),"grasp_strategy":(composer.get("grasp",{}).get("strategy"))},"perception_profile_generated":True},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}
 
 
@@ -238,7 +273,25 @@ def build_readiness_status_panel(state:dict[str,Any], validation:dict[str,Any]|N
     for issue in validation.get("issues",[]):
         if issue.get("code") in badges: badges[issue.get("code")] = True
         messages.append(issue.get("message",""))
-    return {"validation_status":validation["status"],"badges":badges,"messages":messages}
+    perception_profile = default_perception_profile(state)
+    perception = perception_profile.get("perception", {})
+    p_enabled = bool(perception.get("enabled", False))
+    p_status = "PERCEPTION_READY_CONFIG_ONLY"
+    if not perception_profile:
+        p_status = "PERCEPTION_PROFILE_MISSING"
+    elif not perception.get("camera", {}).get("frame_id"):
+        p_status = "CAMERA_FRAME_MISSING"
+    elif not perception.get("epd", {}).get("localization_topic"):
+        p_status = "EPD_TOPIC_MISSING"
+    elif not perception.get("object_mapping", {}).get("default_pick_object_ref"):
+        p_status = "OBJECT_MAPPING_MISSING"
+    elif not p_enabled:
+        p_status = "PERCEPTION_DISABLED"
+    if p_status == "PERCEPTION_PROFILE_MISSING" or p_status == "CAMERA_FRAME_MISSING":
+        badges["PERCEPTION_SOURCE_UNCONFIGURED"] = True
+    messages.append("Config generated. Live EPD not launched automatically.")
+    messages.append(f"Perception status: {p_status}")
+    return {"validation_status":validation["status"],"badges":badges,"messages":messages,"perception_status":p_status,"perception_profile":perception_profile}
 
 def build_preview_launch_plan(state:dict[str,Any], scene_package:str|None=None)->dict[str,Any]:
     validation=validate_manual_cell_state(state)
