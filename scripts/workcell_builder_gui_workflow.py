@@ -122,3 +122,84 @@ def copy_fake_hardware_launch_command(state:dict[str,Any])->dict[str,Any]:
     if state.get("preview_only_assets"):
         return {"ok":False,"message":"No runtime launch command available for preview-only cell"}
     return {"ok":True,"message":"ros2 launch <scene_package> demo.launch.py use_fake_hardware:=true"}
+
+
+def _marker_type(asset:dict[str,Any])->str:
+    role=(asset.get("role") or "").lower()
+    category=(asset.get("category") or "").lower()
+    if "robot" in role or category == "robot":
+        return "robot_base"
+    if "end_effector" in role or "gripper" in category:
+        return "tool"
+    if "support_surface" in role or category in {"table","workbench"}:
+        return "table"
+    if "bin" in role or category == "bin":
+        return "bin"
+    if "camera" in role or "camera" in category:
+        return "camera"
+    if "conveyor" in role or category == "conveyor":
+        return "conveyor"
+    return "object"
+
+
+def build_visual_layout_canvas_model(state:dict[str,Any])->dict[str,Any]:
+    markers=[]
+    warnings=[]
+    for asset in state.get("current_cell_assets",[]):
+        pose=asset.get("pose",{})
+        markers.append({
+            "asset_id":asset.get("asset_id"),
+            "label":asset.get("name") or asset.get("asset_id"),
+            "marker_type":_marker_type(asset),
+            "x":float(pose.get("x",0.0)),
+            "y":float(pose.get("y",0.0)),
+            "z":float(pose.get("z",0.0)),
+            "support_status":asset.get("support_status","supported"),
+            "warning_badge":asset.get("support_status")=="preview_only",
+        })
+    roi=state.get("camera_pointcloud_roi") or {}
+    roi_model=None
+    if roi.get("enabled"):
+        valid=roi.get("x_min",0)<roi.get("x_max",0) and roi.get("y_min",0)<roi.get("y_max",0) and roi.get("z_min",0)<roi.get("z_max",0)
+        roi_model={**roi,"valid":valid}
+        if not valid:
+            warnings.append("ROI invalid")
+    reach_helpers=[]
+    for m in markers:
+        if (m["asset_id"] or "").lower().startswith("ur5") or "ur5" in (m["label"] or "").lower():
+            reach_helpers.append({"asset_id":m["asset_id"],"x":m["x"],"y":m["y"],"radius_m":0.85,"tooltip":"Approximate visual reach only — not a safety or reachability certificate."})
+    return {"grid":{"enabled":True,"step_m":0.1},"origin":{"x":0.0,"y":0.0},"markers":markers,"roi":roi_model,"reach_helpers":reach_helpers,"warnings":warnings}
+
+
+def update_asset_xy_from_canvas_move(state:dict[str,Any], asset_id:str, x:float, y:float)->dict[str,Any]:
+    for asset in state.get("current_cell_assets",[]):
+        if asset.get("asset_id")==asset_id:
+            asset.setdefault("pose",{})["x"]=x
+            asset["pose"]["y"]=y
+            return asset
+    raise KeyError(f"Asset not found: {asset_id}")
+
+
+def export_layout_preview(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
+    output_dir.mkdir(parents=True,exist_ok=True)
+    model=build_visual_layout_canvas_model(state)
+    svg=["<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'>"]
+    svg.append("<text x='12' y='20'>Workcell Layout Preview</text>")
+    for idx,marker in enumerate(model["markers"]):
+        cx=450+int(marker["x"]*250)
+        cy=350-int(marker["y"]*250)
+        color="#f59e0b" if marker["warning_badge"] else "#2563eb"
+        svg.append(f"<circle cx='{cx}' cy='{cy}' r='8' fill='{color}'/>")
+        svg.append(f"<text x='{cx+10}' y='{cy}'>{marker['label']}</text>")
+    if model["roi"]:
+        roi=model["roi"]
+        color="#dc2626" if not roi["valid"] else "#16a34a"
+        x=450+int(roi["x_min"]*250)
+        y=350-int(roi["y_max"]*250)
+        w=max(1,int((roi["x_max"]-roi["x_min"])*250))
+        h=max(1,int((roi["y_max"]-roi["y_min"])*250))
+        svg.append(f"<rect x='{x}' y='{y}' width='{w}' height='{h}' fill='none' stroke='{color}' stroke-width='2'/>")
+    svg.append("</svg>")
+    (output_dir/"layout_preview.svg").write_text("\n".join(svg),encoding="utf-8")
+    (output_dir/"layout_preview.html").write_text("<html><body><h1>Layout Preview</h1><object data='layout_preview.svg' type='image/svg+xml'></object></body></html>",encoding="utf-8")
+    return {"ok":True,"files":["layout_preview.svg","layout_preview.html"],"warnings":model["warnings"]}
