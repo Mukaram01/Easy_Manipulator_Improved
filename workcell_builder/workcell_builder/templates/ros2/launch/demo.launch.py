@@ -689,3 +689,9 @@ def generate_launch_description():
         ),
         OpaqueFunction(function=_launch_setup),
     ])
+
+# Workcell Studio visual toggles
+PUBLISH_WORKCELL_MARKERS_ARG = "publish_workcell_markers"
+PUBLISH_COLLISION_OBJECTS_ARG = "publish_collision_objects"
+SHOW_TASK_FLOW_ARG = "show_task_flow"
+SHOW_GRASP_MARKERS_ARG = "show_grasp_markers"
