@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, shutil, subprocess, sys
+import json, shutil, subprocess, sys, traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -107,8 +107,8 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
     val=validate_manual_cell_state(state)
     assets=state.get("current_cell_assets",[])
     files={
-        "cell_definition.yaml": "cell_definition:\n  assets: %d\n"%len(assets),
-        "environment_layout.yaml": "environment_layout:\n  placed_assets: %d\n"%len(assets),
+        "cell_definition.yaml": _render_cell_definition_v1(state),
+        "environment_layout.yaml": _render_environment_layout_v1(state),
         "task_recipe.yaml": "task_recipe: {}\n",
     }
     for name,content in files.items(): (output_dir/name).write_text(content,encoding="utf-8")
@@ -121,19 +121,48 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
         }}
     (output_dir/"selected_assets.json").write_text(json.dumps(selected_payload,indent=2),encoding="utf-8")
     (output_dir/"compatibility_report.json").write_text(json.dumps({"fake_hardware_default":True,"preview_only":bool(state.get("preview_only_assets"))},indent=2),encoding="utf-8")
-    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()])},indent=2),encoding="utf-8")
+    scene_manifest={"schema_version":"scene_manifest/v1","generated_by":"workcell_builder","selected_assets":selected_payload["selected"],"fake_hardware_default":state.get("fake_hardware_default",True)}
+    (output_dir/"scene_manifest.yaml").write_text("\n".join(["schema_version: scene_manifest/v1", "generated_by: workcell_builder"])+"\n",encoding="utf-8")
+    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}
 
 
 def generate_studio_pack(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
-    result=generate_canonical_files(state,output_dir)
+    try:
+        result=generate_canonical_files(state,output_dir)
+    except Exception as exc:
+        return {"ok":False,"error":{"code":"generation_failure","message":str(exc)}}
     (output_dir/"readiness_summary.md").write_text("# Readiness\n- Final readiness: **%s**\n- Safety: offline/fake hardware first\n"%result["validation"]["status"],encoding="utf-8")
     (output_dir/"readiness_summary.html").write_text("<html><body><h1>Readiness</h1></body></html>",encoding="utf-8")
     (output_dir/"environment_preview.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>",encoding="utf-8")
     (output_dir/"environment_preview.html").write_text("<html><body>Preview</body></html>",encoding="utf-8")
     launch=copy_fake_hardware_launch_command(state)
     (output_dir/"generated_launch_commands.md").write_text(launch.get("message",""),encoding="utf-8")
-    return {"ok":True,"output_dir":str(output_dir),"readiness":result["validation"]["status"]}
+    return {"ok":True,"output_dir":str(output_dir),"readiness":result["validation"]["status"],"runtime_classification":_runtime_classification(state,result["validation"]) }
+
+
+def _runtime_classification(state:dict[str,Any], validation:dict[str,Any])->str:
+    if validation.get("status") == "FAIL":
+        return "blocked_by_validation_errors"
+    if state.get("preview_only_assets"):
+        return "preview_only"
+    if state.get("fake_hardware_default") is not True:
+        return "requires_real_hardware_review"
+    return "runtime_ready"
+
+
+def _render_cell_definition_v1(state:dict[str,Any])->str:
+    selected=state.get("selected",{})
+    payload={"schema_version":"cell_definition/v1","cell_name":state.get("scene_name","builder_scene"),"robot":{"id":selected.get("robot")},"tool":{"id":selected.get("tool")},"sensor":{"id":selected.get("camera")},"task":{"id":selected.get("task")},"safety":{"use_fake_hardware":state.get("fake_hardware_default",True)},"assets":[{"id":a.get("asset_id"),"role":a.get("role"),"category":a.get("category"),"pose":a.get("pose",{})} for a in state.get("current_cell_assets",[])]}
+    return json.dumps(payload,indent=2)+"\n"
+
+
+def _render_environment_layout_v1(state:dict[str,Any])->str:
+    assets=[]
+    for a in state.get("current_cell_assets",[]):
+        assets.append({"id":a.get("asset_id"),"type":a.get("category"),"xyz":[a.get("pose",{}).get("x",0),a.get("pose",{}).get("y",0),a.get("pose",{}).get("z",0)],"rpy":[a.get("pose",{}).get("roll",0),a.get("pose",{}).get("pitch",0),a.get("pose",{}).get("yaw",0)],"scale":a.get("scale",[1.0,1.0,1.0]),"source_file":a.get("source_file")})
+    payload={"schema_version":"environment_layout/v1","layout_id":state.get("scene_name","builder_layout"),"assets":assets}
+    return json.dumps(payload,indent=2)+"\n"
 
 
 def copy_fake_hardware_launch_command(state:dict[str,Any])->dict[str,Any]:
@@ -228,9 +257,10 @@ def register_custom_stl_asset(state:dict[str,Any], source_path:str, destination_
     destination_dir.mkdir(parents=True, exist_ok=True)
     copied=destination_dir/src.name
     shutil.copy2(src,copied)
-    asset=import_custom_stl(state, str(src))
+    asset=add_asset_to_cell(state, asset_id=src.stem, category="custom_stl", role="visual_object", name=src.name)
     asset["source_file"]=str(src)
     asset["copied_asset_path"]=str(copied)
+    asset["collision_mode"]="visual_only"
     asset["pose"]={"x":(xyz or [0,0,0])[0],"y":(xyz or [0,0,0])[1],"z":(xyz or [0,0,0])[2],"roll":(rpy or [0,0,0])[0],"pitch":(rpy or [0,0,0])[1],"yaw":(rpy or [0,0,0])[2]}
     asset["scale"]=scale or [1.0,1.0,1.0]
     return asset
