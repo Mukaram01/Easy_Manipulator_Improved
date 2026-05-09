@@ -74,6 +74,12 @@ def main()->int:
     pc_ok,pc_err=package_consistency(scene_dir); checks.append(('package consistency',pc_ok,pc_err))
     sm_ok,sm_err=launch_smoke(scene_dir); checks.append(('SRDF/controller joints',sm_ok,sm_err))
     prev_ok=all((scene_dir/f).exists() for f in ['generated/preview.txt','generated/readiness_summary.md']); checks.append(('preview artifacts',prev_ok,[] if prev_ok else ['missing preview']))
+    cfg=scene_dir/"config"
+    replay=wf.generate_perception_replay_preview(cfg)
+    replay_ok=all((cfg/f).exists() for f in ['runtime_bridge_payload.preview.json','perception_replay_markers.json','selected_target_summary.json'])
+    checks.append(('perception replay offline preview', replay_ok, [] if replay_ok else ['missing replay artifacts']))
+    launch_text=(scene_dir/'launch'/'demo.launch.py').read_text(encoding='utf-8')
+    checks.append(('no live epd/realsense auto launch', ('easy_perception_deployment' not in launch_text and 'realsense2_camera_node' not in launch_text), []))
     fake_ok='True' in (scene_dir/'launch'/'demo.launch.py').read_text(encoding='utf-8'); checks.append(('fake-hardware default',fake_ok,[] if fake_ok else ['false']))
     for name,ok,errs in checks:
       print(f"{'PASS' if ok else 'FAIL'}: {name}")
@@ -82,7 +88,10 @@ def main()->int:
     print('cd ~/workcell_ws')
     print(f'colcon build --symlink-install --packages-select {args.scene_name}')
     print('source install/setup.bash')
-    print(f'ros2 launch {args.scene_name} demo.launch.py use_fake_hardware:=true')
+    print(f'ros2 launch {args.scene_name} demo.launch.py \\')
+    print('  use_fake_hardware:=true \\')
+    print('  publish_workcell_markers:=true \\')
+    print('  publish_perception_replay:=true')
     return 0 if all(c[1] for c in checks) else 1
 
 if __name__=='__main__':

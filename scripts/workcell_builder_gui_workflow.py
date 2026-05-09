@@ -227,13 +227,57 @@ def generate_studio_pack(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
         result=generate_canonical_files(state,output_dir)
     except Exception as exc:
         return {"ok":False,"error":{"code":"generation_failure","message":str(exc)}}
-    (output_dir/"readiness_summary.md").write_text("# Readiness\n- Final readiness: **%s**\n- Safety: offline/fake hardware first\n"%result["validation"]["status"],encoding="utf-8")
+    replay = generate_perception_replay_preview(output_dir)
+    replay_status = replay.get("status","NOT_RUN")
+    selected = (((replay.get("selected_target") or {}).get("selected_object")) or {})
+    (output_dir/"readiness_summary.md").write_text(
+        "# Readiness\n"
+        f"- Final readiness: **{result['validation']['status']}**\n"
+        "- Safety: offline/fake hardware first\n\n"
+        "## Perception Replay\n"
+        "- profile: config/perception_profile.yaml\n"
+        "- input snapshot: config/sample_detected_objects.yaml\n"
+        f"- selected object: {selected.get('label')}/{selected.get('id')}/{selected.get('confidence')}\n"
+        f"- mapped place target: {((replay.get('selected_target') or {}).get('mapping') or {}).get('place_target_ref')}\n"
+        f"- generated bridge payload preview: {replay_status}\n"
+        "- live EPD launched automatically: false\n- runtime execution called: false\n- motion command sent: false\n",
+        encoding="utf-8")
     (output_dir/"readiness_summary.html").write_text("<html><body><h1>Readiness</h1></body></html>",encoding="utf-8")
     (output_dir/"environment_preview.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'></svg>",encoding="utf-8")
     (output_dir/"environment_preview.html").write_text("<html><body>Preview</body></html>",encoding="utf-8")
     launch=copy_fake_hardware_launch_command(state)
     (output_dir/"generated_launch_commands.md").write_text(launch.get("message",""),encoding="utf-8")
-    return {"ok":True,"output_dir":str(output_dir),"readiness":result["validation"]["status"],"runtime_classification":_runtime_classification(state,result["validation"]) }
+    return {"ok":True,"output_dir":str(output_dir),"readiness":result["validation"]["status"],"runtime_classification":_runtime_classification(state,result["validation"]), "perception_replay": replay }
+
+def generate_perception_replay_preview(scene_dir:Path)->dict[str,Any]:
+    cfg = scene_dir
+    profile = cfg/"perception_profile.yaml"
+    snap = cfg/"sample_detected_objects.yaml"
+    out = cfg/"runtime_bridge_payload.preview.json"
+    markers = cfg/"perception_replay_markers.json"
+    summary = cfg/"perception_replay_summary.json"
+    selected = cfg/"selected_target_summary.json"
+    task = scene_dir.parent/"task_recipe.yaml"
+    grasp = scene_dir.parent/"grasp_strategy.yaml"
+    env = scene_dir.parent/"environment_layout.yaml"
+    if not (profile.exists() and snap.exists()):
+        return {"status":"PERCEPTION_REPLAY_BLOCKED","reason":"missing_profile_or_snapshot"}
+    cmd=[sys.executable, str(repo_root()/ "scripts"/"epd_snapshot_adapter.py"), "--profile", str(profile), "--input", str(snap), "--output", str(out), "--markers", str(markers), "--summary", str(summary), "--selected-summary", str(selected)]
+    if task.exists(): cmd += ["--task", str(task)]
+    if grasp.exists(): cmd += ["--grasp", str(grasp)]
+    if env.exists(): cmd += ["--environment", str(env)]
+    run=_run(cmd, cwd=repo_root())
+    if not run["ok"]:
+        return {"status":"PERCEPTION_REPLAY_BLOCKED","error":run.get("stderr","").strip()}
+    sp = _load_json_safe(summary)
+    st = _load_json_safe(selected)
+    return {"status":"PERCEPTION_REPLAY_READY" if sp.get("status")=="READY" else "PERCEPTION_REPLAY_WARN","summary":sp,"selected_target":st,"bridge_payload_preview_ready":out.exists()}
+
+def _load_json_safe(path:Path)->dict[str,Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def _runtime_classification(state:dict[str,Any], validation:dict[str,Any])->str:

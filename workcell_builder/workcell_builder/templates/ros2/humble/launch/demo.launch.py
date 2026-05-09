@@ -406,6 +406,7 @@ def _launch_setup(context):
     publish_collision_objects = LaunchConfiguration("publish_collision_objects")
     show_task_flow = LaunchConfiguration("show_task_flow")
     show_grasp_markers = LaunchConfiguration("show_grasp_markers")
+    publish_perception_replay = LaunchConfiguration("publish_perception_replay")
 
     enable_octomap = LaunchConfiguration("enable_octomap")
     octomap_resolution = LaunchConfiguration("octomap_resolution")
@@ -655,6 +656,8 @@ def _launch_setup(context):
             "--scene-name", scene_pkg,
             "--show-task-flow", show_task_flow,
             "--show-grasp-markers", show_grasp_markers,
+            "--publish-perception-replay", publish_perception_replay,
+            "--perception-replay-path", os.path.join(get_package_share_directory(scene_pkg), "config", "perception_replay_markers.json"),
         ],
         condition=None,
         output="screen",
@@ -726,6 +729,11 @@ def generate_launch_description():
             "show_grasp_markers",
             default_value="true",
             description="Show grasp approach/retreat intent markers.",
+        ),
+        DeclareLaunchArgument(
+            "publish_perception_replay",
+            default_value="false",
+            description="Publish offline perception replay markers from config/perception_replay_markers.json.",
         ),
         DeclareLaunchArgument(
             "use_fake_hardware",
