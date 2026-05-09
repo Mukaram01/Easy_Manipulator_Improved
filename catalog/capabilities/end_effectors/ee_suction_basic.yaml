@@ -1,0 +1,7 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: suction_basic
+  label: Suction Basic
+  family: suction
+  support_status: supported
+  runtime_status: fake_hardware_only

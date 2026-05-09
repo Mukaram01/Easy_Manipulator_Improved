@@ -1,0 +1,7 @@
+schema_version: environment_asset/v1
+asset:
+  id: pick_area_placeholder
+  label: Pick Area Placeholder
+  family: pick_area
+  support_status: preview_only
+  runtime_status: preview_only

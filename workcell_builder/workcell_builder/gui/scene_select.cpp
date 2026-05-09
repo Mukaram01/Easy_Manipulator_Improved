@@ -1634,3 +1634,6 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
   QApplication::clipboard()->setText(cmd);
   append_success("Copied fake-hardware launch command to clipboard.");
 }
+
+// compatibility note: missing one of [package.xml, CMakeLists.txt, urdf/]
+

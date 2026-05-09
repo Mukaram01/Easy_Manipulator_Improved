@@ -1,0 +1,9 @@
+schema_version: robot_capability/v1
+robot:
+  id: generic_cartesian_placeholder
+  label: Generic Cartesian Placeholder
+  family: gantry
+  support_status: preview_only
+  runtime_status: preview_only
+  limitations_warnings:
+    - Placeholder robot for layout and planning preview only.

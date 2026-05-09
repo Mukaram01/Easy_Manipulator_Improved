@@ -1,0 +1,7 @@
+schema_version: environment_asset/v1
+asset:
+  id: camera_mount_placeholder
+  label: Camera Mount Placeholder
+  family: camera_mount
+  support_status: preview_only
+  runtime_status: preview_only

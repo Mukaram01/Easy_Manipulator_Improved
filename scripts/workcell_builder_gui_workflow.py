@@ -82,6 +82,17 @@ def validate_manual_cell_state(state:dict[str,Any])->dict[str,Any]:
         if not compat: issues.append({"severity":"FAIL","code":"robot_tool_incompatible","message":"Selected robot/tool are incompatible"})
     if state.get("preview_only_assets") or any(a.get("support_status")=="preview_only" for a in state.get("current_cell_assets",[])):
         issues.append({"severity":"WARN","code":"preview_only_assets","message":"Selection includes preview-only assets"})
+    robot_name=str(selected.get("robot") or "").lower()
+    tool_name=str(selected.get("tool") or "").lower()
+    if "generic" in robot_name or "placeholder" in robot_name:
+        issues.append({"severity":"WARN","code":"placeholder_robot","message":"Selected robot is placeholder family"})
+    if ("generic" in robot_name or "placeholder" in robot_name) and ("suction" in tool_name or "vacuum" in tool_name):
+        issues.append({"severity":"WARN","code":"preview_combo","message":"Robot/tool combination is preview-only"})
+    if state.get("fake_hardware_default") is not True:
+        issues.append({"severity":"WARN","code":"fake_hw_required","message":"use_fake_hardware must remain true by default"})
+    for a in state.get("current_cell_assets",[]):
+        if a.get("category")=="custom_stl" and not a.get("source_file"):
+            issues.append({"severity":"WARN","code":"missing_custom_stl_path","message":"Custom STL source path is missing"})
     if state.get("custom_stl_collision_mode") == "visual_only":
         issues.append({"severity":"WARN","code":"custom_stl_visual_only","message":"Custom STL collision mode is visual-only"})
     if state.get("fake_hardware_default") is False:
@@ -101,7 +112,14 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
         "task_recipe.yaml": "task_recipe: {}\n",
     }
     for name,content in files.items(): (output_dir/name).write_text(content,encoding="utf-8")
-    (output_dir/"selected_assets.json").write_text(json.dumps({"selected":state.get("selected",{}),"current_cell_assets":assets},indent=2),encoding="utf-8")
+    selected_payload={"selected":state.get("selected",{}),"current_cell_assets":assets,
+        "catalog_selection":{
+            "robot":state.get("selected",{}).get("robot"),
+            "end_effector":state.get("selected",{}).get("tool"),
+            "sensor":state.get("selected",{}).get("camera"),
+            "task":state.get("selected",{}).get("task"),
+        }}
+    (output_dir/"selected_assets.json").write_text(json.dumps(selected_payload,indent=2),encoding="utf-8")
     (output_dir/"compatibility_report.json").write_text(json.dumps({"fake_hardware_default":True,"preview_only":bool(state.get("preview_only_assets"))},indent=2),encoding="utf-8")
     (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()])},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}
@@ -203,3 +221,16 @@ def export_layout_preview(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
     (output_dir/"layout_preview.svg").write_text("\n".join(svg),encoding="utf-8")
     (output_dir/"layout_preview.html").write_text("<html><body><h1>Layout Preview</h1><object data='layout_preview.svg' type='image/svg+xml'></object></body></html>",encoding="utf-8")
     return {"ok":True,"files":["layout_preview.svg","layout_preview.html"],"warnings":model["warnings"]}
+
+
+def register_custom_stl_asset(state:dict[str,Any], source_path:str, destination_dir:Path, *, xyz:list[float]|None=None, rpy:list[float]|None=None, scale:list[float]|None=None)->dict[str,Any]:
+    src=Path(source_path)
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    copied=destination_dir/src.name
+    shutil.copy2(src,copied)
+    asset=import_custom_stl(state, str(src))
+    asset["source_file"]=str(src)
+    asset["copied_asset_path"]=str(copied)
+    asset["pose"]={"x":(xyz or [0,0,0])[0],"y":(xyz or [0,0,0])[1],"z":(xyz or [0,0,0])[2],"roll":(rpy or [0,0,0])[0],"pitch":(rpy or [0,0,0])[1],"yaw":(rpy or [0,0,0])[2]}
+    asset["scale"]=scale or [1.0,1.0,1.0]
+    return asset
