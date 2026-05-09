@@ -338,6 +338,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->asset_search_filter->setToolTip("Filter assets by id, display name, or tag.");
   ui->perception_roi_tab->setToolTip("Pointcloud ROI crop filters for pick-area metadata.");
   ui->layout_help->setToolTip("Collision mode options: visual-only, bounding-box collision, mesh collision.");
+  ui->generate_files->hide();
 
   connect(ui->asset_search_filter, &QLineEdit::textChanged, this, [this](const QString & text) {
     const QString needle = text.trimmed();
@@ -495,6 +496,11 @@ void SceneSelect::discover_scene_packages_on_startup()
   }
   append_info("Selected workcell root: " + workcell_path.string());
   append_info("Selected scenes directory: " + scenes_path.string());
+  boost::system::error_code path_ec;
+  const fs::path resolved_scenes = fs::canonical(scenes_path, path_ec);
+  if (!path_ec) {
+    append_info("Resolved scenes directory: " + resolved_scenes.string());
+  }
 
   if (!fs::exists(scenes_path) || !fs::is_directory(scenes_path)) {
     append_warning("Scenes directory not found; skipping startup rediscovery.");
@@ -544,6 +550,12 @@ void SceneSelect::discover_scene_packages_on_startup()
       append_warning(
         "Discovered scaffold scene package '" + scene_name +
         "' without environment.yaml; scene can launch but cannot be fully edited until YAML exists.");
+      if (ensure_minimal_environment_yaml(entry.path(), scene_name)) {
+        append_warning(
+          "Repair Missing environment.yaml applied at: " +
+          (entry.path() / "environment.yaml").string());
+      }
+      refresh_scene_manifest_if_missing(entry.path(), scene_name);
     }
     workcell.scene_vector.push_back(discovered_scene);
     known_scenes.insert(scene_name);
@@ -571,6 +583,14 @@ void SceneSelect::on_add_scene_clicked()
     workcell.scene_vector.push_back(scene_window.scene);
     generate_scene_package(
       scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
+    const fs::path scene_package_path = scenes_path / scene_window.scene.name;
+    boost::system::error_code path_ec;
+    const fs::path resolved_scenes = fs::canonical(scenes_path, path_ec);
+    append_info("Selected scenes directory: " + scenes_path.string());
+    if (!path_ec) {
+      append_info("Resolved scenes directory: " + resolved_scenes.string());
+    }
+    append_info("Scene package: " + scene_package_path.string());
     refresh_scenes(workcell.scene_vector.size() - 1, true);
     update_scene_browser_status("Created new scene at: " + (scenes_path / scene_window.scene.name).string());
   }
@@ -704,6 +724,42 @@ void write_builder_validation_helper(const fs::path & scene_dir)
   }
 }
 
+bool ensure_minimal_environment_yaml(const fs::path & scene_dir, const std::string & scene_name)
+{
+  const fs::path environment_file = scene_dir / "environment.yaml";
+  if (fs::exists(environment_file)) {
+    return true;
+  }
+  std::ofstream out(environment_file.string());
+  if (!out.is_open()) {
+    return false;
+  }
+  out << "robot:\n";
+  out << "  brand: \"unknown\"\n";
+  out << "  name: \"unknown\"\n";
+  out << "end_effector:\n";
+  out << "  brand: \"none\"\n";
+  out << "  name: \"none\"\n";
+  out << "objects: []\n";
+  out << "external joints: []\n";
+  out << "scene_name: \"" << scene_name << "\"\n";
+  return true;
+}
+
+void refresh_scene_manifest_if_missing(const fs::path & scene_dir, const std::string & scene_name)
+{
+  const fs::path manifest = scene_dir / "scene_manifest.yaml";
+  if (fs::exists(manifest)) {
+    return;
+  }
+  std::ofstream out(manifest.string());
+  if (!out.is_open()) {
+    return;
+  }
+  out << "scene_name: " << scene_name << "\n";
+  out << "generated_by: workcell_builder\n";
+}
+
 void SceneSelect::generate_scene_package(
   fs::path scene_filepath,
   std::string scene_name, int ros_ver, const std::string & ros_distro)
@@ -716,6 +772,8 @@ void SceneSelect::generate_scene_package(
   if (!boost::filesystem::exists(scene_urdf_dir)) {
     boost::filesystem::create_directory(scene_urdf_dir);
   }
+  ensure_minimal_environment_yaml(scene_dir, scene_name);
+  refresh_scene_manifest_if_missing(scene_dir, scene_name);
   fs::path workcell_path(scene_filepath.branch_path());
   generate_cmakelists(workcell_path, scene_name, ros_ver, ros_distro);
   generate_package_xml(workcell_path, scene_name, ros_ver, ros_distro);
@@ -1025,7 +1083,8 @@ bool SceneSelect::check_scene(bool strict)
   if (has_yaml) {
     append_success("Scene status: environment.yaml found.");
   } else {
-    append_warning("Scene status: environment.yaml not found. Save the scene to enable future edits.");
+    append_warning(
+      "Scene status: environment.yaml not found. Click Generate YAML files for scene first.");
   }
 
   if (files_loaded_proper) {
@@ -1144,7 +1203,7 @@ void SceneSelect::on_generate_files_clicked()
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
-        append_error("Could not load scene from environment.yaml.");
+        append_error("environment.yaml missing. Click Generate YAML files for scene first.");
         return;
       }
     }
@@ -1589,12 +1648,12 @@ void SceneSelect::on_validate_cell_clicked()
 
 void SceneSelect::on_generate_canonical_files_clicked()
 {
-  append_info("Generate Canonical Files triggered.");
+  on_generate_yaml_clicked();
 }
 
 void SceneSelect::on_generate_workcell_package_clicked()
 {
-  append_info("Generate Workcell Package triggered (fake-hardware-first).");
+  on_generate_files_clicked();
 }
 
 void SceneSelect::on_generate_studio_pack_clicked()
@@ -1636,4 +1695,3 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
 }
 
 // compatibility note: missing one of [package.xml, CMakeLists.txt, urdf/]
-
