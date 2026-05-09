@@ -410,6 +410,62 @@ def register_custom_stl_asset(state:dict[str,Any], source_path:str, destination_
     return asset
 
 
+
+ASSET_CATEGORIES={
+    "Robots":["ur3","ur5","ur10","fanuc","panda"],
+    "Grippers & Tools":["robotiq_2f","robotiq_3f","single_suction","onrobot_airpick4"],
+    "Cameras & Sensors":["realsense_d435i"],
+    "Tables & Workbenches":["table","workbench"],
+    "Bins & Totes":["bin","tote"],
+    "Conveyors":["conveyor"],
+    "Fixtures & Jigs":["fixture","jig"],
+    "Objects":["cube","object"],
+    "Custom STL":["custom_stl"],
+}
+
+def list_catalog_assets_by_category(category:str)->list[str]:
+    return list(ASSET_CATEGORIES.get(category, []))
+
+def resolve_output_folder(path:str|Path|None=None)->dict[str,Any]:
+    root=Path(path).expanduser() if path else _default_scenes_root()
+    root=root.resolve()
+    return {"path":str(root),"writable":root.exists() and os.access(root, os.W_OK) if root.exists() else os.access(root.parent, os.W_OK)}
+
+def generation_prerequisites(state:dict[str,Any], scene_dir:str|Path|None=None)->dict[str,Any]:
+    issues=[]
+    if not state.get("scene_name"):
+        issues.append("Create or open a cell first")
+    selected=state.get("selected",{})
+    if not selected.get("robot"):
+        issues.append("Select a robot")
+    if not selected.get("tool"):
+        issues.append("Select an end effector")
+    if not state.get("current_cell_assets"):
+        issues.append("Add at least one asset to the cell")
+    yaml_ready=not issues
+    files_ready=False
+    if scene_dir:
+        files_ready=(Path(scene_dir)/"environment.yaml").exists()
+    return {"generate_yaml_enabled":yaml_ready,"generate_yaml_tooltip":"Ready" if yaml_ready else "Disabled: " + "; ".join(issues),"generate_files_enabled":files_ready,"generate_files_tooltip":"Ready" if files_ready else "Disabled: Generate YAML files for scene first (environment.yaml missing)"}
+
+def create_golden_demo_cell(scene_name:str, output_folder:str|Path|None=None)->dict[str,Any]:
+    created=create_new_cell(scene_name, output_folder)
+    if not created.get("ok"):
+        return created
+    state={"scene_name":created["cell_name"],"fake_hardware_default":True,"selected":{"robot":"ur5","tool":"robotiq_2f","camera":"realsense_d435i","support_surface":"workbench","pick_area":"bin","place_target":"pick_area","task":"pick_place","grasp_strategy":"finger_top"},"current_cell_assets":[]}
+    add_asset_to_cell(state,'ur5','robot','robot_base','UR5')
+    add_asset_to_cell(state,'robotiq_2f','gripper','end_effector','Robotiq 2F')
+    add_asset_to_cell(state,'realsense_d435i','camera','camera','RealSense D435i')
+    add_asset_to_cell(state,'workbench','workbench','support_surface','Workbench')
+    add_asset_to_cell(state,'bin','bin','pick_object','Bin')
+    add_asset_to_cell(state,'cube','object','pick_object','Cube')
+    add_asset_to_cell(state,'pick_area','object','place_target','Pick Area')
+    scene_dir=Path(created['scene_dir'])
+    yaml_result=generate_yaml_files_for_scene(state, scene_dir)
+    package_result=generate_files_from_yaml(scene_dir)
+    launch_cmd=f"ros2 launch {created['cell_name']} demo.launch.py use_fake_hardware:=true"
+    status=(f"Golden Demo: PASS. Created {scene_dir}. Next: Generate files from YAML or build package with {package_result.get('build_command','')}")
+    return {"ok":True,"state":state,"scene_dir":str(scene_dir),"yaml":yaml_result,"package":package_result,"build_command":package_result.get("build_command",""),"launch_command":launch_cmd,"status":status}
 ROS_PACKAGE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
