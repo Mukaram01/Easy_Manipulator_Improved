@@ -1,0 +1,7 @@
+schema_version: end_effector_capability/v1
+end_effector:
+  id: vacuum_array_placeholder
+  label: Vacuum Array Placeholder
+  family: vacuum_array
+  support_status: preview_only
+  runtime_status: preview_only

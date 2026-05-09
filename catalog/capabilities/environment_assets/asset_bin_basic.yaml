@@ -1,0 +1,7 @@
+schema_version: environment_asset/v1
+asset:
+  id: bin_basic
+  label: Bin Basic
+  family: bin
+  support_status: supported
+  runtime_status: supported

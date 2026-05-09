@@ -1,0 +1,7 @@
+schema_version: task_capability/v1
+task:
+  id: machine_tending_placeholder
+  label: Machine Tending Placeholder
+  family: machine_tending
+  support_status: preview_only
+  runtime_status: preview_only

@@ -1,0 +1,7 @@
+schema_version: environment_asset/v1
+asset:
+  id: table_basic
+  label: Table Basic
+  family: table
+  support_status: supported
+  runtime_status: supported

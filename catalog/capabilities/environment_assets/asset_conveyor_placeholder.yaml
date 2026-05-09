@@ -1,0 +1,7 @@
+schema_version: environment_asset/v1
+asset:
+  id: conveyor_placeholder
+  label: Conveyor Placeholder
+  family: conveyor
+  support_status: preview_only
+  runtime_status: preview_only

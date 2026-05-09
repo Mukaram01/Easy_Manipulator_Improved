@@ -1,0 +1,7 @@
+schema_version: task_capability/v1
+task:
+  id: inspection_placeholder
+  label: Inspection Placeholder
+  family: inspection
+  support_status: preview_only
+  runtime_status: preview_only
