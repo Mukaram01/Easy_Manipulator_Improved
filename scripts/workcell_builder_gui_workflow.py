@@ -13,6 +13,25 @@ DEFAULTS={
     "camera":{"role":"camera","pose":{"x":0.5,"y":0,"z":0.8,"roll":0,"pitch":-0.6,"yaw":0},"collision_mode":"visual_only","support_status":"supported"},
     "conveyor":{"role":"conveyor","pose":{"x":0.7,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"bounding_box","support_status":"preview_only"},
 }
+TASK_TEMPLATES={"pick_place","sorting_placeholder","inspection_placeholder","machine_tending_placeholder"}
+GRASP_STRATEGIES={"auto","finger_top","finger_side","suction_top","suction_side"}
+APPROACH_AXES={"x_plus","x_minus","y_plus","y_minus","z_up","z_down"}
+PLACEHOLDER_TEMPLATES={"sorting_placeholder","inspection_placeholder","machine_tending_placeholder"}
+
+def default_task_grasp_config()->dict[str,Any]:
+    return {"task":{"template":"pick_place","pick":{"source_ref":"","object_ref":""},"place":{"target_ref":""},"routing":{"mode":"direct"},"release":{"strategy":"open_gripper_or_disable_suction"},"runtime_ready":True},"grasp":{"strategy":"auto","approach_axis":"z_down","orientation_mode":"vertical","approach_distance_m":0.12,"retreat_distance_m":0.1,"allowed_roll_angles_deg":[0.0],"allowed_yaw_angles_deg":[0.0,90.0,180.0,270.0],"tool_offset_xyz":[0.0,0.0,0.0],"tool_offset_rpy":[0.0,0.0,0.0],"suction_cups":None}}
+
+def ensure_task_grasp_config(state:dict[str,Any])->dict[str,Any]:
+    payload=state.setdefault("task_grasp_composer", default_task_grasp_config())
+    return payload
+
+def _tool_supports_suction(tool_id:str)->bool:
+    name=tool_id.lower()
+    return "suction" in name or "vacuum" in name or "airpick" in name
+
+def _tool_supports_finger(tool_id:str)->bool:
+    name=tool_id.lower()
+    return "robotiq" in name or "2f" in name or "gripper" in name or "finger" in name
 
 def add_asset_to_cell(state:dict[str,Any], asset_id:str, category:str, role:str|None=None, name:str|None=None)->dict[str,Any]:
     assets=state.setdefault("current_cell_assets",[])
@@ -113,6 +132,28 @@ def validate_manual_cell_state(state:dict[str,Any])->dict[str,Any]:
         issues.append({"severity":"WARN","code":"custom_stl_visual_only","message":"Custom STL collision mode is visual-only"})
     if state.get("fake_hardware_default") is False:
         issues.append({"severity":"WARN","code":"fake_hw_not_default","message":"Fake hardware should remain default"})
+    composer=ensure_task_grasp_config(state)
+    task=composer.get("task",{})
+    grasp=composer.get("grasp",{})
+    template=task.get("template")
+    if not template: issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Task template is required"})
+    elif template not in TASK_TEMPLATES: issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Task template is invalid"})
+    if not ((task.get("pick") or {}).get("source_ref")): issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Pick source is required"})
+    if not ((task.get("place") or {}).get("target_ref")): issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Place target is required"})
+    if not grasp.get("strategy"): issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Grasp strategy is required"})
+    if grasp.get("strategy") and grasp.get("strategy") not in GRASP_STRATEGIES: issues.append({"severity":"FAIL","code":"GRASP_INCOMPATIBLE","message":"Invalid grasp strategy"})
+    for fld in ["approach_distance_m","retreat_distance_m"]:
+        if float(grasp.get(fld,0)) < 0: issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":f"{fld} must be non-negative"})
+    if grasp.get("approach_axis") and grasp.get("approach_axis") not in APPROACH_AXES:
+        issues.append({"severity":"FAIL","code":"TASK_INCOMPLETE","message":"Invalid approach axis"})
+    selected_tool=str(state.get("selected",{}).get("tool") or "")
+    strategy=str(grasp.get("strategy") or "")
+    if strategy.startswith("suction") and not _tool_supports_suction(selected_tool):
+        issues.append({"severity":"WARN","code":"GRASP_INCOMPATIBLE","message":"Suction grasp selected with non-suction tool"})
+    if strategy.startswith("finger") and not _tool_supports_finger(selected_tool):
+        issues.append({"severity":"WARN","code":"GRASP_INCOMPATIBLE","message":"Finger grasp selected with non-finger tool"})
+    if template in PLACEHOLDER_TEMPLATES and task.get("runtime_ready",True):
+        issues.append({"severity":"WARN","code":"PREVIEW_ONLY","message":"Placeholder task is preview-only and runtime unsupported"})
     has_fail=any(i["severity"]=="FAIL" for i in issues)
     status="FAIL" if has_fail else ("WARN" if issues else "OK")
     return {"status":status,"issues":issues,"fake_hardware_default": state.get("fake_hardware_default",True)}
@@ -122,10 +163,12 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
     output_dir.mkdir(parents=True,exist_ok=True)
     val=validate_manual_cell_state(state)
     assets=state.get("current_cell_assets",[])
+    composer=ensure_task_grasp_config(state)
     files={
         "cell_definition.yaml": _render_cell_definition_v1(state),
         "environment_layout.yaml": _render_environment_layout_v1(state),
-        "task_recipe.yaml": "task_recipe: {}\n",
+        "task_recipe.yaml": json.dumps({"schema_version":"task_recipe/v1","task":composer.get("task",{}),"grasp":composer.get("grasp",{})},indent=2)+"\n",
+        "grasp_strategy.yaml": json.dumps({"schema_version":"grasp_strategy/v1","grasp":composer.get("grasp",{})},indent=2)+"\n",
     }
     for name,content in files.items(): (output_dir/name).write_text(content,encoding="utf-8")
     selected_payload={"selected":state.get("selected",{}),"current_cell_assets":assets,
@@ -137,9 +180,9 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
         }}
     (output_dir/"selected_assets.json").write_text(json.dumps(selected_payload,indent=2),encoding="utf-8")
     (output_dir/"compatibility_report.json").write_text(json.dumps({"fake_hardware_default":True,"preview_only":bool(state.get("preview_only_assets"))},indent=2),encoding="utf-8")
-    scene_manifest={"schema_version":"scene_manifest/v1","generated_by":"workcell_builder","selected_assets":selected_payload["selected"],"fake_hardware_default":state.get("fake_hardware_default",True)}
-    (output_dir/"scene_manifest.yaml").write_text("\n".join(["schema_version: scene_manifest/v1", "generated_by: workcell_builder"])+"\n",encoding="utf-8")
-    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest},indent=2),encoding="utf-8")
+    scene_manifest={"schema_version":"scene_manifest/v1","generated_by":"workcell_builder","selected_assets":selected_payload["selected"],"task":composer.get("task",{}),"grasp":composer.get("grasp",{}),"fake_hardware_default":state.get("fake_hardware_default",True)}
+    (output_dir/"scene_manifest.yaml").write_text(json.dumps(scene_manifest,indent=2)+"\n",encoding="utf-8")
+    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest,"task_grasp_summary":{"template":(composer.get("task",{}).get("template")),"grasp_strategy":(composer.get("grasp",{}).get("strategy"))}},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}
 
 
@@ -158,17 +201,17 @@ def generate_studio_pack(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
 
 
 def _runtime_classification(state:dict[str,Any], validation:dict[str,Any])->str:
-    if validation.get("status") == "FAIL":
-        return "blocked_by_validation_errors"
     if state.get("preview_only_assets"):
         return "preview_only"
+    if validation.get("status") == "FAIL":
+        return "blocked_by_validation_errors"
     if state.get("fake_hardware_default") is not True:
         return "requires_real_hardware_review"
     return "runtime_ready"
 
 def build_readiness_status_panel(state:dict[str,Any], validation:dict[str,Any]|None=None)->dict[str,Any]:
     validation=validation or validate_manual_cell_state(state)
-    badges={"VALID":False,"WARN":False,"BLOCKED":False,"PREVIEW_ONLY":False,"RUNTIME_UNSUPPORTED":False,"MISSING_ASSET":False,"FAKE_HARDWARE":state.get("fake_hardware_default",True),"REAL_HARDWARE_REVIEW_REQUIRED":False}
+    badges={"VALID":False,"WARN":False,"BLOCKED":False,"PREVIEW_ONLY":False,"TASK_INCOMPLETE":False,"GRASP_INCOMPATIBLE":False,"PERCEPTION_SOURCE_UNCONFIGURED":False,"RUNTIME_UNSUPPORTED":False,"MISSING_ASSET":False,"FAKE_HARDWARE":state.get("fake_hardware_default",True),"REAL_HARDWARE_REVIEW_REQUIRED":False}
     messages=[]
     if validation["status"]=="OK":
         badges["VALID"]=True
@@ -192,6 +235,7 @@ def build_readiness_status_panel(state:dict[str,Any], validation:dict[str,Any]|N
     if preview_combo:
         messages.append("Placeholder robot family is preview-only and runtime unsupported.")
     for issue in validation.get("issues",[]):
+        if issue.get("code") in badges: badges[issue.get("code")] = True
         messages.append(issue.get("message",""))
     return {"validation_status":validation["status"],"badges":badges,"messages":messages}
 
@@ -274,7 +318,21 @@ def build_visual_layout_canvas_model(state:dict[str,Any])->dict[str,Any]:
     for m in markers:
         if (m["asset_id"] or "").lower().startswith("ur5") or "ur5" in (m["label"] or "").lower():
             reach_helpers.append({"asset_id":m["asset_id"],"x":m["x"],"y":m["y"],"radius_m":0.85,"tooltip":"Approximate visual reach only — not a safety or reachability certificate."})
-    return {"grid":{"enabled":True,"step_m":0.1},"origin":{"x":0.0,"y":0.0},"markers":markers,"roi":roi_model,"reach_helpers":reach_helpers,"warnings":warnings}
+    composer=ensure_task_grasp_config(state)
+    task=composer.get("task",{})
+    grasp=composer.get("grasp",{})
+    pick_id=((task.get("pick") or {}).get("source_ref"))
+    place_id=((task.get("place") or {}).get("target_ref"))
+    marker_map={m["asset_id"]:m for m in markers}
+    task_flow={}
+    if pick_id in marker_map and place_id in marker_map:
+        p0=marker_map[pick_id]; p1=marker_map[place_id]
+        task_flow={"pick_source":pick_id,"place_target":place_id,"arrow":{"from":[p0["x"],p0["y"]],"to":[p1["x"],p1["y"]]},"approach_vector":{"axis":grasp.get("approach_axis"),"distance_m":grasp.get("approach_distance_m")},"retreat_vector":{"axis":"z_up","distance_m":grasp.get("retreat_distance_m")},"label":f"{task.get('template')} / {grasp.get('strategy')}"}
+    else:
+        warnings.append("Task source/target missing from scene markers")
+    if task.get("template") in PLACEHOLDER_TEMPLATES:
+        warnings.append("Task template is preview-only")
+    return {"grid":{"enabled":True,"step_m":0.1},"origin":{"x":0.0,"y":0.0},"markers":markers,"roi":roi_model,"reach_helpers":reach_helpers,"warnings":warnings,"task_flow":task_flow}
 
 
 def update_asset_xy_from_canvas_move(state:dict[str,Any], asset_id:str, x:float, y:float)->dict[str,Any]:
@@ -305,12 +363,17 @@ def export_layout_preview(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
         w=max(1,int((roi["x_max"]-roi["x_min"])*250))
         h=max(1,int((roi["y_max"]-roi["y_min"])*250))
         svg.append(f"<rect x='{x}' y='{y}' width='{w}' height='{h}' fill='none' stroke='{color}' stroke-width='2'/>")
+    if model.get("task_flow",{}).get("arrow"):
+        a=model["task_flow"]["arrow"]; x1=450+int(a["from"][0]*250); y1=350-int(a["from"][1]*250); x2=450+int(a["to"][0]*250); y2=350-int(a["to"][1]*250)
+        svg.insert(2,f"<line x1='{x1}' y1='{y1}' x2='{x2}' y2='{y2}' stroke='#059669' stroke-width='3' marker-end='url(#arrow)'/>")
+        svg.insert(1,"<defs><marker id='arrow' markerWidth='10' markerHeight='10' refX='8' refY='3' orient='auto'><polygon points='0 0, 10 3, 0 6' fill='#059669'/></marker></defs>")
+        svg.insert(3,f"<text x='12' y='40'>Task: {model['task_flow'].get('label')}</text>")
     svg.append("</svg>")
     svg_text="\n".join(svg)
     (output_dir/"layout_preview.svg").write_text(svg_text,encoding="utf-8")
     (output_dir/"layout_preview.html").write_text("<html><body><h1>Layout Preview</h1><object data='layout_preview.svg' type='image/svg+xml'></object></body></html>",encoding="utf-8")
     (output_dir/"static_preview.svg").write_text(svg_text,encoding="utf-8")
-    (output_dir/"preview_markers.json").write_text(json.dumps({"markers":model["markers"],"warnings":model["warnings"]},indent=2),encoding="utf-8")
+    (output_dir/"preview_markers.json").write_text(json.dumps({"markers":model["markers"],"warnings":model["warnings"],"task_flow":model.get("task_flow",{})},indent=2),encoding="utf-8")
     return {"ok":True,"files":["layout_preview.svg","layout_preview.html","static_preview.svg","preview_markers.json"],"warnings":model["warnings"]}
 
 def load_existing_scene_into_state(scene_dir:Path, state:dict[str,Any]|None=None)->dict[str,Any]:
