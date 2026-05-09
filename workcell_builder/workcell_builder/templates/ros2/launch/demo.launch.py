@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 import yaml
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, LogInfo
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -76,6 +76,36 @@ def load_yaml(package_name, rel_path):
         return yaml.safe_load(file) or {}
 
 
+def extract_end_effector_metadata(environment_config):
+    end_effector = environment_config.get("end_effector", {}) if isinstance(environment_config, dict) else {}
+    if not isinstance(end_effector, dict):
+        end_effector = {}
+
+    gripper_type = end_effector.get("gripper_type") or end_effector.get("ee_type") or ""
+    planner_id = end_effector.get("planner_id") or end_effector.get("brand") or ""
+    grasp_frame = end_effector.get("grasp_frame") or end_effector.get("tcp_link") or end_effector.get("base_link") or ""
+    tcp_link = end_effector.get("tcp_link") or end_effector.get("grasp_frame") or end_effector.get("base_link") or ""
+
+    spawn_gripper_controller = end_effector.get("spawn_gripper_controller")
+    if spawn_gripper_controller is None:
+        spawn_gripper_controller = gripper_type == "finger"
+
+    finger_count = end_effector.get("finger_count")
+    if finger_count is None and gripper_type == "finger":
+        attributes = end_effector.get("attributes", {})
+        if isinstance(attributes, dict):
+            finger_count = attributes.get("fingers")
+
+    return {
+        "planner_id": planner_id,
+        "grasp_frame": grasp_frame,
+        "tcp_link": tcp_link,
+        "gripper_type": gripper_type,
+        "spawn_gripper_controller": bool(spawn_gripper_controller),
+        "finger_count": finger_count,
+    }
+
+
 def _normalize_ros_param_types(value):
     if isinstance(value, dict):
         return {str(key): _normalize_ros_param_types(item) for key, item in value.items()}
@@ -113,10 +143,13 @@ def _sanitize_ros_param_types(value):
                 sanitized_items.append(sanitized_item)
         return sanitized_items if sanitized_items else _DROP_PARAM
 
+    if value is None:
+        return _DROP_PARAM
+
     if isinstance(value, (bool, int, float, str, bytes)):
         return value
 
-    return value
+    return _DROP_PARAM
 
 
 def _param_dict(value):
@@ -155,33 +188,107 @@ def _validate_ros_param_types(value, path="root"):
     raise TypeError(f"Invalid ROS param type at {path}: {type(value).__name__} -> {value!r}")
 
 
-def _extract_controller_joints(robot_description_semantic_config):
+UR_ARM_JOINTS = [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+]
+
+
+def _collect_movable_urdf_joints(urdf_root):
+    movable = []
+    mimic_joints = set()
+    for joint in urdf_root.findall(".//joint"):
+        name = joint.get("name")
+        joint_type = joint.get("type")
+        if not name or joint_type in (None, "fixed"):
+            continue
+        if joint.find("mimic") is not None:
+            mimic_joints.add(name)
+            continue
+        movable.append(name)
+    return movable, mimic_joints
+
+
+def _derive_chain_joints_from_urdf(robot_description_config, base_link, tip_link):
+    urdf_root = ET.fromstring(robot_description_config)
+    edges = {}
+    for joint in urdf_root.findall(".//joint"):
+        parent = joint.find("parent")
+        child = joint.find("child")
+        name = joint.get("name")
+        joint_type = joint.get("type")
+        if parent is None or child is None or not name:
+            continue
+        edges[parent.get("link")] = (child.get("link"), name, joint_type, joint.find("mimic") is not None)
+
+    chain_joints = []
+    current = base_link
+    seen = set()
+    while current != tip_link and current not in seen and current in edges:
+        seen.add(current)
+        child, joint_name, joint_type, is_mimic = edges[current]
+        if joint_type not in (None, "fixed") and not is_mimic:
+            chain_joints.append(joint_name)
+        current = child
+
+    if current != tip_link or not chain_joints:
+        return []
+    return chain_joints
+
+
+def _extract_controller_joints(robot_description_semantic_config, robot_description_config):
     try:
         srdf_root = ET.fromstring(robot_description_semantic_config)
+        urdf_root = ET.fromstring(robot_description_config)
     except ET.ParseError as exc:
-        raise RuntimeError("Failed to parse robot_description_semantic for controller joint extraction") from exc
+        raise RuntimeError("Failed to parse SRDF/URDF for controller joint extraction") from exc
 
-    preferred_group_names = {"manipulator", "arm"}
-    first_group_with_joints = None
+    group_names = []
+    groups_with_explicit = []
+    groups_with_chain = []
+    preferred_group_names = ["manipulator", "arm", "ur_manipulator"]
 
     for group in srdf_root.findall(".//group"):
-        joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
-        if not joints:
-            continue
-
         group_name = group.get("name") or "arm"
-        if group_name in preferred_group_names:
-            return group_name, joints
+        group_names.append(group_name)
+        joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
+        if joints:
+            groups_with_explicit.append((group_name, joints))
+            if group_name in preferred_group_names:
+                return group_name, joints
+        for chain in group.findall("chain"):
+            base_link = chain.get("base_link")
+            tip_link = chain.get("tip_link")
+            if base_link and tip_link:
+                groups_with_chain.append((group_name, base_link, tip_link))
 
-        if first_group_with_joints is None:
-            first_group_with_joints = (group_name, joints)
+    if groups_with_explicit:
+        return groups_with_explicit[0]
 
-    if first_group_with_joints:
-        return first_group_with_joints
+    movable_joints, _ = _collect_movable_urdf_joints(urdf_root)
+    if all(joint in set(movable_joints) for joint in UR_ARM_JOINTS):
+        return "manipulator", UR_ARM_JOINTS
+
+    for group_name, base_link, tip_link in groups_with_chain:
+        chain_joints = _derive_chain_joints_from_urdf(robot_description_config, base_link, tip_link)
+        if chain_joints:
+            return group_name, chain_joints
+
+    non_gripper = [joint for joint in movable_joints if "gripper" not in joint and "finger" not in joint]
+    fallback_joints = non_gripper[:6]
+    if len(fallback_joints) == 6:
+        print("[workcell_builder] WARNING: using URDF-only fallback arm joints for preview/fake hardware")
+        return "manipulator", fallback_joints
 
     raise RuntimeError(
         "No controller joints were found in robot_description_semantic. "
-        "Ensure the SRDF has a manipulator/arm group with explicit <joint> entries."
+        f"groups={group_names}, explicit={bool(groups_with_explicit)}, chain={bool(groups_with_chain)}, "
+        f"first_movable_urdf_joints={movable_joints[:20]}. "
+        "Regenerate SRDF with explicit manipulator joint entries or configure robot capability arm_joints."
     )
 
 
@@ -215,6 +322,73 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
 
 
 
+
+
+def _derive_controller_configs(scene_name, controller_group_name, controller_joints, robot_description_config, end_effector_metadata):
+    urdf_root = ET.fromstring(robot_description_config)
+    movable_joints = {
+        j.get("name") for j in urdf_root.findall(".//joint")
+        if j.get("name") and j.get("type") not in (None, "fixed")
+    }
+
+    robot_name = (scene_name or controller_group_name or "robot").lower()
+    detected_ur_arm = [joint for joint in UR_ARM_JOINTS if joint in movable_joints]
+    arm_joints = detected_ur_arm if len(detected_ur_arm) == len(UR_ARM_JOINTS) else [
+        joint for joint in controller_joints if joint in movable_joints
+    ]
+
+    if not arm_joints:
+        raise RuntimeError("Unable to derive movable arm joints for MoveIt controller configuration")
+
+    if robot_name.startswith("ur") and len(detected_ur_arm) == len(UR_ARM_JOINTS):
+        arm_controller_name = f"{robot_name}_arm_controller"
+    else:
+        arm_controller_name = f"{robot_name}_arm_controller"
+
+    gripper_joints = [
+        joint for joint in movable_joints
+        if joint.startswith("gripper_")
+        and joint not in set(arm_joints)
+        and joint != "gripper_base_joint"
+    ]
+    gripper_joints = [
+        joint for joint in gripper_joints
+        if "inner_knuckle" not in joint and "finger_tip" not in joint
+    ]
+    preferred = ["gripper_finger1_joint", "gripper_finger2_joint"]
+    preferred_gripper = [joint for joint in preferred if joint in gripper_joints]
+    if preferred_gripper:
+        gripper_joints = preferred_gripper
+    else:
+        gripper_joints.sort()
+
+    controllers = {
+        "controller_names": [arm_controller_name],
+        arm_controller_name: {
+            "action_ns": "follow_joint_trajectory",
+            "type": "FollowJointTrajectory",
+            "default": True,
+            "joints": arm_joints,
+        },
+    }
+
+    should_emit_gripper_controller = (
+        bool(end_effector_metadata.get("spawn_gripper_controller"))
+        or end_effector_metadata.get("gripper_type") == "finger"
+        or bool(gripper_joints)
+    )
+    if should_emit_gripper_controller and gripper_joints:
+        gripper_controller_name = (f"{robot_name}_gripper_controller" if robot_name.startswith("ur") else f"{robot_name}_gripper_controller")
+        controllers["controller_names"].append(gripper_controller_name)
+        controllers[gripper_controller_name] = {
+            "action_ns": "follow_joint_trajectory",
+            "type": "FollowJointTrajectory",
+            "default": False,
+            "joints": gripper_joints,
+        }
+
+    return controllers
+
 def _write_robot_description_file(scene_name, robot_description_config):
     path = os.path.join(
         tempfile.gettempdir(),
@@ -227,6 +401,10 @@ def _write_robot_description_file(scene_name, robot_description_config):
 
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
+    enable_octomap = LaunchConfiguration("enable_octomap")
+    octomap_resolution = LaunchConfiguration("octomap_resolution")
+    octomap_pointcloud_topic = LaunchConfiguration("octomap_pointcloud_topic")
+    octomap_max_range = LaunchConfiguration("octomap_max_range")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
@@ -277,7 +455,7 @@ def _launch_setup(context):
         ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
 
     controller_group_name, controller_joints = _extract_controller_joints(
-        robot_description_semantic_config
+        robot_description_semantic_config, robot_description_config
     )
     if not controller_joints:
         raise RuntimeError(
@@ -285,22 +463,22 @@ def _launch_setup(context):
             "The generated fake controller cannot be created with an empty joints list."
         )
     _validate_joint_state_configuration(robot_description_config, controller_joints)
-    controller_name = f"fake_{controller_group_name}_controller"
+    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    end_effector_metadata = extract_end_effector_metadata(environment_config)
+    controller_configs = _derive_controller_configs(
+        scene_pkg,
+        controller_group_name,
+        controller_joints,
+        robot_description_config,
+        end_effector_metadata,
+    )
 
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
     }
 
     moveit_simple_controller_manager = {
-        "moveit_simple_controller_manager": {
-            "controller_names": [controller_name],
-            controller_name: {
-                "action_ns": "follow_joint_trajectory",
-                "type": "FollowJointTrajectory",
-                "default": True,
-                "joints": controller_joints,
-            },
-        }
+        "moveit_simple_controller_manager": controller_configs
     }
 
     trajectory_execution = {
@@ -314,6 +492,34 @@ def _launch_setup(context):
         "publish_state_updates": True,
         "publish_transforms_updates": True,
     }
+    octomap_enabled = enable_octomap.perform(context).lower() == "true"
+    octomap_config = {}
+    octomap_launch_message = None
+    if octomap_enabled:
+        octomap_config = {
+            "octomap_resolution": float(octomap_resolution.perform(context)),
+            "sensors": ["realsense_pointcloud"],
+            "realsense_pointcloud": {
+                "sensor_plugin": "occupancy_map_monitor/PointCloudOctomapUpdater",
+                "point_cloud_topic": octomap_pointcloud_topic.perform(context),
+                "max_range": float(octomap_max_range.perform(context)),
+                "point_subsample": 1,
+                "padding_offset": 0.1,
+                "padding_scale": 1.0,
+                "max_update_rate": 1.0,
+                "filtered_cloud_topic": "filtered_cloud",
+            },
+        }
+        octomap_launch_message = LogInfo(
+            msg=(
+                "Octomap occupancy monitor enabled with PointCloudOctomapUpdater "
+                f"on topic '{octomap_pointcloud_topic.perform(context)}'."
+            )
+        )
+    else:
+        octomap_launch_message = LogInfo(
+            msg="Octomap occupancy monitor disabled (enable_octomap:=false)."
+        )
 
     try:
         validated_use_sim_time = _param_dict(_normalize_ros_param_types({"use_sim_time": use_sim_time.perform(context).lower() == "true"}))
@@ -323,9 +529,13 @@ def _launch_setup(context):
         validated_planning_pipelines_config = _param_dict(_normalize_ros_param_types(planning_pipelines_config))
         validated_ompl_planning_pipeline_config = _param_dict(_normalize_ros_param_types(ompl_planning_pipeline_config))
         validated_planning_scene_monitor_params = _param_dict(_normalize_ros_param_types(planning_scene_monitor_params))
+        validated_octomap_config = _param_dict(_normalize_ros_param_types(octomap_config))
         validated_trajectory_execution = _param_dict(_normalize_ros_param_types(trajectory_execution))
         validated_moveit_controller_manager = _param_dict(_normalize_ros_param_types(moveit_controller_manager))
         validated_moveit_simple_controller_manager = _param_dict(_normalize_ros_param_types(moveit_simple_controller_manager))
+        validated_end_effector_metadata = _param_dict(_normalize_ros_param_types({
+            "workcell_end_effector_metadata": end_effector_metadata
+        }))
 
         _validate_ros_param_types(validated_use_sim_time, "use_sim_time")
         _validate_ros_param_types(validated_robot_description, "robot_description")
@@ -334,9 +544,11 @@ def _launch_setup(context):
         _validate_ros_param_types(validated_planning_pipelines_config, "planning_pipelines_config")
         _validate_ros_param_types(validated_ompl_planning_pipeline_config, "ompl_planning_pipeline_config")
         _validate_ros_param_types(validated_planning_scene_monitor_params, "planning_scene_monitor_params")
+        _validate_ros_param_types(validated_octomap_config, "octomap_config")
         _validate_ros_param_types(validated_trajectory_execution, "trajectory_execution")
         _validate_ros_param_types(validated_moveit_controller_manager, "moveit_controller_manager")
         _validate_ros_param_types(validated_moveit_simple_controller_manager, "moveit_simple_controller_manager")
+        _validate_ros_param_types(validated_end_effector_metadata, "end_effector_metadata")
     except TypeError as exc:
         raise TypeError(f"{scene_pkg} demo.launch parameter validation failed: {exc}") from exc
 
@@ -396,9 +608,11 @@ def _launch_setup(context):
             validated_planning_pipelines_config,
             validated_ompl_planning_pipeline_config,
             validated_planning_scene_monitor_params,
+            validated_octomap_config,
             validated_trajectory_execution,
             validated_moveit_controller_manager,
             validated_moveit_simple_controller_manager,
+            validated_end_effector_metadata,
         ),
         remappings=[
             ("joint_states", joint_states_topic),
@@ -428,6 +642,7 @@ def _launch_setup(context):
     )
 
     return [
+        octomap_launch_message,
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
@@ -439,6 +654,29 @@ def _launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "enable_octomap",
+            default_value="true",
+            description=(
+                "Enable MoveIt octomap integration. Defaults to true with a "
+                "PointCloudOctomapUpdater config suitable for RealSense D435i."
+            ),
+        ),
+        DeclareLaunchArgument(
+            "octomap_resolution",
+            default_value="0.1",
+            description="Octomap voxel resolution in meters.",
+        ),
+        DeclareLaunchArgument(
+            "octomap_pointcloud_topic",
+            default_value="/camera/camera/depth/color/points",
+            description="Point cloud topic consumed by MoveIt octomap updater.",
+        ),
+        DeclareLaunchArgument(
+            "octomap_max_range",
+            default_value="2.5",
+            description="Maximum point cloud range (m) used for octomap updates.",
+        ),
         DeclareLaunchArgument(
             "use_fake_hardware",
             default_value="true",

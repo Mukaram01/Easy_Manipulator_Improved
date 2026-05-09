@@ -198,43 +198,98 @@ UR_ARM_JOINTS = [
 ]
 
 
+def _collect_movable_urdf_joints(urdf_root):
+    movable = []
+    mimic_joints = set()
+    for joint in urdf_root.findall(".//joint"):
+        name = joint.get("name")
+        joint_type = joint.get("type")
+        if not name or joint_type in (None, "fixed"):
+            continue
+        if joint.find("mimic") is not None:
+            mimic_joints.add(name)
+            continue
+        movable.append(name)
+    return movable, mimic_joints
+
+
+def _derive_chain_joints_from_urdf(robot_description_config, base_link, tip_link):
+    urdf_root = ET.fromstring(robot_description_config)
+    edges = {}
+    for joint in urdf_root.findall(".//joint"):
+        parent = joint.find("parent")
+        child = joint.find("child")
+        name = joint.get("name")
+        joint_type = joint.get("type")
+        if parent is None or child is None or not name:
+            continue
+        edges[parent.get("link")] = (child.get("link"), name, joint_type, joint.find("mimic") is not None)
+
+    chain_joints = []
+    current = base_link
+    seen = set()
+    while current != tip_link and current not in seen and current in edges:
+        seen.add(current)
+        child, joint_name, joint_type, is_mimic = edges[current]
+        if joint_type not in (None, "fixed") and not is_mimic:
+            chain_joints.append(joint_name)
+        current = child
+
+    if current != tip_link or not chain_joints:
+        return []
+    return chain_joints
+
+
 def _extract_controller_joints(robot_description_semantic_config, robot_description_config):
     try:
         srdf_root = ET.fromstring(robot_description_semantic_config)
+        urdf_root = ET.fromstring(robot_description_config)
     except ET.ParseError as exc:
-        raise RuntimeError("Failed to parse robot_description_semantic for controller joint extraction") from exc
+        raise RuntimeError("Failed to parse SRDF/URDF for controller joint extraction") from exc
 
-    preferred_group_names = {"manipulator", "arm"}
-    first_group_with_joints = None
+    group_names = []
+    groups_with_explicit = []
+    groups_with_chain = []
+    preferred_group_names = ["manipulator", "arm", "ur_manipulator"]
 
     for group in srdf_root.findall(".//group"):
-        joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
-        if not joints:
-            continue
-
         group_name = group.get("name") or "arm"
-        if group_name in preferred_group_names:
-            return group_name, joints
+        group_names.append(group_name)
+        joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
+        if joints:
+            groups_with_explicit.append((group_name, joints))
+            if group_name in preferred_group_names:
+                return group_name, joints
+        for chain in group.findall("chain"):
+            base_link = chain.get("base_link")
+            tip_link = chain.get("tip_link")
+            if base_link and tip_link:
+                groups_with_chain.append((group_name, base_link, tip_link))
 
-        if first_group_with_joints is None:
-            first_group_with_joints = (group_name, joints)
+    if groups_with_explicit:
+        return groups_with_explicit[0]
 
-    if not first_group_with_joints:
-        raise RuntimeError(
-            "No controller joints were found in robot_description_semantic. "
-            "Ensure the SRDF has a manipulator/arm group with explicit <joint> entries."
-        )
+    movable_joints, _ = _collect_movable_urdf_joints(urdf_root)
+    if all(joint in set(movable_joints) for joint in UR_ARM_JOINTS):
+        return "manipulator", UR_ARM_JOINTS
 
-    _, raw_joints = first_group_with_joints
-    urdf_root = ET.fromstring(robot_description_config)
-    movable = {
-        j.get("name") for j in urdf_root.findall(".//joint")
-        if j.get("name") and j.get("type") not in (None, "fixed", "mimic")
-    }
-    filtered = [joint for joint in raw_joints if joint in movable]
-    if not filtered:
-        raise RuntimeError("No movable controller joints remain after filtering fixed/mimic joints")
-    return first_group_with_joints[0], filtered
+    for group_name, base_link, tip_link in groups_with_chain:
+        chain_joints = _derive_chain_joints_from_urdf(robot_description_config, base_link, tip_link)
+        if chain_joints:
+            return group_name, chain_joints
+
+    non_gripper = [joint for joint in movable_joints if "gripper" not in joint and "finger" not in joint]
+    fallback_joints = non_gripper[:6]
+    if len(fallback_joints) == 6:
+        print("[workcell_builder] WARNING: using URDF-only fallback arm joints for preview/fake hardware")
+        return "manipulator", fallback_joints
+
+    raise RuntimeError(
+        "No controller joints were found in robot_description_semantic. "
+        f"groups={group_names}, explicit={bool(groups_with_explicit)}, chain={bool(groups_with_chain)}, "
+        f"first_movable_urdf_joints={movable_joints[:20]}. "
+        "Regenerate SRDF with explicit manipulator joint entries or configure robot capability arm_joints."
+    )
 
 
 def _validate_joint_state_configuration(robot_description_config, controller_joints):
