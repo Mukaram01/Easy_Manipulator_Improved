@@ -33,6 +33,22 @@ def duplicate_selected_asset(state:dict[str,Any], index:int)->dict[str,Any]:
     state["current_cell_assets"].append(dup)
     return dup
 
+def edit_asset_pose(state:dict[str,Any], index:int, *, x:float|None=None, y:float|None=None, z:float|None=None, roll:float|None=None, pitch:float|None=None, yaw:float|None=None, scale:list[float]|None=None, source_file:str|None=None, name:str|None=None, category:str|None=None)->dict[str,Any]:
+    asset=state.setdefault("current_cell_assets",[])[index]
+    pose=asset.setdefault("pose",{})
+    for key,val in [("x",x),("y",y),("z",z),("roll",roll),("pitch",pitch),("yaw",yaw)]:
+        if val is not None:
+            pose[key]=float(val)
+    if scale is not None:
+        asset["scale"]=[float(v) for v in scale]
+    if source_file is not None:
+        asset["source_file"]=source_file
+    if name is not None:
+        asset["name"]=name
+    if category is not None:
+        asset["category"]=category
+    return asset
+
 def remove_selected_asset(state:dict[str,Any], index:int)->None:
     state.setdefault("current_cell_assets",[]).pop(index)
 
@@ -150,6 +166,42 @@ def _runtime_classification(state:dict[str,Any], validation:dict[str,Any])->str:
         return "requires_real_hardware_review"
     return "runtime_ready"
 
+def build_readiness_status_panel(state:dict[str,Any], validation:dict[str,Any]|None=None)->dict[str,Any]:
+    validation=validation or validate_manual_cell_state(state)
+    badges={"VALID":False,"WARN":False,"BLOCKED":False,"PREVIEW_ONLY":False,"RUNTIME_UNSUPPORTED":False,"MISSING_ASSET":False,"FAKE_HARDWARE":state.get("fake_hardware_default",True),"REAL_HARDWARE_REVIEW_REQUIRED":False}
+    messages=[]
+    if validation["status"]=="OK":
+        badges["VALID"]=True
+    elif validation["status"]=="WARN":
+        badges["WARN"]=True
+    else:
+        badges["BLOCKED"]=True
+    selected=state.get("selected",{})
+    if not selected.get("robot") or not selected.get("tool"):
+        badges["MISSING_ASSET"]=True
+    preview_combo=False
+    robot_name=str(selected.get("robot") or "").lower()
+    if "generic" in robot_name or "placeholder" in robot_name:
+        badges["PREVIEW_ONLY"]=True
+        badges["RUNTIME_UNSUPPORTED"]=True
+        preview_combo=True
+    if state.get("preview_only_assets") or any(a.get("support_status")=="preview_only" for a in state.get("current_cell_assets",[])):
+        badges["PREVIEW_ONLY"]=True
+    if state.get("fake_hardware_default") is not True:
+        badges["REAL_HARDWARE_REVIEW_REQUIRED"]=True
+    if preview_combo:
+        messages.append("Placeholder robot family is preview-only and runtime unsupported.")
+    for issue in validation.get("issues",[]):
+        messages.append(issue.get("message",""))
+    return {"validation_status":validation["status"],"badges":badges,"messages":messages}
+
+def build_preview_launch_plan(state:dict[str,Any], scene_package:str|None=None)->dict[str,Any]:
+    validation=validate_manual_cell_state(state)
+    readiness=build_readiness_status_panel(state,validation)
+    pkg=scene_package or "<scene_package>"
+    cmd=f"ros2 launch {pkg} demo.launch.py use_fake_hardware:=true"
+    return {"validation":validation,"readiness":readiness,"command":cmd,"manual_launch_only":True,"auto_execute":False}
+
 
 def _render_cell_definition_v1(state:dict[str,Any])->str:
     selected=state.get("selected",{})
@@ -194,15 +246,22 @@ def build_visual_layout_canvas_model(state:dict[str,Any])->dict[str,Any]:
     warnings=[]
     for asset in state.get("current_cell_assets",[]):
         pose=asset.get("pose",{})
+        marker_type=_marker_type(asset)
         markers.append({
             "asset_id":asset.get("asset_id"),
             "label":asset.get("name") or asset.get("asset_id"),
-            "marker_type":_marker_type(asset),
+            "marker_type":marker_type,
             "x":float(pose.get("x",0.0)),
             "y":float(pose.get("y",0.0)),
             "z":float(pose.get("z",0.0)),
+            "roll":float(pose.get("roll",0.0)),
+            "pitch":float(pose.get("pitch",0.0)),
+            "yaw":float(pose.get("yaw",0.0)),
+            "scale":asset.get("scale",[1.0,1.0,1.0]),
+            "source_file":asset.get("source_file"),
             "support_status":asset.get("support_status","supported"),
             "warning_badge":asset.get("support_status")=="preview_only",
+            "shape":"mesh_label" if marker_type=="object" and asset.get("category")=="custom_stl" else "box",
         })
     roi=state.get("camera_pointcloud_roi") or {}
     roi_model=None
@@ -247,9 +306,30 @@ def export_layout_preview(state:dict[str,Any], output_dir:Path)->dict[str,Any]:
         h=max(1,int((roi["y_max"]-roi["y_min"])*250))
         svg.append(f"<rect x='{x}' y='{y}' width='{w}' height='{h}' fill='none' stroke='{color}' stroke-width='2'/>")
     svg.append("</svg>")
-    (output_dir/"layout_preview.svg").write_text("\n".join(svg),encoding="utf-8")
+    svg_text="\n".join(svg)
+    (output_dir/"layout_preview.svg").write_text(svg_text,encoding="utf-8")
     (output_dir/"layout_preview.html").write_text("<html><body><h1>Layout Preview</h1><object data='layout_preview.svg' type='image/svg+xml'></object></body></html>",encoding="utf-8")
-    return {"ok":True,"files":["layout_preview.svg","layout_preview.html"],"warnings":model["warnings"]}
+    (output_dir/"static_preview.svg").write_text(svg_text,encoding="utf-8")
+    (output_dir/"preview_markers.json").write_text(json.dumps({"markers":model["markers"],"warnings":model["warnings"]},indent=2),encoding="utf-8")
+    return {"ok":True,"files":["layout_preview.svg","layout_preview.html","static_preview.svg","preview_markers.json"],"warnings":model["warnings"]}
+
+def load_existing_scene_into_state(scene_dir:Path, state:dict[str,Any]|None=None)->dict[str,Any]:
+    state=state or {}
+    generated=scene_dir/"generated"/"environment_layout.yaml"
+    selected_json=scene_dir/"generated"/"selected_assets.json"
+    if generated.exists():
+        payload=json.loads(generated.read_text(encoding="utf-8"))
+        assets=[]
+        for item in payload.get("assets",[]):
+            xyz=item.get("xyz",[0,0,0]); rpy=item.get("rpy",[0,0,0])
+            assets.append({"asset_id":item.get("id"),"name":item.get("id"),"category":item.get("type","object"),"role":item.get("role",item.get("type","object")),"pose":{"x":xyz[0],"y":xyz[1],"z":xyz[2],"roll":rpy[0],"pitch":rpy[1],"yaw":rpy[2]},"scale":item.get("scale",[1,1,1]),"source_file":item.get("source_file"),"support_status":"preview_only" if "placeholder" in str(item.get("type","")).lower() else "supported"})
+        state["current_cell_assets"]=assets
+    if selected_json.exists():
+        selected_payload=json.loads(selected_json.read_text(encoding="utf-8"))
+        state["selected"]=selected_payload.get("selected",{})
+    state["scene_name"]=scene_dir.name
+    state["canvas_model"]=build_visual_layout_canvas_model(state)
+    return state
 
 
 def register_custom_stl_asset(state:dict[str,Any], source_path:str, destination_dir:Path, *, xyz:list[float]|None=None, rpy:list[float]|None=None, scale:list[float]|None=None)->dict[str,Any]:
