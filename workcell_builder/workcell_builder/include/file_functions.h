@@ -241,14 +241,19 @@ bool copyDir(fs::path const & source, fs::path const & destination)
       return false;
     }
     if (fs::exists(destination)) {
-      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
-        "Destination directory %s already exists.", destination.string().c_str());
-      return false;
-    }
-    if (!fs::create_directory(destination)) {
-      RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
-        "Unable to create destination directory %s", destination.string().c_str());
-      return false;
+      if (!fs::is_directory(destination)) {
+        RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+          "Destination path %s exists and is not a directory.", destination.string().c_str());
+        return false;
+      }
+      RCLCPP_INFO(rclcpp::get_logger("workcell_builder"),
+        "Merging into existing directory %s", destination.string().c_str());
+    } else {
+      if (!fs::create_directories(destination)) {
+        RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"),
+          "Unable to create destination directory %s", destination.string().c_str());
+        return false;
+      }
     }
   } catch(fs::filesystem_error const & e) {
     RCLCPP_ERROR(rclcpp::get_logger("workcell_builder"), "%s", e.what());
