@@ -345,7 +345,7 @@ SceneSelect::SceneSelect(QWidget * parent)
 {
   ui->setupUi(this);
   templates_path = get_default_templates_directory();
-  ui->setWindowTitle("Workcell Builder");
+  setWindowTitle("Workcell Builder");
   ui->workflow_tabs->setCurrentWidget(ui->start_tab);
 
   ui->asset_browser_group->hide();
@@ -1727,3 +1727,20 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
 }
 
 // compatibility note: missing one of [package.xml, CMakeLists.txt, urdf/]
+
+void SceneSelect::on_generate_full_scene_package_start_clicked()
+{
+  on_generate_files_clicked();
+}
+
+void SceneSelect::on_open_scene_folder_clicked()
+{
+  const boost::filesystem::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) {
+    append_warning("No scene selected. Select a scene before opening its folder.");
+    return;
+  }
+
+  QDesktopServices::openUrl(
+    QUrl::fromLocalFile(QString::fromStdString(scene_dir.string())));
+}
