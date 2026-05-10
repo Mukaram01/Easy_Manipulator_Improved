@@ -342,6 +342,14 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->perception_roi_tab->setToolTip("Pointcloud ROI crop filters for pick-area metadata.");
   ui->layout_help->setToolTip("Collision mode options: visual-only, bounding-box collision, mesh collision.");
   ui->generate_files->hide();
+  connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
+  connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
+  const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
+  for (auto * button : placeholder_buttons) {
+    button->setText(button->text() + " (coming soon)");
+    button->setToolTip("This control is not available yet.");
+    button->setDisabled(true);
+  }
 
   connect(ui->asset_search_filter, &QLineEdit::textChanged, this, [this](const QString & text) {
     const QString needle = text.trimmed();
@@ -434,7 +442,7 @@ void SceneSelect::configure_startup_fallback_paths()
   const fs::path fallback_root = select_scene_root(fs::current_path());
   workcell_path = fallback_root;
   scenes_path = workcell_path / "scenes";
-  assets_path = get_runtime_assets_directory(workcell_path);
+  assets_path = workcell_path / "assets";
   templates_path = get_default_templates_directory();
   if (assets_path.empty()) {
     assets_path = workcell_path / "assets";
@@ -1086,8 +1094,7 @@ bool SceneSelect::check_scene(bool strict)
   if (has_yaml) {
     append_success("Scene status: environment.yaml found.");
   } else {
-    append_warning(
-      "Scene status: environment.yaml not found. Click Generate YAML files for scene first.");
+    append_warning("environment.yaml exists. Full scene package has not been generated yet.");
   }
 
   if (files_loaded_proper) {
@@ -1148,7 +1155,7 @@ bool SceneSelect::check_files(bool strict)
 
   if (!boost::filesystem::exists(launch_dir)) {
     append_error("Scene status: required files are missing.");
-    append_error("Scene status: launch folder missing.");
+    append_error("launch/ is missing. Click Generate Full Scene Package.");
     if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
       append_error(
         "Scene status: launch not generated because SRDF generation failed earlier.");
@@ -1677,9 +1684,9 @@ void SceneSelect::on_open_preview_clicked()
 
 void SceneSelect::on_open_output_folder_clicked()
 {
-  const fs::path scene_dir = scene_dir_for_current_selection() / "generated";
+  const fs::path scene_dir = scenes_path;
   if (!fs::exists(scene_dir)) {
-    append_warning("No output folder found yet.");
+    append_warning("No output folder found yet. Expected scenes root: " + scenes_path.string());
     return;
   }
   QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(scene_dir.string())));
@@ -1687,12 +1694,19 @@ void SceneSelect::on_open_output_folder_clicked()
 
 void SceneSelect::on_show_readiness_report_clicked()
 {
-  append_info("Readiness Report: open generated/readiness_summary.md after Studio Pack generation.");
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  const fs::path html = scene_dir / "generated" / "readiness_dashboard.html";
+  const fs::path md = scene_dir / "generated" / "readiness_summary.md";
+  if (fs::exists(html)) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); return; }
+  if (fs::exists(md)) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(md.string()))); return; }
+  append_warning("Readiness report not found. Generate Studio/Readiness Pack first.");
 }
 
 void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
 {
-  const QString cmd("ros2 launch <scene_package> demo.launch.py use_fake_hardware:=true");
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  const std::string scene_name = scene_dir.empty() ? std::string("<scene_name>") : scene_dir.filename().string();
+  const QString cmd(QString::fromStdString("ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true"));
   QApplication::clipboard()->setText(cmd);
   append_success("Copied fake-hardware launch command to clipboard.");
 }

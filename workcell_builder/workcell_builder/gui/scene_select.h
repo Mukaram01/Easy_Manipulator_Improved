@@ -71,6 +71,8 @@ private slots:
   void on_scene_list_currentIndexChanged(int index);
 
   void on_generate_files_clicked();
+  void on_generate_full_scene_package_start_clicked();
+  void on_open_scene_folder_clicked();
 
   void on_back_clicked();
 
