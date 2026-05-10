@@ -917,9 +917,9 @@ void SceneSelect::generate_scene_files(Scene scene)
   append_success("Scene package generated/updated successfully.");
   append_info("Build before launching so ROS 2 can discover updated package files.");
   append_info("Next commands:");
-  append_info("  colcon build --symlink-install --packages-select " + scene_name);
+  append_info("  colcon build --symlink-install --packages-select " + scene.name);
   append_info("  source install/setup.bash");
-  append_info("  ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true");
+  append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true");
   append_info("Workcell Studio metadata generated/updated.");
   append_info("Validation helper: generated/run_builder_validation.sh");
   append_info("Export helper: generated/export_workcell_studio_sources.sh");
