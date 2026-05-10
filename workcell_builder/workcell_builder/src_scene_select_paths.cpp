@@ -65,6 +65,7 @@ SceneSelectPathResolution resolve_scene_select_paths(
   if (repo_env != nullptr) candidates.emplace_back(repo_env);
   const char * home = std::getenv("HOME");
   if (home != nullptr) {
+    candidates.push_back(fs::path(home) / "workcell_ws" / "src");
     candidates.push_back(fs::path(home) / "workcell_ws" / "src" / "easy_manipulation_deployment");
   }
 
