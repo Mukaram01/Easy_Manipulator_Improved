@@ -804,6 +804,12 @@ void SceneSelect::generate_scene_package(
   generate_cmakelists(workcell_path, scene_name, ros_ver, ros_distro);
   generate_package_xml(workcell_path, scene_name, ros_ver, ros_distro);
   write_builder_validation_helper(scene_dir);
+  append_success("Scene package generated/updated successfully.");
+  append_info("Build before launching so ROS 2 can discover updated package files.");
+  append_info("Next commands:");
+  append_info("  colcon build --symlink-install --packages-select " + scene.name);
+  append_info("  source install/setup.bash");
+  append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true");
   std::ofstream readme((scene_dir / "README.builder.md").string());
   if (readme.is_open()) {
     readme << "# Builder Scene Metadata\n\n";
@@ -866,7 +872,7 @@ void SceneSelect::generate_scene_files(Scene scene)
   fs::path target_path = scene_dir / "launch";
   if (!copyDir(launch_path, target_path)) {
     append_error(
-      "Failed to generate launch files because destination already exists or could not be created: " +
+      "Failed to generate/merge launch files. Check filesystem permissions and destination path: " +
       target_path.string());
     return;
   }
@@ -908,6 +914,12 @@ void SceneSelect::generate_scene_files(Scene scene)
     }
   }
   write_builder_validation_helper(scene_dir);
+  append_success("Scene package generated/updated successfully.");
+  append_info("Build before launching so ROS 2 can discover updated package files.");
+  append_info("Next commands:");
+  append_info("  colcon build --symlink-install --packages-select " + scene.name);
+  append_info("  source install/setup.bash");
+  append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true");
   append_info("Workcell Studio metadata generated/updated.");
   append_info("Validation helper: generated/run_builder_validation.sh");
   append_info("Export helper: generated/export_workcell_studio_sources.sh");
