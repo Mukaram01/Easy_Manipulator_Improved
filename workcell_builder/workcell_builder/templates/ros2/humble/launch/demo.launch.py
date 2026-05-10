@@ -312,15 +312,39 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
     if len(movable_joint_names) != len(set(movable_joint_names)):
         raise RuntimeError("Duplicate movable joint names were found in robot_description")
 
-    missing = [joint for joint in controller_joints if joint not in set(movable_joint_names)]
-    if missing:
-        raise RuntimeError(
-            "Controller joints are not present in robot_description: "
-            + ", ".join(missing)
-        )
+    movable_joint_set = set(movable_joint_names)
+    missing = [joint for joint in controller_joints if joint not in movable_joint_set]
+    return movable_joint_set, missing
 
 
+def _filter_controller_configs(controller_configs, movable_joint_set):
+    filtered = {"controller_names": []}
+    warnings = []
+    statuses = []
 
+    for controller_name in controller_configs.get("controller_names", []):
+        cfg = controller_configs.get(controller_name) or {}
+        joints = list(cfg.get("joints") or [])
+        missing = [joint for joint in joints if joint not in movable_joint_set]
+        if missing:
+            warnings.append(
+                f"Skipping controller {controller_name}: joints missing from robot_description: "
+                + ", ".join(missing)
+            )
+            if "gripper" in controller_name:
+                statuses.append(f"gripper controller skipped ({controller_name})")
+            continue
+        filtered["controller_names"].append(controller_name)
+        filtered[controller_name] = cfg
+        if "arm" in controller_name:
+            statuses.append(f"arm controller ready ({controller_name})")
+        elif "gripper" in controller_name:
+            statuses.append(f"gripper controller ready ({controller_name})")
+
+    if not filtered["controller_names"]:
+        raise RuntimeError("No valid controllers remain after filtering against robot_description joints")
+
+    return filtered, warnings, statuses
 
 
 
@@ -469,7 +493,7 @@ def _launch_setup(context):
             "No joints were found in the selected SRDF group. "
             "The generated fake controller cannot be created with an empty joints list."
         )
-    _validate_joint_state_configuration(robot_description_config, controller_joints)
+    movable_joint_set, missing_controller_joints = _validate_joint_state_configuration(robot_description_config, controller_joints)
     environment_config = load_yaml(scene_pkg, "environment.yaml")
     end_effector_metadata = extract_end_effector_metadata(environment_config)
     controller_configs = _derive_controller_configs(
@@ -479,6 +503,15 @@ def _launch_setup(context):
         robot_description_config,
         end_effector_metadata,
     )
+
+    controller_configs, controller_filter_warnings, controller_statuses = _filter_controller_configs(
+        controller_configs,
+        movable_joint_set,
+    )
+    if missing_controller_joints:
+        controller_filter_warnings.append(
+            "Controller joints are not present in robot_description: " + ", ".join(missing_controller_joints)
+        )
 
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
@@ -672,8 +705,15 @@ def _launch_setup(context):
         output="screen",
     )
 
+    controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
+    controller_warning_logs = [LogInfo(msg=f"[workcell_builder] WARNING: {warning}") for warning in controller_filter_warnings]
+    fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)})")
+
     return [
         octomap_launch_message,
+        fake_hw_ready_log,
+        *controller_status_logs,
+        *controller_warning_logs,
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
