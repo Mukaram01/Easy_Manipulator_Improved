@@ -131,6 +131,29 @@ std::string path_or_placeholder(const fs::path & path)
   return path.empty() ? std::string("<none>") : path.string();
 }
 
+std::string display_path_with_home_tilde(const fs::path & path)
+{
+  if (path.empty()) {
+    return "<none>";
+  }
+  const char * home = std::getenv("HOME");
+  if (home == nullptr || std::strlen(home) == 0) {
+    return path.string();
+  }
+  const fs::path home_path(home);
+  const fs::path normalized = path.lexically_normal();
+  const std::string home_str = home_path.string();
+  const std::string normalized_str = normalized.string();
+  if (normalized_str == home_str) {
+    return "~";
+  }
+  const std::string prefix = home_str + "/";
+  if (normalized_str.rfind(prefix, 0) == 0) {
+    return "~/" + normalized_str.substr(prefix.size());
+  }
+  return normalized_str;
+}
+
 std::string parse_cli_scene_root_override()
 {
   const QStringList args = QCoreApplication::arguments();
@@ -322,25 +345,31 @@ SceneSelect::SceneSelect(QWidget * parent)
 {
   ui->setupUi(this);
   templates_path = get_default_templates_directory();
+  ui->setWindowTitle("Workcell Builder");
+  ui->workflow_tabs->setCurrentWidget(ui->start_tab);
 
-  ui->asset_category_tree->setHeaderLabel("Asset Categories");
-  const std::vector<QString> categories = {
-    "Robots", "Grippers & Tools", "Cameras & Sensors", "Tables & Workbenches",
-    "Bins & Totes", "Conveyors", "Fixtures & Jigs", "Machines", "Safety",
-    "Objects", "Custom STL", "Preview-only Robots", "Preview-only Assets"};
-  for (const auto & category : categories) {
-    auto * item = new QTreeWidgetItem(ui->asset_category_tree);
-    item->setText(0, category);
-  }
-
-  ui->recommended_starter_list->addItems({
-    "UR5", "Robotiq 2F", "Workbench/Table", "Cube Small", "Small Bin", "RealSense D435i visual asset"});
+  ui->asset_browser_group->hide();
+  ui->inspector_group->hide();
+  ui->cell_name->hide();
+  ui->output_folder->hide();
+  ui->browse_output_folder->hide();
+  ui->golden_demo_cell->hide();
+  ui->delete_scene->hide();
+  ui->generate_studio_pack->hide();
+  ui->open_preview->hide();
+  ui->show_readiness_report->hide();
+  ui->validate_cell->hide();
+  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->ingredients_tab));
+  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->layout_tab));
+  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->task_tab));
+  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->perception_roi_tab));
+  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->grasp_tab));
+  ui->workflow_tabs->setTabText(
+    ui->workflow_tabs->indexOf(ui->validate_generate_tab), "Generate");
+  ui->browse_scenes_folder->setText("Open Folder");
 
   ui->fake_hardware_default_label->setToolTip(
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
-  ui->asset_search_filter->setToolTip("Filter assets by id, display name, or tag.");
-  ui->perception_roi_tab->setToolTip("Pointcloud ROI crop filters for pick-area metadata.");
-  ui->layout_help->setToolTip("Collision mode options: visual-only, bounding-box collision, mesh collision.");
   ui->generate_files->hide();
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
@@ -351,19 +380,6 @@ SceneSelect::SceneSelect(QWidget * parent)
     button->setDisabled(true);
   }
 
-  connect(ui->asset_search_filter, &QLineEdit::textChanged, this, [this](const QString & text) {
-    const QString needle = text.trimmed();
-    for (int i = 0; i < ui->asset_category_tree->topLevelItemCount(); ++i) {
-      QTreeWidgetItem * item = ui->asset_category_tree->topLevelItem(i);
-      const bool visible = needle.isEmpty() || item->text(0).contains(needle, Qt::CaseInsensitive);
-      item->setHidden(!visible);
-    }
-    for (int i = 0; i < ui->recommended_starter_list->count(); ++i) {
-      QListWidgetItem * item = ui->recommended_starter_list->item(i);
-      const bool visible = needle.isEmpty() || item->text().contains(needle, Qt::CaseInsensitive);
-      item->setHidden(!visible);
-    }
-  });
 }
 
 SceneSelect::~SceneSelect()
@@ -489,9 +505,8 @@ void SceneSelect::update_scene_browser_status(const std::string & note)
 {
   const int count = static_cast<int>(workcell.scene_vector.size());
   const QString stamp = QDateTime::currentDateTime().toString(Qt::ISODate);
-  QString text = QString("Scenes folder: %1\nAssets folder: %2\nNumber of scenes found: %3\nLast refresh: %4")
-    .arg(QString::fromStdString(path_or_placeholder(scenes_path)))
-    .arg(QString::fromStdString(path_or_placeholder(assets_path)))
+  QString text = QString("Scenes folder: %1\nScenes found: %2\nLast refresh: %3")
+    .arg(QString::fromStdString(display_path_with_home_tilde(scenes_path)))
     .arg(count)
     .arg(stamp);
   if (!note.empty()) {
