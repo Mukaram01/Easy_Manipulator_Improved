@@ -1,3 +1,4 @@
+- Workcell Builder now includes a Scene Library + Asset Library workflow and safe STL-to-environment-asset import path while keeping fake-hardware-first generation defaults.
 # Workcell Studio Roadmap
 
 ## Purpose
