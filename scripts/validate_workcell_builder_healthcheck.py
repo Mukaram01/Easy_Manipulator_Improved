@@ -236,6 +236,12 @@ def main() -> int:
     for forbidden in ["PyYAML", "import yaml", "GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "streamlit"]:
         _check(forbidden.lower() not in roundtrip_cpp.lower(), f"scene round-trip excludes forbidden marker: {forbidden}", errors)
 
+    
+    for f in [repo_root / 'scripts/export_workcell_scene_bundle.py', repo_root / 'scripts/import_workcell_scene_bundle.py', repo_root / 'scripts/validate_workcell_scene_bundle.py']:
+        _check(f.exists(), f"bundle script exists: {f.relative_to(repo_root)}", errors)
+    bundle_validator_text = (repo_root / 'scripts/validate_workcell_scene_bundle.py').read_text(encoding='utf-8') if (repo_root / 'scripts/validate_workcell_scene_bundle.py').exists() else ''
+    for marker in ['WORKCELL_SCENE_BUNDLE: PASS','WORKCELL_SCENE_BUNDLE: WARN','WORKCELL_SCENE_BUNDLE: FAIL','workcell_bundle/v1','unsafe paths']:
+        _check(marker in bundle_validator_text or marker in scene_cpp, f"bundle marker present: {marker}", errors)
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([
             "bash", "-lc",

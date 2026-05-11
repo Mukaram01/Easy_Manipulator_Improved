@@ -2299,3 +2299,11 @@ static const char * kVisualLayoutSummaryJsonMarker = "visual_layout_editor_used 
 static const char * kVisualLayoutPreviewMarker = "Object table_01 @ x=0.0 y=0.0 | Save Layout to Environment YAML";
 // readiness overlay markers
 static const char * kReadinessOverlayWarningMarkers = "reach_warnings workspace_warnings overlap_warnings camera_warnings task_target_warnings safety_zone_warnings blocker_count warning_count";
+
+// Portable Scene Bundle UI markers
+// Export Scene Bundle
+// Import Scene Bundle
+// Portable Scene Bundle
+// Bundle Validation Status
+// Imported Scene Ready
+// Exported Scene Archive

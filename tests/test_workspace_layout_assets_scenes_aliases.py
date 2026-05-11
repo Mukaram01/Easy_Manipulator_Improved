@@ -29,3 +29,9 @@ def test_verify_workspace_discovery_accepts_alias_layout():
 def test_curated_asset_tokens_present():
     txt = Path('workcell_builder/workcell_builder/config/asset_profiles/environment_assets.json').read_text(encoding='utf-8')
     assert "table_small" in txt and "pick_box" in txt
+
+
+def test_portable_bundle_markers_present():
+    blob = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
+    for m in ['Export Scene Bundle','Import Scene Bundle','Portable Scene Bundle','Bundle Validation Status','Imported Scene Ready','Exported Scene Archive']:
+        assert m in blob
