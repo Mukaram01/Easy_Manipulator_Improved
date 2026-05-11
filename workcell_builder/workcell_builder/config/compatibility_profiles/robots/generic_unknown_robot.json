@@ -1,0 +1,1 @@
+{"robot_id":"generic_unknown_robot","label":"Generic Unknown Robot","description_package":"unknown","moveit_config_package":"unknown","base_link":"base_link","planning_group":"manipulator","default_tool_mount_link":"tool0","controller_family":"unknown","supported_tool_types":["unknown"],"warnings":["manual_override_required"]}

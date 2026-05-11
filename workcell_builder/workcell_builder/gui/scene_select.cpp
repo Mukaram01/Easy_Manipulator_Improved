@@ -55,6 +55,7 @@
 #include "include/scene_xacro_parser.h"
 #include "include/default_asset_paths.h"
 #include "scene_select_paths.h"
+#include "robot_tool_compatibility.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -446,6 +447,12 @@ std::string status_from_blockers_and_warnings(bool has_blockers, bool has_warnin
 
 struct TaskGraspConfig
 {
+  std::string tool_type = "unknown";
+  std::string tcp_frame = "";
+  std::string tool_mount_link = "";
+  std::string compatibility_status = "UNKNOWN_COMPATIBILITY";
+  std::vector<std::string> compatibility_warnings;
+
   std::string task_type = "pick_place";
   std::string pick_source = "selected_object";
   std::string place_target = "selected_bin";
@@ -464,15 +471,18 @@ struct TaskGraspConfig
 TaskGraspConfig infer_task_grasp_defaults(const Scene & scene)
 {
   TaskGraspConfig config;
-  if (scene.ee_loaded && !scene.ee_vector.empty()) {
-    const std::string type = normalize_placeholder_token(scene.ee_vector[0].type);
-    const std::string name = normalize_placeholder_token(scene.ee_vector[0].name);
-    if (type.find("suction") != std::string::npos || name.find("suction") != std::string::npos ||
-      name.find("vacuum") != std::string::npos)
-    {
-      config.grasp_strategy = "suction_top";
-      config.release_strategy = "vacuum_off";
-    }
+  const auto compat = evaluate_robot_tool_compatibility(scene, "workcell_builder/workcell_builder/config/compatibility_profiles");
+  config.compatibility_status = compat.status;
+  config.tcp_frame = compat.tcp_frame;
+  config.tool_mount_link = compat.tool_mount_link;
+  config.tool_type = compat.tool_type.empty() ? "unknown" : compat.tool_type;
+  config.grasp_strategy = compat.grasp_strategy_default.empty() ? config.grasp_strategy : compat.grasp_strategy_default;
+  config.release_strategy = compat.release_strategy_default.empty() ? config.release_strategy : compat.release_strategy_default;
+  for (const auto & issue : compat.issues) {
+    if (!issue.blocker) { config.compatibility_warnings.push_back(issue.message); }
+  }
+  if (config.tool_type == "suction") {
+    config.compatibility_warnings.push_back("requires_io=true for suction tool profile");
   }
   return config;
 }
@@ -539,6 +549,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->export_layout_preview_action->setText("Export Preview");
   append_info("Workcell Studio Readiness panel initialized: READY_TO_GENERATE / WARNINGS / BLOCKED / SCAFFOLD_ONLY");
   append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
+  append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::on_export_preview_clicked);
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
@@ -1934,6 +1945,12 @@ std::string SceneSelect::build_workcell_readiness_report(
   out << "selected output package path: " << scene_dir.string() << "\n";
   out << "fake hardware default status: use_fake_hardware:=true\n";
   out << "Task recipe: OK\nTask recipe generated: OK\nTask plan dry-run preview: WARN (run scripts/preview_task_recipe.py)\nGrasp strategy: OK\nPick source: OK\nPlace target: OK\n";
+  const TaskGraspConfig compat_cfg = infer_task_grasp_defaults(scene);
+  out << "Robot / Tool Compatibility\n";
+  out << "Compatibility Status: " << compat_cfg.compatibility_status << "\n";
+  out << "TCP Frame: " << (compat_cfg.tcp_frame.empty() ? "MISSING_TCP" : compat_cfg.tcp_frame) << "\n";
+  out << "Tool Mount Link: " << (compat_cfg.tool_mount_link.empty() ? "MISSING_MOUNT_LINK" : compat_cfg.tool_mount_link) << "\n";
+  out << "Controller Hint: metadata from profile\n";
   out << "Tool compatibility: " << (warnings.empty() ? "OK" : "WARN") << "\n";
   for (const auto & b : blockers) { out << "BLOCKER: " << b << "\n"; }
   for (const auto & w : warnings) { out << "WARNING: " << w << "\n"; }
@@ -1998,6 +2015,10 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- orientation mode: " << task_cfg.orientation_mode << "\n";
   mout << "- approach/retreat distances (m): " << task_cfg.approach_distance_m << "/" << task_cfg.retreat_distance_m << "\n";
   mout << "- release strategy: " << task_cfg.release_strategy << "\n";
+  mout << "- compatibility status: " << task_cfg.compatibility_status << "\n";
+  mout << "- compatibility warnings: manual_override_available\n";
+  mout << "- tcp_frame: " << task_cfg.tcp_frame << "\n";
+  mout << "- tool_mount_link: " << task_cfg.tool_mount_link << "\n";
   mout << "- task_recipe_path: config/task_recipe.yaml\n";
   mout << "- task_plan_preview_path: task_plan_preview.json\n";
   mout << "- task_preview_node: task_recipe_visualizer_node\n";
