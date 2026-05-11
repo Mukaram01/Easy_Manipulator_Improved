@@ -111,9 +111,10 @@ void EnvironmentLayoutEditor::rebuild_scene()
     scene_->addLine(g * 50, -500, g * 50, 500);
   }
   scene_->addText("origin (0,0)")->setPos(0, 0);
-  scene_->addText("Show Reach Envelope / Show Workspace Bounds / Show Safety Zones")->setPos(-450,-560);
+  scene_->addText("Readiness Overlay | Show Reach Envelope / Show Workspace Bounds / Show Safety Zones")->setPos(-450,-560);
   scene_->addEllipse(-85,-85,170,170);
   scene_->addRect(-150,-150,300,300);
+  scene_->addText("Reach Warning / Workspace Warning / Overlap Warning / Camera Warning / Task Target Warning / Safety Zone Warning")->setPos(-450,-530);
 
   for (const auto & o : model_.objects()) {
     auto * rect = scene_->addRect(world_metres_to_canvas_pixels(o.x), world_metres_to_canvas_pixels(o.y), 60, 40);
@@ -123,9 +124,10 @@ void EnvironmentLayoutEditor::rebuild_scene()
     name_to_item_[o.name] = rect;
     scene_->addText(QString::fromStdString(o.name + " [" + o.source_type + "]"))->setPos(rect->rect().x(), rect->rect().y());
     if (o.mesh_path.empty()) scene_->addText("missing mesh warning")->setPos(rect->rect().x(), rect->rect().y() + 16.0);
-    scene_->addText("Reach Warning / Workspace Warning / Overlap Warning / Camera Warning")->setPos(rect->rect().x(), rect->rect().y() + 30.0);
+    scene_->addText("Reach Warning / Workspace Warning / Overlap Warning / Camera Warning / Task Target Warning / Safety Zone Warning")->setPos(rect->rect().x(), rect->rect().y() + 30.0);
     connect(scene_, &QGraphicsScene::changed, this, [this, rect](const QList<QRectF> &) { update_model_from_item_move(rect); });
   }
+  scene_->addText("Refresh Readiness Overlay: issue list/table summary updates when objects/camera move")->setPos(-450, -500);
 }
 
 void EnvironmentLayoutEditor::apply_table_pose_to_model()

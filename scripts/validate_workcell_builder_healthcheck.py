@@ -117,6 +117,14 @@ def main() -> int:
     layout_editor_cpp = (repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp").read_text(encoding="utf-8")
     for marker in ["QGraphicsView", "QGraphicsScene", "Top-down Layout", "Open Visual Layout Editor", "Save Layout to Environment YAML", "Reload From Environment YAML", "ObjectPlacementModel", "PlacedObject", "ItemIsMovable", "ItemIsSelectable", "snap_to_grid_", "update_model_from_item_move"]:
         _check(marker in layout_editor_cpp, f"visual layout editor marker present: {marker}", errors)
+
+    overlay_hpp = (repo_root / "workcell_builder/workcell_builder/include/offline_readiness_overlay.hpp").read_text(encoding="utf-8")
+    overlay_cpp = (repo_root / "workcell_builder/workcell_builder/src_offline_readiness_overlay.cpp").read_text(encoding="utf-8")
+    _check("src_offline_readiness_overlay.cpp" in cmake_text, "overlay helper is wired into CMake", errors)
+    for marker in ["evaluate_offline_readiness_overlay", "evaluate_reach_warnings", "evaluate_workspace_bounds", "evaluate_simple_overlap_warnings", "evaluate_camera_placement_warnings", "evaluate_task_pick_place_reach", "SAFETY_ZONE_WARNING", "incompatible robot/tool blocker"]:
+        _check(marker in overlay_hpp or marker in overlay_cpp, f"offline readiness overlay marker present: {marker}", errors)
+    for marker in ["readiness_overlay_status", "readiness_overlay_warning_count", "readiness_overlay_blocker_count", "reach_warnings", "workspace_warnings", "overlap_warnings", "camera_warnings", "task_target_warnings", "safety_zone_warnings"]:
+        _check(marker in scene_cpp, f"summary/readiness/preview includes marker: {marker}", errors)
     for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "PyYAML", "import yaml"]:
         _check(forbidden.lower() not in layout_editor_cpp.lower(), f"visual editor excludes forbidden runtime/dependency marker: {forbidden}", errors)
     addobject_cpp = (repo_root / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")

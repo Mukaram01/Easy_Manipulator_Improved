@@ -28,3 +28,17 @@ Safety constraints:
 10. Generate Files.
 11. Review schema/readiness summary.
 12. Launch with `use_fake_hardware:=true`.
+
+## Warning meanings and common fixes
+- **Reach Warning**: object or task target lies outside approximate annular reach. Fix by moving object/task target closer to reachable radius.
+- **Workspace Warning**: object/camera is outside workspace bounds. Fix workspace metadata or adjust pose.
+- **Overlap Warning**: 2D footprints overlap. Fix by spacing objects, shrinking placeholders, or refining footprints.
+- **Camera Warning**: camera is outside workspace, has suspicious height, or missing topic metadata. Fix camera pose and topic.
+- **Task Target Warning**: missing/unknown pick or place target, or target is outside reach. Fix task recipe and target names.
+- **Safety Zone Warning**: object overlaps an exclusion zone (for example robot base exclusion). Move object out of the zone.
+
+## Golden demo relationship
+The golden demo includes readiness overlay metadata in `config/readiness_overlay_metadata.json` and summary artifacts. This demonstrates a meaningful PASS/WARN offline readiness outcome without any runtime motion path.
+
+## Limits and non-goals
+This overlay is an **approximate offline readiness aid**. It is **not** certified safety validation, **not** MoveIt planning, and does **not** command robot motion or enable real hardware.
