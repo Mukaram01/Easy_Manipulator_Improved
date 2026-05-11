@@ -1,0 +1,4 @@
+# Smoke fixture for suction strategy
+schema_version: grasp_strategy/v1
+id: suction_top_fixture
+family: suction

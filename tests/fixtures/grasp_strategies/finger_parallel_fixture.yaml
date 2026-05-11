@@ -1,0 +1,4 @@
+# Smoke fixture for finger strategy
+schema_version: grasp_strategy/v1
+id: finger_parallel_fixture
+family: finger
