@@ -80,6 +80,19 @@ def main() -> int:
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
+    for needle in [
+        "Task & Grasp Strategy",
+        "config\" / \"task_recipe.yaml",
+        "schema_version: workcell_task/v1",
+        "fake_hardware_first: true",
+        "motion_command_sent: false",
+        "runtime_execution_enabled: false",
+        "finger_top",
+        "suction_top",
+        "open_gripper",
+        "vacuum_off",
+    ]:
+        _check(needle in scene_cpp or needle in (repo_root / "workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8"), f"task/grasp marker present: {needle}", errors)
 
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([
