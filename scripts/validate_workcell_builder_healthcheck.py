@@ -205,6 +205,16 @@ def main() -> int:
     for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path"]:
         _check(forbidden.lower() not in compat_cpp.lower(), f"compatibility layer excludes runtime motion API: {forbidden}", errors)
 
+
+    smoke_script = repo_root / "scripts/run_workcell_fake_hardware_smoke.py"
+    _check(smoke_script.exists(), "fake hardware smoke acceptance script exists", errors)
+    if smoke_script.exists():
+        stxt = smoke_script.read_text(encoding="utf-8")
+        for marker in ["WORKCELL_FAKE_HARDWARE_SMOKE: PASS", "WORKCELL_FAKE_HARDWARE_SMOKE: WARN", "WORKCELL_FAKE_HARDWARE_SMOKE: FAIL", "WORKCELL_FAKE_HARDWARE_SMOKE: SKIP", "--run-launch", "--skip-launch", "--generate-golden-demo", "--headless", "launch_rviz:=false", "use_fake_hardware:=true", "real_hardware_enabled: false", "runtime_execution_enabled: false", "motion_command_sent: false", "moveit_plan_service_called: false"]:
+            _check(marker in stxt, f"smoke script marker present: {marker}", errors)
+        for forbidden in ["import yaml", "pyyaml", "GetMotionPlan", "execute_trajectory", "/plan_kinematic_path", "streamlit", "epd"]:
+            _check(forbidden.lower() not in stxt.lower(), f"smoke script excludes forbidden marker: {forbidden}", errors)
+
     schema_validator = (repo_root / "scripts/validate_workcell_scene.py").read_text(encoding="utf-8")
     for marker in ["WORKCELL_SCENE_SCHEMA: PASS", "WORKCELL_SCENE_SCHEMA: WARN", "WORKCELL_SCENE_SCHEMA: FAIL", "workcell_scene/v1"]:
         _check(marker in schema_validator, f"scene schema validator marker present: {marker}", errors)
