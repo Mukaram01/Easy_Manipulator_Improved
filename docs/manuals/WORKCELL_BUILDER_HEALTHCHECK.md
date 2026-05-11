@@ -8,6 +8,7 @@ This manual validates the post-Qt Workcell Builder stack in a safe, fake-hardwar
 cd ~/workcell_ws/src/easy_manipulation_deployment
 
 PYTHONPATH=$PWD:$PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q \
+  tests/test_workcell_builder_operator_ux_validation_dashboard.py \
   tests/test_workcell_builder_healthcheck.py \
   tests/test_workcell_builder_layout_preview_readiness.py \
   tests/test_workcell_builder_asset_picker_dialogs.py \
@@ -62,6 +63,12 @@ ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=fals
 ```
 
 No motion commands or runtime execution are issued by this workflow.
+
+## 5) Operator UX focus checks
+
+- Main operator flow is visible in Qt (Scene → Generate Files).
+- Validation Dashboard is visible and offline.
+- Golden Demo stays in developer/test tooling only (not a main operator action).
 
 
 ### Generated scenes from workcell_builder should pass validate_workcell_scene.py

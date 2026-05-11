@@ -25,6 +25,7 @@
 #include <QFileDialog>
 #include <QListWidgetItem>
 #include <QTreeWidgetItem>
+#include <QHeaderView>
 #include <boost/filesystem.hpp>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
@@ -35,6 +36,7 @@
 #include <algorithm>
 #include <string>
 #include <sstream>
+#include <regex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -561,7 +563,11 @@ SceneSelect::SceneSelect(QWidget * parent)
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
   ui->generate_files->hide();
   ui->validate_cell->show();
-  ui->validate_cell->setText("Validate Scene");
+  ui->validate_cell->setText("Run Offline Validation");
+  ui->validation_dashboard_table->setColumnCount(4);
+  ui->validation_dashboard_table->setHorizontalHeaderLabels(
+    {"Check", "Status", "Message", "Fix / Report"});
+  ui->validation_dashboard_table->horizontalHeader()->setStretchLastSection(true);
   ui->open_preview->show();
   ui->open_preview->setText("Refresh Preview");
   ui->export_layout_preview_action->setText("Export Preview");
@@ -1504,6 +1510,21 @@ void SceneSelect::on_generate_files_clicked()
     write_task_recipe_yaml(scene_dir_for_current_selection(), infer_task_grasp_defaults(curr_scene));
     bool blocked = false;
     const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
+    const auto blocker_count = static_cast<int>(std::distance(
+      std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("BLOCKER:")),
+      std::sregex_iterator()));
+    const auto warning_count = static_cast<int>(std::distance(
+      std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("WARNING:")),
+      std::sregex_iterator()));
+    append_info("Generation gate: blocker_count=" + std::to_string(blocker_count) +
+      " warning_count=" + std::to_string(warning_count));
+    if (blocked) {
+      append_error("Generate Files blocked by readiness blockers. Fix blockers and re-run Run Offline Validation.");
+      return;
+    }
+    if (warning_count > 0) {
+      append_warning("Generate Files proceeding with warnings (allowed). Review Validation Dashboard items.");
+    }
     write_workcell_studio_summary(curr_scene, scene_dir_for_current_selection(), blocked ? "BLOCKED" : "READY_TO_GENERATE");
     append_info(readiness);
     append_info("Command panel:
@@ -2126,8 +2147,10 @@ void SceneSelect::on_validate_cell_clicked()
   Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
   if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
   bool blocked = false;
+  append_info("Validation Dashboard: Scene Schema | Asset Catalog | Robot/Tool Compatibility | Object Placement | Camera Metadata | Task Recipe | Readiness Overlay | Fake-Hardware Smoke");
+  append_info("Run Offline Validation only: no ROS launch, no MoveIt planning/execution, no robot motion.");
   append_info(build_workcell_readiness_report(curr_scene, scene_dir, true, &blocked));
-  append_info("Validate Scene completed (offline only, no launch/motion/runtime execution).");
+  append_info("Run Offline Validation completed.");
 }
 
 void SceneSelect::on_generate_canonical_files_clicked()
