@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <array>
+#include "environment_layout_editor.hpp"
 
 namespace workcell_builder
 {
@@ -48,6 +49,16 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     rebuild_table();
   });
   mk("Refresh Preview", [this]() { rebuild_table(); });
+  mk("Open Visual Layout Editor", [this]() {
+    EnvironmentLayoutEditor editor(this);
+    editor.setWindowTitle("Open Visual Layout Editor");
+    editor.set_objects(model_.objects());
+    if (editor.exec() == QDialog::Accepted) {
+      model_ = ObjectPlacementModel();
+      for (const auto & o : editor.objects()) model_.add_object(o);
+      rebuild_table();
+    }
+  });
   outer->addLayout(row);
 
   auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close | QDialogButtonBox::Apply, this);

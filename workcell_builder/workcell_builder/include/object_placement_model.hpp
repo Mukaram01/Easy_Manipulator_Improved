@@ -24,6 +24,10 @@ std::string import_stl_to_asset_library(
   const std::string & stl_path,
   const std::string & repo_root,
   const std::string & managed_folder = "easy_manipulation_deployment/assets/environment/custom_meshes");
+std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects);
+std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::string & content);
+bool save_environment_layout(const std::string & output_path, const std::vector<PlacedObject> & objects);
+std::vector<PlacedObject> load_environment_layout(const std::string & input_path);
 
 class ObjectPlacementModel
 {

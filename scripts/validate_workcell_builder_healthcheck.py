@@ -100,8 +100,14 @@ def main() -> int:
     model_cpp = (repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp").read_text(encoding="utf-8")
     for marker in ["sanitize_object_name", "validate_placed_object", "normalize_mesh_path_for_scene", "import_stl_to_asset_library", "easy_manipulation_deployment/assets/environment/custom_meshes"]:
         _check(marker in model_cpp, f"object placement model marker present: {marker}", errors)
-    
-        _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
+    for marker in ["serialize_placed_objects_to_environment_yaml", "parse_placed_objects_from_environment_yaml", "save_environment_layout", "load_environment_layout"]:
+        _check(marker in model_cpp, f"environment yaml helper marker present: {marker}", errors)
+
+    layout_editor_cpp = (repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp").read_text(encoding="utf-8")
+    for marker in ["QGraphicsView", "QGraphicsScene", "Top-down Layout", "Open Visual Layout Editor", "Save Layout to Environment YAML", "Reload From Environment YAML", "ObjectPlacementModel", "PlacedObject", "ItemIsMovable", "ItemIsSelectable", "snap_to_grid_", "update_model_from_item_move"]:
+        _check(marker in layout_editor_cpp, f"visual layout editor marker present: {marker}", errors)
+    for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "PyYAML", "import yaml"]:
+        _check(forbidden.lower() not in layout_editor_cpp.lower(), f"visual editor excludes forbidden runtime/dependency marker: {forbidden}", errors)
     addobject_cpp = (repo_root / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")
     stl_cpp = (repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp").read_text(encoding="utf-8")
     for marker in ["box", "table", "bin/tray", "conveyor_placeholder", "fixture_plate", "meshes/generated_objects/", "custom_stl", "generated mesh"]:
@@ -158,10 +164,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
-    layout_editor_cpp = (repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp").read_text(encoding="utf-8")
-    for marker in ["QGraphicsView", "QGraphicsScene", "Top-down Layout", "Open Visual Layout Editor", "Save Layout to Environment YAML", "Reload From Environment YAML", "ObjectPlacementModel", "PlacedObject"]:
-        _check(marker in layout_editor_cpp, f"visual layout editor marker present: {marker}", errors)
-    for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "PyYAML", "import yaml"]:
-        _check(forbidden.lower() not in layout_editor_cpp.lower(), f"visual editor excludes forbidden runtime/dependency marker: {forbidden}", errors)

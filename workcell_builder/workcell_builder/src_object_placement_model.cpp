@@ -3,6 +3,8 @@
 #include <cmath>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace workcell_builder
 {
@@ -103,6 +105,55 @@ bool ObjectPlacementModel::remove_object(const std::string & name)
 }
 
 std::vector<PlacedObject> ObjectPlacementModel::objects() const { return objects_; }
+
+std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects)
+{
+  std::ostringstream out;
+  out << "placed_objects:\n";
+  for (const auto & o : objects) {
+    out << "  - name: " << o.name << "\n";
+    out << "    source: " << o.source_type << "\n";
+    out << "    mesh: " << o.mesh_path << "\n";
+    out << "    pose: [" << o.x << ", " << o.y << ", " << o.z << ", " << o.roll << ", " << o.pitch << ", " << o.yaw << "]\n";
+    if (!o.status.empty()) out << "    status: " << o.status << "\n";
+  }
+  return out.str();
+}
+
+std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::string & content)
+{
+  std::vector<PlacedObject> objs;
+  std::istringstream in(content);
+  std::string line;
+  PlacedObject current;
+  while (std::getline(in, line)) {
+    if (line.find("  - name:") != std::string::npos) {
+      if (!current.name.empty()) objs.push_back(current);
+      current = PlacedObject{};
+      current.name = sanitize_object_name(line.substr(line.find(":") + 1));
+    } else if (line.find("source:") != std::string::npos) current.source_type = line.substr(line.find(":") + 1);
+    else if (line.find("mesh:") != std::string::npos) current.mesh_path = line.substr(line.find(":") + 1);
+  }
+  if (!current.name.empty()) objs.push_back(current);
+  return objs;
+}
+
+bool save_environment_layout(const std::string & output_path, const std::vector<PlacedObject> & objects)
+{
+  std::ofstream out(output_path);
+  if (!out.good()) return false;
+  out << serialize_placed_objects_to_environment_yaml(objects);
+  return true;
+}
+
+std::vector<PlacedObject> load_environment_layout(const std::string & input_path)
+{
+  std::ifstream in(input_path);
+  if (!in.good()) return {};
+  std::stringstream buf;
+  buf << in.rdbuf();
+  return parse_placed_objects_from_environment_yaml(buf.str());
+}
 
 }  // namespace workcell_builder
 
