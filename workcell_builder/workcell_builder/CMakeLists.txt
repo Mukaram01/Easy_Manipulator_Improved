@@ -118,7 +118,8 @@ add_executable(workcell_builder
     src_generated_stl_writer.cpp
     src_object_placement_model.cpp
     gui/asset_picker_dialog.cpp
-    gui/object_placement_dialog.cpp)
+    gui/object_placement_dialog.cpp
+    gui/environment_layout_editor.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp
