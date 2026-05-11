@@ -120,6 +120,7 @@ add_executable(workcell_builder
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
     src_camera_perception_profile.cpp
+    src_offline_readiness_overlay.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
     gui/environment_layout_editor.cpp)

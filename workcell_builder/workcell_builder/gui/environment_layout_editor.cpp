@@ -1,4 +1,5 @@
 #include "environment_layout_editor.hpp"
+#include "offline_readiness_overlay.hpp"
 
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -41,6 +42,12 @@ EnvironmentLayoutEditor::EnvironmentLayoutEditor(QWidget * parent)
   toolbar->addWidget(new QPushButton("Save Layout to Environment YAML", this));
   toolbar->addWidget(new QPushButton("Reload From Environment YAML", this));
   toolbar->addWidget(new QPushButton("Refresh Preview", this));
+  toolbar->addWidget(new QLabel("Readiness Overlay", this));
+  toolbar->addWidget(new QCheckBox("Show Reach Envelope", this));
+  toolbar->addWidget(new QCheckBox("Show Workspace Bounds", this));
+  toolbar->addWidget(new QCheckBox("Show Safety Zones", this));
+  toolbar->addWidget(new QCheckBox("Show Warnings", this));
+  toolbar->addWidget(new QPushButton("Refresh Readiness Overlay", this));
   outer->addLayout(toolbar);
 
   mode_label_ = new QLabel("Top-down Layout (QGraphicsView/QGraphicsScene)", this);
@@ -104,6 +111,9 @@ void EnvironmentLayoutEditor::rebuild_scene()
     scene_->addLine(g * 50, -500, g * 50, 500);
   }
   scene_->addText("origin (0,0)")->setPos(0, 0);
+  scene_->addText("Show Reach Envelope / Show Workspace Bounds / Show Safety Zones")->setPos(-450,-560);
+  scene_->addEllipse(-85,-85,170,170);
+  scene_->addRect(-150,-150,300,300);
 
   for (const auto & o : model_.objects()) {
     auto * rect = scene_->addRect(world_metres_to_canvas_pixels(o.x), world_metres_to_canvas_pixels(o.y), 60, 40);
@@ -113,6 +123,7 @@ void EnvironmentLayoutEditor::rebuild_scene()
     name_to_item_[o.name] = rect;
     scene_->addText(QString::fromStdString(o.name + " [" + o.source_type + "]"))->setPos(rect->rect().x(), rect->rect().y());
     if (o.mesh_path.empty()) scene_->addText("missing mesh warning")->setPos(rect->rect().x(), rect->rect().y() + 16.0);
+    scene_->addText("Reach Warning / Workspace Warning / Overlap Warning / Camera Warning")->setPos(rect->rect().x(), rect->rect().y() + 30.0);
     connect(scene_, &QGraphicsScene::changed, this, [this, rect](const QList<QRectF> &) { update_model_from_item_move(rect); });
   }
 }

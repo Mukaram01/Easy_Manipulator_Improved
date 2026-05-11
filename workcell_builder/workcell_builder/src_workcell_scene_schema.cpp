@@ -31,6 +31,13 @@ SceneSchemaValidationResult validate_workcell_scene_v1(const std::string & scene
   for (const std::string section : {"scene:", "robot:", "tool:", "compatibility:", "placed_objects:", "camera:", "task:", "safety:", "metadata:"}) {
     if (!contains_token(text, section)) { result.blockers.emplace_back("missing section " + section); }
   }
+  if (contains_token(text, "workspace:")) {
+    if (!contains_token(text, "bounds:")) { (strict ? result.blockers : result.warnings).emplace_back("workspace missing bounds"); }
+    if (contains_token(text, "zones:")) {
+      if (!contains_token(text, "shape: circle") && !contains_token(text, "shape: rectangle")) { (strict ? result.blockers : result.warnings).emplace_back("workspace zone shape unknown"); }
+      if (!contains_token(text, "type: exclusion") && !contains_token(text, "type: warning")) { (strict ? result.blockers : result.warnings).emplace_back("workspace zone type unknown"); }
+    }
+  }
   if (contains_token(text, "UNKNOWN_COMPATIBILITY")) { result.warnings.emplace_back("unknown compatibility warnings only"); }
   if (contains_token(text, "INCOMPATIBLE")) { result.blockers.emplace_back("known incompatible pair"); }
   if (!contains_token(text, "fake_hardware_first: true")) { result.blockers.emplace_back("fake_hardware_first must remain true"); }

@@ -34,6 +34,15 @@ def validate_text(t:str, strict:bool=False):
         if 'rgb_topic:' not in t or 'depth_topic:' not in t:
             (blocks if strict else warns).append('missing rgb/depth topics')
         if 'pointcloud_topic:' not in t: warns.append('missing pointcloud topic')
+
+    if 'workspace:' in t:
+        if 'bounds:' not in t: (blocks if strict else warns).append('workspace missing bounds')
+        for k in ['x_min:','x_max:','y_min:','y_max:','z_min:','z_max:']:
+            if k not in t: (blocks if strict else warns).append(f'workspace bounds missing {k}')
+        if 'zones:' in t:
+            if 'shape: circle' not in t and 'shape: rectangle' not in t: (blocks if strict else warns).append('workspace zone shape unknown')
+            if 'type: exclusion' not in t and 'type: warning' not in t: (blocks if strict else warns).append('workspace zone type unknown')
+
     if 'external_stl_warning' in t: (blocks if strict else warns).append('external mesh path warning')
     return warns, blocks
 
