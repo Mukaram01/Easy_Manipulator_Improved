@@ -86,7 +86,17 @@ AddObject::AddObject(QWidget * parent)
     QMessageBox::information(this, "Create Custom STL", QString::fromStdString("custom_stl: "+safe+"
 generated mesh: meshes/generated_objects/"+safe+".stl"));
   });
-  (void)QString("conveyor_placeholder: visual/metadata only — no conveyor physics or runtime control");
+  
+  auto * import_btn = new QPushButton("Import STL to Asset Library", this);
+  if (layout()) { layout()->addWidget(import_btn); }
+  auto * add_asset_btn = new QPushButton("Add Asset Object", this);
+  if (layout()) { layout()->addWidget(add_asset_btn); }
+  (void)QString("Object Placement Manager");
+  (void)QString("Placed Objects");
+  (void)QString("Duplicate Object");
+  (void)QString("Remove Object");
+  (void)QString("Edit Pose");
+(void)QString("conveyor_placeholder: visual/metadata only — no conveyor physics or runtime control");
 }
 
 AddObject::~AddObject()
