@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QCheckBox>
 #include <unordered_map>
 
 #include "object_placement_model.hpp"
@@ -31,14 +32,17 @@ private:
   void rebuild_scene();
   void refresh_table();
   void apply_table_pose_to_model();
+  void update_model_from_item_move(QGraphicsRectItem * item);
 
   ObjectPlacementModel model_;
   QGraphicsView * view_{nullptr};
   QGraphicsScene * scene_{nullptr};
   QTableWidget * table_{nullptr};
   QDoubleSpinBox * grid_size_{nullptr};
+  QCheckBox * snap_to_grid_{nullptr};
   QLabel * mode_label_{nullptr};
   std::unordered_map<QGraphicsRectItem *, std::string> item_to_name_;
+  std::unordered_map<std::string, QGraphicsRectItem *> name_to_item_;
 };
 
 }  // namespace workcell_builder

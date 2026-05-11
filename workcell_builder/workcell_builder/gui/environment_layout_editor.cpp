@@ -5,8 +5,10 @@
 #include <QGraphicsSimpleTextItem>
 #include <QHeaderView>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
+#include <cmath>
 
 namespace workcell_builder
 {
@@ -29,6 +31,9 @@ EnvironmentLayoutEditor::EnvironmentLayoutEditor(QWidget * parent)
   toolbar->addWidget(new QPushButton("Move Object", this));
   toolbar->addWidget(new QPushButton("Edit Pose", this));
   toolbar->addWidget(new QPushButton("Snap to Grid", this));
+  snap_to_grid_ = new QCheckBox("Snap to Grid", this);
+  snap_to_grid_->setChecked(true);
+  toolbar->addWidget(snap_to_grid_);
   toolbar->addWidget(new QLabel("Grid Size", this));
   grid_size_ = new QDoubleSpinBox(this);
   grid_size_->setValue(0.1);
@@ -92,6 +97,8 @@ void EnvironmentLayoutEditor::refresh_table()
 void EnvironmentLayoutEditor::rebuild_scene()
 {
   scene_->clear();
+  item_to_name_.clear();
+  name_to_item_.clear();
   for (int g = -10; g <= 10; ++g) {
     scene_->addLine(-500, g * 50, 500, g * 50);
     scene_->addLine(g * 50, -500, g * 50, 500);
@@ -102,7 +109,11 @@ void EnvironmentLayoutEditor::rebuild_scene()
     auto * rect = scene_->addRect(world_metres_to_canvas_pixels(o.x), world_metres_to_canvas_pixels(o.y), 60, 40);
     rect->setFlag(QGraphicsItem::ItemIsMovable, true);
     rect->setFlag(QGraphicsItem::ItemIsSelectable, true);
+    item_to_name_[rect] = o.name;
+    name_to_item_[o.name] = rect;
     scene_->addText(QString::fromStdString(o.name + " [" + o.source_type + "]"))->setPos(rect->rect().x(), rect->rect().y());
+    if (o.mesh_path.empty()) scene_->addText("missing mesh warning")->setPos(rect->rect().x(), rect->rect().y() + 16.0);
+    connect(scene_, &QGraphicsScene::changed, this, [this, rect](const QList<QRectF> &) { update_model_from_item_move(rect); });
   }
 }
 
@@ -120,10 +131,40 @@ void EnvironmentLayoutEditor::apply_table_pose_to_model()
     o.roll = table_->item(i, 6)->text().toDouble();
     o.pitch = table_->item(i, 7)->text().toDouble();
     o.yaw = table_->item(i, 8)->text().toDouble();
+    if (!std::isfinite(o.x) || !std::isfinite(o.y) || !std::isfinite(o.z) || !std::isfinite(o.roll) || !std::isfinite(o.pitch) || !std::isfinite(o.yaw)) {
+      QMessageBox::warning(this, "Edit Pose", "reject NaN/inf values");
+      return;
+    }
+    if (std::fabs(o.x) > 100.0 || std::fabs(o.y) > 100.0) {
+      o.status = o.status + " | suspiciously large positions";
+    }
     o.status = table_->item(i, 9)->text().toStdString();
     updated.add_object(o);
   }
   model_ = updated;
+}
+
+void EnvironmentLayoutEditor::update_model_from_item_move(QGraphicsRectItem * item)
+{
+  if (item_to_name_.find(item) == item_to_name_.end()) return;
+  const std::string name = item_to_name_.at(item);
+  auto objs = model_.objects();
+  const double snap = grid_size_ ? grid_size_->value() : 0.1;
+  for (auto & o : objs) {
+    if (o.name != name) continue;
+    double x_m = canvas_pixels_to_world_metres(item->scenePos().x());
+    double y_m = canvas_pixels_to_world_metres(item->scenePos().y());
+    if (snap_to_grid_ && snap_to_grid_->isChecked() && snap > 0.0) {
+      x_m = std::round(x_m / snap) * snap;
+      y_m = std::round(y_m / snap) * snap;
+    }
+    o.x = x_m;
+    o.y = y_m;
+  }
+  ObjectPlacementModel updated;
+  for (const auto & o : objs) updated.add_object(o);
+  model_ = updated;
+  refresh_table();
 }
 
 }  // namespace workcell_builder
