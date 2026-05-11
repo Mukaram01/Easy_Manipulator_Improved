@@ -61,6 +61,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp",
         repo_root / "workcell_builder/workcell_builder/include/object_placement_dialog.hpp",
         repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/environment_layout_editor.hpp",
+        repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
@@ -156,3 +158,10 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+    layout_editor_cpp = (repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp").read_text(encoding="utf-8")
+    for marker in ["QGraphicsView", "QGraphicsScene", "Top-down Layout", "Open Visual Layout Editor", "Save Layout to Environment YAML", "Reload From Environment YAML", "ObjectPlacementModel", "PlacedObject"]:
+        _check(marker in layout_editor_cpp, f"visual layout editor marker present: {marker}", errors)
+    for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "PyYAML", "import yaml"]:
+        _check(forbidden.lower() not in layout_editor_cpp.lower(), f"visual editor excludes forbidden runtime/dependency marker: {forbidden}", errors)

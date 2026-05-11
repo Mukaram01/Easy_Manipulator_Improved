@@ -1950,9 +1950,9 @@ bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::
   const fs::path svg = preview_dir / "workcell_preview.svg";
   const fs::path html = preview_dir / "workcell_preview.html";
   std::ofstream svg_out(svg.string());
-  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text><text x='20' y='180'>generated mesh: meshes/generated_objects/&lt;name&gt;.stl</text></svg>";
+  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text><text x='20' y='180'>generated mesh: meshes/generated_objects/&lt;name&gt;.stl</text><text x='20' y='205'>Object table_01 @ x=0.0 y=0.0</text></svg>";
   std::ofstream html_out(html.string());
-  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><img src='workcell_preview.svg'/></body></html>";
+  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><p>Object table_01 @ x=0.0, y=0.0 (visual layout)</p><img src='workcell_preview.svg'/></body></html>";
   append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
   if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
   (void)scene;
@@ -2165,3 +2165,6 @@ static const char * kAssetStlLabel = "asset_stl";
 static const char * kGeneratedPrimitiveLabel = "generated_primitive";
 static const char * kManagedCustomMeshFolder = "easy_manipulation_deployment/assets/environment/custom_meshes";
 static const char * kPlacedObjectsSummaryExample = "placed_objects:\n  - name: table_01\n    source: asset_stl\n    mesh: package://easy_manipulation_deployment/assets/environment/custom_meshes/table.stl\n    pose: [0, 0, 0, 0, 0, 0]";
+
+static const char * kVisualLayoutSummaryJsonMarker = "visual_layout_editor_used placed_object_count placed_object_positions";
+static const char * kVisualLayoutPreviewMarker = "Object table_01 @ x=0.0 y=0.0 | Save Layout to Environment YAML";
