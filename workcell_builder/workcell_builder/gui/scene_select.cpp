@@ -977,7 +977,7 @@ void SceneSelect::generate_scene_package(
   append_info("Next commands:");
   append_info("  colcon build --symlink-install --packages-select " + scene_name);
   append_info("  source install/setup.bash");
-  append_info("  ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true");
+  append_info("  ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true");
   std::ofstream readme((scene_dir / "README.builder.md").string());
   if (readme.is_open()) {
     readme << "# Builder Scene Metadata\n\n";
@@ -1088,7 +1088,7 @@ void SceneSelect::generate_scene_files(Scene scene)
   append_info("  cd " + workcell_path.string());
   append_info("  colcon build --symlink-install --packages-select " + scene.name);
   append_info("  source install/setup.bash");
-  append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true");
+  append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true");
   append_warning("Real hardware mode requires explicit validation and use_fake_hardware:=false.");
   append_info("Workcell Studio metadata generated/updated.");
   append_info("Validation helper: generated/run_builder_validation.sh");
@@ -1480,7 +1480,7 @@ void SceneSelect::on_generate_files_clicked()
 cd <workspace>
 colcon build --symlink-install --packages-select " + curr_scene.name + "
 source install/setup.bash
-ros2 launch " + curr_scene.name + " demo.launch.py use_fake_hardware:=true");
+ros2 launch " + curr_scene.name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true");
   } else {
     append_error("No scene selected to generate files from.");
   }
@@ -1998,7 +1998,10 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- release strategy: " << task_cfg.release_strategy << "\n";
   mout << "- task_recipe_path: config/task_recipe.yaml\n";
   mout << "- task_plan_preview_path: task_plan_preview.json\n";
-  mout << "- dry_run_preview_status: WARN\n";
+  mout << "- task_preview_node: task_recipe_visualizer_node\n";
+  mout << "- task_preview_topic: /workcell_studio/task_plan_markers\n";
+  mout << "- task_preview_status: WARN\n";
+  mout << "- task_preview_safety: Offline RViz/task recipe preview only. No robot motion, no MoveIt planning, no real hardware.\n";
   mout << "- Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\n";
   mout << "- Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\n";
 }
@@ -2120,7 +2123,7 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   const std::string scene_name = scene_dir.empty() ? std::string("<scene_name>") : scene_dir.filename().string();
-  const QString cmd(QString::fromStdString("ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true"));
+  const QString cmd(QString::fromStdString("ros2 launch " + scene_name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true"));
   QApplication::clipboard()->setText(cmd);
   append_success("Copied fake-hardware launch command to clipboard.");
 }

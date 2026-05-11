@@ -24,6 +24,7 @@ find_package(emd_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(rclpy REQUIRED)
 
 add_executable(demo_node src/demo_node.cpp)
 target_include_directories(demo_node PUBLIC include)
@@ -65,6 +66,11 @@ install(DIRECTORY
 install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  run_grasp_execution/task_recipe_visualizer_node.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
