@@ -137,3 +137,11 @@ workspace:
       origin: [-1.0, -1.0]
       size: [0.5, 1.0]
 ```
+
+
+### Generated scenes from workcell_builder should pass validate_workcell_scene.py
+Run:
+
+```bash
+python3 scripts/validate_workcell_scene.py --scene-dir <generated_scene_dir>
+```

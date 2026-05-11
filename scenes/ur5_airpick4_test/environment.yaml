@@ -1,55 +1,88 @@
+schema_version: workcell_scene/v1
+scene:
+  id: ur5_airpick4_test
+  name: ur5_airpick4_test
 robot:
-  name: ur5
-  brand: universal_robot
-  filepath: ""
-  base_link: base_link
-  links:
-    - base_link
-    - shoulder_link
-    - upper_arm_link
-    - forearm_link
-    - wrist_1_link
-    - wrist_2_link
-    - wrist_3_link
-    - base
-    - tool0
-end_effector:
-  name: onrobot_airpick4
-  brand: onrobot_airpick4_description
-  filepath: assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description
-  base_link: gripper_base_link
-  robot_link: tool0
-  ee_type: suction
-  attributes:
-    array_width: 4
-    array_height: 1
-  links:
-    - gripper_base_link
-objects:
-  table:
-    child_link: table
-    links:
-      table:
-        visual:
-          name: table
-          geometry:
-            filepath: assets/environment/table_description/meshes/visual/table.stl
-            scale:
-              scale_x: 0.001
-              scale_y: 0.001
-              scale_z: 0.001
-        collision:
-          name: None
-          geometry:
-            filepath: assets/environment/table_description/meshes/visual/table.stl
-            scale:
-              scale_x: 0.001
-              scale_y: 0.001
-              scale_z: 0.001
-    table_base_joint:
-      ext_joint_type: fixed
-      child_link: table
-external joints:
-  table:
-    parent object: world
-    parent link: world
+  id: ur5
+  profile: ur5
+tool:
+  id: robotiq_2f
+  profile: robotiq_2f
+compatibility:
+  status: COMPATIBLE
+  robot: ur5
+  tool: robotiq_2f
+placed_objects:
+camera:
+  enabled: false
+  camera_id: UNKNOWN_CAMERA
+  frame_id: UNKNOWN_FRAME
+  pose:
+    - -0.55
+    - 0.55
+    - 0.4
+    - 0.0
+    - 0.0
+    - 0.0
+  rgb_topic: 
+  depth_topic: 
+  pointcloud_topic: 
+task:
+  template: pick_place
+  pick:
+    source_ref: 
+    object_ref: 
+  place:
+    target_ref: 
+  grasp:
+    strategy: auto
+    approach_axis: z_down
+    orientation_mode: vertical
+    approach_distance_m: 0.12
+    retreat_distance_m: 0.1
+    allowed_roll_angles_deg:
+      - 0.0
+    allowed_yaw_angles_deg:
+      - 0.0
+      - 90.0
+      - 180.0
+      - 270.0
+    tool_offset_xyz:
+      - 0.0
+      - 0.0
+      - 0.0
+    tool_offset_rpy:
+      - 0.0
+      - 0.0
+      - 0.0
+    suction_cups: null
+workspace:
+  bounds:
+    x_min: -1.0
+    x_max: 1.0
+    y_min: -1.0
+    y_max: 1.0
+    z_min: 0.0
+    z_max: 1.8
+  zones:
+    -
+      id: robot_base_exclusion
+      type: exclusion
+      shape: circle
+safety:
+  fake_hardware_first: true
+  real_hardware_enabled: false
+  runtime_execution_enabled: false
+  motion_command_sent: false
+metadata:
+  generated_by: workcell_builder
+  scene_schema_version: workcell_scene/v1
+  scene_schema_warnings:
+    - camera disabled: no camera selection
+  scene_schema_blockers:
+    - Support surface/table must be selected
+    - Pick area must be selected
+    - Place target must be selected
+    - Grasp strategy must be selected
+    - Pick source is required
+    - Place target is required

@@ -62,3 +62,11 @@ ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=fals
 ```
 
 No motion commands or runtime execution are issued by this workflow.
+
+
+### Generated scenes from workcell_builder should pass validate_workcell_scene.py
+Run:
+
+```bash
+python3 scripts/validate_workcell_scene.py --scene-dir <generated_scene_dir>
+```

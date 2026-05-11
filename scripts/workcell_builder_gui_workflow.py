@@ -197,6 +197,7 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
     val=validate_manual_cell_state(state)
     assets=state.get("current_cell_assets",[])
     composer=ensure_task_grasp_config(state)
+    scene_doc=_build_workcell_scene_v1(state, state.get("scene_name") or output_dir.parent.name)
     files={
         "cell_definition.yaml": _render_cell_definition_v1(state),
         "environment_layout.yaml": _render_environment_layout_v1(state),
@@ -204,6 +205,7 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
         "grasp_strategy.yaml": json.dumps({"schema_version":"grasp_strategy/v1","grasp":composer.get("grasp",{})},indent=2)+"\n",
     }
     for name,content in files.items(): (output_dir/name).write_text(content,encoding="utf-8")
+    (output_dir/"scene_schema_validator_command.txt").write_text("python3 scripts/validate_workcell_scene.py --scene-dir <generated_scene_dir>\n", encoding="utf-8")
     selected_payload={"selected":state.get("selected",{}),"current_cell_assets":assets,
         "catalog_selection":{
             "robot":state.get("selected",{}).get("robot"),
@@ -218,7 +220,7 @@ def generate_canonical_files(state:dict[str,Any], output_dir:Path)->dict[str,Any
     (output_dir/"perception_profile.yaml").write_text(json.dumps(default_perception_profile(state),indent=2)+"\n",encoding="utf-8")
     (output_dir/"sample_detected_objects.yaml").write_text(json.dumps(default_sample_detected_objects(),indent=2)+"\n",encoding="utf-8")
     (output_dir/"runtime_bridge_payload.sample.json").write_text(json.dumps({"schema_version":"emd_grasp_bridge_payload/v1","source":"perception_replay","dry_run_only":True,"targets":[]},indent=2)+"\n",encoding="utf-8")
-    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest,"task_grasp_summary":{"template":(composer.get("task",{}).get("template")),"grasp_strategy":(composer.get("grasp",{}).get("strategy"))},"perception_profile_generated":True},indent=2),encoding="utf-8")
+    (output_dir/"builder_export_summary.json").write_text(json.dumps({"validation_status":val["status"],"generated_files":sorted([p.name for p in output_dir.iterdir()]),"scene_manifest":scene_manifest,"task_grasp_summary":{"template":(composer.get("task",{}).get("template")),"grasp_strategy":(composer.get("grasp",{}).get("strategy"))},"perception_profile_generated":True,"scene_schema_version":"workcell_scene/v1","scene_schema_validation_status":("FAIL" if scene_doc["metadata"]["scene_schema_blockers"] else ("WARN" if scene_doc["metadata"]["scene_schema_warnings"] else "PASS")),"scene_schema_warnings":len(scene_doc["metadata"]["scene_schema_warnings"]),"scene_schema_blockers":len(scene_doc["metadata"]["scene_schema_blockers"])},indent=2),encoding="utf-8")
     return {"ok":True,"validation":val,"output_dir":str(output_dir),"generated_files":sorted([p.name for p in output_dir.iterdir()])}
 
 
@@ -566,6 +568,15 @@ def create_golden_demo_cell(scene_name:str, output_folder:str|Path|None=None)->d
 ROS_PACKAGE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
+def evaluate_robot_tool_compatibility(robot:str|None, tool:str|None):
+    if not robot or not tool:
+        return None
+    r=str(robot).lower(); t=str(tool).lower()
+    if "airpick" in t and "ur5" not in r:
+        return False
+    return True
+
+
 def validate_cell_name(cell_name:str)->dict[str,Any]:
     name=(cell_name or "").strip()
     if not name:
@@ -579,8 +590,88 @@ def _default_scenes_root()->Path:
     return Path.home()/"workcell_ws"/"src"/"scenes"
 
 
-def _scene_stub(cell_name:str)->str:
-    return json.dumps({"scene":cell_name,"fake_hardware":True,"objects":[]}, indent=2)+"\n"
+
+
+def _build_workcell_scene_v1(state:dict[str,Any], scene_name:str)->dict[str,Any]:
+    selected=state.get("selected",{}) if isinstance(state.get("selected",{}),dict) else {}
+    composer=ensure_task_grasp_config(state)
+    compat=evaluate_robot_tool_compatibility(selected.get("robot"), selected.get("tool"))
+    compat_status="COMPATIBLE"
+    blockers=[]
+    warnings=[]
+    if not selected.get("robot") or not selected.get("tool"):
+        compat_status="UNKNOWN_COMPATIBILITY"
+        warnings.append("missing robot/tool selection")
+    elif compat is False:
+        compat_status="INCOMPATIBLE"
+        blockers.append("known incompatible robot/tool pair")
+    elif compat is None:
+        compat_status="UNKNOWN_COMPATIBILITY"
+        warnings.append("compatibility profile missing")
+
+    placed=[]
+    for idx,a in enumerate(state.get("current_cell_assets",[]) or []):
+        if not isinstance(a,dict):
+            continue
+        pose=a.get("pose") if isinstance(a.get("pose"),dict) else {}
+        xyz=pose.get("xyz",[0.0,0.0,0.0]); rpy=pose.get("rpy",[0.0,0.0,0.0])
+        pose6=[float(xyz[0]) if len(xyz)>0 else 0.0,float(xyz[1]) if len(xyz)>1 else 0.0,float(xyz[2]) if len(xyz)>2 else 0.0,float(rpy[0]) if len(rpy)>0 else 0.0,float(rpy[1]) if len(rpy)>1 else 0.0,float(rpy[2]) if len(rpy)>2 else 0.0]
+        placed.append({"id":a.get("asset_id") or f"asset_{idx}","category":a.get("category","unknown"),"role":a.get("role","unknown"),"source":a.get("source","asset_stl"),"pose":pose6})
+
+    camera_id=selected.get("camera") or "UNKNOWN_CAMERA"
+    camera_enabled=bool(selected.get("camera"))
+    if not camera_enabled:
+        warnings.append("camera disabled: no camera selection")
+
+    validation=validate_manual_cell_state(state)
+    for issue in validation.get("issues",[]):
+        if issue.get("severity")=="FAIL": blockers.append(issue.get("message","validation blocker"))
+        elif issue.get("severity")=="WARN": warnings.append(issue.get("message","validation warning"))
+
+    return {
+        "schema_version":"workcell_scene/v1",
+        "scene":{"id":scene_name,"name":scene_name},
+        "robot":{"id":selected.get("robot") or "UNKNOWN_ROBOT","profile":selected.get("robot") or "missing_profile"},
+        "tool":{"id":selected.get("tool") or "UNKNOWN_TOOL","profile":selected.get("tool") or "missing_profile"},
+        "compatibility":{"status":compat_status,"robot":selected.get("robot") or "UNKNOWN_ROBOT","tool":selected.get("tool") or "UNKNOWN_TOOL"},
+        "placed_objects":placed,
+        "camera":{"enabled":camera_enabled,"camera_id":camera_id,"frame_id":"camera_color_optical_frame" if camera_enabled else "UNKNOWN_FRAME","pose":[-0.55,0.55,0.40,0.0,0.0,0.0],"rgb_topic":"/camera/color/image_raw" if camera_enabled else "","depth_topic":"/camera/depth/image_rect_raw" if camera_enabled else "","pointcloud_topic":"/camera/depth/color/points" if camera_enabled else ""},
+        "task":{"template":composer.get("task",{}).get("template") or "UNKNOWN_TASK","pick":(composer.get("task",{}).get("pick") or {}),"place":(composer.get("task",{}).get("place") or {}),"grasp":composer.get("grasp",{})},
+        "workspace":{"bounds":{"x_min":-1.0,"x_max":1.0,"y_min":-1.0,"y_max":1.0,"z_min":0.0,"z_max":1.8},"zones":[{"id":"robot_base_exclusion","type":"exclusion","shape":"circle"}]},
+        "safety":{"fake_hardware_first":True,"real_hardware_enabled":False,"runtime_execution_enabled":False,"motion_command_sent":False},
+        "metadata":{"generated_by":"workcell_builder","scene_schema_version":"workcell_scene/v1","scene_schema_warnings":warnings,"scene_schema_blockers":blockers}
+    }
+
+def _scene_stub(cell_name:str, state:dict[str,Any]|None=None)->str:
+    payload=_build_workcell_scene_v1(state or {}, cell_name)
+    return "\n".join(f"{line}" for line in _to_yaml_lines(payload))+"\n"
+
+
+def _to_yaml_lines(data, indent:int=0):
+    sp="  "*indent
+    if isinstance(data,dict):
+        lines=[]
+        for k,v in data.items():
+            if isinstance(v,(dict,list)):
+                lines.append(f"{sp}{k}:")
+                lines.extend(_to_yaml_lines(v, indent+1))
+            else:
+                if isinstance(v,bool): sval="true" if v else "false"
+                elif v is None: sval="null"
+                elif isinstance(v,(int,float)): sval=str(v)
+                else: sval=str(v)
+                lines.append(f"{sp}{k}: {sval}")
+        return lines
+    if isinstance(data,list):
+        lines=[]
+        for item in data:
+            if isinstance(item,(dict,list)):
+                lines.append(f"{sp}-")
+                lines.extend(_to_yaml_lines(item, indent+1))
+            else:
+                lines.append(f"{sp}- {item}")
+        return lines
+    return [f"{sp}{data}"]
 
 
 def create_new_cell(cell_name:str, output_folder:str|Path|None=None)->dict[str,Any]:
@@ -609,7 +700,7 @@ def repair_scene_yaml(scene_dir:str|Path, state:dict[str,Any]|None=None)->dict[s
     scene_name=sdir.name
     if state and state.get("scene_name"):
         scene_name=str(state["scene_name"])
-    env.write_text(_scene_stub(scene_name), encoding="utf-8")
+    env.write_text(_scene_stub(scene_name, state), encoding="utf-8")
     return {"ok":True,"repaired":True,"path":str(env)}
 
 
@@ -619,7 +710,7 @@ def generate_yaml_files_for_scene(state:dict[str,Any], scene_dir:str|Path)->dict
     scene_name=state.get("scene_name") or sdir.name
     state["scene_name"]=scene_name
     generated=[]
-    (sdir/"environment.yaml").write_text(_scene_stub(scene_name), encoding="utf-8"); generated.append("environment.yaml")
+    (sdir/"environment.yaml").write_text(_scene_stub(scene_name, state), encoding="utf-8"); generated.append("environment.yaml")
     manifest={"scene":scene_name,"selected":state.get("selected",{}),"fake_hardware_default":state.get("fake_hardware_default",True)}
     (sdir/"scene_manifest.yaml").write_text(json.dumps(manifest,indent=2)+"\n", encoding="utf-8"); generated.append("scene_manifest.yaml")
     canonical=generate_canonical_files(state, sdir/"generated")
