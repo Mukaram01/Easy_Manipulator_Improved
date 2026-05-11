@@ -1,3 +1,11 @@
+
+// Scene round-trip UI labels:
+// Open Existing Scene
+// Reload Scene From YAML
+// Scene Round-trip Status
+// Loaded from workcell_scene/v1
+// Legacy/partial scene warning
+// Regenerate Existing Scene
 // Copyright 2020 Advanced Remanufacturing and Technology Centre
 // Copyright 2020 ROS-Industrial Consortium Asia Pacific Team
 //

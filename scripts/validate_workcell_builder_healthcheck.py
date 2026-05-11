@@ -67,6 +67,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp",
         repo_root / "workcell_builder/workcell_builder/include/validation_dashboard_model.hpp",
         repo_root / "workcell_builder/workcell_builder/src_validation_dashboard_model.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/workcell_scene_roundtrip.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_workcell_scene_roundtrip.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
@@ -81,7 +83,7 @@ def main() -> int:
         _check(f.exists(), f"camera metadata file exists: {f.relative_to(repo_root)}", errors)
 
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp", "src_camera_perception_profile.cpp", "src_validation_dashboard_model.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp", "src_workcell_scene_roundtrip.cpp", "src_camera_perception_profile.cpp", "src_validation_dashboard_model.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
@@ -112,6 +114,8 @@ def main() -> int:
         _check(marker in scene_cpp or marker in addobject_cpp, f"object placement marker present: {marker}", errors)
     for marker in ["Operator Workflow (Main)", "Validation Dashboard", "Run Offline Validation", "Developer Tools: Create Golden UR5 + Robotiq 2F Cell", "blocker_count", "warning_count"]:
         _check(marker in scene_cpp or marker in (repo_root / "workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8"), f"operator UX marker present: {marker}", errors)
+    for marker in ["Open Existing Scene", "Reload Scene From YAML", "Scene Round-trip Status", "Loaded from workcell_scene/v1", "Legacy/partial scene warning", "Regenerate Existing Scene"]:
+        _check(marker in scene_cpp, f"scene round-trip UI marker present: {marker}", errors)
     model_cpp = (repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp").read_text(encoding="utf-8")
     for marker in ["sanitize_object_name", "validate_placed_object", "normalize_mesh_path_for_scene", "import_stl_to_asset_library", "easy_manipulation_deployment/assets/environment/custom_meshes"]:
         _check(marker in model_cpp, f"object placement model marker present: {marker}", errors)
@@ -226,6 +230,11 @@ def main() -> int:
     schema_hpp = (repo_root / "workcell_builder/workcell_builder/include/workcell_scene_schema.hpp").read_text(encoding="utf-8")
     for forbidden in ["PyYAML", "import yaml", "GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path"]:
         _check(forbidden.lower() not in (schema_cpp + schema_hpp + schema_validator).lower(), f"scene schema files exclude forbidden marker: {forbidden}", errors)
+    roundtrip_cpp = (repo_root / "workcell_builder/workcell_builder/src_workcell_scene_roundtrip.cpp").read_text(encoding="utf-8")
+    for marker in ["load_workcell_scene_v1_from_file", "populate_builder_state_from_scene", "extract_builder_state_to_scene", "workcell_scene/v1", "fake_hardware_first", "real_hardware_enabled", "runtime_execution_enabled"]:
+        _check(marker in roundtrip_cpp, f"scene round-trip marker present: {marker}", errors)
+    for forbidden in ["PyYAML", "import yaml", "GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path", "streamlit"]:
+        _check(forbidden.lower() not in roundtrip_cpp.lower(), f"scene round-trip excludes forbidden marker: {forbidden}", errors)
 
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([

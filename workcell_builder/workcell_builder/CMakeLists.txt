@@ -119,6 +119,7 @@ add_executable(workcell_builder
     src_object_placement_model.cpp
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
+    src_workcell_scene_roundtrip.cpp
     src_camera_perception_profile.cpp
     src_offline_readiness_overlay.cpp
     src_validation_dashboard_model.cpp
