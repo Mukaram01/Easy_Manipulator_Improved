@@ -27,3 +27,9 @@ def test_no_runtime_execution_or_moveit_service_calls_added():
     cpp = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8').lower()
     assert 'moveit_msgs/srv/getmotionplan' not in cpp
     assert 'motion_plan' not in cpp or 'preview' in cpp
+
+
+def test_readiness_and_summary_task_preview_strings_exist():
+    cpp = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
+    for needle in ['task_recipe.yaml', 'Task recipe generated: OK', 'Task plan dry-run preview:', 'workcell_studio_summary.json', 'workcell_studio_summary.md']:
+        assert needle in cpp

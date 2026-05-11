@@ -46,6 +46,8 @@ def main() -> int:
     run_launch = args.smoke_launch
 
     key_files = [
+        repo_root / "scripts/preview_task_recipe.py",
+        repo_root / "easy_manipulation_deployment/emd_demo_nodes/run_grasp_execution/run_grasp_execution/task_recipe.py",
         repo_root / "workcell_builder/workcell_builder/CMakeLists.txt",
         repo_root / "workcell_builder/workcell_builder/package.xml",
         repo_root / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py",
@@ -67,6 +69,8 @@ def main() -> int:
     launch_template = (repo_root / "workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
     for needle in ["use_fake_hardware", "launch_rviz", "launch_rviz:=false", "DeclareLaunchArgument("]:
         _check(needle in launch_template, f"launch template contains {needle}", errors)
+    for marker in ["task_recipe_path", "Task recipe loaded for offline preview"]:
+        _check(marker in launch_template, f"launch template contains {marker}", errors)
 
     scene_cpp = (repo_root / "workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
     _check("demo.launch.py use_fake_hardware:=true" in scene_cpp, "guidance uses fake hardware default", errors)
@@ -80,6 +84,13 @@ def main() -> int:
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
+    preview_script = (repo_root / "scripts/preview_task_recipe.py").read_text(encoding="utf-8")
+    _check("WORKCELL_TASK_RECIPE_PREVIEW: PASS" in preview_script, "preview CLI has PASS marker", errors)
+    task_recipe_module = (repo_root / "easy_manipulation_deployment/emd_demo_nodes/run_grasp_execution/run_grasp_execution/task_recipe.py").read_text(encoding="utf-8")
+    for marker in ["OFFLINE_ONLY", "NO_MOTION_COMMAND", "NO_MOVEIT_PLAN", "NO_REAL_HARDWARE"]:
+        _check(marker in task_recipe_module, f"task preview safety marker present: {marker}", errors)
+    for forbidden in ["moveit_msgs/srv/GetMotionPlan", "execute_trajectory", "FollowJointTrajectory"]:
+        _check(forbidden.lower() not in (preview_script + task_recipe_module).lower(), f"dry-run code does not call runtime motion API: {forbidden}", errors)
     for needle in [
         "Task & Grasp Strategy",
         "config\" / \"task_recipe.yaml",
