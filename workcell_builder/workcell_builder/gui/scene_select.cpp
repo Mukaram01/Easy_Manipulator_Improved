@@ -231,6 +231,51 @@ bool scene_has_valid_end_effector(const Scene & scene)
 {
   return scene_requires_end_effector(scene) && !is_placeholder_value(scene.ee_vector[0].name);
 }
+
+
+enum class SceneUiStatus
+{
+  VALID,
+  INCOMPLETE,
+  SCAFFOLD_ONLY,
+  MISSING_ENVIRONMENT_YAML,
+  MISSING_ROBOT,
+  MISSING_MOVEIT_CONFIG
+};
+
+std::string scene_status_label(SceneUiStatus status)
+{
+  switch (status) {
+    case SceneUiStatus::VALID: return "VALID";
+    case SceneUiStatus::INCOMPLETE: return "INCOMPLETE";
+    case SceneUiStatus::SCAFFOLD_ONLY: return "SCAFFOLD_ONLY";
+    case SceneUiStatus::MISSING_ENVIRONMENT_YAML: return "MISSING_ENVIRONMENT_YAML";
+    case SceneUiStatus::MISSING_ROBOT: return "MISSING_ROBOT";
+    case SceneUiStatus::MISSING_MOVEIT_CONFIG: return "MISSING_MOVEIT_CONFIG";
+  }
+  return "INCOMPLETE";
+}
+
+SceneUiStatus compute_scene_status_label(const Scene & scene, const fs::path & scene_dir)
+{
+  const bool has_yaml = fs::exists(scene_dir / "environment.yaml");
+  const bool has_launch = fs::exists(scene_dir / "launch" / "demo.launch.py");
+  const bool has_srdf = fs::exists(scene_dir / "urdf" / "arm_hand.srdf.xacro");
+
+  if (!has_yaml) {
+    return SceneUiStatus::MISSING_ENVIRONMENT_YAML;
+  }
+  if (!scene_has_valid_robot(scene)) {
+    return SceneUiStatus::MISSING_ROBOT;
+  }
+  if (scene_requires_end_effector(scene) && !scene_has_valid_end_effector(scene)) {
+    return SceneUiStatus::INCOMPLETE;
+  }
+  if (!has_srdf) {
+    return has_launch ? SceneUiStatus::MISSING_MOVEIT_CONFIG : SceneUiStatus::SCAFFOLD_ONLY;
+  }
+  return SceneUiStatus::VALID;
+}
 fs::path root_from_override(const std::string & override_value)
 {
   fs::path override_path(override_value);
@@ -287,12 +332,12 @@ fs::path select_scene_root(const fs::path & cwd)
       std::string("environment ") + kSceneRootEnvVar + "=" + env_override));
   }
 
+  candidates.push_back(build_candidate(cwd / "src" / "easy_manipulation_deployment", "workspace src/easy_manipulation_deployment"));
+  candidates.push_back(build_candidate(cwd / "src", "workspace src"));
   candidates.push_back(build_candidate(cwd, "current working directory"));
   candidates.push_back(build_candidate(cwd.parent_path(), "parent directory"));
-  candidates.push_back(build_candidate(
-    cwd / "src" / "easy_manipulation_deployment",
-    "cwd/src/easy_manipulation_deployment"));
-  candidates.push_back(build_candidate(cwd / "src", "cwd/src"));
+  const fs::path repo_root = cwd.parent_path() / "easy_manipulation_deployment";
+  candidates.push_back(build_candidate(repo_root, "repo root easy_manipulation_deployment"));
 
   SceneRootCandidate selected;
   bool has_selected = false;
@@ -955,9 +1000,11 @@ void SceneSelect::generate_scene_files(Scene scene)
   append_success("Scene package generated/updated successfully.");
   append_info("Build before launching so ROS 2 can discover updated package files.");
   append_info("Next commands:");
+  append_info("  cd " + workcell_path.string());
   append_info("  colcon build --symlink-install --packages-select " + scene.name);
   append_info("  source install/setup.bash");
   append_info("  ros2 launch " + scene.name + " demo.launch.py use_fake_hardware:=true");
+  append_warning("Real hardware mode requires explicit validation and use_fake_hardware:=false.");
   append_info("Workcell Studio metadata generated/updated.");
   append_info("Validation helper: generated/run_builder_validation.sh");
   append_info("Export helper: generated/export_workcell_studio_sources.sh");
@@ -973,7 +1020,13 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
   if (workcell.scene_vector.size() > 0) {  // There are scenes in the workcell
     ui->scene_list->setDisabled(false);     // Enable the dropdown menu
     for (int scene = 0; scene < static_cast<int>(workcell.scene_vector.size()); scene++) {
-      ui->scene_list->addItem(QString::fromStdString(workcell.scene_vector[scene].name));
+      Scene scene_value = workcell.scene_vector[scene];
+      if (!scene_value.loaded) {
+        load_scene_from_yaml(&scene_value);
+      }
+      const SceneUiStatus status = compute_scene_status_label(scene_value, scenes_path / workcell.scene_vector[scene].name);
+      const std::string label = workcell.scene_vector[scene].name + " [" + scene_status_label(status) + "]";
+      ui->scene_list->addItem(QString::fromStdString(label));
     }
     ui->scene_list->setCurrentIndex(latest_scene);     // Display the latest scene the user created
     on_scene_list_currentIndexChanged(latest_scene);
@@ -1290,6 +1343,18 @@ bool SceneSelect::check_files(bool strict)
 }
 void SceneSelect::on_scene_list_currentIndexChanged(int index)
 {
+  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
+    Scene curr_scene = workcell.scene_vector[index];
+    if (!curr_scene.loaded) {
+      load_scene_from_yaml(&curr_scene);
+    }
+    const SceneUiStatus status = compute_scene_status_label(curr_scene, scenes_path / curr_scene.name);
+    const bool can_generate_files = status == SceneUiStatus::VALID || status == SceneUiStatus::MISSING_MOVEIT_CONFIG || status == SceneUiStatus::SCAFFOLD_ONLY;
+    ui->generate_full_scene_package_start->setDisabled(!can_generate_files);
+    if (!can_generate_files) {
+      append_warning("Generate Files blocked: scene status is " + scene_status_label(status) + ".");
+    }
+  }
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
 }
 void SceneSelect::on_generate_files_clicked()

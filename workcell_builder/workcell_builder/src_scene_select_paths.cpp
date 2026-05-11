@@ -58,6 +58,10 @@ SceneSelectPathResolution resolve_scene_select_paths(
     if (has_dir(loaded)) candidates.push_back(loaded);
   }
   const fs::path cwd = fs::current_path();
+  if (has_dir(cwd / "src" / "easy_manipulation_deployment" / "scenes")) {
+    candidates.push_back(cwd / "src" / "easy_manipulation_deployment");
+  }
+  if (has_dir(cwd / "src" / "scenes")) candidates.push_back(cwd / "src");
   if (has_dir(cwd / "scenes")) candidates.push_back(cwd);
   const fs::path parent_found = find_repo_from_cwd(cwd);
   if (!parent_found.empty()) candidates.push_back(parent_found);
@@ -65,8 +69,8 @@ SceneSelectPathResolution resolve_scene_select_paths(
   if (repo_env != nullptr) candidates.emplace_back(repo_env);
   const char * home = std::getenv("HOME");
   if (home != nullptr) {
-    candidates.push_back(fs::path(home) / "workcell_ws" / "src");
     candidates.push_back(fs::path(home) / "workcell_ws" / "src" / "easy_manipulation_deployment");
+    candidates.push_back(fs::path(home) / "workcell_ws" / "src");
   }
 
   fs::path workcell_path;
