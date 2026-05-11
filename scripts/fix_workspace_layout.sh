@@ -50,7 +50,7 @@ WS="${WS:-$WORKSPACE_ROOT}"
 SRC_DIR="$WORKSPACE_ROOT/src"
 BACKUP_DIR="$WORKSPACE_ROOT/trajopt_DISABLED_BACKUP"
 ORIG_DIR="$BACKUP_DIR/original"
-EXPOSED_PACKAGES=()
+LEGACY_ASSET_SYMLINKS_REMOVED=()
 
 if [ ! -d "$SRC_DIR" ]; then
   exit 0
@@ -103,80 +103,74 @@ report_invalid_workspace_entry() {
   echo "Invalid workspace entry at ${path}: $(path_details "$path"). Expected a directory or symlink resolving to $(readlink -f "$expected_target")." >&2
 }
 
-symlink_repo_package() {
-  local pkg_name="$1"
-  local pkg_path="$2"
-  local dest="$SRC_DIR/$pkg_name"
-  local expected_resolved actual_resolved
+safe_remove_legacy_asset_symlink() {
+  local path="$1"
+  local name resolved_assets resolved_target
 
-  if [ ! -d "$pkg_path" ]; then
+  name="$(basename "$path")"
+  if [[ "$name" == "assets" || "$name" == "scenes" ]]; then
     return
   fi
 
-  expected_resolved="$(readlink -f "$pkg_path")"
+  [[ -L "$path" ]] || return
+  resolved_target="$(readlink -f "$path" 2>/dev/null || true)"
+  resolved_assets="$(readlink -f "$REPO_DIR/assets" 2>/dev/null || true)"
+
+  if [[ -n "$resolved_target" && -n "$resolved_assets" && "$resolved_target" == "$resolved_assets"/* ]]; then
+    echo "Removing legacy asset package symlink: $path -> $resolved_target"
+    rm -f "$path"
+    LEGACY_ASSET_SYMLINKS_REMOVED+=("$path -> $resolved_target")
+  fi
+}
+
+prune_legacy_asset_package_symlinks() {
+  local candidate
+  while IFS= read -r candidate; do
+    safe_remove_legacy_asset_symlink "$candidate"
+  done < <(find "$SRC_DIR" -mindepth 1 -maxdepth 1 -type l -print 2>/dev/null)
+}
+
+ensure_workspace_alias() {
+  local alias_name="$1"
+  local target="$2"
+  local dest="$SRC_DIR/$alias_name"
+  local expected_resolved actual_resolved
+
+  expected_resolved="$(readlink -f "$target")"
+  if [[ -z "$expected_resolved" ]]; then
+    echo "Error: alias target does not exist: $target" >&2
+    exit 1
+  fi
 
   if [ -L "$dest" ]; then
     actual_resolved="$(resolved_path_or_unresolved "$dest")"
-    if [ "$actual_resolved" = "$expected_resolved" ]; then
+    if [[ "$actual_resolved" == "$expected_resolved" ]]; then
       return
     fi
-
-    report_invalid_workspace_entry "$dest" "$pkg_path"
-    echo "Replacing incorrect symlink at ${dest} with the expected target." >&2
+    report_invalid_workspace_entry "$dest" "$target"
     rm -f "$dest"
   elif [ -d "$dest" ]; then
     actual_resolved="$(resolved_path_or_unresolved "$dest")"
-    if [ "$actual_resolved" = "$expected_resolved" ]; then
+    if [[ "$actual_resolved" == "$expected_resolved" ]]; then
       return
     fi
-
-    report_invalid_workspace_entry "$dest" "$pkg_path"
+    report_invalid_workspace_entry "$dest" "$target"
     echo "Refusing to replace directory ${dest}. Remove or relocate it, then rerun scripts/fix_workspace_layout.sh." >&2
-    return 1
+    exit 1
   elif path_exists "$dest"; then
-    report_invalid_workspace_entry "$dest" "$pkg_path"
-    echo "Replacing invalid non-directory collision at ${dest} with the expected symlink." >&2
+    report_invalid_workspace_entry "$dest" "$target"
     rm -rf "$dest"
   fi
 
-  echo "Linking repository package ${pkg_name} -> ${pkg_path}"
-  ln -s "$pkg_path" "$dest"
-  EXPOSED_PACKAGES+=("$pkg_name")
+  ln -s "$target" "$dest"
 }
 
-expose_repo_packages() {
-  local pkg_xml pkg_dir pkg_name
+ensure_workspace_aliases() {
+  ensure_workspace_alias "assets" "$REPO_DIR/assets"
+  ensure_workspace_alias "scenes" "$REPO_DIR/scenes"
+}
 
-  # The repository keeps many robot/environment asset packages under assets/
-  # with top-level ignore markers to avoid duplicate discovery in fresh clones.
-  # When the repo is used directly inside a workspace, rosdep/colcon still need
-  # concrete package entries at src/<package_name>. Create symlinks for those
-  # hidden packages so dependencies such as workbench_description,
-  # ur5_moveit_config, and robotiq_85_moveit_config resolve without requiring
-  # users to manually move directories around the workspace.
-  while IFS= read -r pkg_xml; do
-    pkg_dir="$(dirname "$pkg_xml")"
-    pkg_name="$(
-      PKG_XML="$pkg_xml" python3 - <<'PY'
-import os
-import xml.etree.ElementTree as ET
-
-pkg_xml = os.environ["PKG_XML"]
-print((ET.parse(pkg_xml).getroot().findtext("name") or "").strip())
-PY
-    )"
-    [ -n "$pkg_name" ] || continue
-    symlink_repo_package "$pkg_name" "$pkg_dir"
-  done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
-
-  # The workcell_builder ROS package already lives underneath this repository.
-  # When the repository itself is checked out inside workspace/src, rosdep and
-  # colcon discover that nested package recursively, so creating an additional
-  # src/workcell_builder symlink introduces a duplicate package name
-  # ("workcell_builder" vs
-  # "easy_manipulation_deployment/workcell_builder/workcell_builder"). Only
-  # export the convenience symlink when the repository is *not* already under
-  # the active workspace src tree.
+ensure_workcell_builder_link_policy() {
   local repo_exposed_in_src=0
   if [[ "${REPO_DIR}" == "${SRC_DIR}/"* ]]; then
     repo_exposed_in_src=1
@@ -196,8 +190,6 @@ PY
       echo "Removing legacy workcell_builder symlink at ${legacy_link}"
       rm -f "$legacy_link"
     fi
-  else
-    symlink_repo_package "workcell_builder" "$REPO_DIR/workcell_builder/workcell_builder"
   fi
 }
 
@@ -314,28 +306,6 @@ set_gui_package_state() {
   fi
 }
 
-ensure_repo_asset_tree_ignored() {
-  local assets_root="$REPO_DIR/assets"
-  local marker
-
-  # When this repository is checked out under workspace/src, rosdep/colcon
-  # traversing from src can see packages twice:
-  #   1) under easy_manipulation_deployment/assets/*
-  #   2) as symlinks exposed directly in src/*
-  # Mark the in-repo assets tree as ignored so tooling only discovers the
-  # exposed src/* entries.
-  if [[ ! -d "$assets_root" ]]; then
-    return
-  fi
-
-  for marker in COLCON_IGNORE AMENT_IGNORE; do
-    if [[ ! -e "$assets_root/$marker" ]]; then
-      echo "Hiding in-repo assets tree from package discovery via $assets_root/$marker"
-      touch "$assets_root/$marker"
-    fi
-  done
-}
-
 for duplicate in \
   "$SRC_DIR/trajopt" \
   "$SRC_DIR/trajopt/trajopt" \
@@ -346,99 +316,73 @@ for duplicate in \
   fi
 done
 
-expose_repo_packages
+prune_legacy_asset_package_symlinks
+ensure_workspace_aliases
+ensure_workcell_builder_link_policy
 set_gui_package_state
-ensure_repo_asset_tree_ignored
 
-summarize_exposed_repo_packages() {
+check_duplicate_packages() {
+  local -A seen=()
+  local -a duplicates=()
+  local line name path
+
+  if ! command -v colcon >/dev/null 2>&1; then
+    echo "Error: colcon is required for duplicate package detection" >&2
+    exit 1
+  fi
+
+  while IFS= read -r line; do
+    name="${line%% *}"
+    path="${line#* }"
+    if [[ -n "${seen[$name]:-}" ]]; then
+      duplicates+=("$name: ${seen[$name]} | $path")
+    else
+      seen[$name]="$path"
+    fi
+  done < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
+
+  if [[ ${#duplicates[@]} -gt 0 ]]; then
+    echo "Duplicate package discovery detected:" >&2
+    printf '  - %s
+' "${duplicates[@]}" >&2
+    exit 1
+  fi
+}
+
+summarize_workspace_layout() {
   local total_assets=0
-  local package_groups=(
-    "table_description:Table scene assets"
-    "ur5_moveit_config:UR5 MoveIt config"
-    "robotiq_85_moveit_config:Robotiq 85 MoveIt config"
-    "single_suction_moveit_config:Single suction MoveIt config"
-    "ur_description:Robot descriptions"
-    "robotiq_85_description:Robot descriptions"
-    "single_suction_description:Single suction description"
-    "workbench_description:Robot descriptions"
-  )
-  local entry pkg_name label dest target remediation
-
-  while IFS= read -r _; do
-    total_assets=$((total_assets + 1))
-  done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null)
+  while IFS= read -r _; do total_assets=$((total_assets+1)); done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null)
 
   echo
   echo "Workspace layout summary"
   echo "========================"
-  echo "Exposed ${#EXPOSED_PACKAGES[@]} package(s) into ${SRC_DIR} during this run; ${total_assets} asset package(s) are available from the repository."
-
-  if [ ${#EXPOSED_PACKAGES[@]} -gt 0 ]; then
-    printf '  New links created: %s\n' "$(printf '%s\n' "${EXPOSED_PACKAGES[@]}" | sort | paste -sd ', ' -)"
+  echo "Canonical repository:"
+  echo "  $REPO_DIR"
+  echo
+  echo "Workspace aliases:"
+  echo "  src/assets -> $REPO_DIR/assets"
+  echo "  src/scenes -> $REPO_DIR/scenes"
+  echo
+  echo "Legacy asset package symlinks removed:"
+  if [[ ${#LEGACY_ASSET_SYMLINKS_REMOVED[@]} -eq 0 ]]; then
+    echo "  none"
   else
-    echo "  New links created: none (all expected workspace entries were already present)."
+    printf '  %s
+' "${LEGACY_ASSET_SYMLINKS_REMOVED[@]}"
   fi
-
-  echo "  Key package status:"
-  for entry in "${package_groups[@]}"; do
-    pkg_name="${entry%%:*}"
-    label="${entry#*:}"
-    dest="$SRC_DIR/$pkg_name"
-    if path_exists "$dest"; then
-      target="$(resolved_path_or_unresolved "$dest")"
-      printf '    - %-24s [%s]: %s\n' "$pkg_name" "$label" "$target"
-    else
-      if [ "$pkg_name" = "ur_description" ]; then
-        remediation="external dependency; install ros-humble-ur-description as documented in README.md step 1"
-      else
-        remediation="MISSING from src/ (rerun scripts/fix_workspace_layout.sh)"
-      fi
-      printf '    - %-24s [%s]: %s\n' "$pkg_name" "$label" "$remediation"
-    fi
-  done
+  echo
+  echo "Asset package discovery:"
+  echo "  $total_assets package.xml files found under assets"
+  echo "  duplicate package names: none"
+  echo
+  echo "Key status:"
+  echo "  assets alias: OK"
+  echo "  scenes alias: OK"
+  echo "  duplicate package check: OK"
 }
 
-verify_exposed_repo_package() {
-  local pkg_name="$1"
-  local expected_target="$2"
-  local dest="$SRC_DIR/$pkg_name"
-  local expected_resolved actual_type actual_resolved
-
-  expected_resolved="$(readlink -f "$expected_target")"
-  actual_type="$(path_type "$dest")"
-  actual_resolved="$(resolved_path_or_unresolved "$dest")"
-
-  if [ "$actual_type" = "directory" ] || [ "$actual_type" = "symlink" ]; then
-    if [ "$actual_resolved" = "$expected_resolved" ]; then
-      echo "Verified workspace layout: src/${pkg_name} is present as a ${actual_type} resolving to ${actual_resolved}."
-      return
-    fi
-  fi
-
-  if path_exists "$dest"; then
-    echo "Error: expose_repo_packages scanned ${REPO_DIR}/assets but ${dest} is ${actual_type} ($(path_details "$dest")); expected a directory or symlink resolving to ${expected_resolved}. Fix or remove the existing entry before rerunning rosdep install." >&2
-  else
-    echo "Error: expose_repo_packages scanned ${REPO_DIR}/assets but did not expose the expected workspace package at ${dest}. Existing path type: ${actual_type}; resolved target: ${actual_resolved}; expected target: ${expected_resolved}. rosdep install should not continue until the package is exposed." >&2
-  fi
-  exit 1
-}
-
-while IFS= read -r pkg_xml; do
-  pkg_dir="$(dirname "$pkg_xml")"
-  pkg_name="$(
-    PKG_XML="$pkg_xml" python3 - <<'PY'
-import os
-import xml.etree.ElementTree as ET
-
-pkg_xml = os.environ["PKG_XML"]
-print((ET.parse(pkg_xml).getroot().findtext("name") or "").strip())
-PY
-  )"
-  [ -n "$pkg_name" ] || continue
-  verify_exposed_repo_package "$pkg_name" "$pkg_dir"
-done < <(find "$REPO_DIR/assets" -name package.xml -print 2>/dev/null | sort)
-
-summarize_exposed_repo_packages
+check_duplicate_packages
+summarize_workspace_layout
 
 # Install core system dependencies (Boost graph/program_options/serialization and
 # TinyXML2) up front so users who only run this script still avoid

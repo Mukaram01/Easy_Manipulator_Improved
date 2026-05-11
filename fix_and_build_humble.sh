@@ -430,6 +430,11 @@ emit_summary() {
   rosdep_skip_json=$(printf '%s\n' "${RODEP_SKIP_KEYS_USED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
   colcon_skip_json=$(printf '%s\n' "${COLCON_SKIP_PACKAGES_USED[@]:-}" | python3 -c 'import json,sys; print(json.dumps([l for l in sys.stdin.read().splitlines() if l]))')
 
+  local assets_alias="$WORKSPACE/src/assets"
+  local scenes_alias="$WORKSPACE/src/scenes"
+  local assets_alias_target scenes_alias_target
+  assets_alias_target="$(readlink -f "$assets_alias" 2>/dev/null || true)"
+  scenes_alias_target="$(readlink -f "$scenes_alias" 2>/dev/null || true)"
   local json
   json=$(cat <<JSON
 {
@@ -466,7 +471,13 @@ emit_summary() {
   "packages_installed": ${pkg_json},
   "pip_packages_installed": ${pip_json},
   "repos_imported": ${repo_json},
-  "files_touched": ${file_json}
+  "files_touched": ${file_json},
+  "workspace_layout": {
+    "assets_alias": "${assets_alias_target}",
+    "scenes_alias": "${scenes_alias_target}",
+    "legacy_asset_symlinks_removed": "reported by scripts/fix_workspace_layout.sh",
+    "duplicate_package_check": "enforced by scripts/fix_workspace_layout.sh and scripts/verify_workspace_discovery.sh"
+  }
 }
 JSON
 )
