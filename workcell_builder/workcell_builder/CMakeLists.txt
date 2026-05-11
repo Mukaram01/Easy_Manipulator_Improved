@@ -127,7 +127,8 @@ add_executable(workcell_builder
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
-    gui/environment_layout_editor.cpp)
+    gui/environment_layout_editor.cpp
+    gui/external_asset_import_dialog.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp

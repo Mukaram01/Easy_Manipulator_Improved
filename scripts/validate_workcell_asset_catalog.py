@@ -107,6 +107,37 @@ def main()->int:
                     if lic in SUSPICIOUS_LICENSE: blockers.append(f'{where}: suspicious proprietary/vendor license label {lic}')
         except Exception: blockers.append('environment_assets.json parse error')
 
+
+    if imported_assets_d.exists():
+        try:
+            arr=json.loads(imported_assets_d.read_text(encoding='utf-8'))
+            seen=set()
+            for i,aobj in enumerate(arr if isinstance(arr,list) else []):
+                where=f'imported_environment_assets[{i}]'
+                _req(aobj,['asset_id','label','category','asset_type','default_dimensions_m','default_pose','default_z_hint','license','source_note'],blockers,where)
+                aid=str(aobj.get('asset_id',''))
+                if aid in seen: blockers.append(f'{where}: duplicate asset_id {aid}')
+                seen.add(aid)
+                if aid: _safe(aid,blockers,where)
+                pth=aobj.get('mesh_path') or aobj.get('urdf_path')
+                if not pth: blockers.append(f'{where}: missing mesh_path/urdf_path')
+                else:
+                    sp=str(pth)
+                    if sp.startswith('/'): blockers.append(f'{where}: absolute mesh_path forbidden')
+                    if '..' in sp: blockers.append(f'{where}: path traversal forbidden')
+                    ext=Path(sp).suffix.lower()
+                    if ext not in {'.stl','.urdf','.xacro'}: blockers.append(f'{where}: unsupported extension {ext}')
+                    fp=root/sp
+                    if not fp.exists(): blockers.append(f'{where}: missing imported file {sp}')
+                    elif fp.is_symlink(): blockers.append(f'{where}: symlink not allowed')
+                dims=aobj.get('default_dimensions_m',[])
+                if not (isinstance(dims,list) and len(dims)==3 and all(isinstance(x,(int,float)) and x>0 for x in dims)): blockers.append(f'{where}: invalid default_dimensions_m')
+                pose=aobj.get('default_pose',[])
+                if not (isinstance(pose,list) and len(pose)==6 and all(isinstance(x,(int,float)) for x in pose)): blockers.append(f'{where}: invalid default_pose')
+                if not str(aobj.get('license','')).strip() or not str(aobj.get('source_note','')).strip(): blockers.append(f'{where}: license/source note required')
+        except Exception:
+            blockers.append('imported_environment_assets.json parse error')
+
     if blockers: print(FAIL)
     elif warns or a.strict: print(WARN if warns else PASS)
     else: print(PASS)
