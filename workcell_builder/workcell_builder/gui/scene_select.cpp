@@ -193,6 +193,44 @@ SceneRootCandidate build_candidate(const fs::path & root, const std::string & la
   return candidate;
 }
 
+
+
+std::string normalize_placeholder_token(const std::string & value)
+{
+  std::string normalized = value;
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  normalized.erase(std::remove_if(normalized.begin(), normalized.end(), [](unsigned char c) {
+    return std::isspace(c) != 0;
+  }), normalized.end());
+  return normalized;
+}
+
+bool is_placeholder_value(const std::string & value)
+{
+  const std::string normalized = normalize_placeholder_token(value);
+  return normalized.empty() || normalized == "unknown" || normalized == "none" || normalized == "null";
+}
+
+bool scene_has_valid_robot(const Scene & scene)
+{
+  return scene.robot_loaded && !scene.robot_vector.empty() && !is_placeholder_value(scene.robot_vector[0].name);
+}
+
+bool scene_requires_end_effector(const Scene & scene)
+{
+  if (!scene.ee_loaded || scene.ee_vector.empty()) {
+    return false;
+  }
+  const std::string ee_name = normalize_placeholder_token(scene.ee_vector[0].name);
+  return !(ee_name.empty() || ee_name == "none");
+}
+
+bool scene_has_valid_end_effector(const Scene & scene)
+{
+  return scene_requires_end_effector(scene) && !is_placeholder_value(scene.ee_vector[0].name);
+}
 fs::path root_from_override(const std::string & override_value)
 {
   fs::path override_path(override_value);
@@ -1118,22 +1156,43 @@ bool SceneSelect::check_scene(bool strict)
 {
   bool has_yaml = check_yaml();
   bool files_loaded_proper = check_files(strict);
+  bool scene_incomplete = false;
+
   if (has_yaml) {
-    append_success("Scene status: environment.yaml found.");
+    Scene curr_scene;
+    if (ui->scene_list->currentIndex() >= 0) {
+      curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+      if (!curr_scene.loaded) {
+        load_scene_from_yaml(&curr_scene);
+      }
+      if (!scene_has_valid_robot(curr_scene)) {
+        scene_incomplete = true;
+      }
+      if (curr_scene.ee_loaded && !curr_scene.ee_vector.empty() && !scene_has_valid_end_effector(curr_scene) && scene_requires_end_effector(curr_scene)) {
+        scene_incomplete = true;
+      }
+    }
+    if (scene_incomplete) {
+      append_warning("Scene status: environment.yaml found, but scene is incomplete.");
+    } else {
+      append_info("Scene status: environment.yaml found.");
+    }
   } else {
     append_warning("environment.yaml exists. Full scene package has not been generated yet.");
   }
 
   if (files_loaded_proper) {
-    if (strict) {
-      append_success("Scene status: required files are present.");
+    if (strict && !scene_incomplete) {
+      append_success("Scene valid: environment.yaml, robot, and MoveIt config found.");
+    } else if (strict) {
+      append_warning("Scene status: required files exist, but scene inputs are incomplete.");
     } else {
       append_info(
-        "Scene status: scaffold created (scene package skeleton is ready). Generate files to create launch and SRDF assets.");
+        "Scene status: scaffold created (SCAFFOLD_ONLY/INCOMPLETE). Generate files only after robot/end-effector are configured.");
     }
   }
 
-  if (strict && has_yaml && files_loaded_proper) {
+  if (strict && has_yaml && files_loaded_proper && !scene_incomplete) {
     append_success("Scene generation complete. You may exit this application.");
   }
   if (strict && !has_yaml && files_loaded_proper) {
@@ -1243,6 +1302,14 @@ void SceneSelect::on_generate_files_clicked()
         append_error("environment.yaml missing. Click Generate YAML files for scene first.");
         return;
       }
+    }
+    if (!scene_has_valid_robot(curr_scene)) {
+      append_error("Scene is incomplete: select a robot before generating.");
+      return;
+    }
+    if (curr_scene.ee_loaded && !curr_scene.ee_vector.empty() && !scene_has_valid_end_effector(curr_scene) && scene_requires_end_effector(curr_scene)) {
+      append_error("Scene is incomplete: select an end effector or disable end effector.");
+      return;
     }
     // Generate all environment object packages
     for (Object object : curr_scene.object_vector) {
@@ -1607,6 +1674,11 @@ bool SceneSelect::validate_description_xacros(
 
   if (scene.robot_loaded) {
     for (const auto & robot : scene.robot_vector) {
+      if (is_placeholder_value(robot.name)) {
+        ok = false;
+        report_error("Scene is incomplete: select a robot before generating.");
+        continue;
+      }
       const bool is_ur = robot.brand == "universal_robot";
       if (is_ur) {
         check_universal_robot_xacro(robot);
@@ -1623,6 +1695,15 @@ bool SceneSelect::validate_description_xacros(
 
   if (scene.ee_loaded) {
     for (const auto & ee : scene.ee_vector) {
+      const std::string ee_name = normalize_placeholder_token(ee.name);
+      if (ee_name == "none" || ee_name.empty()) {
+        continue;
+      }
+      if (is_placeholder_value(ee.name)) {
+        report_error("Scene is incomplete: select an end effector or disable end effector.");
+        ok = false;
+        continue;
+      }
       const std::string package_name = resolve_ee_description_package(ee);
       const std::string filename = resolve_ee_xacro_filename(ee);
       check_xacro(package_name, {filename}, "end effector '" + ee.name + "'");
