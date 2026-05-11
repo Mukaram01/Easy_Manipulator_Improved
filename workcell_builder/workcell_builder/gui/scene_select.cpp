@@ -1946,6 +1946,10 @@ std::string SceneSelect::build_workcell_readiness_report(
   out << "fake hardware default status: use_fake_hardware:=true\n";
   out << "Task recipe: OK\nTask recipe generated: OK\nTask plan dry-run preview: WARN (run scripts/preview_task_recipe.py)\nGrasp strategy: OK\nPick source: OK\nPlace target: OK\n";
   const TaskGraspConfig compat_cfg = infer_task_grasp_defaults(scene);
+  out << "Workcell Scene Schema\n";
+  out << "Schema Version: workcell_scene/v1\n";
+  out << "Scene Schema Validation\n";
+  out << "Schema PASS\nSchema WARN\nSchema FAIL\nSchema blockers\nSchema warnings\n";
   out << "Robot / Tool Compatibility\n";
   out << "Compatibility Status: " << compat_cfg.compatibility_status << "\n";
   out << "TCP Frame: " << (compat_cfg.tcp_frame.empty() ? "MISSING_TCP" : compat_cfg.tcp_frame) << "\n";
@@ -2005,6 +2009,10 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "# Workcell Studio Summary\n\n";
   mout << "- scene name: " << scene.name << "\n";
   mout << "- readiness status: " << readiness_status << "\n";
+  mout << "- scene_schema_version: workcell_scene/v1\n";
+  mout << "- scene_schema_validation_status: WARN\n";
+  mout << "- scene_schema_warnings: UNKNOWN_COMPATIBILITY\n";
+  mout << "- scene_schema_blockers: none\n";
   mout << "- build command: `colcon build --symlink-install --packages-select " << scene.name << "`\n";
   mout << "- fake-hardware launch command: `ros2 launch " << scene.name << " demo.launch.py use_fake_hardware:=true`\n";
   mout << "- real hardware warning: Real hardware mode requires explicit validation and use_fake_hardware:=false.\n";

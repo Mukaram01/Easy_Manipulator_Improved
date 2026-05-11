@@ -70,7 +70,7 @@ def main() -> int:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
 
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
@@ -153,6 +153,15 @@ def main() -> int:
     _check("pyyaml" not in (compat_cpp + compat_hpp).lower(), "compatibility layer does not add PyYAML", errors)
     for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path"]:
         _check(forbidden.lower() not in compat_cpp.lower(), f"compatibility layer excludes runtime motion API: {forbidden}", errors)
+
+    schema_validator = (repo_root / "scripts/validate_workcell_scene.py").read_text(encoding="utf-8")
+    for marker in ["WORKCELL_SCENE_SCHEMA: PASS", "WORKCELL_SCENE_SCHEMA: WARN", "WORKCELL_SCENE_SCHEMA: FAIL", "workcell_scene/v1"]:
+        _check(marker in schema_validator, f"scene schema validator marker present: {marker}", errors)
+    schema_cpp = (repo_root / "workcell_builder/workcell_builder/src_workcell_scene_schema.cpp").read_text(encoding="utf-8")
+    schema_hpp = (repo_root / "workcell_builder/workcell_builder/include/workcell_scene_schema.hpp").read_text(encoding="utf-8")
+    for forbidden in ["PyYAML", "import yaml", "GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path"]:
+        _check(forbidden.lower() not in (schema_cpp + schema_hpp + schema_validator).lower(), f"scene schema files exclude forbidden marker: {forbidden}", errors)
+
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([
             "bash", "-lc",
