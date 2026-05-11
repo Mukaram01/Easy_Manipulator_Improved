@@ -39,3 +39,9 @@ def test_healthcheck_checks_artifacts_strings_and_placeholders_and_asset_ui():
     assert "unknown_description" in txt
     assert "unknown_moveit_config" in txt
     assert "none_moveit_config" in txt
+
+
+def test_healthcheck_includes_task_recipe_preview_checks():
+    txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
+    for needle in ["preview_task_recipe.py", "task_recipe.py", "WORKCELL_TASK_RECIPE_PREVIEW: PASS", "task_recipe_path", "OFFLINE_ONLY", "NO_MOTION_COMMAND", "NO_MOVEIT_PLAN", "NO_REAL_HARDWARE"]:
+        assert needle in txt

@@ -440,6 +440,7 @@ def _launch_setup(context):
     octomap_max_range = LaunchConfiguration("octomap_max_range")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
+    task_recipe_path = LaunchConfiguration("task_recipe_path")
     # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
@@ -712,10 +713,12 @@ def _launch_setup(context):
     controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
     controller_warning_logs = [LogInfo(msg=f"[workcell_builder] WARNING: {warning}") for warning in controller_filter_warnings]
     fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)} launch_rviz:={launch_rviz.perform(context)}; headless hint launch_rviz:=false)")
+    task_recipe_log = LogInfo(msg=f"[workcell_builder] Task recipe loaded for offline preview: {task_recipe_path.perform(context)}")
 
     return [
         octomap_launch_message,
         fake_hw_ready_log,
+        task_recipe_log,
         *controller_status_logs,
         *controller_warning_logs,
         static_tf,
@@ -783,6 +786,11 @@ def generate_launch_description():
             "launch_rviz",
             default_value="true",
             description="Launch RViz alongside MoveIt nodes (set false for headless CI/smoke).",
+        ),
+        DeclareLaunchArgument(
+            "task_recipe_path",
+            default_value=os.path.join(get_package_share_directory(scene_pkg), "config", "task_recipe.yaml"),
+            description="Passive metadata path to the generated offline task recipe.",
         ),
         DeclareLaunchArgument(
             "use_fake_hardware",

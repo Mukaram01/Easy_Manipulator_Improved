@@ -1931,7 +1931,7 @@ std::string SceneSelect::build_workcell_readiness_report(
   out << "selected environment objects/STLs: " << scene.object_vector.size() << "\n";
   out << "selected output package path: " << scene_dir.string() << "\n";
   out << "fake hardware default status: use_fake_hardware:=true\n";
-  out << "Task recipe: OK\nGrasp strategy: OK\nPick source: OK\nPlace target: OK\n";
+  out << "Task recipe: OK\nTask recipe generated: OK\nTask plan dry-run preview: WARN (run scripts/preview_task_recipe.py)\nGrasp strategy: OK\nPick source: OK\nPlace target: OK\n";
   out << "Tool compatibility: " << (warnings.empty() ? "OK" : "WARN") << "\n";
   for (const auto & b : blockers) { out << "BLOCKER: " << b << "\n"; }
   for (const auto & w : warnings) { out << "WARNING: " << w << "\n"; }
@@ -1977,7 +1977,10 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
        << "  \"approach_distance_m\": " << task_cfg.approach_distance_m << ",\n"
        << "  \"retreat_distance_m\": " << task_cfg.retreat_distance_m << ",\n"
        << "  \"release_strategy\": \"" << task_cfg.release_strategy << "\",\n"
-       << "  \"safety_statement\": \"Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\"\n"
+       << "  \"task_recipe_path\": \"config/task_recipe.yaml\",\n"
+       << "  \"task_plan_preview_path\": \"task_plan_preview.json\",\n"
+       << "  \"dry_run_preview_status\": \"WARN\",\n"
+       << "  \"safety_statement\": \"Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\"\n"
        << "}\n";
   std::ofstream mout(md_file.string());
   mout << "# Workcell Studio Summary\n\n";
@@ -1993,7 +1996,11 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- orientation mode: " << task_cfg.orientation_mode << "\n";
   mout << "- approach/retreat distances (m): " << task_cfg.approach_distance_m << "/" << task_cfg.retreat_distance_m << "\n";
   mout << "- release strategy: " << task_cfg.release_strategy << "\n";
+  mout << "- task_recipe_path: config/task_recipe.yaml\n";
+  mout << "- task_plan_preview_path: task_plan_preview.json\n";
+  mout << "- dry_run_preview_status: WARN\n";
   mout << "- Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\n";
+  mout << "- Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\n";
 }
 
 void SceneSelect::on_back_clicked()
