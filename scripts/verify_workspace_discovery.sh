@@ -8,45 +8,43 @@ if [[ ! -d "$SRC_DIR" ]]; then
   echo "Workspace src directory not found: $SRC_DIR" >&2
   exit 1
 fi
-
 if ! command -v colcon >/dev/null 2>&1; then
   echo "colcon is required for workspace validation" >&2
   exit 1
 fi
 
-mapfile -t packages < <(colcon list --base-paths "$SRC_DIR" --names-only 2>/dev/null || true)
-if [[ ${#packages[@]} -eq 0 ]]; then
-  echo "No packages discovered under $SRC_DIR. Run vcs import + fix_workspace_layout first." >&2
-  exit 1
-fi
-
-declare -A present=()
-for pkg in "${packages[@]}"; do
-  present["$pkg"]=1
-done
-
-required=(
-  tesseract_motion_planners
-  tesseract_rosutils
-  trajopt
-  trajopt_common
-  trajopt_sco
-  trajopt_ifopt
-  trajopt_sqp
-)
-
-missing=()
-for pkg in "${required[@]}"; do
-  if [[ -z "${present[$pkg]:-}" ]]; then
-    missing+=("$pkg")
+for alias in assets scenes; do
+  path="$SRC_DIR/$alias"
+  if [[ ! -L "$path" && ! -d "$path" ]]; then
+    echo "Missing workspace alias: $path" >&2
+    exit 1
   fi
 done
 
-if [[ ${#missing[@]} -gt 0 ]]; then
-  echo "Workspace validation failed: required packages are missing from colcon discovery:" >&2
-  printf '  - %s\n' "${missing[@]}" >&2
-  echo "Remediation: source /opt/ros/humble/setup.bash, run vcs import --recursive --skip-existing, then run scripts/fix_workspace_layout.sh and retry." >&2
+mapfile -t package_rows < <(colcon list --base-paths "$SRC_DIR" 2>/dev/null || true)
+if [[ ${#package_rows[@]} -eq 0 ]]; then
+  echo "No packages discovered under $SRC_DIR." >&2
   exit 1
 fi
 
-echo "Workspace validation passed: required Tesseract/TrajOpt packages are discoverable."
+declare -A seen=()
+declare -A present=()
+for row in "${package_rows[@]}"; do
+  name="${row%% *}"
+  path="${row#* }"
+  if [[ -n "${seen[$name]:-}" ]]; then
+    echo "Duplicate package discovered: $name" >&2
+    echo "  - ${seen[$name]}" >&2
+    echo "  - $path" >&2
+    exit 1
+  fi
+  seen[$name]="$path"
+  present[$name]=1
+done
+
+required=(easy_manipulation_deployment workcell_builder)
+for pkg in "${required[@]}"; do
+  [[ -n "${present[$pkg]:-}" ]] || { echo "Missing required package: $pkg" >&2; exit 1; }
+done
+
+echo "Workspace validation passed: aliases exist, packages are unique, and required packages are discoverable exactly once."
