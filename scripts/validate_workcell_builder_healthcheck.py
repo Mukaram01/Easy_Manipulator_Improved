@@ -108,7 +108,7 @@ def main() -> int:
     for ui in ["Select Robot Asset", "Select End Effector Asset", "Select Existing STL", "Create Custom STL / Create Primitive Object"]:
         _check(ui in scene_cpp or ui in (repo_root / "workcell_builder/workcell_builder/gui/asset_picker_dialog.cpp").read_text(encoding="utf-8") or ui in addobject_cpp, f"asset picker string present: {ui}", errors)
 
-    for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
+    for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "workcell_preview.svg", "workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
     for marker in ["Camera / Perception", "RealSense D435i", "Validate Camera", "Apply Camera Defaults", "Perception Metadata Export", "EPD Adapter Metadata", "EPD remains external/separate", "Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:"]:
         _check(marker in scene_cpp or marker in addobject_cpp, f"object placement marker present: {marker}", errors)
@@ -253,6 +253,9 @@ def main() -> int:
     template_text = template_catalog.read_text(encoding="utf-8") if template_catalog.exists() else ""
     for marker in ["ur5_pick_place_cell", "ur5_sorting_cell", "camera_inspection_cell", "conveyor_pick_placeholder_cell", "palletizing_placeholder_cell", "fake_hardware_first", "real_hardware_enabled"]:
         _check(marker in template_text, f"template marker present: {marker}", errors)
+    template_cli_text = template_cli.read_text(encoding="utf-8") if template_cli.exists() else ""
+    for marker in ["workcell_studio_summary.json", "workcell_studio_summary.md", "workcell_preview.svg", "workcell_preview.html", "fake_hardware_first"]:
+        _check(marker in template_cli_text, f"template generator marker present: {marker}", errors)
     for forbidden in ["bom", "bill of materials", "pyyaml", "import yaml", "getmotionplan", "execute_trajectory"]:
         _check(forbidden not in (template_text + (template_cli.read_text(encoding="utf-8") if template_cli.exists() else "")).lower(), f"template feature excludes forbidden marker: {forbidden}", errors)
     if args.run_colcon and not args.skip_colcon:
