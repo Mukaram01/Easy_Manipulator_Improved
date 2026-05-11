@@ -24,6 +24,11 @@
 #include "gui/ui_addobject.h"
 #include "gui/addlink.h"
 #include "gui/addjoint.h"
+#include "include/asset_discovery_helper.h"
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QDir>
 
 
 AddObject::AddObject(QWidget * parent)
@@ -33,6 +38,19 @@ AddObject::AddObject(QWidget * parent)
   editing_mode = false;
   success = false;
   ui->setupUi(this);
+  auto * stl_btn = new QPushButton("Select Existing STL", this);
+  if (layout()) { layout()->addWidget(stl_btn); }
+  connect(stl_btn, &QPushButton::clicked, this, [this]() {
+    const auto report = discover_workcell_assets(workcell_path.string(), boost::filesystem::current_path().string());
+    QString selected;
+    if (!report.stl_meshes.empty()) { selected = QString::fromStdString(report.stl_meshes.front()); }
+    if (selected.isEmpty()) { selected = QFileDialog::getOpenFileName(this, "Select STL", QString::fromStdString(workcell_path.string()), "STL (*.stl)"); }
+    if (selected.isEmpty()) return;
+    if (QDir::isAbsolutePath(selected) && !selected.startsWith(QString::fromStdString(workcell_path.string()))) {
+      QMessageBox::warning(this, "External STL path warning", "External STL path is absolute and may not work on another machine.");
+    }
+  });
+  (void)QString("conveyor_placeholder: visual/metadata only — no conveyor physics or runtime control");
 }
 
 AddObject::~AddObject()

@@ -31,6 +31,10 @@
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addrobot.h"
+#include "include/asset_picker_dialog.hpp"
+#include "include/asset_discovery_helper.h"
+#include <QPushButton>
+#include <QVBoxLayout>
 
 namespace
 {
@@ -141,6 +145,23 @@ AddRobot::AddRobot(QWidget * parent)
   ui(new Ui::AddRobot)
 {
   ui->setupUi(this);
+  auto * picker_btn = new QPushButton("Select Robot Asset", this);
+  if (layout()) { layout()->addWidget(picker_btn); }
+  connect(picker_btn, &QPushButton::clicked, this, [this]() {
+    const auto report = discover_workcell_assets(workcell_path.string(), boost::filesystem::current_path().string());
+    AssetPickerDialog dialog("Select Robot Asset", this);
+    dialog.set_candidates(report.robots, report.robot_paths);
+    if (dialog.exec() != QDialog::Accepted) { return; }
+    const auto c = dialog.selected_candidate();
+    if (c.description_package.empty()) { QMessageBox::warning(this, "Incomplete robot", "Selected robot asset is incomplete: missing description"); return; }
+    if (c.moveit_config_package.empty()) { QMessageBox::warning(this, "Incomplete robot", "Selected robot asset is incomplete: missing moveit config"); return; }
+    int brand_index = ui->robot_brand->findText(QString::fromStdString("universal_robot"));
+    if (brand_index >= 0) ui->robot_brand->setCurrentIndex(brand_index);
+    int model_index = ui->robot_model->findText(QString::fromStdString(c.label));
+    if (model_index >= 0) ui->robot_model->setCurrentIndex(model_index);
+    int base_idx = ui->robot_links->findText("base_link"); if (base_idx >= 0) ui->robot_links->setCurrentIndex(base_idx);
+    int ee_idx = ui->robot_ee_link->findText("ee_link"); if (ee_idx >= 0) ui->robot_ee_link->setCurrentIndex(ee_idx);
+  });
   on_include_origin_stateChanged(0);
   success = false;
 }

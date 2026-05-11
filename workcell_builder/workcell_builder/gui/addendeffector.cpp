@@ -33,6 +33,9 @@
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
+#include "include/asset_picker_dialog.hpp"
+#include "include/asset_discovery_helper.h"
+#include <QPushButton>
 #include "attributes/robot.h"
 
 namespace
@@ -71,6 +74,20 @@ AddEndEffector::AddEndEffector(QWidget * parent)
   ui(new Ui::AddEndEffector)
 {
   ui->setupUi(this);
+  auto * picker_btn = new QPushButton("Select End Effector Asset", this);
+  if (layout()) { layout()->addWidget(picker_btn); }
+  connect(picker_btn, &QPushButton::clicked, this, [this]() {
+    const auto report = discover_workcell_assets(workcell_path.string(), boost::filesystem::current_path().string());
+    AssetPickerDialog dialog("Select End Effector Asset", this);
+    dialog.set_candidates(report.end_effectors, report.end_effector_paths);
+    if (dialog.exec() != QDialog::Accepted) return;
+    const auto c = dialog.selected_candidate();
+    int model_index = ui->ee_model->findText(QString::fromStdString(c.label));
+    if (model_index >= 0) ui->ee_model->setCurrentIndex(model_index);
+    if (c.label.find("robotiq")!=std::string::npos || c.label.find("2f")!=std::string::npos || c.label.find("85")!=std::string::npos) { ui->ee_type->setCurrentText("finger"); ui->attribute_1->setCurrentText("2"); }
+    else if (c.label.find("airpick")!=std::string::npos || c.label.find("suction")!=std::string::npos || c.label.find("vacuum")!=std::string::npos) { ui->ee_type->setCurrentText("suction"); }
+    else { QMessageBox::warning(this, "Unknown end-effector type", "Unknown inferred type. Please select end-effector type manually before generation."); }
+  });
   for (int i = 0; i < static_cast<int>(supported_types.size()); i++) {
     ui->ee_type->addItem(QString::fromStdString(supported_types[i]));
   }
