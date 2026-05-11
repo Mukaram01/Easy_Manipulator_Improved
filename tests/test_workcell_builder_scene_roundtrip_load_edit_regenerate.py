@@ -52,3 +52,8 @@ def test_validation_dashboard_and_forbidden_additions():
     assert "loaded scene" in scene_cpp.lower() or "loaded from workcell_scene/v1" in scene_cpp.lower()
     for forbidden in ["pyyaml", "import yaml", "getmotionplan", "execute_trajectory", "followjointtrajectory"]:
         assert forbidden not in merged
+
+
+def test_curated_asset_tokens_present():
+    txt = Path('workcell_builder/workcell_builder/config/asset_profiles/environment_assets.json').read_text(encoding='utf-8')
+    assert "table_small" in txt and "pick_box" in txt

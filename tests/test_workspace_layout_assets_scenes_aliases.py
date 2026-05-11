@@ -24,3 +24,8 @@ def test_verify_workspace_discovery_accepts_alias_layout():
     assert 'for alias in assets scenes' in text
     assert 'Duplicate package discovered' in text
     assert 'required=(easy_manipulation_deployment workcell_builder)' in text
+
+
+def test_curated_asset_tokens_present():
+    txt = Path('workcell_builder/workcell_builder/config/asset_profiles/environment_assets.json').read_text(encoding='utf-8')
+    assert "table_small" in txt and "pick_box" in txt

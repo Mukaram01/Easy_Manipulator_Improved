@@ -1,0 +1,86 @@
+solid safety_fence_panel
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 -0.9
+   vertex 0.6 -0.025 -0.9
+   vertex 0.6 0.025 -0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 -0.9
+   vertex 0.6 0.025 -0.9
+   vertex -0.6 0.025 -0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 0.9
+   vertex 0.6 0.025 0.9
+   vertex 0.6 -0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 0.9
+   vertex -0.6 0.025 0.9
+   vertex 0.6 0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 -0.9
+   vertex -0.6 -0.025 0.9
+   vertex 0.6 -0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.025 -0.9
+   vertex 0.6 -0.025 0.9
+   vertex 0.6 -0.025 -0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 -0.025 -0.9
+   vertex 0.6 -0.025 0.9
+   vertex 0.6 0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 -0.025 -0.9
+   vertex 0.6 0.025 0.9
+   vertex 0.6 0.025 -0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 0.025 -0.9
+   vertex 0.6 0.025 0.9
+   vertex -0.6 0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 0.025 -0.9
+   vertex -0.6 0.025 0.9
+   vertex -0.6 0.025 -0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 0.025 -0.9
+   vertex -0.6 0.025 0.9
+   vertex -0.6 -0.025 0.9
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 0.025 -0.9
+   vertex -0.6 -0.025 0.9
+   vertex -0.6 -0.025 -0.9
+  endloop
+ endfacet
+endsolid safety_fence_panel

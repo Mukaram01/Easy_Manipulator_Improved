@@ -28,21 +28,29 @@ compatibility:
   tool_mount_link: ee_link
 placed_objects:
   - name: table_01
-    asset_id: table_01
+    asset_id: table_small
     pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   - name: pick_object_01
-    asset_id: pick_object_01
+    asset_id: pick_box
     pose: [0.45, 0.0, 0.78, 0.0, 0.0, 0.0]
   - name: bin_left
-    asset_id: bin_left
+    asset_id: bin_small
     pose: [0.55, 0.25, 0.75, 0.0, 0.0, 0.0]
   - name: bin_right
-    asset_id: bin_right
+    asset_id: bin_large
     pose: [0.55, -0.25, 0.75, 0.0, 0.0, 0.0]
-  - name: fixture_01
-    asset_id: fixture_01
+  - name: camera_stand_01
+    asset_id: camera_stand
     optional: true
-    pose: [0.3, -0.3, 0.75, 0.0, 0.0, 0.0]
+    pose: [0.25, -0.45, 0.0, 0.0, 0.0, 0.0]
+  - name: safety_panel_01
+    asset_id: safety_fence_panel
+    optional: true
+    pose: [1.0, -0.8, 0.0, 0.0, 0.0, 0.0]
+  - name: robot_base_01
+    asset_id: robot_base_plate
+    optional: true
+    pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 camera:
   enabled: true
   camera_id: realsense_d435i
@@ -137,7 +145,7 @@ safety:
     _write(scene_dir / "config/readiness_overlay_metadata.json", json.dumps({"status": "ready_for_offline_preview", "runtime_execution_enabled": False}, indent=2) + "\n")
     _write(scene_dir / "config/visual_layout_metadata.json", json.dumps({"layout": "top_down", "grid_enabled": True}, indent=2) + "\n")
     _write(scene_dir / "preview/workcell_preview.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><text x="20" y="40">ur5_2f_golden_demo preview</text></svg>\n')
-    _write(scene_dir / "preview/workcell_preview.html", "<html><body><h1>Golden Demo Preview</h1><p>Offline-only reference pack.</p></body></html>\n")
+    _write(scene_dir / "preview/workcell_preview.html", "<html><body><h1>Golden Demo Preview</h1><p>Offline-only reference pack. Curated assets: table_small, bin_small, bin_large, pick_box, camera_stand, robot_base_plate.</p></body></html>\n")
 
     fake_launch = f"ros2 launch {a.scene_name} demo.launch.py use_fake_hardware:=true launch_rviz:={'false' if a.no_rviz else 'true'}"
     summary = {
@@ -149,7 +157,11 @@ safety:
         "readiness_overlay_status": "present",
         "camera_metadata_status": "present",
         "fake_hardware_launch_command": fake_launch,
-        "safety": {
+        "placed_assets": [
+      {"asset_id":"table_small","label":"Table Small","category":"Tables / Workbenches","mesh_path":"workcell_builder/workcell_builder/assets/environment/table_small_description/meshes/table_small.stl","urdf_path":"workcell_builder/workcell_builder/assets/environment/table_small_description/urdf/table_small.urdf.xacro","dimensions":[1.2,0.8,0.75],"default_pose":[0,0,0,0,0,0],"catalog_validation_status":"PASS"},
+      {"asset_id":"bin_small","label":"Bin Small","category":"Bins / Trays / Totes","mesh_path":"workcell_builder/workcell_builder/assets/environment/bin_small_description/meshes/bin_small.stl","urdf_path":"workcell_builder/workcell_builder/assets/environment/bin_small_description/urdf/bin_small.urdf.xacro","dimensions":[0.4,0.3,0.2],"default_pose":[0.55,0.25,0.75,0,0,0],"catalog_validation_status":"PASS"}
+    ],
+    "safety": {
             "fake_hardware_first": True,
             "motion_command_sent": False,
             "runtime_execution_enabled": False,

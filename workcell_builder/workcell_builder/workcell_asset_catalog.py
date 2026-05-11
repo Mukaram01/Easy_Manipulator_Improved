@@ -44,7 +44,7 @@ def validate_catalog(payload: dict[str, Any], root: Path | None = None) -> list[
 def grouped_selection(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     groups = {
         "Robots": [], "End Effectors": [], "Tools": [], "Sensors": [], "Tables": [], "Bins": [],
-        "Conveyors": [], "Fixtures": [], "Machines": [], "Safety": [], "Objects": [], "Custom STL": []
+        "Conveyors": [], "Fixtures": [], "Machines": [], "Safety / Fencing": [], "Camera Mounts": [], "Robot Bases": [], "Pick Objects": [], "Objects": [], "Custom STL": []
     }
     for item in payload.get("items", []):
         c = item.get("category", "")
@@ -55,12 +55,18 @@ def grouped_selection(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]
         elif c == "conveyors": groups["Conveyors"].append(item)
         elif c == "fixtures": groups["Fixtures"].append(item)
         elif c == "machines": groups["Machines"].append(item)
-        elif c == "safety": groups["Safety"].append(item)
-        elif c == "objects": groups["Objects"].append(item)
+        elif c == "safety": groups["Safety / Fencing"].append(item)
+        elif c == "objects": groups["Pick Objects"].append(item)
         elif c == "environment":
             iid = item.get("id", "")
             if "table" in iid or "bench" in iid: groups["Tables"].append(item)
-            elif "bin" in iid or "box" in iid or "tote" in iid: groups["Bins"].append(item)
+            elif "bin" in iid or "box" in iid or "tote" in iid or "tray" in iid: groups["Bins"].append(item)
+            elif "conveyor" in iid: groups["Conveyors"].append(item)
+            elif "fixture" in iid or "pallet" in iid: groups["Fixtures"].append(item)
+            elif "fence" in iid or "safety" in iid: groups["Safety / Fencing"].append(item)
+            elif "camera" in iid: groups["Camera Mounts"].append(item)
+            elif "robot_base" in iid or "pedestal" in iid: groups["Robot Bases"].append(item)
+            elif "pick" in iid or "object" in iid or "cube" in iid or "cylinder" in iid: groups["Pick Objects"].append(item)
     return groups
 
 

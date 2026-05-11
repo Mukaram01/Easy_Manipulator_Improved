@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="workbench">
+  <xacro:macro name="workbench" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
+    <link name="${prefix}workbench_link">
+      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/workbench_description/meshes/workbench.stl" scale="1 1 1"/></geometry></visual>
+      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="1.5 0.75 0.9"/></geometry></collision>
+    </link>
+  </xacro:macro>
+</robot>

@@ -58,3 +58,8 @@ def test_healthcheck_tracks_operator_flow_and_validation_dashboard_markers():
         "warning_count",
     ]:
         assert needle in txt
+
+
+def test_curated_asset_tokens_present():
+    txt = Path('workcell_builder/workcell_builder/config/asset_profiles/environment_assets.json').read_text(encoding='utf-8')
+    assert "table_small" in txt and "pick_box" in txt

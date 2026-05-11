@@ -9,6 +9,9 @@ FAIL='WORKCELL_ASSET_CATALOG: FAIL'
 SAFE=re.compile(r'^[a-z0-9_]+$')
 VALID_TOOL_TYPES={'finger','suction','custom','unknown'}
 VALID_STATUS={'COMPATIBLE','COMPATIBLE_WITH_WARNINGS','UNKNOWN_COMPATIBILITY','INCOMPATIBLE'}
+VALID_ENV_CATEGORIES={"Tables / Workbenches","Bins / Trays / Totes","Conveyors","Fixtures","Safety / Fencing","Camera Mounts","Robot Bases","Pick Objects"}
+MAX_ASSET_BYTES=2*1024*1024
+SUSPICIOUS_LICENSE={"proprietary","vendor_only","restricted","unknown_vendor"}
 
 
 def _load_jsons(d: Path):
@@ -76,8 +79,31 @@ def main()->int:
     if assets_d.exists():
         try:
             arr=json.loads(assets_d.read_text(encoding='utf-8'))
+            seen=set()
             if isinstance(arr,list):
-                for i,aobj in enumerate(arr): _req(aobj,['asset_id','label','asset_type','mesh_path_hint','default_dimensions_hint','default_z_hint'],warns,f'environment_assets[{i}]')
+                for i,aobj in enumerate(arr):
+                    where=f'environment_assets[{i}]'
+                    _req(aobj,['asset_id','label','category','asset_type','mesh_path','default_dimensions_m','default_pose','default_z_hint','license'],blockers,where)
+                    aid=str(aobj.get('asset_id',''))
+                    if aid in seen: blockers.append(f'{where}: duplicate asset_id {aid}')
+                    seen.add(aid)
+                    if aid: _safe(aid,blockers,where)
+                    cat=aobj.get('category')
+                    if cat not in VALID_ENV_CATEGORIES: blockers.append(f'{where}: invalid category {cat}')
+                    dims=aobj.get('default_dimensions_m',[])
+                    if not (isinstance(dims,list) and len(dims)==3 and all(isinstance(x,(int,float)) and x>0 and x<100 for x in dims)): blockers.append(f'{where}: invalid default_dimensions_m')
+                    for key in ('mesh_path','urdf_path'):
+                        v=aobj.get(key)
+                        if not v: continue
+                        if str(v).startswith('/'):
+                            blockers.append(f'{where}: absolute path forbidden {key}')
+                            continue
+                        fp=root/str(v)
+                        if not fp.exists(): blockers.append(f'{where}: missing path {v}')
+                        elif fp.is_symlink(): blockers.append(f'{where}: symlink forbidden {v}')
+                        elif fp.stat().st_size>MAX_ASSET_BYTES: blockers.append(f'{where}: huge file {v}')
+                    lic=str(aobj.get('license','')).lower()
+                    if lic in SUSPICIOUS_LICENSE: blockers.append(f'{where}: suspicious proprietary/vendor license label {lic}')
         except Exception: blockers.append('environment_assets.json parse error')
 
     if blockers: print(FAIL)
