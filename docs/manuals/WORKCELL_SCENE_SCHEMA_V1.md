@@ -67,14 +67,19 @@ placed_objects:
     mesh: package://easy_manipulation_deployment/assets/environment/table/meshes/table.stl
     pose: [0, 0, 0, 0, 0, 0]
 camera:
-  enabled: false
-  camera_id: overhead_rgbd
-  label: Overhead RGBD
-  frame_id: world
-  pose: [0, 0, 1.5, 0, 0, 0]
-  rgb_topic: /camera/color/image_raw
-  depth_topic: /camera/depth/image_raw
-  pointcloud_topic: /camera/depth/color/points
+  enabled: true
+  camera_id: realsense_d435i
+  label: RealSense D435i
+  frame_id: camera_link
+  optical_frame_id: camera_color_optical_frame
+  pose: [x, y, z, roll, pitch, yaw]
+  rgb_topic: /camera/camera/color/image_raw
+  depth_topic: /camera/camera/depth/image_rect_raw
+  camera_info_topic: /camera/camera/color/camera_info
+  pointcloud_topic: /camera/camera/depth/color/points
+  mount_type: fixed
+  perception_hint: rgbd_object_detection
+  epd_input_hint: external_epd_adapter
 task:
   task_type: pick_place
   pick_source: pick_bin
@@ -102,3 +107,6 @@ Validation examples:
 - `python3 scripts/validate_workcell_scene.py --scene-file scenes/ur5_2f_test/environment.yaml --strict`
 
 Operator flow: Open builder -> select scene -> robot/tool -> compatibility -> objects -> visual editor -> task/grasp -> generate -> Scene Schema Validation -> fix blockers/warnings -> build -> launch with `use_fake_hardware:=true`.
+
+
+Camera validation notes: camera metadata is optional; when enabled camera_id/frame_id and six-value finite pose are required. Missing pointcloud topic is a warning; missing rgb/depth can be warning or blocker in strict mode. EPD metadata is export hint only.

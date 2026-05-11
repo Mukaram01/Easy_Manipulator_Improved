@@ -119,6 +119,7 @@ add_executable(workcell_builder
     src_object_placement_model.cpp
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
+    src_camera_perception_profile.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
     gui/environment_layout_editor.cpp)
