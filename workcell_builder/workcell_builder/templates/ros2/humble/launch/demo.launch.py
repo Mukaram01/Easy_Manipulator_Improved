@@ -21,6 +21,8 @@ import yaml
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess
+from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -437,6 +439,7 @@ def _launch_setup(context):
     octomap_pointcloud_topic = LaunchConfiguration("octomap_pointcloud_topic")
     octomap_max_range = LaunchConfiguration("octomap_max_range")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
+    launch_rviz = LaunchConfiguration("launch_rviz")
     # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
@@ -664,6 +667,7 @@ def _launch_setup(context):
         get_package_share_directory(scene_pkg), "launch", "demo.rviz"
     )
     rviz_node = Node(
+        condition=IfCondition(PythonExpression([launch_rviz, " == 'true'"])),
         package="rviz2",
         executable="rviz2",
         name="rviz2",
@@ -707,7 +711,7 @@ def _launch_setup(context):
 
     controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
     controller_warning_logs = [LogInfo(msg=f"[workcell_builder] WARNING: {warning}") for warning in controller_filter_warnings]
-    fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)})")
+    fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)} launch_rviz:={launch_rviz.perform(context)}; headless hint launch_rviz:=false)")
 
     return [
         octomap_launch_message,
@@ -774,6 +778,11 @@ def generate_launch_description():
             "publish_perception_replay",
             default_value="false",
             description="Publish offline perception replay markers from config/perception_replay_markers.json.",
+        ),
+        DeclareLaunchArgument(
+            "launch_rviz",
+            default_value="true",
+            description="Launch RViz alongside MoveIt nodes (set false for headless CI/smoke).",
         ),
         DeclareLaunchArgument(
             "use_fake_hardware",
