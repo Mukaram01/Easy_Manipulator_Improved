@@ -65,6 +65,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp",
         repo_root / "workcell_builder/workcell_builder/include/robot_tool_compatibility.hpp",
         repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/validation_dashboard_model.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_validation_dashboard_model.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
@@ -79,7 +81,7 @@ def main() -> int:
         _check(f.exists(), f"camera metadata file exists: {f.relative_to(repo_root)}", errors)
 
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp", "src_camera_perception_profile.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp", "src_camera_perception_profile.cpp", "src_validation_dashboard_model.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
@@ -250,3 +252,11 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# Validation dashboard functional checks
+    dashboard_cpp = (repo_root / "workcell_builder/workcell_builder/src_validation_dashboard_model.cpp").read_text(encoding="utf-8")
+    for marker in ["Scene Schema", "Asset Catalog", "Robot / Tool Compatibility", "Object Placement", "Camera Metadata", "Task Recipe", "Readiness Overlay", "Fake-Hardware Smoke Static", "Generation Safety"]:
+        _check(marker in dashboard_cpp, f"validation dashboard row exists: {marker}", errors)
+    for marker in ["collect_validation_dashboard_results", "Run Offline Validation", "validation_dashboard_status"]:
+        _check(marker in scene_cpp or marker in dashboard_cpp, f"validation dashboard wiring marker present: {marker}", errors)

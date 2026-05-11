@@ -24,6 +24,7 @@
 #include "yaml-cpp/yaml.h"
 #include "attributes/workcell.h"
 #include "scene_select_paths.h"
+#include "validation_dashboard_model.hpp"
 
 
 namespace Ui
@@ -110,6 +111,7 @@ private:
   void refresh_scene_status(bool strict, const std::string & trigger);
   std::string build_workcell_readiness_report(const Scene & scene, const boost::filesystem::path & scene_dir, bool strict, bool * blocked = nullptr);
   void write_workcell_studio_summary(const Scene & scene, const boost::filesystem::path & scene_dir, const std::string & readiness_status);
+  void refresh_validation_dashboard_table(const workcell_builder::ValidationDashboardResult & result);
   bool export_workcell_layout_preview(const Scene & scene, const boost::filesystem::path & scene_dir, bool open_after_export);
 
   Ui::SceneSelect * ui;
@@ -121,6 +123,7 @@ private:
   void update_scene_browser_status(const std::string & note = "");
 
   int scaffold_scene_index_ = -1;
+  workcell_builder::ValidationDashboardResult latest_dashboard_result_;
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_

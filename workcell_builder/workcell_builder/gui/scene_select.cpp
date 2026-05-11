@@ -564,10 +564,12 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->generate_files->hide();
   ui->validate_cell->show();
   ui->validate_cell->setText("Run Offline Validation");
-  ui->validation_dashboard_table->setColumnCount(4);
+  ui->validation_dashboard_table->setColumnCount(6);
   ui->validation_dashboard_table->setHorizontalHeaderLabels(
-    {"Check", "Status", "Message", "Fix / Report"});
+    {"Check", "Status", "Message", "Warnings", "Blockers", "Fix / Report"});
   ui->validation_dashboard_table->horizontalHeader()->setStretchLastSection(true);
+  latest_dashboard_result_ = workcell_builder::default_validation_dashboard_result();
+  refresh_validation_dashboard_table(latest_dashboard_result_);
   ui->open_preview->show();
   ui->open_preview->setText("Refresh Preview");
   ui->export_layout_preview_action->setText("Export Preview");
@@ -1510,12 +1512,16 @@ void SceneSelect::on_generate_files_clicked()
     write_task_recipe_yaml(scene_dir_for_current_selection(), infer_task_grasp_defaults(curr_scene));
     bool blocked = false;
     const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
-    const auto blocker_count = static_cast<int>(std::distance(
+    int blocker_count = latest_dashboard_result_.blocker_count;
+    int warning_count = latest_dashboard_result_.warning_count;
+    const auto readiness_blocker_count = static_cast<int>(std::distance(
       std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("BLOCKER:")),
       std::sregex_iterator()));
-    const auto warning_count = static_cast<int>(std::distance(
+    const auto readiness_warning_count = static_cast<int>(std::distance(
       std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("WARNING:")),
       std::sregex_iterator()));
+    blocker_count += readiness_blocker_count;
+    warning_count += readiness_warning_count;
     append_info("Generation gate: blocker_count=" + std::to_string(blocker_count) +
       " warning_count=" + std::to_string(warning_count));
     if (blocked) {
@@ -2094,6 +2100,28 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- generated mesh: meshes/generated_objects/<safe_object_name>.stl\n";
   mout << "- Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\n";
   mout << "- Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\n";
+  mout << "- validation_dashboard_status: " << workcell_builder::validation_status_label(latest_dashboard_result_.status) << "\n";
+  mout << "- validation_dashboard_warning_count: " << latest_dashboard_result_.warning_count << "\n";
+  mout << "- validation_dashboard_blocker_count: " << latest_dashboard_result_.blocker_count << "\n";
+  mout << "- validation_dashboard_rows: see workcell_studio_summary.json\n";
+}
+
+
+void SceneSelect::refresh_validation_dashboard_table(const workcell_builder::ValidationDashboardResult & result)
+{
+  ui->validation_dashboard_table->setRowCount(static_cast<int>(result.rows.size()));
+  for (int i = 0; i < static_cast<int>(result.rows.size()); ++i) {
+    const auto & row = result.rows[static_cast<size_t>(i)];
+    ui->validation_dashboard_table->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(row.check_name)));
+    std::string status = workcell_builder::validation_status_label(row.status);
+    if (row.blocker_count > 0) { status += " (blockers=" + std::to_string(row.blocker_count) + ")"; }
+    ui->validation_dashboard_table->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(status)));
+    ui->validation_dashboard_table->setItem(i, 2, new QTableWidgetItem(QString::fromStdString(row.message)));
+    ui->validation_dashboard_table->setItem(i, 3, new QTableWidgetItem(QString::number(row.warning_count)));
+    ui->validation_dashboard_table->setItem(i, 4, new QTableWidgetItem(QString::number(row.blocker_count)));
+    const std::string fix = workcell_builder::format_validation_fix_hint(row);
+    ui->validation_dashboard_table->setItem(i, 5, new QTableWidgetItem(QString::fromStdString(fix)));
+  }
 }
 
 void SceneSelect::on_back_clicked()
@@ -2147,8 +2175,13 @@ void SceneSelect::on_validate_cell_clicked()
   Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
   if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
   bool blocked = false;
-  append_info("Validation Dashboard: Scene Schema | Asset Catalog | Robot/Tool Compatibility | Object Placement | Camera Metadata | Task Recipe | Readiness Overlay | Fake-Hardware Smoke");
+  latest_dashboard_result_ = workcell_builder::collect_validation_dashboard_results(curr_scene, scene_dir);
+  refresh_validation_dashboard_table(latest_dashboard_result_);
+  append_info("Validation Dashboard: Scene Schema | Asset Catalog | Robot/Tool Compatibility | Object Placement | Camera Metadata | Task Recipe | Readiness Overlay | Fake-Hardware Smoke Static | Generation Safety");
   append_info("Run Offline Validation only: no ROS launch, no MoveIt planning/execution, no robot motion.");
+  append_info("Offline validation status=" + workcell_builder::validation_status_label(latest_dashboard_result_.status) +
+    " warning_count=" + std::to_string(latest_dashboard_result_.warning_count) +
+    " blocker_count=" + std::to_string(latest_dashboard_result_.blocker_count));
   append_info(build_workcell_readiness_report(curr_scene, scene_dir, true, &blocked));
   append_info("Run Offline Validation completed.");
 }
