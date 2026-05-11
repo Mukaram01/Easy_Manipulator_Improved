@@ -1,0 +1,41 @@
+from pathlib import Path
+
+
+def test_healthcheck_script_exists_and_has_pass_fail_markers():
+    path = Path("scripts/validate_workcell_builder_healthcheck.py")
+    assert path.exists()
+    txt = path.read_text(encoding="utf-8")
+    assert "WORKCELL_BUILDER_HEALTHCHECK: PASS" in txt
+    assert "WORKCELL_BUILDER_HEALTHCHECK: FAIL" in txt
+
+
+def test_healthcheck_cli_defaults_safe_and_optional_flags_present():
+    txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
+    assert "--run-colcon" in txt
+    assert "--smoke-launch" in txt
+    assert "run_launch = args.smoke_launch" in txt
+
+
+def test_healthcheck_checks_build_integration_and_launch_safety():
+    txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
+    assert "gui/asset_picker_dialog.cpp" in txt
+    assert "src_asset_discovery_helper.cpp" in txt
+    assert "gui/scene_select.cpp" in txt
+    assert "demo.launch.py use_fake_hardware:=true" in txt
+    assert "use_fake_hardware:=false" in txt
+    assert "launch_rviz" in txt
+    assert "launch_rviz:=false" in txt or "launch_rviz:=false\"" in txt
+
+
+def test_healthcheck_checks_artifacts_strings_and_placeholders_and_asset_ui():
+    txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
+    assert "workcell_studio_summary.json" in txt
+    assert "workcell_studio_summary.md" in txt
+    assert "preview/workcell_preview.svg" in txt
+    assert "preview/workcell_preview.html" in txt
+    assert "Select Robot Asset" in txt
+    assert "Select End Effector Asset" in txt
+    assert "Select Existing STL" in txt
+    assert "unknown_description" in txt
+    assert "unknown_moveit_config" in txt
+    assert "none_moveit_config" in txt
