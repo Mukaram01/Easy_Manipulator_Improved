@@ -176,6 +176,23 @@ def main() -> int:
             _check(marker in vtxt, f"golden validator marker present: {marker}", errors)
         _check("pyyaml" not in vtxt and "import yaml" not in vtxt, "golden validator uses stdlib only", errors)
 
+
+    catalog_validator = repo_root / "scripts/validate_workcell_asset_catalog.py"
+    _check(catalog_validator.exists(), "asset catalog validator exists", errors)
+    if catalog_validator.exists():
+        ctxt = catalog_validator.read_text(encoding="utf-8").lower()
+        for marker in ["workcell_asset_catalog: pass", "workcell_asset_catalog: warn", "workcell_asset_catalog: fail"]:
+            _check(marker in ctxt, f"asset catalog marker present: {marker}", errors)
+        _check("import yaml" not in ctxt and "pyyaml" not in ctxt, "asset catalog validator uses stdlib only", errors)
+
+    for d in [
+        repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles/robots",
+        repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles/tools",
+        repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles/pairs",
+        repo_root / "workcell_builder/workcell_builder/config/camera_profiles",
+    ]:
+        _check(d.exists(), f"catalog directory exists: {d.relative_to(repo_root)}", errors)
+
     compat_root = repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles"
     _check((compat_root / "robots").exists() and (compat_root / "tools").exists() and (compat_root / "pairs").exists(), "compatibility profile catalog exists", errors)
     compat_cpp = (repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp").read_text(encoding="utf-8")
