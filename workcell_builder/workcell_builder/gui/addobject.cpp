@@ -84,8 +84,7 @@ AddObject::AddObject(QWidget * parent)
       QMessageBox::warning(this, "Create Custom STL failed", QString::fromStdString(error));
       return;
     }
-    QMessageBox::information(this, "Create Custom STL", QString::fromStdString("custom_stl: "+safe+"
-generated mesh: meshes/generated_objects/"+safe+".stl"));
+    QMessageBox::information(this, "Create Custom STL", QString::fromStdString("custom_stl: " + safe + "\ngenerated mesh: meshes/generated_objects/" + safe + ".stl"));
   });
   
   auto * import_btn = new QPushButton("Import STL to Asset Library", this);

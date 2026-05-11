@@ -1536,11 +1536,13 @@ void SceneSelect::on_generate_files_clicked()
     const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
     int blocker_count = latest_dashboard_result_.blocker_count;
     int warning_count = latest_dashboard_result_.warning_count;
+    const std::regex blocker_re("BLOCKER:");
+    const std::regex warning_re("WARNING:");
     const auto readiness_blocker_count = static_cast<int>(std::distance(
-      std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("BLOCKER:")),
+      std::sregex_iterator(readiness.begin(), readiness.end(), blocker_re),
       std::sregex_iterator()));
     const auto readiness_warning_count = static_cast<int>(std::distance(
-      std::sregex_iterator(readiness.begin(), readiness.end(), std::regex("WARNING:")),
+      std::sregex_iterator(readiness.begin(), readiness.end(), warning_re),
       std::sregex_iterator()));
     blocker_count += readiness_blocker_count;
     warning_count += readiness_warning_count;
@@ -1555,11 +1557,7 @@ void SceneSelect::on_generate_files_clicked()
     }
     write_workcell_studio_summary(curr_scene, scene_dir_for_current_selection(), blocked ? "BLOCKED" : "READY_TO_GENERATE");
     append_info(readiness);
-    append_info("Command panel:
-cd <workspace>
-colcon build --symlink-install --packages-select " + curr_scene.name + "
-source install/setup.bash
-ros2 launch " + curr_scene.name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true");
+    append_info("Command panel:\ncd <workspace>\ncolcon build --symlink-install --packages-select " + curr_scene.name + "\nsource install/setup.bash\nros2 launch " + curr_scene.name + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true");
   } else {
     append_error("No scene selected to generate files from.");
   }
@@ -1967,20 +1965,43 @@ std::string SceneSelect::build_workcell_readiness_report(
   if (!scene.robot_loaded || scene.robot_vector.empty() || is_placeholder_value(scene.robot_vector[0].name)) { blockers.emplace_back("missing robot"); }
   if (scene.robot_loaded && !scene.robot_vector.empty()) {
     const auto & r = scene.robot_vector[0];
-    if (is_placeholder_value(r.description_pkg)) { blockers.emplace_back("missing robot description package"); }
-    if (is_placeholder_value(r.moveit_config_pkg)) { blockers.emplace_back("missing robot MoveIt config package"); }
+    if (r.filepath.empty() || is_placeholder_value(r.filepath)) {
+      warnings.emplace_back("readiness metadata not available from legacy scene model: robot filepath missing");
+    }
   }
   if (scene.ee_loaded && !scene.ee_vector.empty()) {
     const auto & ee = scene.ee_vector[0];
     if (is_placeholder_value(ee.brand) || is_placeholder_value(ee.name)) { blockers.emplace_back("missing required end-effector fields"); }
-    if (normalize_placeholder_token(ee.type).find("unknown") != std::string::npos) { warnings.emplace_back("unknown end-effector type requires manual confirmation"); }
+    if (normalize_placeholder_token(ee.ee_type).find("unknown") != std::string::npos) { warnings.emplace_back("unknown end-effector type requires manual confirmation"); }
+    if (ee.filepath.empty() || is_placeholder_value(ee.filepath)) {
+      warnings.emplace_back("readiness metadata not available from legacy scene model: end-effector filepath missing");
+    }
   }
   for (const auto & obj : scene.object_vector) {
-    if (obj.filepath.find("meshes/generated_objects/") != std::string::npos) { warnings.emplace_back("custom_stl generated mesh detected"); }
-    if (obj.filepath.empty() || is_placeholder_value(obj.filepath)) { blockers.emplace_back("missing STL path"); }
-    if (obj.filepath.size() > 0 && obj.filepath[0] == '/') { warnings.emplace_back("external absolute STL path"); }
+    bool object_has_mesh_path = false;
+    bool object_has_absolute_mesh_path = false;
+    for (const auto & link : obj.link_vector) {
+      for (const auto & visual : link.visual_vector) {
+        const std::string & path = visual.geometry.filepath;
+        if (!path.empty()) {
+          object_has_mesh_path = true;
+          if (path.find("meshes/generated_objects/") != std::string::npos) { warnings.emplace_back("custom_stl generated mesh detected"); }
+          if (path[0] == '/') { object_has_absolute_mesh_path = true; }
+        }
+      }
+      for (const auto & collision : link.collision_vector) {
+        const std::string & path = collision.geometry.filepath;
+        if (!path.empty()) {
+          object_has_mesh_path = true;
+          if (path.find("meshes/generated_objects/") != std::string::npos) { warnings.emplace_back("custom_stl generated mesh detected"); }
+          if (path[0] == '/') { object_has_absolute_mesh_path = true; }
+        }
+      }
+    }
+    if (!object_has_mesh_path) { warnings.emplace_back("readiness metadata not available from legacy scene model: object STL path missing"); }
+    if (object_has_absolute_mesh_path) { warnings.emplace_back("external absolute STL path"); }
     if (normalize_placeholder_token(obj.name).find("conveyor_placeholder") != std::string::npos) { warnings.emplace_back("conveyor_placeholder is visual/metadata only"); }
-    if (is_placeholder_value(obj.name) || is_placeholder_value(obj.base_link.name)) { blockers.emplace_back("placeholder unknown/none/null values"); }
+    if (is_placeholder_value(obj.name)) { blockers.emplace_back("placeholder unknown/none/null values"); }
   }
   const TaskGraspConfig task_cfg = infer_task_grasp_defaults(scene);
   if (task_cfg.approach_distance_m < 0.0 || task_cfg.retreat_distance_m < 0.0) {
