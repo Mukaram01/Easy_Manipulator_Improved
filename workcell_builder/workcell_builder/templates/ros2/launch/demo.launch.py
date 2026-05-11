@@ -252,13 +252,19 @@ def _extract_controller_joints(robot_description_semantic_config, robot_descript
     groups_with_chain = []
     preferred_group_names = ["manipulator", "arm", "ur_manipulator"]
 
+    movable_joints, _ = _collect_movable_urdf_joints(urdf_root)
+    movable_joint_set = set(movable_joints)
+
     for group in srdf_root.findall(".//group"):
         group_name = group.get("name") or "arm"
         group_names.append(group_name)
         joints = [joint.get("name") for joint in group.findall("joint") if joint.get("name")]
         if joints:
-            groups_with_explicit.append((group_name, joints))
+            movable_explicit_joints = [joint for joint in joints if joint in movable_joint_set]
+            groups_with_explicit.append((group_name, joints, movable_explicit_joints))
             if group_name in preferred_group_names:
+                if movable_explicit_joints:
+                    return group_name, movable_explicit_joints
                 return group_name, joints
         for chain in group.findall("chain"):
             base_link = chain.get("base_link")
@@ -267,9 +273,13 @@ def _extract_controller_joints(robot_description_semantic_config, robot_descript
                 groups_with_chain.append((group_name, base_link, tip_link))
 
     if groups_with_explicit:
-        return groups_with_explicit[0]
-
-    movable_joints, _ = _collect_movable_urdf_joints(urdf_root)
+        best_group_name, original_joints, movable_explicit_joints = max(
+            groups_with_explicit,
+            key=lambda entry: len(entry[2]),
+        )
+        if movable_explicit_joints:
+            return best_group_name, movable_explicit_joints
+        return best_group_name, original_joints
     if all(joint in set(movable_joints) for joint in UR_ARM_JOINTS):
         return "manipulator", UR_ARM_JOINTS
 
