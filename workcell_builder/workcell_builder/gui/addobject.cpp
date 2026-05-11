@@ -32,6 +32,7 @@
 #include <QInputDialog>
 #include <QDoubleSpinBox>
 #include "generated_stl_writer.hpp"
+#include "object_placement_dialog.hpp"
 
 
 AddObject::AddObject(QWidget * parent)
@@ -91,6 +92,13 @@ generated mesh: meshes/generated_objects/"+safe+".stl"));
   if (layout()) { layout()->addWidget(import_btn); }
   auto * add_asset_btn = new QPushButton("Add Asset Object", this);
   if (layout()) { layout()->addWidget(add_asset_btn); }
+  auto * mgr_btn = new QPushButton("Object Placement Manager", this);
+  if (layout()) { layout()->addWidget(mgr_btn); }
+  connect(mgr_btn, &QPushButton::clicked, this, [this]() {
+    workcell_builder::ObjectPlacementDialog dlg(this);
+    dlg.setWindowTitle("Object Placement Manager");
+    dlg.exec();
+  });
   (void)QString("Object Placement Manager");
   (void)QString("Placed Objects");
   (void)QString("Duplicate Object");

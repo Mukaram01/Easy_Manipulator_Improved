@@ -59,12 +59,14 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp",
         repo_root / "workcell_builder/workcell_builder/include/object_placement_model.hpp",
         repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/object_placement_dialog.hpp",
+        repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
 
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
