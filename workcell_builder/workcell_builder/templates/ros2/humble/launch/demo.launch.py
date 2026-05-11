@@ -713,20 +713,23 @@ def _launch_setup(context):
     )
 
 
-    task_preview_node = Node(
+    task_preview_helper = os.path.join(
+        get_package_share_directory(scene_pkg), "launch", "workcell_visual_scene_publisher.py"
+    )
+    task_preview_process = ExecuteProcess(
+        cmd=[
+            "python3",
+            task_preview_helper,
+            "--scene-name", scene_pkg,
+            "--show-task-flow", "true",
+            "--show-grasp-markers", task_preview_markers,
+        ],
         condition=IfCondition(launch_task_preview),
-        package="run_grasp_execution",
-        executable="task_recipe_visualizer_node.py",
-        name="task_recipe_visualizer_node",
         output="screen",
-        parameters=[{
-            "task_recipe_path": task_recipe_path,
-            "output_dir": task_preview_output_dir,
-            "publish_markers": task_preview_markers,
-            "dry_run_only": True,
-            "keep_alive": True,
-            "frame_id": "world",
-        }],
+    )
+    task_preview_missing_log = LogInfo(
+        condition=IfCondition(launch_task_preview),
+        msg="[workcell_builder] Task preview helper not found; continuing without task preview.",
     )
 
     controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
@@ -749,7 +752,7 @@ def _launch_setup(context):
         rviz_node,
         workcell_marker_publisher,
         collision_object_publisher,
-        task_preview_node,
+        task_preview_process if os.path.exists(task_preview_helper) else task_preview_missing_log,
     ]
 
 
