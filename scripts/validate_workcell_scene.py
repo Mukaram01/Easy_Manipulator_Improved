@@ -44,6 +44,12 @@ def validate_text(t:str, strict:bool=False):
             if 'type: exclusion' not in t and 'type: warning' not in t: (blocks if strict else warns).append('workspace zone type unknown')
 
     if 'external_stl_warning' in t: (blocks if strict else warns).append('external mesh path warning')
+    if 'deployment:' in t:
+        if 'real_hardware_metadata_status:' not in t: warns.append('missing real_hardware_metadata_status')
+        if 'driver_package_hint:' not in t: warns.append('robot driver package hint missing')
+        if 'controller_type_hint:' not in t: warns.append('controller hint missing')
+        if 'io_type:' not in t: warns.append('tool I/O mapping missing for suction/gripper')
+        if 'adapter_metadata_file:' not in t: warns.append('EPD adapter metadata missing')
     return warns, blocks
 
 def main()->int:
@@ -62,3 +68,5 @@ def main()->int:
     return 1 if blocks else 0
 
 if __name__=='__main__': raise SystemExit(main())
+
+# deployment metadata checks

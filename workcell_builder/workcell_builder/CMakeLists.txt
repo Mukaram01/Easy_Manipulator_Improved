@@ -121,6 +121,7 @@ add_executable(workcell_builder
     src_workcell_scene_schema.cpp
     src_workcell_scene_roundtrip.cpp
     src_camera_perception_profile.cpp
+    src_deployment_compatibility_profile.cpp
     src_offline_readiness_overlay.cpp
     src_validation_dashboard_model.cpp
     src_scene_template_library.cpp

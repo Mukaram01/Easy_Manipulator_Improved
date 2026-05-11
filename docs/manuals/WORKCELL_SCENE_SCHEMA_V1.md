@@ -145,3 +145,30 @@ Run:
 ```bash
 python3 scripts/validate_workcell_scene.py --scene-dir <generated_scene_dir>
 ```
+
+
+## Deployment Compatibility Metadata
+```yaml
+deployment:
+  simulation_ready: true
+  real_hardware_ready: false
+  real_hardware_metadata_status: REAL_HARDWARE_DRIVER_REQUIRED
+  robot_driver_requirement:
+    driver_package_hint: ur_robot_driver
+    controller_type_hint: ur_ros2_control
+    network_required: true
+  tool_io_requirement:
+    io_required: true
+    io_type: vacuum
+  camera_calibration_requirement:
+    calibration_required: true
+  epd_compatibility:
+    status: EPD_METADATA_READY
+    rgb_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/depth/image_rect_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    pointcloud_topic: /camera/camera/depth/color/points
+    adapter_metadata_file: config/epd_adapter_metadata.json
+  warnings: []
+  blockers: []
+```
