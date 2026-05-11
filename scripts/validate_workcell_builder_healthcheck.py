@@ -151,6 +151,23 @@ def main() -> int:
         _check(needle in scene_cpp or needle in (repo_root / "workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8"), f"task/grasp marker present: {needle}", errors)
 
     
+
+    golden_gen = repo_root / "scripts/generate_golden_workcell_demo.py"
+    golden_val = repo_root / "scripts/validate_golden_workcell_demo.py"
+    _check(golden_gen.exists(), "golden demo generator script exists", errors)
+    _check(golden_val.exists(), "golden demo validator script exists", errors)
+    if golden_gen.exists():
+        gtxt = golden_gen.read_text(encoding="utf-8").lower()
+        for marker in ["fake_hardware_first: true", "real_hardware_enabled: false", "motion_command_sent: false", "runtime_execution_enabled: false", "--install-into-scenes"]:
+            _check(marker in gtxt, f"golden generator marker present: {marker}", errors)
+        for forbidden in ["import yaml", "pyyaml", "getmotionplan", "execute_trajectory", "/plan_kinematic_path"]:
+            _check(forbidden not in gtxt, f"golden generator excludes forbidden marker: {forbidden}", errors)
+    if golden_val.exists():
+        vtxt = golden_val.read_text(encoding="utf-8").lower()
+        for marker in ["workcell_golden_demo: pass", "workcell_golden_demo: warn", "workcell_golden_demo: fail"]:
+            _check(marker in vtxt, f"golden validator marker present: {marker}", errors)
+        _check("pyyaml" not in vtxt and "import yaml" not in vtxt, "golden validator uses stdlib only", errors)
+
     compat_root = repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles"
     _check((compat_root / "robots").exists() and (compat_root / "tools").exists() and (compat_root / "pairs").exists(), "compatibility profile catalog exists", errors)
     compat_cpp = (repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp").read_text(encoding="utf-8")
