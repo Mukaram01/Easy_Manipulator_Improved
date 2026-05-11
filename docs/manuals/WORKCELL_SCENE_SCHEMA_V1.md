@@ -7,6 +7,8 @@ Purpose: define one stable offline scene contract for `workcell_builder` generat
 ## Top-level sections
 Required: `scene`, `robot`, `tool`, `compatibility`, `placed_objects`, `camera`, `task`, `safety`, `metadata`.
 
+Optional: `workspace` with `bounds` and `zones` for offline readiness overlay.
+
 ## Safety
 - fake_hardware_first: true
 - motion_command_sent: false
@@ -110,3 +112,28 @@ Operator flow: Open builder -> select scene -> robot/tool -> compatibility -> ob
 
 
 Camera validation notes: camera metadata is optional; when enabled camera_id/frame_id and six-value finite pose are required. Missing pointcloud topic is a warning; missing rgb/depth can be warning or blocker in strict mode. EPD metadata is export hint only.
+
+
+## Workspace (optional)
+
+```yaml
+workspace:
+  bounds:
+    x_min: -1.5
+    x_max: 1.5
+    y_min: -1.5
+    y_max: 1.5
+    z_min: 0.0
+    z_max: 2.0
+  zones:
+    - name: robot_base_exclusion
+      type: exclusion
+      shape: circle
+      center: [0.0, 0.0]
+      radius: 0.2
+    - name: operator_area
+      type: warning
+      shape: rectangle
+      origin: [-1.0, -1.0]
+      size: [0.5, 1.0]
+```
