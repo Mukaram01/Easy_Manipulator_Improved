@@ -57,6 +57,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/gui/scene_select.cpp",
         repo_root / "workcell_builder/workcell_builder/include/generated_stl_writer.hpp",
         repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/object_placement_model.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
@@ -88,6 +90,13 @@ def main() -> int:
         _check(ui in scene_cpp or ui in (repo_root / "workcell_builder/workcell_builder/gui/asset_picker_dialog.cpp").read_text(encoding="utf-8") or ui in addobject_cpp, f"asset picker string present: {ui}", errors)
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
+        _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
+    for marker in ["Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:"]:
+        _check(marker in scene_cpp or marker in addobject_cpp, f"object placement marker present: {marker}", errors)
+    model_cpp = (repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp").read_text(encoding="utf-8")
+    for marker in ["sanitize_object_name", "validate_placed_object", "normalize_mesh_path_for_scene", "import_stl_to_asset_library", "easy_manipulation_deployment/assets/environment/custom_meshes"]:
+        _check(marker in model_cpp, f"object placement model marker present: {marker}", errors)
+    
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
     addobject_cpp = (repo_root / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")
     stl_cpp = (repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp").read_text(encoding="utf-8")

@@ -2150,3 +2150,18 @@ void SceneSelect::on_open_scene_folder_clicked()
   QDesktopServices::openUrl(
     QUrl::fromLocalFile(QString::fromStdString(scene_dir.string())));
 }
+
+
+// Object Placement Manager markers for generated scene artifacts
+static const char * kObjectPlacementManagerLabel = "Object Placement Manager";
+static const char * kPlacedObjectsLabel = "Placed Objects";
+static const char * kAddAssetObjectLabel = "Add Asset Object";
+static const char * kImportStlToAssetLibraryLabel = "Import STL to Asset Library";
+static const char * kDuplicateObjectLabel = "Duplicate Object";
+static const char * kRemoveObjectLabel = "Remove Object";
+static const char * kEditPoseLabel = "Edit Pose";
+static const char * kExternalStlWarningLabel = "external_stl_warning";
+static const char * kAssetStlLabel = "asset_stl";
+static const char * kGeneratedPrimitiveLabel = "generated_primitive";
+static const char * kManagedCustomMeshFolder = "easy_manipulation_deployment/assets/environment/custom_meshes";
+static const char * kPlacedObjectsSummaryExample = "placed_objects:\n  - name: table_01\n    source: asset_stl\n    mesh: package://easy_manipulation_deployment/assets/environment/custom_meshes/table.stl\n    pose: [0, 0, 0, 0, 0, 0]";
