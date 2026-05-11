@@ -45,3 +45,16 @@ def test_healthcheck_includes_task_recipe_preview_checks():
     txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
     for needle in ["preview_task_recipe.py", "task_recipe.py", "WORKCELL_TASK_RECIPE_PREVIEW: PASS", "task_recipe_path", "OFFLINE_ONLY", "NO_MOTION_COMMAND", "NO_MOVEIT_PLAN", "NO_REAL_HARDWARE"]:
         assert needle in txt
+
+
+def test_healthcheck_tracks_operator_flow_and_validation_dashboard_markers():
+    txt = Path("scripts/validate_workcell_builder_healthcheck.py").read_text(encoding="utf-8")
+    for needle in [
+        "Operator Workflow (Main)",
+        "Validation Dashboard",
+        "Run Offline Validation",
+        "Developer Tools: Create Golden UR5 + Robotiq 2F Cell",
+        "blocker_count",
+        "warning_count",
+    ]:
+        assert needle in txt
