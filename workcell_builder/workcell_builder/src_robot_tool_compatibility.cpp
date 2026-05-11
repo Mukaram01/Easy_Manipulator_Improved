@@ -58,6 +58,16 @@ std::map<std::string, RobotProfile> load_robot_profiles(const std::string & conf
     p.planning_group = obj.value("planning_group").toString().toStdString();
     p.default_tool_mount_link = obj.value("default_tool_mount_link").toString().toStdString();
     p.controller_family = obj.value("controller_family").toString().toStdString();
+    p.robot_family = obj.value("robot_family").toString("unknown").toStdString();
+    p.real_driver_required = obj.value("real_driver_required").toBool(true);
+    p.driver_package_hint = obj.value("driver_package_hint").toString().toStdString();
+    p.controller_type_hint = obj.value("controller_type_hint").toString().toStdString();
+    p.ros2_control_required = obj.value("ros2_control_required").toBool(true);
+    p.network_required = obj.value("network_required").toBool(true);
+    p.calibration_required = obj.value("calibration_required").toBool(false);
+    p.supported_in_simulation = obj.value("supported_in_simulation").toBool(true);
+    p.supported_on_real_hardware = obj.value("supported_on_real_hardware").toString("unknown").toStdString();
+    p.deployment_notes = obj.value("deployment_notes").toString().toStdString();
     for (const auto & v : obj.value("supported_tool_types").toArray()) { p.supported_tool_types.push_back(v.toString().toStdString()); }
     out[p.robot_id] = p;
   }
@@ -80,6 +90,13 @@ std::map<std::string, ToolProfile> load_tool_profiles(const std::string & config
     p.grasp_strategy_default = obj.value("grasp_strategy_default").toString().toStdString();
     p.release_strategy_default = obj.value("release_strategy_default").toString().toStdString();
     p.requires_io = obj.value("requires_io").toBool(false);
+    p.io_required = obj.value("io_required").toBool(p.requires_io);
+    p.io_type = obj.value("io_type").toString("unknown").toStdString();
+    p.open_command_hint = obj.value("open_command_hint").toString().toStdString();
+    p.close_command_hint = obj.value("close_command_hint").toString().toStdString();
+    p.release_command_hint = obj.value("release_command_hint").toString().toStdString();
+    p.real_hardware_io_mapping_required = obj.value("real_hardware_io_mapping_required").toBool(false);
+    p.deployment_notes = obj.value("deployment_notes").toString().toStdString();
     out[p.tool_id] = p;
   }
   return out;

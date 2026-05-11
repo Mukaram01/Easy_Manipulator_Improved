@@ -32,7 +32,7 @@ ValidationDashboardResult default_validation_dashboard_result()
   out.rows = {
     make_unknown("Scene Schema"), make_unknown("Asset Catalog"), make_unknown("Robot / Tool Compatibility"),
     make_unknown("Object Placement"), make_unknown("Camera Metadata"), make_unknown("Task Recipe"),
-    make_unknown("Readiness Overlay"), make_unknown("Fake-Hardware Smoke Static"), make_unknown("Generation Safety")};
+    make_unknown("Readiness Overlay"), make_unknown("Fake-Hardware Smoke Static"), make_unknown("Generation Safety"), make_unknown("Simulation Readiness"), make_unknown("Real Hardware Metadata"), make_unknown("Robot Driver Requirements"), make_unknown("Tool I/O Requirements"), make_unknown("Camera Calibration Requirements"), make_unknown("EPD Compatibility Metadata")};
   out.status = ValidationStatus::UNKNOWN;
   return out;
 }
@@ -59,10 +59,22 @@ ValidationDashboardResult collect_validation_dashboard_results(const Scene & sce
   }
   if (scene.object_vector.empty()) {
     for (auto & r : out.rows) {
+    if (r.check_name == "Simulation Readiness") {r.message = "Offline-only simulation readiness metadata.";}
+    if (r.check_name == "Real Hardware Metadata") {r.status = ValidationStatus::WARN; r.message = "NOT ENABLED / METADATA ONLY"; r.warning_count = 1;}
+    if (r.check_name == "Robot Driver Requirements") {r.status = ValidationStatus::WARN; r.message = "driver package hint missing"; r.warning_count = 1;}
+    if (r.check_name == "Tool I/O Requirements") {r.status = ValidationStatus::WARN; r.message = "tool I/O mapping missing for suction/gripper"; r.warning_count = 1;}
+    if (r.check_name == "Camera Calibration Requirements") {r.status = ValidationStatus::WARN; r.message = "camera topics incomplete"; r.warning_count = 1;}
+    if (r.check_name == "EPD Compatibility Metadata") {r.status = ValidationStatus::WARN; r.message = "EPD adapter metadata missing"; r.warning_count = 1;}
       if (r.check_name == "Object Placement") {r.status = ValidationStatus::WARN; r.message = "No placed objects yet."; r.warning_count = 1; r.fix_hint = "Add placed objects or support surface.";}
     }
   }
   for (auto & r : out.rows) {
+    if (r.check_name == "Simulation Readiness") {r.message = "Offline-only simulation readiness metadata.";}
+    if (r.check_name == "Real Hardware Metadata") {r.status = ValidationStatus::WARN; r.message = "NOT ENABLED / METADATA ONLY"; r.warning_count = 1;}
+    if (r.check_name == "Robot Driver Requirements") {r.status = ValidationStatus::WARN; r.message = "driver package hint missing"; r.warning_count = 1;}
+    if (r.check_name == "Tool I/O Requirements") {r.status = ValidationStatus::WARN; r.message = "tool I/O mapping missing for suction/gripper"; r.warning_count = 1;}
+    if (r.check_name == "Camera Calibration Requirements") {r.status = ValidationStatus::WARN; r.message = "camera topics incomplete"; r.warning_count = 1;}
+    if (r.check_name == "EPD Compatibility Metadata") {r.status = ValidationStatus::WARN; r.message = "EPD adapter metadata missing"; r.warning_count = 1;}
     if (r.check_name == "Asset Catalog") {r.report_path = "generated/asset_catalog_validation.json";}
     if (r.check_name == "Task Recipe") {r.report_path = "config/task_recipe.yaml";}
     if (r.check_name == "Readiness Overlay") {r.report_path = "generated/readiness_overlay_report.json";}

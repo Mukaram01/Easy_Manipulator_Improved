@@ -19,6 +19,11 @@ struct CameraProfile
   std::string mount_type{"fixed"};
   std::string perception_hint{"rgbd_object_detection"};
   std::string epd_input_hint{"external_epd_adapter"};
+  bool calibration_required{true};
+  bool real_camera_driver_required{true};
+  std::string driver_package_hint{"realsense2_camera"};
+  std::string epd_compatible{"metadata_only"};
+  std::string deployment_notes{"EPD metadata export only"};
   std::vector<std::string> notes;
   std::vector<std::string> warnings;
 };

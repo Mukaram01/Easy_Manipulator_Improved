@@ -23,6 +23,16 @@ struct RobotProfile
   std::string planning_group;
   std::string default_tool_mount_link;
   std::string controller_family;
+  std::string robot_family{"unknown"};
+  bool real_driver_required{true};
+  std::string driver_package_hint;
+  std::string controller_type_hint;
+  bool ros2_control_required{true};
+  bool network_required{true};
+  bool calibration_required{false};
+  std::string supported_on_real_hardware{"unknown"};
+  bool supported_in_simulation{true};
+  std::string deployment_notes;
   std::vector<std::string> supported_tool_types;
   std::vector<std::string> warnings;
 };
@@ -41,6 +51,13 @@ struct ToolProfile
   std::string grasp_strategy_default;
   std::string release_strategy_default;
   bool requires_io = false;
+  bool io_required = false;
+  std::string io_type{"unknown"};
+  std::string open_command_hint;
+  std::string close_command_hint;
+  std::string release_command_hint;
+  bool real_hardware_io_mapping_required{false};
+  std::string deployment_notes;
   std::vector<std::string> warnings;
 };
 
