@@ -72,3 +72,37 @@ def test_load_yaml_returns_none_on_parse_error(tmp_path, monkeypatch):
     bad_yaml.write_text('list: [1, 2')
     monkeypatch.setattr(demo, 'get_package_share_directory', lambda pkg: str(pkg_dir))
     assert demo.load_yaml('pkg', bad_yaml.name) is None
+
+
+def test_extract_controller_joints_prefers_movable_srdf_group():
+    srdf = """
+<robot name="test_robot">
+  <group name="gripper">
+    <joint name="gripper_base_joint"/>
+    <joint name="gripper_finger1_finger_joint"/>
+  </group>
+  <group name="manipulator">
+    <joint name="shoulder_pan_joint"/>
+    <joint name="shoulder_lift_joint"/>
+    <joint name="elbow_joint"/>
+    <joint name="wrist_1_joint"/>
+    <joint name="wrist_2_joint"/>
+    <joint name="wrist_3_joint"/>
+  </group>
+</robot>
+"""
+    urdf = """
+<robot name="test_robot">
+  <joint name="shoulder_pan_joint" type="revolute"/>
+  <joint name="shoulder_lift_joint" type="revolute"/>
+  <joint name="elbow_joint" type="revolute"/>
+  <joint name="wrist_1_joint" type="revolute"/>
+  <joint name="wrist_2_joint" type="revolute"/>
+  <joint name="wrist_3_joint" type="revolute"/>
+  <joint name="gripper_base_joint" type="fixed"/>
+  <joint name="gripper_finger1_finger_joint" type="fixed"/>
+</robot>
+"""
+    group_name, joints = demo._extract_controller_joints(srdf, urdf)
+    assert group_name == "manipulator"
+    assert joints == demo.UR_ARM_JOINTS
