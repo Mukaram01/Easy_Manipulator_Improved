@@ -15,8 +15,17 @@ def test_visualizer_node_and_launch_template_safety_contract():
         assert needle in txt
 
     launch = Path("workcell_builder/workcell_builder/templates/ros2/humble/launch/demo.launch.py").read_text(encoding="utf-8")
-    for needle in ["launch_task_preview", "task_preview_markers", "task_preview_output_dir", "task_recipe_visualizer_node", "condition=IfCondition"]:
+    for needle in [
+        "launch_task_preview",
+        "task_preview_markers",
+        "task_preview_output_dir",
+        "workcell_visual_scene_publisher.py",
+        "Task preview helper not found; continuing without task preview.",
+        "condition=IfCondition(launch_task_preview)",
+    ]:
         assert needle in launch
+
+    assert "task_recipe_visualizer_node.py" not in launch
 
     lowered = txt.lower()
     for forbidden in ["getmotionplan", "execute_trajectory", "followjointtrajectory", "actionclient", "hardware_interface"]:
