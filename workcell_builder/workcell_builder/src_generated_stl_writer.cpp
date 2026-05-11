@@ -1,8 +1,8 @@
 #include "generated_stl_writer.hpp"
+#include "object_placement_model.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <tuple>
@@ -40,15 +40,6 @@ bool write_mesh(const PrimitiveSpec & spec, const std::string & out_path, const 
   return true;
 }
 }
-std::string sanitize_object_name(const std::string & input)
-{
-  std::string out;
-  for (char c : input) out.push_back(std::isalnum(static_cast<unsigned char>(c)) ? static_cast<char>(std::tolower(c)) : '_');
-  while (!out.empty() && out.front() == '_') out.erase(out.begin());
-  while (!out.empty() && out.back() == '_') out.pop_back();
-  return out.empty() ? "custom_object" : out;
-}
-
 bool validate_primitive_spec(const PrimitiveSpec & spec, std::string * reason)
 {
   if (sanitize_object_name(spec.object_name).empty()) { if (reason) *reason = "invalid object name"; return false; }
