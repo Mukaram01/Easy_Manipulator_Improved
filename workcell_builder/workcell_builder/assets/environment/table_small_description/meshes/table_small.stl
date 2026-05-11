@@ -1,0 +1,86 @@
+solid table_small
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 -0.375
+   vertex 0.6 -0.4 -0.375
+   vertex 0.6 0.4 -0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 -0.375
+   vertex 0.6 0.4 -0.375
+   vertex -0.6 0.4 -0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 0.375
+   vertex 0.6 0.4 0.375
+   vertex 0.6 -0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 0.375
+   vertex -0.6 0.4 0.375
+   vertex 0.6 0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 -0.375
+   vertex -0.6 -0.4 0.375
+   vertex 0.6 -0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 -0.4 -0.375
+   vertex 0.6 -0.4 0.375
+   vertex 0.6 -0.4 -0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 -0.4 -0.375
+   vertex 0.6 -0.4 0.375
+   vertex 0.6 0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 -0.4 -0.375
+   vertex 0.6 0.4 0.375
+   vertex 0.6 0.4 -0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 0.4 -0.375
+   vertex 0.6 0.4 0.375
+   vertex -0.6 0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.6 0.4 -0.375
+   vertex -0.6 0.4 0.375
+   vertex -0.6 0.4 -0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 0.4 -0.375
+   vertex -0.6 0.4 0.375
+   vertex -0.6 -0.4 0.375
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.6 0.4 -0.375
+   vertex -0.6 -0.4 0.375
+   vertex -0.6 -0.4 -0.375
+  endloop
+ endfacet
+endsolid table_small

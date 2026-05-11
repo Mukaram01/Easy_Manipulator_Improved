@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tray">
+  <xacro:macro name="tray" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
+    <link name="${prefix}tray_link">
+      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/tray_description/meshes/tray.stl" scale="1 1 1"/></geometry></visual>
+      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.5 0.35 0.06"/></geometry></collision>
+    </link>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,86 @@
+solid tote_box
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 -0.14
+   vertex 0.3 -0.2 -0.14
+   vertex 0.3 0.2 -0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 -0.14
+   vertex 0.3 0.2 -0.14
+   vertex -0.3 0.2 -0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 0.14
+   vertex 0.3 0.2 0.14
+   vertex 0.3 -0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 0.14
+   vertex -0.3 0.2 0.14
+   vertex 0.3 0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 -0.14
+   vertex -0.3 -0.2 0.14
+   vertex 0.3 -0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 -0.2 -0.14
+   vertex 0.3 -0.2 0.14
+   vertex 0.3 -0.2 -0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.3 -0.2 -0.14
+   vertex 0.3 -0.2 0.14
+   vertex 0.3 0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.3 -0.2 -0.14
+   vertex 0.3 0.2 0.14
+   vertex 0.3 0.2 -0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.3 0.2 -0.14
+   vertex 0.3 0.2 0.14
+   vertex -0.3 0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.3 0.2 -0.14
+   vertex -0.3 0.2 0.14
+   vertex -0.3 0.2 -0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 0.2 -0.14
+   vertex -0.3 0.2 0.14
+   vertex -0.3 -0.2 0.14
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.3 0.2 -0.14
+   vertex -0.3 -0.2 0.14
+   vertex -0.3 -0.2 -0.14
+  endloop
+ endfacet
+endsolid tote_box

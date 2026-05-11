@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="pallet">
+  <xacro:macro name="pallet" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
+    <link name="${prefix}pallet_link">
+      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/pallet_description/meshes/pallet.stl" scale="1 1 1"/></geometry></visual>
+      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="1.0 0.8 0.14"/></geometry></collision>
+    </link>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,86 @@
+solid pallet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 -0.07
+   vertex 0.5 -0.4 -0.07
+   vertex 0.5 0.4 -0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 -0.07
+   vertex 0.5 0.4 -0.07
+   vertex -0.5 0.4 -0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 0.07
+   vertex 0.5 0.4 0.07
+   vertex 0.5 -0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 0.07
+   vertex -0.5 0.4 0.07
+   vertex 0.5 0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 -0.07
+   vertex -0.5 -0.4 0.07
+   vertex 0.5 -0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 -0.4 -0.07
+   vertex 0.5 -0.4 0.07
+   vertex 0.5 -0.4 -0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.5 -0.4 -0.07
+   vertex 0.5 -0.4 0.07
+   vertex 0.5 0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.5 -0.4 -0.07
+   vertex 0.5 0.4 0.07
+   vertex 0.5 0.4 -0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.5 0.4 -0.07
+   vertex 0.5 0.4 0.07
+   vertex -0.5 0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex 0.5 0.4 -0.07
+   vertex -0.5 0.4 0.07
+   vertex -0.5 0.4 -0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 0.4 -0.07
+   vertex -0.5 0.4 0.07
+   vertex -0.5 -0.4 0.07
+  endloop
+ endfacet
+ facet normal 0 0 0
+  outer loop
+   vertex -0.5 0.4 -0.07
+   vertex -0.5 -0.4 0.07
+   vertex -0.5 -0.4 -0.07
+  endloop
+ endfacet
+endsolid pallet

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="conveyor_placeholder">
+  <xacro:macro name="conveyor_placeholder" params="prefix parent xyz:='0 0 0' rpy:='0 0 0'">
+    <link name="${prefix}conveyor_placeholder_link">
+      <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><mesh filename="package://workcell_builder/assets/environment/conveyor_placeholder_description/meshes/conveyor_placeholder.stl" scale="1 1 1"/></geometry></visual>
+      <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="1.2 0.4 0.25"/></geometry></collision>
+    </link>
+  </xacro:macro>
+</robot>
