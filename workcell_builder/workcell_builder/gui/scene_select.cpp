@@ -59,6 +59,17 @@
 namespace fs = boost::filesystem;
 
 namespace {
+
+
+static const char * kAssetDiscoveryLabel = "Asset discovery paths";
+static const char * kSelectRobotAssetLabel = "Select Robot Asset";
+static const char * kSelectEndEffectorAssetLabel = "Select End Effector Asset";
+static const char * kSelectExistingStlLabel = "Select Existing STL";
+static const char * kPresetTable = "table";
+static const char * kPresetBin = "bin";
+static const char * kPresetConveyorPlaceholder = "conveyor_placeholder";
+static const char * kPresetFixture = "fixture";
+static const char * kPresetCustomStl = "custom_stl";
 constexpr const char * kSceneRootEnvVar = "WORKCELL_BUILDER_SCENE_ROOT";
 
 [[maybe_unused]] bool change_directory(const fs::path & p)
