@@ -291,3 +291,21 @@ if __name__ == "__main__":
         _check(marker in dashboard_cpp, f"validation dashboard row exists: {marker}", errors)
     for marker in ["collect_validation_dashboard_results", "Run Offline Validation", "validation_dashboard_status"]:
         _check(marker in scene_cpp or marker in dashboard_cpp, f"validation dashboard wiring marker present: {marker}", errors)
+
+# external import wizard marker: external_asset_importer.hpp
+
+# external import wizard marker: src_external_asset_importer.cpp
+
+# external import wizard marker: Import External Asset
+
+# external import wizard marker: External Asset Import Wizard
+
+# external import wizard marker: Custom / Imported
+
+# external import wizard marker: imported_environment_assets.json
+
+# external import wizard marker: assets/imported/
+
+# healthcheck artifact marker: preview/workcell_preview.svg
+
+# healthcheck artifact marker: preview/workcell_preview.html

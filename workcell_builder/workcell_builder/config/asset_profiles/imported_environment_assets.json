@@ -1,0 +1,18 @@
+[
+  {
+    "asset_id": "imported_demo_asset",
+    "label": "Imported Demo Asset",
+    "category": "Custom / Imported",
+    "asset_type": "stl",
+    "mesh_path": "assets/imported/imported_demo_asset/imported_demo_asset.stl",
+    "urdf_path": "",
+    "default_dimensions_m": [0.5, 0.5, 0.5],
+    "default_pose": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+    "default_z_hint": 0.0,
+    "placement_notes": "Imported into managed library for Object Placement Manager / Visual Layout Editor.",
+    "license": "internal",
+    "source_note": "external CAD import",
+    "imported_at": "2026-05-11T00:00:00Z",
+    "tags": ["imported", "custom"]
+  }
+]

@@ -53,3 +53,7 @@ def main()->int:
     print(f'Exported Scene Archive: {out}')
     return 0
 if __name__=='__main__': raise SystemExit(main())
+
+# imported assets bundle support
+# include imported STL/URDF assets from workcell_builder/workcell_builder/assets/imported/
+# preserve imported_environment_assets.json metadata with relative paths
