@@ -441,6 +441,9 @@ def _launch_setup(context):
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
     task_recipe_path = LaunchConfiguration("task_recipe_path")
+    launch_task_preview = LaunchConfiguration("launch_task_preview")
+    task_preview_output_dir = LaunchConfiguration("task_preview_output_dir")
+    task_preview_markers = LaunchConfiguration("task_preview_markers")
     # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
@@ -710,15 +713,34 @@ def _launch_setup(context):
         output="screen",
     )
 
+
+    task_preview_node = Node(
+        condition=IfCondition(PythonExpression([launch_task_preview, " == 'true'"])),
+        package="run_grasp_execution",
+        executable="task_recipe_visualizer_node.py",
+        name="task_recipe_visualizer_node",
+        output="screen",
+        parameters=[{
+            "task_recipe_path": task_recipe_path,
+            "output_dir": task_preview_output_dir,
+            "publish_markers": task_preview_markers,
+            "dry_run_only": True,
+            "keep_alive": True,
+            "frame_id": "world",
+        }],
+    )
+
     controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
     controller_warning_logs = [LogInfo(msg=f"[workcell_builder] WARNING: {warning}") for warning in controller_filter_warnings]
     fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)} launch_rviz:={launch_rviz.perform(context)}; headless hint launch_rviz:=false)")
     task_recipe_log = LogInfo(msg=f"[workcell_builder] Task recipe loaded for offline preview: {task_recipe_path.perform(context)}")
+    task_preview_log = LogInfo(msg="[workcell_builder] Offline dry-run preview only — no robot motion, no MoveIt planning, no real hardware.")
 
     return [
         octomap_launch_message,
         fake_hw_ready_log,
         task_recipe_log,
+        task_preview_log,
         *controller_status_logs,
         *controller_warning_logs,
         static_tf,
@@ -728,6 +750,7 @@ def _launch_setup(context):
         rviz_node,
         workcell_marker_publisher,
         collision_object_publisher,
+        task_preview_node,
     ]
 
 
@@ -786,6 +809,21 @@ def generate_launch_description():
             "launch_rviz",
             default_value="true",
             description="Launch RViz alongside MoveIt nodes (set false for headless CI/smoke).",
+        ),
+        DeclareLaunchArgument(
+            "launch_task_preview",
+            default_value="true",
+            description="Launch passive task recipe RViz/log preview node (dry-run only).",
+        ),
+        DeclareLaunchArgument(
+            "task_preview_output_dir",
+            default_value="/tmp/workcell_task_preview",
+            description="Output directory for task_plan_preview.json and task_plan_preview.md.",
+        ),
+        DeclareLaunchArgument(
+            "task_preview_markers",
+            default_value="true",
+            description="Publish task preview MarkerArray on /workcell_studio/task_plan_markers.",
         ),
         DeclareLaunchArgument(
             "task_recipe_path",

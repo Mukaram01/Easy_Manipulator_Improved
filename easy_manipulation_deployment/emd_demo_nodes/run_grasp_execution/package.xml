@@ -16,6 +16,8 @@
   <depend>emd_waypoint_execution</depend>
 
   <exec_depend>xacro</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
