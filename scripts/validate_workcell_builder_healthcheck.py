@@ -242,6 +242,19 @@ def main() -> int:
     bundle_validator_text = (repo_root / 'scripts/validate_workcell_scene_bundle.py').read_text(encoding='utf-8') if (repo_root / 'scripts/validate_workcell_scene_bundle.py').exists() else ''
     for marker in ['WORKCELL_SCENE_BUNDLE: PASS','WORKCELL_SCENE_BUNDLE: WARN','WORKCELL_SCENE_BUNDLE: FAIL','workcell_bundle/v1','unsafe paths']:
         _check(marker in bundle_validator_text or marker in scene_cpp, f"bundle marker present: {marker}", errors)
+
+    template_catalog = repo_root / "workcell_builder/workcell_builder/config/scene_templates/scene_templates.json"
+    template_helper_h = repo_root / "workcell_builder/workcell_builder/include/scene_template_library.hpp"
+    template_helper_cpp = repo_root / "workcell_builder/workcell_builder/src_scene_template_library.cpp"
+    template_cli = repo_root / "scripts/generate_workcell_scene_from_template.py"
+    _check(template_catalog.exists(), "scene template catalog exists", errors)
+    _check(template_helper_h.exists() and template_helper_cpp.exists(), "scene template helper files exist", errors)
+    _check(template_cli.exists(), "scene template CLI exists", errors)
+    template_text = template_catalog.read_text(encoding="utf-8") if template_catalog.exists() else ""
+    for marker in ["ur5_pick_place_cell", "ur5_sorting_cell", "camera_inspection_cell", "conveyor_pick_placeholder_cell", "palletizing_placeholder_cell", "fake_hardware_first", "real_hardware_enabled"]:
+        _check(marker in template_text, f"template marker present: {marker}", errors)
+    for forbidden in ["bom", "bill of materials", "pyyaml", "import yaml", "getmotionplan", "execute_trajectory"]:
+        _check(forbidden not in (template_text + (template_cli.read_text(encoding="utf-8") if template_cli.exists() else "")).lower(), f"template feature excludes forbidden marker: {forbidden}", errors)
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([
             "bash", "-lc",
