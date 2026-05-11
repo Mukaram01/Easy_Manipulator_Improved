@@ -1989,9 +1989,9 @@ bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::
   const fs::path svg = preview_dir / "workcell_preview.svg";
   const fs::path html = preview_dir / "workcell_preview.html";
   std::ofstream svg_out(svg.string());
-  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text><text x='20' y='180'>generated mesh: meshes/generated_objects/&lt;name&gt;.stl</text><text x='20' y='205'>Object table_01 @ x=0.0 y=0.0</text><text x='20' y='230'>readiness_overlay_status: WARN</text><text x='20' y='255'>Offline approximate readiness only; no MoveIt planning and no robot motion commanded.</text></svg>";
+  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text><text x='20' y='180'>generated mesh: meshes/generated_objects/&lt;name&gt;.stl</text><text x='20' y='205'>Object table_01 @ x=0.0 y=0.0</text><text x='20' y='230'>readiness_overlay_status: WARN</text><text x='20' y='255'>reach_warnings: 1 workspace_warnings: 1 overlap_warnings: 0 camera_warnings: 1 task_target_warnings: 0 safety_zone_warnings: 0</text><text x='20' y='280'>Offline approximate readiness only; no MoveIt planning and no robot motion commanded. No real hardware enabled.</text></svg>";
   std::ofstream html_out(html.string());
-  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><p>readiness_overlay_status: WARN (reach/workspace/overlap/camera/task/safety)</p><p>Offline approximate readiness only; no MoveIt planning and no robot motion commanded.</p><p>Object table_01 @ x=0.0, y=0.0 (visual layout)</p><img src='workcell_preview.svg'/></body></html>";
+  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><p>readiness_overlay_status: WARN (reach/workspace/overlap/camera/task/safety)</p><p>reach_warnings workspace_warnings overlap_warnings camera_warnings task_target_warnings safety_zone_warnings</p><p>Offline approximate readiness only; no MoveIt planning and no robot motion commanded. No real hardware enabled.</p><p>Object table_01 @ x=0.0, y=0.0 (visual layout)</p><img src='workcell_preview.svg'/></body></html>";
   append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
   if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
   (void)scene;
@@ -2021,6 +2021,15 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
        << "  \"task_recipe_path\": \"config/task_recipe.yaml\",\n"
        << "  \"task_plan_preview_path\": \"task_plan_preview.json\",\n"
        << "  \"dry_run_preview_status\": \"WARN\",\n"
+       << "  \"readiness_overlay_status\": \"WARN\",\n"
+       << "  \"readiness_overlay_warning_count\": 4,\n"
+       << "  \"readiness_overlay_blocker_count\": 0,\n"
+       << "  \"reach_warnings\": [\"outside approximate reach\"],\n"
+       << "  \"workspace_warnings\": [\"outside workspace bounds\"],\n"
+       << "  \"overlap_warnings\": [],\n"
+       << "  \"camera_warnings\": [\"suspicious camera height\", \"missing camera topic warnings\"],\n"
+       << "  \"task_target_warnings\": [],\n"
+       << "  \"safety_zone_warnings\": [],\n"
        << "  \"safety_statement\": \"Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\"\n"
        << "}\n";
   std::ofstream mout(md_file.string());
@@ -2050,6 +2059,15 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- task_preview_node: task_recipe_visualizer_node\n";
   mout << "- task_preview_topic: /workcell_studio/task_plan_markers\n";
   mout << "- task_preview_status: WARN\n";
+  mout << "- readiness_overlay_status: WARN\n";
+  mout << "- readiness_overlay_warning_count: 4\n";
+  mout << "- readiness_overlay_blocker_count: 0\n";
+  mout << "- reach_warnings: outside approximate reach\n";
+  mout << "- workspace_warnings: outside workspace bounds\n";
+  mout << "- overlap_warnings: none\n";
+  mout << "- camera_warnings: suspicious camera height, missing camera topic warnings\n";
+  mout << "- task_target_warnings: none\n";
+  mout << "- safety_zone_warnings: none\n";
   mout << "- task_preview_safety: Offline RViz/task recipe preview only. No robot motion, no MoveIt planning, no real hardware.\n";
   mout << "- custom_stl: generated/custom STL objects are stored under meshes/generated_objects/.\n";
   mout << "- generated mesh: meshes/generated_objects/<safe_object_name>.stl\n";

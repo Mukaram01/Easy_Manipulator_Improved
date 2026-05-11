@@ -13,6 +13,18 @@ struct ObjectFootprint { std::string name; double x{0.0}, y{0.0}, width{0.6}, he
 struct CameraFootprint { std::string camera_id; double x{0.0}, y{0.0}, z{0.0}; bool enabled{false}; };
 struct ReadinessOverlayIssue { std::string status; std::string message; std::string object_name; };
 struct ReadinessOverlayResult { std::string readiness_overlay_status{"UNKNOWN"}; std::vector<ReadinessOverlayIssue> issues; int blocker_count{0}; int warning_count{0}; };
+ReadinessOverlayResult evaluate_offline_readiness_overlay(
+  const std::vector<ObjectFootprint> & objects,
+  const ReachEnvelope & reach,
+  const WorkspaceBounds & workspace,
+  const std::vector<SafetyZone> & safety_zones,
+  const std::vector<CameraFootprint> & cameras,
+  const std::string & pick_source,
+  const std::string & place_target,
+  const std::string & compatibility_status,
+  const std::string & tcp_frame,
+  const std::string & tool_mount_link,
+  const std::string & camera_topic);
 
 ReachEnvelope estimate_robot_reach_envelope(const std::string & robot_id);
 ObjectFootprint estimate_object_footprint(const PlacedObject & object);
