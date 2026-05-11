@@ -1,0 +1,1 @@
+{"tool_id":"robotiq_2f85","label":"Robotiq 2F85","description_package":"robotiq_2f_85_gripper_visualization","moveit_config_package":"","tool_type":"finger","mount_link":"tool0","tcp_frame":"robotiq_85_tcp","tcp_xyz_rpy":"0 0 0.16 0 0 0","controller_hint":"parallel_gripper","grasp_strategy_default":"finger_top","release_strategy_default":"open_gripper","requires_io":false}

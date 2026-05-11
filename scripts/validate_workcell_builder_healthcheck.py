@@ -63,12 +63,14 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp",
         repo_root / "workcell_builder/workcell_builder/include/environment_layout_editor.hpp",
         repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/robot_tool_compatibility.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
 
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
@@ -139,6 +141,18 @@ def main() -> int:
     ]:
         _check(needle in scene_cpp or needle in (repo_root / "workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8"), f"task/grasp marker present: {needle}", errors)
 
+    
+    compat_root = repo_root / "workcell_builder/workcell_builder/config/compatibility_profiles"
+    _check((compat_root / "robots").exists() and (compat_root / "tools").exists() and (compat_root / "pairs").exists(), "compatibility profile catalog exists", errors)
+    compat_cpp = (repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp").read_text(encoding="utf-8")
+    compat_hpp = (repo_root / "workcell_builder/workcell_builder/include/robot_tool_compatibility.hpp").read_text(encoding="utf-8")
+    for marker in ["COMPATIBLE", "COMPATIBLE_WITH_WARNINGS", "UNKNOWN_COMPATIBILITY", "INCOMPATIBLE", "MISSING_TCP", "MISSING_MOUNT_LINK"]:
+        _check(marker in compat_cpp or marker in compat_hpp, f"compatibility status marker present: {marker}", errors)
+    for marker in ["Robot / Tool Compatibility", "Apply Profile Defaults", "Manual Override", "compatibility_status", "compatibility_warnings", "tcp_frame", "tool_mount_link"]:
+        _check(marker in scene_cpp, f"scene compatibility marker present: {marker}", errors)
+    _check("pyyaml" not in (compat_cpp + compat_hpp).lower(), "compatibility layer does not add PyYAML", errors)
+    for forbidden in ["GetMotionPlan", "execute_trajectory", "FollowJointTrajectory", "/plan_kinematic_path"]:
+        _check(forbidden.lower() not in compat_cpp.lower(), f"compatibility layer excludes runtime motion API: {forbidden}", errors)
     if args.run_colcon and not args.skip_colcon:
         code, out = _run([
             "bash", "-lc",

@@ -1,0 +1,1 @@
+{"tool_id":"generic_unknown_tool","label":"Generic Unknown Tool","description_package":"unknown","tool_type":"unknown","mount_link":"","tcp_frame":"","tcp_xyz_rpy":"0 0 0 0 0 0","controller_hint":"","grasp_strategy_default":"finger_top","release_strategy_default":"open_gripper","requires_io":false}
