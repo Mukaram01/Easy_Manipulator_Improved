@@ -79,6 +79,9 @@ bool write_ascii_stl(const PrimitiveSpec & spec, const std::string & out_path, s
     case PrimitiveType::kConveyorPlaceholder: return write_conveyor_placeholder_mesh(spec, out_path, error);
     case PrimitiveType::kFixturePlate: return write_fixture_plate_mesh(spec, out_path, error);
   }
-  if (error) *error = "unsupported primitive"; return false;
+  if (error) {
+    *error = "unsupported primitive";
+  }
+  return false;
 }
 }

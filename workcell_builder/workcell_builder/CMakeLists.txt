@@ -186,6 +186,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene_select_paths_test test/scene_select_paths_test.cpp src_scene_select_paths.cpp)
   ament_add_gtest(workcell_generate_yaml_end_effector_metadata_test
     test/generate_yaml_end_effector_metadata_test.cpp)
+  ament_add_gtest(workcell_robot_tool_compatibility_inference_test
+    test/robot_tool_compatibility_inference_test.cpp
+    src_robot_tool_compatibility.cpp)
   if(TARGET workcell_directory_inspection_test)
     target_link_libraries(workcell_directory_inspection_test
       ${Boost_LIBRARIES}
@@ -210,6 +213,23 @@ if(BUILD_TESTING)
         include
         include/attributes
         include/yaml_parser
+    )
+  endif()
+
+  if(TARGET workcell_robot_tool_compatibility_inference_test)
+    ament_target_dependencies(workcell_robot_tool_compatibility_inference_test
+      rclcpp
+    )
+    target_link_libraries(workcell_robot_tool_compatibility_inference_test
+      Qt5::Widgets
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_robot_tool_compatibility_inference_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
     )
   endif()
 
