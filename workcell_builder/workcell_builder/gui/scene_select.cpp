@@ -444,6 +444,61 @@ std::string status_from_blockers_and_warnings(bool has_blockers, bool has_warnin
   return "READY_TO_GENERATE";
 }
 
+struct TaskGraspConfig
+{
+  std::string task_type = "pick_place";
+  std::string pick_source = "selected_object";
+  std::string place_target = "selected_bin";
+  std::string grasp_strategy = "finger_top";
+  std::string orientation_mode = "vertical";
+  std::string approach_axis = "z_down";
+  double approach_distance_m = 0.12;
+  double retreat_distance_m = 0.10;
+  double place_clearance_m = 0.05;
+  std::string allowed_roll_angles_deg = "0, 90";
+  std::string allowed_yaw_angles_deg = "0";
+  int suction_cups = 1;
+  std::string release_strategy = "open_gripper";
+};
+
+TaskGraspConfig infer_task_grasp_defaults(const Scene & scene)
+{
+  TaskGraspConfig config;
+  if (scene.ee_loaded && !scene.ee_vector.empty()) {
+    const std::string type = normalize_placeholder_token(scene.ee_vector[0].type);
+    const std::string name = normalize_placeholder_token(scene.ee_vector[0].name);
+    if (type.find("suction") != std::string::npos || name.find("suction") != std::string::npos ||
+      name.find("vacuum") != std::string::npos)
+    {
+      config.grasp_strategy = "suction_top";
+      config.release_strategy = "vacuum_off";
+    }
+  }
+  return config;
+}
+
+void write_task_recipe_yaml(const fs::path & scene_dir, const TaskGraspConfig & config)
+{
+  fs::create_directories(scene_dir / "config");
+  std::ofstream out((scene_dir / "config" / "task_recipe.yaml").string());
+  out << "schema_version: workcell_task/v1\n";
+  out << "task:\n  type: " << config.task_type << "\n  pick_source: " << config.pick_source <<
+    "\n  place_target: " << config.place_target << "\n";
+  out << "grasp:\n  strategy: " << config.grasp_strategy << "\n  approach_axis: " <<
+    config.approach_axis << "\n  orientation_mode: " << config.orientation_mode << "\n";
+  out << "  approach_distance_m: " << config.approach_distance_m << "\n  retreat_distance_m: " <<
+    config.retreat_distance_m << "\n";
+  out << "  allowed_roll_angles_deg: [" << config.allowed_roll_angles_deg << "]\n";
+  out << "  allowed_yaw_angles_deg: [" << config.allowed_yaw_angles_deg << "]\n";
+  out << "  suction_cups: " << config.suction_cups <<
+    "\n  tcp_offset_xyz: [0.0, 0.0, 0.0]\n  tcp_offset_rpy: [0.0, 0.0, 0.0]\n";
+  out << "place:\n  clearance_m: " << config.place_clearance_m <<
+    "\n  orientation_mode: preserve_object_orientation\n";
+  out << "release:\n  strategy: " << config.release_strategy << "\n";
+  out << "safety:\n  fake_hardware_first: true\n  motion_command_sent: false\n";
+  out << "  runtime_execution_enabled: false\n";
+}
+
 
 SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
@@ -1416,6 +1471,7 @@ void SceneSelect::on_generate_files_clicked()
       make_object_xacro(object, object_urdf_dir.string());
     }
     generate_scene_files(curr_scene);
+    write_task_recipe_yaml(scene_dir_for_current_selection(), infer_task_grasp_defaults(curr_scene));
     bool blocked = false;
     const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
     write_workcell_studio_summary(curr_scene, scene_dir_for_current_selection(), blocked ? "BLOCKED" : "READY_TO_GENERATE");
@@ -1846,6 +1902,18 @@ std::string SceneSelect::build_workcell_readiness_report(
     if (normalize_placeholder_token(obj.name).find("conveyor_placeholder") != std::string::npos) { warnings.emplace_back("conveyor_placeholder is visual/metadata only"); }
     if (is_placeholder_value(obj.name) || is_placeholder_value(obj.base_link.name)) { blockers.emplace_back("placeholder unknown/none/null values"); }
   }
+  const TaskGraspConfig task_cfg = infer_task_grasp_defaults(scene);
+  if (task_cfg.approach_distance_m < 0.0 || task_cfg.retreat_distance_m < 0.0) {
+    blockers.emplace_back("invalid task/grasp numeric values");
+  }
+  if (task_cfg.task_type == "pick_place" || task_cfg.task_type == "sorting") {
+    if (task_cfg.pick_source.empty()) { blockers.emplace_back("missing pick source"); }
+    if (task_cfg.place_target.empty()) { blockers.emplace_back("missing place target"); }
+  }
+  if (task_cfg.grasp_strategy.empty()) { blockers.emplace_back("unsupported empty grasp strategy"); }
+  if (task_cfg.pick_source == "perception_detection") {
+    warnings.emplace_back("perception_detection selected but EPD adapter not configured yet");
+  }
   warnings.emplace_back("real hardware mode requires explicit validation");
   const bool is_blocked = !blockers.empty();
   const std::string status = is_blocked ? "BLOCKED" : (warnings.empty() ? (strict ? "READY_TO_GENERATE" : "SCAFFOLD_ONLY") : "WARNINGS");
@@ -1863,6 +1931,8 @@ std::string SceneSelect::build_workcell_readiness_report(
   out << "selected environment objects/STLs: " << scene.object_vector.size() << "\n";
   out << "selected output package path: " << scene_dir.string() << "\n";
   out << "fake hardware default status: use_fake_hardware:=true\n";
+  out << "Task recipe: OK\nGrasp strategy: OK\nPick source: OK\nPlace target: OK\n";
+  out << "Tool compatibility: " << (warnings.empty() ? "OK" : "WARN") << "\n";
   for (const auto & b : blockers) { out << "BLOCKER: " << b << "\n"; }
   for (const auto & w : warnings) { out << "WARNING: " << w << "\n"; }
   return out.str();
@@ -1872,14 +1942,15 @@ std::string SceneSelect::build_workcell_readiness_report(
 
 bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::path & scene_dir, bool open_after_export)
 {
+  const TaskGraspConfig task_cfg = infer_task_grasp_defaults(scene);
   const fs::path preview_dir = scene_dir / "preview";
   fs::create_directories(preview_dir);
   const fs::path svg = preview_dir / "workcell_preview.svg";
   const fs::path html = preview_dir / "workcell_preview.html";
   std::ofstream svg_out(svg.string());
-  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text></svg>";
+  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text></svg>";
   std::ofstream html_out(html.string());
-  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><img src='workcell_preview.svg'/></body></html>";
+  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><img src='workcell_preview.svg'/></body></html>";
   append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
   if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
   (void)scene;
@@ -1888,6 +1959,7 @@ bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::
 
 void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::path & scene_dir, const std::string & readiness_status)
 {
+  const TaskGraspConfig task_cfg = infer_task_grasp_defaults(scene);
   const fs::path json_file = scene_dir / "workcell_studio_summary.json";
   const fs::path md_file = scene_dir / "workcell_studio_summary.md";
   std::ofstream jout(json_file.string());
@@ -1896,7 +1968,16 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
        << "  \"readiness_status\": \"" << readiness_status << "\",\n"
        << "  \"build_command\": \"colcon build --symlink-install --packages-select " << scene.name << "\",\n"
        << "  \"fake_hardware_launch_command\": \"ros2 launch " << scene.name << " demo.launch.py use_fake_hardware:=true\",\n"
-       << "  \"real_hardware_warning\": \"Real hardware mode requires explicit validation and use_fake_hardware:=false.\"\n"
+       << "  \"real_hardware_warning\": \"Real hardware mode requires explicit validation and use_fake_hardware:=false.\",\n"
+       << "  \"task_type\": \"" << task_cfg.task_type << "\",\n"
+       << "  \"pick_source\": \"" << task_cfg.pick_source << "\",\n"
+       << "  \"place_target\": \"" << task_cfg.place_target << "\",\n"
+       << "  \"grasp_strategy\": \"" << task_cfg.grasp_strategy << "\",\n"
+       << "  \"orientation_mode\": \"" << task_cfg.orientation_mode << "\",\n"
+       << "  \"approach_distance_m\": " << task_cfg.approach_distance_m << ",\n"
+       << "  \"retreat_distance_m\": " << task_cfg.retreat_distance_m << ",\n"
+       << "  \"release_strategy\": \"" << task_cfg.release_strategy << "\",\n"
+       << "  \"safety_statement\": \"Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\"\n"
        << "}\n";
   std::ofstream mout(md_file.string());
   mout << "# Workcell Studio Summary\n\n";
@@ -1905,6 +1986,14 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- build command: `colcon build --symlink-install --packages-select " << scene.name << "`\n";
   mout << "- fake-hardware launch command: `ros2 launch " << scene.name << " demo.launch.py use_fake_hardware:=true`\n";
   mout << "- real hardware warning: Real hardware mode requires explicit validation and use_fake_hardware:=false.\n";
+  mout << "- task type: " << task_cfg.task_type << "\n";
+  mout << "- pick source: " << task_cfg.pick_source << "\n";
+  mout << "- place target: " << task_cfg.place_target << "\n";
+  mout << "- grasp strategy: " << task_cfg.grasp_strategy << "\n";
+  mout << "- orientation mode: " << task_cfg.orientation_mode << "\n";
+  mout << "- approach/retreat distances (m): " << task_cfg.approach_distance_m << "/" << task_cfg.retreat_distance_m << "\n";
+  mout << "- release strategy: " << task_cfg.release_strategy << "\n";
+  mout << "- Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\n";
 }
 
 void SceneSelect::on_back_clicked()
