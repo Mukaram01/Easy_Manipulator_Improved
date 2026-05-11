@@ -1,0 +1,1 @@
+{"profile":"realsense_d435i","label":"RealSense D435i","camera_frame":"camera_link","optical_frame":"camera_color_optical_frame","rgb_topic":"/camera/camera/color/image_raw","depth_topic":"/camera/camera/depth/image_rect_raw","camera_info_topic":"/camera/camera/color/camera_info","pointcloud_topic":"/camera/camera/depth/color/points","epd_input_hint":"external_epd_adapter"}

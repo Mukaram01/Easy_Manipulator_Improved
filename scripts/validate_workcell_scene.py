@@ -17,6 +17,7 @@ def _pose_ok(vals:str)->bool:
 
 def validate_text(t:str, strict:bool=False):
     warns=[]; blocks=[]
+    camera_enabled='camera:\n  enabled: true' in t or 'enabled: true' in t and 'camera:' in t
     for sec in ['scene:','robot:','tool:','compatibility:','placed_objects:','camera:','task:','safety:','metadata:']:
         if sec not in t: blocks.append(f'missing {sec}')
     if 'schema_version: workcell_scene/v1' not in t: blocks.append('schema_version mismatch')
@@ -25,6 +26,14 @@ def validate_text(t:str, strict:bool=False):
     for k,v in [('fake_hardware_first','true'),('motion_command_sent','false'),('runtime_execution_enabled','false'),('real_hardware_enabled','false')]:
         if f'{k}: {v}' not in t: blocks.append(f'safety flag {k} must be {v}')
     if 'pose:' in t and '[x, y, z, roll, pitch, yaw]' in t: warns.append('template pose detected')
+    if camera_enabled:
+        if 'camera_id:' not in t: blocks.append('camera_id must be non-empty when camera enabled')
+        if 'frame_id:' not in t: blocks.append('frame_id must be non-empty when camera enabled')
+        if 'pose:' in t and not _pose_ok(t.split('pose:',1)[1].split('\n',1)[0].strip()):
+            blocks.append('camera pose must be six finite numbers')
+        if 'rgb_topic:' not in t or 'depth_topic:' not in t:
+            (blocks if strict else warns).append('missing rgb/depth topics')
+        if 'pointcloud_topic:' not in t: warns.append('missing pointcloud topic')
     if 'external_stl_warning' in t: (blocks if strict else warns).append('external mesh path warning')
     return warns, blocks
 

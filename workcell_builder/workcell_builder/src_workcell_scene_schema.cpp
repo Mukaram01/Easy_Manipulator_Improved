@@ -37,6 +37,12 @@ SceneSchemaValidationResult validate_workcell_scene_v1(const std::string & scene
   if (!contains_token(text, "runtime_execution_enabled: false")) { result.blockers.emplace_back("runtime_execution_enabled must remain false"); }
   if (!contains_token(text, "real_hardware_enabled: false")) { result.blockers.emplace_back("real_hardware_enabled must remain false"); }
   if (strict && contains_token(text, "external_stl_warning")) { result.blockers.emplace_back("external mesh warning promoted by strict mode"); }
+  if (contains_token(text, "camera:") && contains_token(text, "enabled: true")) {
+    if (!contains_token(text, "camera_id:")) { result.blockers.emplace_back("camera_id must be non-empty"); }
+    if (!contains_token(text, "frame_id:")) { result.blockers.emplace_back("frame_id must be non-empty"); }
+    if (!contains_token(text, "pointcloud_topic:")) { result.warnings.emplace_back("missing pointcloud topic"); }
+    if (!contains_token(text, "rgb_topic:") || !contains_token(text, "depth_topic:")) { (strict ? result.blockers : result.warnings).emplace_back("missing rgb/depth topics"); }
+  }
   result.status = !result.blockers.empty() ? "FAIL" : (result.warnings.empty() ? "PASS" : "WARN");
   return result;
 }

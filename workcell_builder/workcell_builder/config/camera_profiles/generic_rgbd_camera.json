@@ -1,0 +1,1 @@
+{"profile":"generic_rgbd_camera","label":"Generic RGB-D Camera","camera_frame":"camera_link","optical_frame":"camera_optical_frame","rgb_topic":"/camera/rgb/image_raw","depth_topic":"/camera/depth/image_rect_raw","camera_info_topic":"/camera/rgb/camera_info","pointcloud_topic":"/camera/depth/points","epd_input_hint":"external_epd_adapter"}

@@ -73,6 +73,24 @@ static const char * kPresetFixture = "fixture";
 static const char * kPresetCustomStl = "custom_stl";
 constexpr const char * kSceneRootEnvVar = "WORKCELL_BUILDER_SCENE_ROOT";
 
+static const char * kCameraPerceptionSectionLabel = "Camera / Perception";
+static const char * kAddCameraLabel = "Add Camera";
+static const char * kCameraProfileLabel = "Camera Profile";
+static const char * kRealSenseD435iLabel = "RealSense D435i";
+static const char * kCameraPoseLabel = "Camera Pose";
+static const char * kRgbTopicLabel = "RGB Topic";
+static const char * kDepthTopicLabel = "Depth Topic";
+static const char * kCameraInfoTopicLabel = "Camera Info Topic";
+static const char * kPointCloudTopicLabel = "PointCloud Topic";
+static const char * kCameraFrameLabel = "Camera Frame";
+static const char * kOpticalFrameLabel = "Optical Frame";
+static const char * kMountTypeLabel = "Mount Type";
+static const char * kValidateCameraLabel = "Validate Camera";
+static const char * kApplyCameraDefaultsLabel = "Apply Camera Defaults";
+static const char * kPerceptionMetadataExportLabel = "Perception Metadata Export";
+static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
+static const char * kEpdSeparateNote = "EPD remains external/separate";
+
 [[maybe_unused]] bool change_directory(const fs::path & p)
 {
   boost::system::error_code ec;

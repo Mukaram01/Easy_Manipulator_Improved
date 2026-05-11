@@ -69,8 +69,17 @@ def main() -> int:
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
 
+    camera_files = [
+        repo_root / "workcell_builder/workcell_builder/include/camera_perception_profile.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_camera_perception_profile.cpp",
+        repo_root / "workcell_builder/workcell_builder/config/camera_profiles/realsense_d435i.json",
+        repo_root / "workcell_builder/workcell_builder/config/camera_profiles/generic_rgbd_camera.json",
+    ]
+    for f in camera_files:
+        _check(f.exists(), f"camera metadata file exists: {f.relative_to(repo_root)}", errors)
+
     cmake_text = (repo_root / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp"]:
+    for needle in ["gui/asset_picker_dialog.cpp", "src_asset_discovery_helper.cpp", "gui/scene_select.cpp", "gui/object_placement_dialog.cpp", "src_robot_tool_compatibility.cpp", "src_workcell_scene_schema.cpp", "src_camera_perception_profile.cpp"]:
         _check(needle in cmake_text, f"CMake references {needle}", errors)
 
     pkg_text = (repo_root / "workcell_builder/workcell_builder/package.xml").read_text(encoding="utf-8")
@@ -97,7 +106,7 @@ def main() -> int:
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
-    for marker in ["Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:"]:
+    for marker in ["Camera / Perception", "RealSense D435i", "Validate Camera", "Apply Camera Defaults", "Perception Metadata Export", "EPD Adapter Metadata", "EPD remains external/separate", "Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:"]:
         _check(marker in scene_cpp or marker in addobject_cpp, f"object placement marker present: {marker}", errors)
     model_cpp = (repo_root / "workcell_builder/workcell_builder/src_object_placement_model.cpp").read_text(encoding="utf-8")
     for marker in ["sanitize_object_name", "validate_placed_object", "normalize_mesh_path_for_scene", "import_stl_to_asset_library", "easy_manipulation_deployment/assets/environment/custom_meshes"]:
