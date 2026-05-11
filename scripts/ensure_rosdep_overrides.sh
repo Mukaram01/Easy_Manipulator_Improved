@@ -36,6 +36,7 @@ fi
 
 if [[ $needs_update -eq 1 ]]; then
   echo "Registering rosdep overrides from $OVERRIDES_FILE"
+  run_as_root mkdir -p "$(dirname "$ROSDEP_SOURCE_LIST")"
   printf '%s\n' "$ROSDEP_SOURCE_ENTRY" | run_as_root tee "$ROSDEP_SOURCE_LIST" >/dev/null
 else
   echo "Rosdep overrides already registered in $ROSDEP_SOURCE_LIST"
