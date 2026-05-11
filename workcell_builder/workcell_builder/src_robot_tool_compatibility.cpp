@@ -27,9 +27,33 @@ std::string infer_robot_id(const Scene & scene)
 std::string infer_tool_id(const Scene & scene)
 {
   if (!scene.ee_loaded || scene.ee_vector.empty()) { return "generic_unknown_tool"; }
-  const std::string key = normalize(scene.ee_vector[0].name + " " + scene.ee_vector[0].type);
-  if (key.find("robotiq") != std::string::npos || key.find("2f") != std::string::npos) { return "robotiq_2f85"; }
-  if (key.find("airpick") != std::string::npos || key.find("suction") != std::string::npos || key.find("vacuum") != std::string::npos) { return "onrobot_airpick"; }
+
+  const EndEffector & ee = scene.ee_vector[0];
+  std::string key = ee.name;
+  key += " " + ee.brand;
+  key += " " + ee.ee_type;
+  key += " " + ee.gripper_type;
+  key += " " + ee.planner_id;
+  key += " " + ee.base_link;
+  key += " " + ee.robot_link;
+  key += " " + ee.grasp_frame;
+  key += " " + ee.tcp_link;
+  key = normalize(key);
+
+  if (key.find("robotiq") != std::string::npos ||
+    key.find("2f") != std::string::npos ||
+    key.find("finger") != std::string::npos ||
+    key.find("85") != std::string::npos)
+  {
+    return "robotiq_2f85";
+  }
+  if (key.find("airpick") != std::string::npos ||
+    key.find("suction") != std::string::npos ||
+    key.find("vacuum") != std::string::npos ||
+    key.find("cup") != std::string::npos)
+  {
+    return "onrobot_airpick";
+  }
   return "generic_unknown_tool";
 }
 
