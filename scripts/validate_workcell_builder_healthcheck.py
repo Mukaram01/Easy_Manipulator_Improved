@@ -55,6 +55,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/gui/asset_picker_dialog.cpp",
         repo_root / "workcell_builder/workcell_builder/src_asset_discovery_helper.cpp",
         repo_root / "workcell_builder/workcell_builder/gui/scene_select.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/generated_stl_writer.hpp",
+        repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp",
     ]
     for f in key_files:
         _check(f.exists(), f"required file exists: {f.relative_to(repo_root)}", errors)
@@ -81,11 +83,19 @@ def main() -> int:
     for bad in ["unknown_description", "unknown_moveit_config", "none_moveit_config"]:
         _check(bad not in scene_cpp.lower(), f"forbidden placeholder text absent: {bad}", errors)
 
-    for ui in ["Select Robot Asset", "Select End Effector Asset", "Select Existing STL"]:
-        _check(ui in scene_cpp or ui in (repo_root / "workcell_builder/workcell_builder/gui/asset_picker_dialog.cpp").read_text(encoding="utf-8"), f"asset picker string present: {ui}", errors)
+    addobject_cpp = (repo_root / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")
+    for ui in ["Select Robot Asset", "Select End Effector Asset", "Select Existing STL", "Create Custom STL / Create Primitive Object"]:
+        _check(ui in scene_cpp or ui in (repo_root / "workcell_builder/workcell_builder/gui/asset_picker_dialog.cpp").read_text(encoding="utf-8") or ui in addobject_cpp, f"asset picker string present: {ui}", errors)
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "preview/workcell_preview.svg", "preview/workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
+    addobject_cpp = (repo_root / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")
+    stl_cpp = (repo_root / "workcell_builder/workcell_builder/src_generated_stl_writer.cpp").read_text(encoding="utf-8")
+    for marker in ["box", "table", "bin/tray", "conveyor_placeholder", "fixture_plate", "meshes/generated_objects/", "custom_stl", "generated mesh"]:
+        _check(marker in addobject_cpp or marker in scene_cpp, f"custom STL marker present: {marker}", errors)
+    for marker in ["solid ", "facet normal", "vertex", "endsolid"]:
+        _check(marker in stl_cpp, f"ASCII STL marker present: {marker}", errors)
+    _check("generated_stl_writer" in cmake_text, "CMake references generated STL writer", errors)
     preview_script = (repo_root / "scripts/preview_task_recipe.py").read_text(encoding="utf-8")
     preview_visualizer = (repo_root / "easy_manipulation_deployment/emd_demo_nodes/run_grasp_execution/run_grasp_execution/task_recipe_visualizer_node.py").read_text(encoding="utf-8")
     _check("WORKCELL_TASK_RECIPE_PREVIEW: PASS" in preview_script, "preview CLI has PASS marker", errors)

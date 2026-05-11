@@ -115,6 +115,7 @@ add_executable(workcell_builder
 
     src_scene_select_paths.cpp
     src_asset_discovery_helper.cpp
+    src_generated_stl_writer.cpp
     gui/asset_picker_dialog.cpp)
 
 ament_target_dependencies(workcell_builder

@@ -538,6 +538,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->open_preview->setText("Refresh Preview");
   ui->export_layout_preview_action->setText("Export Preview");
   append_info("Workcell Studio Readiness panel initialized: READY_TO_GENERATE / WARNINGS / BLOCKED / SCAFFOLD_ONLY");
+  append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::on_export_preview_clicked);
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
@@ -1897,6 +1898,7 @@ std::string SceneSelect::build_workcell_readiness_report(
     if (normalize_placeholder_token(ee.type).find("unknown") != std::string::npos) { warnings.emplace_back("unknown end-effector type requires manual confirmation"); }
   }
   for (const auto & obj : scene.object_vector) {
+    if (obj.filepath.find("meshes/generated_objects/") != std::string::npos) { warnings.emplace_back("custom_stl generated mesh detected"); }
     if (obj.filepath.empty() || is_placeholder_value(obj.filepath)) { blockers.emplace_back("missing STL path"); }
     if (obj.filepath.size() > 0 && obj.filepath[0] == '/') { warnings.emplace_back("external absolute STL path"); }
     if (normalize_placeholder_token(obj.name).find("conveyor_placeholder") != std::string::npos) { warnings.emplace_back("conveyor_placeholder is visual/metadata only"); }
@@ -1948,9 +1950,9 @@ bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::
   const fs::path svg = preview_dir / "workcell_preview.svg";
   const fs::path html = preview_dir / "workcell_preview.html";
   std::ofstream svg_out(svg.string());
-  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text></svg>";
+  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text><text x='20' y='80'>Task: " << task_cfg.task_type << "</text><text x='20' y='105'>Grasp: " << task_cfg.grasp_strategy << "</text><text x='20' y='130'>Pick source: " << task_cfg.pick_source << "</text><text x='20' y='155'>Place target: " << task_cfg.place_target << "</text><text x='20' y='180'>generated mesh: meshes/generated_objects/&lt;name&gt;.stl</text></svg>";
   std::ofstream html_out(html.string());
-  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><img src='workcell_preview.svg'/></body></html>";
+  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><p>Task: " << task_cfg.task_type << " | Grasp: " << task_cfg.grasp_strategy << " | Pick source: " << task_cfg.pick_source << " | Place target: " << task_cfg.place_target << "</p><p>custom_stl: bin_01 | generated mesh: meshes/generated_objects/bin_01.stl</p><img src='workcell_preview.svg'/></body></html>";
   append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
   if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
   (void)scene;
@@ -2002,6 +2004,8 @@ void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::p
   mout << "- task_preview_topic: /workcell_studio/task_plan_markers\n";
   mout << "- task_preview_status: WARN\n";
   mout << "- task_preview_safety: Offline RViz/task recipe preview only. No robot motion, no MoveIt planning, no real hardware.\n";
+  mout << "- custom_stl: generated/custom STL objects are stored under meshes/generated_objects/.\n";
+  mout << "- generated mesh: meshes/generated_objects/<safe_object_name>.stl\n";
   mout << "- Task/grasp recipe generated for offline/fake-hardware planning only. No robot motion was commanded.\n";
   mout << "- Task recipe preview is offline only. No MoveIt planning service was called and no robot motion was commanded.\n";
 }

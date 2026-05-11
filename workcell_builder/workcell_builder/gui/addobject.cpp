@@ -29,6 +29,9 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QDir>
+#include <QInputDialog>
+#include <QDoubleSpinBox>
+#include "generated_stl_writer.hpp"
 
 
 AddObject::AddObject(QWidget * parent)
@@ -49,6 +52,39 @@ AddObject::AddObject(QWidget * parent)
     if (QDir::isAbsolutePath(selected) && !selected.startsWith(QString::fromStdString(workcell_path.string()))) {
       QMessageBox::warning(this, "External STL path warning", "External STL path is absolute and may not work on another machine.");
     }
+  });
+  auto * custom_btn = new QPushButton("Create Custom STL / Create Primitive Object", this);
+  if (layout()) { layout()->addWidget(custom_btn); }
+  connect(custom_btn, &QPushButton::clicked, this, [this]() {
+    using namespace workcell_builder;
+    bool ok = false;
+    const QStringList primitive_types = {"box", "table", "bin/tray", "conveyor_placeholder", "fixture_plate"};
+    QString selected_type = QInputDialog::getItem(this, "Create Primitive Object", "primitive type", primitive_types, 0, false, &ok);
+    if (!ok || selected_type.isEmpty()) { return; }
+    QString object_name = QInputDialog::getText(this, "Create Custom STL", "object name", QLineEdit::Normal, "custom_stl_object", &ok);
+    if (!ok || object_name.isEmpty()) { return; }
+    PrimitiveSpec spec;
+    spec.object_name = object_name.toStdString();
+    auto read_dim = [this](const QString & label, double val) { bool lok=false; double d=QInputDialog::getDouble(this, "Primitive dimensions (m)", label, val, 0.0001, 1000.0, 4, &lok); return std::pair<bool,double>(lok,d); };
+    auto L=read_dim("length (m)",0.4); if(!L.first) return; spec.length_m=L.second;
+    auto W=read_dim("width (m)",0.3); if(!W.first) return; spec.width_m=W.second;
+    auto H=read_dim("height (m)",0.2); if(!H.first) return; spec.height_m=H.second;
+    if (selected_type == "table") spec.type = PrimitiveType::kTable;
+    else if (selected_type == "bin/tray") spec.type = PrimitiveType::kBinTray;
+    else if (selected_type == "conveyor_placeholder") spec.type = PrimitiveType::kConveyorPlaceholder;
+    else if (selected_type == "fixture_plate") spec.type = PrimitiveType::kFixturePlate;
+    else spec.type = PrimitiveType::kBox;
+    const std::string safe = sanitize_object_name(spec.object_name);
+    const auto generated_dir = workcell_path / "meshes" / "generated_objects";
+    boost::filesystem::create_directories(generated_dir);
+    const auto stl_path = (generated_dir / (safe + ".stl")).string();
+    std::string error;
+    if (!write_ascii_stl(spec, stl_path, &error)) {
+      QMessageBox::warning(this, "Create Custom STL failed", QString::fromStdString(error));
+      return;
+    }
+    QMessageBox::information(this, "Create Custom STL", QString::fromStdString("custom_stl: "+safe+"
+generated mesh: meshes/generated_objects/"+safe+".stl"));
   });
   (void)QString("conveyor_placeholder: visual/metadata only — no conveyor physics or runtime control");
 }
