@@ -87,6 +87,8 @@ private slots:
   void on_open_output_folder_clicked();
   void on_show_readiness_report_clicked();
   void on_copy_fake_hardware_launch_command_clicked();
+  void on_refresh_preview_clicked();
+  void on_export_preview_clicked();
   void on_browse_scenes_folder_clicked();
   void on_refresh_scenes_button_clicked();
 
@@ -106,6 +108,9 @@ private:
   void append_success(const std::string & message);
   void clear_messages();
   void refresh_scene_status(bool strict, const std::string & trigger);
+  std::string build_workcell_readiness_report(const Scene & scene, const boost::filesystem::path & scene_dir, bool strict, bool * blocked = nullptr);
+  void write_workcell_studio_summary(const Scene & scene, const boost::filesystem::path & scene_dir, const std::string & readiness_status);
+  bool export_workcell_layout_preview(const Scene & scene, const boost::filesystem::path & scene_dir, bool open_after_export);
 
   Ui::SceneSelect * ui;
   boost::filesystem::path scene_dir_for_current_selection() const;

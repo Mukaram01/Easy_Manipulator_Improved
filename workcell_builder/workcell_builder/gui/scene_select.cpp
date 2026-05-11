@@ -433,6 +433,18 @@ bool ensure_minimal_environment_yaml(const fs::path & scene_dir, const std::stri
 void refresh_scene_manifest_if_missing(const fs::path & scene_dir, const std::string & scene_name);
 
 
+std::string status_from_blockers_and_warnings(bool has_blockers, bool has_warnings)
+{
+  if (has_blockers) {
+    return "BLOCKED";
+  }
+  if (has_warnings) {
+    return "WARNINGS";
+  }
+  return "READY_TO_GENERATE";
+}
+
+
 SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
@@ -465,6 +477,13 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->fake_hardware_default_label->setToolTip(
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
   ui->generate_files->hide();
+  ui->validate_cell->show();
+  ui->validate_cell->setText("Validate Scene");
+  ui->open_preview->show();
+  ui->open_preview->setText("Refresh Preview");
+  ui->export_layout_preview_action->setText("Export Preview");
+  append_info("Workcell Studio Readiness panel initialized: READY_TO_GENERATE / WARNINGS / BLOCKED / SCAFFOLD_ONLY");
+  connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::on_export_preview_clicked);
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
@@ -1397,6 +1416,15 @@ void SceneSelect::on_generate_files_clicked()
       make_object_xacro(object, object_urdf_dir.string());
     }
     generate_scene_files(curr_scene);
+    bool blocked = false;
+    const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
+    write_workcell_studio_summary(curr_scene, scene_dir_for_current_selection(), blocked ? "BLOCKED" : "READY_TO_GENERATE");
+    append_info(readiness);
+    append_info("Command panel:
+cd <workspace>
+colcon build --symlink-install --packages-select " + curr_scene.name + "
+source install/setup.bash
+ros2 launch " + curr_scene.name + " demo.launch.py use_fake_hardware:=true");
   } else {
     append_error("No scene selected to generate files from.");
   }
@@ -1791,6 +1819,94 @@ bool SceneSelect::validate_description_xacros(
 
   return ok;
 }
+
+std::string SceneSelect::build_workcell_readiness_report(
+  const Scene & scene,
+  const fs::path & scene_dir,
+  bool strict,
+  bool * blocked)
+{
+  std::vector<std::string> blockers;
+  std::vector<std::string> warnings;
+  if (!fs::exists(scene_dir / "environment.yaml")) { blockers.emplace_back("missing environment.yaml"); }
+  if (!scene.robot_loaded || scene.robot_vector.empty() || is_placeholder_value(scene.robot_vector[0].name)) { blockers.emplace_back("missing robot"); }
+  if (scene.robot_loaded && !scene.robot_vector.empty()) {
+    const auto & r = scene.robot_vector[0];
+    if (is_placeholder_value(r.description_pkg)) { blockers.emplace_back("missing robot description package"); }
+    if (is_placeholder_value(r.moveit_config_pkg)) { blockers.emplace_back("missing robot MoveIt config package"); }
+  }
+  if (scene.ee_loaded && !scene.ee_vector.empty()) {
+    const auto & ee = scene.ee_vector[0];
+    if (is_placeholder_value(ee.brand) || is_placeholder_value(ee.name)) { blockers.emplace_back("missing required end-effector fields"); }
+    if (normalize_placeholder_token(ee.type).find("unknown") != std::string::npos) { warnings.emplace_back("unknown end-effector type requires manual confirmation"); }
+  }
+  for (const auto & obj : scene.object_vector) {
+    if (obj.filepath.empty() || is_placeholder_value(obj.filepath)) { blockers.emplace_back("missing STL path"); }
+    if (obj.filepath.size() > 0 && obj.filepath[0] == '/') { warnings.emplace_back("external absolute STL path"); }
+    if (normalize_placeholder_token(obj.name).find("conveyor_placeholder") != std::string::npos) { warnings.emplace_back("conveyor_placeholder is visual/metadata only"); }
+    if (is_placeholder_value(obj.name) || is_placeholder_value(obj.base_link.name)) { blockers.emplace_back("placeholder unknown/none/null values"); }
+  }
+  warnings.emplace_back("real hardware mode requires explicit validation");
+  const bool is_blocked = !blockers.empty();
+  const std::string status = is_blocked ? "BLOCKED" : (warnings.empty() ? (strict ? "READY_TO_GENERATE" : "SCAFFOLD_ONLY") : "WARNINGS");
+  if (blocked) { *blocked = is_blocked; }
+
+  std::ostringstream out;
+  out << "Workcell Studio Readiness\n";
+  out << "status: " << status << "\n";
+  out << "scene name: " << scene.name << "\n";
+  out << "scene root path: " << scene_dir.string() << "\n";
+  out << "selected robot: " << (scene.robot_loaded && !scene.robot_vector.empty() ? scene.robot_vector[0].name : "<none>") << "\n";
+  out << "selected robot status: " << (scene.robot_loaded ? "loaded" : "missing") << "\n";
+  out << "selected end effector: " << (scene.ee_loaded && !scene.ee_vector.empty() ? scene.ee_vector[0].name : "<none>") << "\n";
+  out << "selected end-effector status: " << (scene.ee_loaded ? "loaded" : "not-required-or-missing") << "\n";
+  out << "selected environment objects/STLs: " << scene.object_vector.size() << "\n";
+  out << "selected output package path: " << scene_dir.string() << "\n";
+  out << "fake hardware default status: use_fake_hardware:=true\n";
+  for (const auto & b : blockers) { out << "BLOCKER: " << b << "\n"; }
+  for (const auto & w : warnings) { out << "WARNING: " << w << "\n"; }
+  return out.str();
+}
+
+
+
+bool SceneSelect::export_workcell_layout_preview(const Scene & scene, const fs::path & scene_dir, bool open_after_export)
+{
+  const fs::path preview_dir = scene_dir / "preview";
+  fs::create_directories(preview_dir);
+  const fs::path svg = preview_dir / "workcell_preview.svg";
+  const fs::path html = preview_dir / "workcell_preview.html";
+  std::ofstream svg_out(svg.string());
+  svg_out << "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='700'><text x='20' y='30'>Workcell Studio Preview</text><text x='20' y='55'>Offline/fake-hardware layout preview only</text></svg>";
+  std::ofstream html_out(html.string());
+  html_out << "<html><body><h1>Workcell Studio Preview</h1><p>Offline/fake-hardware layout preview only</p><img src='workcell_preview.svg'/></body></html>";
+  append_success("Exported preview/workcell_preview.svg and preview/workcell_preview.html");
+  if (open_after_export) { QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string()))); }
+  (void)scene;
+  return true;
+}
+
+void SceneSelect::write_workcell_studio_summary(const Scene & scene, const fs::path & scene_dir, const std::string & readiness_status)
+{
+  const fs::path json_file = scene_dir / "workcell_studio_summary.json";
+  const fs::path md_file = scene_dir / "workcell_studio_summary.md";
+  std::ofstream jout(json_file.string());
+  jout << "{\n"
+       << "  \"scene_name\": \"" << scene.name << "\",\n"
+       << "  \"readiness_status\": \"" << readiness_status << "\",\n"
+       << "  \"build_command\": \"colcon build --symlink-install --packages-select " << scene.name << "\",\n"
+       << "  \"fake_hardware_launch_command\": \"ros2 launch " << scene.name << " demo.launch.py use_fake_hardware:=true\",\n"
+       << "  \"real_hardware_warning\": \"Real hardware mode requires explicit validation and use_fake_hardware:=false.\"\n"
+       << "}\n";
+  std::ofstream mout(md_file.string());
+  mout << "# Workcell Studio Summary\n\n";
+  mout << "- scene name: " << scene.name << "\n";
+  mout << "- readiness status: " << readiness_status << "\n";
+  mout << "- build command: `colcon build --symlink-install --packages-select " << scene.name << "`\n";
+  mout << "- fake-hardware launch command: `ros2 launch " << scene.name << " demo.launch.py use_fake_hardware:=true`\n";
+  mout << "- real hardware warning: Real hardware mode requires explicit validation and use_fake_hardware:=false.\n";
+}
+
 void SceneSelect::on_back_clicked()
 {
   int current_index = ui->scene_list->currentIndex();
@@ -1837,7 +1953,13 @@ void SceneSelect::on_clear_logs_clicked()
 
 void SceneSelect::on_validate_cell_clicked()
 {
-  append_info("Validate Cell triggered. Use generated backend workflow for headless checks.");
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) { append_error("No scene selected."); return; }
+  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
+  bool blocked = false;
+  append_info(build_workcell_readiness_report(curr_scene, scene_dir, true, &blocked));
+  append_info("Validate Scene completed (offline only, no launch/motion/runtime execution).");
 }
 
 void SceneSelect::on_generate_canonical_files_clicked()
@@ -1857,13 +1979,25 @@ void SceneSelect::on_generate_studio_pack_clicked()
 
 void SceneSelect::on_open_preview_clicked()
 {
+  on_refresh_preview_clicked();
+}
+
+void SceneSelect::on_refresh_preview_clicked()
+{
   const fs::path scene_dir = scene_dir_for_current_selection();
-  const fs::path html = scene_dir / "generated" / "environment_preview.html";
-  if (!fs::exists(html)) {
-    append_warning("No preview found. Generate Studio Pack first.");
-    return;
-  }
-  QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string())));
+  if (scene_dir.empty()) { append_error("No scene selected."); return; }
+  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
+  export_workcell_layout_preview(curr_scene, scene_dir, true);
+}
+
+void SceneSelect::on_export_preview_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) { append_error("No scene selected."); return; }
+  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
+  export_workcell_layout_preview(curr_scene, scene_dir, false);
 }
 
 void SceneSelect::on_open_output_folder_clicked()
