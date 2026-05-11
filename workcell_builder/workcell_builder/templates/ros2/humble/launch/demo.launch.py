@@ -22,7 +22,6 @@ import yaml
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import PythonExpression
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -671,7 +670,7 @@ def _launch_setup(context):
         get_package_share_directory(scene_pkg), "launch", "demo.rviz"
     )
     rviz_node = Node(
-        condition=IfCondition(PythonExpression([launch_rviz, " == 'true'"])),
+        condition=IfCondition(launch_rviz),
         package="rviz2",
         executable="rviz2",
         name="rviz2",
@@ -715,7 +714,7 @@ def _launch_setup(context):
 
 
     task_preview_node = Node(
-        condition=IfCondition(PythonExpression([launch_task_preview, " == 'true'"])),
+        condition=IfCondition(launch_task_preview),
         package="run_grasp_execution",
         executable="task_recipe_visualizer_node.py",
         name="task_recipe_visualizer_node",
