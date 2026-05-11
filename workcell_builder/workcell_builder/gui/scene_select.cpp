@@ -84,6 +84,12 @@ static const char * kAssetDiscoveryLabel = "Asset discovery paths";
 static const char * kSelectRobotAssetLabel = "Select Robot Asset";
 static const char * kSelectEndEffectorAssetLabel = "Select End Effector Asset";
 static const char * kSelectExistingStlLabel = "Select Existing STL";
+
+// External Asset Import Wizard labels
+static const char * kImportExternalAssetLabel = "Import External Asset";
+static const char * kExternalAssetImportWizardLabel = "External Asset Import Wizard";
+static const char * kSelectStlUrdfLabel = "Select STL / URDF";
+static const char * kImportedCategoryLabel = "Custom / Imported";
 static const char * kPresetTable = "table";
 static const char * kPresetBin = "bin";
 static const char * kPresetConveyorPlaceholder = "conveyor_placeholder";

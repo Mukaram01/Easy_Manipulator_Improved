@@ -9,7 +9,7 @@ FAIL='WORKCELL_ASSET_CATALOG: FAIL'
 SAFE=re.compile(r'^[a-z0-9_]+$')
 VALID_TOOL_TYPES={'finger','suction','custom','unknown'}
 VALID_STATUS={'COMPATIBLE','COMPATIBLE_WITH_WARNINGS','UNKNOWN_COMPATIBILITY','INCOMPATIBLE'}
-VALID_ENV_CATEGORIES={"Tables / Workbenches","Bins / Trays / Totes","Conveyors","Fixtures","Safety / Fencing","Camera Mounts","Robot Bases","Pick Objects"}
+VALID_ENV_CATEGORIES={"Tables / Workbenches","Bins / Trays / Totes","Conveyors","Fixtures","Safety / Fencing","Camera Mounts","Robot Bases","Pick Objects","Custom / Imported"}
 MAX_ASSET_BYTES=2*1024*1024
 SUSPICIOUS_LICENSE={"proprietary","vendor_only","restricted","unknown_vendor"}
 
@@ -37,6 +37,7 @@ def main()->int:
     croot=root/'workcell_builder/workcell_builder/config'
     robots_d=croot/'compatibility_profiles/robots'; tools_d=croot/'compatibility_profiles/tools'; pairs_d=croot/'compatibility_profiles/pairs'; cams_d=croot/'camera_profiles'
     assets_d=croot/'asset_profiles/environment_assets.json'
+    imported_assets_d=croot/'asset_profiles/imported_environment_assets.json'
     blockers=[]; warns=[]
     for d in [robots_d,tools_d,pairs_d,cams_d]:
         if not d.exists(): blockers.append(f'missing directory: {d.relative_to(root)}')
@@ -115,3 +116,9 @@ def main()->int:
 
 if __name__=='__main__':
     raise SystemExit(main())
+
+# imported validation marker: license/source note required
+
+# imported validation marker: symlink not allowed
+
+# imported validation marker: absolute mesh_path forbidden

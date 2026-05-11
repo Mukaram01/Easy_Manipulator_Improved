@@ -124,6 +124,7 @@ add_executable(workcell_builder
     src_offline_readiness_overlay.cpp
     src_validation_dashboard_model.cpp
     src_scene_template_library.cpp
+    src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
     gui/environment_layout_editor.cpp)
