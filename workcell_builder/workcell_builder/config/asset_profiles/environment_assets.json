@@ -1,0 +1,6 @@
+[
+  {"asset_id":"table_standard","label":"Standard Table","asset_type":"table","mesh_path_hint":"assets/environment/table_description/urdf/table.urdf.xacro","default_dimensions_hint":"1.2x0.8x0.75","default_z_hint":0.0,"warnings":[],"notes":["default demo table"]},
+  {"asset_id":"bin_generic","label":"Generic Bin","asset_type":"bin","mesh_path_hint":"assets/environment/custom_meshes/bin_generic.stl","default_dimensions_hint":"0.4x0.3x0.2","default_z_hint":0.75,"warnings":["mesh_may_be_user_supplied"],"notes":["placeholder for sorting scenes"]},
+  {"asset_id":"fixture_plate","label":"Fixture Plate","asset_type":"fixture","mesh_path_hint":"assets/environment/custom_meshes/fixture_plate.stl","default_dimensions_hint":"0.4x0.4x0.02","default_z_hint":0.75,"warnings":[],"notes":["mounting surface"]},
+  {"asset_id":"conveyor_placeholder","label":"Conveyor Placeholder","asset_type":"conveyor","mesh_path_hint":"assets/environment/custom_meshes/conveyor_placeholder.stl","default_dimensions_hint":"1.0x0.3x0.2","default_z_hint":0.0,"warnings":["placeholder_geometry_only"],"notes":["no runtime conveyor control"]}
+]

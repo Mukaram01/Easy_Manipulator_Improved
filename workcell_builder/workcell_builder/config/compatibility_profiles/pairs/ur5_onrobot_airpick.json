@@ -1,1 +1,1 @@
-{"robot_id":"ur5","tool_id":"onrobot_airpick","status":"COMPATIBLE_WITH_WARNINGS","warnings":["requires_io"],"blockers":[]}
+{"robot_id":"ur5","tool_id":"onrobot_airpick","status":"COMPATIBLE_WITH_WARNINGS","mount_link_override":"tool0","tcp_frame_override":"airpick_tcp","warnings":["requires_io"],"blockers":[]}
