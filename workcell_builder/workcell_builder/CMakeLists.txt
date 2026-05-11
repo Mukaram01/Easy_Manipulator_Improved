@@ -113,7 +113,9 @@ add_executable(workcell_builder
     gui/loadobjects.h
     gui/loadobjects.ui
 
-    src_scene_select_paths.cpp)
+    src_scene_select_paths.cpp
+    src_asset_discovery_helper.cpp
+    gui/asset_picker_dialog.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp
