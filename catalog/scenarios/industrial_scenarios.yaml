@@ -155,3 +155,12 @@ inspection_and_reject:
 kitting_tray_loading:
   class_to_place_zone_routing: partial
   real_hardware_ready: false
+
+scenario_contracts:
+  grasp_strategy_contract:
+    static_table_pick_place: supported
+    conveyor_upstream_detection_downstream_pick: supported
+    conveyor_sorting_by_class: supported
+    multi_bin_sorting_cell: supported
+    bin_picking_tote_picking: partial
+    real_hardware_ready: false

@@ -118,6 +118,9 @@ MainWindow::MainWindow(QWidget * parent)
   ui->filepath->setToolTip("Selected ROS workspace root (contains assets/ and scenes/)");
   ui->ros_distro->setToolTip("Choose the ROS 2 distro that will be used for generated launch/config files");
   statusBar()->showMessage("Select a workspace directory to begin.");
+  // Scene Status panel action labels (preview-only contract)
+  static const char * kSceneStatusGraspActions[] = {"Check Grasp Strategy", "Generate EMD Grasp Request", "Open EMD Grasp Request", "Open Grasp Visualization Docs"};
+  (void)kSceneStatusGraspActions;
 
   // Detect available ROS 2 distributions from /opt/ros.
   const boost::filesystem::path ros_root("/opt/ros");
