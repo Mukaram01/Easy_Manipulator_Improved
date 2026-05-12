@@ -18,6 +18,8 @@
 #include <QKeyEvent>
 #include <iostream>
 #include <string>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "gui/ui_addcollision.h"
 #include "attributes/collision.h"
@@ -28,6 +30,7 @@ AddCollision::AddCollision(QWidget * parent)
 {
   editing_mode = false;
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   ui->stl_select->toggle();
   AddCollision::on_includeorigin_stateChanged(0);
   success = false;

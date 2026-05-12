@@ -30,6 +30,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "gui/ui_addendeffector.h"
@@ -74,6 +76,7 @@ AddEndEffector::AddEndEffector(QWidget * parent)
   ui(new Ui::AddEndEffector)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   auto * picker_btn = new QPushButton("Select End Effector Asset", this);
   if (layout()) { layout()->addWidget(picker_btn); }
   connect(picker_btn, &QPushButton::clicked, this, [this]() {

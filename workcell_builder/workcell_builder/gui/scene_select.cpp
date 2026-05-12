@@ -32,6 +32,8 @@ static const char * kSceneTemplateUiMarkers[] = {
 #include <QKeyEvent>
 #include <QCoreApplication>
 #include <QDateTime>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include <QDesktopServices>
 #include <QUrl>
@@ -557,8 +559,9 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui(new Ui::SceneSelect)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   templates_path = get_default_templates_directory();
-  setWindowTitle("Workcell Builder");
+  setWindowTitle("Workcell Studio - Workcell Builder");
   ui->workflow_tabs->setCurrentWidget(ui->start_tab);
 
   ui->asset_browser_group->hide();

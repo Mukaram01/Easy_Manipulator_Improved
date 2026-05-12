@@ -1,3 +1,4 @@
+#include "workcell_builder_ui_utils.hpp"
 #include "include/asset_picker_dialog.hpp"
 #include <QHeaderView>
 #include <QLabel>
@@ -6,6 +7,7 @@
 #include <QHBoxLayout>
 
 AssetPickerDialog::AssetPickerDialog(const QString & title, QWidget * parent) : QDialog(parent) {
+  workcell_builder::applyCompactDialogDefaults(this);
   setWindowTitle(title);
   auto * layout = new QVBoxLayout(this);
   layout->addWidget(new QLabel("READY assets are selectable. Incomplete assets are shown for manual fallback.", this));

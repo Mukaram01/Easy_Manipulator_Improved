@@ -35,3 +35,10 @@ Default launch command guidance is safe simulation (fake hardware). Real hardwar
 - Status text shows scenes folder path, assets folder path, count, and last refresh.
 - Actions: **Browse Scenes Folder** and **Refresh Scenes**.
 - New cells default to `scenes/<safe_name>` and do not silently overwrite existing packages.
+
+## 2026 UI compact polish
+- Target screen size: 1366x768.
+- Workflow: Workspace -> Scene -> Robot -> Tool -> Assets -> Placement -> Generate -> Validate/Preview.
+- This update polishes the existing Qt workcell_builder UI only (no Streamlit/EPD merge).
+- Dialogs are capped and text wraps to avoid oversized windows.
+- Manual screenshot checklist: main window, scene select, add scene, add robot, add object, placement/editor dialogs.

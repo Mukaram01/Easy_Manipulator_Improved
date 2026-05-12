@@ -1,3 +1,4 @@
+#include "workcell_builder_ui_utils.hpp"
 #include "object_placement_dialog.hpp"
 
 #include <QDialogButtonBox>
@@ -13,6 +14,7 @@
 
 namespace workcell_builder
 {
+  workcell_builder::applyCompactDialogDefaults(this);
 
 ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
 : QDialog(parent)

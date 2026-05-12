@@ -19,6 +19,8 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "gui/ui_addjoint.h"
 
@@ -27,6 +29,7 @@ AddJoint::AddJoint(QWidget * parent)
   ui(new Ui::AddJoint)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   on_includeaxis_stateChanged(0);
   on_includeorigin_stateChanged(0);
   success = false;

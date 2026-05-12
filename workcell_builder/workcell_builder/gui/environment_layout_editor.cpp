@@ -1,3 +1,4 @@
+#include "workcell_builder_ui_utils.hpp"
 #include "environment_layout_editor.hpp"
 #include "offline_readiness_overlay.hpp"
 
@@ -13,6 +14,7 @@
 
 namespace workcell_builder
 {
+  workcell_builder::applyCompactDialogDefaults(this);
 
 namespace
 {

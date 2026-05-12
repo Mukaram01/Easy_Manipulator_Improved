@@ -27,6 +27,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "gui/ui_mainwindow.h"
 #include "gui/scene_select.h"
@@ -106,7 +108,8 @@ MainWindow::MainWindow(QWidget * parent)
   ui(new Ui::MainWindow)
 {
   ui->setupUi(this);
-  setWindowTitle("Workcell Builder");
+  workcell_builder::applyCompactDialogDefaults(this);
+  setWindowTitle("Workcell Studio - Workcell Builder");
   ui->next->setDisabled(true);
   ui->change_workcell->setDisabled(true);
   success = false;
