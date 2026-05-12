@@ -100,6 +100,9 @@ private slots:
   void on_copy_build_command_button_clicked();
   void on_copy_launch_command_button_clicked();
 
+  void on_create_scenario_template_clicked();
+  void on_create_conveyor_sorting_live_epd_preview_clicked();
+
 private:
   enum class MessageLevel
   {
