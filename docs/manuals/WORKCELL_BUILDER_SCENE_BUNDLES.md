@@ -47,3 +47,6 @@ Detection/pick/place zones and conveyor_flow metadata are preserved in environme
 - Offline preview computes distance/time from detection zone to pick zone via conveyor flow metadata.
 - Preview outputs `conveyor_pick_preview.yaml/json` when preview/status is refreshed.
 - `preview_only`: true, `robot_motion_commanded`: false, `real_conveyor_commanded`: false.
+
+## Task Intent Readiness note
+This layer is preview/readiness only and does not execute robot motion, MoveIt planning, or gripper runtime commands.

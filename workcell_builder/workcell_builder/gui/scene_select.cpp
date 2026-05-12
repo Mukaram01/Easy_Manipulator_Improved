@@ -121,6 +121,9 @@ static const char * kPerceptionMetadataExportLabel = "Perception Metadata Export
 static const char * kPreviewConveyorPickFlowLabel = "Preview Conveyor Pick Flow";
 static const char * kConveyorPreviewTimeLabel = "time_to_pick_s";
 static const char * kConveyorPreviewOnlyLabel = "preview_only";
+static const char * kTaskIntentPreviewLabel = "Preview Task Intent";
+static const char * kGenerateTaskIntentPreviewLabel = "Generate Task Intent Preview";
+static const char * kOpenTaskIntentPreviewLabel = "Open Task Intent Preview";
 static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
 static const char * kEpdSeparateNote = "EPD remains external/separate";
 

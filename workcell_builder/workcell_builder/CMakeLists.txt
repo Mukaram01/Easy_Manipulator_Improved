@@ -131,6 +131,7 @@ add_executable(workcell_builder
     src_workcell_zone_model.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
+    src_task_intent_readiness.cpp
     src_scene_template_library.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
@@ -209,14 +210,20 @@ if(BUILD_TESTING)
     src_workcell_scene_status.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
+    src_task_intent_readiness.cpp
     src_workcell_zone_model.cpp
     src_workcell_perception_snapshot.cpp)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
+
+  ament_add_gtest(workcell_task_intent_readiness_test
+    test/task_intent_readiness_test.cpp
+    src_task_intent_readiness.cpp)
   ament_add_gtest(workcell_perception_snapshot_test
     test/workcell_perception_snapshot_test.cpp
     src_workcell_perception_snapshot.cpp
+    src_task_intent_readiness.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_camera_model.cpp
     src_workcell_zone_model.cpp)

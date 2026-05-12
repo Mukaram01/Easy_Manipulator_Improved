@@ -10,3 +10,6 @@ This feature adds **offline metadata-only** conveyor detection-to-pick preview.
 
 ## EPD snapshot adapter note
 EPD remains external; this document covers metadata-only offline detection snapshot mapping and preview time-to-pick estimates only.
+
+## Task Intent Readiness note
+This layer is preview/readiness only and does not execute robot motion, MoveIt planning, or gripper runtime commands.
