@@ -367,6 +367,7 @@ install(DIRECTORY assets
 install(PROGRAMS
   scripts/conveyor_sorting_live_preview_node.py
   scripts/publish_sample_epd_snapshot.py
+  scripts/epd_to_workcell_snapshot_node.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/
