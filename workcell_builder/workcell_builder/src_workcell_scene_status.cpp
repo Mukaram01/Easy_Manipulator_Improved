@@ -2,6 +2,8 @@
 
 #include <yaml-cpp/yaml.h>
 #include "workcell_zone_model.hpp"
+#include "conveyor_pick_preview.hpp"
+#include <fstream>
 
 namespace fs = boost::filesystem;
 
@@ -85,7 +87,19 @@ SceneStatusReport inspect_scene_status(
       add_item(report, "Detection zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "camera_detection"; }) ? "OK" : "WARN", "Metadata check");
       add_item(report, "Pick zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_pick"; }) ? "OK" : "WARN", "Metadata check");
       add_item(report, "Place zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_place"; }) ? "OK" : "WARN", "Metadata check");
+
       add_item(report, "Conveyor flow configured", flows.empty() ? "INFO" : "OK", flows.empty() ? "No conveyor flow metadata" : "Conveyor flow metadata present");
+      if (!flows.empty()) {
+        const auto preview = generate_preview_result(zones, flows.front());
+        add_item(report, "conveyor pick preview available", preview.valid ? "OK" : "ERROR", preview.valid ? "preview metadata computed" : "preview metadata invalid");
+        add_item(report, "time_to_pick_s", preview.valid ? "INFO" : "ERROR", std::to_string(preview.time_to_pick_s));
+        add_item(report, "speed_mps", preview.valid ? "INFO" : "ERROR", std::to_string(preview.speed_mps));
+        add_item(report, "detection zone exists", preview.valid ? "OK" : "ERROR", preview.detection_zone);
+        add_item(report, "pick zone exists", preview.valid ? "OK" : "ERROR", preview.pick_zone);
+        add_item(report, "preview_only", "INFO", "preview_only safety note shown");
+        add_item(report, "no robot motion commanded", "OK", "No robot motion commanded");
+      }
+
       for (const auto & info : zone_validation.infos) add_item(report, "Work zones", "INFO", info);
       for (const auto & warn : zone_validation.warnings) { add_item(report, "Work zones", "WARN", warn); report.warnings.push_back(warn); }
       for (const auto & err : zone_validation.errors) { add_item(report, "Work zones", "ERROR", err); report.blockers.push_back(err); }

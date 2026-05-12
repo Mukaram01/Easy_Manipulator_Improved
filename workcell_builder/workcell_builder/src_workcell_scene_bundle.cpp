@@ -70,7 +70,7 @@ SceneBundleResult export_scene_bundle(const SceneBundleExportOptions & options)
   fs::create_directories(bundle_dir / "checksums", ec);
 
   std::vector<std::string> copied_scene_files;
-  for (const std::string & rel : {"environment.yaml", "scene_manifest.yaml"}) {
+  for (const std::string & rel : {"environment.yaml", "scene_manifest.yaml", "preview/conveyor_pick_preview.yaml", "preview/conveyor_pick_preview.json"}) {
     const fs::path p = scene_dir / rel;
     if (fs::exists(p)) {
       copy_file_safe(p, bundle_dir / "scenes" / options.scene_name / rel);
