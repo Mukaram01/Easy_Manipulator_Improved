@@ -116,6 +116,7 @@ add_executable(workcell_builder
     src_scene_select_paths.cpp
     src_asset_discovery_helper.cpp
     src_generated_stl_writer.cpp
+    src_generated_environment_asset_writer.cpp
     src_object_placement_model.cpp
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
@@ -190,6 +191,11 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
   ament_add_gtest(workcell_scene_select_paths_test test/scene_select_paths_test.cpp src_scene_select_paths.cpp)
+  ament_add_gtest(workcell_generated_environment_asset_writer_test
+    test/generated_environment_asset_writer_test.cpp
+    src_generated_stl_writer.cpp
+    src_generated_environment_asset_writer.cpp
+    gui/loadobjects.cpp)
   ament_add_gtest(workcell_generate_yaml_end_effector_metadata_test
     test/generate_yaml_end_effector_metadata_test.cpp)
   ament_add_gtest(workcell_robot_tool_compatibility_inference_test
@@ -236,6 +242,22 @@ if(BUILD_TESTING)
         ${Boost_INCLUDE_DIRS}
         include
         include/attributes
+    )
+  endif()
+
+  if(TARGET workcell_generated_environment_asset_writer_test)
+    target_link_libraries(workcell_generated_environment_asset_writer_test
+      Qt5::Widgets
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_generated_environment_asset_writer_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+        include/yaml_parser
+        gui
     )
   endif()
 
