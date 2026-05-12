@@ -1,0 +1,23 @@
+overhead_camera_gantry:
+  child_link: overhead_camera_gantry_body
+  links:
+    overhead_camera_gantry_body:
+      visual:
+        name: overhead_camera_gantry_visual
+        geometry:
+          filepath: package://overhead_camera_gantry_description/meshes/visual/overhead_camera_gantry.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+      collision:
+        name: overhead_camera_gantry_collision
+        geometry:
+          filepath: package://overhead_camera_gantry_description/meshes/collision/overhead_camera_gantry.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+  overhead_camera_gantry_base_joint:
+    ext_joint_type: fixed
+    child_link: overhead_camera_gantry_body

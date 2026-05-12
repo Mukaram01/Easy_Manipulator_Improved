@@ -1,0 +1,86 @@
+solid overhead_camera_gantry_collision
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 -0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex -0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 -0.325 -0.825
+    endloop
+  endfacet
+endsolid overhead_camera_gantry_collision

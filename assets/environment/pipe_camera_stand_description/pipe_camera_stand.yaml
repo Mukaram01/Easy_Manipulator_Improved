@@ -1,0 +1,23 @@
+pipe_camera_stand:
+  child_link: pipe_camera_stand_body
+  links:
+    pipe_camera_stand_body:
+      visual:
+        name: pipe_camera_stand_visual
+        geometry:
+          filepath: package://pipe_camera_stand_description/meshes/visual/pipe_camera_stand.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+      collision:
+        name: pipe_camera_stand_collision
+        geometry:
+          filepath: package://pipe_camera_stand_description/meshes/collision/pipe_camera_stand.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+  pipe_camera_stand_base_joint:
+    ext_joint_type: fixed
+    child_link: pipe_camera_stand_body

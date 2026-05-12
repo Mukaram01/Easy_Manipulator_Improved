@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot name="flat_plate_camera_bracket" xmlns:xacro="http://ros.org/wiki/xacro">
+  <link name="base_link"/>
+  <link name="flat_plate_camera_bracket_body">
+    <visual><geometry><mesh filename="package://flat_plate_camera_bracket_description/meshes/visual/flat_plate_camera_bracket.stl" scale="1 1 1"/></geometry></visual>
+    <collision><geometry><mesh filename="package://flat_plate_camera_bracket_description/meshes/collision/flat_plate_camera_bracket.stl" scale="1 1 1"/></geometry></collision>
+    <inertial><mass value="5.0"/><origin xyz="0 0 0"/><inertia ixx="0.2" ixy="0" ixz="0" iyy="0.2" iyz="0" izz="0.2"/></inertial>
+  </link>
+  <joint name="flat_plate_camera_bracket_base_joint" type="fixed"><parent link="base_link"/><child link="flat_plate_camera_bracket_body"/></joint>
+  <link name="camera_mount_link"/>
+  <joint name="flat_plate_camera_bracket_camera_mount_joint" type="fixed"><parent link="flat_plate_camera_bracket_body"/><child link="camera_mount_link"/><origin xyz="0 0 0.8" rpy="0 0 0"/></joint>
+</robot>

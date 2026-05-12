@@ -1,0 +1,23 @@
+flat_plate_camera_bracket:
+  child_link: flat_plate_camera_bracket_body
+  links:
+    flat_plate_camera_bracket_body:
+      visual:
+        name: flat_plate_camera_bracket_visual
+        geometry:
+          filepath: package://flat_plate_camera_bracket_description/meshes/visual/flat_plate_camera_bracket.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+      collision:
+        name: flat_plate_camera_bracket_collision
+        geometry:
+          filepath: package://flat_plate_camera_bracket_description/meshes/collision/flat_plate_camera_bracket.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+  flat_plate_camera_bracket_base_joint:
+    ext_joint_type: fixed
+    child_link: flat_plate_camera_bracket_body

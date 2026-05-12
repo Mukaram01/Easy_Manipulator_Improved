@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<robot name="test_flat_plate_camera_bracket" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:include filename="$(find flat_plate_camera_bracket_description)/urdf/flat_plate_camera_bracket.urdf.xacro"/>
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435.urdf.xacro"/>
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed"><parent link="world"/><child link="base_link"/></joint>
+  <xacro:sensor_d435 parent="camera_mount_link" use_nominal_extrinsics="true"><origin xyz="0 0 0" rpy="0 0 0"/></xacro:sensor_d435>
+</robot>

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot name="overhead_camera_gantry" xmlns:xacro="http://ros.org/wiki/xacro">
+  <link name="base_link"/>
+  <link name="overhead_camera_gantry_body">
+    <visual><geometry><mesh filename="package://overhead_camera_gantry_description/meshes/visual/overhead_camera_gantry.stl" scale="1 1 1"/></geometry></visual>
+    <collision><geometry><mesh filename="package://overhead_camera_gantry_description/meshes/collision/overhead_camera_gantry.stl" scale="1 1 1"/></geometry></collision>
+    <inertial><mass value="5.0"/><origin xyz="0 0 0"/><inertia ixx="0.2" ixy="0" ixz="0" iyy="0.2" iyz="0" izz="0.2"/></inertial>
+  </link>
+  <joint name="overhead_camera_gantry_base_joint" type="fixed"><parent link="base_link"/><child link="overhead_camera_gantry_body"/></joint>
+  <link name="camera_mount_link"/>
+  <joint name="overhead_camera_gantry_camera_mount_joint" type="fixed"><parent link="overhead_camera_gantry_body"/><child link="camera_mount_link"/><origin xyz="0 0 0.8" rpy="0 0 0"/></joint>
+</robot>

@@ -1,0 +1,86 @@
+solid table_clamp_camera_mount_collision
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 -0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex -0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 -0.325 -0.825
+    endloop
+  endfacet
+endsolid table_clamp_camera_mount_collision
