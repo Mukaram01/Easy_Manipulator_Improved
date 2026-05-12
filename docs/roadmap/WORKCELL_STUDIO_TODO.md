@@ -52,3 +52,10 @@ This roadmap tracks prioritized implementation work from preview capability to l
 - Added live EPD feed bridge preview path (metadata-only).
 - EPD GUI remains separate.
 - No robot/gripper/conveyor command, no MoveIt call, no forced RealSense launch.
+
+
+- dry_run_planning_check: supported for static_table_pick_place and conveyor_upstream_detection_downstream_pick; partial for conveyor_sorting_by_class.
+- real_hardware_ready remains false.
+
+
+This readiness feature does not execute robot motion and does not call MoveIt execution; it only generates dry-run artifacts for future planning work.
