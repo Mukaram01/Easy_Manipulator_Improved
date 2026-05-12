@@ -34,6 +34,7 @@
 #include <QInputDialog>
 #include <QDoubleSpinBox>
 #include "generated_stl_writer.hpp"
+#include "generated_environment_asset_writer.hpp"
 #include "object_placement_dialog.hpp"
 
 
@@ -57,9 +58,12 @@ AddObject::AddObject(QWidget * parent)
       QMessageBox::warning(this, "External STL path warning", "External STL path is absolute and may not work on another machine.");
     }
   });
-  auto * custom_btn = new QPushButton("Create Custom STL / Create Primitive Object", this);
-  if (layout()) { layout()->addWidget(custom_btn); }
-  connect(custom_btn, &QPushButton::clicked, this, [this]() {
+  auto * create_and_add_btn = new QPushButton("Create Asset and Add to Scene", this);
+  if (layout()) { layout()->addWidget(create_and_add_btn); }
+  auto * create_asset_only_btn = new QPushButton("Create Asset Only", this);
+  if (layout()) { layout()->addWidget(create_asset_only_btn); }
+
+  auto create_primitive_asset = [this](bool add_to_scene) {
     using namespace workcell_builder;
     bool ok = false;
     const QStringList primitive_types = {"box", "table", "bin/tray", "conveyor_placeholder", "fixture_plate"};
@@ -78,17 +82,40 @@ AddObject::AddObject(QWidget * parent)
     else if (selected_type == "conveyor_placeholder") spec.type = PrimitiveType::kConveyorPlaceholder;
     else if (selected_type == "fixture_plate") spec.type = PrimitiveType::kFixturePlate;
     else spec.type = PrimitiveType::kBox;
-    const std::string safe = sanitize_object_name(spec.object_name);
-    const auto generated_dir = workcell_path / "meshes" / "generated_objects";
-    boost::filesystem::create_directories(generated_dir);
-    const auto stl_path = (generated_dir / (safe + ".stl")).string();
-    std::string error;
-    if (!write_ascii_stl(spec, stl_path, &error)) {
-      QMessageBox::warning(this, "Create Custom STL failed", QString::fromStdString(error));
+    const auto resolved_assets_path = workcell_path / "assets";
+    auto result = write_generated_environment_asset(spec, resolved_assets_path, false);
+    if (!result.success) {
+      if (result.already_exists) {
+        QMessageBox::warning(this, "Asset Exists", QString::fromStdString(
+          result.error_message + "\nTry name: " + result.suggested_name));
+      } else {
+        QMessageBox::warning(this, "Create Asset failed", QString::fromStdString(result.error_message));
+      }
       return;
     }
-    QMessageBox::information(this, "Create Custom STL", QString::fromStdString("custom_stl: " + safe + "\ngenerated mesh: meshes/generated_objects/" + safe + ".stl"));
-  });
+
+    const std::string safe = result.object_name;
+    const auto generated_dir = workcell_path / "meshes" / "generated_objects";
+    boost::filesystem::create_directories(generated_dir);
+    std::string error;
+    (void)write_ascii_stl(spec, (generated_dir / (safe + ".stl")).string(), &error);
+
+    if (add_to_scene) {
+      object.name = safe;
+      if (std::find(available_object_names.begin(), available_object_names.end(), safe) == available_object_names.end()) {
+        available_object_names.push_back(safe);
+      }
+      ui->lineEdit->setText(QString::fromStdString(safe));
+      ui->error_check->append("Asset created and ready to add. External joint defaults to fixed/world placement.");
+    } else {
+      ui->error_check->append("Asset created and added to library list for Load Existing Object.");
+    }
+    QMessageBox::information(this, "Generated Environment Asset", QString::fromStdString(
+      "Created asset package for " + safe + " under assets/environment."));
+  };
+
+  connect(create_and_add_btn, &QPushButton::clicked, this, [create_primitive_asset]() { create_primitive_asset(true); });
+  connect(create_asset_only_btn, &QPushButton::clicked, this, [create_primitive_asset]() { create_primitive_asset(false); });
   
   auto * import_btn = new QPushButton("Import STL to Asset Library", this);
   if (layout()) { layout()->addWidget(import_btn); }
