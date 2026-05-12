@@ -88,3 +88,5 @@ python3 -m pytest -q \
 - Verify key dialogs fit on 1366x768.
 - Verify long path/status text wraps without forcing horizontal growth.
 - Confirm no runtime/safety/launch behavior changes; UI-only polish.
+
+- Scene Select now includes a Workcell Studio Scene Status panel with Refresh Status, Validate Scene, Copy Build Command, and Copy Launch Command controls.

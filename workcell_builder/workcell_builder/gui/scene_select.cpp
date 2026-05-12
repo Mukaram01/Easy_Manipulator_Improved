@@ -605,6 +605,10 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::on_export_preview_clicked);
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
+  connect(ui->refresh_status_button, &QPushButton::clicked, this, &SceneSelect::on_refresh_status_button_clicked);
+  connect(ui->validate_scene_button, &QPushButton::clicked, this, &SceneSelect::on_validate_scene_button_clicked);
+  connect(ui->copy_build_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_build_command_button_clicked);
+  connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
   for (auto * button : placeholder_buttons) {
     button->setText(button->text() + " (coming soon)");
@@ -679,6 +683,21 @@ void SceneSelect::refresh_scene_status(bool strict, const std::string & trigger)
     QDateTime::currentDateTime().toString(Qt::ISODate).toStdString();
   append_info("Status snapshot [" + trigger + "] @ " + timestamp);
   check_scene(strict);
+}
+
+void SceneSelect::render_workcell_studio_status(const workcell_builder::SceneStatusReport & report)
+{
+  QString text;
+  text += QString("Selected scene: %1\n").arg(QString::fromStdString(report.scene_name));
+  text += QString("Scene path: %1\n\n").arg(QString::fromStdString(report.scene_path));
+  for (const auto & item : report.items) {
+    text += QString("[%1] %2: %3\n").arg(QString::fromStdString(item.status), QString::fromStdString(item.name), QString::fromStdString(item.message));
+  }
+  text += "\nSafety notes:\n";
+  for (const auto & note : report.safety_notes) text += QString("- %1\n").arg(QString::fromStdString(note));
+  text += "\nNext commands:\n";
+  for (const auto & cmd : report.next_commands) text += QString("- %1\n").arg(QString::fromStdString(cmd));
+  ui->workcell_studio_status_text->setText(text);
 }
 
 void SceneSelect::configure_startup_fallback_paths()
@@ -1505,6 +1524,7 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
     }
   }
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
+  on_refresh_status_button_clicked();
 }
 void SceneSelect::on_generate_files_clicked()
 {
@@ -2398,4 +2418,31 @@ void SceneSelect::on_import_scene_bundle_clicked()
     append_warning(warning);
   }
   refresh_scenes(-1);
+}
+
+
+void SceneSelect::on_refresh_status_button_clicked()
+{
+  if (ui->scene_list->currentIndex() < 0 || ui->scene_list->currentIndex() >= static_cast<int>(workcell.scene_vector.size())) return;
+  const std::string scene_name = workcell.scene_vector[ui->scene_list->currentIndex()].name;
+  latest_scene_status_report_ = workcell_builder::inspect_scene_status(workcell_path, scenes_path, assets_path, scene_name);
+  render_workcell_studio_status(latest_scene_status_report_);
+}
+
+void SceneSelect::on_validate_scene_button_clicked()
+{
+  on_validate_cell_clicked();
+  on_refresh_status_button_clicked();
+}
+
+void SceneSelect::on_copy_build_command_button_clicked()
+{
+  if (latest_scene_status_report_.next_commands.empty()) return;
+  QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[0]));
+}
+
+void SceneSelect::on_copy_launch_command_button_clicked()
+{
+  if (latest_scene_status_report_.next_commands.size() < 3) return;
+  QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[2]));
 }

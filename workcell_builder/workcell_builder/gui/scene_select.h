@@ -25,6 +25,7 @@
 #include "attributes/workcell.h"
 #include "scene_select_paths.h"
 #include "validation_dashboard_model.hpp"
+#include "workcell_scene_status.hpp"
 
 
 namespace Ui
@@ -94,6 +95,10 @@ private slots:
   void on_refresh_scenes_button_clicked();
   void on_export_scene_bundle_clicked();
   void on_import_scene_bundle_clicked();
+  void on_refresh_status_button_clicked();
+  void on_validate_scene_button_clicked();
+  void on_copy_build_command_button_clicked();
+  void on_copy_launch_command_button_clicked();
 
 private:
   enum class MessageLevel
@@ -126,6 +131,9 @@ private:
 
   int scaffold_scene_index_ = -1;
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
+  void render_workcell_studio_status(const workcell_builder::SceneStatusReport & report);
+  workcell_builder::SceneStatusReport latest_scene_status_report_;
+
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_

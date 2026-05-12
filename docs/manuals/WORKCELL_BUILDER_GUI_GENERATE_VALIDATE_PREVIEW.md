@@ -36,3 +36,6 @@ Preview-only cells should return: `No runtime launch command available for previ
 - Real hardware is never the default.
 - EPD remains separate.
 - No EPD controls, RealSense launch, or real hardware drivers are added to workcell_builder GUI.
+
+## Workcell Studio Scene Status panel
+- Added Generate / Validate / Preview readiness panel in Scene Select with explicit status checks, blockers, safety notes, and fake-hardware launch command defaults.
