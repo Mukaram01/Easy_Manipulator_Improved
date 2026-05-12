@@ -145,6 +145,9 @@ add_executable(workcell_builder
     gui/conveyor_sorting_scenario_wizard.cpp
     gui/conveyor_sorting_scenario_wizard.h
     gui/conveyor_sorting_scenario_wizard.ui
+    gui/conveyor_sorting_run_console.cpp
+    gui/conveyor_sorting_run_console.h
+    gui/conveyor_sorting_run_console.ui
 
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp
