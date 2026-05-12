@@ -13,11 +13,6 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
-install(DIRECTORY meshes
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install(DIRECTORY urdf
-  DESTINATION share/${PROJECT_NAME}
-)
+install(DIRECTORY launch meshes rviz urdf
+  DESTINATION share/${PROJECT_NAME})
 ament_package()
