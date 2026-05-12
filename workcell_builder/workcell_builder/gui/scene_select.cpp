@@ -42,6 +42,8 @@ static const char * kSceneTemplateUiMarkers[] = {
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QListWidgetItem>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <boost/filesystem.hpp>
@@ -130,6 +132,28 @@ static const char * kGenerateDryRunPlanningRequestLabel = "Generate Dry-Run Plan
 static const char * kCheckPlanningReadinessLabel = "Check Planning Readiness";
 static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
 static const char * kEpdSeparateNote = "EPD remains external/separate";
+
+static bool copy_directory_recursive(const fs::path & source, const fs::path & destination, std::string * error)
+{
+  boost::system::error_code ec;
+  if (!fs::exists(source, ec) || ec) {
+    if (error) *error = "Template folder does not exist: " + source.string();
+    return false;
+  }
+  fs::create_directories(destination, ec);
+  if (ec) { if (error) *error = "Failed to create destination: " + destination.string(); return false; }
+  for (fs::recursive_directory_iterator it(source, ec), end; it != end && !ec; it.increment(ec)) {
+    const fs::path rel = fs::relative(it->path(), source, ec);
+    if (ec) break;
+    const fs::path out = destination / rel;
+    if (fs::is_directory(it->path(), ec)) { fs::create_directories(out, ec); }
+    else if (fs::is_regular_file(it->path(), ec)) { fs::create_directories(out.parent_path(), ec); fs::copy_file(it->path(), out, fs::copy_option::overwrite_if_exists, ec); }
+    if (ec) break;
+  }
+  if (ec) { if (error) *error = "Failed while copying template assets."; return false; }
+  return true;
+}
+
 
 [[maybe_unused]] bool change_directory(const fs::path & p)
 {
@@ -622,6 +646,8 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->validate_scene_button, &QPushButton::clicked, this, &SceneSelect::on_validate_scene_button_clicked);
   connect(ui->copy_build_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_build_command_button_clicked);
   connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
+  connect(ui->create_scenario_template, &QPushButton::clicked, this, &SceneSelect::on_create_scenario_template_clicked);
+  connect(ui->create_conveyor_sorting_live_epd_preview, &QPushButton::clicked, this, &SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked);
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
   for (auto * button : placeholder_buttons) {
     button->setText(button->text() + " (coming soon)");
@@ -629,6 +655,40 @@ SceneSelect::SceneSelect(QWidget * parent)
     button->setDisabled(true);
   }
 
+}
+
+
+void SceneSelect::on_create_scenario_template_clicked()
+{
+  QMessageBox::information(this, "Create Scenario",
+    "Create Scenario opens the guided setup workflow. Select Conveyor Sorting - Live EPD Preview to continue.");
+}
+
+void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
+{
+  configure_startup_fallback_paths();
+  const QString default_name = "conveyor_sorting_live_epd_preview_" +
+    QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+  bool ok = false;
+  const QString scenario_name = QInputDialog::getText(
+    this, "Create Scenario", "Scenario Name", QLineEdit::Normal, default_name, &ok);
+  if (!ok || scenario_name.trimmed().isEmpty()) return;
+
+  const fs::path target_scene_dir = scenes_path / scenario_name.toStdString();
+  if (fs::exists(target_scene_dir)) {
+    append_error("Scenario folder already exists: " + target_scene_dir.string());
+    return;
+  }
+  const fs::path template_dir = templates_path / "scenarios" / "conveyor_sorting_live_epd_preview";
+  std::string copy_error;
+  if (!copy_directory_recursive(template_dir, target_scene_dir, &copy_error)) {
+    append_error(copy_error);
+    return;
+  }
+  append_success("Created scenario from template: " + target_scene_dir.string());
+  workcell.scene_vector.clear();
+  discover_scene_packages_on_startup();
+  refresh_scenes(0, false);
 }
 
 SceneSelect::~SceneSelect()
