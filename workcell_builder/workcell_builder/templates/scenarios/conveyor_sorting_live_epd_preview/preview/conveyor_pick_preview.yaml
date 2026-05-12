@@ -1,0 +1,6 @@
+conveyor_flow_1:
+  detection_zone: detection_zone_1
+  pick_zone: pick_zone_1
+  estimated_distance_m: 0.8
+  speed_mps: 0.2
+  time_to_pick_s: 4.0

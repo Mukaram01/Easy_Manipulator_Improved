@@ -1,0 +1,42 @@
+scene_name: conveyor_sorting_live_epd_preview
+scenario_template: conveyor_sorting_live_epd_preview
+robot: ur5
+end_effector: robotiq_2f_85
+camera: realsense_d435i_1
+camera_mount: overhead_camera_gantry
+conveyor: conveyor_placeholder
+work_zones:
+  - detection_zone_1
+  - pick_zone_1
+  - place_zone_box
+  - place_zone_bottle
+  - reject_zone
+place_zones:
+  - place_zone_box
+  - place_zone_bottle
+  - reject_zone
+conveyor_flows:
+  - name: conveyor_flow_1
+    from_zone: detection_zone_1
+    to_zone: pick_zone_1
+    estimated_distance_m: 0.8
+    speed_mps: 0.2
+class_routing:
+  box: place_zone_box
+  bottle: place_zone_bottle
+  unknown: reject_zone
+grasp_strategy:
+  box: finger_side_top_generic
+  bottle: finger_generic
+  unknown: reject_default
+live_epd_bridge:
+  supported: true
+  mode: live_adapter_metadata_only
+  expected_camera: realsense_d435i_1
+  expected_zone: detection_zone_1
+execution_safety:
+  robot_motion_commanded: false
+  moveit_execute_called: false
+  gripper_command_sent: false
+  conveyor_command_sent: false
+  use_fake_hardware_default: true

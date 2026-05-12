@@ -1,0 +1,16 @@
+scene_name: conveyor_sorting_live_epd_preview
+camera_placements:
+  - name: realsense_d435i_1
+    mount: overhead_camera_gantry
+work_zones:
+  - name: detection_zone_1
+  - name: pick_zone_1
+  - name: place_zone_box
+  - name: place_zone_bottle
+  - name: reject_zone
+conveyor_flows:
+  - name: conveyor_flow_1
+    detection_zone: detection_zone_1
+    pick_zone: pick_zone_1
+    estimated_distance_m: 0.8
+    speed_mps: 0.2

@@ -36,6 +36,8 @@ Recommended Workflow:
         <item><widget class="QLineEdit" name="output_folder"><property name="placeholderText"><string>Output Folder</string></property><property name="text"><string>~/workcell_ws/src/scenes</string></property></widget></item>
         <item><widget class="QPushButton" name="browse_output_folder"><property name="text"><string>Browse Output Folder</string></property></widget></item>
         <item><widget class="QPushButton" name="add_scene"><property name="text"><string>New Cell</string></property></widget></item>
+        <item><widget class="QPushButton" name="create_scenario_template"><property name="text"><string>Create Scenario Template</string></property></widget></item>
+        <item><widget class="QPushButton" name="create_conveyor_sorting_live_epd_preview"><property name="text"><string>Conveyor Sorting - Live EPD Preview</string></property></widget></item>
         <item><widget class="QPushButton" name="golden_demo_cell"><property name="text"><string>Developer Tools: Create Golden UR5 + Robotiq 2F Cell</string></property></widget></item>
         <item><widget class="QComboBox" name="scene_list"/></item>
         <item><layout class="QHBoxLayout" name="sceneActionsLayout"><item><widget class="QPushButton" name="browse_scenes_folder"><property name="text"><string>Browse Scenes Folder</string></property></widget></item><item><widget class="QPushButton" name="refresh_scenes_button"><property name="text"><string>Refresh Scenes</string></property></widget></item></layout></item>

@@ -1,0 +1,4 @@
+class_routing:
+  box: place_zone_box
+  bottle: place_zone_bottle
+  unknown: reject_zone

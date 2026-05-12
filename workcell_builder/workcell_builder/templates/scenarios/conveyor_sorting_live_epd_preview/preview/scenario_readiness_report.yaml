@@ -1,0 +1,27 @@
+scenario_readiness:
+  scenario_id: conveyor_sorting_live_epd_preview
+  status: WARN
+  fake_hardware_preview_supported: true
+  live_epd_bridge_supported: true
+  robot_motion_commanded: false
+  moveit_execute_called: false
+  gripper_command_sent: false
+  conveyor_command_sent: false
+  real_hardware_ready: false
+  live_epd_bridge_status: waiting_for_live_epd_snapshot
+  completed_capabilities:
+    - scene_generation
+    - camera_mounting
+    - work_zones
+    - conveyor_flow
+    - live_epd_bridge
+    - class_routing
+    - task_intent_preview
+    - planning_readiness
+    - grasp_request_contract
+  missing_for_real_hardware:
+    - safety_validation
+    - real robot driver profile
+    - conveyor hardware driver
+    - gripper hardware command validation
+    - operator safety checklist

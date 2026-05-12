@@ -66,3 +66,8 @@ This readiness feature does not execute robot motion and does not call MoveIt ex
 - Existing EMD planner remains downstream planner.
 - Workcell Studio now emits grasp_strategy.yaml, emd_grasp_planner_request.yaml/json, and readiness reports.
 - No planner execution or robot motion is called in this stage.
+
+## Conveyor Sorting Golden Template
+- Golden template landed: `conveyor_sorting_live_epd_preview`.
+- Status: supported preview with fake hardware default.
+- Remaining for real hardware readiness: safety validation, robot driver profile, conveyor driver, gripper command validation, operator checklist.

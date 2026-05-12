@@ -28,3 +28,8 @@ Preview-only class-to-place-zone routing maps EPD class labels from snapshot/liv
 - Existing EMD planner remains downstream planner.
 - Workcell Studio now emits grasp_strategy.yaml, emd_grasp_planner_request.yaml/json, and readiness reports.
 - No planner execution or robot motion is called in this stage.
+
+## Golden Conveyor Sorting Scenario
+- `conveyor_upstream_detection_downstream_pick`: golden_template_available=true, golden_template=`conveyor_sorting_live_epd_preview`, current_status=`supported_preview`, real_hardware_ready=false.
+- `conveyor_sorting_by_class`: golden_template_available=true, golden_template=`conveyor_sorting_live_epd_preview`, current_status=`supported_preview`, real_hardware_ready=false.
+- `multi_bin_sorting_cell`: golden_template_available=true, golden_template=`conveyor_sorting_live_epd_preview`, current_status=`supported_preview`, real_hardware_ready=false.
