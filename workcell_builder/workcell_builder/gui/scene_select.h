@@ -23,10 +23,11 @@
 
 #include "yaml-cpp/yaml.h"
 #include "attributes/workcell.h"
+#include "conveyor_sorting_run_console.h"
+#include "conveyor_sorting_scenario_wizard.h"
 #include "scene_select_paths.h"
 #include "validation_dashboard_model.hpp"
 #include "workcell_scene_status.hpp"
-
 
 namespace Ui
 {
@@ -56,30 +57,20 @@ public:
   void refresh_scenes(int latest_scene, bool scaffold_only_status = false);
   void keyPressEvent(QKeyEvent * e);
 
-  // void GeneratePackageXML(std::string target_filepath ,std::string package_name,int ros_ver);
-  // void GenerateCMakeLists(std::string target_filepath ,std::string package_name,int ros_ver);
   explicit SceneSelect(QWidget * parent = nullptr);
   ~SceneSelect();
 
 private slots:
   void on_add_scene_clicked();
-
   void on_delete_scene_clicked();
-
   void on_edit_scene_clicked();
-
   void on_generate_yaml_clicked();
-
   void on_scene_list_currentIndexChanged(int index);
-
   void on_generate_files_clicked();
   void on_generate_full_scene_package_start_clicked();
   void on_open_scene_folder_clicked();
-
   void on_back_clicked();
-
   void on_exit_clicked();
-
   void on_clear_logs_clicked();
   void on_validate_cell_clicked();
   void on_generate_canonical_files_clicked();
@@ -99,19 +90,12 @@ private slots:
   void on_validate_scene_button_clicked();
   void on_copy_build_command_button_clicked();
   void on_copy_launch_command_button_clicked();
-
   void on_create_scenario_template_clicked();
   void on_create_conveyor_sorting_live_epd_preview_clicked();
   void on_open_conveyor_sorting_run_console_clicked();
 
 private:
-  enum class MessageLevel
-  {
-    Info,
-    Warning,
-    Error,
-    Success
-  };
+  enum class MessageLevel { Info, Warning, Error, Success };
 
   void append_message(MessageLevel level, const std::string & message);
   void append_info(const std::string & message);
@@ -137,7 +121,6 @@ private:
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
   void render_workcell_studio_status(const workcell_builder::SceneStatusReport & report);
   workcell_builder::SceneStatusReport latest_scene_status_report_;
-
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
