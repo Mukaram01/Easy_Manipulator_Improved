@@ -3,6 +3,7 @@
 #include <yaml-cpp/yaml.h>
 #include "workcell_zone_model.hpp"
 #include "conveyor_pick_preview.hpp"
+#include "workcell_perception_snapshot.hpp"
 #include <fstream>
 
 namespace fs = boost::filesystem;
@@ -89,6 +90,8 @@ SceneStatusReport inspect_scene_status(
       add_item(report, "Place zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_place"; }) ? "OK" : "WARN", "Metadata check");
 
       add_item(report, "Conveyor flow configured", flows.empty() ? "INFO" : "OK", flows.empty() ? "No conveyor flow metadata" : "Conveyor flow metadata present");
+      add_item(report, "Detection snapshot available", fs::exists(scene_dir / "preview" / "perception_detection_snapshot.yaml") ? "OK" : "INFO", "EPD-compatible offline metadata");
+      add_item(report, "No EPD runtime launched", "OK", "EPD GUI remains separate");
       if (!flows.empty()) {
         const auto preview = generate_preview_result(zones, flows.front());
         add_item(report, "conveyor pick preview available", preview.valid ? "OK" : "ERROR", preview.valid ? "preview metadata computed" : "preview metadata invalid");
