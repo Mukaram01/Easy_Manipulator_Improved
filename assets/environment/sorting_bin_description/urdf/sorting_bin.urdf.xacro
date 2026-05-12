@@ -1,0 +1,1 @@
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sorting_bin"><link name="sorting_bin_link"><visual><geometry><box size="1 0.4 0.1"/></geometry></visual><collision><geometry><box size="1 0.4 0.1"/></geometry></collision></link></robot>

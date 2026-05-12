@@ -1,0 +1,5 @@
+objects:
+  - link: base_link
+    joint: base_joint
+    visual: package://sorting_bin_description/meshes/sorting_bin.stl
+    collision: package://sorting_bin_description/meshes/sorting_bin.stl
