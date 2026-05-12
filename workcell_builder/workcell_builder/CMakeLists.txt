@@ -121,6 +121,7 @@ add_executable(workcell_builder
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
     src_workcell_scene_roundtrip.cpp
+    src_workcell_scene_bundle.cpp
     src_camera_perception_profile.cpp
     src_deployment_compatibility_profile.cpp
     src_offline_readiness_overlay.cpp

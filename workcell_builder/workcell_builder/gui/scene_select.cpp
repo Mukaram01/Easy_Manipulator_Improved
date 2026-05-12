@@ -76,6 +76,7 @@ static const char * kSceneTemplateUiMarkers[] = {
 #include "include/default_asset_paths.h"
 #include "scene_select_paths.h"
 #include "robot_tool_compatibility.hpp"
+#include "workcell_scene_bundle.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -2345,3 +2346,56 @@ static const char * kReadinessOverlayWarningMarkers = "reach_warnings workspace_
 // Bundle Validation Status
 // Imported Scene Ready
 // Exported Scene Archive
+
+
+void SceneSelect::on_export_scene_bundle_clicked()
+{
+  const int index = ui->scene_list->currentIndex();
+  if (index < 0) {
+    append_warning("Select a scene before exporting a bundle.");
+    return;
+  }
+  const QString scene_q = ui->scene_list->itemText(index);
+  const QString out_dir = QFileDialog::getExistingDirectory(this, tr("Select Export Destination"), QString::fromStdString(scenes_path.string()));
+  if (out_dir.isEmpty()) {
+    return;
+  }
+  workcell_builder::SceneBundleExportOptions options;
+  options.workcell_path = workcell_path;
+  options.scenes_path = scenes_path;
+  options.assets_path = assets_path;
+  options.scene_name = scene_q.toStdString();
+  options.output_dir = out_dir.toStdString();
+  const auto result = workcell_builder::export_scene_bundle(options);
+  if (!result.ok) {
+    append_error("Export Scene Bundle failed: " + result.message);
+    return;
+  }
+  append_success("Export OK: " + result.output_path.string());
+  for (const auto & warning : result.warnings) {
+    append_warning(warning);
+  }
+}
+
+void SceneSelect::on_import_scene_bundle_clicked()
+{
+  const QString bundle_dir = QFileDialog::getExistingDirectory(this, tr("Select Scene Bundle Directory"), QString::fromStdString(scenes_path.string()));
+  if (bundle_dir.isEmpty()) {
+    return;
+  }
+  workcell_builder::SceneBundleImportOptions options;
+  options.workcell_path = workcell_path;
+  options.scenes_path = scenes_path;
+  options.assets_path = assets_path;
+  options.bundle_dir = bundle_dir.toStdString();
+  const auto result = workcell_builder::import_scene_bundle(options);
+  if (!result.ok) {
+    append_error("Import Scene Bundle failed: " + result.message);
+    return;
+  }
+  append_success("Import OK: " + result.scene_name + " -> " + result.output_path.string());
+  for (const auto & warning : result.warnings) {
+    append_warning(warning);
+  }
+  refresh_scenes(-1);
+}
