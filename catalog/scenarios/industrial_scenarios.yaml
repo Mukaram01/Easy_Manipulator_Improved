@@ -138,3 +138,20 @@ scenarios:
     dry_run_planning_check_supported: true
     real_hardware_ready: false
     next_pr: demo_scene_bundle
+
+class_to_place_zone_routing:
+  preview_supported: true
+  real_hardware_ready: false
+  notes: preview_only class_label to place_zone routing
+conveyor_sorting_by_class:
+  class_to_place_zone_routing: supported
+  real_hardware_ready: false
+multi_bin_sorting_cell:
+  class_to_place_zone_routing: supported
+  real_hardware_ready: false
+inspection_and_reject:
+  class_to_place_zone_routing: supported
+  real_hardware_ready: false
+kitting_tray_loading:
+  class_to_place_zone_routing: partial
+  real_hardware_ready: false

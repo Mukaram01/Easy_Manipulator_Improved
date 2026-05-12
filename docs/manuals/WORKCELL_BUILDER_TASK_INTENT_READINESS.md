@@ -23,3 +23,7 @@ Future PRs may connect this readiness layer to dry-run planning/fake execution.
 
 ## Planning readiness follow-up
 Task intent preview can now be validated with dry-run planning readiness artifacts. This remains non-executing: no robot motion, no MoveIt execute call, no gripper/conveyor command.
+
+
+## Class-to-Place-Zone Routing
+Preview-only class-to-place-zone routing maps EPD class labels from snapshot/live bridge to destination place zones, with unknown/default typically routed to reject bin. No robot motion, no MoveIt execution, no gripper or conveyor hardware commands, EPD GUI remains separate, real hardware later.

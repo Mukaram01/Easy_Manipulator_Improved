@@ -132,6 +132,7 @@ add_executable(workcell_builder
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
     src_task_intent_readiness.cpp
+    src_class_routing_model.cpp
     src_planning_readiness.cpp
     src_scene_template_library.cpp
     src_external_asset_importer.cpp
@@ -212,6 +213,7 @@ if(BUILD_TESTING)
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
     src_task_intent_readiness.cpp
+    src_class_routing_model.cpp
     src_planning_readiness.cpp
     src_workcell_zone_model.cpp
     src_workcell_perception_snapshot.cpp)
@@ -229,6 +231,7 @@ if(BUILD_TESTING)
     test/workcell_perception_snapshot_test.cpp
     src_workcell_perception_snapshot.cpp
     src_task_intent_readiness.cpp
+    src_class_routing_model.cpp
     src_planning_readiness.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_camera_model.cpp
