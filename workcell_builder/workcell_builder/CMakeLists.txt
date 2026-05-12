@@ -129,6 +129,7 @@ add_executable(workcell_builder
     src_workcell_scene_status.cpp
     src_workcell_camera_model.cpp
     src_workcell_zone_model.cpp
+    src_conveyor_pick_preview.cpp
     src_scene_template_library.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
@@ -204,7 +205,12 @@ if(BUILD_TESTING)
     test/generate_yaml_end_effector_metadata_test.cpp)
   ament_add_gtest(workcell_scene_status_test
     test/workcell_scene_status_test.cpp
-    src_workcell_scene_status.cpp)
+    src_workcell_scene_status.cpp
+    src_conveyor_pick_preview.cpp
+    src_workcell_zone_model.cpp)
+  ament_add_gtest(workcell_conveyor_pick_preview_test
+    test/conveyor_pick_preview_test.cpp
+    src_conveyor_pick_preview.cpp)
   ament_add_gtest(workcell_robot_tool_compatibility_inference_test
     test/robot_tool_compatibility_inference_test.cpp
     src_robot_tool_compatibility.cpp)
@@ -235,6 +241,11 @@ if(BUILD_TESTING)
     )
   endif()
 
+
+  if(TARGET workcell_conveyor_pick_preview_test)
+    target_link_libraries(workcell_conveyor_pick_preview_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_conveyor_pick_preview_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+  endif()
 
   if(TARGET workcell_scene_status_test)
     target_link_libraries(workcell_scene_status_test

@@ -77,6 +77,7 @@ static const char * kSceneTemplateUiMarkers[] = {
 #include "scene_select_paths.h"
 #include "robot_tool_compatibility.hpp"
 #include "workcell_scene_bundle.hpp"
+#include "conveyor_pick_preview.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -115,6 +116,9 @@ static const char * kMountTypeLabel = "Mount Type";
 static const char * kValidateCameraLabel = "Validate Camera";
 static const char * kApplyCameraDefaultsLabel = "Apply Camera Defaults";
 static const char * kPerceptionMetadataExportLabel = "Perception Metadata Export";
+static const char * kPreviewConveyorPickFlowLabel = "Preview Conveyor Pick Flow";
+static const char * kConveyorPreviewTimeLabel = "time_to_pick_s";
+static const char * kConveyorPreviewOnlyLabel = "preview_only";
 static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
 static const char * kEpdSeparateNote = "EPD remains external/separate";
 
@@ -2421,10 +2425,28 @@ void SceneSelect::on_import_scene_bundle_clicked()
 }
 
 
+static void write_conveyor_pick_preview_artifacts(const boost::filesystem::path & scene_dir)
+{
+  const auto env = scene_dir / "environment.yaml";
+  if (!boost::filesystem::exists(env)) return;
+  try {
+    const YAML::Node root = YAML::LoadFile(env.string());
+    std::vector<workcell_builder::WorkZone> zones; std::vector<workcell_builder::ConveyorFlow> flows;
+    workcell_builder::parse_work_zones_from_yaml(root, &zones, &flows);
+    if (flows.empty()) return;
+    const auto preview = workcell_builder::generate_preview_result(zones, flows.front());
+    const auto preview_dir = scene_dir / "preview";
+    boost::filesystem::create_directories(preview_dir);
+    std::ofstream(preview_dir.string() + "/conveyor_pick_preview.yaml") << workcell_builder::serialize_preview_to_yaml(preview);
+    std::ofstream(preview_dir.string() + "/conveyor_pick_preview.json") << workcell_builder::serialize_preview_to_json(preview);
+  } catch (...) {}
+}
+
 void SceneSelect::on_refresh_status_button_clicked()
 {
   if (ui->scene_list->currentIndex() < 0 || ui->scene_list->currentIndex() >= static_cast<int>(workcell.scene_vector.size())) return;
   const std::string scene_name = workcell.scene_vector[ui->scene_list->currentIndex()].name;
+  write_conveyor_pick_preview_artifacts(scenes_path / scene_name);
   latest_scene_status_report_ = workcell_builder::inspect_scene_status(workcell_path, scenes_path, assets_path, scene_name);
   render_workcell_studio_status(latest_scene_status_report_);
 }

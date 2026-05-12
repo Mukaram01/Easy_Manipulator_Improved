@@ -42,3 +42,8 @@ This flow uses `realsense2_description` cameras attached to support assets via `
 
 ## Work zones metadata preview
 Detection/pick/place zones and conveyor_flow metadata are preserved in environment YAML and scene bundles. This is metadata/preview only (not safety-certified). Conveyor runtime tracking and robot wait logic are future work.
+
+## Conveyor pick preview notes
+- Offline preview computes distance/time from detection zone to pick zone via conveyor flow metadata.
+- Preview outputs `conveyor_pick_preview.yaml/json` when preview/status is refreshed.
+- `preview_only`: true, `robot_motion_commanded`: false, `real_conveyor_commanded`: false.
