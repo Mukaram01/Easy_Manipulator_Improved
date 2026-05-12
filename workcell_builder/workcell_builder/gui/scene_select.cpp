@@ -667,28 +667,14 @@ void SceneSelect::on_create_scenario_template_clicked()
 void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
 {
   configure_startup_fallback_paths();
-  const QString default_name = "conveyor_sorting_live_epd_preview_" +
-    QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-  bool ok = false;
-  const QString scenario_name = QInputDialog::getText(
-    this, "Create Scenario", "Scenario Name", QLineEdit::Normal, default_name, &ok);
-  if (!ok || scenario_name.trimmed().isEmpty()) return;
-
-  const fs::path target_scene_dir = scenes_path / scenario_name.toStdString();
-  if (fs::exists(target_scene_dir)) {
-    append_error("Scenario folder already exists: " + target_scene_dir.string());
-    return;
-  }
-  const fs::path template_dir = templates_path / "scenarios" / "conveyor_sorting_live_epd_preview";
-  std::string copy_error;
-  if (!copy_directory_recursive(template_dir, target_scene_dir, &copy_error)) {
-    append_error(copy_error);
-    return;
-  }
-  append_success("Created scenario from template: " + target_scene_dir.string());
-  workcell.scene_vector.clear();
-  discover_scene_packages_on_startup();
-  refresh_scenes(0, false);
+  ConveyorSortingScenarioWizard wizard(scenes_path, workcell_path, this);
+  connect(&wizard, &ConveyorSortingScenarioWizard::scenarioGenerated, this, [this](const QString & name) {
+    append_success("Created scenario from wizard: " + (scenes_path / name.toStdString()).string());
+    workcell.scene_vector.clear();
+    discover_scene_packages_on_startup();
+    refresh_scenes(0, false);
+  });
+  wizard.exec();
 }
 
 SceneSelect::~SceneSelect()
