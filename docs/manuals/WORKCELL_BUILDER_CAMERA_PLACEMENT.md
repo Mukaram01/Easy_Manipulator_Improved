@@ -18,3 +18,6 @@ This metadata only attaches camera models in generated URDF/Xacro and does not s
 
 ## Work zones metadata preview
 Detection/pick/place zones and conveyor_flow metadata are preserved in environment YAML and scene bundles. This is metadata/preview only (not safety-certified). Conveyor runtime tracking and robot wait logic are future work.
+
+## EPD snapshot adapter note
+EPD remains external; this document covers metadata-only offline detection snapshot mapping and preview time-to-pick estimates only.

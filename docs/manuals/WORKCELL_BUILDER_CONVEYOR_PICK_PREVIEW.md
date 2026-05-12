@@ -7,3 +7,6 @@ This feature adds **offline metadata-only** conveyor detection-to-pick preview.
 - `pick_ready` is preview metadata only.
 - No MoveIt call, no robot command, no RealSense runtime launch, no EPD launch, no real conveyor command.
 - No safety certification.
+
+## EPD snapshot adapter note
+EPD remains external; this document covers metadata-only offline detection snapshot mapping and preview time-to-pick estimates only.

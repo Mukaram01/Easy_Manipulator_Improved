@@ -83,6 +83,8 @@ namespace fs = boost::filesystem;
 
 namespace {
 
+static const char * kPerceptionAdapterUiStrings = "Load Detection Snapshot | Generate Sample EPD Snapshot | Preview Detection Mapping | adapter_metadata_only | no robot motion commanded";
+
 
 static const char * kAssetDiscoveryLabel = "Asset discovery paths";
 static const char * kSelectRobotAssetLabel = "Select Robot Asset";

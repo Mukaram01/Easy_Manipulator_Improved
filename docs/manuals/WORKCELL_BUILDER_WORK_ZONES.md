@@ -19,3 +19,6 @@ Work zones add **metadata-only** semantic areas for scene authoring and preview.
 - Offline preview computes distance/time from detection zone to pick zone via conveyor flow metadata.
 - Preview outputs `conveyor_pick_preview.yaml/json` when preview/status is refreshed.
 - `preview_only`: true, `robot_motion_commanded`: false, `real_conveyor_commanded`: false.
+
+## EPD snapshot adapter note
+EPD remains external; this document covers metadata-only offline detection snapshot mapping and preview time-to-pick estimates only.
