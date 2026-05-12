@@ -5,6 +5,7 @@
 #include "conveyor_pick_preview.hpp"
 #include "workcell_perception_snapshot.hpp"
 #include "task_intent_readiness.hpp"
+#include "planning_readiness.hpp"
 #include <fstream>
 
 namespace fs = boost::filesystem;
@@ -96,6 +97,11 @@ SceneStatusReport inspect_scene_status(
 
       const fs::path tip_yaml = scene_dir / "preview" / "task_intent_preview.yaml";
       add_item(report, "Task intent preview", fs::exists(tip_yaml) ? "OK" : "WARN", fs::exists(tip_yaml) ? "task_intent_preview.yaml present" : "Generate Task Intent Preview");
+      const fs::path planning_yaml = scene_dir / "preview" / "planning_readiness_report.yaml";
+      const fs::path dryrun_yaml = scene_dir / "preview" / "dry_run_planning_request.yaml";
+      add_item(report, "Planning readiness report available", fs::exists(planning_yaml) ? "OK" : "WARN", fs::exists(planning_yaml) ? "planning_readiness_report.yaml present" : "Check Planning Readiness");
+      add_item(report, "Dry-run request available", fs::exists(dryrun_yaml) ? "OK" : "WARN", fs::exists(dryrun_yaml) ? "dry_run_planning_request.yaml present" : "Generate Dry-Run Planning Request");
+      add_item(report, "Execution disabled", "OK", "dry_run_readiness_only");
       add_item(report, "Robot configured", robot_pkg != "<unknown>" ? "OK" : "ERROR", robot_pkg);
       add_item(report, "End effector configured", ee_pkg != "<none>" ? "OK" : "WARN", ee_pkg);
       add_item(report, "Detection mapping available", fs::exists(scene_dir / "preview" / "perception_detection_mapping.yaml") ? "OK" : "WARN", "offline mapping artifact");

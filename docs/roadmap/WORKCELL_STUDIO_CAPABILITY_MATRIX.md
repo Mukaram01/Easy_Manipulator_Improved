@@ -14,3 +14,6 @@
 | multi_bin_sorting_cell | Multi-bin sorting cell | multiple bins, camera mount | yes | yes | yes | yes | detection,pick,multi_place | optional | yes | yes | yes | yes | no | planned | multi_destination_rules, class_mapping_ui, live_epd_feed | multi_bin_routing |
 | dual_camera_workcell | Dual-camera workcell | two cameras, mounts, zones | yes | yes | yes | yes | upstream_detection,workarea_verification | optional | yes | yes | yes | yes | no | planned | multi_camera_calibration_metadata, zone_camera_binding | dual_camera_support |
 | mobile_portable_demo_cell | Mobile/portable demo cell | table, bins, robot base, camera mount | yes | yes | yes | yes | detection,pick,place | optional | yes | optional | yes | yes | no | supported_preview | demo_scene_generator, portability_checklist | demo_scene_bundle |
+
+
+This readiness feature does not execute robot motion and does not call MoveIt execution; it only generates dry-run artifacts for future planning work.

@@ -20,3 +20,7 @@ Live artifacts are written to `<scene>/preview/`:
 - `live_task_intent_preview.{yaml,json}`
 
 If native EPD output differs, add a small exporter/shim to translate into the snapshot schema topic.
+
+
+## Planning readiness follow-up
+Task intent preview can now be validated with dry-run planning readiness artifacts. This remains non-executing: no robot motion, no MoveIt execute call, no gripper/conveyor command.

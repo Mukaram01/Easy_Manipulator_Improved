@@ -124,6 +124,10 @@ static const char * kConveyorPreviewOnlyLabel = "preview_only";
 static const char * kTaskIntentPreviewLabel = "Preview Task Intent";
 static const char * kGenerateTaskIntentPreviewLabel = "Generate Task Intent Preview";
 static const char * kOpenTaskIntentPreviewLabel = "Open Task Intent Preview";
+static const char * kDryRunReadinessOnlyLabel = "dry_run_readiness_only";
+static const char * kOpenPlanningReadinessReportLabel = "Open Planning Readiness Report";
+static const char * kGenerateDryRunPlanningRequestLabel = "Generate Dry-Run Planning Request";
+static const char * kCheckPlanningReadinessLabel = "Check Planning Readiness";
 static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
 static const char * kEpdSeparateNote = "EPD remains external/separate";
 
