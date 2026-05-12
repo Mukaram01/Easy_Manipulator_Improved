@@ -10,9 +10,9 @@ SCENE_SELECT_CPP = ROOT / 'workcell_builder/workcell_builder/gui/scene_select.cp
 def test_ui_static_tokens():
     text = UI.read_text(encoding='utf-8') + CPP.read_text(encoding='utf-8')
     for token in [
-        'Conveyor Sorting Run Console', 'Copy Build Command', 'Copy Launch Command',
-        'Open Preview Folder', 'Live Preview Status', 'Safety State',
-        'robot_motion_commanded: false', 'real_hardware_ready: false'
+        'Conveyor Sorting Run Console', 'Build Scenario', 'Launch Fake Preview',
+        'Open Log Folder', 'Live Preview Status', 'Build status',
+        'Launch status', 'real_hardware_ready must remain false'
     ]:
         assert token in text
 
@@ -44,8 +44,8 @@ def test_command_builder_tokens_exist():
 
 def test_safety_validation_rules_present():
     text = CPP.read_text(encoding='utf-8')
-    assert 'robot_motion_commanded: true' in text
-    assert 'green: fake preview safe' in text
+    assert 'Unsafe launch args detected' in text
+    assert 'real_hardware_ready must remain false' in text
 
 
 def test_scenario_detection_enables_console_path():
