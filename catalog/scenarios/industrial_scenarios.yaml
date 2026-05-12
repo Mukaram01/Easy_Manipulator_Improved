@@ -1,0 +1,133 @@
+scenarios:
+  - id: static_table_pick_place
+    name: Static table pick and place
+    category: pick_place
+    current_status: needs_live_epd
+    required_capabilities: [robot_selection, end_effector_selection, table_asset, camera_mount, camera_placement, detection_zone, pick_zone, place_zone, epd_detection_snapshot, task_intent_preview]
+    missing_capabilities: [live_epd_feed, dry_run_planning_check, grasp_strategy_selection]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: live_epd_feed_bridge
+  - id: conveyor_upstream_detection_downstream_pick
+    name: Conveyor upstream detection, downstream pick
+    category: conveyor_pick
+    current_status: partial_preview
+    required_capabilities: [conveyor_asset, camera_mount, detection_zone, pick_zone, place_zone, conveyor_flow_preview, epd_detection_mapping, task_intent_preview]
+    missing_capabilities: [live_epd_feed, runtime_wait_pick, dry_run_planning_check]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: runtime_wait_pick_orchestrator
+  - id: conveyor_sorting_by_class
+    name: Conveyor sorting by class
+    category: sorting
+    current_status: partial_preview
+    required_capabilities: [conveyor_asset, camera_mount, detection_zone, pick_zone, multi_place_zone, class_mapping, task_intent_preview]
+    missing_capabilities: [class_to_place_routing, live_epd_feed]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: class_routing_rules
+  - id: bin_tote_picking
+    name: Bin picking / tote picking
+    category: bin_picking
+    current_status: planned
+    required_capabilities: [bin_tote_asset, camera_mount, camera_placement, detection_zone, pick_zone, grasp_strategy]
+    missing_capabilities: [depth_pose_estimation, grasp_strategy_selection]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: false
+    real_hardware_ready: false
+    next_pr: bin_pick_metadata
+  - id: kitting_tray_loading
+    name: Kitting / tray loading
+    category: kitting
+    current_status: planned
+    required_capabilities: [tray_fixture_asset, place_slot_zones, class_to_slot_mapping, task_sequence]
+    missing_capabilities: [slot_metadata, sequence_authoring]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: false
+    real_hardware_ready: false
+    next_pr: tray_slot_mapping
+  - id: machine_tending_load_unload
+    name: Machine tending load/unload
+    category: machine_tending
+    current_status: planned
+    required_capabilities: [machine_asset, door_opening_metadata, fixture_zones, load_unload_sequence, safety_interlocks_metadata]
+    missing_capabilities: [machine_template_assets, sequence_runtime_stub]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: false
+    real_hardware_ready: false
+    next_pr: machine_tending_template
+  - id: inspection_and_reject
+    name: Inspection and reject
+    category: inspection
+    current_status: planned
+    required_capabilities: [inspection_zone, reject_place_zone, quality_mapping, class_mapping]
+    missing_capabilities: [inspection_rule_authoring, reject_routing]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: inspection_rules_engine
+  - id: palletizing_depalletizing_light
+    name: Palletizing / depalletizing light objects
+    category: palletizing
+    current_status: planned
+    required_capabilities: [pallet_asset, pattern_generator, place_sequence]
+    missing_capabilities: [pattern_preview_ui, sequence_validation]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: false
+    real_hardware_ready: false
+    next_pr: pallet_pattern_preview
+  - id: fixture_loading_assembly_assist
+    name: Fixture loading / assembly assist
+    category: assembly_assist
+    current_status: planned
+    required_capabilities: [fixture_asset, target_pose_zone, optional_verification_camera]
+    missing_capabilities: [fixture_alignment_rules, verification_binding]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: false
+    real_hardware_ready: false
+    next_pr: fixture_loading_template
+  - id: multi_bin_sorting_cell
+    name: Multi-bin sorting cell
+    category: sorting
+    current_status: planned
+    required_capabilities: [multiple_place_zones, class_destination_rules, detection_zone, pick_zone]
+    missing_capabilities: [rules_ui, destination_priority_resolution]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: multi_bin_routing
+  - id: dual_camera_workcell
+    name: Dual-camera workcell
+    category: multi_camera
+    current_status: planned
+    required_capabilities: [multi_camera_assets, multiple_detection_zones, inspection_zone, camera_zone_binding]
+    missing_capabilities: [camera_calibration_profiles, synchronization_metadata]
+    live_epd_feed_required: true
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: dual_camera_support
+  - id: mobile_portable_demo_cell
+    name: Mobile/portable demo cell
+    category: demo
+    current_status: supported_preview
+    required_capabilities: [table_asset, robot, camera_mount, bins, custom_asset_generation, scene_export_import]
+    missing_capabilities: [demo_scene_generator]
+    live_epd_feed_required: false
+    fake_hardware_preview_supported: true
+    task_intent_preview_supported: true
+    real_hardware_ready: false
+    next_pr: demo_scene_bundle
