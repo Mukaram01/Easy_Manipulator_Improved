@@ -130,6 +130,7 @@ add_executable(workcell_builder
     gui/object_placement_dialog.cpp
     gui/environment_layout_editor.cpp
     gui/external_asset_import_dialog.cpp
+    gui/workcell_builder_ui_utils.cpp
 
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp

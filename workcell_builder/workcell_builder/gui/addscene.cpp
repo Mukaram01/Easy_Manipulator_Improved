@@ -30,6 +30,7 @@
 #include "gui/addrobot.h"
 #include "gui/addendeffector.h"
 #include "gui/loadobjects.h"
+#include "workcell_builder_ui_utils.hpp"
 
 
 AddScene::AddScene(QWidget * parent)
@@ -37,6 +38,7 @@ AddScene::AddScene(QWidget * parent)
   ui(new Ui::AddScene)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   world_link.name = "world";
   on_include_ee_stateChanged(0);
   on_include_robot_stateChanged(0);

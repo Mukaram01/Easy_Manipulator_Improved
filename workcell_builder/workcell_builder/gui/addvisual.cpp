@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #include "gui/addvisual.h"
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include <QFileDialog>
 #include <QValidator>
@@ -30,6 +32,7 @@ AddVisual::AddVisual(QWidget * parent)
 {
   editing_mode = false;
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   ui->stl_select->toggle();
   ui->TextureFIle->toggle();
   AddVisual::on_includematerial_stateChanged(0);

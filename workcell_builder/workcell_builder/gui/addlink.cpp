@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #include "gui/addlink.h"
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include <QKeyEvent>
 #include <QString>
@@ -34,6 +36,7 @@ AddLink::AddLink(QWidget * parent)
 {
   editing_mode = false;
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   success = false;
 
   on_enable_visual_stateChanged(0);

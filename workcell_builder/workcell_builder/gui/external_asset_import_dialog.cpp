@@ -1,3 +1,4 @@
+#include "workcell_builder_ui_utils.hpp"
 #include "external_asset_import_dialog.hpp"
 #include "external_asset_importer.hpp"
 
@@ -14,6 +15,7 @@
 #include <QVBoxLayout>
 
 ExternalAssetImportDialog::ExternalAssetImportDialog(QWidget *parent) : QDialog(parent) {
+  workcell_builder::applyCompactDialogDefaults(this);
   setWindowTitle("External Asset Import Wizard");
 
   auto *main_layout = new QVBoxLayout(this);

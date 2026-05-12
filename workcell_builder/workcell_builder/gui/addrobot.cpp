@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #include "gui/addrobot.h"
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include <boost/filesystem.hpp>
 #include <QKeyEvent>
@@ -145,6 +147,7 @@ AddRobot::AddRobot(QWidget * parent)
   ui(new Ui::AddRobot)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   auto * picker_btn = new QPushButton("Select Robot Asset", this);
   if (layout()) { layout()->addWidget(picker_btn); }
   connect(picker_btn, &QPushButton::clicked, this, [this]() {

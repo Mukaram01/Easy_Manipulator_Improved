@@ -17,6 +17,8 @@
 #include <QKeyEvent>
 #include <QDoubleValidator>
 #include "gui/ui_addinertial.h"
+#include "workcell_builder_ui_utils.hpp"
+
 
 AddInertial::AddInertial(QWidget * parent)
 : QDialog(parent),
@@ -24,6 +26,7 @@ AddInertial::AddInertial(QWidget * parent)
 {
   editing_mode = false;
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   AddInertial::on_includeorigin_stateChanged(0);
   success = false;
 }

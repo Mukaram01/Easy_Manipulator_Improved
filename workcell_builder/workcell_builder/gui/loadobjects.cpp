@@ -19,6 +19,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "gui/ui_loadobjects.h"
 #include "include/scene_parser.h"
@@ -28,6 +30,7 @@ LoadObjects::LoadObjects(QWidget * parent)
   ui(new Ui::LoadObjects)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   success = false;
 }
 

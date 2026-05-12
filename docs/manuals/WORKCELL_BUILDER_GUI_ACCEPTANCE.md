@@ -83,3 +83,8 @@ python3 -m pytest -q \
   tests/test_workcell_builder_gui_visible_editor_fields.py \
   tests/test_workcell_builder_gui_launch_commands.py
 ```
+
+## 2026 compact-layout acceptance additions
+- Verify key dialogs fit on 1366x768.
+- Verify long path/status text wraps without forcing horizontal growth.
+- Confirm no runtime/safety/launch behavior changes; UI-only polish.

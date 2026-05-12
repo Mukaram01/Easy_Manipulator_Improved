@@ -16,6 +16,8 @@
 #include "gui/addexternaljoint.h"
 #include <QKeyEvent>
 #include <iostream>
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include "gui/ui_addexternaljoint.h"
 #include "attributes/external_joint.h"
@@ -25,6 +27,7 @@ AddExternalJoint::AddExternalJoint(QWidget * parent)
   ui(new Ui::AddExternalJoint)
 {
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
 }
 
 AddExternalJoint::~AddExternalJoint()

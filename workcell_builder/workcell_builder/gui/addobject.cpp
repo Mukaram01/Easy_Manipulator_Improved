@@ -14,6 +14,8 @@
 // limitations under the License.
 
 #include "gui/addobject.h"
+#include "workcell_builder_ui_utils.hpp"
+
 
 #include <QKeyEvent>
 #include <algorithm>
@@ -42,6 +44,7 @@ AddObject::AddObject(QWidget * parent)
   editing_mode = false;
   success = false;
   ui->setupUi(this);
+  workcell_builder::applyCompactDialogDefaults(this);
   auto * stl_btn = new QPushButton("Select Existing STL", this);
   if (layout()) { layout()->addWidget(stl_btn); }
   connect(stl_btn, &QPushButton::clicked, this, [this]() {
