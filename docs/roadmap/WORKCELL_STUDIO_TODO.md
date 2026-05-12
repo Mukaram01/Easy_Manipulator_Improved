@@ -46,3 +46,9 @@ This roadmap tracks prioritized implementation work from preview capability to l
 5. Export PDF/HTML report.
 6. Screenshot/preview generation.
 7. Better docs and onboarding.
+
+
+## live_epd_feed_bridge update
+- Added live EPD feed bridge preview path (metadata-only).
+- EPD GUI remains separate.
+- No robot/gripper/conveyor command, no MoveIt call, no forced RealSense launch.

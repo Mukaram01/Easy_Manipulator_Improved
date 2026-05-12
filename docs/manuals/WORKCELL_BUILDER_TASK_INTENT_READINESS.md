@@ -13,3 +13,9 @@ Task Intent Readiness adds an offline preview layer that converts detection mapp
 - Fake hardware remains the default recommendation.
 
 Future PRs may connect this readiness layer to dry-run planning/fake execution.
+
+
+## live_epd_feed_bridge update
+- Added live EPD feed bridge preview path (metadata-only).
+- EPD GUI remains separate.
+- No robot/gripper/conveyor command, no MoveIt call, no forced RealSense launch.

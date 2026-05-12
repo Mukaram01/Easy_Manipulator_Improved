@@ -2,9 +2,9 @@ scenarios:
   - id: static_table_pick_place
     name: Static table pick and place
     category: pick_place
-    current_status: needs_live_epd
+    current_status: partial_preview
     required_capabilities: [robot_selection, end_effector_selection, table_asset, camera_mount, camera_placement, detection_zone, pick_zone, place_zone, epd_detection_snapshot, task_intent_preview]
-    missing_capabilities: [live_epd_feed, dry_run_planning_check, grasp_strategy_selection]
+    missing_capabilities: [dry_run_planning_check, grasp_strategy_selection]
     live_epd_feed_required: true
     fake_hardware_preview_supported: true
     task_intent_preview_supported: true
@@ -15,7 +15,7 @@ scenarios:
     category: conveyor_pick
     current_status: partial_preview
     required_capabilities: [conveyor_asset, camera_mount, detection_zone, pick_zone, place_zone, conveyor_flow_preview, epd_detection_mapping, task_intent_preview]
-    missing_capabilities: [live_epd_feed, runtime_wait_pick, dry_run_planning_check]
+    missing_capabilities: [runtime_wait_pick, dry_run_planning_check]
     live_epd_feed_required: true
     fake_hardware_preview_supported: true
     task_intent_preview_supported: true
