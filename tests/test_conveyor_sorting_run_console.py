@@ -52,3 +52,16 @@ def test_scenario_detection_enables_console_path():
     text = SCENE_SELECT_CPP.read_text(encoding='utf-8')
     assert 'conveyor_sorting_live_epd_preview' in text
     assert 'on_open_conveyor_sorting_run_console_clicked' in text
+
+
+def test_emd_planner_execution_tokens_present():
+    text = (UI.read_text(encoding='utf-8') + CPP.read_text(encoding='utf-8'))
+    for token in [
+        'EMD Planner / Execution Files',
+        'Generate Planner Config',
+        'Generate Planner Launch',
+        'Copy Planner Launch Command',
+        'Copy Execution Launch Command',
+        'Workcell Studio generated the EMD files. Planning/execution still happens through run_grasp_planner and run_grasp_execution.',
+    ]:
+        assert token in text

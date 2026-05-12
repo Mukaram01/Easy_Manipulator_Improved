@@ -215,3 +215,19 @@ void ConveyorSortingRunConsole::onRefresh()
 // /workcell_studio/epd_detection_snapshot_json
 // /workcell_studio/epd_connector_status
 // ros2 run workcell_builder epd_to_workcell_snapshot_node.py
+
+// EMD Planner / Execution Files
+// generated planner config path
+// generated planner launch path
+// planner command
+// execution command
+// selected gripper
+// selected EPD topics
+// selected point cloud topic
+// config validation status
+// Workcell Studio generated the EMD files. Planning/execution still happens through run_grasp_planner and run_grasp_execution.
+
+// Generate Planner Config
+// Generate Planner Launch
+// Copy Planner Launch Command
+// Copy Execution Launch Command
