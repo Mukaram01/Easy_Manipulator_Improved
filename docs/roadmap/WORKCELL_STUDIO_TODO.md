@@ -59,3 +59,10 @@ This roadmap tracks prioritized implementation work from preview capability to l
 
 
 This readiness feature does not execute robot motion and does not call MoveIt execution; it only generates dry-run artifacts for future planning work.
+
+
+## EMD Grasp Request Contract (preview-only)
+- EPD provides perception only.
+- Existing EMD planner remains downstream planner.
+- Workcell Studio now emits grasp_strategy.yaml, emd_grasp_planner_request.yaml/json, and readiness reports.
+- No planner execution or robot motion is called in this stage.

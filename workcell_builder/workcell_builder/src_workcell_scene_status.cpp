@@ -116,6 +116,20 @@ SceneStatusReport inspect_scene_status(
       add_item(report, "Routing preview only", "INFO", "preview_only");
       add_item(report, "No robot motion commanded", "OK", "No robot motion commanded");
       add_item(report, "Preview-only safety notes", "INFO", "No motion/MoveIt/gripper commands in preview mode");
+
+      const fs::path grasp_strategy_yaml = scene_dir / "preview" / "grasp_strategy.yaml";
+      const fs::path grasp_request_yaml = scene_dir / "preview" / "emd_grasp_planner_request.yaml";
+      const fs::path readiness_yaml2 = scene_dir / "preview" / "grasp_strategy_readiness_report.yaml";
+      add_item(report, "Grasp strategy available", fs::exists(grasp_strategy_yaml) ? "OK" : "WARN", "Check Grasp Strategy");
+      add_item(report, "Selected grasp strategy", fs::exists(readiness_yaml2) ? "OK" : "WARN", "from grasp_strategy_readiness_report");
+      add_item(report, "End effector compatible", fs::exists(readiness_yaml2) ? "OK" : "WARN", "preview compatibility check");
+      add_item(report, "Object pose source", fs::exists(grasp_request_yaml) ? "OK" : "WARN", "live_epd_detection_mapping or zone center fallback");
+      add_item(report, "Segmented cloud available", fs::exists(grasp_request_yaml) ? "INFO" : "WARN", "from EPD mapping artifacts");
+      add_item(report, "EMD grasp planner request generated", fs::exists(grasp_request_yaml) ? "OK" : "WARN", "Generate EMD Grasp Request");
+      add_item(report, "Existing EMD grasp planner backend", "INFO", "existing_emd_grasp_planner");
+      add_item(report, "No grasp execution called", "OK", "grasp_execution_called: false");
+      add_item(report, "No robot motion commanded", "OK", "robot_motion_commanded: false");
+      add_item(report, "No gripper command sent", "OK", "gripper_command_sent: false");
       if (!flows.empty()) {
         const auto preview = generate_preview_result(zones, flows.front());
         add_item(report, "conveyor pick preview available", preview.valid ? "OK" : "ERROR", preview.valid ? "preview metadata computed" : "preview metadata invalid");

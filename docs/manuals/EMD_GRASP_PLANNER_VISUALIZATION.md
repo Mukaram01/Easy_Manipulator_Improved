@@ -48,3 +48,10 @@ If `DISPLAY`/`WAYLAND_DISPLAY` are unavailable and `point_cloud_visualization_sa
 
 ## Relation to Workcell Studio
 Workcell Studio uses readiness/previews. This viewer remains a planner-side debug utility only.
+
+
+## EMD Grasp Request Contract (preview-only)
+- EPD provides perception only.
+- Existing EMD planner remains downstream planner.
+- Workcell Studio now emits grasp_strategy.yaml, emd_grasp_planner_request.yaml/json, and readiness reports.
+- No planner execution or robot motion is called in this stage.
