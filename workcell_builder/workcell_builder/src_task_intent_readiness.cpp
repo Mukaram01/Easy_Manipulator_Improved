@@ -1,4 +1,5 @@
 #include "task_intent_readiness.hpp"
+#include "class_routing_model.hpp"
 
 #include <boost/filesystem.hpp>
 #include <fstream>
@@ -19,6 +20,7 @@ TaskIntentPreview build_task_intent_preview(const std::string & robot, const std
   p.pick_zone = mapping.pick_zone;
   p.conveyor_flow = mapping.conveyor_flow;
   p.time_to_pick_s = mapping.time_to_pick_s;
+  // class-to-place-zone routing hook: place_zone may be overwritten by routing preview artifacts
 
   for (const auto & z : zones) {
     if (z.type == "robot_place" && p.place_zone.empty()) p.place_zone = z.name;

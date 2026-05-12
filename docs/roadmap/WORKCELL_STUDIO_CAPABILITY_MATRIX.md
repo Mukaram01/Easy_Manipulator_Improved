@@ -17,3 +17,7 @@
 
 
 This readiness feature does not execute robot motion and does not call MoveIt execution; it only generates dry-run artifacts for future planning work.
+
+
+## Class-to-Place-Zone Routing
+Preview-only class-to-place-zone routing maps EPD class labels from snapshot/live bridge to destination place zones, with unknown/default typically routed to reject bin. No robot motion, no MoveIt execution, no gripper or conveyor hardware commands, EPD GUI remains separate, real hardware later.

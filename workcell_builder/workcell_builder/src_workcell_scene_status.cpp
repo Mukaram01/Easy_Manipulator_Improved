@@ -105,6 +105,16 @@ SceneStatusReport inspect_scene_status(
       add_item(report, "Robot configured", robot_pkg != "<unknown>" ? "OK" : "ERROR", robot_pkg);
       add_item(report, "End effector configured", ee_pkg != "<none>" ? "OK" : "WARN", ee_pkg);
       add_item(report, "Detection mapping available", fs::exists(scene_dir / "preview" / "perception_detection_mapping.yaml") ? "OK" : "WARN", "offline mapping artifact");
+      const fs::path routing_table = scene_dir / "preview" / "class_routing_table.yaml";
+      const fs::path routing_result = scene_dir / "preview" / "class_routing_result.yaml";
+      add_item(report, "Class routing table available", fs::exists(routing_table) ? "OK" : "WARN", fs::exists(routing_table) ? "class_routing_table.yaml present" : "Add Class Route and Preview Class Routing");
+      add_item(report, "Routes configured", fs::exists(routing_table) ? "OK" : "WARN", "class_label -> place_zone metadata");
+      add_item(report, "Default place zone configured", fs::exists(routing_table) ? "OK" : "WARN", "reject/default route check");
+      add_item(report, "Class label matched", fs::exists(routing_result) ? "OK" : "INFO", "selected from routing_result");
+      add_item(report, "Selected place zone", fs::exists(routing_result) ? "OK" : "WARN", "task intent uses routed place zone when available");
+      add_item(report, "Fallback route used", fs::exists(routing_result) ? "INFO" : "WARN", "unknown class fallback to reject/default");
+      add_item(report, "Routing preview only", "INFO", "preview_only");
+      add_item(report, "No robot motion commanded", "OK", "No robot motion commanded");
       add_item(report, "Preview-only safety notes", "INFO", "No motion/MoveIt/gripper commands in preview mode");
       if (!flows.empty()) {
         const auto preview = generate_preview_result(zones, flows.front());

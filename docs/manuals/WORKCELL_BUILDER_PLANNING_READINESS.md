@@ -15,3 +15,7 @@ Artifacts written to `<scene>/preview/`:
 - `dry_run_planning_request.yaml`
 
 `runtime_mode` is `dry_run_readiness_only` and `can_execute` is always `false`.
+
+
+## Class-to-Place-Zone Routing
+Preview-only class-to-place-zone routing maps EPD class labels from snapshot/live bridge to destination place zones, with unknown/default typically routed to reject bin. No robot motion, no MoveIt execution, no gripper or conveyor hardware commands, EPD GUI remains separate, real hardware later.
