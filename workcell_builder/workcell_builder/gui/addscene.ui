@@ -451,7 +451,20 @@
      </item>
     </layout>
    </item>
-  </layout>
+         <item>
+        <widget class="QGroupBox" name="work_zone_group">
+         <property name="title"><string>Work Zones (Metadata Preview)</string></property>
+         <layout class="QVBoxLayout" name="work_zone_layout">
+          <item><widget class="QPushButton" name="add_work_zone"><property name="text"><string>Add Work Zone</string></property></widget></item>
+          <item><widget class="QPushButton" name="edit_work_zone"><property name="text"><string>Edit Work Zone</string></property></widget></item>
+          <item><widget class="QPushButton" name="remove_work_zone"><property name="text"><string>Remove Work Zone</string></property></widget></item>
+          <item><widget class="QPushButton" name="add_conveyor_flow"><property name="text"><string>Add Conveyor Flow</string></property></widget></item>
+          <item><widget class="QComboBox" name="work_zone_type_combo"><item><property name="text"><string>camera_detection</string></property></item><item><property name="text"><string>robot_pick</string></property></item><item><property name="text"><string>robot_place</string></property></item><item><property name="text"><string>inspection</string></property></item><item><property name="text"><string>safety_exclusion_preview</string></property></item></widget></item>
+          <item><widget class="QLabel" name="runtime_mode_label"><property name="text"><string>runtime_mode: metadata_only</string></property></widget></item>
+         </layout>
+        </widget>
+       </item>
+</layout>
  </widget>
  <resources/>
  <connections/>

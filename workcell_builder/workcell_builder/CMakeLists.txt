@@ -128,6 +128,7 @@ add_executable(workcell_builder
     src_validation_dashboard_model.cpp
     src_workcell_scene_status.cpp
     src_workcell_camera_model.cpp
+    src_workcell_zone_model.cpp
     src_scene_template_library.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp

@@ -43,3 +43,6 @@ Preview-only cells should return: `No runtime launch command available for previ
 
 ## Camera placement metadata
 This flow uses `realsense2_description` cameras attached to support assets via `parent_object` + `parent_link` and `runtime_driver: metadata_only`. No RealSense runtime launch is added; EPD remains separate and detection/pick/place zones are out-of-scope for this PR.
+
+## Work zones metadata preview
+Detection/pick/place zones and conveyor_flow metadata are preserved in environment YAML and scene bundles. This is metadata/preview only (not safety-certified). Conveyor runtime tracking and robot wait logic are future work.

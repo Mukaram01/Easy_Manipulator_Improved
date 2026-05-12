@@ -1,6 +1,7 @@
 #include "workcell_scene_status.hpp"
 
 #include <yaml-cpp/yaml.h>
+#include "workcell_zone_model.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -75,6 +76,19 @@ SceneStatusReport inspect_scene_status(
           }
         }
       }
+
+      std::vector<WorkZone> zones; std::vector<ConveyorFlow> flows;
+      parse_work_zones_from_yaml(root, &zones, &flows);
+      std::vector<std::string> camera_names; if (root["cameras"]) { for (const auto & c : root["cameras"]) { if (c["name"]) camera_names.push_back(c["name"].as<std::string>()); } }
+      std::vector<std::string> robots; if (root["robot"] && root["robot"]["name"]) robots.push_back(root["robot"]["name"].as<std::string>());
+      const auto zone_validation = validate_work_zones(zones, flows, camera_names, robots);
+      add_item(report, "Detection zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "camera_detection"; }) ? "OK" : "WARN", "Metadata check");
+      add_item(report, "Pick zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_pick"; }) ? "OK" : "WARN", "Metadata check");
+      add_item(report, "Place zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_place"; }) ? "OK" : "WARN", "Metadata check");
+      add_item(report, "Conveyor flow configured", flows.empty() ? "INFO" : "OK", flows.empty() ? "No conveyor flow metadata" : "Conveyor flow metadata present");
+      for (const auto & info : zone_validation.infos) add_item(report, "Work zones", "INFO", info);
+      for (const auto & warn : zone_validation.warnings) { add_item(report, "Work zones", "WARN", warn); report.warnings.push_back(warn); }
+      for (const auto & err : zone_validation.errors) { add_item(report, "Work zones", "ERROR", err); report.blockers.push_back(err); }
 
       if (root["cameras"]) {
         add_item(report, "Camera configured", "OK", "camera metadata present", environment_yaml);
