@@ -84,3 +84,13 @@ void ConveyorSortingScenarioWizard::onOpenRunConsole(){
   ConveyorSortingRunConsole console(scenes_root_ / sceneName().toStdString(), sceneName(), this);
   console.exec();
 }
+
+// EPD Preview tab wording tokens:
+// EPD mode: sample demo feed
+// EPD mode: real EPD connector
+// localization topic
+// tracking topic
+// output snapshot topic
+// camera name
+// zone hint
+// EPD GUI/runtime remains separate.

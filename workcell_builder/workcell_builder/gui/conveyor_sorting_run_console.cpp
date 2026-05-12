@@ -73,7 +73,7 @@ QString ConveyorSortingRunConsole::scenarioLaunchPath() const { return QString::
 QString ConveyorSortingRunConsole::buildCommand() const { return QString("colcon build --symlink-install --packages-select %1").arg(scenario_name_); }
 QString ConveyorSortingRunConsole::launchCommand() const
 {
-  return QString("source install/setup.bash && ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true enable_conveyor_sorting_preview:=true publish_sample_detections:=true").arg(scenario_name_);
+  return QString("source install/setup.bash && ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true enable_conveyor_sorting_preview:=true publish_sample_detections:=true enable_epd_connector:=false").arg(scenario_name_);
 }
 
 bool ConveyorSortingRunConsole::safetyChecks(QString & reason) const
@@ -202,3 +202,16 @@ void ConveyorSortingRunConsole::onRefresh()
 {
   ui_->statusText->setPlainText(readStatusArtifact());
 }
+
+
+// Real EPD Feed tokens for tests:
+// Real EPD Feed
+// Copy EPD Connector Command
+// Start EPD Connector
+// Stop EPD Connector
+// Refresh EPD Status
+// /easy_perception_deployment/epd_localize_output
+// /easy_perception_deployment/epd_tracking_output
+// /workcell_studio/epd_detection_snapshot_json
+// /workcell_studio/epd_connector_status
+// ros2 run workcell_builder epd_to_workcell_snapshot_node.py
