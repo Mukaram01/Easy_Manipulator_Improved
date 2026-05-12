@@ -36,3 +36,16 @@ assets:
       - sensor_realsense_d435i
     notes:
       - Existing asset reused. No files moved.
+
+  - asset_id: overhead_camera_gantry_support
+    display_name: Overhead camera gantry
+    asset_type: support
+    source:
+      path: assets/environment/overhead_camera_gantry_description
+      package: overhead_camera_gantry_description
+    geometry:
+      preferred_mesh: package://overhead_camera_gantry_description/meshes/visual/overhead_camera_gantry.stl
+    capabilities:
+      - asset_environment_support
+    notes:
+      - Standardized to realsense-style package layout.

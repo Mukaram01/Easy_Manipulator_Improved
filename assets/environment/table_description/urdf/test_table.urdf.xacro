@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="test_table">
+  <link name="world"/>
+  <xacro:include filename="$(find table_description)/urdf/table.urdf.xacro"/>
+  <xacro:table parent="world" prefix="preview">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:table>
+</robot>
