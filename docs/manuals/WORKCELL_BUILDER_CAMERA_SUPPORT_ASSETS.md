@@ -56,3 +56,7 @@ These support assets are intended to be used alongside the existing RealSense de
 ## Out of scope for this change
 
 Detection zones, pick/place zones, conveyor tracking, and EPD runtime behavior are intentionally not changed here and should be handled in a follow-up PR.
+
+
+## Camera placement metadata
+This flow uses `realsense2_description` cameras attached to support assets via `parent_object` + `parent_link` and `runtime_driver: metadata_only`. No RealSense runtime launch is added; EPD remains separate and detection/pick/place zones are out-of-scope for this PR.

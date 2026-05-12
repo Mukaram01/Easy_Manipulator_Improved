@@ -35,3 +35,7 @@ Instead, dependencies are recorded under `required_ros_packages` in `bundle_mani
 - Bundles are offline authoring artifacts only.
 - Imported bundles are **not** safety certificates.
 - No runtime execution, motion behavior, or EPD separation behavior is changed.
+
+
+## Camera placement metadata
+This flow uses `realsense2_description` cameras attached to support assets via `parent_object` + `parent_link` and `runtime_driver: metadata_only`. No RealSense runtime launch is added; EPD remains separate and detection/pick/place zones are out-of-scope for this PR.

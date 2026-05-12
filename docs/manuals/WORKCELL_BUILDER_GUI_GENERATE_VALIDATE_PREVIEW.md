@@ -39,3 +39,7 @@ Preview-only cells should return: `No runtime launch command available for previ
 
 ## Workcell Studio Scene Status panel
 - Added Generate / Validate / Preview readiness panel in Scene Select with explicit status checks, blockers, safety notes, and fake-hardware launch command defaults.
+
+
+## Camera placement metadata
+This flow uses `realsense2_description` cameras attached to support assets via `parent_object` + `parent_link` and `runtime_driver: metadata_only`. No RealSense runtime launch is added; EPD remains separate and detection/pick/place zones are out-of-scope for this PR.
