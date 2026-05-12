@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QDialog>
+#include <QProcess>
+#include <QTimer>
 #include <filesystem>
 
 namespace Ui { class ConveyorSortingRunConsole; }
@@ -17,20 +19,38 @@ public:
 
 private slots:
   void onRefresh();
-  void onCopyBuild();
-  void onCopyLaunch();
-  void onCopySample();
-  void onOpenSceneFolder();
-  void onOpenPreviewFolder();
-  void onOpenRvizConfig();
+  void onBuildScenario();
+  void onLaunchPreview();
+  void onStopPreview();
+  void onRestartPreview();
+  void onClearLog();
+  void onOpenLogFolder();
+
+  void onBuildOutput();
+  void onLaunchOutput();
+  void onBuildFinished(int exit_code, QProcess::ExitStatus status);
+  void onLaunchFinished(int exit_code, QProcess::ExitStatus status);
+  void onBuildError(QProcess::ProcessError error);
+  void onLaunchError(QProcess::ProcessError error);
 
 private:
-  QString buildRunCommandsText() const;
-  QString readStatusArtifact() const;
-  QString summarizeMissingFiles() const;
-  QString safetyStateText(const QString & status_text) const;
+  QString readStatusArtifact();
+  QString resolveWorkspaceRoot() const;
+  QString scenarioLaunchPath() const;
+  QString buildCommand() const;
+  QString launchCommand() const;
+  bool safetyChecks(QString & reason) const;
+  QString makeLogPath(const QString & prefix) const;
+  void appendLog(const QString & text);
+  void setBuildStatus(const QString & status);
+  void setLaunchStatus(const QString & status);
+  void setLastError(const QString & text);
 
   Ui::ConveyorSortingRunConsole * ui_;
   std::filesystem::path scene_path_;
   QString scenario_name_;
+  QProcess * build_process_;
+  QProcess * launch_process_;
+  QFile * active_log_file_;
+  QTimer status_timer_;
 };
