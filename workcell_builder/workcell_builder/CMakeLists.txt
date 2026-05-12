@@ -361,6 +361,11 @@ install(DIRECTORY templates
 install(DIRECTORY assets
   DESTINATION share/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/conveyor_sorting_live_preview_node.py
+  scripts/publish_sample_epd_snapshot.py
+  DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/
   DESTINATION share/${PROJECT_NAME}/legacy_assets)
 
