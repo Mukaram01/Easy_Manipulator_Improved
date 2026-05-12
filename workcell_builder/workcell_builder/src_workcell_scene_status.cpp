@@ -4,6 +4,7 @@
 #include "workcell_zone_model.hpp"
 #include "conveyor_pick_preview.hpp"
 #include "workcell_perception_snapshot.hpp"
+#include "task_intent_readiness.hpp"
 #include <fstream>
 
 namespace fs = boost::filesystem;
@@ -92,6 +93,13 @@ SceneStatusReport inspect_scene_status(
       add_item(report, "Conveyor flow configured", flows.empty() ? "INFO" : "OK", flows.empty() ? "No conveyor flow metadata" : "Conveyor flow metadata present");
       add_item(report, "Detection snapshot available", fs::exists(scene_dir / "preview" / "perception_detection_snapshot.yaml") ? "OK" : "INFO", "EPD-compatible offline metadata");
       add_item(report, "No EPD runtime launched", "OK", "EPD GUI remains separate");
+
+      const fs::path tip_yaml = scene_dir / "preview" / "task_intent_preview.yaml";
+      add_item(report, "Task intent preview", fs::exists(tip_yaml) ? "OK" : "WARN", fs::exists(tip_yaml) ? "task_intent_preview.yaml present" : "Generate Task Intent Preview");
+      add_item(report, "Robot configured", robot_pkg != "<unknown>" ? "OK" : "ERROR", robot_pkg);
+      add_item(report, "End effector configured", ee_pkg != "<none>" ? "OK" : "WARN", ee_pkg);
+      add_item(report, "Detection mapping available", fs::exists(scene_dir / "preview" / "perception_detection_mapping.yaml") ? "OK" : "WARN", "offline mapping artifact");
+      add_item(report, "Preview-only safety notes", "INFO", "No motion/MoveIt/gripper commands in preview mode");
       if (!flows.empty()) {
         const auto preview = generate_preview_result(zones, flows.front());
         add_item(report, "conveyor pick preview available", preview.valid ? "OK" : "ERROR", preview.valid ? "preview metadata computed" : "preview metadata invalid");
