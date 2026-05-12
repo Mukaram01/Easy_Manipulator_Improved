@@ -64,3 +64,8 @@ grasp_planning_node:
             number_contact_points: 1.3
     visualization_params:
       point_cloud_visualization: false
+      point_cloud_visualization_backend: "pcl"
+      point_cloud_visualization_blocking: false
+      point_cloud_visualization_timeout_ms: 2000
+      point_cloud_visualization_save_debug_pcd: false
+      point_cloud_visualization_debug_dir: "/tmp/emd_grasp_visualization"
