@@ -18,6 +18,8 @@
 #include <mutex>
 #include <algorithm>
 #include <sstream>
+#include <thread>
+#include <chrono>
 
 #include "emd/grasp_planner/end_effectors/finger_gripper.hpp"
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("FingerGripper");
@@ -1577,8 +1579,11 @@ void FingerGripper::visualize_grasps(
         0.01, 1.0, 0, 1.0, "sample_side_2 " + std::to_string(i));
     }
 
-    viewer->spin();
-    viewer->close();
+    const auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (!viewer->wasStopped() && std::chrono::steady_clock::now() < end_time) {
+      viewer->spinOnce(30, true);
+      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
     viewer->removeAllShapes();
   }
   viewer->removeAllPointClouds();

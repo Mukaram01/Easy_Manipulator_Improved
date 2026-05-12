@@ -15,6 +15,8 @@
 
 // Main PCL files
 #include <mutex>
+#include <thread>
+#include <chrono>
 
 #include "emd/grasp_planner/end_effectors/suction_gripper.hpp"
 static const rclcpp::Logger & LOGGER = rclcpp::get_logger("EMD::SuctionGripper");
@@ -330,8 +332,11 @@ void SuctionGripper::visualize_grasps(
         object.maxPoint.x - object.minPoint.x,
         object.maxPoint.y - object.minPoint.y,
         object.maxPoint.z - object.minPoint.z, "bbox_" + object.object_name);
-      viewer->spin();
-      viewer->close();
+      const auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+      while (!viewer->wasStopped() && std::chrono::steady_clock::now() < end_time) {
+        viewer->spinOnce(30, true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      }
       viewer->removeAllShapes();
     }
   } else {

@@ -18,8 +18,13 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <type_traits>
 #include <utility>
+#include <yaml-cpp/yaml.h>
+#include <pcl/io/pcd_io.h>
 
 namespace
 {
@@ -246,9 +251,27 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
           std::chrono::duration_cast<std::chrono::milliseconds>(grasp_end - grasp_begin).count()) +
           " [ms] ");
 
-      if (node->get_parameter("visualization_params.point_cloud_visualization").as_bool()) {
+      bool point_cloud_visualization = false;
+      node->get_parameter_or(
+        "visualization_params.point_cloud_visualization", point_cloud_visualization, false);
+      if (point_cloud_visualization) {
+        if (ensure_visualization_runtime()) {
+          RCLCPP_INFO(
+            LOGGER, "Visualizing grasps for object '%s' (cloud points: %zu).",
+            object.object_name.c_str(), object.cloud ? object.cloud->size() : 0UL);
+          viewer->removeAllPointClouds();
+          viewer->removeAllShapes();
+          viewer->removeAllCoordinateSystems();
+          if (viewer->wasStopped()) {
+            viewer->resetStoppedFlag();
+          }
         gripper->visualize_grasps(viewer, object);
-        RCLCPP_INFO(LOGGER, "Point Cloud Viewer Visualization");
+        } else {
+          RCLCPP_WARN(
+            LOGGER, "Skipping visualization for '%s': %s",
+            object.object_name.c_str(), visualization_unavailable_reason.c_str());
+          maybe_save_visualization_debug_artifacts(object, visualization_unavailable_reason);
+        }
       }
     }
 
@@ -272,6 +295,83 @@ emd_msgs::msg::GraspTask grasp_planner::GraspScene<T>::generate_grasp_task()
   object_pose_rectification(grasp_task);
 
   return grasp_task;
+}
+
+template<typename T>
+bool grasp_planner::GraspScene<T>::is_display_available() const
+{
+  const char * display = std::getenv("DISPLAY");
+  const char * wayland = std::getenv("WAYLAND_DISPLAY");
+  return (display != nullptr && std::string(display).size() > 0U) ||
+         (wayland != nullptr && std::string(wayland).size() > 0U);
+}
+
+template<typename T>
+bool grasp_planner::GraspScene<T>::ensure_visualization_runtime()
+{
+  if (visualization_initialized) {
+    return visualization_available;
+  }
+  visualization_initialized = true;
+  std::string backend{"pcl"};
+  node->get_parameter_or(
+    "visualization_params.point_cloud_visualization_backend", backend, std::string("pcl"));
+  RCLCPP_INFO(LOGGER, "Visualization backend selected: %s", backend.c_str());
+  if (backend != "pcl") {
+    visualization_unavailable_reason = "unsupported backend '" + backend + "'";
+    return false;
+  }
+  if (!is_display_available()) {
+    visualization_unavailable_reason = "no display available (DISPLAY/WAYLAND_DISPLAY unset)";
+    return false;
+  }
+  try {
+    viewer = std::make_shared<pcl::visualization::PCLVisualizer>("EMD Grasp Planner Viewer");
+    visualization_available = static_cast<bool>(viewer);
+    if (!visualization_available) {
+      visualization_unavailable_reason = "PCL viewer allocation returned null";
+      return false;
+    }
+    RCLCPP_INFO(LOGGER, "Point cloud visualization viewer initialized successfully.");
+  } catch (const std::exception & ex) {
+    visualization_unavailable_reason = std::string("viewer init error: ") + ex.what();
+    visualization_available = false;
+  }
+  return visualization_available;
+}
+
+template<typename T>
+void grasp_planner::GraspScene<T>::maybe_save_visualization_debug_artifacts(
+  const GraspObject & object,
+  const std::string & reason) const
+{
+  bool save_debug = false;
+  node->get_parameter_or(
+    "visualization_params.point_cloud_visualization_save_debug_pcd", save_debug, false);
+  if (!save_debug) {return;}
+  std::string debug_dir{"/tmp/emd_grasp_visualization"};
+  node->get_parameter_or(
+    "visualization_params.point_cloud_visualization_debug_dir", debug_dir, debug_dir);
+  std::filesystem::create_directories(debug_dir);
+  const auto stamp = std::to_string(node->now().nanoseconds());
+  if (object.cloud && !object.cloud->empty()) {
+    pcl::io::savePCDFileBinary(
+      debug_dir + "/object_cloud_" + stamp + ".pcd",
+      *object.cloud);
+  }
+  if (cloud && !cloud->empty()) {
+    pcl::io::savePCDFileBinary(
+      debug_dir + "/scene_cloud_" + stamp + ".pcd",
+      *cloud);
+  }
+  YAML::Node summary;
+  summary["reason"] = reason;
+  summary["object_name"] = object.object_name;
+  summary["object_cloud_size"] = object.cloud ? object.cloud->size() : 0U;
+  summary["scene_cloud_size"] = cloud ? cloud->size() : 0U;
+  std::ofstream fout(debug_dir + "/grasp_debug_summary_" + stamp + ".yaml");
+  fout << summary;
+  RCLCPP_WARN(LOGGER, "Visualization debug artifacts written to '%s'", debug_dir.c_str());
 }
 
 template<typename T>

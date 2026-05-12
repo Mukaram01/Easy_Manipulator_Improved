@@ -62,6 +62,7 @@
 #include <future>
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -88,8 +89,7 @@ public:
     cloud_plane_removed(new pcl::PointCloud<pcl::PointXYZRGB>()),
     org_cloud(new pcl::PointCloud<pcl::PointXYZRGB>()),
     cloud_table(new pcl::PointCloud<pcl::PointXYZRGB>()),
-    table_coeff(new pcl::ModelCoefficients),
-    viewer(new pcl::visualization::PCLVisualizer("Cloud viewer"))
+    table_coeff(new pcl::ModelCoefficients)
   {
     auto clock = node->get_clock();
     this->buffer_ = std::make_shared<tf2_ros::Buffer>(clock);
@@ -238,6 +238,12 @@ protected:
   std::shared_ptr<grasp_planner::collision::CollisionObject> world_collision_object;
   /*! \brief PCL Visualizer  */
   pcl::visualization::PCLVisualizer::Ptr viewer;
+  /*! \brief True once visualization capability is evaluated and enabled */
+  bool visualization_initialized{false};
+  /*! \brief True when runtime can safely create and use PCL visualization */
+  bool visualization_available{false};
+  /*! \brief Reason for why visualization is unavailable */
+  std::string visualization_unavailable_reason;
   /*! \brief Intermediate message type for conversion to PointCloud2 message */
   sensor_msgs::msg::PointCloud2 pointcloud2;
 
@@ -254,6 +260,12 @@ protected:
   std::atomic_bool execution_in_progress{false};
   /*! \brief Runtime gate to skip sending new execution requests while busy */
   bool execution_gate_enabled{true};
+
+  bool is_display_available() const;
+  bool ensure_visualization_runtime();
+  void maybe_save_visualization_debug_artifacts(
+    const GraspObject & object,
+    const std::string & reason) const;
 
   #if EPD_ENABLED == 1
   /*! \brief Client that triggers the EPD workflow */
