@@ -13,3 +13,9 @@ EPD remains external; this document covers metadata-only offline detection snaps
 
 ## Task Intent Readiness note
 This layer is preview/readiness only and does not execute robot motion, MoveIt planning, or gripper runtime commands.
+
+
+## live_epd_feed_bridge update
+- Added live EPD feed bridge preview path (metadata-only).
+- EPD GUI remains separate.
+- No robot/gripper/conveyor command, no MoveIt call, no forced RealSense launch.
