@@ -1,0 +1,5 @@
+objects:
+  - link: base_link
+    joint: base_joint
+    visual: package://simple_conveyor_description/meshes/simple_conveyor.stl
+    collision: package://simple_conveyor_description/meshes/simple_conveyor.stl
