@@ -92,6 +92,8 @@ private slots:
   void on_export_preview_clicked();
   void on_browse_scenes_folder_clicked();
   void on_refresh_scenes_button_clicked();
+  void on_export_scene_bundle_clicked();
+  void on_import_scene_bundle_clicked();
 
 private:
   enum class MessageLevel

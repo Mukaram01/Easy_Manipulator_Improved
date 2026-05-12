@@ -45,3 +45,7 @@ After load/edit/regenerate, use **Run Offline Validation** to review:
 - readiness blockers/warnings
 
 This is offline-only safety validation; no ROS launch, no MoveIt planning/execution, and no real hardware enablement.
+
+
+## Scene Bundle portability
+Use **Export Scene Bundle** and **Import Scene Bundle** in Scene Select to move full scene authoring artifacts (including generated environment assets) between workspaces while preserving fake-hardware-first defaults and safety notes.
