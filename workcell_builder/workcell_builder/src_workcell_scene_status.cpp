@@ -75,6 +75,19 @@ SceneStatusReport inspect_scene_status(
           }
         }
       }
+
+      if (root["cameras"]) {
+        add_item(report, "Camera configured", "OK", "camera metadata present", environment_yaml);
+        for (const auto & c : root["cameras"]) {
+          const std::string pkg = c["package"] ? c["package"].as<std::string>() : "";
+          const std::string po = c["parent_object"] ? c["parent_object"].as<std::string>() : "world";
+          const std::string pl = c["parent_link"] ? c["parent_link"].as<std::string>() : "world";
+          add_item(report, "Camera package found", pkg == "realsense2_description" ? "OK" : "WARN", pkg);
+          add_item(report, "Parent mount object found", po == "world" ? "WARN" : "OK", po == "world" ? "camera appears floating unless intentionally wall/world mounted" : po);
+          add_item(report, "Parent mount link found", pl.empty() ? "ERROR" : "OK", pl.empty() ? "camera parent link missing" : pl);
+          add_item(report, "Runtime driver", "INFO", (c["runtime_driver"] ? c["runtime_driver"].as<std::string>() : "metadata_only") + " (metadata/URDF preview only)");
+        }
+      } else { add_item(report, "Camera configured", "WARN", "No camera metadata found", environment_yaml); }
     } catch (...) {
       report.warnings.push_back("environment.yaml parse warning");
       add_item(report, "environment.yaml parse", "WARN", "Could not fully parse robot/tool/object dependencies", environment_yaml);

@@ -100,6 +100,7 @@ SceneBundleResult export_scene_bundle(const SceneBundleExportOptions & options)
   manifest["required_ros_packages"]["robots"].push_back("ur_description");
   manifest["required_ros_packages"]["end_effectors"].push_back("robotiq_85_description");
   manifest["bundled_environment_assets"] = bundled_assets;
+  manifest["required_camera_packages"] = YAML::Load("[realsense2_description]");
   manifest["scene_files"] = copied_scene_files;
   manifest["warnings"] = result.warnings;
   manifest["fake_hardware_default"] = true;
