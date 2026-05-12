@@ -1,5 +1,6 @@
 #include "conveyor_sorting_scenario_wizard.h"
 #include "ui_conveyor_sorting_scenario_wizard.h"
+#include "conveyor_sorting_run_console.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -36,6 +37,7 @@ ConveyorSortingScenarioWizard::ConveyorSortingScenarioWizard(const fs::path & sc
   connect(ui_->copyBuildCommandButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onCopyBuildCommand);
   connect(ui_->copyLaunchCommandButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onCopyLaunchCommand);
   connect(ui_->copySampleEpdCommandButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onCopySampleEpdCommand);
+  connect(ui_->openRunConsoleButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onOpenRunConsole);
   loadDefaults();
 }
 ConveyorSortingScenarioWizard::~ConveyorSortingScenarioWizard() { delete ui_; }
@@ -77,3 +79,8 @@ void ConveyorSortingScenarioWizard::onCopySampleEpdCommand(){QGuiApplication::cl
 // enable_conveyor_sorting_preview epd_snapshot_topic publish_sample_detections sample_detection_class sample_detection_period_s
 // /workcell_studio/conveyor_sorting_preview_markers /workcell_studio/conveyor_sorting_preview_status
 // conveyor_sorting_live_preview_node.py publish_sample_epd_snapshot.py
+
+void ConveyorSortingScenarioWizard::onOpenRunConsole(){
+  ConveyorSortingRunConsole console(scenes_root_ / sceneName().toStdString(), sceneName(), this);
+  console.exec();
+}

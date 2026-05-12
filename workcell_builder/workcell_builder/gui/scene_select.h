@@ -102,6 +102,7 @@ private slots:
 
   void on_create_scenario_template_clicked();
   void on_create_conveyor_sorting_live_epd_preview_clicked();
+  void on_open_conveyor_sorting_run_console_clicked();
 
 private:
   enum class MessageLevel

@@ -648,6 +648,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
   connect(ui->create_scenario_template, &QPushButton::clicked, this, &SceneSelect::on_create_scenario_template_clicked);
   connect(ui->create_conveyor_sorting_live_epd_preview, &QPushButton::clicked, this, &SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked);
+  connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_clicked);
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
   for (auto * button : placeholder_buttons) {
     button->setText(button->text() + " (coming soon)");

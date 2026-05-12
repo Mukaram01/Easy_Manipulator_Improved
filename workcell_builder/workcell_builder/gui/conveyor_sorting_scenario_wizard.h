@@ -30,6 +30,7 @@ private slots:
   void onCopyBuildCommand();
   void onCopyLaunchCommand();
   void onCopySampleEpdCommand();
+  void onOpenRunConsole();
 
 private:
   void loadDefaults();
