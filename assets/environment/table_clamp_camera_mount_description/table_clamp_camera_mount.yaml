@@ -1,0 +1,23 @@
+table_clamp_camera_mount:
+  child_link: table_clamp_camera_mount_body
+  links:
+    table_clamp_camera_mount_body:
+      visual:
+        name: table_clamp_camera_mount_visual
+        geometry:
+          filepath: package://table_clamp_camera_mount_description/meshes/visual/table_clamp_camera_mount.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+      collision:
+        name: table_clamp_camera_mount_collision
+        geometry:
+          filepath: package://table_clamp_camera_mount_description/meshes/collision/table_clamp_camera_mount.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+  table_clamp_camera_mount_base_joint:
+    ext_joint_type: fixed
+    child_link: table_clamp_camera_mount_body

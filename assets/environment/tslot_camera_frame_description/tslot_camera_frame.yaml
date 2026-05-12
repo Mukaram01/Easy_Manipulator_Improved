@@ -1,0 +1,23 @@
+tslot_camera_frame:
+  child_link: tslot_camera_frame_body
+  links:
+    tslot_camera_frame_body:
+      visual:
+        name: tslot_camera_frame_visual
+        geometry:
+          filepath: package://tslot_camera_frame_description/meshes/visual/tslot_camera_frame.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+      collision:
+        name: tslot_camera_frame_collision
+        geometry:
+          filepath: package://tslot_camera_frame_description/meshes/collision/tslot_camera_frame.stl
+          scale:
+            scale_x: 1.0
+            scale_y: 1.0
+            scale_z: 1.0
+  tslot_camera_frame_base_joint:
+    ext_joint_type: fixed
+    child_link: tslot_camera_frame_body

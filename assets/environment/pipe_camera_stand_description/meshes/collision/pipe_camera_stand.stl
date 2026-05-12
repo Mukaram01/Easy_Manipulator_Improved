@@ -1,0 +1,86 @@
+solid pipe_camera_stand_collision
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex 0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 -0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 -0.325 0.825
+      vertex 0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 -0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex 0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex 0.425 0.325 0.825
+      vertex -0.425 0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 0.325 -0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 0.325 0.825
+      vertex -0.425 -0.325 0.825
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex -0.425 0.325 -0.825
+      vertex -0.425 -0.325 0.825
+      vertex -0.425 -0.325 -0.825
+    endloop
+  endfacet
+endsolid pipe_camera_stand_collision
