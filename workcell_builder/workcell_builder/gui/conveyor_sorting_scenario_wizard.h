@@ -41,6 +41,10 @@ private slots:
   void onOpenRunConsole();
 
 private:
+  bool validatePoseField(const QString & text, const QString & fieldName, QStringList & errors) const;
+  bool zoneExists(const QString & zoneName) const;
+  QString generatedScenePath() const;
+  void setGeneratedState(bool generated);
   void loadDefaults();
   void ensureZoneTableDefaults();
   void ensureRouteTableDefaults();

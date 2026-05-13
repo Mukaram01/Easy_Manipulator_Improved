@@ -9,6 +9,7 @@
 #include <QTableWidgetItem>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QMessageBox>
 
 #include <fstream>
 
@@ -57,6 +58,8 @@ ConveyorSortingScenarioWizard::ConveyorSortingScenarioWizard(
   ui_->generateFilesButton->setToolTip("Generate Files is enabled after Generate Scenario.");
   ui_->sampleCommand->setReadOnly(true);
   loadDefaults();
+  ui_->openRunConsoleButton->setEnabled(false);
+  ui_->openRunConsoleButton->setToolTip("Generate Files before opening run console.");
 }
 
 ConveyorSortingScenarioWizard::~ConveyorSortingScenarioWizard()
@@ -113,6 +116,7 @@ void ConveyorSortingScenarioWizard::onUseRecommendedLayout()
   ui_->cameraPoseEdit->setText("0.0,0.0,1.6,-1.57,0,0");
   ui_->binPoseEdit->setText(
     "0.65,-0.25,0.0,0,0,0 | 0.65,0.0,0.0,0,0,0 | 0.65,0.25,0.0,0,0,0");
+  updateStatus("Recommended layout applied");
 }
 
 void ConveyorSortingScenarioWizard::onResetLayout()
@@ -260,7 +264,9 @@ void ConveyorSortingScenarioWizard::onGenerateYaml()
 void ConveyorSortingScenarioWizard::onGenerateFiles()
 {
   writeScenarioArtifacts(true);
-  updateStatus("Generated Files");
+  ui_->openRunConsoleButton->setEnabled(true);
+  ui_->openRunConsoleButton->setToolTip("Open run console for generated scene.");
+  updateStatus("Generated Files in: " + QString::fromStdString((scenes_root_ / sceneName().toStdString()).string()));
 }
 
 void ConveyorSortingScenarioWizard::onRefreshStatus()
@@ -271,6 +277,7 @@ void ConveyorSortingScenarioWizard::onRefreshStatus()
 void ConveyorSortingScenarioWizard::onCopyBuildCommand()
 {
   QGuiApplication::clipboard()->setText("colcon build --symlink-install --packages-select " + sceneName());
+  updateStatus("Copied build command");
 }
 
 void ConveyorSortingScenarioWizard::onCopyLaunchCommand()
@@ -278,12 +285,14 @@ void ConveyorSortingScenarioWizard::onCopyLaunchCommand()
   QGuiApplication::clipboard()->setText(
     "ros2 launch " + sceneName() +
     " demo.launch.py use_fake_hardware:=true launch_rviz:=true enable_conveyor_sorting_preview:=true publish_sample_detections:=true");
+  updateStatus("Copied launch command");
 }
 
 void ConveyorSortingScenarioWizard::onCopySampleEpdCommand()
 {
   QGuiApplication::clipboard()->setText(
     "python3 scripts/publish_sample_epd_snapshot.py --camera realsense_d435i_1 --zone detection_zone_1");
+  updateStatus("Copied sample EPD command");
 }
 
 // live preview runtime tokens:
@@ -292,13 +301,13 @@ void ConveyorSortingScenarioWizard::onCopySampleEpdCommand()
 // conveyor_sorting_live_preview_node.py publish_sample_epd_snapshot.py
 
 
-void ConveyorSortingScenarioWizard::onAddZone(){ ui_->zoneTable->insertRow(ui_->zoneTable->rowCount()); updateStatus("Zone added"); }
-void ConveyorSortingScenarioWizard::onRemoveZone(){ int r=ui_->zoneTable->currentRow(); if(r>=0) ui_->zoneTable->removeRow(r); updateStatus("Zone removed"); }
+void ConveyorSortingScenarioWizard::onAddZone(){ int r=ui_->zoneTable->rowCount(); ui_->zoneTable->insertRow(r); ui_->zoneTable->setItem(r,0,new QTableWidgetItem(QString("zone_%1").arg(r+1))); ui_->zoneTable->setItem(r,1,new QTableWidgetItem("metadata")); ui_->zoneTable->setItem(r,2,new QTableWidgetItem("0,0,0")); ui_->zoneTable->setItem(r,3,new QTableWidgetItem("0.2,0.2,0.2")); ui_->zoneTable->setItem(r,4,new QTableWidgetItem("true")); updateStatus("Zone added"); }
+void ConveyorSortingScenarioWizard::onRemoveZone(){ int r=ui_->zoneTable->currentRow(); if(r>=0){ ui_->zoneTable->removeRow(r); updateStatus("Zone removed"); } else updateStatus("WARN: No zone selected"); }
 void ConveyorSortingScenarioWizard::onResetZones(){ ensureZoneTableDefaults(); updateStatus("Zones reset"); }
-void ConveyorSortingScenarioWizard::onValidateZones(){ updateStatus("Zones validated"); }
+void ConveyorSortingScenarioWizard::onValidateZones(){ QStringList missing; for(const auto & z: {"detection_zone_1","pick_zone_1","place_zone_box","place_zone_bottle","reject_zone"}){ bool found=false; for(int r=0;r<ui_->zoneTable->rowCount();++r){ auto *it=ui_->zoneTable->item(r,0); if(it && it->text().trimmed()==z){found=true; break;} } if(!found) missing<<z; } updateStatus(missing.isEmpty()? "OK: Zones validated" : "ERROR: Missing zones: "+missing.join(", ")); }
 void ConveyorSortingScenarioWizard::onAddRoute(){ int r=ui_->routingTable->rowCount(); ui_->routingTable->insertRow(r); ui_->routingTable->setItem(r,0,new QTableWidgetItem("class")); ui_->routingTable->setItem(r,1,new QTableWidgetItem("place_zone_box")); updateStatus("Route added"); }
-void ConveyorSortingScenarioWizard::onRemoveRoute(){ int r=ui_->routingTable->currentRow(); if(r>=0) ui_->routingTable->removeRow(r); updateStatus("Route removed"); }
-void ConveyorSortingScenarioWizard::onValidateRouting(){ updateStatus("Routing validated"); }
+void ConveyorSortingScenarioWizard::onRemoveRoute(){ int r=ui_->routingTable->currentRow(); if(r>=0){ ui_->routingTable->removeRow(r); updateStatus("Route removed"); } else updateStatus("WARN: No route selected"); }
+void ConveyorSortingScenarioWizard::onValidateRouting(){ bool unknown=false; QStringList errs; QSet<QString> labels; for(int r=0;r<ui_->routingTable->rowCount();++r){ auto *l=ui_->routingTable->item(r,0); auto *z=ui_->routingTable->item(r,1); const QString ls=l?l->text().trimmed():""; const QString zs=z?z->text().trimmed():""; if(ls.isEmpty()) errs<<"row "+QString::number(r+1)+": empty class"; bool zone_found=false; for(int zr=0;zr<ui_->zoneTable->rowCount();++zr){ auto *zi=ui_->zoneTable->item(zr,0); if(zi && zi->text().trimmed()==zs){zone_found=true;break;} } if(zs.isEmpty()||!zone_found) errs<<"row "+QString::number(r+1)+": unknown zone"; if(ls=="unknown") unknown=true; if(!ls.isEmpty() && labels.contains(ls)) errs<<"duplicate class: "+ls; labels.insert(ls);} if(!unknown) errs<<"missing unknown route"; updateStatus(errs.isEmpty()?"OK: Routing validated":"ERROR: "+errs.join("; ")); }
 void ConveyorSortingScenarioWizard::onEpdModeChanged(){
  const bool real = ui_->epdModeCombo->currentText().contains("Real");
  ui_->sampleCommand->setEnabled(!real);
@@ -307,11 +316,18 @@ void ConveyorSortingScenarioWizard::onEpdModeChanged(){
  ui_->epdTopicEdit->setText("/workcell_studio/epd_detection_snapshot_json");
  if (real) { ui_->epdDetailsLabel->setText("Localization: /easy_perception_deployment/epd_localize_output\nTracking: /easy_perception_deployment/epd_tracking_output"); }
  else { ui_->epdDetailsLabel->setText("Sample demo mode enabled."); }
+ updateStatus(real ? "EPD mode set: Real EPD connector" : "EPD mode set: Sample demo feed");
 }
 
 void ConveyorSortingScenarioWizard::onOpenRunConsole()
 {
-  ConveyorSortingRunConsole console(scenes_root_ / sceneName().toStdString(), sceneName(), this);
+  const fs::path scene_path = scenes_root_ / sceneName().toStdString();
+  if (!fs::exists(scene_path / "config" / "scenario.yaml")) {
+    QMessageBox::warning(this, "Generate files first", "Generate Files before opening run console.");
+    updateStatus("WARN: Generate Files before opening run console");
+    return;
+  }
+  ConveyorSortingRunConsole console(scene_path, sceneName(), this);
   console.exec();
 }
 
