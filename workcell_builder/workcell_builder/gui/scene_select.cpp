@@ -43,6 +43,7 @@
 #include <QFileDialog>
 #include <QListWidgetItem>
 #include <QInputDialog>
+#include <QDir>
 #include <QMessageBox>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
@@ -603,24 +604,18 @@ SceneSelect::SceneSelect(QWidget * parent)
   setWindowTitle("Workcell Studio - Workcell Builder");
   ui->workflow_tabs->setCurrentWidget(ui->start_tab);
 
-  ui->asset_browser_group->hide();
-  ui->inspector_group->hide();
-  ui->cell_name->hide();
-  ui->output_folder->hide();
-  ui->browse_output_folder->hide();
+  ui->asset_browser_group->show();
+  ui->inspector_group->show();
+  ui->cell_name->show();
+  ui->output_folder->show();
+  ui->browse_output_folder->show();
   ui->golden_demo_cell->hide();
   ui->delete_scene->hide();
   ui->generate_studio_pack->hide();
   ui->open_preview->hide();
   ui->show_readiness_report->hide();
   ui->validate_cell->hide();
-  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->ingredients_tab));
-  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->layout_tab));
-  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->task_tab));
-  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->perception_roi_tab));
-  ui->workflow_tabs->removeTab(ui->workflow_tabs->indexOf(ui->grasp_tab));
-  ui->workflow_tabs->setTabText(
-    ui->workflow_tabs->indexOf(ui->validate_generate_tab), "Generate");
+  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->validate_generate_tab), "Validate & Generate");
   ui->browse_scenes_folder->setText("Open Folder");
 
   ui->fake_hardware_default_label->setToolTip(
@@ -652,20 +647,45 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->use_recommended_layout, &QPushButton::clicked, this, &SceneSelect::on_use_recommended_layout_clicked);
   connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_button_clicked);
   ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
-  const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
+  ui->scenario_template_description->setText(
+    "Choose a real starter template:\n"
+    "• Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin\n"
+    "• Conveyor Sorting - Live EPD Preview\n"
+    "• Camera Inspection Cell (PREVIEW ONLY)\n"
+    "• UR5 + Suction Pick Cell\n"
+    "• Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)");
+  const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets, ui->generate_scenario, ui->copy_sample_epd_command};
   for (auto * button : placeholder_buttons) {
-    button->setText(button->text() + " (coming soon)");
-    button->setToolTip("This control is not available yet.");
+    button->setToolTip("Disabled: this control requires feature-complete editor integration and is intentionally blocked.");
     button->setDisabled(true);
   }
+  append_info("Next recommended action: Create or open a scene, then apply a recommended layout.");
 
 }
 
 
 void SceneSelect::on_create_scenario_template_clicked()
 {
-  QMessageBox::information(this, "Create Scenario",
-    "Create Scenario opens the guided setup workflow. Select Conveyor Sorting - Live EPD Preview to continue.");
+  const QStringList templates = {
+    "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin",
+    "Conveyor Sorting - Live EPD Preview",
+    "Camera Inspection Cell (PREVIEW ONLY)",
+    "UR5 + Suction Pick Cell",
+    "Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)"
+  };
+  bool ok = false;
+  const QString selected = QInputDialog::getItem(
+    this, "Scenario Templates", "Select template", templates, 0, false, &ok);
+  if (!ok || selected.isEmpty()) {
+    append_info("Template selection cancelled.");
+    return;
+  }
+  if (selected.contains("Conveyor Sorting")) {
+    on_create_conveyor_sorting_live_epd_preview_clicked();
+    return;
+  }
+  append_success("Template selected: " + selected.toStdString());
+  append_info("Next recommended action: Click 'New Cell', then 'Use Recommended Layout'.");
 }
 
 void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
@@ -686,8 +706,8 @@ void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
 
 void SceneSelect::on_use_recommended_layout_clicked()
 {
-  if (ui->scene_list->currentIndex() <= 0 || workcell.scene_vector.empty()) {
-    append_warning("Select or create a scenario before applying layout");
+  if (ui->scene_list->count() <= 1 || ui->scene_list->currentIndex() <= 0 || workcell.scene_vector.empty()) {
+    append_warning("No selected scene. Create/Open a scene first, then apply recommended layout.");
     return;
   }
 
@@ -707,7 +727,17 @@ void SceneSelect::on_use_recommended_layout_clicked()
     scene.robot_vector[0].origin.pitch = 0.0F;
     scene.robot_vector[0].origin.yaw = 0.0F;
   }
-  append_success("Recommended layout applied");
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  fs::create_directories(scene_dir / "config");
+  std::ofstream out((scene_dir / "config" / "recommended_layout.yaml").string());
+  out << "layout_profile: ur5_2f_safe_defaults\n";
+  out << "support_surface: table\npick_object: cube\nplace_bin: bin\n";
+  out << "camera:\n  profile: realsense_d435i\n  pose_xyz: [0.35, 0.0, 0.85]\n";
+  out << "task_defaults:\n  type: pick_place\n  grasp: finger_top\n";
+  out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+  out.close();
+  append_success("Recommended layout applied and saved to config/recommended_layout.yaml");
+  append_info("Next recommended action: Validate Scene, then Generate Full Scene Package.");
   refresh_preview_status();
 }
 
