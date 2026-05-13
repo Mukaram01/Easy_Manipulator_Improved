@@ -46,3 +46,9 @@ def test_no_stale_autoconnect_and_no_white_on_white_and_no_full_width_delete():
     assert 'connectSlotsByName' not in addscene_cpp
     assert 'background-color: white;\"\n    \"  color: white;' not in main_cpp
     assert "destructive_action" in utils_cpp
+
+
+def test_validate_generate_has_next_steps_panel_and_copy_actions():
+    text = _read('workcell_builder/workcell_builder/gui/scene_select.ui')
+    for token in ['Next Steps', 'next_steps_group', 'Copy Build Command', 'Copy Launch Command']:
+        assert token in text
