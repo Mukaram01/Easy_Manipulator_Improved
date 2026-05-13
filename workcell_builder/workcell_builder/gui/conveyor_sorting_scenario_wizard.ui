@@ -2,7 +2,7 @@
 <ui version="4.0">
  <class>ConveyorSortingScenarioWizard</class>
  <widget class="QDialog" name="ConveyorSortingScenarioWizard">
-  <property name="geometry"><rect><x>0</x><y>0</y><width>980</width><height>700</height></rect></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1024</width><height>720</height></rect></property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QTabWidget" name="wizardTabs">
@@ -27,7 +27,7 @@
        <item row="4" column="0"><widget class="QLabel" name="l5"><property name="text"><string>Camera</string></property></widget></item>
        <item row="4" column="1"><widget class="QComboBox" name="cameraCombo"><item><property name="text"><string>realsense2_description</string></property></item></widget></item>
        <item row="5" column="0"><widget class="QLabel" name="l6"><property name="text"><string>Camera mount</string></property></widget></item>
-       <item row="5" column="1"><widget class="QComboBox" name="cameraMountCombo"><item><property name="text"><string>overhead_camera_gantry</string></property></item></widget></item>
+       <item row="5" column="1"><widget class="QComboBox" name="cameraMountCombo"><item><property name="text"><string>overhead_camera_gantry_description</string></property></item></widget></item>
       </layout>
      </widget>
      <widget class="QWidget" name="layoutTab">
@@ -45,25 +45,25 @@
         <item row="4" column="0"><widget class="QLabel" name="e"><property name="text"><string>bin poses</string></property></widget></item>
         <item row="4" column="1"><widget class="QLineEdit" name="binPoseEdit"/></item>
        </layout></item>
-       <item><layout class="QHBoxLayout" name="h1"><item><widget class="QPushButton" name="useRecommendedLayoutButton"><property name="text"><string>Use Recommended Layout</string></property></widget></item><item><widget class="QPushButton" name="resetLayoutButton"><property name="text"><string>Reset Layout</string></property></widget></item></layout></item>
+       <item><layout class="QHBoxLayout" name="h1"><item><widget class="QPushButton" name="useRecommendedLayoutButton"><property name="text"><string>Use Recommended Layout</string></property></widget></item><item><widget class="QPushButton" name="resetLayoutButton"><property name="text"><string>Reset Layout</string></property></widget></item><item><widget class="QPushButton" name="validateRoutingButton"><property name="text"><string>Validate Routing</string></property></widget></item></layout></item>
       </layout>
      </widget>
      <widget class="QWidget" name="workZonesTab">
-      <attribute name="title"><string>Work Zones</string></attribute>
-      <layout class="QVBoxLayout" name="v3"><item><widget class="QTableWidget" name="zoneTable"><column/><column/><column/><column/><column/></widget></item></layout>
+      <attribute name="title"><string>Work Zones / Pick Areas</string></attribute>
+      <layout class="QVBoxLayout" name="v3"><item><widget class="QLabel" name="zonesHelp"><property name="text"><string>Detection zone: where camera sees object. Pick zone: where robot picks. Place zones: bin destinations. Conveyor flow links detection to pick.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item><item><widget class="QTableWidget" name="zoneTable"><column/><column/><column/><column/><column/></widget></item><item><layout class="QHBoxLayout" name="zoneButtons"><item><widget class="QPushButton" name="addZoneButton"><property name="text"><string>Add Zone</string></property></widget></item><item><widget class="QPushButton" name="removeZoneButton"><property name="text"><string>Remove Selected Zone</string></property></widget></item><item><widget class="QPushButton" name="resetZonesButton"><property name="text"><string>Reset Default Zones</string></property></widget></item><item><widget class="QPushButton" name="validateZonesButton"><property name="text"><string>Validate Zones</string></property></widget></item></layout></item></layout>
      </widget>
      <widget class="QWidget" name="routingTab">
       <attribute name="title"><string>Routing</string></attribute>
       <layout class="QVBoxLayout" name="v4">
-       <item><widget class="QTableWidget" name="routingTable"><column/><column/></widget></item>
-       <item><layout class="QHBoxLayout" name="rbtns"><item><widget class="QPushButton" name="addRouteButton"><property name="text"><string>Add Route</string></property></widget></item><item><widget class="QPushButton" name="removeRouteButton"><property name="text"><string>Remove Route</string></property></widget></item><item><widget class="QPushButton" name="resetRoutesButton"><property name="text"><string>Reset Default Routes</string></property></widget></item></layout></item>
+       <item><widget class="QTableWidget" name="routingTable"><column/><column/><column/></widget></item>
+       <item><layout class="QHBoxLayout" name="rbtns"><item><widget class="QPushButton" name="addRouteButton"><property name="text"><string>Add Route</string></property></widget></item><item><widget class="QPushButton" name="removeRouteButton"><property name="text"><string>Remove Selected Route</string></property></widget></item><item><widget class="QPushButton" name="resetRoutesButton"><property name="text"><string>Reset Default Routes</string></property></widget></item></layout></item>
       </layout>
      </widget>
      <widget class="QWidget" name="epdPreviewTab">
       <attribute name="title"><string>EPD Preview</string></attribute>
       <layout class="QFormLayout" name="f3">
        <item row="0" column="0"><widget class="QLabel" name="m"><property name="text"><string>mode</string></property></widget></item>
-       <item row="0" column="1"><widget class="QComboBox" name="epdModeCombo"><item><property name="text"><string>sample metadata preview</string></property></item><item><property name="text"><string>live metadata preview</string></property></item></widget></item>
+       <item row="0" column="1"><widget class="QComboBox" name="epdModeCombo"><item><property name="text"><string>Sample demo feed</string></property></item><item><property name="text"><string>Real EPD connector</string></property></item></widget></item>
        <item row="1" column="0"><widget class="QLabel" name="n"><property name="text"><string>topic</string></property></widget></item>
        <item row="1" column="1"><widget class="QLineEdit" name="epdTopicEdit"><property name="text"><string>/workcell_studio/epd_detection_snapshot_json</string></property></widget></item>
        <item row="2" column="0"><widget class="QLabel" name="o"><property name="text"><string>camera name</string></property></widget></item>
@@ -72,7 +72,7 @@
        <item row="3" column="1"><widget class="QLineEdit" name="detectionZoneEdit"><property name="text"><string>detection_zone_1</string></property></widget></item>
        <item row="4" column="0"><widget class="QLabel" name="q"><property name="text"><string>command</string></property></widget></item>
        <item row="4" column="1"><widget class="QLineEdit" name="sampleCommand"><property name="text"><string>python3 scripts/publish_sample_epd_snapshot.py --camera realsense_d435i_1 --zone detection_zone_1</string></property></widget></item>
-      </layout>
+      <item row="5" column="0"><widget class="QLabel" name="epdDetailsLabel"><property name="text"><string>Sample demo mode enabled.</string></property></widget></item></layout>
      </widget>
      <widget class="QWidget" name="generateTab">
       <attribute name="title"><string>Generate</string></attribute>
