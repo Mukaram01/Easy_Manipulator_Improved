@@ -167,7 +167,7 @@ def main() -> int:
         'when': {'object_class': a.object_class, 'object_color': a.object_color},
         'place_target': a.place_target,
     }]
-    payload['safety']={'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False}
+    payload['safety']={'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False,'fake_hardware_first':True,'runtime_execution_enabled':False,'motion_command_sent':False}
     _dump(out, payload)
     val={'status':'SKIP'}
     if a.validate:

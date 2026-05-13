@@ -31,7 +31,7 @@ ValidationDashboardResult default_validation_dashboard_result()
   ValidationDashboardResult out;
   out.rows = {
     make_unknown("Scene Schema"), make_unknown("Asset Catalog"), make_unknown("Robot / Tool Compatibility"),
-    make_unknown("Object Placement"), make_unknown("Camera Metadata"), make_unknown("Task Recipe"),
+    make_unknown("Object Placement"), make_unknown("Camera Metadata"), make_unknown("Task Recipe"), make_unknown("Pick source selected"), make_unknown("Place target selected"), make_unknown("Pick source exists in scene/canvas"), make_unknown("Place target exists in scene/canvas"), make_unknown("Grasp strategy compatible with selected tool"), make_unknown("Approach/retreat distances valid"), make_unknown("Release strategy compatible with tool"), make_unknown("Task intent YAML generated"), make_unknown("Preview-only task blocked from runtime claim"),
     make_unknown("Readiness Overlay"), make_unknown("Work Zone Validation"), make_unknown("Fake-Hardware Smoke Static"), make_unknown("Generation Safety"), make_unknown("Simulation Readiness"), make_unknown("Real Hardware Metadata"), make_unknown("Robot Driver Requirements"), make_unknown("Tool I/O Requirements"), make_unknown("Camera Calibration Requirements"), make_unknown("EPD Compatibility Metadata")};
   out.status = ValidationStatus::UNKNOWN;
   return out;
