@@ -19,6 +19,7 @@
 #include <QDialog>
 #include <QStringList>
 #include <QListWidget>
+#include <QInputDialog>
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -113,6 +114,11 @@ private:
   void write_workcell_studio_summary(const Scene & scene, const boost::filesystem::path & scene_dir, const std::string & readiness_status);
   void refresh_validation_dashboard_table(const workcell_builder::ValidationDashboardResult & result);
   bool export_workcell_layout_preview(const Scene & scene, const boost::filesystem::path & scene_dir, bool open_after_export);
+  bool open_existing_scene(const boost::filesystem::path & scene_dir, Scene * output_scene, std::string * status);
+  bool save_scene(Scene scene, const boost::filesystem::path & scene_dir, std::string * backup_path);
+  bool duplicate_scene(const boost::filesystem::path & source_scene_dir, const std::string & new_scene_name, boost::filesystem::path * duplicated_dir, std::string * reason);
+  bool regenerate_scene(const boost::filesystem::path & scene_dir, const std::string & scene_name, std::string * launch_command, std::string * reason);
+  void refresh_canvas_from_scene(const Scene & scene);
 
   Ui::SceneSelect * ui;
   QListWidget * scenario_template_catalog_ = nullptr;
