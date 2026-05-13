@@ -2,6 +2,8 @@
 
 #include <QWidget>
 #include <QLabel>
+#include <QPushButton>
+#include <QString>
 
 namespace workcell_builder
 {
@@ -11,9 +13,30 @@ enum class StatusType
   Info,
   Warning,
   Error,
-  Success
+  Success,
+  Ready,
+  PreviewOnly,
+  FakeHardware,
+  LiveEpd,
+  NoRuntimeMotion,
+  ScaffoldOnly
 };
 
+enum class ButtonRole
+{
+  primary_action,
+  secondary_action,
+  safe_action,
+  preview_action,
+  destructive_action,
+  disabled_placeholder
+};
+
+
+QString workcellStudioStyleSheet();
+void applyWorkcellStudioTheme(QWidget * widget);
+void applyStatusBadgeStyle(QLabel * label, StatusType status);
+void applyButtonRoleStyle(QPushButton * button, ButtonRole role);
 void applyCompactDialogDefaults(QWidget * widget);
 void capDialogSize(QWidget * widget, int max_width = 1100, int max_height = 760);
 void makeTextWidgetsWrap(QWidget * widget);
