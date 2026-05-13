@@ -75,9 +75,9 @@ private slots:
 
   void on_remove_ee_clicked();
 
-  void on_ok_clicked();
+  void handle_accept();
 
-  void on_exit_clicked();
+  void handle_reject();
 
   void keyPressEvent(QKeyEvent * e);
 

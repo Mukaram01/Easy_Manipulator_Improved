@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <QFileDialog>
+#include <QDialogButtonBox>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <iostream>
@@ -38,6 +39,8 @@ AddScene::AddScene(QWidget * parent)
   ui(new Ui::AddScene)
 {
   ui->setupUi(this);
+  connect(ui->actionButtonBox, &QDialogButtonBox::accepted, this, &AddScene::handle_accept);
+  connect(ui->actionButtonBox, &QDialogButtonBox::rejected, this, &AddScene::handle_reject);
   workcell_builder::applyCompactDialogDefaults(this);
   resize(900, 700);
   ui->edit_work_zone->setEnabled(false);
@@ -422,7 +425,7 @@ void AddScene::on_remove_ee_clicked()
   ui->add_ee->setText(QString::fromStdString("Add End Effector"));
 }
 
-void AddScene::on_ok_clicked()
+void AddScene::handle_accept
 {
   ui->scene_errors->clear();
   if (CheckRobot() && CheckEE() && CheckExtJoint() && CheckSceneName()) {
@@ -435,7 +438,7 @@ void AddScene::on_ok_clicked()
   }
 }
 
-void AddScene::on_exit_clicked()
+void AddScene::handle_reject
 {
   success = false;
   this->close();

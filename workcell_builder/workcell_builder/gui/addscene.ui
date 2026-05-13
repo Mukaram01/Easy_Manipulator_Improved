@@ -20,12 +20,8 @@
     </widget>
    </item>
    <item><widget class="QDialogButtonBox" name="actionButtonBox"><property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property></widget></item>
-   <item><widget class="QPushButton" name="exit"><property name="text"><string>Exit</string></property></widget></item>
-  </layout>
+     </layout>
  </widget>
  <resources/>
- <connections>
-  <connection><sender>actionButtonBox</sender><signal>accepted()</signal><receiver>AddScene</receiver><slot>on_ok_clicked()</slot></connection>
-  <connection><sender>actionButtonBox</sender><signal>rejected()</signal><receiver>AddScene</receiver><slot>on_exit_clicked()</slot></connection>
- </connections>
+ <connections/>
 </ui>
