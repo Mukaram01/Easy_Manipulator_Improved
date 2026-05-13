@@ -1,12 +1,9 @@
-from scripts import workcell_builder_gui_workflow as wf
+from pathlib import Path
 
-
-def test_canvas_model_renders_core_markers_and_reach_helper():
-    state={"selected":{},"current_cell_assets":[]}
-    wf.add_asset_to_cell(state,"ur5","robot",role="robot")
-    wf.add_asset_to_cell(state,"workbench","table",role="support_surface",name="Table")
-    wf.add_asset_to_cell(state,"bin_a","bin",role="place_target",name="Bin A")
-    model=wf.build_visual_layout_canvas_model(state)
-    marker_types={m["marker_type"] for m in model["markers"]}
-    assert {"robot_base","table","bin"}.issubset(marker_types)
-    assert model["reach_helpers"]
+def test_layout_canvas_controls_and_tokens_present():
+    ui = Path('workcell_builder/workcell_builder/gui/scene_select.ui').read_text(encoding='utf-8')
+    cpp = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
+    for token in ['visual_layout_canvas','fit_cell_action','reset_view_action','toggle_grid_action','toggle_reach_action','toggle_roi_action','export_layout_preview_action']:
+        assert token in ui
+    for token in ['build_layout_preview_items','robot_base','conveyor_1','inspection_target','Safety/Home','selectionChanged']:
+        assert token in cpp

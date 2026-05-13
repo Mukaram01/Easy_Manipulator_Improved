@@ -49,6 +49,16 @@
 #include <QHeaderView>
 #include <QSplitter>
 #include <QShortcut>
+#include <QGraphicsScene>
+#include <QGraphicsView>
+#include <QGraphicsItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsEllipseItem>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSvgGenerator>
+#include <QPainter>
 #include <boost/filesystem.hpp>
 #include <filesystem>
 #include <boost/system/error_code.hpp>
@@ -596,6 +606,46 @@ void write_task_recipe_yaml(const fs::path & scene_dir, const TaskGraspConfig & 
 }
 
 
+
+struct LayoutPreviewItem {
+  QString id; QString name; QString type; double x{0.0}; double y{0.0}; double width{0.2}; double height{0.2}; double radius{0.0}; double yaw{0.0}; QString status; QString source; QString role; QString warning;
+};
+
+static double px(double m){ return m*220.0; }
+static std::vector<LayoutPreviewItem> build_layout_preview_items(const Scene & scene, const QString & selected_template)
+{
+  std::vector<LayoutPreviewItem> out;
+  out.push_back({"safety_home","Safety/Home","safety",-0.75,-0.5,0.16,0.16,0.0,0.0,"safe","default","safety","fake_hardware_first | no_runtime_motion"});
+  out.push_back({"work_zone","Work Zone","zone",0.2,0.0,1.1,0.9,0.0,0.0,"active","generated","pick_zone",""});
+  const bool conveyor = selected_template.contains("Conveyor") || selected_template.contains("sorting", Qt::CaseInsensitive);
+  const bool inspection = selected_template.contains("Inspection");
+  out.push_back({"robot_base","Robot Base","robot",-0.45,0.0,0.25,0.25,0.0,0.0,"ready","template","robot",""});
+  out.push_back({"robot_reach","Robot Reach","reach",-0.45,0.0,0.0,0.0,0.78,0.0,"approx","default","reach_envelope",""});
+  if (inspection) {
+    out.push_back({"inspection_table","Inspection Table","table",0.25,0.0,0.7,0.7,0.0,0.0,"ok","template","support_surface",""});
+    out.push_back({"inspection_target","Inspection Target","object",0.25,0.0,0.09,0.09,0.0,0.0,"ok","template","inspection_target",""});
+    out.push_back({"inspection_cam","Camera","camera",0.15,-0.45,0.15,0.15,0.0,0.0,"ok","template","perception",""});
+    out.push_back({"camera_roi","Camera ROI","zone",0.25,0.0,0.4,0.3,0.0,0.0,"ok","generated","roi",""});
+  } else if (conveyor) {
+    out.push_back({"conveyor_1","Conveyor","conveyor",0.25,-0.25,1.0,0.35,0.0,0.0,"preview_only","template","feed",""});
+    out.push_back({"cam_conv","Camera","camera",0.10,-0.65,0.15,0.15,0.0,0.0,"ok","template","perception",""});
+    out.push_back({"pick_zone","Pick Zone","zone",0.25,-0.25,0.35,0.25,0.0,0.0,"ok","generated","pick_zone",""});
+    out.push_back({"bin_red","Bin Red","bin",0.45,0.35,0.26,0.24,0.0,0.0,"ok","template","place_bin",""});
+    out.push_back({"bin_blue","Bin Blue","bin",0.05,0.35,0.26,0.24,0.0,0.0,"ok","template","place_bin",""});
+    out.push_back({"camera_roi","Camera ROI","zone",0.25,-0.25,0.6,0.3,0.0,0.0,"ok","generated","roi",""});
+  } else {
+    out.push_back({"table_1","Table","table",0.25,0.0,0.9,0.7,0.0,0.0,"ok","template","support_surface",""});
+    out.push_back({"cube_1","Cube","object",0.25,0.0,0.08,0.08,0.0,0.0,"pick","template","pick_object",""});
+    out.push_back({"bin_1","Bin","bin",0.45,0.28,0.25,0.25,0.0,0.0,"place","template","place_bin",""});
+    out.push_back({"cam_1","Camera","camera",0.15,-0.45,0.15,0.15,0.0,0.0,"ok","template","perception",""});
+    out.push_back({"camera_roi","Camera ROI","zone",0.25,0.0,0.4,0.3,0.0,0.0,"ok","generated","roi",""});
+  }
+  if (scene.object_vector.empty() && scene.robot_vector.empty()) {
+    out.clear();
+  }
+  return out;
+}
+
 SceneSelect::SceneSelect(QWidget * parent)
 : QDialog(parent),
   ui(new Ui::SceneSelect)
@@ -650,6 +700,14 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
   append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::export_preview_layout);
+  connect(ui->fit_cell_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  connect(ui->reset_view_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  connect(ui->toggle_grid_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  connect(ui->toggle_reach_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  connect(ui->toggle_roi_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  ui->toggle_grid_action->setCheckable(true); ui->toggle_grid_action->setChecked(true);
+  ui->toggle_reach_action->setCheckable(true); ui->toggle_reach_action->setChecked(true);
+  ui->toggle_roi_action->setCheckable(true); ui->toggle_roi_action->setChecked(true);
   ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
   ui->scenario_template_description->setText(
     "Choose a real starter template:\n"
@@ -658,7 +716,7 @@ SceneSelect::SceneSelect(QWidget * parent)
     "• Camera Inspection Cell (PREVIEW ONLY)\n"
     "• UR5 + Suction Pick Cell\n"
     "• Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)\n\nBadges: MoveIt/RViz | Fake hardware | Preview only | EPD metadata | NO RUNTIME MOTION");
-  const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets, ui->generate_scenario, ui->copy_sample_epd_command};
+  const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl,  ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets, ui->generate_scenario, ui->copy_sample_epd_command};
   for (auto * button : placeholder_buttons) {
     button->setToolTip("Disabled: this control requires feature-complete editor integration and is intentionally blocked.");
     button->setDisabled(true);
@@ -678,6 +736,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   initialize_template_catalog();
   initialize_asset_library();
+  refresh_preview_status();
 
 }
 
@@ -797,7 +856,8 @@ void SceneSelect::on_use_recommended_layout_clicked()
   out << "task_defaults:\n  type: pick_place\n  grasp: finger_top\n";
   out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
   out.close();
-  append_success("Recommended layout applied and saved to config/recommended_layout.yaml");
+  append_success("Layout applied: recommended layout saved to config/recommended_layout.yaml");
+  append_info("Next: Validate Scene");
   append_info("Next recommended action: Validate Scene, then Generate Full Scene Package.");
   refresh_preview_status();
 }
@@ -2554,20 +2614,60 @@ void SceneSelect::on_open_preview_clicked()
 
 void SceneSelect::refresh_preview_status()
 {
-  const fs::path scene_dir = scene_dir_for_current_selection();
-  if (scene_dir.empty()) { append_error("No scene selected."); return; }
-  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int idx = ui->scene_list->currentIndex();
+  if (idx < 0 || idx >= static_cast<int>(workcell.scene_vector.size())) {
+    auto * empty_scene = new QGraphicsScene(ui->visual_layout_canvas);
+    empty_scene->addText("No scene selected. Create or open a scene, then apply a template layout.");
+    ui->visual_layout_canvas->setScene(empty_scene);
+    return;
+  }
+  Scene curr_scene = workcell.scene_vector[idx];
   if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
-  export_workcell_layout_preview(curr_scene, scene_dir, true);
+  auto items = build_layout_preview_items(curr_scene, selected_template_);
+  auto * scene = new QGraphicsScene(ui->visual_layout_canvas);
+  scene->setSceneRect(-320, -320, 640, 640);
+  const bool show_grid = ui->toggle_grid_action->isChecked();
+  const bool show_reach = ui->toggle_reach_action->isChecked();
+  const bool show_roi = ui->toggle_roi_action->isChecked();
+  if (show_grid || !ui->toggle_grid_action->isCheckable()) {
+    for (int g=-300; g<=300; g+=30){ scene->addLine(-300,g,300,g,QPen(QColor("#dde6f2"))); scene->addLine(g,-300,g,300,QPen(QColor("#dde6f2"))); }
+  }
+  if (items.empty()) {
+    scene->addText("Empty scene: pick a template to populate robot/table/bins/camera preview.");
+    ui->visual_layout_canvas->setScene(scene);
+    return;
+  }
+  for (const auto & it : items) {
+    QAbstractGraphicsShapeItem * shape=nullptr;
+    if (it.type=="reach") { if (!show_reach) continue; shape = scene->addEllipse(px(it.x-it.radius), px(it.y-it.radius), px(2*it.radius), px(2*it.radius), QPen(QColor("#6f42c1"),2,Qt::DashLine)); }
+    else if (it.id=="camera_roi" || it.role=="roi") { if (!show_roi) continue; shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(QColor("#2769b3"),2,Qt::DotLine), QBrush(QColor(39,105,179,40))); }
+    else if (it.type=="camera" || it.type=="object") shape = scene->addEllipse(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="camera"?QColor("#3b82f6"):QColor("#f59e0b")));
+    else shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="robot"?QColor("#1f7a3a"):it.type=="table"?QColor("#64748b"):it.type=="bin"?QColor("#ef4444"):it.type=="conveyor"?QColor("#0ea5e9"):QColor("#94a3b8")));
+    shape->setFlag(QGraphicsItem::ItemIsSelectable, true); shape->setData(0, it.name); shape->setData(1, it.type); shape->setData(2, QString("x=%1 y=%2 source=%3 status=%4 role=%5").arg(it.x,0,'f',2).arg(it.y,0,'f',2).arg(it.source,it.status,it.role));
+    scene->addText(it.name)->setPos(px(it.x)-22, px(it.y)-12);
+  }
+  QObject::connect(scene, &QGraphicsScene::selectionChanged, ui->visual_layout_canvas, [this, scene]() {
+    const auto sel = scene->selectedItems(); if (sel.empty()) return; auto * i=sel.front();
+    ui->inspector_help->setText(QString("%1 (%2) | %3").arg(i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
+  });
+  ui->visual_layout_canvas->setScene(scene);
+  ui->visual_layout_canvas->setRenderHint(QPainter::Antialiasing, true);
+  ui->visual_layout_canvas->fitInView(scene->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio);
 }
 
 void SceneSelect::export_preview_layout()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) { append_error("No scene selected."); return; }
+  fs::create_directories(scene_dir / "preview");
   Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
-  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
-  export_workcell_layout_preview(curr_scene, scene_dir, false);
+  auto items = build_layout_preview_items(curr_scene, selected_template_);
+  QJsonObject root; root["scene_name"] = QString::fromStdString(curr_scene.name); root["template_name"] = selected_template_; root["fake_hardware_first"] = true; root["no_runtime_motion"] = true;
+  QJsonArray arr; for (const auto & it : items){ QJsonObject o; o["id"]=it.id; o["display_name"]=it.name; o["type"]=it.type; o["x"]=it.x; o["y"]=it.y; o["width"]=it.width; o["height"]=it.height; o["radius"]=it.radius; o["yaw"]=it.yaw; o["status"]=it.status; o["source"]=it.source; o["role"]=it.role; o["warnings"]=it.warning; arr.append(o);} root["preview_items"]=arr;
+  QFile json(QString::fromStdString((scene_dir/"preview"/"layout_preview.json").string())); json.open(QIODevice::WriteOnly); json.write(QJsonDocument(root).toJson()); json.close();
+  QFile html(QString::fromStdString((scene_dir/"preview"/"layout_preview.html").string())); html.open(QIODevice::WriteOnly); html.write(("<html><body><h1>Layout Preview</h1><p>fake_hardware_first=true | no_runtime_motion=true</p><pre>" + QJsonDocument(root).toJson().toStdString() + "</pre></body></html>").c_str()); html.close();
+  QSvgGenerator gen; gen.setFileName(QString::fromStdString((scene_dir/"preview"/"layout_preview.svg").string())); gen.setSize(QSize(960,720)); QPainter painter(&gen); if (ui->visual_layout_canvas->scene()) { ui->visual_layout_canvas->scene()->render(&painter);} painter.end();
+  append_success("Export Preview created: preview/layout_preview.svg | .html | .json");
 }
 
 void SceneSelect::on_open_output_folder_clicked()
