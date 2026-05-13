@@ -39,6 +39,13 @@ AddScene::AddScene(QWidget * parent)
 {
   ui->setupUi(this);
   workcell_builder::applyCompactDialogDefaults(this);
+  resize(900, 700);
+  ui->edit_work_zone->setEnabled(false);
+  ui->edit_work_zone->setToolTip("Editing metadata_only work zones is not yet implemented in this dialog.");
+  ui->remove_work_zone->setEnabled(false);
+  ui->remove_work_zone->setToolTip("Removing metadata_only work zones is not yet implemented in this dialog.");
+  ui->add_conveyor_flow->setEnabled(false);
+  ui->add_conveyor_flow->setToolTip("Adding metadata_only conveyor flow is not yet implemented in this dialog.");
   world_link.name = "world";
   on_include_ee_stateChanged(0);
   on_include_robot_stateChanged(0);
