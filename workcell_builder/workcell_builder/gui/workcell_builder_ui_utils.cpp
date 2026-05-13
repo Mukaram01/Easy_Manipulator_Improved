@@ -5,60 +5,61 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QVariant>
 
 namespace workcell_builder
 {
-void capDialogSize(QWidget * dialog, int max_width, int max_height)
+void capDialogSize(QWidget * widget, int max_width, int max_height)
 {
-  if (!dialog) {
+  if (!widget) {
     return;
   }
-  dialog->setMinimumSize(640, 420);
-  dialog->setMaximumSize(max_width, max_height);
-  dialog->resize(dialog->size().boundedTo(QSize(max_width, max_height)));
+  widget->setMinimumSize(640, 420);
+  widget->setMaximumSize(max_width, max_height);
+  widget->resize(widget->size().boundedTo(QSize(max_width, max_height)));
 }
 
-void makeTextWidgetsWrap(QWidget * dialog)
+void makeTextWidgetsWrap(QWidget * widget)
 {
-  if (!dialog) {
+  if (!widget) {
     return;
   }
 
-  const auto labels = dialog->findChildren<QLabel *>();
+  const auto labels = widget->findChildren<QLabel *>();
   for (QLabel * label : labels) {
     label->setWordWrap(true);
     label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
   }
 }
 
-void applyPrimarySecondaryButtonStyle(QWidget * dialog)
+void applyPrimarySecondaryButtonStyle(QWidget * widget)
 {
-  if (!dialog) {
+  if (!widget) {
     return;
   }
 
-  const auto button_boxes = dialog->findChildren<QDialogButtonBox *>();
+  const auto button_boxes = widget->findChildren<QDialogButtonBox *>();
   for (QDialogButtonBox * box : button_boxes) {
     if (auto * ok = box->button(QDialogButtonBox::Ok)) {
-      ok->setProperty("class", "primary_action");
+      ok->setProperty("class", QVariant(QStringLiteral("primary_action")));
       ok->setDefault(true);
     }
     if (auto * save = box->button(QDialogButtonBox::Save)) {
-      save->setProperty("class", "primary_action");
+      save->setProperty("class", QVariant(QStringLiteral("primary_action")));
       save->setDefault(true);
     }
   }
 
-  const auto buttons = dialog->findChildren<QPushButton *>();
+  const auto buttons = widget->findChildren<QPushButton *>();
   for (QPushButton * button : buttons) {
     const QString name = button->objectName().toLower();
     if (name.contains("generate") || name.contains("save") || name.contains("next")) {
-      button->setProperty("class", "primary_action");
+      button->setProperty("class", QVariant(QStringLiteral("primary_action")));
       button->setDefault(true);
     }
   }
 
-  dialog->setStyleSheet(dialog->styleSheet() +
+  widget->setStyleSheet(widget->styleSheet() +
     "\nQPushButton[class='primary_action'] {"
     "background-color: #1d5da8; color: white; font-weight: 600; padding: 4px 10px; }"
     "\nQPushButton[class='primary_action']:disabled {"
@@ -81,13 +82,13 @@ void applyStatusLabelStyle(QLabel * label, StatusType status)
   label->setStyleSheet(QString("color: %1; font-weight: 500;").arg(color));
 }
 
-void applyCompactDialogDefaults(QDialog * dialog)
+void applyCompactDialogDefaults(QWidget * widget)
 {
-  if (!dialog) {
+  if (!widget) {
     return;
   }
-  capDialogSize(dialog);
-  makeTextWidgetsWrap(dialog);
-  applyPrimarySecondaryButtonStyle(dialog);
+  capDialogSize(widget);
+  makeTextWidgetsWrap(widget);
+  applyPrimarySecondaryButtonStyle(widget);
 }
 }  // namespace workcell_builder

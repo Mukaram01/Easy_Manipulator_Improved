@@ -30,6 +30,63 @@ bool copy_file_safe(const fs::path & src, const fs::path & dst)
   return !ec;
 }
 
+
+
+bool copy_path_recursive(
+  const fs::path & source,
+  const fs::path & destination,
+  boost::system::error_code & ec)
+{
+  ec.clear();
+
+  if (!fs::exists(source, ec) || ec) {
+    return false;
+  }
+
+  if (fs::is_regular_file(source, ec)) {
+    fs::create_directories(destination.parent_path(), ec);
+    if (ec) {
+      return false;
+    }
+    fs::copy_file(source, destination, fs::copy_option::overwrite_if_exists, ec);
+    return !ec;
+  }
+
+  if (!fs::is_directory(source, ec) || ec) {
+    return false;
+  }
+
+  fs::create_directories(destination, ec);
+  if (ec) {
+    return false;
+  }
+
+  for (fs::recursive_directory_iterator it(source, ec), end; it != end && !ec; it.increment(ec)) {
+    const fs::path rel = fs::relative(it->path(), source, ec);
+    if (ec) {
+      return false;
+    }
+
+    const fs::path out = destination / rel;
+
+    if (fs::is_directory(it->path(), ec)) {
+      fs::create_directories(out, ec);
+    } else if (fs::is_regular_file(it->path(), ec)) {
+      fs::create_directories(out.parent_path(), ec);
+      if (ec) {
+        return false;
+      }
+      fs::copy_file(it->path(), out, fs::copy_option::overwrite_if_exists, ec);
+    }
+
+    if (ec) {
+      return false;
+    }
+  }
+
+  return !ec;
+}
+
 std::vector<std::string> discover_environment_assets(const fs::path & environment_yaml)
 {
   std::vector<std::string> out;
@@ -70,7 +127,7 @@ SceneBundleResult export_scene_bundle(const SceneBundleExportOptions & options)
   fs::create_directories(bundle_dir / "checksums", ec);
 
   std::vector<std::string> copied_scene_files;
-  for (const std::string & rel : {"environment.yaml", "scene_manifest.yaml", "preview/conveyor_pick_preview.yaml", "preview/conveyor_pick_preview.json", "preview/perception_detection_snapshot.yaml", "preview/perception_detection_mapping.yaml", "preview/perception_detection_mapping.json", "preview/task_intent_preview.yaml", "preview/task_intent_preview.json", "preview/class_routing_table.yaml", "preview/class_routing_result.yaml", "preview/class_routing_result.json", "preview/grasp_strategy.yaml", "preview/emd_grasp_planner_request.yaml", "preview/emd_grasp_planner_request.json", "preview/grasp_strategy_readiness_report.yaml", "preview/grasp_strategy_readiness_report.json"}) {
+  for (const char * rel : {"environment.yaml", "scene_manifest.yaml", "preview/conveyor_pick_preview.yaml", "preview/conveyor_pick_preview.json", "preview/perception_detection_snapshot.yaml", "preview/perception_detection_mapping.yaml", "preview/perception_detection_mapping.json", "preview/task_intent_preview.yaml", "preview/task_intent_preview.json", "preview/class_routing_table.yaml", "preview/class_routing_result.yaml", "preview/class_routing_result.json", "preview/grasp_strategy.yaml", "preview/emd_grasp_planner_request.yaml", "preview/emd_grasp_planner_request.json", "preview/grasp_strategy_readiness_report.yaml", "preview/grasp_strategy_readiness_report.json"}) {
     const fs::path p = scene_dir / rel;
     if (fs::exists(p)) {
       copy_file_safe(p, bundle_dir / "scenes" / options.scene_name / rel);
@@ -87,7 +144,10 @@ SceneBundleResult export_scene_bundle(const SceneBundleExportOptions & options)
       continue;
     }
     const fs::path dst = bundle_dir / "assets" / "environment" / (object_name + "_description");
-    fs::copy(src, dst, fs::copy_option::recursive, ec);
+    if (!copy_path_recursive(src, dst, ec)) {
+      result.warnings.emplace_back("Failed to bundle environment asset: " + object_name);
+      continue;
+    }
     bundled_assets.push_back("assets/environment/" + object_name + "_description");
   }
 
@@ -153,7 +213,18 @@ SceneBundleResult import_scene_bundle(const SceneBundleImportOptions & options)
 
   boost::system::error_code ec;
   fs::create_directories(options.scenes_path, ec);
-  fs::copy(source_scene, target_scene, fs::copy_option::recursive, ec);
+  if (fs::exists(target_scene) && options.overwrite) {
+    fs::remove_all(target_scene, ec);
+    if (ec) {
+      result.message = "failed to remove existing target scene before overwrite";
+      return result;
+    }
+  }
+
+  if (!copy_path_recursive(source_scene, target_scene, ec)) {
+    result.message = "failed to copy scene from bundle";
+    return result;
+  }
   fs::path bundled_assets = options.bundle_dir / "assets" / "environment";
   if (fs::exists(bundled_assets)) {
     fs::create_directories(options.assets_path / "environment", ec);
@@ -163,7 +234,10 @@ SceneBundleResult import_scene_bundle(const SceneBundleImportOptions & options)
         result.warnings.emplace_back("Asset already exists, skipped overwrite: " + dst.filename().string());
         continue;
       }
-      fs::copy(it->path(), dst, fs::copy_option::recursive, ec);
+      if (!copy_path_recursive(it->path(), dst, ec)) {
+        result.warnings.emplace_back("Failed to import bundled asset: " + it->path().filename().string());
+        continue;
+      }
     }
   }
   result.ok = true;

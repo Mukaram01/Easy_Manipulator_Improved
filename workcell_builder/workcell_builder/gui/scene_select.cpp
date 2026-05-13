@@ -1,6 +1,6 @@
 
 // Workcell Scene Template Library UI labels
-static const char * kSceneTemplateUiMarkers[] = {
+[[maybe_unused]] static const char * kSceneTemplateUiMarkers[] = {
   "Create Scene From Template", "Scene Template Library", "Template Category",
   "Pick and Place Cell", "Sorting Cell", "Camera Inspection Cell",
   "Conveyor Pick Cell", "Palletizing Cell", "Instantiate Template",
@@ -47,6 +47,7 @@ static const char * kSceneTemplateUiMarkers[] = {
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <boost/filesystem.hpp>
+#include <filesystem>
 #include <boost/system/error_code.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include <stdio.h>
@@ -85,55 +86,55 @@ namespace fs = boost::filesystem;
 
 namespace {
 
-static const char * kPerceptionAdapterUiStrings = "Load Detection Snapshot | Generate Sample EPD Snapshot | Preview Detection Mapping | adapter_metadata_only | no robot motion commanded";
+[[maybe_unused]] static const char * kPerceptionAdapterUiStrings = "Load Detection Snapshot | Generate Sample EPD Snapshot | Preview Detection Mapping | adapter_metadata_only | no robot motion commanded";
 
 
-static const char * kAssetDiscoveryLabel = "Asset discovery paths";
-static const char * kSelectRobotAssetLabel = "Select Robot Asset";
-static const char * kSelectEndEffectorAssetLabel = "Select End Effector Asset";
-static const char * kSelectExistingStlLabel = "Select Existing STL";
+[[maybe_unused]] static const char * kAssetDiscoveryLabel = "Asset discovery paths";
+[[maybe_unused]] static const char * kSelectRobotAssetLabel = "Select Robot Asset";
+[[maybe_unused]] static const char * kSelectEndEffectorAssetLabel = "Select End Effector Asset";
+[[maybe_unused]] static const char * kSelectExistingStlLabel = "Select Existing STL";
 
 // External Asset Import Wizard labels
-static const char * kImportExternalAssetLabel = "Import External Asset";
-static const char * kExternalAssetImportWizardLabel = "External Asset Import Wizard";
-static const char * kSelectStlUrdfLabel = "Select STL / URDF";
-static const char * kImportedCategoryLabel = "Custom / Imported";
-static const char * kPresetTable = "table";
-static const char * kPresetBin = "bin";
-static const char * kPresetConveyorPlaceholder = "conveyor_placeholder";
-static const char * kPresetFixture = "fixture";
-static const char * kPresetCustomStl = "custom_stl";
+[[maybe_unused]] static const char * kImportExternalAssetLabel = "Import External Asset";
+[[maybe_unused]] static const char * kExternalAssetImportWizardLabel = "External Asset Import Wizard";
+[[maybe_unused]] static const char * kSelectStlUrdfLabel = "Select STL / URDF";
+[[maybe_unused]] static const char * kImportedCategoryLabel = "Custom / Imported";
+[[maybe_unused]] static const char * kPresetTable = "table";
+[[maybe_unused]] static const char * kPresetBin = "bin";
+[[maybe_unused]] static const char * kPresetConveyorPlaceholder = "conveyor_placeholder";
+[[maybe_unused]] static const char * kPresetFixture = "fixture";
+[[maybe_unused]] static const char * kPresetCustomStl = "custom_stl";
 constexpr const char * kSceneRootEnvVar = "WORKCELL_BUILDER_SCENE_ROOT";
 
-static const char * kCameraPerceptionSectionLabel = "Camera / Perception";
-static const char * kAddCameraLabel = "Add Camera";
-static const char * kCameraProfileLabel = "Camera Profile";
-static const char * kRealSenseD435iLabel = "RealSense D435i";
-static const char * kCameraPoseLabel = "Camera Pose";
-static const char * kRgbTopicLabel = "RGB Topic";
-static const char * kDepthTopicLabel = "Depth Topic";
-static const char * kCameraInfoTopicLabel = "Camera Info Topic";
-static const char * kPointCloudTopicLabel = "PointCloud Topic";
-static const char * kCameraFrameLabel = "Camera Frame";
-static const char * kOpticalFrameLabel = "Optical Frame";
-static const char * kMountTypeLabel = "Mount Type";
-static const char * kValidateCameraLabel = "Validate Camera";
-static const char * kApplyCameraDefaultsLabel = "Apply Camera Defaults";
-static const char * kPerceptionMetadataExportLabel = "Perception Metadata Export";
-static const char * kPreviewConveyorPickFlowLabel = "Preview Conveyor Pick Flow";
-static const char * kConveyorPreviewTimeLabel = "time_to_pick_s";
-static const char * kConveyorPreviewOnlyLabel = "preview_only";
-static const char * kTaskIntentPreviewLabel = "Preview Task Intent";
-static const char * kGenerateTaskIntentPreviewLabel = "Generate Task Intent Preview";
-static const char * kOpenTaskIntentPreviewLabel = "Open Task Intent Preview";
-static const char * kDryRunReadinessOnlyLabel = "dry_run_readiness_only";
-static const char * kOpenPlanningReadinessReportLabel = "Open Planning Readiness Report";
-static const char * kGenerateDryRunPlanningRequestLabel = "Generate Dry-Run Planning Request";
-static const char * kCheckPlanningReadinessLabel = "Check Planning Readiness";
-static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
-static const char * kEpdSeparateNote = "EPD remains external/separate";
+[[maybe_unused]] static const char * kCameraPerceptionSectionLabel = "Camera / Perception";
+[[maybe_unused]] static const char * kAddCameraLabel = "Add Camera";
+[[maybe_unused]] static const char * kCameraProfileLabel = "Camera Profile";
+[[maybe_unused]] static const char * kRealSenseD435iLabel = "RealSense D435i";
+[[maybe_unused]] static const char * kCameraPoseLabel = "Camera Pose";
+[[maybe_unused]] static const char * kRgbTopicLabel = "RGB Topic";
+[[maybe_unused]] static const char * kDepthTopicLabel = "Depth Topic";
+[[maybe_unused]] static const char * kCameraInfoTopicLabel = "Camera Info Topic";
+[[maybe_unused]] static const char * kPointCloudTopicLabel = "PointCloud Topic";
+[[maybe_unused]] static const char * kCameraFrameLabel = "Camera Frame";
+[[maybe_unused]] static const char * kOpticalFrameLabel = "Optical Frame";
+[[maybe_unused]] static const char * kMountTypeLabel = "Mount Type";
+[[maybe_unused]] static const char * kValidateCameraLabel = "Validate Camera";
+[[maybe_unused]] static const char * kApplyCameraDefaultsLabel = "Apply Camera Defaults";
+[[maybe_unused]] static const char * kPerceptionMetadataExportLabel = "Perception Metadata Export";
+[[maybe_unused]] static const char * kPreviewConveyorPickFlowLabel = "Preview Conveyor Pick Flow";
+[[maybe_unused]] static const char * kConveyorPreviewTimeLabel = "time_to_pick_s";
+[[maybe_unused]] static const char * kConveyorPreviewOnlyLabel = "preview_only";
+[[maybe_unused]] static const char * kTaskIntentPreviewLabel = "Preview Task Intent";
+[[maybe_unused]] static const char * kGenerateTaskIntentPreviewLabel = "Generate Task Intent Preview";
+[[maybe_unused]] static const char * kOpenTaskIntentPreviewLabel = "Open Task Intent Preview";
+[[maybe_unused]] static const char * kDryRunReadinessOnlyLabel = "dry_run_readiness_only";
+[[maybe_unused]] static const char * kOpenPlanningReadinessReportLabel = "Open Planning Readiness Report";
+[[maybe_unused]] static const char * kGenerateDryRunPlanningRequestLabel = "Generate Dry-Run Planning Request";
+[[maybe_unused]] static const char * kCheckPlanningReadinessLabel = "Check Planning Readiness";
+[[maybe_unused]] static const char * kEpdAdapterMetadataLabel = "EPD Adapter Metadata";
+[[maybe_unused]] static const char * kEpdSeparateNote = "EPD remains external/separate";
 
-static bool copy_directory_recursive(const fs::path & source, const fs::path & destination, std::string * error)
+[[maybe_unused]] static bool copy_directory_recursive(const fs::path & source, const fs::path & destination, std::string * error)
 {
   boost::system::error_code ec;
   if (!fs::exists(source, ec) || ec) {
@@ -668,7 +669,10 @@ void SceneSelect::on_create_scenario_template_clicked()
 void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
 {
   configure_startup_fallback_paths();
-  ConveyorSortingScenarioWizard wizard(scenes_path, workcell_path, this);
+  ConveyorSortingScenarioWizard wizard(
+    std::filesystem::path(scenes_path.string()),
+    std::filesystem::path(workcell_path.string()),
+    this);
   connect(&wizard, &ConveyorSortingScenarioWizard::scenarioGenerated, this, [this](const QString & name) {
     append_success("Created scenario from wizard: " + (scenes_path / name.toStdString()).string());
     workcell.scene_vector.clear();

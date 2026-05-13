@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QDialog>
+#include <QWidget>
 #include <QLabel>
 
 namespace workcell_builder
@@ -14,9 +14,9 @@ enum class StatusType
   Success
 };
 
-void applyCompactDialogDefaults(QDialog * dialog);
-void capDialogSize(QWidget * dialog, int max_width = 1100, int max_height = 760);
-void makeTextWidgetsWrap(QWidget * dialog);
+void applyCompactDialogDefaults(QWidget * widget);
+void capDialogSize(QWidget * widget, int max_width = 1100, int max_height = 760);
+void makeTextWidgetsWrap(QWidget * widget);
 void applyStatusLabelStyle(QLabel * label, StatusType status);
-void applyPrimarySecondaryButtonStyle(QWidget * dialog);
+void applyPrimarySecondaryButtonStyle(QWidget * widget);
 }  // namespace workcell_builder
