@@ -59,6 +59,8 @@
 #include <QJsonObject>
 #include <QSvgGenerator>
 #include <QPainter>
+#include <QWheelEvent>
+#include <QMouseEvent>
 #include <boost/filesystem.hpp>
 #include <filesystem>
 #include <boost/system/error_code.hpp>
@@ -99,6 +101,43 @@
 namespace fs = boost::filesystem;
 
 namespace {
+class InteractiveCanvasView : public QGraphicsView
+{
+public:
+  explicit InteractiveCanvasView(QWidget * parent = nullptr): QGraphicsView(parent) {}
+  bool snap_to_grid_enabled = true;
+  bool asset_placement_mode = false;
+  double zoom_level = 1.0;
+  int grid_px = 30;
+protected:
+  void wheelEvent(QWheelEvent * event) override
+  {
+    const double factor = event->angleDelta().y() > 0 ? 1.1 : 0.9;
+    scale(factor, factor);
+    zoom_level *= factor;
+    event->accept();
+  }
+  void mousePressEvent(QMouseEvent * event) override
+  {
+    if (event->button() == Qt::MiddleButton || event->button() == Qt::RightButton) {
+      setDragMode(QGraphicsView::ScrollHandDrag);
+      QMouseEvent fake(QEvent::MouseButtonPress, event->position(), Qt::LeftButton, Qt::LeftButton, event->modifiers());
+      QGraphicsView::mousePressEvent(&fake);
+      return;
+    }
+    QGraphicsView::mousePressEvent(event);
+  }
+  void mouseReleaseEvent(QMouseEvent * event) override
+  {
+    if (dragMode() == QGraphicsView::ScrollHandDrag) {
+      QMouseEvent fake(QEvent::MouseButtonRelease, event->position(), Qt::LeftButton, Qt::NoButton, event->modifiers());
+      QGraphicsView::mouseReleaseEvent(&fake);
+      setDragMode(QGraphicsView::RubberBandDrag);
+      return;
+    }
+    QGraphicsView::mouseReleaseEvent(event);
+  }
+};
 
 
 [[maybe_unused]] static const char * kCanvasWorkspaceUxTokens =
@@ -727,13 +766,23 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::export_preview_layout);
   connect(ui->fit_cell_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
-  connect(ui->reset_view_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
+  connect(ui->reset_view_action, &QPushButton::clicked, this, [this]() {
+    if (ui->visual_layout_canvas) {
+      ui->visual_layout_canvas->resetTransform();
+      refresh_preview_status();
+    }
+  });
   connect(ui->toggle_grid_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   connect(ui->toggle_reach_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   connect(ui->toggle_roi_action, &QPushButton::clicked, this, &SceneSelect::refresh_preview_status);
   ui->toggle_grid_action->setCheckable(true); ui->toggle_grid_action->setChecked(true);
   ui->toggle_reach_action->setCheckable(true); ui->toggle_reach_action->setChecked(true);
   ui->toggle_roi_action->setCheckable(true); ui->toggle_roi_action->setChecked(true);
+  auto * interactive_canvas = new InteractiveCanvasView(ui->visual_layout_canvas->parentWidget());
+  interactive_canvas->setObjectName("visual_layout_canvas");
+  ui->visualCanvasLayout->replaceWidget(ui->visual_layout_canvas, interactive_canvas);
+  delete ui->visual_layout_canvas;
+  ui->visual_layout_canvas = interactive_canvas;
   ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
   ui->scenario_template_description->setText(
     "Choose a real starter template:\n"
@@ -2793,6 +2842,13 @@ void SceneSelect::on_open_preview_clicked()
 
 void SceneSelect::refresh_preview_status()
 {
+  // canvas_controller_impl: layer state, selection id, unsaved layout edit state and metadata map.
+  static std::unordered_map<std::string, bool> layer_visibility = {
+    {"Grid", true}, {"Robot", true}, {"Reach", true}, {"Tables", true}, {"Objects", true},
+    {"Bins", true}, {"Conveyors", true}, {"Cameras", true}, {"Pick/place zones", true},
+    {"Camera ROI/FOV", true}, {"Warnings/blockers", true}, {"Labels", true}};
+  static std::string selected_item_id;
+  static bool unsaved_layout_edits = false;
   const int idx = ui->scene_list->currentIndex();
   if (idx < 0 || idx >= static_cast<int>(workcell.scene_vector.size())) {
     auto * empty_scene = new QGraphicsScene(ui->visual_layout_canvas);
@@ -2808,6 +2864,9 @@ void SceneSelect::refresh_preview_status()
   const bool show_grid = ui->toggle_grid_action->isChecked();
   const bool show_reach = ui->toggle_reach_action->isChecked();
   const bool show_roi = ui->toggle_roi_action->isChecked();
+  layer_visibility["Grid"] = show_grid;
+  layer_visibility["Reach"] = show_reach;
+  layer_visibility["Camera ROI/FOV"] = show_roi;
   if (show_grid || !ui->toggle_grid_action->isCheckable()) {
     for (int g=-300; g<=300; g+=30){ scene->addLine(-300,g,300,g,QPen(QColor("#dde6f2"))); scene->addLine(g,-300,g,300,QPen(QColor("#dde6f2"))); }
   }
@@ -2822,7 +2881,10 @@ void SceneSelect::refresh_preview_status()
     else if (it.id=="camera_roi" || it.role=="roi" || it.id=="pick_zone" || it.id=="place_zone") { if (!show_roi && (it.id=="camera_roi" || it.role=="roi")) continue; shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(it.id=="pick_zone"?QColor("#22c55e"):it.id=="place_zone"?QColor("#e11d48"):QColor("#2769b3"),2,Qt::DotLine), QBrush(QColor(39,105,179,40))); }
     else if (it.type=="camera" || it.type=="object") shape = scene->addEllipse(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="camera"?QColor("#3b82f6"):QColor("#f59e0b")));
     else shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="robot"?QColor("#1f7a3a"):it.type=="table"?QColor("#64748b"):it.type=="bin"?QColor("#ef4444"):it.type=="conveyor"?QColor("#0ea5e9"):QColor("#94a3b8")));
-    shape->setFlag(QGraphicsItem::ItemIsSelectable, true); shape->setData(0, it.name); shape->setData(1, it.type); shape->setData(2, QString("x=%1 y=%2 source=%3 status=%4 role=%5").arg(it.x,0,'f',2).arg(it.y,0,'f',2).arg(it.source,it.status,it.role));
+    shape->setFlag(QGraphicsItem::ItemIsSelectable, true);
+    shape->setFlag(QGraphicsItem::ItemIsMovable, it.type != "reach");
+    shape->setData(0, it.name); shape->setData(1, it.type); shape->setData(2, QString("x=%1 y=%2 source=%3 status=%4 role=%5").arg(it.x,0,'f',2).arg(it.y,0,'f',2).arg(it.source,it.status,it.role));
+    shape->setData(3, it.id);
     scene->addText(it.name)->setPos(px(it.x)-22, px(it.y)-12);
     if (it.warning.contains("BLOCKED") || it.warning.contains("overlap") || it.warning.contains("unreachable")) {
       scene->addText("reach_warning")->setPos(px(it.x)-18, px(it.y)+8);
@@ -2830,7 +2892,10 @@ void SceneSelect::refresh_preview_status()
   }
   QObject::connect(scene, &QGraphicsScene::selectionChanged, ui->visual_layout_canvas, [this, scene]() {
     const auto sel = scene->selectedItems(); if (sel.empty()) return; auto * i=sel.front();
-    ui->inspector_help->setText(QString("zone_inspector_token %1 (%2) | %3").arg(i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
+    selected_item_id = i->data(3).toString().toStdString();
+    unsaved_layout_edits = true;
+    ui->inspector_help->setText(QString("zone_inspector_token id=%1 name=%2 type=%3 | %4 | layout_unsaved=true | rerun zone validation")
+      .arg(i->data(3).toString(), i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
   });
   ui->visual_layout_canvas->setScene(scene);
   ui->visual_layout_canvas->setRenderHint(QPainter::Antialiasing, true);
