@@ -76,6 +76,38 @@ std::string get_asset_yaml_error(const std::string & object_name, const YAML::No
   }
   return "";
 }
+
+bool is_conveyor_asset(const std::string & object_name)
+{
+  return object_name.find("conveyor") != std::string::npos;
+}
+
+Link make_placeholder_link(const std::string & object_name)
+{
+  Link link;
+  link.name = "base_link";
+  link.is_visual = true;
+  link.is_collision = true;
+
+  Visual visual;
+  visual.name = object_name + "_placeholder_visual";
+  visual.geometry.is_stl = false;
+  visual.geometry.shape = "box";
+  visual.geometry.length = 0.6F;
+  visual.geometry.breadth = 0.2F;
+  visual.geometry.height = 0.1F;
+  link.visual_vector.push_back(visual);
+
+  Collision collision;
+  collision.name = object_name + "_placeholder_collision";
+  collision.geometry.is_stl = false;
+  collision.geometry.shape = "box";
+  collision.geometry.length = 0.6F;
+  collision.geometry.breadth = 0.2F;
+  collision.geometry.height = 0.1F;
+  link.collision_vector.push_back(collision);
+  return link;
+}
 }
 
 
@@ -275,6 +307,25 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
   } catch (const std::exception & error) {
     append_error("Failed to load object asset '" + object_name + "': " + std::string(error.what()));
     return false;
+  }
+
+  if (temp_object.link_vector.empty() || temp_object.ext_joint.child_link_pos < 0 ||
+    temp_object.ext_joint.child_link_pos >= static_cast<int>(temp_object.link_vector.size()) ||
+    (visual_count == 0 && collision_count == 0))
+  {
+    if (!is_conveyor_asset(object_name)) {
+      append_error("Asset validation failed for '" + object_name + "' from " + yaml_path.string());
+      return false;
+    }
+    append_error("Conveyor asset is incomplete; using placeholder geometry. Source: " + yaml_path.string());
+    temp_object.link_vector.clear();
+    temp_object.link_vector.push_back(make_placeholder_link(object_name));
+    temp_object.joint_vector.clear();
+    temp_object.ext_joint.name = object_name + "_base_joint";
+    temp_object.ext_joint.type = "fixed";
+    temp_object.ext_joint.child_link_pos = 0;
+    visual_count = 1;
+    collision_count = 1;
   }
 
   std::cout << "[LoadObjects] asset=" << object_name << " type=environment object=" << temp_object.name

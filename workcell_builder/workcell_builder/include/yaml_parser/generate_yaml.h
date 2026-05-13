@@ -39,14 +39,19 @@
 #include "yaml_parser/externaljoint_parser.h"
 #include "yaml_parser/object_parser.h"
 #include "yaml_parser/origin_parser.h"
+#include "tool_mount_defaults.hpp"
 
 namespace {
 Origin identity_origin()
 {
   Origin origin{};
   origin.is_origin = true;
+  origin.x = 0.0F;
+  origin.y = 0.0F;
+  origin.z = 0.0F;
   origin.roll = -1.5708F;
   origin.pitch = -1.5708F;
+  origin.yaw = 0.0F;
   return origin;
 }
 
@@ -61,10 +66,23 @@ bool is_valid_origin(const Origin & origin)
 
 Origin resolve_end_effector_mount_origin(const EndEffector & ee)
 {
-  if (!is_valid_origin(ee.origin)) {
-    return identity_origin();
+  if (is_valid_origin(ee.origin)) {
+    return ee.origin;
   }
-  return ee.origin;
+
+  const auto profile = workcell_builder::resolve_tool_mount_profile(ee.name, ee.ee_type);
+  if (profile.apply_default) {
+    Origin origin = identity_origin();
+    origin.x = profile.xyz[0];
+    origin.y = profile.xyz[1];
+    origin.z = profile.xyz[2];
+    origin.roll = profile.rpy[0];
+    origin.pitch = profile.rpy[1];
+    origin.yaw = profile.rpy[2];
+    return origin;
+  }
+
+  return identity_origin();
 }
 
 std::vector<std::string> normalize_robot_links(const Robot & robot)
