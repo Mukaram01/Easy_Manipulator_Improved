@@ -48,6 +48,11 @@ AddScene::AddScene(QWidget * parent)
   ui->remove_work_zone->setEnabled(false);
   ui->remove_work_zone->setToolTip("Removing metadata_only work zones is not yet implemented in this dialog.");
   ui->add_conveyor_flow->setEnabled(false);
+  ui->edit_work_zone->setToolTip("Edit Work Zone is enabled after selecting a work zone entry.");
+  ui->remove_work_zone->setToolTip("Remove Work Zone is enabled after selecting a work zone entry.");
+  ui->add_conveyor_flow->setToolTip("Conveyor flow metadata is available in Conveyor Sorting wizard layouts.");
+  ui->delete_object->setProperty("class", QVariant(QStringLiteral("destructive_action")));
+
   ui->add_conveyor_flow->setToolTip("Adding metadata_only conveyor flow is not yet implemented in this dialog.");
   world_link.name = "world";
   on_include_ee_stateChanged(0);

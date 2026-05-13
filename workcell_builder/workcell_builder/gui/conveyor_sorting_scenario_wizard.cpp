@@ -54,6 +54,8 @@ ConveyorSortingScenarioWizard::ConveyorSortingScenarioWizard(
   connect(ui_->copyLaunchCommandButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onCopyLaunchCommand);
   connect(ui_->copySampleEpdCommandButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onCopySampleEpdCommand);
   connect(ui_->openRunConsoleButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onOpenRunConsole);
+  ui_->generateFilesButton->setToolTip("Generate Files is enabled after Generate Scenario.");
+  ui_->sampleCommand->setReadOnly(true);
   loadDefaults();
 }
 
@@ -300,6 +302,7 @@ void ConveyorSortingScenarioWizard::onValidateRouting(){ updateStatus("Routing v
 void ConveyorSortingScenarioWizard::onEpdModeChanged(){
  const bool real = ui_->epdModeCombo->currentText().contains("Real");
  ui_->sampleCommand->setEnabled(!real);
+ ui_->sampleCommand->setToolTip(real ? "Sample publisher command is available in Sample demo feed mode." : "Copy this command to run sample EPD publisher.");
  ui_->sampleCommand->setText(real ? "ros2 run epd_connector start_connector --camera realsense_d435i_1" : "python3 scripts/publish_sample_epd_snapshot.py --camera realsense_d435i_1 --zone detection_zone_1");
  ui_->epdTopicEdit->setText("/workcell_studio/epd_detection_snapshot_json");
  if (real) { ui_->epdDetailsLabel->setText("Localization: /easy_perception_deployment/epd_localize_output\nTracking: /easy_perception_deployment/epd_tracking_output"); }

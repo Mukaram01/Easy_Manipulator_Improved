@@ -53,7 +53,7 @@ void applyPrimarySecondaryButtonStyle(QWidget * widget)
   const auto buttons = widget->findChildren<QPushButton *>();
   for (QPushButton * button : buttons) {
     const QString name = button->objectName().toLower();
-    if (name.contains("generate") || name.contains("save") || name.contains("next")) {
+    if (name.contains("generate") || name.contains("save") || name.contains("launch") || name.contains("build") || name.contains("validate") || name.contains("wizard")) {
       button->setProperty("class", QVariant(QStringLiteral("primary_action")));
       button->setDefault(true);
     }
@@ -61,9 +61,12 @@ void applyPrimarySecondaryButtonStyle(QWidget * widget)
 
   widget->setStyleSheet(widget->styleSheet() +
     "\nQPushButton[class='primary_action'] {"
-    "background-color: #1d5da8; color: white; font-weight: 600; padding: 4px 10px; }"
+    "background-color: #1d5da8; color: #ffffff; font-weight: 600; padding: 4px 10px; border-radius: 4px; }"
     "\nQPushButton[class='primary_action']:disabled {"
-    "background-color: #8ea1b8; color: #f2f2f2; }");
+    "background-color: #8ea1b8; color: #f2f2f2; }"
+    "\nQPushButton { padding: 3px 8px; }"
+    "\nQPushButton[class='destructive_action'] { background-color: #f4d7d7; color: #702020; }"
+    "\nQLineEdit, QPlainTextEdit, QTextBrowser { color: palette(text); background-color: palette(base); }");
 }
 
 void applyStatusLabelStyle(QLabel * label, StatusType status)
