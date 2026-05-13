@@ -48,6 +48,7 @@
 #include <QTreeWidgetItem>
 #include <QHeaderView>
 #include <QSplitter>
+#include <QShortcut>
 #include <boost/filesystem.hpp>
 #include <filesystem>
 #include <boost/system/error_code.hpp>
@@ -601,12 +602,13 @@ SceneSelect::SceneSelect(QWidget * parent)
 {
   ui->setupUi(this);
   workcell_builder::applyCompactDialogDefaults(this);
+  setWindowFlags(Qt::Window | Qt::WindowMinimizeButtonHint | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
   templates_path = get_default_templates_directory();
   setWindowTitle("Workcell Studio - Workcell Builder");
   ui->workflow_tabs->setCurrentWidget(ui->start_tab);
 
-  ui->asset_browser_group->show();
-  ui->inspector_group->show();
+  ui->asset_browser_group->hide();
+  ui->inspector_group->hide();
   ui->cell_name->show();
   ui->output_folder->show();
   ui->browse_output_folder->show();
@@ -618,6 +620,17 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->validate_cell->hide();
   ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->validate_generate_tab), "Validate & Generate");
   ui->browse_scenes_folder->setText("Open Folder");
+  ui->workflow_tabs->setTabText(ui->workflow_tabs->indexOf(ui->ingredients_tab), "Task");
+
+  ui->templatesPageLayout->addWidget(ui->scenario_templates_group);
+  ui->assetsPageLayout->addWidget(ui->asset_browser_group);
+  ui->assetsPageLayout->addWidget(ui->current_cell_assets_group);
+  ui->scenesPageLayout->insertWidget(0, ui->existing_scenes_group);
+  ui->scenesPageLayout->addWidget(ui->workcell_studio_scene_status_group);
+
+  ui->startLayout->removeWidget(ui->scenario_templates_group);
+  ui->startLayout->removeWidget(ui->existing_scenes_group);
+  ui->startLayout->removeWidget(ui->workcell_studio_scene_status_group);
 
   ui->fake_hardware_default_label->setToolTip(
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
@@ -653,6 +666,14 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Next recommended action: Create or open a scene, then apply a recommended layout.");
   setMinimumSize(1100, 720);
   resize(1450, 900);
+  ui->scene_catalog_table->setColumnCount(6);
+  ui->scene_catalog_table->setHorizontalHeaderLabels({"Scene", "Status", "Path", "environment.yaml", "Generated", "Modified"});
+  ui->scene_catalog_table->horizontalHeader()->setStretchLastSection(true);
+
+  auto * fsShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
+  connect(fsShortcut, &QShortcut::activated, this, [this]() {
+    isFullScreen() ? showNormal() : showFullScreen();
+  });
   setSizeGripEnabled(true);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   initialize_template_catalog();
@@ -2439,6 +2460,10 @@ void SceneSelect::on_back_clicked()
 
 void SceneSelect::keyPressEvent(QKeyEvent * e)
 {
+  if (e->key() == Qt::Key_Escape && isFullScreen()) {
+    showNormal();
+    return;
+  }
   if (e->key() != Qt::Key_Escape) {
     QDialog::keyPressEvent(e);
   } else { /* minimize */}
