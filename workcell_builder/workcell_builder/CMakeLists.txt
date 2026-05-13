@@ -139,6 +139,7 @@ add_executable(workcell_builder
     gui/environment_layout_editor.cpp
     gui/external_asset_import_dialog.cpp
     gui/workcell_builder_ui_utils.cpp
+    gui/asset_catalog_model.cpp
     gui/conveyor_sorting_scenario_wizard.cpp
     gui/conveyor_sorting_scenario_wizard.h
     gui/conveyor_sorting_scenario_wizard.ui
