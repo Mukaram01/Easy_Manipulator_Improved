@@ -47,6 +47,7 @@
 #include <QMessageBox>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
+#include <QSplitter>
 #include <boost/filesystem.hpp>
 #include <filesystem>
 #include <boost/system/error_code.hpp>
@@ -636,16 +637,6 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
   append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
   connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::export_preview_layout);
-  connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
-  connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
-  connect(ui->refresh_status_button, &QPushButton::clicked, this, &SceneSelect::on_refresh_status_button_clicked);
-  connect(ui->validate_scene_button, &QPushButton::clicked, this, &SceneSelect::on_validate_scene_button_clicked);
-  connect(ui->copy_build_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_build_command_button_clicked);
-  connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
-  connect(ui->create_scenario_template, &QPushButton::clicked, this, &SceneSelect::on_create_scenario_template_clicked);
-  connect(ui->create_conveyor_sorting_live_epd_preview, &QPushButton::clicked, this, &SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked);
-  connect(ui->use_recommended_layout, &QPushButton::clicked, this, &SceneSelect::on_use_recommended_layout_clicked);
-  connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_button_clicked);
   ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
   ui->scenario_template_description->setText(
     "Choose a real starter template:\n"
@@ -660,26 +651,75 @@ SceneSelect::SceneSelect(QWidget * parent)
     button->setDisabled(true);
   }
   append_info("Next recommended action: Create or open a scene, then apply a recommended layout.");
+  setMinimumSize(1100, 720);
+  resize(1450, 900);
+  setSizeGripEnabled(true);
+  setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  initialize_template_catalog();
+  initialize_asset_library();
 
 }
 
+void SceneSelect::initialize_template_catalog()
+{
+  scenario_template_catalog_ = new QListWidget(ui->scenario_templates_group);
+  scenario_template_catalog_->setObjectName("scenario_template_catalog");
+  scenario_template_catalog_->addItems({
+      "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin",
+      "Conveyor Sorting - Live EPD Preview",
+      "Camera Inspection Cell (PREVIEW ONLY)",
+      "UR5 + Suction Pick Cell",
+      "Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)"});
+  ui->scenarioTemplatesLayout->insertWidget(0, scenario_template_catalog_);
+  scenario_template_catalog_->setCurrentRow(0);
+  selected_template_ = scenario_template_catalog_->currentItem()->text();
+  connect(scenario_template_catalog_, &QListWidget::itemSelectionChanged, this, &SceneSelect::on_template_catalog_selection_changed);
+}
+
+void SceneSelect::initialize_asset_library()
+{
+  ui->asset_category_tree->setColumnCount(4);
+  ui->asset_category_tree->setHeaderLabels({"Asset", "Category", "Source", "Status"});
+  const std::vector<std::tuple<QString, QString, QString, QString>> rows = {
+    {"UR5", "robot", "default catalog", "OK"},
+    {"Robotiq 2F", "end_effector", "default catalog", "OK"},
+    {"Table", "environment", "default catalog", "OK"},
+    {"Bin", "environment", "default catalog", "OK"},
+    {"Conveyor Placeholder", "environment", "default catalog", "preview-only"},
+    {"RealSense D435i", "sensor", "default catalog", "OK"}
+  };
+  ui->asset_category_tree->clear();
+  for (const auto & row : rows) {
+    auto * item = new QTreeWidgetItem(ui->asset_category_tree);
+    item->setText(0, std::get<0>(row));
+    item->setText(1, std::get<1>(row));
+    item->setText(2, std::get<2>(row));
+    item->setText(3, std::get<3>(row));
+  }
+}
+
+void SceneSelect::on_template_catalog_selection_changed()
+{
+  if (!scenario_template_catalog_ || !scenario_template_catalog_->currentItem()) {
+    return;
+  }
+  selected_template_ = scenario_template_catalog_->currentItem()->text();
+  append_info("Template selected: " + selected_template_.toStdString());
+}
+
+QString SceneSelect::ensure_selected_template()
+{
+  if (!selected_template_.isEmpty()) {
+    return selected_template_;
+  }
+  selected_template_ = "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin";
+  append_warning("No template selected. Defaulted to Pick and Place Cell.");
+  return selected_template_;
+}
 
 void SceneSelect::on_create_scenario_template_clicked()
 {
-  const QStringList templates = {
-    "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin",
-    "Conveyor Sorting - Live EPD Preview",
-    "Camera Inspection Cell (PREVIEW ONLY)",
-    "UR5 + Suction Pick Cell",
-    "Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)"
-  };
-  bool ok = false;
-  const QString selected = QInputDialog::getItem(
-    this, "Scenario Templates", "Select template", templates, 0, false, &ok);
-  if (!ok || selected.isEmpty()) {
-    append_info("Template selection cancelled.");
-    return;
-  }
+  const QString selected = ensure_selected_template();
   if (selected.contains("Conveyor Sorting")) {
     on_create_conveyor_sorting_live_epd_preview_clicked();
     return;
@@ -748,6 +788,10 @@ SceneSelect::~SceneSelect()
 
 void SceneSelect::append_message(MessageLevel level, const std::string & message)
 {
+  if (last_status_message_ == QString::fromStdString(message)) {
+    return;
+  }
+  last_status_message_ = QString::fromStdString(message);
   QString color;
   QString prefix;
   switch (level) {

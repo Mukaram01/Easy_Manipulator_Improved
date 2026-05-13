@@ -66,7 +66,7 @@ void applyStatusBadgeStyle(QLabel * label, StatusType status)
   label->setStyleSheet(QString("background:%1; color:%2; border:1px solid #c7d3df; border-radius:10px; padding:2px 8px; font-weight:600;").arg(bg, fg));
 }
 
-void capDialogSize(QWidget * widget, int max_width, int max_height){ if(!widget) return; widget->setMinimumSize(640,420); widget->setMaximumSize(max_width,max_height); widget->resize(widget->size().boundedTo(QSize(max_width,max_height))); }
+void capDialogSize(QWidget * widget, int, int){ if(!widget) return; widget->setMinimumSize(640,420); widget->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX); }
 void makeTextWidgetsWrap(QWidget * widget){ if(!widget) return; for (QLabel * label : widget->findChildren<QLabel *>()) { label->setWordWrap(true); label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);} }
 
 void applyPrimarySecondaryButtonStyle(QWidget * widget)
