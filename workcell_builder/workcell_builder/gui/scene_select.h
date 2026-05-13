@@ -95,6 +95,7 @@ private slots:
   void on_create_scenario_template_clicked();
   void on_create_conveyor_sorting_live_epd_preview_clicked();
   void on_use_recommended_layout_clicked();
+  void on_repair_scene_yaml_clicked();
   void on_open_conveyor_sorting_run_console_button_clicked();
   void on_template_catalog_selection_changed();
 

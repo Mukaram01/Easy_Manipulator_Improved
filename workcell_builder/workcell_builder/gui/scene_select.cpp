@@ -1211,6 +1211,39 @@ bool ensure_minimal_environment_yaml(const fs::path & scene_dir, const std::stri
   return true;
 }
 
+
+bool repair_scene_yaml_file(const fs::path & scene_dir, std::string * summary)
+{
+  const fs::path environment_file = scene_dir / "environment.yaml";
+  if (!fs::exists(environment_file)) {
+    if (summary) *summary = "environment.yaml missing";
+    return false;
+  }
+  YAML::Node root;
+  try { root = YAML::LoadFile(environment_file.string()); } catch (const std::exception & e) {
+    if (summary) *summary = std::string("YAML parse failure: ") + e.what();
+    return false;
+  }
+  bool changed = false;
+  if (root["objects"] && root["objects"].IsSequence()) {
+    YAML::Node map(YAML::NodeType::Map);
+    for (const auto & obj : root["objects"]) {
+      if (!obj["name"]) continue;
+      map[obj["name"].as<std::string>()] = obj;
+    }
+    root["objects"] = map;
+    changed = true;
+  }
+  if (!changed) { if (summary) *summary = "No supported legacy YAML normalization needed."; return false; }
+  const fs::path backup = scene_dir / "environment.yaml.bak";
+  fs::copy_file(environment_file, backup, fs::copy_option::overwrite_if_exists);
+  YAML::Emitter out; out << root;
+  std::ofstream ofs(environment_file.string());
+  ofs << out.c_str() << "\n";
+  if (summary) *summary = "Repaired legacy objects list->map format; wrote environment.yaml.bak";
+  return true;
+}
+
 void refresh_scene_manifest_if_missing(const fs::path & scene_dir, const std::string & scene_name)
 {
   const fs::path manifest = scene_dir / "scene_manifest.yaml";
@@ -1587,7 +1620,7 @@ bool SceneSelect::check_scene(bool strict)
       append_info("Scene status: environment.yaml found.");
     }
   } else {
-    append_warning("environment.yaml exists. Full scene package has not been generated yet.");
+    append_warning("Missing environment.yaml. Next recommended action: Create or save scene YAML.");
   }
 
   if (files_loaded_proper) {
@@ -1649,8 +1682,8 @@ bool SceneSelect::check_files(bool strict)
   }
 
   if (!boost::filesystem::exists(launch_dir)) {
-    append_error("Scene status: required files are missing.");
-    append_error("launch/ is missing. Click Generate Full Scene Package.");
+    append_info("Scene scaffold found. Package files are not generated yet.");
+    append_info("Next recommended action: click Generate Full Scene Package.");
     if (!boost::filesystem::exists(urdf_dir / "arm_hand.srdf.xacro")) {
       append_error(
         "Scene status: launch not generated because SRDF generation failed earlier.");
@@ -1661,12 +1694,12 @@ bool SceneSelect::check_files(bool strict)
   if (!boost::filesystem::exists(launch_dir / "demo.rviz") ||
     !boost::filesystem::exists(launch_dir / "demo.launch.py"))
   {
-    append_error("Scene status: required launch files are missing.");
+    append_warning("Launch assets are not ready yet. This is expected before generation/launch validation.");
     if (!boost::filesystem::exists(launch_dir / "demo.rviz")) {
-      append_error("Scene status: demo.rviz missing.");
+      append_warning("demo.rviz missing. Next recommended action: regenerate full scene package before launch validation.");
     }
     if (!boost::filesystem::exists(launch_dir / "demo.launch.py")) {
-      append_error("Scene status: demo.launch.py missing.");
+      append_warning("demo.launch.py missing. Next recommended action: regenerate full scene package.");
     }
     return false;
   }
@@ -2722,4 +2755,21 @@ void SceneSelect::on_open_conveyor_sorting_run_console_button_clicked()
   const QString scenario_name = ui->scene_list->itemText(ui->scene_list->currentIndex());
   ConveyorSortingRunConsole dialog(std::filesystem::path(scene_dir.string()), scenario_name, this);
   dialog.exec();
+}
+
+
+void SceneSelect::on_repair_scene_yaml_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) {
+    append_warning("No selected scene. Next recommended action: select a scene first.");
+    return;
+  }
+  std::string summary;
+  if (repair_scene_yaml_file(scene_dir, &summary)) {
+    append_success("Repair Scene YAML complete: " + summary);
+  } else {
+    append_warning("Repair Scene YAML skipped: " + summary);
+  }
+  refresh_scene_status(true, "Repair Scene YAML");
 }
