@@ -75,7 +75,7 @@ def _resolve_scene_label(scene_package: Path, target_id: str) -> tuple[str, bool
     return _readable_label(target_id), False
 
 def _default(scene_package: str) -> dict[str, Any]:
-    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview","template":"pick_place"},"task_template":{"id":"pick_place","scenario":"pick_place","runtime_status":"supported","notes":"Template metadata only; runtime remains existing pick/place and sorting flows."},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview","template":"pick_place"},"task_template":{"id":"pick_place","scenario":"pick_place","runtime_status":"supported","notes":"Template metadata only; runtime remains existing pick/place and sorting flows."},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1,"place_clearance_m":0.05},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
@@ -161,7 +161,7 @@ def main() -> int:
     payload['place'].setdefault('target',{}).setdefault('type', 'place_target')
     place_label, place_resolved = _resolve_scene_label(a.scene_package, a.place_target)
     payload['place']['target']['label'] = place_label
-    payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
+    payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m, 'place_clearance_m': 0.05})
     payload.setdefault('routing', {})['rules'] = [{
         'id': 'route_any_to_selected_place',
         'when': {'object_class': a.object_class, 'object_color': a.object_color},
