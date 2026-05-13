@@ -17,6 +17,8 @@
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
 
 #include <QDialog>
+#include <QStringList>
+#include <QListWidget>
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -94,6 +96,7 @@ private slots:
   void on_create_conveyor_sorting_live_epd_preview_clicked();
   void on_use_recommended_layout_clicked();
   void on_open_conveyor_sorting_run_console_button_clicked();
+  void on_template_catalog_selection_changed();
 
 private:
   enum class MessageLevel { Info, Warning, Error, Success };
@@ -111,6 +114,12 @@ private:
   bool export_workcell_layout_preview(const Scene & scene, const boost::filesystem::path & scene_dir, bool open_after_export);
 
   Ui::SceneSelect * ui;
+  QListWidget * scenario_template_catalog_ = nullptr;
+  QString selected_template_;
+  QString last_status_message_;
+  void initialize_template_catalog();
+  void initialize_asset_library();
+  QString ensure_selected_template();
   boost::filesystem::path scene_dir_for_current_selection() const;
   bool validate_description_xacros(const Scene & scene, const std::string & context_label);
   void configure_startup_fallback_paths();
