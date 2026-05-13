@@ -649,7 +649,9 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
   connect(ui->create_scenario_template, &QPushButton::clicked, this, &SceneSelect::on_create_scenario_template_clicked);
   connect(ui->create_conveyor_sorting_live_epd_preview, &QPushButton::clicked, this, &SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked);
+  connect(ui->use_recommended_layout, &QPushButton::clicked, this, &SceneSelect::on_use_recommended_layout_clicked);
   connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_button_clicked);
+  ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
   for (auto * button : placeholder_buttons) {
     button->setText(button->text() + " (coming soon)");
@@ -680,6 +682,33 @@ void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
     refresh_scenes(0, false);
   });
   wizard.exec();
+}
+
+void SceneSelect::on_use_recommended_layout_clicked()
+{
+  if (ui->scene_list->currentIndex() <= 0 || workcell.scene_vector.empty()) {
+    append_warning("Select or create a scenario before applying layout");
+    return;
+  }
+
+  const int scene_index = ui->scene_list->currentIndex() - 1;
+  if (scene_index < 0 || scene_index >= static_cast<int>(workcell.scene_vector.size())) {
+    append_warning("Select or create a scenario before applying layout");
+    return;
+  }
+
+  Scene & scene = workcell.scene_vector[scene_index];
+  if (scene.robot_loaded && !scene.robot_vector.empty()) {
+    scene.robot_vector[0].origin.is_origin = true;
+    scene.robot_vector[0].origin.x = -0.45F;
+    scene.robot_vector[0].origin.y = 0.0F;
+    scene.robot_vector[0].origin.z = 0.0F;
+    scene.robot_vector[0].origin.roll = 0.0F;
+    scene.robot_vector[0].origin.pitch = 0.0F;
+    scene.robot_vector[0].origin.yaw = 0.0F;
+  }
+  append_success("Recommended layout applied");
+  refresh_preview_status();
 }
 
 SceneSelect::~SceneSelect()

@@ -44,8 +44,10 @@
         <item row="3" column="1"><widget class="QLineEdit" name="cameraPoseEdit"/></item>
         <item row="4" column="0"><widget class="QLabel" name="e"><property name="text"><string>bin poses</string></property></widget></item>
         <item row="4" column="1"><widget class="QLineEdit" name="binPoseEdit"/></item>
+        <item row="5" column="0"><widget class="QLabel" name="gripperMountRpyLabel"><property name="text"><string>Gripper Mount RPY</string></property></widget></item>
+        <item row="5" column="1"><widget class="QLineEdit" name="gripperMountRpyEdit"/></item>
        </layout></item>
-       <item><layout class="QHBoxLayout" name="h1"><item><widget class="QPushButton" name="useRecommendedLayoutButton"><property name="text"><string>Use Recommended Layout</string></property></widget></item><item><widget class="QPushButton" name="resetLayoutButton"><property name="text"><string>Reset Layout</string></property></widget></item><item><widget class="QPushButton" name="validateRoutingButton"><property name="text"><string>Validate Routing</string></property></widget></item></layout></item>
+       <item><layout class="QHBoxLayout" name="h1"><item><widget class="QPushButton" name="useRecommendedLayoutButton"><property name="text"><string>Use Recommended Layout</string></property></widget></item><item><widget class="QPushButton" name="useDefaultGripperOrientationButton"><property name="text"><string>Use Default Gripper Orientation</string></property></widget></item><item><widget class="QPushButton" name="resetLayoutButton"><property name="text"><string>Reset Layout</string></property></widget></item><item><widget class="QPushButton" name="validateRoutingButton"><property name="text"><string>Validate Routing</string></property></widget></item></layout></item>
       </layout>
      </widget>
      <widget class="QWidget" name="workZonesTab">
