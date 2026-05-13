@@ -37,6 +37,7 @@ ConveyorSortingScenarioWizard::ConveyorSortingScenarioWizard(
   ui_->zoneTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   ui_->routingTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
   connect(ui_->useRecommendedLayoutButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onUseRecommendedLayout);
+  connect(ui_->useDefaultGripperOrientationButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onUseDefaultGripperOrientation);
   connect(ui_->resetLayoutButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onResetLayout);
   connect(ui_->resetRoutesButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onResetDefaultRoutes);
   connect(ui_->addZoneButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onAddZone);
@@ -116,7 +117,14 @@ void ConveyorSortingScenarioWizard::onUseRecommendedLayout()
   ui_->cameraPoseEdit->setText("0.0,0.0,1.6,-1.57,0,0");
   ui_->binPoseEdit->setText(
     "0.65,-0.25,0.0,0,0,0 | 0.65,0.0,0.0,0,0,0 | 0.65,0.25,0.0,0,0,0");
+  ui_->gripperMountRpyEdit->setText("-1.5708,-1.5708,0");
   updateStatus("Recommended layout applied");
+}
+
+void ConveyorSortingScenarioWizard::onUseDefaultGripperOrientation()
+{
+  ui_->gripperMountRpyEdit->setText("-1.5708,-1.5708,0");
+  updateStatus("Default gripper orientation applied");
 }
 
 void ConveyorSortingScenarioWizard::onResetLayout()
@@ -155,7 +163,8 @@ void ConveyorSortingScenarioWizard::writeScenarioArtifacts(bool fullSet)
     "  robot_motion_commanded: false\n"
     "  moveit_execute_called: false\n"
     "  gripper_command_sent: false\n"
-    "  conveyor_command_sent: false\n");
+    "  conveyor_command_sent: false\n"
+    "  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n");
 
   writeFile(
     scene_dir / "package.xml",

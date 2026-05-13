@@ -21,6 +21,7 @@ signals:
 
 private slots:
   void onUseRecommendedLayout();
+  void onUseDefaultGripperOrientation();
   void onResetLayout();
   void onResetDefaultRoutes();
   void onAddZone();

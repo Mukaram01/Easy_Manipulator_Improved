@@ -45,6 +45,8 @@ Origin identity_origin()
 {
   Origin origin{};
   origin.is_origin = true;
+  origin.roll = -1.5708F;
+  origin.pitch = -1.5708F;
   return origin;
 }
 

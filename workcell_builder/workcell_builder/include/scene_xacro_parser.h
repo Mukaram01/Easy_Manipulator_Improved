@@ -154,8 +154,8 @@ Origin resolve_default_ee_mount_origin(const Scene &, const EndEffector &)
   fallback.x = 0.0F;
   fallback.y = 0.0F;
   fallback.z = 0.0F;
-  fallback.roll = 0.0F;
-  fallback.pitch = 0.0F;
+  fallback.roll = -1.5708F;
+  fallback.pitch = -1.5708F;
   fallback.yaw = 0.0F;
   return fallback;
 }
@@ -164,15 +164,15 @@ Origin resolve_ee_mount_origin(const Scene & scene, const EndEffector & ee)
 {
   (void)scene;
   if (!ee.origin.is_origin) {
-    std::cerr << "WARNING: End-effector mount pose not set; defaulting to identity origin xyz/rpy (0 0 0).\n";
+    std::cerr << "WARNING: End-effector mount pose not set; defaulting to mount origin xyz/rpy (0 0 0, -1.5708 -1.5708 0).\n";
     return resolve_default_ee_mount_origin(scene, ee);
   }
   if (is_all_negative_one(ee.origin)) {
-    std::cerr << "WARNING: End-effector mount pose contains unset sentinel values (-1); defaulting to identity origin xyz/rpy (0 0 0).\n";
+    std::cerr << "WARNING: End-effector mount pose contains unset sentinel values (-1); defaulting to mount origin xyz/rpy (0 0 0, -1.5708 -1.5708 0).\n";
     return resolve_default_ee_mount_origin(scene, ee);
   }
   if (has_any_invalid_origin_component(ee.origin)) {
-    std::cerr << "WARNING: End-effector mount pose contains invalid NaN/Inf values; defaulting to identity origin xyz/rpy (0 0 0).\n";
+    std::cerr << "WARNING: End-effector mount pose contains invalid NaN/Inf values; defaulting to mount origin xyz/rpy (0 0 0, -1.5708 -1.5708 0).\n";
     return resolve_default_ee_mount_origin(scene, ee);
   }
   return ee.origin;
