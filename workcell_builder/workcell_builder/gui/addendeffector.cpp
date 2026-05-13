@@ -39,6 +39,7 @@
 #include "include/asset_discovery_helper.h"
 #include <QPushButton>
 #include "attributes/robot.h"
+#include "tool_mount_defaults.hpp"
 
 namespace
 {
@@ -211,12 +212,12 @@ void AddEndEffector::LoadExistingEE(EndEffector ee_input)
   if (ee.origin.is_origin) {
     ui->include_origin->setChecked(true);
     on_include_origin_stateChanged(2);
-    if (ee.origin.x >= 0) {ui->x->setText(QString::number(ee.origin.x));}
-    if (ee.origin.y >= 0) {ui->y->setText(QString::number(ee.origin.y));}
-    if (ee.origin.z >= 0) {ui->z->setText(QString::number(ee.origin.z));}
-    if (ee.origin.roll >= 0) {ui->roll->setText(QString::number(ee.origin.roll));}
-    if (ee.origin.pitch >= 0) {ui->pitch->setText(QString::number(ee.origin.pitch));}
-    if (ee.origin.yaw >= 0) {ui->yaw->setText(QString::number(ee.origin.yaw));}
+    ui->x->setText(QString::number(ee.origin.x));
+    ui->y->setText(QString::number(ee.origin.y));
+    ui->z->setText(QString::number(ee.origin.z));
+    ui->roll->setText(QString::number(ee.origin.roll));
+    ui->pitch->setText(QString::number(ee.origin.pitch));
+    ui->yaw->setText(QString::number(ee.origin.yaw));
   } else {
     ui->include_origin->stateChanged(0);
   }
@@ -576,13 +577,13 @@ void AddEndEffector::on_include_origin_stateChanged(int arg1)
     ui->z->clear();
     ui->z_label->setDisabled(false);
     ui->roll->setDisabled(false);
-    ui->roll->clear();
+    ui->roll->setText(QString::fromStdString("-1.5708"));
     ui->roll_label->setDisabled(false);
     ui->pitch->setDisabled(false);
-    ui->pitch->clear();
+    ui->pitch->setText(QString::fromStdString("-1.5708"));
     ui->pitch_label->setDisabled(false);
     ui->yaw->setDisabled(false);
-    ui->yaw->clear();
+    ui->yaw->setText(QString::fromStdString("0"));
     ui->yaw_label->setDisabled(false);
     ui->origin_label->setDisabled(false);
     ui->position_label->setDisabled(false);
@@ -710,6 +711,18 @@ void AddEndEffector::on_ok_clicked()
     }
     ee.base_link = ui->ee_links->currentText().toStdString();
     ee.robot_link = ui->parent_link->text().toStdString();
+    if (!ee.origin.is_origin) {
+      const auto profile = workcell_builder::resolve_tool_mount_profile(ee.name, ee.ee_type);
+      if (profile.apply_default) {
+        ee.origin.is_origin = true;
+        ee.origin.x = profile.xyz[0];
+        ee.origin.y = profile.xyz[1];
+        ee.origin.z = profile.xyz[2];
+        ee.origin.roll = profile.rpy[0];
+        ee.origin.pitch = profile.rpy[1];
+        ee.origin.yaw = profile.rpy[2];
+      }
+    }
     success = true;
     this->close();
   }
