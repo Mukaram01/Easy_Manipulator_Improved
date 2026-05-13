@@ -90,6 +90,7 @@
 #include "include/scene_parser.h"
 #include "include/scene_xacro_parser.h"
 #include "include/default_asset_paths.h"
+#include "include/asset_catalog_model.h"
 #include "scene_select_paths.h"
 #include "robot_tool_compatibility.hpp"
 #include "workcell_scene_bundle.hpp"
@@ -758,24 +759,24 @@ void SceneSelect::initialize_template_catalog()
 
 void SceneSelect::initialize_asset_library()
 {
-  ui->asset_category_tree->setColumnCount(4);
-  ui->asset_category_tree->setHeaderLabels({"Asset", "Category", "Source", "Status"});
-  const std::vector<std::tuple<QString, QString, QString, QString>> rows = {
-    {"UR5", "robot", "default catalog", "OK"},
-    {"Robotiq 2F", "end_effector", "default catalog", "OK"},
-    {"Table", "environment", "default catalog", "OK"},
-    {"Bin", "environment", "default catalog", "OK"},
-    {"Conveyor Placeholder", "environment", "default catalog", "preview-only"},
-    {"RealSense D435i", "sensor", "default catalog", "OK"}
-  };
+  ui->asset_category_tree->setColumnCount(7);
+  ui->asset_category_tree->setHeaderLabels({"Icon", "Asset Name", "Category", "Readiness", "Source", "Path/Package", "Diagnostics"});
   ui->asset_category_tree->clear();
-  for (const auto & row : rows) {
+
+  const AssetCatalogModel catalog = discover_asset_catalog(std::string(std::getenv("HOME") ? std::getenv("HOME") : "") + "/workcell_ws", workcell_path.string());
+  for (const auto & root : catalog.discovered_roots) { append_info("Asset root scanned: " + root); }
+
+  for (const auto & asset : catalog.assets) {
     auto * item = new QTreeWidgetItem(ui->asset_category_tree);
-    item->setText(0, std::get<0>(row));
-    item->setText(1, std::get<1>(row));
-    item->setText(2, std::get<2>(row));
-    item->setText(3, std::get<3>(row));
+    item->setText(0, QString::fromStdString(asset.icon_key));
+    item->setText(1, QString::fromStdString(asset.display_name));
+    item->setText(2, QString::fromStdString(asset.category));
+    item->setText(3, QString::fromStdString(asset.readiness));
+    item->setText(4, QString::fromStdString(asset.source));
+    item->setText(5, QString::fromStdString(asset.path));
+    item->setText(6, QString("warnings=%1 blockers=%2").arg(asset.warnings.size()).arg(asset.blockers.size()));
   }
+  ui->inspector_help->setText("Inspector diagnostics: asset name/category/readiness/root/path/discovered files/warnings/blockers/suggested action/compatible templates/can add to scene.");
 }
 
 void SceneSelect::on_template_catalog_selection_changed()
