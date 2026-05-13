@@ -1524,12 +1524,11 @@ void SceneSelect::on_edit_scene_clicked()
   configure_startup_fallback_paths();
   if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
     Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
-    if (!curr_scene.loaded) {
-      if (!load_scene_from_yaml(&curr_scene)) {
-        // if scene.loaded is not true, generate scene from yaml
-        append_error("Could not load scene from environment.yaml.");
-        return;
-      }
+    std::string open_status;
+    if (!open_existing_scene(scene_dir_for_current_selection(), &curr_scene, &open_status)) {
+      append_error(open_status);
+      refresh_scene_status(true, "Open/Edit Cell");
+      return;
     }
     // Scene loaded
     AddScene scene_window;
@@ -1547,11 +1546,11 @@ void SceneSelect::on_edit_scene_clicked()
         const fs::path scene_yaml_path = scenes_path / scene_window.scene.name;
         if (boost::filesystem::exists(scene_yaml_path)) {     // Scene name nvr change
           // Replace the current environment yaml
-          if (GenerateYAML::generate_yaml(
-              scene_window.scene,
-              scene_yaml_path.string(), scenes_path, assets_path))
+          std::string backup_path;
+          if (save_scene(scene_window.scene, scene_yaml_path, &backup_path))
           {
             generate_scene_files(scene_window.scene);
+            append_success("Save Scene complete. Backup: " + backup_path);
           } else {
             append_error(
               "Failed to generate environment.yaml: invalid external joint parent configuration.");
@@ -1564,11 +1563,11 @@ void SceneSelect::on_edit_scene_clicked()
           // Generate new folder
           generate_scene_package(
             scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
-          if (GenerateYAML::generate_yaml(
-              scene_window.scene,
-              scene_yaml_path.string(), scenes_path, assets_path))
+          std::string backup_path;
+          if (save_scene(scene_window.scene, scene_yaml_path, &backup_path))
           {
             generate_scene_files(scene_window.scene);
+            append_success("Save Scene complete. Backup: " + backup_path);
           } else {
             append_error(
               "Failed to generate environment.yaml: invalid external joint parent configuration.");
@@ -1576,9 +1575,9 @@ void SceneSelect::on_edit_scene_clicked()
           }
         }
         workcell.scene_vector[ui->scene_list->currentIndex()] = scene_window.scene;
-        append_warning(
-          "Scene edits were applied. Regenerate environment.yaml to save the latest scene state.");
+        append_success("Scene edits were applied and persisted to environment.yaml.");
         refresh_scenes(ui->scene_list->currentIndex(), false);
+        refresh_canvas_from_scene(scene_window.scene);
       }
     } else {
       refresh_scenes(ui->scene_list->currentIndex(), false);
@@ -1586,6 +1585,77 @@ void SceneSelect::on_edit_scene_clicked()
   } else {
     append_error("No scene selected to edit.");
   }
+}
+
+bool SceneSelect::open_existing_scene(const fs::path & scene_dir, Scene * output_scene, std::string * status)
+{
+  if (scene_dir.empty()) {
+    if (status) *status = "YAML_MISSING: no scene selected.";
+    return false;
+  }
+  const fs::path env = scene_dir / "environment.yaml";
+  if (!fs::exists(env)) {
+    if (status) *status = "YAML_MISSING: environment.yaml missing. Use Repair Scene YAML or select a template.";
+    return false;
+  }
+  if (!output_scene) return false;
+  if (!load_scene_from_yaml(output_scene)) {
+    if (status) *status = "YAML_INVALID_REPAIRABLE: failed to parse environment.yaml. Use Repair Scene YAML.";
+    return false;
+  }
+  if (status) *status = "YAML_READY";
+  return true;
+}
+
+bool SceneSelect::save_scene(Scene scene, const fs::path & scene_dir, std::string * backup_path)
+{
+  const fs::path env = scene_dir / "environment.yaml";
+  if (fs::exists(env)) {
+    const auto stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMddhhmmss").toStdString();
+    const fs::path backup = scene_dir / ("environment.yaml." + stamp + ".bak");
+    boost::system::error_code ec;
+    fs::copy_file(env, backup, fs::copy_option::overwrite_if_exists, ec);
+    if (backup_path) *backup_path = backup.string();
+    if (ec) return false;
+  } else if (backup_path) {
+    *backup_path = (scene_dir / "environment.yaml.bak").string();
+  }
+  return GenerateYAML::generate_yaml(scene, scene_dir.string(), scenes_path, assets_path);
+}
+
+void SceneSelect::refresh_canvas_from_scene(const Scene & scene)
+{
+  workcell.scene_vector[ui->scene_list->currentIndex()] = scene;
+  refresh_preview_status();
+}
+
+bool SceneSelect::duplicate_scene(const fs::path & source_scene_dir, const std::string & new_scene_name, fs::path * duplicated_dir, std::string * reason)
+{
+  if (source_scene_dir.empty() || new_scene_name.empty()) {
+    if (reason) *reason = "invalid source scene or duplicate name";
+    return false;
+  }
+  fs::path dst = source_scene_dir.parent_path() / new_scene_name;
+  std::string error;
+  if (!copy_directory_recursive(source_scene_dir, dst, &error)) {
+    if (reason) *reason = error;
+    return false;
+  }
+  if (duplicated_dir) *duplicated_dir = dst;
+  if (reason) *reason = "duplicate created";
+  return true;
+}
+
+bool SceneSelect::regenerate_scene(const fs::path & scene_dir, const std::string & scene_name, std::string * launch_command, std::string * reason)
+{
+  if (!fs::exists(scene_dir / "environment.yaml")) {
+    if (reason) *reason = "missing environment.yaml";
+    return false;
+  }
+  generate_scene_package(scenes_path, scene_name, workcell.ros_ver, workcell.ros_distro);
+  if (launch_command) *launch_command = "ros2 launch " + scene_name + " demo.launch.py";
+  if (reason) *reason = "GENERATED_PACKAGE_READY";
+  return true;
 }
 void SceneSelect::on_generate_yaml_clicked()
 {
