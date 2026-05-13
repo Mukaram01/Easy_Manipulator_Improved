@@ -1,5 +1,23 @@
-objects:
-  - link: base_link
-    joint: base_joint
-    visual: package://simple_conveyor_description/meshes/simple_conveyor.stl
-    collision: package://simple_conveyor_description/meshes/simple_conveyor.stl
+simple_conveyor:
+  child_link: base_link
+  links:
+    base_link:
+      visual:
+        name: simple_conveyor_visual
+        geometry:
+          filepath: package://simple_conveyor_description/meshes/simple_conveyor.stl
+          scale:
+            scale_x: 0.001
+            scale_y: 0.001
+            scale_z: 0.001
+      collision:
+        name: simple_conveyor_collision
+        geometry:
+          filepath: package://simple_conveyor_description/meshes/simple_conveyor.stl
+          scale:
+            scale_x: 0.001
+            scale_y: 0.001
+            scale_z: 0.001
+  simple_conveyor_base_joint:
+    ext_joint_type: fixed
+    child_link: base_link

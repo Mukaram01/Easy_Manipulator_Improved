@@ -1,5 +1,23 @@
-objects:
-  - link: base_link
-    joint: base_joint
-    visual: package://sorting_bin_description/meshes/sorting_bin.stl
-    collision: package://sorting_bin_description/meshes/sorting_bin.stl
+sorting_bin:
+  child_link: base_link
+  links:
+    base_link:
+      visual:
+        name: sorting_bin_visual
+        geometry:
+          filepath: package://sorting_bin_description/meshes/sorting_bin.stl
+          scale:
+            scale_x: 0.001
+            scale_y: 0.001
+            scale_z: 0.001
+      collision:
+        name: sorting_bin_collision
+        geometry:
+          filepath: package://sorting_bin_description/meshes/sorting_bin.stl
+          scale:
+            scale_x: 0.001
+            scale_y: 0.001
+            scale_z: 0.001
+  sorting_bin_base_joint:
+    ext_joint_type: fixed
+    child_link: base_link

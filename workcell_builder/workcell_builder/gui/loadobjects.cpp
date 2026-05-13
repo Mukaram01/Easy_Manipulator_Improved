@@ -17,6 +17,7 @@
 #include <boost/filesystem.hpp>
 #include <QMessageBox>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "workcell_builder_ui_utils.hpp"
@@ -24,6 +25,59 @@
 
 #include "gui/ui_loadobjects.h"
 #include "include/scene_parser.h"
+
+namespace
+{
+bool get_map_string(const YAML::Node & node, const std::string & key, std::string & out)
+{
+  if (!node.IsMap() || !node[key] || !node[key].IsScalar()) {
+    return false;
+  }
+  out = node[key].as<std::string>();
+  return true;
+}
+
+std::string get_asset_yaml_error(const std::string & object_name, const YAML::Node & root)
+{
+  if (!root.IsDefined()) {
+    return "YAML root is not defined";
+  }
+  if (!root.IsMap()) {
+    return "YAML root must be a map";
+  }
+  if (!root[object_name]) {
+    return "Missing object key '" + object_name + "'";
+  }
+  const YAML::Node object_node = root[object_name];
+  if (!object_node.IsMap()) {
+    return "Object node for '" + object_name + "' must be a map";
+  }
+  if (!object_node["links"]) {
+    return "Missing required key: links";
+  }
+  if (!object_node["links"].IsMap()) {
+    return "links must be a map";
+  }
+  for (YAML::const_iterator link_it = object_node["links"].begin(); link_it != object_node["links"].end(); ++link_it) {
+    if (!link_it->second.IsMap()) {
+      return "Each link entry must be a map";
+    }
+  }
+  const std::string ext_joint_key = object_name + "_base_joint";
+  if (!object_node[ext_joint_key] || !object_node[ext_joint_key].IsMap()) {
+    return "Missing required ext joint map: " + ext_joint_key;
+  }
+  std::string child_link;
+  if (!get_map_string(object_node[ext_joint_key], "child_link", child_link)) {
+    return "Ext joint missing scalar child_link";
+  }
+  if (!object_node["links"][child_link]) {
+    return "Ext joint child_link '" + child_link + "' is not present in links";
+  }
+  return "";
+}
+}
+
 
 LoadObjects::LoadObjects(QWidget * parent)
 : QDialog(parent),
@@ -111,8 +165,20 @@ void LoadObjects::get_all_objects()
         continue;
       }
       temp_name = temp_name.substr(0, temp_name.size() - 12);
-      if (boost::filesystem::exists(filepath.path() / (temp_name + ".yaml"))) {
+      const boost::filesystem::path yaml_path = filepath.path() / (temp_name + ".yaml");
+      if (!boost::filesystem::exists(yaml_path)) {
+        continue;
+      }
+      try {
+        const YAML::Node yaml = YAML::LoadFile(yaml_path.string());
+        const std::string parse_error = get_asset_yaml_error(temp_name, yaml);
+        if (!parse_error.empty()) {
+          std::cout << "[LoadObjects] Skipping invalid asset '" << temp_name << "': " << parse_error << std::endl;
+          continue;
+        }
         available_objects.push_back(temp_name);
+      } catch (const YAML::Exception & error) {
+        std::cout << "[LoadObjects] Skipping invalid YAML asset '" << temp_name << "': " << error.what() << std::endl;
       }
     }
   } catch (const boost::filesystem::filesystem_error & error) {
@@ -137,6 +203,7 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
     return false;
   }
 
+  std::cout << "[LoadObjects] asset=" << object_name << " path=" << object_directory.string() << " yaml=" << yaml_path.string() << std::endl;
   try {
     yaml = YAML::LoadFile(yaml_path.string());
   } catch (YAML::BadFile & error) {
@@ -147,13 +214,20 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
     return false;
   }
 
-  YAML::Node ext_joint;
-  for (YAML::iterator it = yaml.begin(); it != yaml.end(); ++it) {
-    temp_object.name = it->first.as<std::string>();
-    temp_object.ext_joint.child_object = it->first.as<std::string>();
-    for (YAML::iterator in_object_it = it->second.begin(); in_object_it != it->second.end();
-      ++in_object_it)
-    {
+  const std::string validation_error = get_asset_yaml_error(object_name, yaml);
+  if (!validation_error.empty()) {
+    append_error("Failed to load object asset '" + object_name + "': " + validation_error);
+    return false;
+  }
+
+  YAML::Node object_node = yaml[object_name];
+  YAML::Node ext_joint = object_node[object_name + "_base_joint"];
+  temp_object.name = object_name;
+  temp_object.ext_joint.child_object = object_name;
+  size_t visual_count = 0;
+  size_t collision_count = 0;
+  try {
+    for (YAML::iterator in_object_it = object_node.begin(); in_object_it != object_node.end(); ++in_object_it) {
       if (in_object_it->first.as<std::string>().compare("links") == 0) {
         std::vector<Link> temp_link_vector;
         SceneParser::LoadLinksFromYAML(&temp_link_vector, in_object_it->second);
@@ -170,9 +244,13 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
 
       if (in_object_it->first.as<std::string>().compare(temp_object.name + "_base_joint") == 0) {
         temp_object.ext_joint.name = in_object_it->first.as<std::string>();
-        ext_joint = in_object_it->second;
       }
     }
+
+  for (const Link & link : temp_object.link_vector) {
+    visual_count += link.visual_vector.size();
+    collision_count += link.collision_vector.size();
+  }
 
     for (YAML::iterator in_ext_joint_it = ext_joint.begin(); in_ext_joint_it != ext_joint.end();
       ++in_ext_joint_it)
@@ -191,7 +269,17 @@ bool LoadObjects::load_object_from_yaml(std::string object_name)
         }
       }
     }
+  } catch (const YAML::Exception & error) {
+    append_error("Failed to load object asset '" + object_name + "': " + std::string(error.what()));
+    return false;
+  } catch (const std::exception & error) {
+    append_error("Failed to load object asset '" + object_name + "': " + std::string(error.what()));
+    return false;
   }
+
+  std::cout << "[LoadObjects] asset=" << object_name << " type=environment object=" << temp_object.name
+            << " links=" << temp_object.link_vector.size() << " visuals=" << visual_count
+            << " collisions=" << collision_count << std::endl;
 
   chosen_object = temp_object;
   chosen_object.name = ui->object_name->text().toStdString();
