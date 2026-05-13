@@ -2524,3 +2524,16 @@ void SceneSelect::on_copy_launch_command_button_clicked()
   if (latest_scene_status_report_.next_commands.size() < 3) return;
   QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[2]));
 }
+
+void SceneSelect::on_open_conveyor_sorting_run_console_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) {
+    append_warning("No scene selected. Select a scene before opening the run console.");
+    return;
+  }
+
+  const QString scenario_name = ui->scene_list->itemText(ui->scene_list->currentIndex());
+  ConveyorSortingRunConsole dialog(std::filesystem::path(scene_dir.string()), scenario_name, this);
+  dialog.exec();
+}
