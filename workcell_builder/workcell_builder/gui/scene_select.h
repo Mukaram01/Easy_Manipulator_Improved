@@ -99,6 +99,15 @@ private slots:
   void on_repair_scene_yaml_clicked();
   void on_open_conveyor_sorting_run_console_button_clicked();
   void on_template_catalog_selection_changed();
+  void on_demo_one_click_button_clicked();
+  void on_demo_create_scene_button_clicked();
+  void on_demo_validate_button_clicked();
+  void on_demo_generate_button_clicked();
+  void on_demo_export_preview_button_clicked();
+  void on_demo_copy_build_command_button_clicked();
+  void on_demo_copy_launch_command_button_clicked();
+  void on_demo_open_scene_folder_button_clicked();
+  void on_demo_open_readiness_report_button_clicked();
 
 private:
   enum class MessageLevel { Info, Warning, Error, Success };
@@ -132,6 +141,9 @@ private:
   QString selected_template_;
   QString last_status_message_;
   void initialize_template_catalog();
+  void initialize_demo_mode_catalog();
+  void refresh_demo_mode_catalog();
+  bool run_demo_action(bool validate, bool generate);
   void initialize_asset_library();
   QString ensure_selected_template();
   boost::filesystem::path scene_dir_for_current_selection() const;
@@ -145,6 +157,8 @@ private:
   workcell_builder::ValidationDashboardResult latest_dashboard_result_;
   void render_workcell_studio_status(const workcell_builder::SceneStatusReport & report);
   workcell_builder::SceneStatusReport latest_scene_status_report_;
+  std::string latest_demo_scene_name_;
+  boost::filesystem::path latest_demo_scene_dir_;
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_

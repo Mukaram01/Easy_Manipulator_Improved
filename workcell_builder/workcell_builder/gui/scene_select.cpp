@@ -736,6 +736,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   setSizeGripEnabled(true);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   initialize_template_catalog();
+  initialize_demo_mode_catalog();
   initialize_asset_library();
   refresh_preview_status();
 
@@ -755,6 +756,31 @@ void SceneSelect::initialize_template_catalog()
   scenario_template_catalog_->setCurrentRow(0);
   selected_template_ = scenario_template_catalog_->currentItem()->text();
   connect(scenario_template_catalog_, &QListWidget::itemSelectionChanged, this, &SceneSelect::on_template_catalog_selection_changed);
+}
+
+void SceneSelect::initialize_demo_mode_catalog()
+{
+  ui->demo_mode_table->setColumnCount(7);
+  ui->demo_mode_table->setHorizontalHeaderLabels(
+    {"Demo", "Description", "Readiness", "Required Assets", "Missing/Warnings", "Safety", "Mode"});
+  ui->demo_mode_table->horizontalHeader()->setStretchLastSection(true);
+  refresh_demo_mode_catalog();
+}
+
+void SceneSelect::refresh_demo_mode_catalog()
+{
+  const std::vector<std::vector<QString>> rows = {
+    {"UR5 + Robotiq 2F Pick & Place Demo", "supported/full package; MoveIt/RViz; table + cube + bin; gripper RPY -1.5708 -1.5708 0", "READY_WITH_WARNINGS", "UR5, Robotiq 2F, table/bin/cube, MoveIt", "If missing assets: BLOCKED_MISSING_ASSETS", "fake_hardware_first=true | runtime_execution_enabled=false", "supported/full package"},
+    {"UR5 + Suction Pick Demo", "suction/AirPick if available; fake hardware; table + object", "PREVIEW_ONLY", "UR5, suction/AirPick, table, object", "Preview-only if suction asset unavailable", "fake_hardware_first=true | runtime_execution_enabled=false", "supported if assets"},
+    {"Conveyor Sorting + EPD Metadata Preview", "conveyor placeholder + camera metadata + bins/zones; adapter metadata only", "PREVIEW_ONLY", "conveyor placeholder, camera metadata fallback", "No runtime motion; metadata-only by default", "fake_hardware_first=true | runtime_execution_enabled=false", "preview-only"},
+    {"Camera Inspection Preview", "camera + table + inspection target", "PREVIEW_ONLY", "camera, table, inspection target", "No robot motion unless robot explicitly selected", "fake_hardware_first=true | runtime_execution_enabled=false", "preview-only"}
+  };
+  ui->demo_mode_table->setRowCount(static_cast<int>(rows.size()));
+  for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+    for (int c = 0; c < static_cast<int>(rows[r].size()); ++c) {
+      ui->demo_mode_table->setItem(r, c, new QTableWidgetItem(rows[r][c]));
+    }
+  }
 }
 
 void SceneSelect::initialize_asset_library()
@@ -2971,6 +2997,49 @@ void SceneSelect::on_open_conveyor_sorting_run_console_button_clicked()
   ConveyorSortingRunConsole dialog(std::filesystem::path(scene_dir.string()), scenario_name, this);
   dialog.exec();
 }
+
+bool SceneSelect::run_demo_action(bool validate, bool generate)
+{
+  const int row = ui->demo_mode_table->currentRow();
+  if (row < 0) {
+    append_warning("Select a demo card/row first.");
+    return false;
+  }
+  const std::vector<std::string> scene_slugs = {
+    "demo_ur5_2f_pick_place", "demo_ur5_suction_pick", "demo_conveyor_sorting_epd_preview", "demo_camera_inspection_preview"};
+  const std::vector<std::string> template_ids = {
+    "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin", "UR5 + Suction Pick Cell", "Conveyor Sorting - Live EPD Preview", "Camera Inspection Cell (PREVIEW ONLY)"};
+  std::string scene_name = scene_slugs[static_cast<size_t>(row)];
+  fs::path scene_dir = scenes_path / scene_name;
+  int suffix = 1;
+  while (fs::exists(scene_dir)) {
+    scene_name = scene_slugs[static_cast<size_t>(row)] + "_" + std::to_string(suffix++);
+    scene_dir = scenes_path / scene_name;
+  }
+  scene_name = sanitize_scene_name(scene_name);
+  if (!create_scene_from_template(template_ids[static_cast<size_t>(row)], scene_name, scenes_path, &scene_dir)) return false;
+  apply_recommended_layout_to_scene(scene_dir, template_ids[static_cast<size_t>(row)]);
+  Scene scene; scene.name = scene_name;
+  save_new_scene_yaml(scene_dir, scene);
+  if (validate) validate_new_scene(scene_dir);
+  const bool supported_full_generate = (row == 0);
+  if (generate && supported_full_generate) generate_full_scene_package_from_scene(scene_dir);
+  export_workcell_layout_preview(scene, scene_dir, false);
+  update_new_scene_lifecycle_and_canvas(scene_dir);
+  latest_demo_scene_name_ = scene_name;
+  latest_demo_scene_dir_ = scene_dir;
+  return true;
+}
+
+void SceneSelect::on_demo_one_click_button_clicked() { run_demo_action(true, true); }
+void SceneSelect::on_demo_create_scene_button_clicked() { run_demo_action(false, false); }
+void SceneSelect::on_demo_validate_button_clicked() { run_demo_action(true, false); }
+void SceneSelect::on_demo_generate_button_clicked() { run_demo_action(false, true); }
+void SceneSelect::on_demo_export_preview_button_clicked() { if (!latest_demo_scene_dir_.empty()) { Scene s; s.name = latest_demo_scene_name_; export_workcell_layout_preview(s, latest_demo_scene_dir_, true); } }
+void SceneSelect::on_demo_copy_build_command_button_clicked() { if (!latest_demo_scene_name_.empty()) QApplication::clipboard()->setText(QString::fromStdString("colcon build --symlink-install --packages-select " + latest_demo_scene_name_)); }
+void SceneSelect::on_demo_copy_launch_command_button_clicked() { if (!latest_demo_scene_name_.empty()) QApplication::clipboard()->setText(QString::fromStdString("ros2 launch " + latest_demo_scene_name_ + " demo.launch.py use_fake_hardware:=true launch_task_preview:=true")); }
+void SceneSelect::on_demo_open_scene_folder_button_clicked() { if (!latest_demo_scene_dir_.empty()) QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(latest_demo_scene_dir_.string()))); }
+void SceneSelect::on_demo_open_readiness_report_button_clicked() { if (!latest_demo_scene_dir_.empty()) QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString((latest_demo_scene_dir_ / "readiness" / "readiness_report.md").string()))); }
 
 
 void SceneSelect::on_repair_scene_yaml_clicked()
