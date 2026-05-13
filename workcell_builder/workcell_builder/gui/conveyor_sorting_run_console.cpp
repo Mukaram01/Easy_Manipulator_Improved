@@ -30,8 +30,16 @@ ConveyorSortingRunConsole::ConveyorSortingRunConsole(const fs::path & scene_path
   connect(build_process_, &QProcess::readyReadStandardError, this, &ConveyorSortingRunConsole::onBuildOutput);
   connect(launch_process_, &QProcess::readyReadStandardOutput, this, &ConveyorSortingRunConsole::onLaunchOutput);
   connect(launch_process_, &QProcess::readyReadStandardError, this, &ConveyorSortingRunConsole::onLaunchOutput);
-  connect(build_process_, &QProcess::finished, this, &ConveyorSortingRunConsole::onBuildFinished);
-  connect(launch_process_, &QProcess::finished, this, &ConveyorSortingRunConsole::onLaunchFinished);
+  connect(
+    build_process_,
+    qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+    this,
+    &ConveyorSortingRunConsole::onBuildFinished);
+  connect(
+    launch_process_,
+    qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+    this,
+    &ConveyorSortingRunConsole::onLaunchFinished);
   connect(build_process_, &QProcess::errorOccurred, this, &ConveyorSortingRunConsole::onBuildError);
   connect(launch_process_, &QProcess::errorOccurred, this, &ConveyorSortingRunConsole::onLaunchError);
 

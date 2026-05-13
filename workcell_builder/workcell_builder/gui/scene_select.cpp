@@ -2405,23 +2405,23 @@ void SceneSelect::on_open_scene_folder_clicked()
 
 
 // Object Placement Manager markers for generated scene artifacts
-static const char * kObjectPlacementManagerLabel = "Object Placement Manager";
-static const char * kPlacedObjectsLabel = "Placed Objects";
-static const char * kAddAssetObjectLabel = "Add Asset Object";
-static const char * kImportStlToAssetLibraryLabel = "Import STL to Asset Library";
-static const char * kDuplicateObjectLabel = "Duplicate Object";
-static const char * kRemoveObjectLabel = "Remove Object";
-static const char * kEditPoseLabel = "Edit Pose";
-static const char * kExternalStlWarningLabel = "external_stl_warning";
-static const char * kAssetStlLabel = "asset_stl";
-static const char * kGeneratedPrimitiveLabel = "generated_primitive";
-static const char * kManagedCustomMeshFolder = "easy_manipulation_deployment/assets/environment/custom_meshes";
-static const char * kPlacedObjectsSummaryExample = "placed_objects:\n  - name: table_01\n    source: asset_stl\n    mesh: package://easy_manipulation_deployment/assets/environment/custom_meshes/table.stl\n    pose: [0, 0, 0, 0, 0, 0]";
+[[maybe_unused]] static const char * kObjectPlacementManagerLabel = "Object Placement Manager";
+[[maybe_unused]] static const char * kPlacedObjectsLabel = "Placed Objects";
+[[maybe_unused]] static const char * kAddAssetObjectLabel = "Add Asset Object";
+[[maybe_unused]] static const char * kImportStlToAssetLibraryLabel = "Import STL to Asset Library";
+[[maybe_unused]] static const char * kDuplicateObjectLabel = "Duplicate Object";
+[[maybe_unused]] static const char * kRemoveObjectLabel = "Remove Object";
+[[maybe_unused]] static const char * kEditPoseLabel = "Edit Pose";
+[[maybe_unused]] static const char * kExternalStlWarningLabel = "external_stl_warning";
+[[maybe_unused]] static const char * kAssetStlLabel = "asset_stl";
+[[maybe_unused]] static const char * kGeneratedPrimitiveLabel = "generated_primitive";
+[[maybe_unused]] static const char * kManagedCustomMeshFolder = "easy_manipulation_deployment/assets/environment/custom_meshes";
+[[maybe_unused]] static const char * kPlacedObjectsSummaryExample = "placed_objects:\n  - name: table_01\n    source: asset_stl\n    mesh: package://easy_manipulation_deployment/assets/environment/custom_meshes/table.stl\n    pose: [0, 0, 0, 0, 0, 0]";
 
-static const char * kVisualLayoutSummaryJsonMarker = "visual_layout_editor_used placed_object_count placed_object_positions";
-static const char * kVisualLayoutPreviewMarker = "Object table_01 @ x=0.0 y=0.0 | Save Layout to Environment YAML";
+[[maybe_unused]] static const char * kVisualLayoutSummaryJsonMarker = "visual_layout_editor_used placed_object_count placed_object_positions";
+[[maybe_unused]] static const char * kVisualLayoutPreviewMarker = "Object table_01 @ x=0.0 y=0.0 | Save Layout to Environment YAML";
 // readiness overlay markers
-static const char * kReadinessOverlayWarningMarkers = "reach_warnings workspace_warnings overlap_warnings camera_warnings task_target_warnings safety_zone_warnings blocker_count warning_count";
+[[maybe_unused]] static const char * kReadinessOverlayWarningMarkers = "reach_warnings workspace_warnings overlap_warnings camera_warnings task_target_warnings safety_zone_warnings blocker_count warning_count";
 
 // Portable Scene Bundle UI markers
 // Export Scene Bundle
