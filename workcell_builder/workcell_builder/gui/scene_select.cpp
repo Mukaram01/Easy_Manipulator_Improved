@@ -1662,14 +1662,15 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     return false;
   }
   YAML::Node yaml;
-  // Load Yaml File.
   try {
     yaml = YAML::LoadFile(yaml_path.string());
-    // std::ifstream f("environment.yaml");
-    //    if (f.is_open())
-    //        std::cout << f.rdbuf() << std::endl;
-  } catch (YAML::BadFile & error) {
-    append_error("Failed to read environment.yaml. Regenerate the file and try again.");
+  } catch (const YAML::Exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
+  }
+  if (!yaml.IsMap()) {
+    append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
     return false;
   }
   YAML::Node objects;
@@ -1680,8 +1681,12 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   input_scene->parent_objects.clear();
   input_scene->child_objects.clear();
 
-  for (YAML::iterator it = yaml.begin(); it != yaml.end(); ++it) {
-    std::string key = it->first.as<std::string>();
+  try {
+    for (YAML::iterator it = yaml.begin(); it != yaml.end(); ++it) {
+      if (!it->first || !it->first.IsScalar()) {
+        continue;
+      }
+      std::string key = it->first.as<std::string>();
     if (key.compare("robot") == 0) {
       Robot robot;
       SceneParser::LoadRobotFromYAML(&robot, it->second);
@@ -1703,9 +1708,17 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     if (key.compare("external joints") == 0) {
       ext_joints = it->second;
     }
-  }
+    }
 
-  if (has_objects) {  // We need to do this because the object field needs to load before
+    if (has_objects && !objects.IsMap()) {
+      append_error("Invalid scene YAML: objects must be a map.");
+      return false;
+    }
+    if (ext_joints && !ext_joints.IsMap()) {
+      append_error("Invalid scene YAML: external joints must be a map.");
+      return false;
+    }
+    if (has_objects) {  // We need to do this because the object field needs to load before
                       // the ext joint field, and it currently has a random load order
     std::unordered_set<std::string> object_names;
     for (YAML::iterator objects_it = objects.begin(); objects_it != objects.end(); ++objects_it) {
@@ -1771,9 +1784,17 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     for (YAML::iterator ext_joints_it = ext_joints.begin(); ext_joints_it != ext_joints.end();
       ++ext_joints_it)
     {
+      if (counter >= static_cast<int>(input_scene->object_vector.size())) {
+        append_warning("external joints contains extra entries; ignoring trailing entries.");
+        break;
+      }
       input_scene->object_vector[counter].ext_joint.origin.is_origin = false;
       input_scene->object_vector[counter].ext_joint.axis.is_axis = false;
       YAML::Node in_ext_joints = ext_joints_it->second;
+      if (!in_ext_joints || !in_ext_joints.IsMap()) {
+        ++counter;
+        continue;
+      }
       for (YAML::iterator in_ext_joints_it = in_ext_joints.begin();
         in_ext_joints_it != in_ext_joints.end(); ++in_ext_joints_it)
       {
@@ -1841,6 +1862,11 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
       }
       counter++;
     }
+  }
+  } catch (const YAML::Exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
   }
 
   resolve_scene_paths(input_scene, workcell_path);

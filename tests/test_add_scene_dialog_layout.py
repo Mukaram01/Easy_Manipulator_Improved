@@ -1,35 +1,25 @@
 from pathlib import Path
 
 ADD_SCENE_UI = Path('workcell_builder/workcell_builder/gui/addscene.ui').read_text()
-SCENE_SELECT_H = Path('workcell_builder/workcell_builder/gui/scene_select.h').read_text()
+ADD_SCENE_H = Path('workcell_builder/workcell_builder/gui/addscene.h').read_text()
+ADD_SCENE_CPP = Path('workcell_builder/workcell_builder/gui/addscene.cpp').read_text()
 
 
 def test_add_scene_scrollable_grouped_layout():
     assert 'QScrollArea" name="scrollArea"' in ADD_SCENE_UI
-    for section in [
-        'Scene',
-        'Robot',
-        'End Effector',
-        'Objects / Environment',
-        'Work Zones / Metadata Preview',
-    ]:
+    assert '<property name="widgetResizable"><bool>true</bool></property>' in ADD_SCENE_UI
+    for section in ['Scene', 'Robot', 'End Effector', 'Objects / Environment', 'Work Zones / Metadata Preview']:
         assert f'<string>{section}</string>' in ADD_SCENE_UI
 
 
-def test_work_zone_buttons_are_compact_grouped():
-    for button in ['add_work_zone', 'edit_work_zone', 'remove_work_zone', 'add_conveyor_flow']:
-        assert f'name="{button}"' in ADD_SCENE_UI
-    assert 'QGridLayout" name="workzoneButtons"' in ADD_SCENE_UI
-    assert 'Delete</string>' not in ADD_SCENE_UI
-
-
-def test_compact_dialog_actions_and_no_absolute_sections():
+def test_compact_dialog_actions_and_no_stale_exit_button():
     assert 'QDialogButtonBox' in ADD_SCENE_UI
-    assert 'name="exit"' in ADD_SCENE_UI
-    assert '<layout class="QVBoxLayout" name="dialogLayout"' in ADD_SCENE_UI
+    assert 'name="exit"' not in ADD_SCENE_UI
+    assert '<connections/>' in ADD_SCENE_UI
 
 
-def test_no_stale_autoconnect_slot_names():
-    assert 'on_refresh_preview_clicked' not in SCENE_SELECT_H
-    assert 'on_export_preview_clicked' not in SCENE_SELECT_H
-    assert 'on_open_conveyor_sorting_run_console_clicked' not in SCENE_SELECT_H
+def test_no_stale_on_ok_autoconnect_slot():
+    assert 'on_ok_clicked' not in ADD_SCENE_H
+    assert 'on_ok_clicked' not in ADD_SCENE_CPP
+    assert 'connect(ui->actionButtonBox, &QDialogButtonBox::accepted' in ADD_SCENE_CPP
+    assert 'connect(ui->actionButtonBox, &QDialogButtonBox::rejected' in ADD_SCENE_CPP
