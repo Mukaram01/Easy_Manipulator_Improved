@@ -119,6 +119,13 @@ private:
   bool duplicate_scene(const boost::filesystem::path & source_scene_dir, const std::string & new_scene_name, boost::filesystem::path * duplicated_dir, std::string * reason);
   bool regenerate_scene(const boost::filesystem::path & scene_dir, const std::string & scene_name, std::string * launch_command, std::string * reason);
   void refresh_canvas_from_scene(const Scene & scene);
+  bool create_scene_from_template(const std::string & template_id, const std::string & scene_name, const boost::filesystem::path & output_root, boost::filesystem::path * scene_dir);
+  bool apply_recommended_layout_to_scene(const boost::filesystem::path & scene_dir, const std::string & template_id);
+  bool save_new_scene_yaml(const boost::filesystem::path & scene_dir, const Scene & scene_model);
+  bool validate_new_scene(const boost::filesystem::path & scene_dir);
+  bool generate_full_scene_package_from_scene(const boost::filesystem::path & scene_dir);
+  void update_new_scene_lifecycle_and_canvas(const boost::filesystem::path & scene_dir);
+  std::string sanitize_scene_name(const std::string & raw_name) const;
 
   Ui::SceneSelect * ui;
   QListWidget * scenario_template_catalog_ = nullptr;

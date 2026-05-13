@@ -827,40 +827,18 @@ void SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked()
 
 void SceneSelect::on_use_recommended_layout_clicked()
 {
-  if (ui->scene_list->count() <= 1 || ui->scene_list->currentIndex() <= 0 || workcell.scene_vector.empty()) {
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) {
     append_warning("No selected scene. Create/Open a scene first, then apply recommended layout.");
     return;
   }
-
-  const int scene_index = ui->scene_list->currentIndex() - 1;
-  if (scene_index < 0 || scene_index >= static_cast<int>(workcell.scene_vector.size())) {
-    append_warning("Select or create a scenario before applying layout");
-    return;
+  if (apply_recommended_layout_to_scene(scene_dir, ensure_selected_template().toStdString())) {
+    append_success("Layout applied: recommended layout saved to config/recommended_layout.yaml");
+    update_new_scene_lifecycle_and_canvas(scene_dir);
+    append_info("Next recommended action: Validate Scene, then Generate Full Scene Package.");
+  } else {
+    append_error("Failed to apply recommended layout.");
   }
-
-  Scene & scene = workcell.scene_vector[scene_index];
-  if (scene.robot_loaded && !scene.robot_vector.empty()) {
-    scene.robot_vector[0].origin.is_origin = true;
-    scene.robot_vector[0].origin.x = -0.45F;
-    scene.robot_vector[0].origin.y = 0.0F;
-    scene.robot_vector[0].origin.z = 0.0F;
-    scene.robot_vector[0].origin.roll = 0.0F;
-    scene.robot_vector[0].origin.pitch = 0.0F;
-    scene.robot_vector[0].origin.yaw = 0.0F;
-  }
-  const fs::path scene_dir = scene_dir_for_current_selection();
-  fs::create_directories(scene_dir / "config");
-  std::ofstream out((scene_dir / "config" / "recommended_layout.yaml").string());
-  out << "layout_profile: ur5_2f_safe_defaults\n";
-  out << "support_surface: table\npick_object: cube\nplace_bin: bin\n";
-  out << "camera:\n  profile: realsense_d435i\n  pose_xyz: [0.35, 0.0, 0.85]\n";
-  out << "task_defaults:\n  type: pick_place\n  grasp: finger_top\n";
-  out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
-  out.close();
-  append_success("Layout applied: recommended layout saved to config/recommended_layout.yaml");
-  append_info("Next: Validate Scene");
-  append_info("Next recommended action: Validate Scene, then Generate Full Scene Package.");
-  refresh_preview_status();
 }
 
 SceneSelect::~SceneSelect()
@@ -1094,32 +1072,98 @@ void SceneSelect::discover_scene_packages_on_startup()
   }
   update_scene_browser_status();
 }
+std::string SceneSelect::sanitize_scene_name(const std::string & raw_name) const
+{
+  std::string out;
+  out.reserve(raw_name.size());
+  for (const char c : raw_name) {
+    if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
+      out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    } else if (std::isspace(static_cast<unsigned char>(c))) {
+      out.push_back('_');
+    }
+  }
+  out.erase(std::unique(out.begin(), out.end(), [](char a, char b) { return a == '_' && b == '_'; }), out.end());
+  while (!out.empty() && out.front() == '_') out.erase(out.begin());
+  while (!out.empty() && out.back() == '_') out.pop_back();
+  return out.empty() ? std::string("new_scene") : out;
+}
+
+bool SceneSelect::create_scene_from_template(const std::string & template_id, const std::string & scene_name, const boost::filesystem::path & output_root, boost::filesystem::path * scene_dir)
+{
+  const std::string safe_name = sanitize_scene_name(scene_name);
+  const fs::path target = output_root / safe_name;
+  if (fs::exists(target)) {
+    append_warning("Scene already exists: " + target.string());
+    return false;
+  }
+  generate_scene_package(output_root, safe_name, workcell.ros_ver, workcell.ros_distro);
+  Scene scene; scene.name = safe_name; scene.loaded = true;
+  workcell.scene_vector.push_back(scene);
+  if (!save_new_scene_yaml(target, scene)) return false;
+  apply_recommended_layout_to_scene(target, template_id);
+  if (scene_dir) *scene_dir = target;
+  return true;
+}
+
+bool SceneSelect::apply_recommended_layout_to_scene(const boost::filesystem::path & scene_dir, const std::string & template_id)
+{
+  fs::create_directories(scene_dir / "config");
+  std::ofstream out((scene_dir / "config" / "recommended_layout.yaml").string());
+  out << "layout_profile: canonical_new_scene_layout\n";
+  out << "template_id: " << template_id << "\n";
+  out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+  out << "objects:\n  map_format: true\n";
+  return out.good();
+}
+
+bool SceneSelect::save_new_scene_yaml(const boost::filesystem::path & scene_dir, const Scene & scene_model)
+{
+  Scene copy = scene_model;
+  return GenerateYAML::generate_yaml(copy, scene_dir.string(), scenes_path, assets_path);
+}
+
+bool SceneSelect::validate_new_scene(const boost::filesystem::path & scene_dir)
+{
+  if (!fs::exists(scene_dir / "environment.yaml")) {
+    append_warning("Validate Scene blocked: environment.yaml missing. Next action: Save / Generate environment.yaml.");
+    return false;
+  }
+  on_validate_scene_button_clicked();
+  return true;
+}
+
+bool SceneSelect::generate_full_scene_package_from_scene(const boost::filesystem::path & scene_dir)
+{
+  (void)scene_dir;
+  on_generate_files_clicked();
+  return true;
+}
+
+void SceneSelect::update_new_scene_lifecycle_and_canvas(const boost::filesystem::path & scene_dir)
+{
+  (void)scene_dir;
+  refresh_scenes(static_cast<int>(workcell.scene_vector.size()) - 1, true);
+  on_refresh_status_button_clicked();
+  refresh_preview_status();
+}
+
 void SceneSelect::on_add_scene_clicked()
 {
   configure_startup_fallback_paths();
-
-  AddScene scene_window;
-  scene_window.setWindowTitle("Create New Scene");
-  scene_window.setModal(true);
-  scene_window.scenes_path = scenes_path;
-  scene_window.assets_path = assets_path;
-  scene_window.workcell_path = workcell_path;
-  scene_window.exec();
-  if (scene_window.success) {
-    workcell.scene_vector.push_back(scene_window.scene);
-    generate_scene_package(
-      scenes_path, scene_window.scene.name, workcell.ros_ver, workcell.ros_distro);
-    const fs::path scene_package_path = scenes_path / scene_window.scene.name;
-    boost::system::error_code path_ec;
-    const fs::path resolved_scenes = fs::canonical(scenes_path, path_ec);
-    append_info("Selected scenes directory: " + scenes_path.string());
-    if (!path_ec) {
-      append_info("Resolved scenes directory: " + resolved_scenes.string());
-    }
-    append_info("Scene package: " + scene_package_path.string());
-    refresh_scenes(workcell.scene_vector.size() - 1, true);
-    update_scene_browser_status("Created new scene at: " + (scenes_path / scene_window.scene.name).string());
+  bool ok = false;
+  const QString name = QInputDialog::getText(this, tr("New Cell"), tr("Scene name:"), QLineEdit::Normal, "", &ok);
+  if (!ok) return;
+  const std::string safe_name = sanitize_scene_name(name.toStdString());
+  fs::path scene_dir;
+  if (!create_scene_from_template(ensure_selected_template().toStdString(), safe_name, scenes_path, &scene_dir)) {
+    append_error("Failed to create scene from template.");
+    return;
   }
+  append_success("Created new scene: " + scene_dir.string());
+  update_scene_browser_status("Created new scene at: " + scene_dir.string());
+  update_new_scene_lifecycle_and_canvas(scene_dir);
+  append_info("Next recommended action: Apply Recommended Layout or Validate Scene.");
 }
 
 void SceneSelect::on_browse_scenes_folder_clicked()
@@ -2905,13 +2949,13 @@ void SceneSelect::on_validate_scene_button_clicked()
 
 void SceneSelect::on_copy_build_command_button_clicked()
 {
-  if (latest_scene_status_report_.next_commands.empty()) return;
+  if (latest_scene_status_report_.next_commands.empty()) { append_warning("Copy Build Command blocked: generate package first."); return; }
   QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[0]));
 }
 
 void SceneSelect::on_copy_launch_command_button_clicked()
 {
-  if (latest_scene_status_report_.next_commands.size() < 3) return;
+  if (latest_scene_status_report_.next_commands.size() < 3) { append_warning("Copy Launch Command blocked: generate package first."); return; }
   QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[2]));
 }
 
