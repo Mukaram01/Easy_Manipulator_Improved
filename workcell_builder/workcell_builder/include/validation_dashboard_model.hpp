@@ -14,6 +14,7 @@ enum class ValidationStatus
   WARN,
   FAIL,
   SKIP,
+  PREVIEW_ONLY,
   UNKNOWN
 };
 

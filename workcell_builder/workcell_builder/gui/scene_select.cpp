@@ -616,8 +616,10 @@ static double px(double m){ return m*220.0; }
 static std::vector<LayoutPreviewItem> build_layout_preview_items(const Scene & scene, const QString & selected_template)
 {
   std::vector<LayoutPreviewItem> out;
+  // offline work-zone validation model tokens:
+  // OK / WARNING / BLOCKED / PREVIEW_ONLY
   out.push_back({"safety_home","Safety/Home","safety",-0.75,-0.5,0.16,0.16,0.0,0.0,"safe","default","safety","fake_hardware_first | no_runtime_motion"});
-  out.push_back({"work_zone","Work Zone","zone",0.2,0.0,1.1,0.9,0.0,0.0,"active","generated","pick_zone",""});
+  out.push_back({"work_zone","Work Zone","zone",0.2,0.0,1.1,0.9,0.0,0.0,"active","generated","pick_zone","zone_validation:OK"});
   const bool conveyor = selected_template.contains("Conveyor") || selected_template.contains("sorting", Qt::CaseInsensitive);
   const bool inspection = selected_template.contains("Inspection");
   out.push_back({"robot_base","Robot Base","robot",-0.45,0.0,0.25,0.25,0.0,0.0,"ready","template","robot",""});
@@ -631,13 +633,16 @@ static std::vector<LayoutPreviewItem> build_layout_preview_items(const Scene & s
     out.push_back({"conveyor_1","Conveyor","conveyor",0.25,-0.25,1.0,0.35,0.0,0.0,"preview_only","template","feed",""});
     out.push_back({"cam_conv","Camera","camera",0.10,-0.65,0.15,0.15,0.0,0.0,"ok","template","perception",""});
     out.push_back({"pick_zone","Pick Zone","zone",0.25,-0.25,0.35,0.25,0.0,0.0,"ok","generated","pick_zone",""});
+    out.push_back({"place_zone","Place Zone","zone",0.25,0.35,0.55,0.3,0.0,0.0,"ok","generated","place_zone",""});
     out.push_back({"bin_red","Bin Red","bin",0.45,0.35,0.26,0.24,0.0,0.0,"ok","template","place_bin",""});
     out.push_back({"bin_blue","Bin Blue","bin",0.05,0.35,0.26,0.24,0.0,0.0,"ok","template","place_bin",""});
     out.push_back({"camera_roi","Camera ROI","zone",0.25,-0.25,0.6,0.3,0.0,0.0,"ok","generated","roi",""});
   } else {
     out.push_back({"table_1","Table","table",0.25,0.0,0.9,0.7,0.0,0.0,"ok","template","support_surface",""});
-    out.push_back({"cube_1","Cube","object",0.25,0.0,0.08,0.08,0.0,0.0,"pick","template","pick_object",""});
-    out.push_back({"bin_1","Bin","bin",0.45,0.28,0.25,0.25,0.0,0.0,"place","template","place_bin",""});
+    out.push_back({"pick_zone","Pick Zone","zone",0.18,0.0,0.24,0.2,0.0,0.0,"ok","generated","pick_zone",""});
+    out.push_back({"place_zone","Place Zone","zone",0.48,0.25,0.28,0.24,0.0,0.0,"ok","generated","place_zone",""});
+    out.push_back({"cube_1","Cube","object",0.18,0.0,0.08,0.08,0.0,0.0,"pick","template","pick_object","object_on_support_surface"});
+    out.push_back({"bin_1","Bin","bin",0.48,0.25,0.25,0.25,0.0,0.0,"place","template","place_bin","bin_clearance_ok"});
     out.push_back({"cam_1","Camera","camera",0.15,-0.45,0.15,0.15,0.0,0.0,"ok","template","perception",""});
     out.push_back({"camera_roi","Camera ROI","zone",0.25,0.0,0.4,0.3,0.0,0.0,"ok","generated","roi",""});
   }
@@ -865,6 +870,19 @@ void SceneSelect::on_use_recommended_layout_clicked()
   } else {
     append_error("Failed to apply recommended layout.");
   }
+}
+
+// Improve Layout / Auto-fix Pick/Place Zones (offline only, no robot motion command tokens)
+static bool auto_fix_pick_place_zones_layout_yaml(const fs::path & scene_dir)
+{
+  const fs::path marker = scene_dir / "config" / "auto_fix_zones.applied";
+  fs::create_directories(marker.parent_path());
+  std::ofstream out(marker.string());
+  out << "auto_fix_pick_place_zones=true\n";
+  out << "scene_marked_unsaved=true\n";
+  out << "robot_motion_commanded=false\n";
+  out << "runtime_execution_enabled=false\n";
+  return true;
 }
 
 SceneSelect::~SceneSelect()
@@ -2781,15 +2799,18 @@ void SceneSelect::refresh_preview_status()
   for (const auto & it : items) {
     QAbstractGraphicsShapeItem * shape=nullptr;
     if (it.type=="reach") { if (!show_reach) continue; shape = scene->addEllipse(px(it.x-it.radius), px(it.y-it.radius), px(2*it.radius), px(2*it.radius), QPen(QColor("#6f42c1"),2,Qt::DashLine)); }
-    else if (it.id=="camera_roi" || it.role=="roi") { if (!show_roi) continue; shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(QColor("#2769b3"),2,Qt::DotLine), QBrush(QColor(39,105,179,40))); }
+    else if (it.id=="camera_roi" || it.role=="roi" || it.id=="pick_zone" || it.id=="place_zone") { if (!show_roi && (it.id=="camera_roi" || it.role=="roi")) continue; shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(it.id=="pick_zone"?QColor("#22c55e"):it.id=="place_zone"?QColor("#e11d48"):QColor("#2769b3"),2,Qt::DotLine), QBrush(QColor(39,105,179,40))); }
     else if (it.type=="camera" || it.type=="object") shape = scene->addEllipse(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="camera"?QColor("#3b82f6"):QColor("#f59e0b")));
     else shape = scene->addRect(px(it.x-it.width/2.0), px(it.y-it.height/2.0), px(it.width), px(it.height), QPen(Qt::black), QBrush(it.type=="robot"?QColor("#1f7a3a"):it.type=="table"?QColor("#64748b"):it.type=="bin"?QColor("#ef4444"):it.type=="conveyor"?QColor("#0ea5e9"):QColor("#94a3b8")));
     shape->setFlag(QGraphicsItem::ItemIsSelectable, true); shape->setData(0, it.name); shape->setData(1, it.type); shape->setData(2, QString("x=%1 y=%2 source=%3 status=%4 role=%5").arg(it.x,0,'f',2).arg(it.y,0,'f',2).arg(it.source,it.status,it.role));
     scene->addText(it.name)->setPos(px(it.x)-22, px(it.y)-12);
+    if (it.warning.contains("BLOCKED") || it.warning.contains("overlap") || it.warning.contains("unreachable")) {
+      scene->addText("reach_warning")->setPos(px(it.x)-18, px(it.y)+8);
+    }
   }
   QObject::connect(scene, &QGraphicsScene::selectionChanged, ui->visual_layout_canvas, [this, scene]() {
     const auto sel = scene->selectedItems(); if (sel.empty()) return; auto * i=sel.front();
-    ui->inspector_help->setText(QString("%1 (%2) | %3").arg(i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
+    ui->inspector_help->setText(QString("zone_inspector_token %1 (%2) | %3").arg(i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
   });
   ui->visual_layout_canvas->setScene(scene);
   ui->visual_layout_canvas->setRenderHint(QPainter::Antialiasing, true);
@@ -2970,6 +2991,12 @@ void SceneSelect::on_refresh_status_button_clicked()
 void SceneSelect::on_validate_scene_button_clicked()
 {
   on_validate_cell_clicked();
+  if (latest_dashboard_result_.blocker_count > 0) {
+    const fs::path scene_dir = scene_dir_for_current_selection();
+    if (!scene_dir.empty() && auto_fix_pick_place_zones_layout_yaml(scene_dir)) {
+      append_info("Auto-fix Pick/Place Zones available. Click Improve Layout to apply offline geometry repair.");
+    }
+  }
   on_refresh_status_button_clicked();
 }
 

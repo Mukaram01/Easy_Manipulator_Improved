@@ -32,7 +32,7 @@ ValidationDashboardResult default_validation_dashboard_result()
   out.rows = {
     make_unknown("Scene Schema"), make_unknown("Asset Catalog"), make_unknown("Robot / Tool Compatibility"),
     make_unknown("Object Placement"), make_unknown("Camera Metadata"), make_unknown("Task Recipe"),
-    make_unknown("Readiness Overlay"), make_unknown("Fake-Hardware Smoke Static"), make_unknown("Generation Safety"), make_unknown("Simulation Readiness"), make_unknown("Real Hardware Metadata"), make_unknown("Robot Driver Requirements"), make_unknown("Tool I/O Requirements"), make_unknown("Camera Calibration Requirements"), make_unknown("EPD Compatibility Metadata")};
+    make_unknown("Readiness Overlay"), make_unknown("Work Zone Validation"), make_unknown("Fake-Hardware Smoke Static"), make_unknown("Generation Safety"), make_unknown("Simulation Readiness"), make_unknown("Real Hardware Metadata"), make_unknown("Robot Driver Requirements"), make_unknown("Tool I/O Requirements"), make_unknown("Camera Calibration Requirements"), make_unknown("EPD Compatibility Metadata")};
   out.status = ValidationStatus::UNKNOWN;
   return out;
 }
@@ -78,6 +78,7 @@ ValidationDashboardResult collect_validation_dashboard_results(const Scene & sce
     if (r.check_name == "Asset Catalog") {r.report_path = "generated/asset_catalog_validation.json";}
     if (r.check_name == "Task Recipe") {r.report_path = "config/task_recipe.yaml";}
     if (r.check_name == "Readiness Overlay") {r.report_path = "generated/readiness_overlay_report.json";}
+    if (r.check_name == "Work Zone Validation") {r.report_path = "generated/work_zone_validation_report.json"; r.message = "Robot reach covers pick zone | Robot reach covers place zone | Pick/place zones separated | Object is on support surface | Place bin has clearance | Camera ROI covers pick zone if camera enabled | Conveyor pick zone valid if conveyor template | Task intent matches selected pick/place zones";}
     if (r.check_name == "Fake-Hardware Smoke Static") {r.status = ValidationStatus::SKIP; r.message = "Static smoke status only (no ROS launch)."; r.fix_hint = "Optional: run scripts/run_workcell_fake_hardware_smoke.py --skip-launch";}
     if (r.check_name == "Generation Safety") {r.message = "No ROS launch, no MoveIt planning, no robot execution.";}
     out.warning_count += r.warning_count;
@@ -94,6 +95,7 @@ std::string validation_status_label(ValidationStatus status)
     case ValidationStatus::WARN: return "WARN";
     case ValidationStatus::FAIL: return "FAIL";
     case ValidationStatus::SKIP: return "SKIP";
+    case ValidationStatus::PREVIEW_ONLY: return "PREVIEW_ONLY";
     default: return "UNKNOWN";
   }
 }
@@ -104,6 +106,7 @@ int validation_status_severity(ValidationStatus status)
     case ValidationStatus::FAIL: return 4;
     case ValidationStatus::WARN: return 3;
     case ValidationStatus::SKIP: return 2;
+    case ValidationStatus::PREVIEW_ONLY: return 2;
     case ValidationStatus::PASS: return 1;
     default: return 0;
   }
