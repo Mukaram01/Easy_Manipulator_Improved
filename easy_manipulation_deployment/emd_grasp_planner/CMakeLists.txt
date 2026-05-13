@@ -81,6 +81,7 @@ if(NOT _emd_octomap_targets_valid AND NOT (_emd_octomap_library_octomap AND _emd
 endif()
 
 find_package(sensor_msgs REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(emd_msgs REQUIRED)
 find_package(epd_msgs QUIET)
 find_package(geometry_msgs REQUIRED)
@@ -208,6 +209,7 @@ target_link_libraries(grasp_planning_interface
   ${PCL_LIBRARIES}
   ${FCL_LIBRARIES}
   ${EMD_OCTOMAP_LINK_LIBS}
+  yaml-cpp
 )
 if(OpenMP_CXX_FOUND)
   target_link_libraries(grasp_planning_interface OpenMP::OpenMP_CXX)
@@ -285,6 +287,7 @@ if(epd_msgs_FOUND)
     tf2_geometry_msgs
     PCL
     octomap
+    yaml-cpp
   )
 else()
   ament_export_dependencies(
@@ -298,6 +301,7 @@ else()
     tf2_geometry_msgs
     PCL
     octomap
+    yaml-cpp
   )
 endif()
 
