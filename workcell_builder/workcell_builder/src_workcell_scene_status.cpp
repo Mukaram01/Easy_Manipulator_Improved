@@ -14,6 +14,8 @@ namespace workcell_builder
 {
 namespace
 {
+SceneLifecycleSnapshot determine_scene_lifecycle(const SceneStatusReport & report);
+
 void add_item(SceneStatusReport & report, const std::string & name, const std::string & status, const std::string & message, const fs::path & path = fs::path())
 {
   report.items.push_back({name, status, message, path.string()});
@@ -176,7 +178,57 @@ SceneStatusReport inspect_scene_status(
     launch_cmd
   };
   add_item(report, "validation summary", report.blockers.empty() ? "OK" : "ERROR", report.blockers.empty() ? "No blockers" : "Blockers present");
+
+  report.lifecycle = determine_scene_lifecycle(report);
   return report;
+}
+
+
+SceneLifecycleSnapshot determine_scene_lifecycle(const SceneStatusReport & report)
+{
+  SceneLifecycleSnapshot lifecycle;
+  if (report.scene_name.empty()) {
+    lifecycle = {SceneLifecycleState::NO_SCENE_SELECTED, "No Scene Selected", "info", "Select or create a scene.", "Choose a template or open an existing scene.", false, false, false};
+    return lifecycle;
+  }
+  if (!report.environment_yaml_ok) {
+    lifecycle = {SceneLifecycleState::YAML_MISSING, "Scene Scaffold", "warning", "Scene scaffold found. Package files are not generated yet.", "Create or save scene YAML, then click Generate Full Scene Package.", false, false, false};
+    return lifecycle;
+  }
+  if (!report.blockers.empty()) {
+    lifecycle = {SceneLifecycleState::VALIDATION_BLOCKED, "Validation Blocked", "error", "Scene has blocking validation issues.", "Resolve blockers, then validate and generate package.", false, false, false};
+    return lifecycle;
+  }
+  if (!report.generated_files_ok) {
+    lifecycle = {SceneLifecycleState::YAML_READY, "YAML Ready", "info", "environment.yaml is valid. Generated launch/build artifacts are not created yet.", "Click Generate Full Scene Package.", true, true, false};
+    return lifecycle;
+  }
+  if (!report.launch_file_ok) {
+    lifecycle = {SceneLifecycleState::GENERATED_PACKAGE_READY, "Generated Package Ready", "warning", "Generated package is incomplete for launch.", "Regenerate package and ensure launch/demo.launch.py exists.", true, true, true};
+    return lifecycle;
+  }
+  lifecycle = {SceneLifecycleState::LAUNCH_READY, "Launch Ready", "success", "Scene package is generated and launch checks passed.", "Build workspace and run demo launch command.", true, true, true};
+  return lifecycle;
+}
+
+bool lifecycle_allows_recommended_layout(SceneLifecycleState state)
+{
+  return state == SceneLifecycleState::TEMPLATE_SELECTED || state == SceneLifecycleState::SCENE_SCAFFOLD || state == SceneLifecycleState::YAML_READY;
+}
+
+bool lifecycle_allows_validate(SceneLifecycleState state)
+{
+  return state == SceneLifecycleState::YAML_READY || state == SceneLifecycleState::LAYOUT_READY || state == SceneLifecycleState::TASK_READY || state == SceneLifecycleState::VALIDATION_WARNINGS || state == SceneLifecycleState::VALIDATION_BLOCKED || state == SceneLifecycleState::GENERATED_PACKAGE_READY || state == SceneLifecycleState::BUILD_READY || state == SceneLifecycleState::LAUNCH_READY;
+}
+
+bool lifecycle_allows_generate(SceneLifecycleState state)
+{
+  return state == SceneLifecycleState::YAML_READY || state == SceneLifecycleState::LAYOUT_READY || state == SceneLifecycleState::TASK_READY || state == SceneLifecycleState::VALIDATION_WARNINGS;
+}
+
+bool lifecycle_allows_export(SceneLifecycleState state)
+{
+  return state == SceneLifecycleState::YAML_READY || state == SceneLifecycleState::LAYOUT_READY || state == SceneLifecycleState::TASK_READY || state == SceneLifecycleState::VALIDATION_WARNINGS || state == SceneLifecycleState::GENERATED_PACKAGE_READY || state == SceneLifecycleState::BUILD_READY || state == SceneLifecycleState::LAUNCH_READY;
 }
 
 }  // namespace workcell_builder
