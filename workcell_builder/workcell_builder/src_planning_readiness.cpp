@@ -19,7 +19,14 @@ PlanningReadinessReport build_planning_readiness_report(const std::string & robo
     if (r.pick_zone.empty() && z.type == "robot_pick") r.pick_zone = z.name;
     if (r.place_zone.empty() && z.type == "robot_place") r.place_zone = z.name;
   }
-  if (!flows.empty() && flows.front().pick_ready == false) r.warnings.push_back("Pick not ready from conveyor preview");
+  if (!flows.empty()) {
+    const auto & flow = flows.front();
+    if (flow.detection_zone.empty() || flow.pick_zone.empty() || flow.speed_mps <= 0.0) {
+      r.warnings.push_back("Conveyor preview is metadata-only or incomplete");
+    } else if (!r.pick_zone.empty() && flow.pick_zone != r.pick_zone) {
+      r.warnings.push_back("Conveyor pick zone differs from planning pick zone");
+    }
+  }
   r.warnings.push_back("Object pose is zone-center estimate");
   r.warnings.push_back("Grasp strategy is generic");
   r.warnings.push_back("No collision validation against live object mesh");

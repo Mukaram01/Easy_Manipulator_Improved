@@ -12,12 +12,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Default to C99
 if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
 
-# Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
@@ -49,7 +47,6 @@ include_directories(include)
 include_directories(include/attributes)
 include_directories(include/yaml_parser)
 include_directories(gui)
-
 
 add_executable(workcell_builder
     gui/main.cpp
@@ -198,9 +195,6 @@ add_dependencies(workcell_builder generate_workcell_builder_secondary_assets)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # uncomment the line when a copyright and license is not present in all source files
-  #set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
@@ -227,7 +221,6 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
-
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
@@ -246,6 +239,24 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_robot_tool_compatibility_inference_test
     test/robot_tool_compatibility_inference_test.cpp
     src_robot_tool_compatibility.cpp)
+
+  foreach(workcell_builder_yaml_boost_test
+      workcell_task_intent_readiness_test
+      workcell_planning_readiness_test
+      workcell_perception_snapshot_test)
+    if(TARGET ${workcell_builder_yaml_boost_test})
+      target_link_libraries(${workcell_builder_yaml_boost_test}
+        yaml-cpp
+        ${Boost_LIBRARIES}
+      )
+      target_include_directories(${workcell_builder_yaml_boost_test}
+        PRIVATE
+          ${Boost_INCLUDE_DIRS}
+          include
+      )
+    endif()
+  endforeach()
+
   if(TARGET workcell_directory_inspection_test)
     target_link_libraries(workcell_directory_inspection_test
       ${Boost_LIBRARIES}
@@ -273,7 +284,6 @@ if(BUILD_TESTING)
     )
   endif()
 
-
   if(TARGET workcell_conveyor_pick_preview_test)
     target_link_libraries(workcell_conveyor_pick_preview_test yaml-cpp ${Boost_LIBRARIES})
     target_include_directories(workcell_conveyor_pick_preview_test PRIVATE ${Boost_INCLUDE_DIRS} include)
@@ -290,6 +300,7 @@ if(BUILD_TESTING)
         include
     )
   endif()
+
   if(TARGET workcell_robot_tool_compatibility_inference_test)
     ament_target_dependencies(workcell_robot_tool_compatibility_inference_test
       rclcpp

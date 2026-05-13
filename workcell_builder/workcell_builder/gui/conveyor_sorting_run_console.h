@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QFile>
 #include <QProcess>
 #include <QTimer>
 #include <filesystem>
