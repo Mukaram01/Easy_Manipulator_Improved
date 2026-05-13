@@ -14,7 +14,6 @@
 
 namespace workcell_builder
 {
-  workcell_builder::applyCompactDialogDefaults(this);
 
 namespace
 {
@@ -69,6 +68,8 @@ EnvironmentLayoutEditor::EnvironmentLayoutEditor(QWidget * parent)
   connect(buttons, &QDialogButtonBox::accepted, this, [this]() { apply_table_pose_to_model(); rebuild_scene(); });
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   outer->addWidget(buttons);
+
+  applyCompactDialogDefaults(this);
 }
 
 double EnvironmentLayoutEditor::world_metres_to_canvas_pixels(double metres) { return metres * kDefaultPixelsPerMetre; }

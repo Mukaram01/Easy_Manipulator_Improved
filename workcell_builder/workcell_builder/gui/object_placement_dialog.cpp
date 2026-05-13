@@ -14,7 +14,6 @@
 
 namespace workcell_builder
 {
-  workcell_builder::applyCompactDialogDefaults(this);
 
 ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
 : QDialog(parent)
@@ -67,6 +66,8 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
   QObject::connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   QObject::connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
   outer->addWidget(buttons);
+
+  applyCompactDialogDefaults(this);
 }
 
 void ObjectPlacementDialog::set_objects(const std::vector<PlacedObject> & objects)
