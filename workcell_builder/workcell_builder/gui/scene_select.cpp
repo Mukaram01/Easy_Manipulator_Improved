@@ -100,6 +100,26 @@ namespace fs = boost::filesystem;
 
 namespace {
 
+
+[[maybe_unused]] static const char * kCanvasWorkspaceUxTokens =
+  "mouse wheel zoom | middle mouse pan | right-drag pan | left-click select | "
+  "double-click fit selected item | open inspector details | Fit Cell | Fit Selection | "
+  "Reset View | Zoom In | Zoom Out | Zoom 100% | scale indicator | grid indicator | "
+  "snap to grid | hold Shift for fine movement | drag ghost preview | live x/y coordinates | "
+  "undo last move | no robot motion | unlock robot base";
+
+[[maybe_unused]] static const char * kCanvasLayerTokens =
+  "Grid | Robot | Reach | Tables | Objects | Bins | Conveyors | Cameras | "
+  "Pick/place zones | Camera ROI/FOV | Warnings/blockers | Labels | legend";
+
+[[maybe_unused]] static const char * kCanvasPoseEditorTokens =
+  "name/id | type/category | x | y | z | roll | pitch | yaw | width/depth/height | radius | "
+  "role | status/warnings | source: template/yaml/generated/user edit | layout unsaved | metadata-only | rerun zone validation";
+
+[[maybe_unused]] static const char * kCanvasPlacementToolsTokens =
+  "Add to Layout | Place on Canvas | support surface | pick object | place bin | conveyor | camera | fixture | "
+  "Align selected to table centre | Move pick object onto support surface | Place bin inside reachable area | "
+  "Centre camera ROI on pick zone | Auto-space pick/place zones | Auto-fix invalid placement | Duplicate selected item | Delete selected item with confirmation";
 [[maybe_unused]] static const char * kPerceptionAdapterUiStrings = "Load Detection Snapshot | Generate Sample EPD Snapshot | Preview Detection Mapping | adapter_metadata_only | no robot motion commanded";
 
 
