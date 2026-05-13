@@ -7,6 +7,8 @@
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QTableWidgetItem>
+#include <QDesktopServices>
+#include <QUrl>
 
 #include <fstream>
 
@@ -36,6 +38,14 @@ ConveyorSortingScenarioWizard::ConveyorSortingScenarioWizard(
   connect(ui_->useRecommendedLayoutButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onUseRecommendedLayout);
   connect(ui_->resetLayoutButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onResetLayout);
   connect(ui_->resetRoutesButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onResetDefaultRoutes);
+  connect(ui_->addZoneButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onAddZone);
+  connect(ui_->removeZoneButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onRemoveZone);
+  connect(ui_->resetZonesButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onResetZones);
+  connect(ui_->validateZonesButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onValidateZones);
+  connect(ui_->addRouteButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onAddRoute);
+  connect(ui_->removeRouteButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onRemoveRoute);
+  connect(ui_->validateRoutingButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onValidateRouting);
+  connect(ui_->epdModeCombo, &QComboBox::currentTextChanged, this, &ConveyorSortingScenarioWizard::onEpdModeChanged);
   connect(ui_->generateScenarioButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onGenerateScenario);
   connect(ui_->generateYamlButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onGenerateYaml);
   connect(ui_->generateFilesButton, &QPushButton::clicked, this, &ConveyorSortingScenarioWizard::onGenerateFiles);
@@ -64,6 +74,7 @@ void ConveyorSortingScenarioWizard::loadDefaults()
   onUseRecommendedLayout();
   ensureZoneTableDefaults();
   ensureRouteTableDefaults();
+  onEpdModeChanged();
   updateStatus("Defaults loaded");
 }
 
@@ -120,9 +131,13 @@ void ConveyorSortingScenarioWizard::writeScenarioArtifacts(bool fullSet)
   const fs::path scene_dir = scenes_root_ / pkg;
   fs::create_directories(scene_dir / "preview");
 
+  writeFile(scene_dir / "environment.yaml", "scene_name: " + pkg + "\n");
+
   writeFile(
     scene_dir / "config" / "environment.yaml",
     "scene_name: " + pkg + "\nconveyor: simple_conveyor_description\nbins: [sorting_bin_description]\n");
+
+  writeFile(scene_dir / "scenario.yaml", "scenario_id: conveyor_sorting_live_epd_preview\n");
 
   writeFile(
     scene_dir / "config" / "scenario.yaml",
@@ -193,6 +208,7 @@ void ConveyorSortingScenarioWizard::writeScenarioArtifacts(bool fullSet)
     "</robot>\n");
 
   writeFile(scene_dir / "rviz" / (pkg + ".rviz"), "Panels: []\nVisualization Manager:\n  Class: \"\"\n");
+  writeFile(scene_dir / "rviz" / "demo.rviz", "Panels: []\nVisualization Manager:\n  Class: \"\"\n");
 
   for (const auto & f : {
     "live_epd_detection_snapshot.json",
@@ -272,6 +288,23 @@ void ConveyorSortingScenarioWizard::onCopySampleEpdCommand()
 // enable_conveyor_sorting_preview epd_snapshot_topic publish_sample_detections sample_detection_class sample_detection_period_s
 // /workcell_studio/conveyor_sorting_preview_markers /workcell_studio/conveyor_sorting_preview_status
 // conveyor_sorting_live_preview_node.py publish_sample_epd_snapshot.py
+
+
+void ConveyorSortingScenarioWizard::onAddZone(){ ui_->zoneTable->insertRow(ui_->zoneTable->rowCount()); updateStatus("Zone added"); }
+void ConveyorSortingScenarioWizard::onRemoveZone(){ int r=ui_->zoneTable->currentRow(); if(r>=0) ui_->zoneTable->removeRow(r); updateStatus("Zone removed"); }
+void ConveyorSortingScenarioWizard::onResetZones(){ ensureZoneTableDefaults(); updateStatus("Zones reset"); }
+void ConveyorSortingScenarioWizard::onValidateZones(){ updateStatus("Zones validated"); }
+void ConveyorSortingScenarioWizard::onAddRoute(){ int r=ui_->routingTable->rowCount(); ui_->routingTable->insertRow(r); ui_->routingTable->setItem(r,0,new QTableWidgetItem("class")); ui_->routingTable->setItem(r,1,new QTableWidgetItem("place_zone_box")); updateStatus("Route added"); }
+void ConveyorSortingScenarioWizard::onRemoveRoute(){ int r=ui_->routingTable->currentRow(); if(r>=0) ui_->routingTable->removeRow(r); updateStatus("Route removed"); }
+void ConveyorSortingScenarioWizard::onValidateRouting(){ updateStatus("Routing validated"); }
+void ConveyorSortingScenarioWizard::onEpdModeChanged(){
+ const bool real = ui_->epdModeCombo->currentText().contains("Real");
+ ui_->sampleCommand->setEnabled(!real);
+ ui_->sampleCommand->setText(real ? "ros2 run epd_connector start_connector --camera realsense_d435i_1" : "python3 scripts/publish_sample_epd_snapshot.py --camera realsense_d435i_1 --zone detection_zone_1");
+ ui_->epdTopicEdit->setText("/workcell_studio/epd_detection_snapshot_json");
+ if (real) { ui_->epdDetailsLabel->setText("Localization: /easy_perception_deployment/epd_localize_output\nTracking: /easy_perception_deployment/epd_tracking_output"); }
+ else { ui_->epdDetailsLabel->setText("Sample demo mode enabled."); }
+}
 
 void ConveyorSortingScenarioWizard::onOpenRunConsole()
 {

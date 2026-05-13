@@ -23,6 +23,14 @@ private slots:
   void onUseRecommendedLayout();
   void onResetLayout();
   void onResetDefaultRoutes();
+  void onAddZone();
+  void onRemoveZone();
+  void onResetZones();
+  void onValidateZones();
+  void onAddRoute();
+  void onRemoveRoute();
+  void onValidateRouting();
+  void onEpdModeChanged();
   void onGenerateScenario();
   void onGenerateYaml();
   void onGenerateFiles();

@@ -640,7 +640,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   append_info("Workcell Studio Readiness panel initialized: READY_TO_GENERATE / WARNINGS / BLOCKED / SCAFFOLD_ONLY");
   append_info("Task & Grasp Strategy panel initialized for offline recipe preview.");
   append_info("Robot / Tool Compatibility | Check Compatibility | Apply Profile Defaults | Manual Override");
-  connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::on_export_preview_clicked);
+  connect(ui->export_layout_preview_action, &QPushButton::clicked, this, &SceneSelect::export_preview_layout);
   connect(ui->generate_full_scene_package_start, &QPushButton::clicked, this, &SceneSelect::on_generate_full_scene_package_start_clicked);
   connect(ui->open_scene_folder, &QPushButton::clicked, this, &SceneSelect::on_open_scene_folder_clicked);
   connect(ui->refresh_status_button, &QPushButton::clicked, this, &SceneSelect::on_refresh_status_button_clicked);
@@ -649,7 +649,7 @@ SceneSelect::SceneSelect(QWidget * parent)
   connect(ui->copy_launch_command_button, &QPushButton::clicked, this, &SceneSelect::on_copy_launch_command_button_clicked);
   connect(ui->create_scenario_template, &QPushButton::clicked, this, &SceneSelect::on_create_scenario_template_clicked);
   connect(ui->create_conveyor_sorting_live_epd_preview, &QPushButton::clicked, this, &SceneSelect::on_create_conveyor_sorting_live_epd_preview_clicked);
-  connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_clicked);
+  connect(ui->open_conveyor_sorting_run_console_button, &QPushButton::clicked, this, &SceneSelect::on_open_conveyor_sorting_run_console_button_clicked);
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets};
   for (auto * button : placeholder_buttons) {
     button->setText(button->text() + " (coming soon)");
@@ -2334,10 +2334,10 @@ void SceneSelect::on_generate_studio_pack_clicked()
 
 void SceneSelect::on_open_preview_clicked()
 {
-  on_refresh_preview_clicked();
+  refresh_preview_status();
 }
 
-void SceneSelect::on_refresh_preview_clicked()
+void SceneSelect::refresh_preview_status()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) { append_error("No scene selected."); return; }
@@ -2346,7 +2346,7 @@ void SceneSelect::on_refresh_preview_clicked()
   export_workcell_layout_preview(curr_scene, scene_dir, true);
 }
 
-void SceneSelect::on_export_preview_clicked()
+void SceneSelect::export_preview_layout()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) { append_error("No scene selected."); return; }
@@ -2529,7 +2529,7 @@ void SceneSelect::on_copy_launch_command_button_clicked()
   QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[2]));
 }
 
-void SceneSelect::on_open_conveyor_sorting_run_console_clicked()
+void SceneSelect::on_open_conveyor_sorting_run_console_button_clicked()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) {

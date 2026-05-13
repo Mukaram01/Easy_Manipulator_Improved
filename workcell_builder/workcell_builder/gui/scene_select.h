@@ -80,8 +80,8 @@ private slots:
   void on_open_output_folder_clicked();
   void on_show_readiness_report_clicked();
   void on_copy_fake_hardware_launch_command_clicked();
-  void on_refresh_preview_clicked();
-  void on_export_preview_clicked();
+  void refresh_preview_status();
+  void export_preview_layout();
   void on_browse_scenes_folder_clicked();
   void on_refresh_scenes_button_clicked();
   void on_export_scene_bundle_clicked();
@@ -92,7 +92,7 @@ private slots:
   void on_copy_launch_command_button_clicked();
   void on_create_scenario_template_clicked();
   void on_create_conveyor_sorting_live_epd_preview_clicked();
-  void on_open_conveyor_sorting_run_console_clicked();
+  void on_open_conveyor_sorting_run_console_button_clicked();
 
 private:
   enum class MessageLevel { Info, Warning, Error, Success };
