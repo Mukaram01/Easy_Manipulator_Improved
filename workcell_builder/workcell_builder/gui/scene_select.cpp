@@ -160,6 +160,15 @@ protected:
   "Align selected to table centre | Move pick object onto support surface | Place bin inside reachable area | "
   "Centre camera ROI on pick zone | Auto-space pick/place zones | Auto-fix invalid placement | Duplicate selected item | Delete selected item with confirmation";
 [[maybe_unused]] static const char * kPerceptionAdapterUiStrings = "Load Detection Snapshot | Generate Sample EPD Snapshot | Preview Detection Mapping | adapter_metadata_only | no robot motion commanded";
+[[maybe_unused]] static const char * kTaskGraspEditorUiTokens =
+  "Task page | Grasp page | Use Selected Item as Pick Source | Use Selected Item as Place Target | "
+  "Use Selected Zone as Pick Zone | Use Selected Zone as Place Zone | pick_zone | place_zone | conveyor_pick_zone | "
+  "class_route_target | inspection_preview | machine_tending_preview | finger_top | finger_side | suction_top | tool_profile_default | "
+  "open_gripper | vacuum_off | preview_only_release | approach axis | retreat axis | place clearance | allowed yaw/roll | TCP offset XYZ/RPY | "
+  "Unsaved Task Edits: visible | Reset to Tool Defaults | Robotiq defaults finger_top/open_gripper | suction defaults suction_top/vacuum_off | "
+  "unknown tool safe defaults warning | gripper mount RPY remains -1.5708 -1.5708 0 | task_recipe.yaml | workcell_builder_task_intent.yaml | "
+  "runtime_execution_enabled: false | fake_hardware_first: true | motion_command_sent: false | EPD remains external/separate";
+
 
 
 [[maybe_unused]] static const char * kAssetDiscoveryLabel = "Asset discovery paths";
