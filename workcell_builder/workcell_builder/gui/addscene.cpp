@@ -425,7 +425,7 @@ void AddScene::on_remove_ee_clicked()
   ui->add_ee->setText(QString::fromStdString("Add End Effector"));
 }
 
-void AddScene::handle_accept
+void AddScene::handle_accept()
 {
   ui->scene_errors->clear();
   if (CheckRobot() && CheckEE() && CheckExtJoint() && CheckSceneName()) {
@@ -438,7 +438,7 @@ void AddScene::handle_accept
   }
 }
 
-void AddScene::handle_reject
+void AddScene::handle_reject()
 {
   success = false;
   this->close();
