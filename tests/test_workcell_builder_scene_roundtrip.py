@@ -1,19 +1,17 @@
 from pathlib import Path
-
-ROUNDTRIP_CPP = Path('workcell_builder/workcell_builder/src_workcell_scene_roundtrip.cpp').read_text(encoding='utf-8')
-SCENE_CPP = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
-
-
-def test_roundtrip_status_validator_and_scene_version_markers_exist():
-    for token in ['validate_roundtrip_scene_state', 'roundtrip_status_label', 'workcell_scene/v1', 'Legacy/partial']:
-        assert token in ROUNDTRIP_CPP
+import yaml
+from tests.workcell_scene_backend import open_existing_scene, save_scene
 
 
-def test_edit_save_path_keeps_backup_and_safety_metadata_defaults_present():
-    for token in ['environment.yaml.bak', 'YAML parse failure', 'fake_hardware_first', 'runtime_execution_enabled', 'selected_template_']:
-        assert token in SCENE_CPP
-
-
-def test_gripper_mount_orientation_regression_marker_present_in_repo():
-    test_cpp = Path('tests/test_workcell_builder_gripper_mount_rpy.py').read_text(encoding='utf-8')
-    assert '-1.5708 -1.5708 0' in test_cpp
+def test_roundtrip_save_creates_backup_and_preserves_metadata(tmp_path: Path):
+    d = tmp_path / 'scene_rt'; d.mkdir()
+    (d / 'environment.yaml').write_text('''robot:\n  name: ur5\nend_effector:\n  name: gripper\n  origin: {rpy: [-1.5708, -1.5708, 0]}\nobjects:\n  box_1: {links: []}\nfake_hardware_first: true\nruntime_execution_enabled: false\nselected_template: pick_place\n''')
+    opened = open_existing_scene(d)
+    backup = save_scene(d, opened.model)
+    assert backup.exists()
+    root = yaml.safe_load((d / 'environment.yaml').read_text())
+    assert root['end_effector']['origin']['rpy'] == [-1.5708, -1.5708, 0]
+    assert 'box_1' in root['objects']
+    assert root['fake_hardware_first'] is True
+    assert root['runtime_execution_enabled'] is False
+    assert root['selected_template'] == 'pick_place'
