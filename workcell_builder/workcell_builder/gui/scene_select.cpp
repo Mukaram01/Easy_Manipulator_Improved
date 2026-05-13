@@ -653,7 +653,7 @@ SceneSelect::SceneSelect(QWidget * parent)
     "• Conveyor Sorting - Live EPD Preview\n"
     "• Camera Inspection Cell (PREVIEW ONLY)\n"
     "• UR5 + Suction Pick Cell\n"
-    "• Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)");
+    "• Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)\n\nBadges: MoveIt/RViz | Fake hardware | Preview only | EPD metadata | NO RUNTIME MOTION");
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl, ui->fit_cell_action, ui->reset_view_action, ui->toggle_grid_action, ui->toggle_reach_action, ui->toggle_roi_action, ui->snap_to_grid_action, ui->export_layout_preview_action, ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets, ui->generate_scenario, ui->copy_sample_epd_command};
   for (auto * button : placeholder_buttons) {
     button->setToolTip("Disabled: this control requires feature-complete editor integration and is intentionally blocked.");
