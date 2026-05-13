@@ -205,6 +205,8 @@ if(BUILD_TESTING)
     test/generated_environment_asset_writer_test.cpp
     src_generated_stl_writer.cpp
     src_generated_environment_asset_writer.cpp
+    src_object_placement_model.cpp
+    gui/workcell_builder_ui_utils.cpp
     gui/loadobjects.cpp)
   ament_add_gtest(workcell_generate_yaml_end_effector_metadata_test
     test/generate_yaml_end_effector_metadata_test.cpp)
