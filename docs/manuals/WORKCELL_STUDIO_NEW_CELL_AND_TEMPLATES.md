@@ -1,43 +1,15 @@
-# Workcell Studio: New Cell + Templates
+# Workcell Studio New Cell and Templates
 
-New Cell now uses the existing `workcell_builder` scene generation path (no Streamlit replacement, no EPD merge).
+`New Cell` now instantiates a real scene package backend rather than UI-only scaffolding.
 
-## Templates
-- Pick and Place Cell
-- Conveyor Sorting Cell
-- Camera Inspection Cell
-- Machine Tending Placeholder (PREVIEW_ONLY)
-- Bin Picking Placeholder (PREVIEW_ONLY)
-- Palletizing Placeholder (PREVIEW_ONLY)
+Supported behavior:
+- Template + robot + tool + layout metadata produce generated files under scene root.
+- UR5 + finger tool uses finger grasp defaults.
+- UR5 + suction tool defaults to `suction_top` strategy.
+- Placeholder/non-UR5 robots are generated as metadata-first `PREVIEW_ONLY` scenes.
 
-Each template is safety-first and shows status (launch-ready vs preview-only).
-
-## Supported robot/tool combinations
-- UR5 + Robotiq 2F
-- UR5 + suction
-- UR10 + Robotiq 2F (when assets/config are present)
-- Delta/cartesian + suction placeholders are explicitly PREVIEW_ONLY
-
-## Recommended layout
-Use **Use Recommended Layout** to write/update practical layout metadata for the selected scene/template using the existing scene metadata files.
-
-## Output
-Generated scenes are written under the selected scenes root and include scaffold files such as:
-- `environment.yaml`
-- `scene_manifest.yaml` (when supported)
-- `config/workcell_builder_task_intent.yaml`
-- `config/task_recipe.yaml`
-
-## Gripper default mount RPY
-Default for new/generated template flows:
-- `-1.5708 -1.5708 0`
-
-This remains user-editable.
-
-## Safety note
-No robot motion is commanded automatically.
-- `fake_hardware_first: true`
-- `runtime_execution_enabled: false`
-- `motion_command_sent: false`
-
-EPD remains separate/external to Workcell Studio.
+Safety and runtime constraints:
+- Fake-hardware-first defaults are preserved.
+- Runtime execution remains disabled by default.
+- No MoveIt/live motion commands are executed during generation.
+- EPD GUI remains separate.

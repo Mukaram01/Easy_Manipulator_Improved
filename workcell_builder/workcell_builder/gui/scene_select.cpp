@@ -1218,18 +1218,21 @@ std::string SceneSelect::sanitize_scene_name(const std::string & raw_name) const
 
 bool SceneSelect::create_scene_from_template(const std::string & template_id, const std::string & scene_name, const boost::filesystem::path & output_root, boost::filesystem::path * scene_dir)
 {
-  const std::string safe_name = sanitize_scene_name(scene_name);
-  const fs::path target = output_root / safe_name;
-  if (fs::exists(target)) {
-    append_warning("Scene already exists: " + target.string());
-    return false;
-  }
-  generate_scene_package(output_root, safe_name, workcell.ros_ver, workcell.ros_distro);
-  Scene scene; scene.name = safe_name; scene.loaded = true;
+  workcell_builder::WorkcellStudioTemplateInstantiationRequest req;
+  req.template_id = template_id;
+  req.scene_name = sanitize_scene_name(scene_name);
+  req.scene_root = output_root;
+  req.robot_id = "ur5";
+  req.end_effector_id = "robotiq_2f85";
+  req.layout_preset_id = "recommended_layout";
+  const auto result = workcell_builder::instantiate_workcell_studio_template(req);
+  for (const auto & warn : result.warnings) append_warning(warn);
+  for (const auto & blocker : result.blockers) append_error(blocker);
+  if (!result.success) return false;
+  Scene scene; scene.name = result.scene_dir.filename().string(); scene.loaded = true;
   workcell.scene_vector.push_back(scene);
-  if (!save_new_scene_yaml(target, scene)) return false;
-  apply_recommended_layout_to_scene(target, template_id);
-  if (scene_dir) *scene_dir = target;
+  if (scene_dir) *scene_dir = result.scene_dir;
+  append_info("Template instantiated with status: " + result.status);
   return true;
 }
 

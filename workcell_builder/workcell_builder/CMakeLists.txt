@@ -135,6 +135,7 @@ add_executable(workcell_builder
     src_planning_readiness.cpp
     src_grasp_strategy_model.cpp
     src_scene_template_library.cpp
+    src_workcell_studio_template_instantiator.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
