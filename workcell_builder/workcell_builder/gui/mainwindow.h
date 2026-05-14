@@ -42,6 +42,7 @@ class QPlainTextEdit;
 class QGraphicsView;
 class QGraphicsScene;
 class QCheckBox;
+class QPushButton;
 
 class MainWindow: public QMainWindow
 {
@@ -95,6 +96,9 @@ private:
   void set_preview_state(const QString & state);
   void rebuild_digital_twin_canvas();
   void select_canvas_item(const QString & text);
+  void mark_layout_dirty(const QString & reason);
+  void save_layout_changes();
+  void revert_layout_changes();
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -113,8 +117,19 @@ private:
   QGraphicsView * digital_twin_canvas_{ nullptr };
   QGraphicsScene * digital_twin_scene_{ nullptr };
   QCheckBox * toggle_grid_box_{ nullptr };
+  QCheckBox * snap_to_grid_box_{ nullptr };
+  QCheckBox * fine_move_mode_box_{ nullptr };
+  QCheckBox * unlock_robot_base_box_{ nullptr };
   QCheckBox * toggle_labels_box_{ nullptr };
   QCheckBox * toggle_warnings_box_{ nullptr };
+  QLabel * layout_state_label_{ nullptr };
+  QPushButton * undo_layout_button_{ nullptr };
+  QPushButton * redo_layout_button_{ nullptr };
+  QPushButton * duplicate_layout_button_{ nullptr };
+  QPushButton * delete_layout_button_{ nullptr };
+  QPushButton * save_layout_button_{ nullptr };
+  QPushButton * revert_layout_button_{ nullptr };
+  bool layout_dirty_{ false };
   QLabel * preview_scene_label_{ nullptr };
   QLabel * preview_status_label_{ nullptr };
   QLabel * preview_safety_label_{ nullptr };
