@@ -24,7 +24,8 @@
 #include <vector>
 
 #include "gui/mainwindow.h"
- #include "gui/scene_select.h"
+#include "gui/scene_select.h"
+#include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
 
 namespace
@@ -142,7 +143,12 @@ int main(int argc, char * argv[])
   a.setStyleSheet(workcell_builder::workcellStudioStyleSheet());
 
 
-  MainWindow w;
+  StartupDialog startup;
+  if (startup.exec() != QDialog::Accepted) {
+    return 0;
+  }
+
+  MainWindow w(startup.selected_workspace(), startup.selected_ros_distro());
   w.show();
   return a.exec();
 }

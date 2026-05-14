@@ -191,8 +191,10 @@ QPointF default_xy_for_category(const QString & category){
   return QPointF(60.0, 5.0);
 }
 
-MainWindow::MainWindow(QWidget * parent)
+MainWindow::MainWindow(const QString & startup_workspace, const QString & startup_ros_distro, QWidget * parent)
 : QMainWindow(parent),
+  startup_workspace_(startup_workspace),
+  startup_ros_distro_(startup_ros_distro),
   ui(new Ui::MainWindow)
 {
   ui->setupUi(this);
@@ -272,6 +274,7 @@ MainWindow::MainWindow(QWidget * parent)
       }
     });
 
+  apply_startup_selection();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
@@ -634,10 +637,14 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_load_workcell_clicked()
 {
-  QString workcell_file = QFileDialog::getExistingDirectory(
-    this,
-    "Target workcell project destination",
-    QDir::homePath());
+  QString workcell_file = startup_workspace_.trimmed();
+  if (workcell_file.isEmpty()) {
+    workcell_file = QFileDialog::getExistingDirectory(
+      this,
+      "Target workcell project destination",
+      QDir::homePath());
+  }
+  startup_workspace_.clear();
   if (workcell_file.isEmpty()) {
     return;
   }
@@ -884,9 +891,25 @@ void MainWindow::on_change_workcell_clicked()
   success = false;
   ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
   statusBar()->showMessage("Select a new workspace directory.");
+  apply_startup_selection();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
+}
+
+
+void MainWindow::apply_startup_selection()
+{
+  if (!startup_ros_distro_.trimmed().isEmpty()) {
+    const int idx = ui->ros_distro->findData(startup_ros_distro_.trimmed().toLower());
+    if (idx >= 0) {
+      ui->ros_distro->setCurrentIndex(idx);
+    }
+  }
+
+  if (!startup_workspace_.trimmed().isEmpty()) {
+    on_load_workcell_clicked();
+  }
 }
 
 bool MainWindow::has_selected_ros_distro() const
@@ -910,6 +933,9 @@ bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::strin
 
 QString MainWindow::detect_workspace_root() const
 {
+  const QString configured_workspace = ui->filepath->text().trimmed();
+  if (!configured_workspace.isEmpty()) return configured_workspace;
+  if (!startup_workspace_.trimmed().isEmpty()) return startup_workspace_.trimmed();
   const fs::path cwd(QDir::currentPath().toStdString());
   if (fs::exists(cwd / "src") && fs::is_directory(cwd / "src")) return QString::fromStdString(cwd.string());
   if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) {
