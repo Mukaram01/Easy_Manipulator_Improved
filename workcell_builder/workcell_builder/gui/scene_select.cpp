@@ -62,6 +62,7 @@
 #include <QPainter>
 #include <QWheelEvent>
 #include <QMouseEvent>
+#include "workcell_studio_template_instantiator.hpp"
 #include <boost/filesystem.hpp>
 #include <filesystem>
 #include <boost/system/error_code.hpp>
@@ -122,7 +123,7 @@ protected:
   {
     if (event->button() == Qt::MiddleButton || event->button() == Qt::RightButton) {
       setDragMode(QGraphicsView::ScrollHandDrag);
-      QMouseEvent fake(QEvent::MouseButtonPress, event->position(), Qt::LeftButton, Qt::LeftButton, event->modifiers());
+      QMouseEvent fake(QEvent::MouseButtonPress, event->localPos(), Qt::LeftButton, Qt::LeftButton, event->modifiers());
       QGraphicsView::mousePressEvent(&fake);
       return;
     }
@@ -131,7 +132,7 @@ protected:
   void mouseReleaseEvent(QMouseEvent * event) override
   {
     if (dragMode() == QGraphicsView::ScrollHandDrag) {
-      QMouseEvent fake(QEvent::MouseButtonRelease, event->position(), Qt::LeftButton, Qt::NoButton, event->modifiers());
+      QMouseEvent fake(QEvent::MouseButtonRelease, event->localPos(), Qt::LeftButton, Qt::NoButton, event->modifiers());
       QGraphicsView::mouseReleaseEvent(&fake);
       setDragMode(QGraphicsView::RubberBandDrag);
       return;
@@ -1465,7 +1466,8 @@ bool repair_scene_yaml_file(const fs::path & scene_dir, std::string * summary)
     YAML::Node map(YAML::NodeType::Map);
     for (const auto & obj : root["objects"]) {
       if (!obj["name"]) continue;
-      map[obj["name"].as<std::string>()] = obj;
+      const std::string key = obj["name"].as<std::string>();
+      map[key] = YAML::Clone(obj);
     }
     root["objects"] = map;
     changed = true;

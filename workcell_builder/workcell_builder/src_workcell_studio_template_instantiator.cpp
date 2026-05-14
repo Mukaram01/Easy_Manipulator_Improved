@@ -45,8 +45,8 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
   if (scene_dir.filename().string() != scene_name) r.warnings.push_back("scene existed; created suffixed scene: " + scene_dir.filename().string());
   r.scene_dir = scene_dir;
 
-  generate_package_xml(scene_dir, scene_dir.filename().string(), "humble");
-  generate_cmake(scene_dir, scene_dir.filename().string(), "humble");
+  generate_package_xml(scene_dir, scene_dir.filename().string(), 0, "humble");
+  generate_cmakelists(scene_dir, scene_dir.filename().string(), 0, "humble");
   r.created_files.push_back((scene_dir / "package.xml").string());
   r.created_files.push_back((scene_dir / "CMakeLists.txt").string());
 

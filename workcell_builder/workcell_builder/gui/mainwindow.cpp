@@ -29,6 +29,7 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTextEdit>
+#include <QPlainTextEdit>
 #include <QToolBar>
 #include <QApplication>
 #include <QClipboard>
@@ -80,7 +81,6 @@ namespace fs = boost::filesystem;
 namespace {
 [[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
   "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
-  "if (label == "Open Existing Scene")"
 };
 bool is_good_scene_path(const fs::path & scene_path)
 {
@@ -557,24 +557,9 @@ void MainWindow::select_scene_by_row(int row)
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
   selected_scene_index_ = row; const auto & s = scene_browser_result_.scenes[(size_t)row];
   scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
-  scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("
-Status: %1").arg(QString::fromStdString(s.status)));
-  inspector_label_->setText(QString("Scene name: %1
-Scene path: %2
-Status: %3
-Robot: %4
-End effector: %5
-Gripper Mount RPY: -1.5708 -1.5708 0
-Objects count: %6
-Task recipe: %7
-Smoke report: %8
-Launch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
-  readiness_label_->setText("Preview/offline validation only
-No robot motion commanded
-Runtime execution remains disabled unless explicitly enabled elsewhere
-colcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"
-source install/setup.bash
-"+selected_scene_launch_command());
+  scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
+  inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
   rebuild_digital_twin_canvas();
 }
@@ -635,9 +620,7 @@ void MainWindow::show_not_wired_message(const QString & action_label)
   QMessageBox::information(
     this,
     "Workcell Studio",
-    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.
-
-Could not find Workcell Studio helper script");
+    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.\n\nCould not find Workcell Studio helper script");
 }
 
 MainWindow::~MainWindow()
@@ -1062,9 +1045,7 @@ void MainWindow::run_diagnostics_self_test()
   add("no robot motion safety flags", true, true, "no_robot_motion_commanded: true", "Diagnostics is offline-only", "diagnostics report");
   const QString st=diagnostics_status_from_counts(blocked,warn); if(diagnostics_status_label_) diagnostics_status_label_->setText("Status: "+st); if(diagnostics_indicator_label_) diagnostics_indicator_label_->setText("Diagnostics: "+st); if(diagnostics_summary_label_) diagnostics_summary_label_->setText(QString("PASS rows: %1 | WARN rows: %2 | BLOCKED rows: %3").arg(diagnostics_table_?diagnostics_table_->rowCount()-warn-blocked:0).arg(warn).arg(blocked));
   QJsonObject report{{"timestamp", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}, {"workspace_root", ws}, {"scenes_root", ws+"/scenes"}, {"assets_root", ws+"/assets"}, {"golden_flow_status", "NOT CHECKED"}, {"safety_status", st}, {"no_robot_motion_commanded", true}};
-  write_diagnostics_report(report, QString("Diagnostics status: %1
-no_robot_motion_commanded=true
-").arg(st), QString("<html><body><h1>Diagnostics: %1</h1><p>No robot motion commanded.</p></body></html>").arg(st)); }
+  write_diagnostics_report(report, QString("Diagnostics status: %1\nno_robot_motion_commanded=true\n").arg(st), QString("<html><body><h1>Diagnostics: %1</h1><p>No robot motion commanded.</p></body></html>").arg(st)); }
 
 void MainWindow::run_diagnostics_golden_flow_dry_run()
 { const QString cmd = "python3 scripts/run_workcell_studio_golden_flow.py --scene-dir /tmp/workcell_studio_diag_scene --json"; QProcess p; p.start("/bin/bash", {"-lc", cmd}); p.waitForFinished(60000); append_studio_log("Run Golden Flow Dry Run"); append_studio_log("Command: " + cmd); append_studio_log("Report path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_report.json"); append_studio_log("Summary path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_summary.txt"); append_studio_log("Dashboard path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_dashboard.html"); }
