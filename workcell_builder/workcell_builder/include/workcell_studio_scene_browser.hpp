@@ -34,10 +34,11 @@ struct WorkcellStudioSceneBrowserResult
 {
   boost::filesystem::path scene_root;
   bool root_exists{false};
+  std::vector<boost::filesystem::path> searched_roots;
   std::vector<WorkcellStudioSceneInfo> scenes;
 };
 
-WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & scene_root);
+WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & workspace_root);
 
 }  // namespace workcell_builder
 

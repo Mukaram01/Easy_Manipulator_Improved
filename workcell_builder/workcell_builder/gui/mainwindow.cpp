@@ -353,8 +353,18 @@ void MainWindow::setup_studio_shell()
 
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
   dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2><p>Scene overview and investor-demo readiness</p>"));
-  dashboard_summary_label_=new QLabel("Loading scenes..."); dl->addWidget(dashboard_summary_label_);
-  dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Smoke"}); dl->addWidget(dashboard_scene_table_);
+  dashboard_summary_label_=new QLabel("Loading scenes..."); dashboard_summary_label_->setWordWrap(true); dl->addWidget(dashboard_summary_label_);
+  dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
+  dashboard_scene_table_->setStyleSheet("QTableWidget{background:#1f2937;color:#e5e7eb;gridline-color:#374151;} QHeaderView::section{background:#111827;color:#93c5fd;}");
+  dashboard_scene_table_->setAlternatingRowColors(true);
+  dl->addWidget(dashboard_scene_table_);
+  auto * dashboard_actions = new QHBoxLayout();
+  auto * dash_open_scene_builder = new QPushButton("Open in Scene Builder", dashboard); dashboard_actions->addWidget(dash_open_scene_builder);
+  auto * dash_validate = new QPushButton("Validate", dashboard); dashboard_actions->addWidget(dash_validate);
+  auto * dash_preview = new QPushButton("Preview Launch", dashboard); dashboard_actions->addWidget(dash_preview);
+  auto * dash_export = new QPushButton("Export", dashboard); dashboard_actions->addWidget(dash_export);
+  dl->addLayout(dashboard_actions);
+  auto * dash_safety = new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion", dashboard); dl->addWidget(dash_safety);
 
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); sl->addWidget(scene_builder_title_);
@@ -540,6 +550,10 @@ void MainWindow::setup_studio_shell()
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(2); });
+  connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ >= 0) { studio_nav_->setCurrentRow(2); append_studio_log("Open in Scene Builder: switched to Scene Builder"); }});
+  connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); open_selected_scene_artifact("run_acceptance"); });
+  connect(dash_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Preview Launch: prepared fake-hardware commands"); refresh_preview_launch_ui(); });
+  connect(dash_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Export: switched to export page"); });
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(2);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
@@ -601,11 +615,24 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
 }
 void MainWindow::refresh_scene_browser_ui()
 {
-  const fs::path root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "scenes" : workcell_path / "scenes";
-  scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(root);
+  const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
+  scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(workspace_root);
   int ready=0,warn=0,blocked=0; for (const auto & s : scene_browser_result_.scenes){ if(s.status=="READY") ++ready; else if(s.status=="WARNINGS") ++warn; else ++blocked; }
-  dashboard_summary_label_->setText(QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Root: %5").arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(QString::fromStdString(root.string())) + (scene_browser_result_.root_exists?"":" | Warning: scenes folder not found"));
-  auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; t->setItem(i,0,new QTableWidgetItem(QString::fromStdString(sc.scene_name))); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_smoke_report_json?"present":"missing")); }};
+  const QString root_used = QString::fromStdString(scene_browser_result_.scene_root.string());
+  const QStringList searched = [&](){ QStringList out; for (const auto & p : scene_browser_result_.searched_roots) out << QString::fromStdString(p.string()); return out; }();
+  QString summary = QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Workspace: %5 | Loaded from: %6")
+    .arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(QString::fromStdString(workspace_root.string())).arg(root_used);
+  if (!scene_browser_result_.root_exists) {
+    summary += " | Warning: no scene folders found. Searched:
+ - " + searched.join("
+ - ") + "
+Check selected workspace or symlink ~/workcell_ws/src/scenes";
+    append_studio_log("No scenes found. Searched paths: " + searched.join(" | "));
+  } else {
+    append_studio_log(QString("Loaded %1 scenes from %2").arg(scene_browser_result_.scenes.size()).arg(root_used));
+  }
+  dashboard_summary_label_->setText(summary);
+  auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; t->setItem(i,0,new QTableWidgetItem(QString::fromStdString(sc.scene_name))); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill(dashboard_scene_table_); fill(existing_scene_table_);
 }
 
