@@ -123,6 +123,7 @@ add_executable(workcell_builder
     src_deployment_compatibility_profile.cpp
     src_offline_readiness_overlay.cpp
     src_validation_dashboard_model.cpp
+    src_offline_smoke_check_model.cpp
     src_workcell_scene_status.cpp
     src_workcell_camera_model.cpp
     src_workcell_zone_model.cpp
