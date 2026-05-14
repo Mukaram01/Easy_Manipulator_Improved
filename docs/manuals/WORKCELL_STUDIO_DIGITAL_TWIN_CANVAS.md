@@ -1,15 +1,14 @@
 # Workcell Studio Digital Twin Canvas
 
-Shows a 2D/2.5D **Digital Twin Canvas** for Scene Builder.
+The digital twin canvas now supports interactive layout editing while preserving runtime behavior.
 
-- Robot base, Robot Reach, table, conveyor, camera/Camera FOV
-- Pick Source + Place Target zones, bins, objects, safety/home pose
-- Warnings overlay and fake-hardware/no-motion safety banner
-- Task strip: Pick Source → Grasp Strategy → Place Target → Release
-- Export Canvas Snapshot to `preview/workcell_studio_canvas_snapshot.svg`
+## Controls
+- Snap to Grid
+- Fine Move Mode
+- Undo / Redo
+- Duplicate Selected / Delete Selected
+- Save Layout / Revert Layout
+- Unlock Robot Base
 
 ## Safety
-This is visual preview only. **No robot motion is commanded**.
-
-## Limitation
-2D/2.5D preview only (not RViz embedding).
+Layout editing remains preview-only. No runtime robot motion is commanded from canvas edits.

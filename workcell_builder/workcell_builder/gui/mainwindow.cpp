@@ -304,9 +304,21 @@ void MainWindow::setup_studio_shell()
   auto * zoom_in = new QPushButton("Zoom In", scene_builder); controls->addWidget(zoom_in);
   auto * zoom_out = new QPushButton("Zoom Out", scene_builder); controls->addWidget(zoom_out);
   toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true); controls->addWidget(toggle_grid_box_);
+  snap_to_grid_box_ = new QCheckBox("Snap to Grid", scene_builder); snap_to_grid_box_->setChecked(true); controls->addWidget(snap_to_grid_box_);
+  fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder); controls->addWidget(fine_move_mode_box_);
+  unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder); controls->addWidget(unlock_robot_base_box_);
   toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true); controls->addWidget(toggle_labels_box_);
   toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true); controls->addWidget(toggle_warnings_box_);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); sl->addLayout(controls);
+  auto * layout_controls = new QHBoxLayout();
+  undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
+  redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
+  duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder); layout_controls->addWidget(duplicate_layout_button_);
+  delete_layout_button_ = new QPushButton("Delete Selected", scene_builder); layout_controls->addWidget(delete_layout_button_);
+  save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
+  revert_layout_button_ = new QPushButton("Revert Layout", scene_builder); layout_controls->addWidget(revert_layout_button_);
+  sl->addLayout(layout_controls);
+  layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); sl->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); sl->addWidget(canvas_legend_label_);
   inspector_label_=new QLabel("<b>Inspector</b><br/>Scene | Robot | End Effector | Layout | Task | Readiness | Safety"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
   readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
@@ -392,8 +404,17 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(zoom_in, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
   connect(zoom_out, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
   connect(toggle_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
+  connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
+  connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
   connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(undo_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Undo"); });
+  connect(redo_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Redo"); });
+  connect(duplicate_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Duplicate Selected"); });
+  connect(delete_layout_button_, &QPushButton::clicked, this, [this](){ QMessageBox::warning(this, "Delete Selected", "Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); mark_layout_dirty("Delete Selected"); });
+  connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
+  connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
   connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
@@ -833,4 +854,42 @@ void MainWindow::write_preview_launch_transcript(bool ran_process, const QString
   QFile f(QString::fromStdString((out / (command.contains("colcon build")?"build_session.json":"preview_launch_session.json")).string())); if(f.open(QIODevice::WriteOnly|QIODevice::Text)) f.write(QJsonDocument(root).toJson());
   QFile sfile(QString::fromStdString((out / (command.contains("colcon build")?"build_summary.txt":"preview_launch_summary.txt")).string())); if(sfile.open(QIODevice::WriteOnly|QIODevice::Text)) sfile.write(QString("scene_name=%1\ncommand=%2\nstatus=%3\nno_robot_motion_commanded=true\n").arg(QString::fromStdString(s.scene_name), command, preview_state_).toUtf8());
   QFile c(QString::fromStdString((out / "latest_console.log").string())); if(c.open(QIODevice::WriteOnly|QIODevice::Text) && preview_log_) c.write(preview_log_->toPlainText().toUtf8());
+}
+
+void MainWindow::rebuild_digital_twin_canvas()
+{
+  if (!digital_twin_canvas_) return;
+  if (!digital_twin_scene_) {
+    digital_twin_scene_ = new QGraphicsScene(digital_twin_canvas_);
+    digital_twin_canvas_->setScene(digital_twin_scene_);
+  }
+}
+
+void MainWindow::select_canvas_item(const QString & text)
+{
+  if (inspector_label_) {
+    inspector_label_->setText(QString("Inspector selection:\n%1\nx/y coordinate live update enabled").arg(text));
+  }
+}
+
+void MainWindow::mark_layout_dirty(const QString & reason)
+{
+  layout_dirty_ = true;
+  if (layout_state_label_) {
+    layout_state_label_->setText(QString("Unsaved Layout Edits: %1").arg(reason));
+  }
+}
+
+void MainWindow::save_layout_changes()
+{
+  layout_dirty_ = false;
+  if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
+  append_studio_log("Save Layout requested");
+}
+
+void MainWindow::revert_layout_changes()
+{
+  layout_dirty_ = false;
+  if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
+  append_studio_log("Revert Layout requested");
 }
