@@ -14,8 +14,6 @@ namespace workcell_builder
 {
 namespace
 {
-SceneLifecycleSnapshot determine_scene_lifecycle(const SceneStatusReport & report);
-
 void add_item(SceneStatusReport & report, const std::string & name, const std::string & status, const std::string & message, const fs::path & path = fs::path())
 {
   report.items.push_back({name, status, message, path.string()});
