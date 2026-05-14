@@ -14,3 +14,9 @@
 - Use task binding shortcuts (Use Selected as Pick Source/Place Target/Pick Zone/Place Zone/Camera).
 - Save Layout explicitly, then rerun validation/acceptance when `Layout changed since last acceptance` appears.
 - Safety contract remains: fake_hardware_first=true, runtime_execution_enabled=false, motion_command_sent=false.
+
+## QA checks for imported/generated assets
+- Import STL/URDF and verify item appears instantly on canvas and is editable in inspector.
+- Generate simple box/cylinder placeholder and verify persisted dimensions after Save/Reopen.
+- Verify stale readiness messaging updates after add/import/bind/save actions.
+- Verify no runtime execution is enabled and no robot motion is commanded.

@@ -35,3 +35,8 @@
 - Use task binding shortcuts (Use Selected as Pick Source/Place Target/Pick Zone/Place Zone/Camera).
 - Save Layout explicitly, then rerun validation/acceptance when `Layout changed since last acceptance` appears.
 - Safety contract remains: fake_hardware_first=true, runtime_execution_enabled=false, motion_command_sent=false.
+
+## Imported and generated assets
+- Imported STL/URDF assets persist `source_path`, import flags, and mesh/URDF path fields in layout YAML.
+- Generated simple box/cylinder placeholders persist dimensions and `generated_placeholder=true`.
+- Missing mesh/URDF warnings and stale readiness indicators are restored on reload/revert.
