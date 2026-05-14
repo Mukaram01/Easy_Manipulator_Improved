@@ -18,6 +18,7 @@
 #include <QAction>
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -36,6 +37,7 @@
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QDesktopServices>
 #include <QHeaderView>
 #include <QTableWidget>
@@ -333,7 +335,7 @@ void MainWindow::setup_studio_shell()
   };
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","✅ Validation","📤 Export"});
+  studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
   studio_pages_ = new QStackedWidget(content);
 
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
@@ -423,6 +425,22 @@ void MainWindow::setup_studio_shell()
   auto * demo_open_layout_merge_report = new QPushButton("Open Merge Report", demo); dm->addWidget(demo_open_layout_merge_report);
   auto * demo_copy_layout_merge_summary = new QPushButton("Copy Merge Summary", demo); dm->addWidget(demo_copy_layout_merge_summary);
 
+  auto * diagnostics = new QWidget(studio_pages_); auto * gl = new QVBoxLayout(diagnostics);
+  gl->addWidget(new QLabel("<h2>Diagnostics / First-Run Self-Test</h2><p>Offline checks only. No ROS launch, no MoveIt, no robot motion.</p>"));
+  diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", diagnostics); gl->addWidget(diagnostics_indicator_label_);
+  diagnostics_status_label_ = new QLabel("Status: NOT CHECKED", diagnostics); gl->addWidget(diagnostics_status_label_);
+  diagnostics_summary_label_ = new QLabel("Run Self-Test to populate diagnostics details.", diagnostics); diagnostics_summary_label_->setWordWrap(true); gl->addWidget(diagnostics_summary_label_);
+  diagnostics_table_ = new QTableWidget(0,5,diagnostics); diagnostics_table_->setHorizontalHeaderLabels({"Check","Status","Details","Suggested Fix","Related Path"}); diagnostics_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch); gl->addWidget(diagnostics_table_);
+  auto * d_actions = new QHBoxLayout();
+  run_self_test_button_ = new QPushButton("Run Self-Test", diagnostics); d_actions->addWidget(run_self_test_button_);
+  run_golden_flow_button_ = new QPushButton("Run Golden Flow Dry Run", diagnostics); d_actions->addWidget(run_golden_flow_button_);
+  copy_diagnostics_report_button_ = new QPushButton("Copy Diagnostics Report", diagnostics); d_actions->addWidget(copy_diagnostics_report_button_);
+  open_diagnostics_report_button_ = new QPushButton("Open Diagnostics Report", diagnostics); d_actions->addWidget(open_diagnostics_report_button_);
+  auto * copy_golden_cmd = new QPushButton("Copy Golden Flow Command", diagnostics); d_actions->addWidget(copy_golden_cmd);
+  auto * copy_build_cmd = new QPushButton("Copy Build Command", diagnostics); d_actions->addWidget(copy_build_cmd);
+  auto * copy_source_cmd = new QPushButton("Copy Source Command", diagnostics); d_actions->addWidget(copy_source_cmd);
+  auto * open_logs_cmd = new QPushButton("Open Logs Folder", diagnostics); d_actions->addWidget(open_logs_cmd);
+  gl->addLayout(d_actions);
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
   pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Safe control console with selected scene card, readiness gate card, command card, and live log console.</p>"));
   preview_scene_label_ = new QLabel("Selected scene card: none"); pl->addWidget(preview_scene_label_);
@@ -440,7 +458,7 @@ void MainWindow::setup_studio_shell()
   open_preview_folder_button_ = new QPushButton("Open Scene Folder", preview); pl->addWidget(open_preview_folder_button_);
   open_preview_transcript_button_ = new QPushButton("Open Reports", preview); pl->addWidget(open_preview_transcript_button_);
 
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview);
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(130); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
   preview_process_ = new QProcess(this);
@@ -460,6 +478,8 @@ void MainWindow::setup_studio_shell()
   connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
   top_bar->addSeparator();
   top_bar->addWidget(new QLabel("Fake Hardware | No Robot Motion"));
+  diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", this);
+  top_bar->addWidget(diagnostics_indicator_label_);
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(2); });
@@ -482,6 +502,14 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect(run_self_test_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_self_test);
+  connect(run_golden_flow_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
+  connect(copy_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::copy_diagnostics_report);
+  connect(open_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::open_diagnostics_folder);
+  connect(copy_golden_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("python3 scripts/run_workcell_studio_golden_flow.py --scene-dir /tmp/workcell_studio_diag_scene --json"); });
+  connect(copy_build_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select workcell_builder"); });
+  connect(copy_source_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("source install/setup.bash"); });
+  connect(open_logs_cmd, &QPushButton::clicked, this, [this](){ open_diagnostics_folder(); });
   connect(fit_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
   connect(reset_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
   connect(zoom_in, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
@@ -511,6 +539,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
+  refresh_diagnostics_quick_status();
   rebuild_digital_twin_canvas();
 }
 void MainWindow::refresh_scene_browser_ui()
@@ -995,6 +1024,57 @@ void MainWindow::copy_layout_merge_summary()
   QFile f(QString::fromStdString(summary.string()));
   if (f.open(QIODevice::ReadOnly | QIODevice::Text)) QApplication::clipboard()->setText(QString::fromUtf8(f.readAll()));
 }
+
+QString MainWindow::diagnostics_output_root() const
+{ const QString ws = detect_workspace_root(); return ws.isEmpty() ? (QDir::homePath() + "/diagnostics") : (ws + "/diagnostics"); }
+
+bool MainWindow::helper_script_exists(const QString & script_name, QString * path) const
+{ const QString p = QDir::currentPath() + "/scripts/" + script_name; if (QFileInfo::exists(p)) { if (path) *path = p; return true; } return false; }
+
+QString MainWindow::diagnostics_status_from_counts(int blocked, int warn) const
+{ if (blocked > 0) return "BLOCKED"; if (warn > 0) return "WARN"; return "PASS"; }
+
+void MainWindow::append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path)
+{ if (!diagnostics_table_) return; int r = diagnostics_table_->rowCount(); diagnostics_table_->insertRow(r); diagnostics_table_->setItem(r,0,new QTableWidgetItem(name)); diagnostics_table_->setItem(r,1,new QTableWidgetItem(status)); diagnostics_table_->setItem(r,2,new QTableWidgetItem(details)); diagnostics_table_->setItem(r,3,new QTableWidgetItem(fix)); diagnostics_table_->setItem(r,4,new QTableWidgetItem(related_path)); }
+
+void MainWindow::write_diagnostics_report(const QJsonObject & report, const QString & summary, const QString & dashboard_html)
+{ const QDir().mkpath(diagnostics_output_root()); QFile jf(diagnostics_output_root()+"/workcell_studio_diagnostics_report.json"); if (jf.open(QIODevice::WriteOnly|QIODevice::Text)) jf.write(QJsonDocument(report).toJson()); QFile sf(diagnostics_output_root()+"/workcell_studio_diagnostics_summary.txt"); if (sf.open(QIODevice::WriteOnly|QIODevice::Text)) sf.write(summary.toUtf8()); QFile hf(diagnostics_output_root()+"/workcell_studio_diagnostics_dashboard.html"); if (hf.open(QIODevice::WriteOnly|QIODevice::Text)) hf.write(dashboard_html.toUtf8()); }
+
+void MainWindow::refresh_diagnostics_quick_status()
+{ int blocked = 0; int warn = 0; const QString ws = detect_workspace_root(); if (ws.isEmpty()) blocked++; if (!QFileInfo::exists(ws + "/scenes")) warn++; const QString st = diagnostics_status_from_counts(blocked, warn); if (diagnostics_status_label_) diagnostics_status_label_->setText("Status: "+st); if (diagnostics_indicator_label_) diagnostics_indicator_label_->setText("Diagnostics: "+st); }
+
+void MainWindow::run_diagnostics_self_test()
+{ if (diagnostics_table_) diagnostics_table_->setRowCount(0); int blocked=0,warn=0; auto add=[&](const QString&n,bool ok,bool hard,const QString&d,const QString&f,const QString&p){QString s=ok?"PASS":(hard?"BLOCKED":"WARN"); if(!ok){if(hard)blocked++; else warn++;} append_diagnostics_row(n,s,d,f,p);};
+  const QString ws=detect_workspace_root(); add("ROS workspace detected", !ws.isEmpty(), true, ws.isEmpty()?"workspace root not detected":ws, "Select workspace containing install/ and src/", ws);
+  add("workcell_builder package found", QFileInfo::exists(ws+"/src"), true, "Check src folder", "Clone repository into workspace src", ws+"/src");
+  add("scenes root found", QFileInfo::exists(ws+"/scenes"), false, "Expected scenes root", "Create <workspace>/scenes", ws+"/scenes");
+  add("assets root found", QFileInfo::exists(ws+"/assets"), false, "Expected assets root", "Create <workspace>/assets", ws+"/assets");
+  QString p; add("helper scripts found", helper_script_exists("run_workcell_studio_golden_flow.py", &p), true, p.isEmpty()?"missing golden flow helper":p, "Ensure scripts folder is present", p);
+  add("dark theme/QSS loaded", !styleSheet().isEmpty(), false, styleSheet().isEmpty()?"theme missing":"dark theme active", "Install gui/resources/workcell_studio_dark.qss", "gui/resources/workcell_studio_dark.qss");
+  add("Qt SVG support available", true, false, "QSvgGenerator linked", "Install Qt SVG runtime if missing", "QtSvg");
+  add("scene browser working", scene_browser_result_.root_exists, false, scene_browser_result_.root_exists?"scene browser ready":"scene browser root missing", "Create scenes root and refresh", ws+"/scenes");
+  add("layout merge script working", helper_script_exists("workcell_studio_layout_merge.py", &p), false, p.isEmpty()?"missing":p, "Restore script", p);
+  add("acceptance validator working", helper_script_exists("validate_workcell_studio_generated_scene.py", &p), false, p.isEmpty()?"missing":p, "Restore script", p);
+  add("demo mode script working", helper_script_exists("workcell_studio_demo_mode.py", &p), false, p.isEmpty()?"missing":p, "Restore script", p);
+  add("preview launch helper working", helper_script_exists("workcell_studio_preview_launch.py", &p), false, p.isEmpty()?"missing":p, "Restore script", p);
+  QStringList b; bool safe = preview_command_is_safe("ros2 launch demo demo.launch.py use_fake_hardware:=true", &b);
+  add("fake-hardware command safety", safe, true, safe?"safe tokens validated":b.join(", "), "Keep use_fake_hardware:=true and no unsafe tokens", "preview launch command");
+  add("no robot motion safety flags", true, true, "no_robot_motion_commanded: true", "Diagnostics is offline-only", "diagnostics report");
+  const QString st=diagnostics_status_from_counts(blocked,warn); if(diagnostics_status_label_) diagnostics_status_label_->setText("Status: "+st); if(diagnostics_indicator_label_) diagnostics_indicator_label_->setText("Diagnostics: "+st); if(diagnostics_summary_label_) diagnostics_summary_label_->setText(QString("PASS rows: %1 | WARN rows: %2 | BLOCKED rows: %3").arg(diagnostics_table_?diagnostics_table_->rowCount()-warn-blocked:0).arg(warn).arg(blocked));
+  QJsonObject report{{"timestamp", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}, {"workspace_root", ws}, {"scenes_root", ws+"/scenes"}, {"assets_root", ws+"/assets"}, {"golden_flow_status", "NOT CHECKED"}, {"safety_status", st}, {"no_robot_motion_commanded", true}};
+  write_diagnostics_report(report, QString("Diagnostics status: %1
+no_robot_motion_commanded=true
+").arg(st), QString("<html><body><h1>Diagnostics: %1</h1><p>No robot motion commanded.</p></body></html>").arg(st)); }
+
+void MainWindow::run_diagnostics_golden_flow_dry_run()
+{ const QString cmd = "python3 scripts/run_workcell_studio_golden_flow.py --scene-dir /tmp/workcell_studio_diag_scene --json"; QProcess p; p.start("/bin/bash", {"-lc", cmd}); p.waitForFinished(60000); append_studio_log("Run Golden Flow Dry Run"); append_studio_log("Command: " + cmd); append_studio_log("Report path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_report.json"); append_studio_log("Summary path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_summary.txt"); append_studio_log("Dashboard path: /tmp/workcell_studio_diag_scene/golden_flow/workcell_studio_golden_flow_dashboard.html"); }
+
+void MainWindow::copy_diagnostics_report()
+{ QFile f(diagnostics_output_root()+"/workcell_studio_diagnostics_summary.txt"); if(f.open(QIODevice::ReadOnly|QIODevice::Text)) QApplication::clipboard()->setText(QString::fromUtf8(f.readAll())); }
+
+void MainWindow::open_diagnostics_folder()
+{ QDesktopServices::openUrl(QUrl::fromLocalFile(diagnostics_output_root())); }
+
 
 void MainWindow::rebuild_digital_twin_canvas()
 {

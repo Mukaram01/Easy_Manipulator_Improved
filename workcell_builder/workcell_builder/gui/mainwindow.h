@@ -22,6 +22,7 @@
 #include <QTableWidget>
 #include <QLabel>
 #include <QString>
+#include <QJsonObject>
 #include <atomic>
 #include <QProcess>
 #include <boost/filesystem.hpp>
@@ -117,6 +118,16 @@ private:
   void open_layout_merge_report();
   void copy_layout_merge_summary();
   bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
+  void refresh_diagnostics_quick_status();
+  void run_diagnostics_self_test();
+  void run_diagnostics_golden_flow_dry_run();
+  void copy_diagnostics_report();
+  void open_diagnostics_folder();
+  bool helper_script_exists(const QString & script_name, QString * path = nullptr) const;
+  QString diagnostics_output_root() const;
+  QString diagnostics_status_from_counts(int blocked, int warn) const;
+  void append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path);
+  void write_diagnostics_report(const QJsonObject & report, const QString & summary, const QString & dashboard_html);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -162,6 +173,14 @@ private:
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
   QLabel * preview_scene_label_{ nullptr };
+  QTableWidget * diagnostics_table_{ nullptr };
+  QLabel * diagnostics_status_label_{ nullptr };
+  QLabel * diagnostics_summary_label_{ nullptr };
+  QLabel * diagnostics_indicator_label_{ nullptr };
+  QPushButton * run_self_test_button_{ nullptr };
+  QPushButton * run_golden_flow_button_{ nullptr };
+  QPushButton * copy_diagnostics_report_button_{ nullptr };
+  QPushButton * open_diagnostics_report_button_{ nullptr };
   QLabel * preview_status_label_{ nullptr };
   QLabel * preview_safety_label_{ nullptr };
   QTextEdit * preview_commands_{ nullptr };
