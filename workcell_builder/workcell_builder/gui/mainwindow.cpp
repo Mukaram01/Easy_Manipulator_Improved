@@ -42,6 +42,9 @@
 #include <QDesktopServices>
 #include <QHeaderView>
 #include <QTableWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QFileInfo>
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsRectItem>
@@ -384,13 +387,21 @@ void MainWindow::setup_studio_shell()
   auto * hierarchy_card = new QFrame(left_panel); hierarchy_card->setObjectName("studioCard");
   auto * hierarchy_layout = new QVBoxLayout(hierarchy_card);
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
-  asset_catalog_panel_label_ = new QLabel("Robot • End Effector • Camera • Conveyor • Work Table<br/>Bin / Source • Bin / Reject • Place Location / Fixture • Safety • Lighting");
-  asset_catalog_panel_label_->setWordWrap(true); hierarchy_layout->addWidget(asset_catalog_panel_label_);
+  scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
+  scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
+  scene_hierarchy_tree_->setHeaderLabels({"Item", "Status"});
+  hierarchy_layout->addWidget(scene_hierarchy_tree_);
   left_layout->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(left_panel); catalog_card->setObjectName("studioCard");
   auto * catalog_layout = new QVBoxLayout(catalog_card);
   catalog_layout->addWidget(new QLabel("<b>Asset Catalog</b>"));
-  catalog_layout->addWidget(new QLabel("All | Robots | End Effectors | Fixtures | Sensors | Tables | Conveyors | Bins | Custom"));
+  asset_filter_combo_ = new QComboBox(catalog_card);
+  asset_filter_combo_->addItems({"All", "Robots", "End Effectors", "Fixtures", "Sensors", "Tables", "Conveyors", "Bins", "Custom"});
+  catalog_layout->addWidget(asset_filter_combo_);
+  asset_catalog_tree_ = new QTreeWidget(catalog_card);
+  asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
+  asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type"});
+  catalog_layout->addWidget(asset_catalog_tree_, 1);
   auto * add_to_canvas_button = new QPushButton("Add to Canvas", scene_builder); catalog_layout->addWidget(add_to_canvas_button);
   auto * open_asset_folder_button = new QPushButton("Open Asset Folder", scene_builder); catalog_layout->addWidget(open_asset_folder_button);
   auto * copy_asset_path_button = new QPushButton("Copy Asset Path", scene_builder); catalog_layout->addWidget(copy_asset_path_button);
@@ -643,6 +654,14 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(demo_open_layout_merge_report, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
   connect(demo_copy_layout_merge_summary, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
   connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
+  connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int){ Q_UNUSED(int); on_hierarchy_item_selected(item); });
+  connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
+  connect(open_asset_folder_button, &QPushButton::clicked, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
+  connect(copy_asset_path_button, &QPushButton::clicked, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
+  connect(add_to_canvas_button, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(import_asset_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
+  connect(add_existing_stl_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
+  connect(placeholder_button, &QPushButton::clicked, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
   connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
@@ -651,6 +670,8 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   refresh_preview_launch_ui();
   refresh_diagnostics_quick_status();
   rebuild_digital_twin_canvas();
+  populate_scene_hierarchy();
+  populate_asset_catalog();
 }
 void MainWindow::refresh_scene_browser_ui()
 {
@@ -685,6 +706,8 @@ void MainWindow::select_scene_by_row(int row)
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
   rebuild_digital_twin_canvas();
+  populate_scene_hierarchy();
+  populate_asset_catalog();
 }
 
 
@@ -1183,6 +1206,8 @@ void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
   append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
   refresh_scene_browser_ui();
   rebuild_digital_twin_canvas();
+  populate_scene_hierarchy();
+  populate_asset_catalog();
 }
 
 void MainWindow::open_layout_merge_report()
@@ -1444,4 +1469,85 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   redo_stack_.clear();
   mark_layout_dirty("Add to Canvas");
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
+}
+
+
+QString MainWindow::selected_catalog_item_path() const
+{
+  if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) {
+    return "";
+  }
+  return asset_catalog_tree_->currentItem()->data(0, Qt::UserRole).toString();
+}
+
+void MainWindow::on_asset_filter_changed(int)
+{
+  const QString selected = asset_filter_combo_ ? asset_filter_combo_->currentText() : "All";
+  if (!asset_catalog_tree_) return;
+  for (int i = 0; i < asset_catalog_tree_->topLevelItemCount(); ++i) {
+    auto * item = asset_catalog_tree_->topLevelItem(i);
+    const bool visible = (selected == "All" || item->text(1) == selected);
+    item->setHidden(!visible);
+  }
+}
+
+void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
+{
+  if (!item) return;
+  const QString name = item->text(0);
+  const QString category = item->data(0, Qt::UserRole + 2).toString();
+  const QString pose = item->data(0, Qt::UserRole + 3).toString();
+  const QString source = item->data(0, Qt::UserRole + 4).toString();
+  inspector_label_->setText(QString("Selected: %1
+Category: %2
+Pose: %3
+Source: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
+  live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(name, pose.isEmpty()?"pose unknown":pose));
+}
+
+void MainWindow::populate_scene_hierarchy()
+{
+  if (!scene_hierarchy_tree_) return;
+  scene_hierarchy_tree_->clear();
+  const QStringList groups = {"Robot","End Effector","Camera / Sensor","Conveyor","Work Table / Surface","Pick Source / Bin","Place Target / Fixture","Reject Bin","Safety","Lighting","Other Objects / Imported Assets"};
+  std::unordered_map<QString,QTreeWidgetItem*> tops;
+  for (const auto & g : groups) { auto *t = new QTreeWidgetItem(scene_hierarchy_tree_, {g, "unknown"}); tops[g]=t; }
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path d=s.scene_dir;
+  const std::vector<std::string> files={"environment.yaml","scene_manifest.yaml","cell_definition.yaml","environment_layout.yaml"};
+  for (const auto & fn : files) {
+    const fs::path pth=d/fn; if (!fs::exists(pth)) continue;
+    auto *n = new QTreeWidgetItem(tops["Other Objects / Imported Assets"], {QString::fromStdString(fn), "OK"});
+    n->setData(0, Qt::UserRole + 2, "Other Objects / Imported Assets");
+    n->setData(0, Qt::UserRole + 4, QString::fromStdString(pth.string()));
+  }
+}
+
+void MainWindow::populate_asset_catalog()
+{
+  if (!asset_catalog_tree_) return;
+  asset_catalog_tree_->clear();
+  const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
+  std::vector<fs::path> roots = {workspace_root / "src" / "easy_manipulation_deployment" / "assets", workspace_root / "src" / "assets", fs::current_path() / "assets"};
+  for (const auto & root : roots) {
+    boost::system::error_code ec; if (!fs::exists(root, ec) || ec) continue;
+    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
+      if (!fs::is_regular_file(it->path(), ec) || ec) continue;
+      const QString path = QString::fromStdString(it->path().string());
+      const QString ext = QString::fromStdString(it->path().extension().string()).toLower();
+      QString category="Custom"; QString type="Mesh";
+      if (path.contains("robot", Qt::CaseInsensitive) || ext==".urdf" || ext==".xacro") category="Robots";
+      if (path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) category="End Effectors";
+      if (path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) category="Sensors";
+      if (path.contains("table", Qt::CaseInsensitive)) category="Tables";
+      if (path.contains("conveyor", Qt::CaseInsensitive)) category="Conveyors";
+      if (path.contains("bin", Qt::CaseInsensitive)) category="Bins";
+      if (path.contains("fixture", Qt::CaseInsensitive)) category="Fixtures";
+      if (ext==".urdf") type="URDF"; else if (ext==".xacro") type="Xacro"; else if (ext==".stl") type="STL";
+      auto * item = new QTreeWidgetItem(asset_catalog_tree_, {it->path().filename().string().c_str(), category, type});
+      item->setData(0, Qt::UserRole, path);
+    }
+  }
+  on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
 }
