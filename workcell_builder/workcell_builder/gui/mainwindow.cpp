@@ -193,9 +193,9 @@ QPointF default_xy_for_category(const QString & category){
 
 MainWindow::MainWindow(const QString & startup_workspace, const QString & startup_ros_distro, QWidget * parent)
 : QMainWindow(parent),
+  ui(new Ui::MainWindow),
   startup_workspace_(startup_workspace),
-  startup_ros_distro_(startup_ros_distro),
-  ui(new Ui::MainWindow)
+  startup_ros_distro_(startup_ros_distro)
 {
   ui->setupUi(this);
   workcell_builder::applyCompactDialogDefaults(this);
@@ -908,6 +908,9 @@ void MainWindow::apply_startup_selection()
   }
 
   if (!startup_workspace_.trimmed().isEmpty()) {
+    if (ui && ui->filepath) {
+      ui->filepath->setPlainText(startup_workspace_.trimmed());
+    }
     on_load_workcell_clicked();
   }
 }
@@ -933,19 +936,18 @@ bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::strin
 
 QString MainWindow::detect_workspace_root() const
 {
-  const QString configured_workspace = ui->filepath->text().trimmed();
-  if (!configured_workspace.isEmpty()) return configured_workspace;
-  if (!startup_workspace_.trimmed().isEmpty()) return startup_workspace_.trimmed();
-  const fs::path cwd(QDir::currentPath().toStdString());
-  if (fs::exists(cwd / "src") && fs::is_directory(cwd / "src")) return QString::fromStdString(cwd.string());
-  if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) {
-    fs::path p = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir;
-    while (!p.empty()) {
-      if (fs::exists(p / "src") && fs::is_directory(p / "src")) return QString::fromStdString(p.string());
-      p = p.parent_path();
-    }
+  const QString startup_workspace = startup_workspace_.trimmed();
+  if (!startup_workspace.isEmpty() && QDir(startup_workspace).exists()) return startup_workspace;
+
+  if (ui && ui->filepath) {
+    const QString configured_workspace = ui->filepath->toPlainText().trimmed();
+    if (!configured_workspace.isEmpty() && QDir(configured_workspace).exists()) return configured_workspace;
   }
-  return "";
+
+  const QString default_workspace = QDir::homePath() + "/workcell_ws";
+  if (QDir(default_workspace).exists()) return default_workspace;
+
+  return QDir::homePath();
 }
 
 QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; return QString("cd %1 && source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select %2").arg(detect_workspace_root(), QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); }
