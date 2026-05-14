@@ -50,6 +50,9 @@ class QCheckBox;
 class QPushButton;
 class QDoubleSpinBox;
 class QGraphicsSceneMouseEvent;
+class QTreeWidget;
+class QTreeWidgetItem;
+class QComboBox;
 
 class MainWindow: public QMainWindow
 {
@@ -124,6 +127,11 @@ private:
   void copy_layout_merge_summary();
   bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
   void refresh_diagnostics_quick_status();
+  void populate_scene_hierarchy();
+  void populate_asset_catalog();
+  void on_hierarchy_item_selected(QTreeWidgetItem * item);
+  void on_asset_filter_changed(int index);
+  QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
   void copy_diagnostics_report();
@@ -157,6 +165,9 @@ private:
   QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };
+  QTreeWidget * scene_hierarchy_tree_{ nullptr };
+  QTreeWidget * asset_catalog_tree_{ nullptr };
+  QComboBox * asset_filter_combo_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
   QGraphicsView * digital_twin_canvas_{ nullptr };
   QGraphicsScene * digital_twin_scene_{ nullptr };
