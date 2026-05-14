@@ -39,6 +39,11 @@
 #include <QDesktopServices>
 #include <QHeaderView>
 #include <QTableWidget>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QCheckBox>
+#include <QSvgGenerator>
+#include <QPainter>
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QMetaObject>
@@ -62,6 +67,7 @@
 #include "include/default_asset_paths.h"
 #include "include/workcell_directory_inspection.h"
 #include "workcell_studio_scene_browser.hpp"
+#include "workcell_studio_canvas_model.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -288,7 +294,20 @@ void MainWindow::setup_studio_shell()
 
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); sl->addWidget(scene_builder_title_);
-  scene_preview_label_=new QLabel("<b>Digital twin preview</b><br/>Dark canvas preview card with scene name overlay and pick/place/task summary strip.<br/>Open Preview | Fit View | Open Scene Folder | Copy Launch Command"); scene_preview_label_->setWordWrap(true); sl->addWidget(scene_preview_label_);
+  scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); sl->addWidget(scene_preview_label_);
+  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY | Fake Hardware | No Robot Motion"); canvas_header_label_->setWordWrap(true); sl->addWidget(canvas_header_label_);
+  task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); sl->addWidget(task_flow_label_);
+  digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setMinimumHeight(340); sl->addWidget(digital_twin_canvas_);
+  auto * controls = new QHBoxLayout();
+  auto * fit_button = new QPushButton("Fit Cell", scene_builder); controls->addWidget(fit_button);
+  auto * reset_button = new QPushButton("Reset View", scene_builder); controls->addWidget(reset_button);
+  auto * zoom_in = new QPushButton("Zoom In", scene_builder); controls->addWidget(zoom_in);
+  auto * zoom_out = new QPushButton("Zoom Out", scene_builder); controls->addWidget(zoom_out);
+  toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true); controls->addWidget(toggle_grid_box_);
+  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true); controls->addWidget(toggle_labels_box_);
+  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true); controls->addWidget(toggle_warnings_box_);
+  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); sl->addLayout(controls);
+  canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); sl->addWidget(canvas_legend_label_);
   inspector_label_=new QLabel("<b>Inspector</b><br/>Scene | Robot | End Effector | Layout | Task | Readiness | Safety"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
   readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
 
@@ -368,11 +387,20 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect(fit_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
+  connect(reset_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
+  connect(zoom_in, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
+  connect(zoom_out, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
+  connect(toggle_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
+  rebuild_digital_twin_canvas();
 }
 void MainWindow::refresh_scene_browser_ui()
 {
@@ -408,6 +436,7 @@ colcon build --symlink-install --packages-select "+QString::fromStdString(s.scen
 source install/setup.bash
 "+selected_scene_launch_command());
   refresh_preview_launch_ui();
+  rebuild_digital_twin_canvas();
 }
 
 

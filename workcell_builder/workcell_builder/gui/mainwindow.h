@@ -39,6 +39,9 @@ class QListWidget;
 class QPushButton;
 class QTextEdit;
 class QPlainTextEdit;
+class QGraphicsView;
+class QGraphicsScene;
+class QCheckBox;
 
 class MainWindow: public QMainWindow
 {
@@ -90,6 +93,8 @@ private:
   void write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code = -1);
   QString detect_workspace_root() const;
   void set_preview_state(const QString & state);
+  void rebuild_digital_twin_canvas();
+  void select_canvas_item(const QString & text);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -102,6 +107,14 @@ private:
   QLabel * scene_preview_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QLabel * readiness_label_{ nullptr };
+  QLabel * canvas_header_label_{ nullptr };
+  QLabel * task_flow_label_{ nullptr };
+  QLabel * canvas_legend_label_{ nullptr };
+  QGraphicsView * digital_twin_canvas_{ nullptr };
+  QGraphicsScene * digital_twin_scene_{ nullptr };
+  QCheckBox * toggle_grid_box_{ nullptr };
+  QCheckBox * toggle_labels_box_{ nullptr };
+  QCheckBox * toggle_warnings_box_{ nullptr };
   QLabel * preview_scene_label_{ nullptr };
   QLabel * preview_status_label_{ nullptr };
   QLabel * preview_safety_label_{ nullptr };
