@@ -376,6 +376,9 @@ install(TARGETS workcell_builder
 install(DIRECTORY templates
   DESTINATION share/${PROJECT_NAME})
 
+install(DIRECTORY gui/resources
+  DESTINATION share/${PROJECT_NAME}/gui)
+
 install(DIRECTORY assets
   DESTINATION share/${PROJECT_NAME})
 

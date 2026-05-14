@@ -17,6 +17,7 @@
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 
 #include <QFutureWatcher>
+#include <QStackedWidget>
 #include <QMainWindow>
 #include <QString>
 #include <atomic>
@@ -30,6 +31,8 @@ QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
 class QProgressDialog;
+class QListWidget;
+class QPushButton;
 
 class MainWindow: public QMainWindow
 {
@@ -57,7 +60,13 @@ private slots:
 private:
   bool has_selected_ros_distro() const;
   void update_next_button_state();
+  void toggle_full_screen();
+  void setup_studio_shell();
+  void apply_studio_theme();
   Ui::MainWindow * ui;
+  QStackedWidget * studio_pages_{ nullptr };
+  QListWidget * studio_nav_{ nullptr };
+  QPushButton * full_screen_button_{ nullptr };
   struct WorkcellLoadResult
   {
     bool success{ false };

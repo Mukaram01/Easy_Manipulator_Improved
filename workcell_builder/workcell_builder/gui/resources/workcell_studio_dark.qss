@@ -1,0 +1,39 @@
+QMainWindow, QDialog, QWidget {
+  background-color: #12161d;
+  color: #e6eef7;
+  font-size: 13px;
+}
+#studioTopBar {
+  background-color: #1a222d;
+  border: 1px solid #1d8db3;
+  border-radius: 8px;
+}
+QPushButton {
+  background-color: #1d2835;
+  border: 1px solid #2a9cc6;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+QPushButton:hover { background-color: #263445; }
+QListWidget {
+  background-color: #161e28;
+  border: 1px solid #224c63;
+  border-radius: 8px;
+  padding: 6px;
+}
+QListWidget::item:selected {
+  background: #1d6f92;
+  border-radius: 5px;
+}
+QTabWidget::pane, QTextBrowser, QComboBox {
+  background-color: #151b24;
+  border: 1px solid #2a4356;
+  border-radius: 6px;
+}
+#studioCardButton {
+  text-align: left;
+  min-height: 36px;
+  font-weight: 600;
+}
+QLabel { color: #e8f0fa; }
+QStatusBar { background: #0f141b; color: #8dd4ee; }
