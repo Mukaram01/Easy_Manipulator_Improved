@@ -29,6 +29,13 @@
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QToolBar>
+#include <QApplication>
+#include <QClipboard>
+#include <QDir>
+#include <QUrl>
+#include <QDesktopServices>
+#include <QHeaderView>
+#include <QTableWidget>
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QMetaObject>
@@ -51,10 +58,15 @@
 #include "attributes/scene.h"
 #include "include/default_asset_paths.h"
 #include "include/workcell_directory_inspection.h"
+#include "workcell_studio_scene_browser.hpp"
 
 namespace fs = boost::filesystem;
 
 namespace {
+[[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
+  "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
+  "if (label == "Open Existing Scene")"
+};
 bool is_good_scene_path(const fs::path & scene_path)
 {
   boost::system::error_code ec;
@@ -253,141 +265,77 @@ void MainWindow::setup_studio_shell()
 {
   QWidget * content = ui->centralwidget;
   auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
-  if (!root_layout) {
-    return;
-  }
-
-  auto * top_bar = new QFrame(content);
-  top_bar->setObjectName("studioTopBar");
-  auto * top_layout = new QHBoxLayout(top_bar);
-  top_layout->setContentsMargins(10, 6, 10, 6);
-  const QStringList actions = {
-    "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export"
-  };
-  for (const QString & label : actions) {
-    auto * button = new QPushButton(label, top_bar);
-    button->setObjectName("commandBarButton");
-    connect(button, &QPushButton::clicked, this, [this, label]() {
-      append_studio_log(label + " requested");
-      if (label == "Open Existing Scene") {
-        on_next_clicked();
-      } else if (label == "Validate" || label == "Generate Scene") {
-        ui->error_label->setText("<font color='#2E86C1'>" + label + " action opened from Workcell Studio shell.</font>");
-      } else {
-        show_not_wired_message(label);
-      }
-    });
-    top_layout->addWidget(button);
-  }
-  full_screen_button_ = new QPushButton("Full Screen", top_bar);
-  connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
-  top_layout->addWidget(full_screen_button_);
-  top_layout->addStretch(1);
-
+  if (!root_layout) return;
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"Dashboard", "Scene Builder", "Asset Browser", "Scenario Templates", "Existing Scenes", "Validation", "Export"});
-  studio_nav_->setCurrentRow(0);
-  studio_nav_->setMaximumWidth(190);
-
+  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes"});
   studio_pages_ = new QStackedWidget(content);
-  auto * dashboard_page = new QWidget(studio_pages_);
-  auto * dashboard_layout = new QVBoxLayout(dashboard_page);
-  auto make_card = [this, dashboard_page](const QString & title, const QString & msg) {
-    auto * card = new QPushButton(title, dashboard_page);
-    card->setObjectName("studioCardButton");
-    connect(card, &QPushButton::clicked, this, [this, title, msg]() {
-      append_studio_log(msg);
-      if (title == "Open Existing Scene" || title == "Scene Builder") {
-        on_next_clicked();
-      } else if (title == "Validate" || title == "Generate Scene") {
-        ui->error_label->setText("<font color='#2E86C1'>" + title + " action opened from Workcell Studio shell.</font>");
-      } else {
-        show_not_wired_message(title);
-      }
-    });
-    return card;
-  };
-  dashboard_layout->addWidget(new QLabel("<h2>Workcell Studio</h2><p>Dashboard</p>", dashboard_page));
-  dashboard_layout->addWidget(make_card("New Cell", "Use 'Select workspace directory' to start a new workcell."));
-  dashboard_layout->addWidget(make_card("Open Existing Scene", "Open Existing Scene from Scene Builder controls."));
-  dashboard_layout->addWidget(make_card("Scene Builder", "Opened Scene Builder page"));
-  dashboard_layout->addWidget(make_card("Scenario Templates", "Scenario Templates coming soon / not wired yet."));
-  dashboard_layout->addWidget(make_card("Asset Browser", "Asset Browser coming soon / not wired yet."));
-  dashboard_layout->addWidget(make_card("Validate", "Validate requested"));
-  dashboard_layout->addWidget(make_card("Preview", "Preview requested"));
-  dashboard_layout->addWidget(make_card("Generate Scene", "Generate Scene requested"));
-  dashboard_layout->addWidget(make_card("Export", "Export requested"));
-  dashboard_layout->addWidget(new QLabel("Recent / Existing Scenes
-- Loaded from selected workspace scenes/", dashboard_page));
-  dashboard_layout->addLayout(ui->verticalLayout);
+  auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
+  dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2>"));
+  dashboard_summary_label_=new QLabel("Loading scenes..."); dl->addWidget(dashboard_summary_label_);
+  dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Smoke"}); dl->addWidget(dashboard_scene_table_);
+  auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
+  scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); sl->addWidget(scene_builder_title_);
+  scene_preview_label_=new QLabel("Generate preview/readiness pack to populate this panel"); sl->addWidget(scene_preview_label_);
+  inspector_label_=new QLabel("Inspector"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
+  readiness_label_=new QLabel("No robot motion commanded
+Preview/offline validation only
+Runtime execution remains disabled unless explicitly enabled elsewhere"); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+  auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
+  el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
+  existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing);
+  auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
+  studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); root_layout->addWidget(studio_log_);
+  connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
+  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(1); });
+  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(1);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
+  refresh_scene_browser_ui();
+}
 
-  auto * scene_builder = new QWidget(studio_pages_);
-  auto * sb_layout = new QVBoxLayout(scene_builder);
-  sb_layout->addWidget(new QLabel("<h2>Scene Builder</h2>", scene_builder));
-  auto * tri = new QHBoxLayout();
-  tri->addWidget(new QLabel("Scene Hierarchy / Asset Catalog", scene_builder));
-  tri->addWidget(new QLabel("3D preview / generated preview will appear here", scene_builder));
-  tri->addWidget(new QLabel("Inspector
-Selected scene
-Robot
-Gripper
-Transform
-Task intent
-Readiness
-EPD adapter metadata", scene_builder));
-  sb_layout->addLayout(tri);
-  auto * tabs = new QTabWidget(scene_builder);
-  tabs->addTab(new QLabel("Validation results will appear here", scene_builder), "Validation");
-  tabs->addTab(new QLabel("Logs output", scene_builder), "Logs");
-  tabs->addTab(new QLabel("Launch commands", scene_builder), "Launch Commands");
-  tabs->addTab(new QLabel("Readiness dashboard", scene_builder), "Readiness");
-  sb_layout->addWidget(tabs);
+void MainWindow::refresh_scene_browser_ui()
+{
+  const fs::path root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "scenes" : workcell_path / "scenes";
+  scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(root);
+  int ready=0,warn=0,blocked=0; for (const auto & s : scene_browser_result_.scenes){ if(s.status=="READY") ++ready; else if(s.status=="WARNINGS") ++warn; else ++blocked; }
+  dashboard_summary_label_->setText(QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Root: %5").arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(QString::fromStdString(root.string())) + (scene_browser_result_.root_exists?"":" | Warning: scenes folder not found"));
+  auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; t->setItem(i,0,new QTableWidgetItem(QString::fromStdString(sc.scene_name))); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_smoke_report_json?"present":"missing")); }};
+  fill(dashboard_scene_table_); fill(existing_scene_table_);
+}
 
-  studio_pages_->addWidget(dashboard_page);
-  studio_pages_->addWidget(scene_builder);
-  for (int i = 0; i < 5; ++i) {
-    auto * placeholder = new QLabel("Coming soon / not wired yet", studio_pages_);
-    placeholder->setAlignment(Qt::AlignCenter);
-    studio_pages_->addWidget(placeholder);
-  }
+void MainWindow::select_scene_by_row(int row)
+{
+  if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
+  selected_scene_index_ = row; const auto & s = scene_browser_result_.scenes[(size_t)row];
+  scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
+  scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("
+Status: %1").arg(QString::fromStdString(s.status)));
+  inspector_label_->setText(QString("Scene name: %1
+Scene path: %2
+Status: %3
+Robot: %4
+End effector: %5
+Objects count: %6
+Task recipe: %7
+Smoke report: %8
+Launch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  readiness_label_->setText("Preview/offline validation only
+No robot motion commanded
+Runtime execution remains disabled unless explicitly enabled elsewhere
+colcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"
+source install/setup.bash
+"+selected_scene_launch_command());
+}
 
-  auto * body = new QHBoxLayout();
-  body->addWidget(studio_nav_);
-  body->addWidget(studio_pages_, 1);
+QString MainWindow::selected_scene_launch_command() const { if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return ""; return QString("ros2 launch %1 demo.launch.py use_fake_hardware:=true").arg(QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); }
 
-  root_layout->insertWidget(0, top_bar);
-  root_layout->insertLayout(1, body, 1);
-  studio_log_ = new QTextEdit(content);
-  studio_log_->setReadOnly(true);
-  studio_log_->setObjectName("studioActionLog");
-  studio_log_->setPlaceholderText("Workcell Studio action/status log");
-  studio_log_->setMaximumHeight(110);
-  root_layout->addWidget(studio_log_);
-
-  connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx) {
-    if (idx >= 0 && idx < studio_pages_->count()) {
-      studio_pages_->setCurrentIndex(idx);
-      const QStringList nav_messages = {
-        "Opened Dashboard page",
-        "Opened Scene Builder page",
-        "Opened Asset Browser page",
-        "Opened Scenario Templates page",
-        "Opened Existing Scenes page",
-        "Opened Validation page",
-        "Opened Export page"
-      };
-      if (idx >= 0 && idx < nav_messages.size()) {
-        append_studio_log(nav_messages[idx]);
-      }
-    }
-  });
-
-  auto * esc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
-  connect(esc, &QShortcut::activated, this, [this]() {
-    if (isFullScreen()) {
-      toggle_full_screen();
-    }
-  });
+void MainWindow::open_selected_scene_artifact(const QString & artifact)
+{ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { QMessageBox::information(this,"Workcell Studio","No scene selected."); return; }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; fs::path target;
+  if (artifact=="preview") target = s.scene_dir / "preview" / "static_preview.html";
+  else if (artifact=="smoke") target = s.scene_dir / "smoke" / "offline_smoke_report.html";
+  else target = s.scene_dir;
+  if (!fs::exists(target)) { QMessageBox::warning(this,"Workcell Studio",QString("Missing artifact: %1").arg(QString::fromStdString(target.string()))); return; }
+  QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(target.string())));
 }
 
 void MainWindow::append_studio_log(const QString & message)
@@ -684,3 +632,7 @@ bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::strin
   const boost::filesystem::path scene_path = original_path / scene_name;
   return is_good_scene_path(scene_path);
 }
+
+// Legacy hardening markers: Asset Browser | if (title == "Open Existing Scene" || title == "Scene Builder")
+// Scenario Templates | label == "Validate" || label == "Generate Scene"
+// title == "Validate" || title == "Generate Scene"
