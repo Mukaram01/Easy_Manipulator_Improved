@@ -26,3 +26,9 @@
 - Verify critical buttons are wired or explicitly show safe fallback (no silent button failures).
 - Validate stale layout gating blocks preview launch until merge/regeneration is rerun.
 - Confirm preview command remains fake-hardware-only and no motion command is sent.
+
+## Startup / Process Troubleshooting
+- If `workcell_builder` fails to open, run from terminal and capture stdout/stderr.
+- If preview launch/build appears stuck, use **Stop Preview** and check `preview_launch/latest_console.log`.
+- If helper script lookup fails, UI should display `Could not find Workcell Studio helper script`; verify installed `share/workcell_builder/scripts` and source checkout `scripts/` paths.
+- If scene save/merge actions are disabled or blocked, verify a scene is selected and layout has been saved to `layout/workcell_studio_layout.yaml`.

@@ -613,6 +613,7 @@ Could not find Workcell Studio helper script");
 
 MainWindow::~MainWindow()
 {
+  stop_preview_process();
   delete ui;
 }
 

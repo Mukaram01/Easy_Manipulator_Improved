@@ -49,3 +49,11 @@ GUI flow:
 - Run Build if dependencies are ready
 - Do not run real hardware
 - Confirm no robot motion was commanded
+
+## Local Build and Runtime Troubleshooting
+- If `colcon build --packages-select workcell_builder` fails, verify Qt5 SVG dev package is installed (`libqt5svg5-dev`) and rerun from a sourced ROS 2 Humble shell.
+- If Workcell Studio opens without the dark theme, verify `share/workcell_builder/gui/resources/workcell_studio_dark.qss` exists in your install space.
+- If merge/acceptance/demo/preview actions fail, collect GUI console output and `preview_launch/latest_console.log` under the selected scene directory.
+- If helper scripts cannot be found, confirm scripts are present under either:
+  - `install/workcell_builder/share/workcell_builder/scripts`, or
+  - repository `scripts/` in the workspace source tree.

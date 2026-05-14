@@ -24,6 +24,17 @@ def _index(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return out
 
 def merge(scene_dir: Path) -> dict[str, Any]:
+    if not scene_dir.exists() or not scene_dir.is_dir():
+        return {
+            'status': 'BLOCKED',
+            'layout_applied': False,
+            'generated_from_saved_layout': False,
+            'merge_warnings': [],
+            'merge_blockers': [f"scene_dir not found: {scene_dir}"],
+            'layout_saved_at_utc': None,
+            'merged_at_utc': datetime.now(timezone.utc).isoformat(),
+            'safety_flags': {'fake_hardware_first': True, 'runtime_execution_enabled': False, 'motion_command_sent': False},
+        }
     env = _load(scene_dir/'environment.yaml')
     manifest = _load(scene_dir/'scene_manifest.yaml')
     layout = _load(scene_dir/'layout'/'workcell_studio_layout.yaml')
@@ -88,9 +99,11 @@ def merge(scene_dir: Path) -> dict[str, Any]:
     }
     (generated/'workcell_studio_layout_merge_report.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
     (generated/'workcell_studio_layout_merge_summary.txt').write_text(f"layout_applied={report['layout_applied']}\ngenerated_from_saved_layout={report['generated_from_saved_layout']}\n", encoding='utf-8')
+    report['status'] = 'READY' if not blockers else 'BLOCKED'
     return report
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('scene_dir', type=Path); ap.add_argument('--json', action='store_true')
     a = ap.parse_args(); rep = merge(a.scene_dir)
     if a.json: print(json.dumps(rep, indent=2))
+    raise SystemExit(0 if rep.get('status') == 'READY' else 2)
