@@ -267,7 +267,7 @@ void MainWindow::setup_studio_shell()
   auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
   if (!root_layout) return;
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes", "Demo Mode"});
+  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes", "Demo Mode", "Preview Launch"});
   studio_pages_ = new QStackedWidget(content);
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
   dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2>"));
@@ -293,10 +293,17 @@ Runtime execution remains disabled unless explicitly enabled elsewhere"); readin
   auto * copy_build = new QPushButton("Copy Build Command", demo); dm->addWidget(copy_build);
   auto * copy_launch = new QPushButton("Copy Fake-Hardware Launch Command", demo); dm->addWidget(copy_launch);
   auto * copy_summary = new QPushButton("Copy Demo Summary", demo); dm->addWidget(copy_summary);
+  auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
+  pl->addWidget(new QLabel("<h2>Preview Launch Assistant</h2>"));
+  pl->addWidget(new QLabel("Fake hardware only\nNo real robot hardware enabled\nNo runtime execution commanded\nNo robot motion commanded by Workcell Studio\nStop button only stops the preview process started by this UI"));
+  pl->addWidget(new QLabel("Run Fake-Hardware Preview"));
+  pl->addWidget(new QLabel("Stop Preview"));
+  pl->addWidget(new QLabel("Copy Fake-Hardware Launch Command"));
+  pl->addWidget(new QLabel("use_fake_hardware:=true"));
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
   el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
   existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo);
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); root_layout->addWidget(studio_log_);
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
