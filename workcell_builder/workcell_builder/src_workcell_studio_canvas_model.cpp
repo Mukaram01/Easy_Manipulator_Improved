@@ -81,7 +81,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       }
     }
   }
-  if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; m.items.push_back({"warning","warning","warning","warning","environment.yaml",-1.2,1.2,0,0,0,0,0.1,0.1,0,m.warnings}); }
+  if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; { WorkcellStudioCanvasItem w; w.id="warning"; w.type="warning"; w.role="warning"; w.label="warning"; w.source_file="environment.yaml"; w.x=-1.2; w.y=1.2; w.width=0.1; w.depth=0.1; w.height=0.0; w.warnings=m.warnings; m.items.push_back(w); } }
   else { m.status = "READY"; }
   return m;
 }
