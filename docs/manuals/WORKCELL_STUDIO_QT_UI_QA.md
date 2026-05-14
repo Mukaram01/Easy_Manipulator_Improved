@@ -20,3 +20,9 @@
 - Generate simple box/cylinder placeholder and verify persisted dimensions after Save/Reopen.
 - Verify stale readiness messaging updates after add/import/bind/save actions.
 - Verify no runtime execution is enabled and no robot motion is commanded.
+
+## Golden Flow Regression Addendum
+- Ensure helper-script lookup errors render a clear dialog: `Could not find Workcell Studio helper script`.
+- Verify critical buttons are wired or explicitly show safe fallback (no silent button failures).
+- Validate stale layout gating blocks preview launch until merge/regeneration is rerun.
+- Confirm preview command remains fake-hardware-only and no motion command is sent.

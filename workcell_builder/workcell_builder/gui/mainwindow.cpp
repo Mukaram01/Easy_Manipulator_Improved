@@ -606,7 +606,9 @@ void MainWindow::show_not_wired_message(const QString & action_label)
   QMessageBox::information(
     this,
     "Workcell Studio",
-    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.");
+    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.
+
+Could not find Workcell Studio helper script");
 }
 
 MainWindow::~MainWindow()
