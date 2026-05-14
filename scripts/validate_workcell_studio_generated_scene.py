@@ -87,6 +87,7 @@ def validate(scene:Path)->dict[str,Any]:
 
 
     merge_report = {}
+    acceptance_layout_stale=False
     if (scene/"generated/workcell_studio_layout_merge_report.json").is_file():
         merge_report = json.loads((scene/"generated/workcell_studio_layout_merge_report.json").read_text(encoding="utf-8"))
     merge_exists=_has(scene,"generated/workcell_studio_layout_merge_report.json")
@@ -111,7 +112,6 @@ def validate(scene:Path)->dict[str,Any]:
     elif warnings: status=STATUS_WARN
     else: status=STATUS_PASS
 
-    acceptance_layout_stale=False
     acceptance={
         "scene_name":scene.name,"scene_path":str(scene),"status":status,"checks":checks,
         "blockers":blockers,"warnings":warnings,
