@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
+#include <QLineEdit>
 #include <atomic>
 #include <QProcess>
 #include <boost/filesystem.hpp>
@@ -100,6 +101,8 @@ private:
   void write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code = -1);
   QString detect_workspace_root() const;
   void apply_startup_selection();
+  void setup_compact_header();
+  void refresh_header_status();
   void set_preview_state(const QString & state);
   void rebuild_digital_twin_canvas();
   void rebuild_canvas_inspector();
@@ -215,5 +218,10 @@ private:
   std::atomic<bool> cancel_requested_{ false };
   QString startup_workspace_;
   QString startup_ros_distro_;
+  QString selected_workspace_;
+  QLabel * studio_title_label_{ nullptr };
+  QLabel * studio_ros_label_{ nullptr };
+  QLineEdit * studio_workspace_path_{ nullptr };
+  QPushButton * studio_change_workspace_button_{ nullptr };
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
