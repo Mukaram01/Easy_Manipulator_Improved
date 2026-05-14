@@ -62,6 +62,12 @@ private slots:
   void on_next_clicked();
 
   void on_change_workcell_clicked();
+  void run_preview_build();
+  void run_fake_hardware_preview();
+  void stop_preview_process();
+  void handle_preview_stdout();
+  void handle_preview_stderr();
+  void handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status);
 
 private:
   bool has_selected_ros_distro() const;
@@ -82,6 +88,8 @@ private:
   bool preview_command_is_safe(const QString & command, QStringList * blockers = nullptr) const;
   void refresh_preview_launch_ui();
   void write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code = -1);
+  QString detect_workspace_root() const;
+  void set_preview_state(const QString & state);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -100,8 +108,17 @@ private:
   QTextEdit * preview_commands_{ nullptr };
   QPlainTextEdit * preview_log_{ nullptr };
   QPushButton * run_preview_button_{ nullptr };
+  QPushButton * run_build_button_{ nullptr };
   QPushButton * stop_preview_button_{ nullptr };
+  QPushButton * copy_build_button_{ nullptr };
+  QPushButton * copy_source_button_{ nullptr };
+  QPushButton * copy_launch_button_{ nullptr };
+  QPushButton * copy_all_button_{ nullptr };
+  QPushButton * open_preview_folder_button_{ nullptr };
+  QPushButton * open_preview_transcript_button_{ nullptr };
   QProcess * preview_process_{ nullptr };
+  QString preview_state_{ "IDLE" };
+  QString active_preview_command_;
   workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
   int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
