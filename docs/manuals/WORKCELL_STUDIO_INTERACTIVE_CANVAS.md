@@ -28,3 +28,10 @@
 - Inspector pose fields (x/y/z/roll/pitch/yaw) apply live to selected item and mark layout dirty.
 - Undo/redo, duplicate/delete, and Save/Revert Layout now operate on live canvas state.
 - Safety behavior is unchanged: fake-hardware-first and no robot motion command execution.
+
+
+## Asset-to-canvas loop
+- Open Asset Catalog in Scene Builder and add assets directly to the digital-twin canvas.
+- Use task binding shortcuts (Use Selected as Pick Source/Place Target/Pick Zone/Place Zone/Camera).
+- Save Layout explicitly, then rerun validation/acceptance when `Layout changed since last acceptance` appears.
+- Safety contract remains: fake_hardware_first=true, runtime_execution_enabled=false, motion_command_sent=false.

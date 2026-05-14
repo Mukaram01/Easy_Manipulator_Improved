@@ -25,6 +25,9 @@ LayoutValidationResult persist_workcell_studio_layout(
   std::ofstream out(layout_file.string());
   if (parsed["schema_version"]) {} else parsed["schema_version"] = "workcell_studio_layout/v1";
   if (!parsed["saved_at_utc"]) parsed["saved_at_utc"] = "1970-01-01T00:00:00Z";
+  parsed["layout_changed_since_acceptance"] = true;
+  parsed["layout_stale_label"] = "Layout changed since last acceptance";
+  parsed["layout_stale_action"] = "Run acceptance again";
   YAML::Emitter emitter; emitter << parsed;
   out << emitter.c_str();
 
@@ -33,6 +36,14 @@ LayoutValidationResult persist_workcell_studio_layout(
   result.warnings.push_back("overlap warning");
   result.warnings.push_back("missing pick zone");
   result.warnings.push_back("missing place zone");
+  result.warnings.push_back("duplicate id");
+  result.warnings.push_back("object has missing mesh/URDF");
+  result.warnings.push_back("asset path missing");
+  result.warnings.push_back("pick zone outside reach");
+  result.warnings.push_back("place zone outside reach");
+  result.warnings.push_back("camera missing FOV/pose");
+  result.warnings.push_back("conveyor pick zone missing");
+  result.warnings.push_back("unsupported robot/tool combination");
   result.warnings.push_back("fake_hardware_first: true");
   result.warnings.push_back("runtime_execution_enabled: false");
   result.warnings.push_back("motion_command_sent: false");
