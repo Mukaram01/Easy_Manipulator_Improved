@@ -269,25 +269,37 @@ void MainWindow::setup_studio_shell()
   QWidget * content = ui->centralwidget;
   auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
   if (!root_layout) return;
+  if (studio_nav_) {
+    return;
+  }
+
+  auto make_badge = [](const QString & text) {
+    return QString("<span style='padding:3px 8px;border-radius:8px;border:1px solid #3a6e91;background:#162637;'>%1</span>").arg(text);
+  };
+  // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes", "Demo Mode", "Preview Launch"});
+  studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","✅ Validation","📤 Export"});
   studio_pages_ = new QStackedWidget(content);
+
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
-  dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2>"));
+  dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2><p>Scene overview and investor-demo readiness</p>"));
   dashboard_summary_label_=new QLabel("Loading scenes..."); dl->addWidget(dashboard_summary_label_);
   dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Smoke"}); dl->addWidget(dashboard_scene_table_);
+
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); sl->addWidget(scene_builder_title_);
-  scene_preview_label_=new QLabel("Generate preview/readiness pack to populate this panel"); sl->addWidget(scene_preview_label_);
-  inspector_label_=new QLabel("Inspector"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
-  readiness_label_=new QLabel("No robot motion commanded
-Preview/offline validation only
-Runtime execution remains disabled unless explicitly enabled elsewhere"); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+  scene_preview_label_=new QLabel("<b>Digital twin preview</b><br/>Dark canvas preview card with scene name overlay and pick/place/task summary strip.<br/>Open Preview | Fit View | Open Scene Folder | Copy Launch Command"); scene_preview_label_->setWordWrap(true); sl->addWidget(scene_preview_label_);
+  inspector_label_=new QLabel("<b>Inspector</b><br/>Scene | Robot | End Effector | Layout | Task | Readiness | Safety"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
+  readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+
+  auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
+  el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
+  existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
 
   auto * demo = new QWidget(studio_pages_); auto * dm=new QVBoxLayout(demo);
-  dm->addWidget(new QLabel("<h2>Workcell Studio Demo Readiness</h2>"));
-  dm->addWidget(new QLabel("No robot motion commanded\nOffline/fake-hardware preview only\nRuntime execution remains disabled unless explicitly enabled elsewhere"));
-  auto * run_demo = new QPushButton("Run Demo Readiness", demo); dm->addWidget(run_demo);
+  dm->addWidget(new QLabel("<h2>Demo Mode</h2><p>Big status summary, acceptance/smoke/preview cards, and command card for investor demo. Offline/fake-hardware preview only.</p>"));
+  dm->addWidget(new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion | PREVIEW_ONLY"));
+  auto * run_demo = new QPushButton("Run Demo Readiness", demo); run_demo->setProperty("role","primary"); dm->addWidget(run_demo);
   auto * run_acc = new QPushButton("Run Acceptance", demo); dm->addWidget(run_acc);
   auto * run_smoke = new QPushButton("Run Offline Smoke Check", demo); dm->addWidget(run_smoke);
   auto * gen_prev = new QPushButton("Generate Preview Bundle", demo); dm->addWidget(gen_prev);
@@ -296,34 +308,52 @@ Runtime execution remains disabled unless explicitly enabled elsewhere"); readin
   auto * copy_build = new QPushButton("Copy Build Command", demo); dm->addWidget(copy_build);
   auto * copy_launch = new QPushButton("Copy Fake-Hardware Launch Command", demo); dm->addWidget(copy_launch);
   auto * copy_summary = new QPushButton("Copy Demo Summary", demo); dm->addWidget(copy_summary);
+
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
-  pl->addWidget(new QLabel("<h2>Preview Launch Assistant</h2>"));
-  pl->addWidget(new QLabel("Fake hardware only\nNo real robot hardware enabled\nNo runtime execution commanded\nNo robot motion commanded by Workcell Studio\nStop button only stops the preview process started by this UI"));
-  pl->addWidget(new QLabel("Run Fake-Hardware Preview"));
-  pl->addWidget(new QLabel("Stop Preview"));
-  pl->addWidget(new QLabel("Copy Fake-Hardware Launch Command"));
-  pl->addWidget(new QLabel("use_fake_hardware:=true"));
-  auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
-  el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
-  existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
+  pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Safe control console with selected scene card, readiness gate card, command card, and live log console.</p>"));
+  preview_scene_label_ = new QLabel("Selected scene card: none"); pl->addWidget(preview_scene_label_);
+  preview_status_label_ = new QLabel("Readiness gate: BLOCKED"); pl->addWidget(preview_status_label_);
+  preview_safety_label_ = new QLabel("Fake Hardware | No Robot Motion | Stop Preview only stops UI started process"); pl->addWidget(preview_safety_label_);
+  preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); pl->addWidget(preview_commands_);
+  preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("command console"); pl->addWidget(preview_log_);
+  run_build_button_ = new QPushButton("Validate", preview); pl->addWidget(run_build_button_);
+  run_preview_button_ = new QPushButton("Run Fake-Hardware Preview", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
+  stop_preview_button_ = new QPushButton("Stop Preview", preview); pl->addWidget(stop_preview_button_);
+  copy_build_button_ = new QPushButton("Copy Build Command", preview); pl->addWidget(copy_build_button_);
+  copy_source_button_ = new QPushButton("Copy Source Command", preview); pl->addWidget(copy_source_button_);
+  copy_launch_button_ = new QPushButton("Copy Fake-Hardware Launch Command", preview); pl->addWidget(copy_launch_button_);
+  copy_all_button_ = new QPushButton("Copy Full Command Block", preview); pl->addWidget(copy_all_button_);
+  open_preview_folder_button_ = new QPushButton("Open Scene Folder", preview); pl->addWidget(open_preview_folder_button_);
+  open_preview_transcript_button_ = new QPushButton("Open Reports", preview); pl->addWidget(open_preview_transcript_button_);
+
   studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
-  studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); root_layout->addWidget(studio_log_);
+  studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(130); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
+  preview_process_ = new QProcess(this);
+
+  QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
+  addToolBar(Qt::TopToolBarArea, top_bar);
+  top_bar->setObjectName("studioTopBar");
+  for (const QString & label : {"New Cell","Open Scene","Validate","Demo Mode","Preview Launch","Generate Scene","Export"}) {
+    auto * button = new QPushButton(label, this);
+    if (label == "Generate Scene") button->setProperty("role", "primary");
+    if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
+    connect(button, &QPushButton::clicked, this, [this, label]() { show_not_wired_message(label); });
+    top_bar->addWidget(button);
+  }
+  full_screen_button_ = new QPushButton("Full Screen", this);
+  top_bar->addWidget(full_screen_button_);
+  connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
+  top_bar->addSeparator();
+  top_bar->addWidget(new QLabel("Fake Hardware | No Robot Motion"));
+
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
-  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(1); });
-  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(1);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  
-  connect(run_demo, &QPushButton::clicked, this, [this](){
-    if(selected_scene_index_ < 0){ append_studio_log("Missing selected scene for Demo Mode"); return; }
-    const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-    const QString cmd = QString("python3 scripts/workcell_studio_demo_mode.py '%1' --json").arg(QString::fromStdString(sc.scene_path));
-    const int rc = std::system(cmd.toStdString().c_str());
-    append_studio_log(rc==0?"Demo readiness completed":"Demo readiness blocked. See generated demo report.");
-    refresh_scene_browser_ui();
-  });
+  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(2); });
+  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(2);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
+connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(open_folder, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("folder"); });
-  connect(copy_build, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("colcon build --symlink-install --packages-select "+QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); });
+  connect(copy_build, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect(copy_launch, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
   connect(run_acc, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_acceptance"); });
@@ -334,17 +364,16 @@ Runtime execution remains disabled unless explicitly enabled elsewhere"); readin
   connect(stop_preview_button_, &QPushButton::clicked, this, &MainWindow::stop_preview_process);
   connect(copy_build_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect(copy_source_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
-  connect(copy_launch_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); write_preview_launch_transcript(false, selected_scene_launch_command(), "copy_launch"); });
+  connect(copy_launch_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
   connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
-refresh_scene_browser_ui();
-refresh_preview_launch_ui();
+  refresh_scene_browser_ui();
+  refresh_preview_launch_ui();
 }
-
 void MainWindow::refresh_scene_browser_ui()
 {
   const fs::path root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "scenes" : workcell_path / "scenes";

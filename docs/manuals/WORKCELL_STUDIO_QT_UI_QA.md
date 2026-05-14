@@ -1,8 +1,6 @@
-# Workcell Studio Qt UI Manual QA Checklist
+# Workcell Studio Qt UI Visual QA Checklist
 
-This checklist validates the hardened Workcell Studio Qt shell wiring without changing generation/runtime semantics.
-
-## Build and Run
+## Build and run
 
 ```bash
 cd ~/workcell_ws
@@ -12,43 +10,33 @@ source install/setup.bash
 workcell_builder
 ```
 
-## Click-through checklist
+## Visual polish checklist
 
-- App opens to **Workcell Studio** shell.
-- Dark theme loads; if missing, app stays usable and reports fallback in status/log.
-- Dashboard and left navigation appear.
-- Open **Full Screen** and confirm **Escape** returns to normal mode.
-- Click each visible action and verify behavior:
-  - **New Cell**: clear placeholder message appears.
-  - **Open Existing Scene**: transitions into existing scene workflow.
-  - **Scene Builder**: transitions into existing scene workflow.
-  - **Asset Browser**: placeholder message appears.
-  - **Scenario Templates**: placeholder message appears.
-  - **Validate**: request is logged and no crash.
-  - **Preview**: placeholder message appears.
-  - **Generate Scene**: request is logged and no crash.
-  - **Export**: placeholder message appears.
-- Verify placeholder text includes:
-  - "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded."
+- Dark digital-twin theme is loaded with readable contrast.
+- Spacious cards are visible for dashboard, scene overview, selected scene, readiness, and preview command console.
+- Left navigation shows: Dashboard, New Cell, Scene Builder, Existing Scenes, Scenario Templates, Asset Browser, Demo Mode, Preview Launch, Validation, Export.
+- Top command bar shows: New Cell, Open Scene, Validate, Demo Mode, Preview Launch, Generate Scene, Export, Full Screen.
+- Right safety indicator is visible: **Fake Hardware | No Robot Motion**.
+- Status badges/tokens are visible in UI copy: READY, PASS, WARNINGS, BLOCKED, PREVIEW_ONLY, ACCEPTED, BUILD REQUIRED.
 
-## Existing workflow preservation checks
+## 16:9 presentation checklist
 
-After opening Scene Builder workflow:
+- Enter full screen and confirm **Press Esc to exit full screen** message is visible.
+- Dashboard table remains readable at 16:9.
+- Scene Builder preview panel keeps digital twin preview hierarchy.
+- Demo Mode cards and command actions stay clear and uncluttered.
+- Preview Launch presents a safe console with clear stop control and fake-hardware banner.
 
-- Existing scenes are discovered from default scenes folder.
-- **Add New Scene** still works.
-- **Edit Scene** still works.
-- **Generate YAML** still works.
-- **Generate Files From YAML** still works.
-- Scene generation outputs remain unchanged in intent (URDF/Xacro/launch semantics unchanged).
+## Investor demo screenshot checklist
 
-## Safety checks
+Capture screenshots for:
+1. Dashboard overview
+2. Scene Builder digital twin preview and inspector
+3. Demo Mode readiness summary
+4. Preview Launch safe console
 
-- Bottom action/status log updates for user actions (navigation + button clicks).
-- Confirm logs include concise action messages and explicit safety note for placeholders.
-- Confirm no runtime execution is auto-triggered and no robot motion is commanded.
-
-## Scope note
-
-- Workcell Builder remains the primary Workcell Studio product UI.
-- EPD GUI remains separate and is not merged into this shell in this change.
+Each screenshot should visibly include:
+- Fake Hardware safety language
+- No Robot Motion safety language
+- Current selected scene/status context
+- Command/readiness information
