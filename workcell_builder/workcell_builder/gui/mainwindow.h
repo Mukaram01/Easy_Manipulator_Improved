@@ -33,6 +33,7 @@ QT_END_NAMESPACE
 class QProgressDialog;
 class QListWidget;
 class QPushButton;
+class QTextEdit;
 
 class MainWindow: public QMainWindow
 {
@@ -63,10 +64,13 @@ private:
   void toggle_full_screen();
   void setup_studio_shell();
   void apply_studio_theme();
+  void append_studio_log(const QString & message);
+  void show_not_wired_message(const QString & action_label);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
   QPushButton * full_screen_button_{ nullptr };
+  QTextEdit * studio_log_{ nullptr };
   struct WorkcellLoadResult
   {
     bool success{ false };

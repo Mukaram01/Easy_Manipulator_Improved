@@ -35,6 +35,7 @@
 #include <QPointer>
 #include <QProgressDialog>
 #include <QtConcurrent>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
 #include <algorithm>
@@ -207,15 +208,30 @@ MainWindow::MainWindow(QWidget * parent)
 
 void MainWindow::apply_studio_theme()
 {
-  QString style_path = QCoreApplication::applicationDirPath() + "/../share/workcell_builder/gui/resources/workcell_studio_dark.qss";
-  QFile external_style(style_path);
-  if (!external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    external_style.setFileName("workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss");
-    if (!external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
+  QStringList style_candidates;
+  try {
+    const auto share_dir = ament_index_cpp::get_package_share_directory("workcell_builder");
+    style_candidates << QString::fromStdString(share_dir + "/gui/resources/workcell_studio_dark.qss");
+  } catch (const std::exception &) {
+    // Intentionally continue with fallback candidate paths.
+  }
+  style_candidates
+    << (QCoreApplication::applicationDirPath() + "/../share/workcell_builder/gui/resources/workcell_studio_dark.qss")
+    << "workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss";
+
+  QFile external_style;
+  for (const auto & candidate : style_candidates) {
+    external_style.setFileName(candidate);
+    if (external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      setStyleSheet(QString::fromUtf8(external_style.readAll()));
+      append_studio_log("Loaded Workcell Studio dark theme.");
+      statusBar()->showMessage("Workcell Studio dark theme loaded.");
       return;
     }
   }
-  setStyleSheet(QString::fromUtf8(external_style.readAll()));
+
+  append_studio_log("Warning: dark theme missing. Using default Qt theme.");
+  statusBar()->showMessage("Dark theme not found. Using default Qt theme.");
 }
 
 void MainWindow::toggle_full_screen()
@@ -246,15 +262,19 @@ void MainWindow::setup_studio_shell()
   auto * top_layout = new QHBoxLayout(top_bar);
   top_layout->setContentsMargins(10, 6, 10, 6);
   const QStringList actions = {
-    "New Cell", "Open Scene", "Validate", "Preview", "Generate Scene", "Export"
+    "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export"
   };
   for (const QString & label : actions) {
     auto * button = new QPushButton(label, top_bar);
     button->setObjectName("commandBarButton");
     connect(button, &QPushButton::clicked, this, [this, label]() {
-      statusBar()->showMessage(label + " action selected.");
-      if (label == "Validate" || label == "Generate Scene") {
+      append_studio_log(label + " requested");
+      if (label == "Open Existing Scene") {
+        on_next_clicked();
+      } else if (label == "Validate" || label == "Generate Scene") {
         ui->error_label->setText("<font color='#2E86C1'>" + label + " action opened from Workcell Studio shell.</font>");
+      } else {
+        show_not_wired_message(label);
       }
     });
     top_layout->addWidget(button);
@@ -265,7 +285,7 @@ void MainWindow::setup_studio_shell()
   top_layout->addStretch(1);
 
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"Dashboard", "Scene Builder", "Assets", "Templates", "Existing Scenes", "Validation", "Export"});
+  studio_nav_->addItems({"Dashboard", "Scene Builder", "Asset Browser", "Scenario Templates", "Existing Scenes", "Validation", "Export"});
   studio_nav_->setCurrentRow(0);
   studio_nav_->setMaximumWidth(190);
 
@@ -275,21 +295,28 @@ void MainWindow::setup_studio_shell()
   auto make_card = [this, dashboard_page](const QString & title, const QString & msg) {
     auto * card = new QPushButton(title, dashboard_page);
     card->setObjectName("studioCardButton");
-    connect(card, &QPushButton::clicked, this, [this, msg]() {
-      statusBar()->showMessage(msg);
-      if (msg.contains("soon")) {
-        QMessageBox::information(this, "Workcell Studio", msg);
+    connect(card, &QPushButton::clicked, this, [this, title, msg]() {
+      append_studio_log(msg);
+      if (title == "Open Existing Scene" || title == "Scene Builder") {
+        on_next_clicked();
+      } else if (title == "Validate" || title == "Generate Scene") {
+        ui->error_label->setText("<font color='#2E86C1'>" + title + " action opened from Workcell Studio shell.</font>");
+      } else {
+        show_not_wired_message(title);
       }
     });
     return card;
   };
   dashboard_layout->addWidget(new QLabel("<h2>Workcell Studio</h2><p>Dashboard</p>", dashboard_page));
-  dashboard_layout->addWidget(make_card("New Workcell", "Use 'Select workspace directory' to start a new workcell."));
+  dashboard_layout->addWidget(make_card("New Cell", "Use 'Select workspace directory' to start a new workcell."));
   dashboard_layout->addWidget(make_card("Open Existing Scene", "Open Existing Scene from Scene Builder controls."));
+  dashboard_layout->addWidget(make_card("Scene Builder", "Opened Scene Builder page"));
   dashboard_layout->addWidget(make_card("Scenario Templates", "Scenario Templates coming soon / not wired yet."));
   dashboard_layout->addWidget(make_card("Asset Browser", "Asset Browser coming soon / not wired yet."));
-  dashboard_layout->addWidget(make_card("Validate Current Cell", "Validate action selected."));
-  dashboard_layout->addWidget(make_card("Export Demo Bundle", "Export demo bundle coming soon / not wired yet."));
+  dashboard_layout->addWidget(make_card("Validate", "Validate requested"));
+  dashboard_layout->addWidget(make_card("Preview", "Preview requested"));
+  dashboard_layout->addWidget(make_card("Generate Scene", "Generate Scene requested"));
+  dashboard_layout->addWidget(make_card("Export", "Export requested"));
   dashboard_layout->addWidget(new QLabel("Recent / Existing Scenes
 - Loaded from selected workspace scenes/", dashboard_page));
   dashboard_layout->addLayout(ui->verticalLayout);
@@ -330,10 +357,28 @@ EPD adapter metadata", scene_builder));
 
   root_layout->insertWidget(0, top_bar);
   root_layout->insertLayout(1, body, 1);
+  studio_log_ = new QTextEdit(content);
+  studio_log_->setReadOnly(true);
+  studio_log_->setObjectName("studioActionLog");
+  studio_log_->setPlaceholderText("Workcell Studio action/status log");
+  studio_log_->setMaximumHeight(110);
+  root_layout->addWidget(studio_log_);
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx) {
     if (idx >= 0 && idx < studio_pages_->count()) {
       studio_pages_->setCurrentIndex(idx);
+      const QStringList nav_messages = {
+        "Opened Dashboard page",
+        "Opened Scene Builder page",
+        "Opened Asset Browser page",
+        "Opened Scenario Templates page",
+        "Opened Existing Scenes page",
+        "Opened Validation page",
+        "Opened Export page"
+      };
+      if (idx >= 0 && idx < nav_messages.size()) {
+        append_studio_log(nav_messages[idx]);
+      }
     }
   });
 
@@ -343,6 +388,24 @@ EPD adapter metadata", scene_builder));
       toggle_full_screen();
     }
   });
+}
+
+void MainWindow::append_studio_log(const QString & message)
+{
+  if (studio_log_) {
+    studio_log_->append(message);
+  }
+  statusBar()->showMessage(message);
+}
+
+void MainWindow::show_not_wired_message(const QString & action_label)
+{
+  append_studio_log(action_label + ": Action not wired yet");
+  append_studio_log("No robot motion commanded");
+  QMessageBox::information(
+    this,
+    "Workcell Studio",
+    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.");
 }
 
 MainWindow::~MainWindow()
