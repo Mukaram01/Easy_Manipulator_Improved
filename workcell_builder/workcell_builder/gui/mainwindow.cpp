@@ -367,6 +367,9 @@ void MainWindow::setup_studio_shell()
   delete_layout_button_ = new QPushButton("Delete Selected", scene_builder); layout_controls->addWidget(delete_layout_button_);
   save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
   revert_layout_button_ = new QPushButton("Revert Layout", scene_builder); layout_controls->addWidget(revert_layout_button_);
+  auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder); layout_controls->addWidget(run_layout_merge_button);
+  auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder); layout_controls->addWidget(open_layout_merge_report_button);
+  auto * copy_layout_merge_summary_button = new QPushButton("Copy Merge Summary", scene_builder); layout_controls->addWidget(copy_layout_merge_summary_button);
   sl->addLayout(layout_controls);
   layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); sl->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); sl->addWidget(canvas_legend_label_);
@@ -416,6 +419,9 @@ void MainWindow::setup_studio_shell()
   auto * copy_build = new QPushButton("Copy Build Command", demo); dm->addWidget(copy_build);
   auto * copy_launch = new QPushButton("Copy Fake-Hardware Launch Command", demo); dm->addWidget(copy_launch);
   auto * copy_summary = new QPushButton("Copy Demo Summary", demo); dm->addWidget(copy_summary);
+  auto * demo_run_layout_merge = new QPushButton("Run Layout Merge", demo); dm->addWidget(demo_run_layout_merge);
+  auto * demo_open_layout_merge_report = new QPushButton("Open Merge Report", demo); dm->addWidget(demo_open_layout_merge_report);
+  auto * demo_copy_layout_merge_summary = new QPushButton("Copy Merge Summary", demo); dm->addWidget(demo_copy_layout_merge_summary);
 
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
   pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Safe control console with selected scene card, readiness gate card, command card, and live log console.</p>"));
@@ -446,7 +452,7 @@ void MainWindow::setup_studio_shell()
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
     if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
-    connect(button, &QPushButton::clicked, this, [this, label]() { show_not_wired_message(label); });
+    connect(button, &QPushButton::clicked, this, [this, label]() { if (label == "Generate Scene") { run_layout_merge_for_selected_scene(true); return; } show_not_wired_message(label); });
     top_bar->addWidget(button);
   }
   full_screen_button_ = new QPushButton("Full Screen", this);
@@ -492,6 +498,12 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ apply_inspector_pose_to_item(); });
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
+  connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
+  connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
+  connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
+  connect(demo_run_layout_merge, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
+  connect(demo_open_layout_merge_report, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
+  connect(demo_copy_layout_merge_summary, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
   connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
   connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
@@ -553,7 +565,17 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
     if (!fs::exists(summary)) { QMessageBox::warning(this,"Workcell Studio",QString("Missing artifact: %1").arg(QString::fromStdString(summary.string()))); return; }
     QFile f(QString::fromStdString(summary.string())); if (f.open(QIODevice::ReadOnly|QIODevice::Text)) QApplication::clipboard()->setText(QString::fromUtf8(f.readAll()));
     append_studio_log("Copied demo summary"); return;
+  } else if (artifact=="layout_merge_report") {
+    const QString p = QString::fromStdString((s.scene_dir/"generated/workcell_studio_layout_merge_report.json").string());
+    if (QFileInfo::exists(p)) QDesktopServices::openUrl(QUrl::fromLocalFile(p));
+    else QMessageBox::information(this,"Workcell Studio","Layout merge report missing. Run Layout Merge first"); return;
   } else if (artifact=="run_acceptance") {
+    const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
+    const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+    if (fs::exists(layout_file) && (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
+      append_studio_log("Acceptance: running safe offline layout merge first");
+      workcell_builder::merge_workcell_studio_layout(s.scene_dir);
+    }
     const QString cmd = QString("python3 scripts/validate_workcell_studio_generated_scene.py '%1' --json").arg(QString::fromStdString(s.scene_dir.string()));
     const int rc = std::system(cmd.toStdString().c_str()); append_studio_log(rc==0?"Acceptance completed":"Acceptance blocked"); refresh_scene_browser_ui(); return;
   } else if (artifact=="run_smoke") {
@@ -892,6 +914,12 @@ bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   if (QString::fromStdString(s.status).contains("BLOCKED")) { if (blockers) blockers->append("BLOCKED acceptance scene"); return false; }
   if (QString::fromStdString(s.status).contains("PREVIEW_ONLY")) { if (blockers) blockers->append("PREVIEW_ONLY scenes cannot run"); return false; }
+  const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  if (fs::exists(layout_file) && (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
+    if (blockers) blockers->append("Layout changed since last generation. Run Generate Scene / Layout Merge before preview.");
+    return false;
+  }
   return true;
 }
 bool MainWindow::preview_command_is_safe(const QString & command, QStringList * blockers) const
@@ -932,6 +960,37 @@ void MainWindow::write_preview_launch_transcript(bool ran_process, const QString
   QFile f(QString::fromStdString((out / (command.contains("colcon build")?"build_session.json":"preview_launch_session.json")).string())); if(f.open(QIODevice::WriteOnly|QIODevice::Text)) f.write(QJsonDocument(root).toJson());
   QFile sfile(QString::fromStdString((out / (command.contains("colcon build")?"build_summary.txt":"preview_launch_summary.txt")).string())); if(sfile.open(QIODevice::WriteOnly|QIODevice::Text)) sfile.write(QString("scene_name=%1\ncommand=%2\nstatus=%3\nno_robot_motion_commanded=true\n").arg(QString::fromStdString(s.scene_name), command, preview_state_).toUtf8());
   QFile c(QString::fromStdString((out / "latest_console.log").string())); if(c.open(QIODevice::WriteOnly|QIODevice::Text) && preview_log_) c.write(preview_log_->toPlainText().toUtf8());
+}
+
+
+void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
+{
+  if (selected_scene_index_ < 0) { QMessageBox::warning(this, "Layout Merge", "No scene selected"); return; }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  if (!fs::exists(layout_file)) { QMessageBox::information(this, "Layout Merge", "No saved layout found (layout/workcell_studio_layout.yaml)."); return; }
+  if (layout_dirty_) { QMessageBox::warning(this, "Layout Merge", "Layout has unsaved edits. Save Layout first."); append_studio_log("Layout has unsaved edits. Save Layout first."); return; }
+  append_studio_log(from_generate_scene ? "Generate Scene: running layout merge" : "Run Layout Merge");
+  auto result = workcell_builder::merge_workcell_studio_layout(s.scene_dir);
+  append_studio_log(QString::fromStdString(result.status ? "Layout merge completed" : "Layout merge blocked"));
+  append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
+  refresh_scene_browser_ui();
+  rebuild_digital_twin_canvas();
+}
+
+void MainWindow::open_layout_merge_report()
+{
+  open_selected_scene_artifact("layout_merge_report");
+}
+
+void MainWindow::copy_layout_merge_summary()
+{
+  if (selected_scene_index_ < 0) return;
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path summary = s.scene_dir / "generated" / "workcell_studio_layout_merge_summary.txt";
+  if (!fs::exists(summary)) { QMessageBox::warning(this, "Copy Merge Summary", "Merge summary not found"); return; }
+  QFile f(QString::fromStdString(summary.string()));
+  if (f.open(QIODevice::ReadOnly | QIODevice::Text)) QApplication::clipboard()->setText(QString::fromUtf8(f.readAll()));
 }
 
 void MainWindow::rebuild_digital_twin_canvas()
