@@ -85,6 +85,19 @@ def validate(scene:Path)->dict[str,Any]:
         checks.append({"name":"generated gripper mount RPY is -1.5708 -1.5708 0","ok":rpy_ok})
         if not rpy_ok: warnings.append("Expected gripper mount RPY not found")
 
+
+    merge_report=_load_yaml(scene/"generated/workcell_studio_layout_merge_report.json") if (scene/"generated/workcell_studio_layout_merge_report.json").is_file() else json.loads((scene/"generated/workcell_studio_layout_merge_report.json").read_text(encoding="utf-8")) if False else {}
+    merge_exists=_has(scene,"generated/workcell_studio_layout_merge_report.json")
+    checks.append({"name":"generated/workcell_studio_layout_merge_report.json exists","ok":merge_exists,"optional":True})
+    if not merge_exists: warnings.append("Layout merge report missing; run Generate Scene to apply layout")
+    layout=_load_yaml(scene/"layout/workcell_studio_layout.yaml")
+    if layout.get("saved_at_utc") and merge_exists:
+        mt=(scene/"generated/workcell_studio_layout_merge_report.json").stat().st_mtime
+        lt=(scene/"layout/workcell_studio_layout.yaml").stat().st_mtime
+        stale=lt>mt
+        checks.append({"name":"layout merged after last save","ok":not stale,"optional":True})
+        if stale: warnings.append("Generated files stale: saved layout newer than merge artifacts")
+
     cmd=f"ros2 launch {scene.name} demo.launch.py use_fake_hardware:=true"
     checks.append({"name":"launch command contains use_fake_hardware:=true","ok":True})
 
