@@ -54,6 +54,9 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QSettings>
+#include <QLineEdit>
+#include <QHBoxLayout>
 #include <QtConcurrent>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
@@ -202,12 +205,21 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
   setWindowTitle("Workcell Studio - Workcell Builder");
   ui->next->setDisabled(true);
   ui->change_workcell->setDisabled(true);
+  ui->quick_start_label->hide();
+  ui->filepath_label->hide();
+  ui->filepath->hide();
+  ui->label->hide();
+  ui->ros_distro->hide();
+  ui->load_workcell->hide();
+  ui->change_workcell->hide();
+  ui->next->hide();
   success = false;
   ui->error_label->setWordWrap(true);
   ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
   ui->filepath->setToolTip("Selected ROS workspace root (contains assets/ and scenes/)");
   ui->ros_distro->setToolTip("Choose the ROS 2 distro that will be used for generated launch/config files");
-  statusBar()->showMessage("Select a workspace directory to begin.");
+  setup_compact_header();
+  statusBar()->showMessage("Initializing Workcell Studio...");
   // Scene Status panel action labels (preview-only contract)
   static const char * kSceneStatusGraspActions[] = {"Check Grasp Strategy", "Generate EMD Grasp Request", "Open EMD Grasp Request", "Open Grasp Visualization Docs"};
   (void)kSceneStatusGraspActions;
@@ -275,6 +287,7 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
     });
 
   apply_startup_selection();
+  refresh_header_status();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
@@ -838,18 +851,15 @@ void MainWindow::on_load_workcell_clicked()
           "to continue.</font>");
         statusBar()->showMessage("Workspace loaded. Select a ROS distro.");
       }
-      ui->load_workcell->setDisabled(true);
-      ui->change_workcell->setDisabled(false);
       success = true;
-      ui->filepath->setText(result.workcell_file);
+      selected_workspace_ = result.workcell_file;
+      refresh_header_status();
       update_next_button_state();
     } else {
       const QString error_text = result.cancelled ? "Workcell load cancelled" :
         QString("Failed to load workcell: %1").arg(result.error);
       ui->error_label->setText(QString("<font color='#C0392B'>%1</font>").arg(error_text));
       statusBar()->showMessage(error_text);
-      ui->load_workcell->setDisabled(false);
-      ui->change_workcell->setDisabled(true);
       success = false;
       update_next_button_state();
     }
@@ -885,18 +895,56 @@ void MainWindow::on_next_clicked()
 
 void MainWindow::on_change_workcell_clicked()
 {
-  ui->load_workcell->setDisabled(false);
-  ui->change_workcell->setDisabled(true);
-  ui->filepath->clear();
   success = false;
   ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
   statusBar()->showMessage("Select a new workspace directory.");
   apply_startup_selection();
+  refresh_header_status();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
 }
 
+
+
+void MainWindow::setup_compact_header()
+{
+  QWidget * content = ui->centralwidget;
+  auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
+  if (!root_layout || studio_title_label_) return;
+
+  auto * header = new QWidget(content);
+  header->setMaximumHeight(64);
+  auto * hl = new QHBoxLayout(header);
+  hl->setContentsMargins(8, 6, 8, 6);
+  studio_title_label_ = new QLabel("<b>Workcell Studio</b>", header);
+  studio_ros_label_ = new QLabel("ROS 2: not selected", header);
+  studio_workspace_path_ = new QLineEdit(header);
+  studio_workspace_path_->setReadOnly(true);
+  studio_workspace_path_->setMinimumWidth(280);
+  studio_change_workspace_button_ = new QPushButton("Change Workspace", header);
+  connect(studio_change_workspace_button_, &QPushButton::clicked, this, &MainWindow::on_change_workcell_clicked);
+  hl->addWidget(studio_title_label_);
+  hl->addSpacing(12);
+  hl->addWidget(studio_ros_label_);
+  hl->addSpacing(12);
+  hl->addWidget(studio_workspace_path_, 1);
+  hl->addWidget(studio_change_workspace_button_);
+  root_layout->insertWidget(0, header);
+}
+
+void MainWindow::refresh_header_status()
+{
+  if (studio_ros_label_) {
+    const QString ros_text = has_selected_ros_distro() ? ui->ros_distro->currentText() : QString("Humble");
+    studio_ros_label_->setText("ROS 2 " + ros_text);
+  }
+  if (studio_workspace_path_) {
+    const QString ws = detect_workspace_root();
+    studio_workspace_path_->setText(ws);
+    studio_workspace_path_->setToolTip(ws);
+  }
+}
 
 void MainWindow::apply_startup_selection()
 {
@@ -908,11 +956,10 @@ void MainWindow::apply_startup_selection()
   }
 
   if (!startup_workspace_.trimmed().isEmpty()) {
-    if (ui && ui->filepath) {
-      ui->filepath->setPlainText(startup_workspace_.trimmed());
-    }
+    selected_workspace_ = startup_workspace_.trimmed();
     on_load_workcell_clicked();
   }
+  refresh_header_status();
 }
 
 bool MainWindow::has_selected_ros_distro() const
@@ -939,10 +986,12 @@ QString MainWindow::detect_workspace_root() const
   const QString startup_workspace = startup_workspace_.trimmed();
   if (!startup_workspace.isEmpty() && QDir(startup_workspace).exists()) return startup_workspace;
 
-  if (ui && ui->filepath) {
-    const QString configured_workspace = ui->filepath->toPlainText().trimmed();
-    if (!configured_workspace.isEmpty() && QDir(configured_workspace).exists()) return configured_workspace;
-  }
+  const QString selected_workspace = selected_workspace_.trimmed();
+  if (!selected_workspace.isEmpty() && QDir(selected_workspace).exists()) return selected_workspace;
+
+  QSettings settings;
+  const QString saved_workspace = settings.value("startup/last_workspace").toString().trimmed();
+  if (!saved_workspace.isEmpty() && QDir(saved_workspace).exists()) return saved_workspace;
 
   const QString default_workspace = QDir::homePath() + "/workcell_ws";
   if (QDir(default_workspace).exists()) return default_workspace;
