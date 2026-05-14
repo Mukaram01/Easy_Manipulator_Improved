@@ -797,11 +797,13 @@ SceneSelect::SceneSelect(QWidget * parent)
   ui->use_recommended_layout->setToolTip("Apply recommended layout to the selected scene.");
   ui->scenario_template_description->setText(
     "Choose a real starter template:\n"
-    "• Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin\n"
-    "• Conveyor Sorting - Live EPD Preview\n"
-    "• Camera Inspection Cell (PREVIEW ONLY)\n"
-    "• UR5 + Suction Pick Cell\n"
-    "• Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)\n\nBadges: MoveIt/RViz | Fake hardware | Preview only | EPD metadata | NO RUNTIME MOTION");
+    "• Pick and Place Cell\n"
+    "• Conveyor Sorting Cell\n"
+    "• Camera Inspection Cell\n"
+    "• Machine Tending Placeholder (PREVIEW ONLY)\n"
+    "• Bin Picking Placeholder (PREVIEW ONLY)\n"
+    "• Palletizing Placeholder (PREVIEW ONLY)\n\n"
+    "Safety: no robot motion commanded. fake_hardware_first=true.");
   const std::vector<QPushButton *> placeholder_buttons = {ui->set_as_robot, ui->set_as_end_effector, ui->add_as_support_surface, ui->add_as_pick_object, ui->import_custom_stl,  ui->duplicate_selected_asset, ui->remove_selected_asset, ui->clear_cell_assets, ui->generate_scenario, ui->copy_sample_epd_command};
   for (auto * button : placeholder_buttons) {
     button->setToolTip("Disabled: this control requires feature-complete editor integration and is intentionally blocked.");
@@ -832,11 +834,12 @@ void SceneSelect::initialize_template_catalog()
   scenario_template_catalog_ = new QListWidget(ui->scenario_templates_group);
   scenario_template_catalog_->setObjectName("scenario_template_catalog");
   scenario_template_catalog_->addItems({
-      "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin",
-      "Conveyor Sorting - Live EPD Preview",
-      "Camera Inspection Cell (PREVIEW ONLY)",
-      "UR5 + Suction Pick Cell",
-      "Placeholder Delta/Cartesian + Suction (PREVIEW ONLY)"});
+      "Pick and Place Cell | UR5 + Robotiq 2F or UR5 + suction | LAUNCH_READY",
+      "Conveyor Sorting Cell | UR5 + Robotiq 2F | PREVIEW_ONLY",
+      "Camera Inspection Cell | UR5 + Robotiq 2F | PREVIEW_ONLY",
+      "Machine Tending Placeholder | UR10 + Robotiq 2F (if assets) | PREVIEW_ONLY",
+      "Bin Picking Placeholder | Delta/Cartesian + suction placeholder | PREVIEW_ONLY",
+      "Palletizing Placeholder | UR10 + Robotiq 2F (if assets) | PREVIEW_ONLY"});
   ui->scenarioTemplatesLayout->insertWidget(0, scenario_template_catalog_);
   scenario_template_catalog_->setCurrentRow(0);
   selected_template_ = scenario_template_catalog_->currentItem()->text();
@@ -904,7 +907,7 @@ QString SceneSelect::ensure_selected_template()
   if (!selected_template_.isEmpty()) {
     return selected_template_;
   }
-  selected_template_ = "Pick and Place Cell: UR5 + Robotiq 2F + table + cube + bin";
+  selected_template_ = "Pick and Place Cell | UR5 + Robotiq 2F or UR5 + suction | LAUNCH_READY";
   append_warning("No template selected. Defaulted to Pick and Place Cell.");
   return selected_template_;
 }
