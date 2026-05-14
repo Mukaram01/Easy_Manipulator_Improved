@@ -145,6 +145,7 @@ add_executable(workcell_builder
     gui/environment_layout_editor.cpp
     gui/external_asset_import_dialog.cpp
     gui/workcell_builder_ui_utils.cpp
+    gui/startup_dialog.cpp
     gui/asset_catalog_model.cpp
     gui/conveyor_sorting_scenario_wizard.cpp
     gui/conveyor_sorting_scenario_wizard.h
@@ -156,7 +157,9 @@ add_executable(workcell_builder
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp
     include/environment_layout_editor.hpp
-    include/external_asset_import_dialog.hpp)
+    include/external_asset_import_dialog.hpp
+    include/workspace_validation.hpp
+    src_workspace_validation.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp
@@ -250,6 +253,13 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_robot_tool_compatibility_inference_test
     test/robot_tool_compatibility_inference_test.cpp
     src_robot_tool_compatibility.cpp)
+
+  ament_add_gtest(workcell_workspace_validation_test
+    test/workspace_validation_test.cpp
+    src_workspace_validation.cpp)
+  if(TARGET workcell_workspace_validation_test)
+    target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
 
   foreach(workcell_builder_yaml_boost_test
       workcell_task_intent_readiness_test

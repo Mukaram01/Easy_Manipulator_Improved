@@ -63,7 +63,7 @@ public:
   std::vector<std::string> ros_dist;
   bool is_good_scene(boost::filesystem::path original_path, std::string scene_name);
 
-  explicit MainWindow(QWidget * parent = nullptr);
+  explicit MainWindow(const QString & startup_workspace = QString(), const QString & startup_ros_distro = QString(), QWidget * parent = nullptr);
   ~MainWindow();
 
 private slots:
@@ -99,6 +99,7 @@ private:
   void refresh_preview_launch_ui();
   void write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code = -1);
   QString detect_workspace_root() const;
+  void apply_startup_selection();
   void set_preview_state(const QString & state);
   void rebuild_digital_twin_canvas();
   void rebuild_canvas_inspector();
@@ -212,5 +213,7 @@ private:
   QFutureWatcher<WorkcellLoadResult> * load_watcher_{ nullptr };
   QProgressDialog * progress_dialog_{ nullptr };
   std::atomic<bool> cancel_requested_{ false };
+  QString startup_workspace_;
+  QString startup_ros_distro_;
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
