@@ -8,6 +8,21 @@ QFrame#studioCard, QFrame#statusCard {
   border: 1px solid #254661;
   border-radius: 12px;
 }
+QFrame#studioPanel {
+  background-color: #101923;
+  border: 1px solid #22384d;
+  border-radius: 12px;
+}
+QLabel[studioTitle="true"] { color: #dff2ff; font-weight: 700; }
+QPushButton#studioPrimaryButton, QPushButton[studioPrimaryButton="true"] {
+  background-color: #0f5f8f;
+  border: 1px solid #71c9ff;
+  color: #f3fbff;
+}
+QLabel[safetyLabel="true"] {
+  color: #7dd8ff;
+  font-weight: 700;
+}
 QToolBar {
   background-color: #131c27;
   border: 1px solid #285173;
