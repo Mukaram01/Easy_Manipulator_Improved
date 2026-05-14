@@ -23,7 +23,10 @@ LayoutValidationResult persist_workcell_studio_layout(
   const fs::path layout_file = scene_dir / "layout" / "workcell_studio_layout.yaml";
   fs::create_directories(layout_file.parent_path());
   std::ofstream out(layout_file.string());
-  out << yaml_fragment;
+  if (parsed["schema_version"]) {} else parsed["schema_version"] = "workcell_studio_layout/v1";
+  if (!parsed["saved_at_utc"]) parsed["saved_at_utc"] = "1970-01-01T00:00:00Z";
+  YAML::Emitter emitter; emitter << parsed;
+  out << emitter.c_str();
 
   result.warnings.push_back("outside robot reach");
   result.warnings.push_back("camera coverage warning");
