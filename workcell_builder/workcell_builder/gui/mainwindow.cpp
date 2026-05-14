@@ -15,6 +15,21 @@
 
 #include "gui/mainwindow.h"
 #include <QFileDialog>
+#include <QAction>
+#include <QCoreApplication>
+#include <QFile>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QShortcut>
+#include <QStackedWidget>
+#include <QTabWidget>
+#include <QTextEdit>
+#include <QToolBar>
+#include <QVBoxLayout>
 #include <QStatusBar>
 #include <QMetaObject>
 #include <QPointer>
@@ -185,6 +200,149 @@ MainWindow::MainWindow(QWidget * parent)
     });
 
   update_next_button_state();
+  setup_studio_shell();
+  apply_studio_theme();
+}
+
+
+void MainWindow::apply_studio_theme()
+{
+  QString style_path = QCoreApplication::applicationDirPath() + "/../share/workcell_builder/gui/resources/workcell_studio_dark.qss";
+  QFile external_style(style_path);
+  if (!external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    external_style.setFileName("workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss");
+    if (!external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      return;
+    }
+  }
+  setStyleSheet(QString::fromUtf8(external_style.readAll()));
+}
+
+void MainWindow::toggle_full_screen()
+{
+  if (isFullScreen()) {
+    showNormal();
+    if (full_screen_button_) {
+      full_screen_button_->setText("Full Screen");
+    }
+  } else {
+    showFullScreen();
+    if (full_screen_button_) {
+      full_screen_button_->setText("Exit Full Screen");
+    }
+  }
+}
+
+void MainWindow::setup_studio_shell()
+{
+  QWidget * content = ui->centralwidget;
+  auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
+  if (!root_layout) {
+    return;
+  }
+
+  auto * top_bar = new QFrame(content);
+  top_bar->setObjectName("studioTopBar");
+  auto * top_layout = new QHBoxLayout(top_bar);
+  top_layout->setContentsMargins(10, 6, 10, 6);
+  const QStringList actions = {
+    "New Cell", "Open Scene", "Validate", "Preview", "Generate Scene", "Export"
+  };
+  for (const QString & label : actions) {
+    auto * button = new QPushButton(label, top_bar);
+    button->setObjectName("commandBarButton");
+    connect(button, &QPushButton::clicked, this, [this, label]() {
+      statusBar()->showMessage(label + " action selected.");
+      if (label == "Validate" || label == "Generate Scene") {
+        ui->error_label->setText("<font color='#2E86C1'>" + label + " action opened from Workcell Studio shell.</font>");
+      }
+    });
+    top_layout->addWidget(button);
+  }
+  full_screen_button_ = new QPushButton("Full Screen", top_bar);
+  connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
+  top_layout->addWidget(full_screen_button_);
+  top_layout->addStretch(1);
+
+  studio_nav_ = new QListWidget(content);
+  studio_nav_->addItems({"Dashboard", "Scene Builder", "Assets", "Templates", "Existing Scenes", "Validation", "Export"});
+  studio_nav_->setCurrentRow(0);
+  studio_nav_->setMaximumWidth(190);
+
+  studio_pages_ = new QStackedWidget(content);
+  auto * dashboard_page = new QWidget(studio_pages_);
+  auto * dashboard_layout = new QVBoxLayout(dashboard_page);
+  auto make_card = [this, dashboard_page](const QString & title, const QString & msg) {
+    auto * card = new QPushButton(title, dashboard_page);
+    card->setObjectName("studioCardButton");
+    connect(card, &QPushButton::clicked, this, [this, msg]() {
+      statusBar()->showMessage(msg);
+      if (msg.contains("soon")) {
+        QMessageBox::information(this, "Workcell Studio", msg);
+      }
+    });
+    return card;
+  };
+  dashboard_layout->addWidget(new QLabel("<h2>Workcell Studio</h2><p>Dashboard</p>", dashboard_page));
+  dashboard_layout->addWidget(make_card("New Workcell", "Use 'Select workspace directory' to start a new workcell."));
+  dashboard_layout->addWidget(make_card("Open Existing Scene", "Open Existing Scene from Scene Builder controls."));
+  dashboard_layout->addWidget(make_card("Scenario Templates", "Scenario Templates coming soon / not wired yet."));
+  dashboard_layout->addWidget(make_card("Asset Browser", "Asset Browser coming soon / not wired yet."));
+  dashboard_layout->addWidget(make_card("Validate Current Cell", "Validate action selected."));
+  dashboard_layout->addWidget(make_card("Export Demo Bundle", "Export demo bundle coming soon / not wired yet."));
+  dashboard_layout->addWidget(new QLabel("Recent / Existing Scenes
+- Loaded from selected workspace scenes/", dashboard_page));
+  dashboard_layout->addLayout(ui->verticalLayout);
+
+  auto * scene_builder = new QWidget(studio_pages_);
+  auto * sb_layout = new QVBoxLayout(scene_builder);
+  sb_layout->addWidget(new QLabel("<h2>Scene Builder</h2>", scene_builder));
+  auto * tri = new QHBoxLayout();
+  tri->addWidget(new QLabel("Scene Hierarchy / Asset Catalog", scene_builder));
+  tri->addWidget(new QLabel("3D preview / generated preview will appear here", scene_builder));
+  tri->addWidget(new QLabel("Inspector
+Selected scene
+Robot
+Gripper
+Transform
+Task intent
+Readiness
+EPD adapter metadata", scene_builder));
+  sb_layout->addLayout(tri);
+  auto * tabs = new QTabWidget(scene_builder);
+  tabs->addTab(new QLabel("Validation results will appear here", scene_builder), "Validation");
+  tabs->addTab(new QLabel("Logs output", scene_builder), "Logs");
+  tabs->addTab(new QLabel("Launch commands", scene_builder), "Launch Commands");
+  tabs->addTab(new QLabel("Readiness dashboard", scene_builder), "Readiness");
+  sb_layout->addWidget(tabs);
+
+  studio_pages_->addWidget(dashboard_page);
+  studio_pages_->addWidget(scene_builder);
+  for (int i = 0; i < 5; ++i) {
+    auto * placeholder = new QLabel("Coming soon / not wired yet", studio_pages_);
+    placeholder->setAlignment(Qt::AlignCenter);
+    studio_pages_->addWidget(placeholder);
+  }
+
+  auto * body = new QHBoxLayout();
+  body->addWidget(studio_nav_);
+  body->addWidget(studio_pages_, 1);
+
+  root_layout->insertWidget(0, top_bar);
+  root_layout->insertLayout(1, body, 1);
+
+  connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx) {
+    if (idx >= 0 && idx < studio_pages_->count()) {
+      studio_pages_->setCurrentIndex(idx);
+    }
+  });
+
+  auto * esc = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+  connect(esc, &QShortcut::activated, this, [this]() {
+    if (isFullScreen()) {
+      toggle_full_screen();
+    }
+  });
 }
 
 MainWindow::~MainWindow()
@@ -445,6 +603,8 @@ void MainWindow::on_change_workcell_clicked()
   ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
   statusBar()->showMessage("Select a new workspace directory.");
   update_next_button_state();
+  setup_studio_shell();
+  apply_studio_theme();
 }
 
 bool MainWindow::has_selected_ros_distro() const
