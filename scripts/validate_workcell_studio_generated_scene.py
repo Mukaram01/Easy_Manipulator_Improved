@@ -86,7 +86,9 @@ def validate(scene:Path)->dict[str,Any]:
         if not rpy_ok: warnings.append("Expected gripper mount RPY not found")
 
 
-    merge_report=_load_yaml(scene/"generated/workcell_studio_layout_merge_report.json") if (scene/"generated/workcell_studio_layout_merge_report.json").is_file() else json.loads((scene/"generated/workcell_studio_layout_merge_report.json").read_text(encoding="utf-8")) if False else {}
+    merge_report = {}
+    if (scene/"generated/workcell_studio_layout_merge_report.json").is_file():
+        merge_report = json.loads((scene/"generated/workcell_studio_layout_merge_report.json").read_text(encoding="utf-8"))
     merge_exists=_has(scene,"generated/workcell_studio_layout_merge_report.json")
     checks.append({"name":"generated/workcell_studio_layout_merge_report.json exists","ok":merge_exists,"optional":True})
     if not merge_exists: warnings.append("Layout merge report missing; run Generate Scene to apply layout")
@@ -96,7 +98,7 @@ def validate(scene:Path)->dict[str,Any]:
         lt=(scene/"layout/workcell_studio_layout.yaml").stat().st_mtime
         stale=lt>mt
         checks.append({"name":"layout merged after last save","ok":not stale,"optional":True})
-        if stale: warnings.append("Generated files stale: saved layout newer than merge artifacts")
+        if stale: warnings.append("Generated files stale: saved layout newer than merge artifacts"); acceptance_layout_stale=True
 
     cmd=f"ros2 launch {scene.name} demo.launch.py use_fake_hardware:=true"
     checks.append({"name":"launch command contains use_fake_hardware:=true","ok":True})
@@ -109,12 +111,19 @@ def validate(scene:Path)->dict[str,Any]:
     elif warnings: status=STATUS_WARN
     else: status=STATUS_PASS
 
+    acceptance_layout_stale=False
     acceptance={
         "scene_name":scene.name,"scene_path":str(scene),"status":status,"checks":checks,
         "blockers":blockers,"warnings":warnings,
         "safety_flags":{"fake_hardware_first":safety.get("fake_hardware_first"),"runtime_execution_enabled":safety.get("runtime_execution_enabled"),"motion_command_sent":safety.get("motion_command_sent")},
         "next_commands":[f"colcon build --symlink-install --packages-select {scene.name}","source install/setup.bash",cmd],
         "notes":["Command not executed by validator","No robot motion commanded"],
+        "layout_applied": merge_report.get("layout_applied", False),
+        "generated_from_saved_layout": merge_report.get("generated_from_saved_layout", False),
+        "merge_report_path": str(scene/"generated/workcell_studio_layout_merge_report.json"),
+        "layout_stale": acceptance_layout_stale,
+        "merge_warnings": merge_report.get("warnings", []),
+        "merge_blockers": merge_report.get("blockers", []),
     }
     out_dir=scene/"acceptance"; out_dir.mkdir(exist_ok=True)
     (out_dir/"generated_scene_acceptance.json").write_text(json.dumps(acceptance,indent=2)+"\n",encoding='utf-8')

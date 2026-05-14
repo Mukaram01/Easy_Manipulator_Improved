@@ -1,15 +1,20 @@
-# Workcell Studio Layout-Aware Generation
-Saved canvas layout is merged into generated metadata via `scripts/workcell_studio_layout_merge.py`.
+# Workcell Studio Layout-Aware Flow
 
-Merge priority:
-1. `layout/workcell_studio_layout.yaml`
-2. `scene_manifest.yaml`
-3. `environment.yaml`
-4. template defaults.
+Generate Scene now runs layout merge automatically when `layout/workcell_studio_layout.yaml` exists and no unsaved canvas edits are pending.
 
-Outputs are written to `generated/workcell_studio_merged_environment.yaml`, `generated/workcell_studio_merged_scene_manifest.yaml`, `generated/workcell_studio_layout_merge_report.json`, and `generated/workcell_studio_layout_merge_summary.txt`.
+- Run path: Scene Builder / Command Bar / Demo Mode can trigger **Run Layout Merge**.
+- Reports:
+  - `generated/workcell_studio_layout_merge_report.json`
+  - `generated/workcell_studio_layout_merge_summary.txt`
+- Acceptance and Demo read these merge reports and surface `layout_applied`, `generated_from_saved_layout`, stale status, warnings, and blockers.
+- Preview Launch blocks stale layouts with: `Layout changed since last generation. Run Generate Scene / Layout Merge before preview.`
 
-`PREVIEW_ONLY` means metadata is preserved but runtime geometry is not claimed launch-ready.
-Acceptance/demo become stale when layout save time is newer than merge artifacts. Regenerate scene after layout edits.
+## Safety
 
-Safety: no robot motion commanded.
+No robot motion is commanded by merge/generate flows.
+
+Defaults remain:
+- `fake_hardware_first: true`
+- `runtime_execution_enabled: false`
+- `motion_command_sent: false`
+- gripper mount RPY: `-1.5708 -1.5708 0`

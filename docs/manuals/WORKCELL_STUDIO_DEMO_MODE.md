@@ -1,39 +1,20 @@
-# Workcell Studio Demo Mode
+# Workcell Studio Layout-Aware Flow
 
-Demo Mode provides a guided **offline** workflow inside Workcell Studio for investor/operator demonstrations.
+Generate Scene now runs layout merge automatically when `layout/workcell_studio_layout.yaml` exists and no unsaved canvas edits are pending.
 
-## What Demo Mode does
-- Validates the selected generated scene (acceptance validator).
-- Reads offline smoke report status (report-only).
-- Generates consolidated demo artifacts under `<scene>/demo/`.
-- Provides copyable build and fake-hardware launch commands.
-- Opens a clean offline dashboard HTML.
+- Run path: Scene Builder / Command Bar / Demo Mode can trigger **Run Layout Merge**.
+- Reports:
+  - `generated/workcell_studio_layout_merge_report.json`
+  - `generated/workcell_studio_layout_merge_summary.txt`
+- Acceptance and Demo read these merge reports and surface `layout_applied`, `generated_from_saved_layout`, stale status, warnings, and blockers.
+- Preview Launch blocks stale layouts with: `Layout changed since last generation. Run Generate Scene / Layout Merge before preview.`
 
-## What Demo Mode does not do
-- Does **not** launch ROS nodes automatically.
-- Does **not** call MoveIt services.
-- Does **not** command robot motion.
-- Does **not** enable runtime execution.
+## Safety
 
-## Generated artifacts
-- `demo/workcell_studio_demo_summary.txt`
-- `demo/workcell_studio_demo_report.json`
-- `demo/workcell_studio_demo_dashboard.html`
+No robot motion is commanded by merge/generate flows.
 
-## Commands surfaced in Demo Mode
-- Build command:
-  - `colcon build --symlink-install --packages-select <scene_name>`
-- Fake-hardware launch command:
-  - `ros2 launch <scene_name> demo.launch.py use_fake_hardware:=true`
-
-## Investor demo usage
-1. Create/select a generated scene from Workcell Studio.
-2. Open **Demo Mode**.
-3. Click **Run Demo Readiness**.
-4. Open dashboard and share summary/commands.
-
-## Safety notes
-- No robot motion commanded.
-- Offline/fake-hardware preview only.
-- Runtime execution remains disabled unless enabled elsewhere.
-- EPD workflows remain separate from Demo Mode.
+Defaults remain:
+- `fake_hardware_first: true`
+- `runtime_execution_enabled: false`
+- `motion_command_sent: false`
+- gripper mount RPY: `-1.5708 -1.5708 0`

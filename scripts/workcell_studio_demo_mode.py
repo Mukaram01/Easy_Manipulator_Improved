@@ -25,7 +25,7 @@ def _write_dashboard(report:dict[str,Any], path:Path)->None:
 <h1>Workcell Studio Demo Readiness</h1>
 <div class='card'><h2>Safety Banner</h2><ul><li>No robot motion commanded</li><li>Offline/fake-hardware preview only</li><li>Runtime execution remains disabled unless explicitly enabled elsewhere</li></ul></div>
 <div class='card'><h2>Scene Overview</h2><p><b>Scene:</b> {report.get('scene_name')}</p><p><b>Path:</b> {report.get('scene_path')}</p><p><b>Status:</b> {report.get('status')}</p></div>
-<div class='card'><h2>Robot / Tool / Layout</h2><p>Robot/Tool: {report.get('robot_tool','unknown')}</p><p>Gripper Mount RPY: {report.get('gripper_mount_rpy')}</p></div>
+<div class='card'><h2>Robot / Tool / Layout</h2><p>Robot/Tool: {report.get('robot_tool','unknown')}</p><p>Gripper Mount RPY: {report.get('gripper_mount_rpy')}</p><p>Layout Merge: {report.get('layout_merge_status')}</p><p>Saved Layout Timestamp: {report.get('saved_layout_timestamp')}</p><p>Merge Timestamp: {report.get('merge_timestamp')}</p><p>Layout Applied: {report.get('layout_applied')}</p><p>Stale: {report.get('layout_stale')}</p></div>
 <div class='card'><h2>Acceptance</h2><p>{report.get('acceptance_status')}</p></div>
 <div class='card'><h2>Smoke Check</h2><p>{report.get('smoke_status')}</p></div>
 <div class='card'><h2>Preview Artifacts</h2><pre>{json.dumps(report.get('preview_paths',{}),indent=2)}</pre></div>
@@ -42,6 +42,8 @@ def run(scene:Path)->dict[str,Any]:
     acceptance={"status":"BLOCKED"}
     smoke={"status":"BLOCKED"}
     if not blockers:
+        if (scene/'layout'/'workcell_studio_layout.yaml').is_file():
+            _run_json([sys.executable,str(SCRIPTS/'workcell_studio_layout_merge.py'),str(scene),'--json'],'layout_merge')
         acceptance=_run_json([sys.executable,str(SCRIPTS/'validate_workcell_studio_generated_scene.py'),str(scene),'--json'],'acceptance')
         smoke_json = scene/'smoke'/'offline_smoke_report.json'
         if smoke_json.is_file():
@@ -65,7 +67,12 @@ def run(scene:Path)->dict[str,Any]:
       'dashboard_link':str(demo_dir/'workcell_studio_demo_dashboard.html'),'build_command':build_cmd,
       'fake_hardware_launch_command':launch_cmd,'robot_tool':'unknown','gripper_mount_rpy':'-1.5708 -1.5708 0',
       'blockers':blockers,'warnings':warnings,'next_commands':[build_cmd,launch_cmd],
-      'safety_flags':{'no_robot_motion_commanded':True,'use_fake_hardware':True,'runtime_execution_enabled':False}
+      'safety_flags':{'no_robot_motion_commanded':True,'use_fake_hardware':True,'runtime_execution_enabled':False},
+      'layout_merge_status':'READY' if acceptance.get('layout_applied') else 'MISSING',
+      'saved_layout_timestamp': acceptance.get('saved_layout_timestamp','unknown'),
+      'merge_timestamp': acceptance.get('merge_timestamp','unknown'),
+      'layout_applied': acceptance.get('layout_applied',False),
+      'layout_stale': acceptance.get('layout_stale',False)
     }
     (demo_dir/'workcell_studio_demo_report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     summary='\n'.join([

@@ -31,6 +31,7 @@
 
 #include "attributes/workcell.h"
 #include "workcell_studio_scene_browser.hpp"
+#include "workcell_studio_layout_merge.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -112,6 +113,10 @@ private:
   void duplicate_selected_item();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
+  void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
+  void open_layout_merge_report();
+  void copy_layout_merge_summary();
+  bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
