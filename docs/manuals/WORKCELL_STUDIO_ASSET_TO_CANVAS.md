@@ -43,3 +43,13 @@ For the selected item:
 
 ## Safety
 No robot motion is commanded. Fake-hardware-first defaults remain required.
+
+## Placement and ID defaults
+- Add to Canvas now creates a selectable canvas item immediately with unique IDs (`table_01`, `bin_02`, etc.).
+- Category-based default placement is applied (table/conveyor/camera/bin/pick/place/fixture/object).
+- If no robot/table context exists, placement falls back to canvas center with a warning.
+
+## Robot and end-effector rules
+- Primary robot remains locked by default.
+- Robot replacement prompts: replace primary, add preview-only secondary, or cancel.
+- End-effector updates preserve gripper mount RPY `[-1.5708, -1.5708, 0]`.

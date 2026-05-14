@@ -93,7 +93,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleType, RoleLocked, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleSource, RoleSize };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked };
 
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
@@ -158,6 +158,36 @@ bool is_ros2_prefix(const fs::path & prefix)
 }
 }  // namespace
 
+
+QString normalized_slug(const QString & value){
+  QString v = value.toLower();
+  v.replace(" ", "_"); v.replace("-", "_");
+  return v;
+}
+
+QString id_prefix_from_category(const QString & category){
+  const QString c = normalized_slug(category);
+  if (c.contains("table") || c.contains("support_surface")) return "table";
+  if (c.contains("conveyor")) return "conveyor";
+  if (c.contains("camera")) return "camera";
+  if (c.contains("bin")) return "bin";
+  if (c.contains("pick_zone")) return "pick_zone";
+  if (c.contains("place_zone")) return "place_zone";
+  if (c.contains("fixture")) return "fixture";
+  return "object";
+}
+
+QPointF default_xy_for_category(const QString & category){
+  const QString c = normalized_slug(category);
+  if (c.contains("table") || c.contains("support_surface")) return QPointF(70.0, 0.0);
+  if (c.contains("conveyor")) return QPointF(-40.0, -25.0);
+  if (c.contains("camera")) return QPointF(-20.0, 40.0);
+  if (c.contains("bin")) return QPointF(95.0, -30.0);
+  if (c.contains("pick_zone")) return QPointF(60.0, 0.0);
+  if (c.contains("place_zone")) return QPointF(95.0, -20.0);
+  if (c.contains("fixture")) return QPointF(30.0, 20.0);
+  return QPointF(60.0, 5.0);
+}
 
 MainWindow::MainWindow(QWidget * parent)
 : QMainWindow(parent),
@@ -920,11 +950,20 @@ void MainWindow::rebuild_digital_twin_canvas()
     auto * item = new DraggableCanvasItem(QRectF(0, 0, entry.width * 100.0, entry.depth * 100.0));
     item->setPos(entry.x * 100.0, entry.y * 100.0);
     item->setData(RoleId, QString::fromStdString(entry.id));
+    item->setData(RoleDisplayName, QString::fromStdString(entry.label));
     item->setData(RoleType, QString::fromStdString(entry.type));
+    item->setData(RoleCategory, QString::fromStdString(entry.type));
+    item->setData(RoleRole, QString::fromStdString(entry.role));
     item->setData(RoleLocked, entry.locked);
     item->setData(RolePoseZ, entry.z);
     item->setData(RoleRoll, entry.roll); item->setData(RolePitch, entry.pitch); item->setData(RoleYaw, entry.yaw);
     item->setData(RoleSource, QString::fromStdString(entry.source_file));
+    item->setData(RoleSourcePackage, QString(""));
+    item->setData(RoleWidth, entry.width);
+    item->setData(RoleDepth, entry.depth);
+    item->setData(RoleHeight, entry.height);
+    item->setData(RoleImported, false);
+    item->setData(RoleGeneratedPlaceholder, false);
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     digital_twin_scene_->addItem(item);
   }
@@ -955,9 +994,18 @@ void MainWindow::save_layout_changes()
     const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
     QString yaml = "schema_version: workcell_studio_layout/v1\nscene_name: " + QString::fromStdString(s.scene_name) + "\nsaved_at_utc: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + "\nfake_hardware_first: true\nruntime_execution_enabled: false\nmotion_command_sent: false\ngripper_mount_rpy: [-1.5708, -1.5708, 0]\nitems:\n";
     for (auto * gi : digital_twin_scene_->items()) {
-      yaml += QString("  - id: %1\n    type: %2\n    source: %3\n    locked: %4\n    pose:\n      xyz: [%5, %6, %7]\n      rpy: [%8, %9, %10]\n")
-        .arg(gi->data(RoleId).toString(), gi->data(RoleType).toString(), gi->data(RoleSource).toString(), gi->data(RoleLocked).toBool() ? "true" : "false")
-        .arg(gi->pos().x()/100.0).arg(gi->pos().y()/100.0).arg(gi->data(RolePoseZ).toDouble()).arg(gi->data(RoleRoll).toDouble()).arg(gi->data(RolePitch).toDouble()).arg(gi->data(RoleYaw).toDouble());
+      const QString source = gi->data(RoleSource).toString();
+      const bool is_mesh = source.endsWith(".stl", Qt::CaseInsensitive);
+      const bool is_urdf = source.endsWith(".urdf", Qt::CaseInsensitive);
+      yaml += QString("  - id: %1\n    display_name: %2\n    type: %3\n    category: %4\n    role: %5\n    source_path: %6\n    source_package: %7\n    pose:\n      xyz: [%8, %9, %10]\n      rpy: [%11, %12, %13]\n    size:\n      width: %14\n      depth: %15\n      height: %16\n    imported: %17\n    generated_placeholder: %18\n    locked: %19\n")
+        .arg(gi->data(RoleId).toString(), gi->data(RoleDisplayName).toString(), gi->data(RoleType).toString(), gi->data(RoleCategory).toString(), gi->data(RoleRole).toString(), source, gi->data(RoleSourcePackage).toString())
+        .arg(gi->pos().x()/100.0).arg(gi->pos().y()/100.0).arg(gi->data(RolePoseZ).toDouble()).arg(gi->data(RoleRoll).toDouble()).arg(gi->data(RolePitch).toDouble()).arg(gi->data(RoleYaw).toDouble())
+        .arg(gi->data(RoleWidth).toDouble()).arg(gi->data(RoleDepth).toDouble()).arg(gi->data(RoleHeight).toDouble())
+        .arg(gi->data(RoleImported).toBool() ? "true" : "false")
+        .arg(gi->data(RoleGeneratedPlaceholder).toBool() ? "true" : "false")
+        .arg(gi->data(RoleLocked).toBool() ? "true" : "false");
+      if (is_mesh) yaml += QString("    mesh_path: %1\n").arg(source);
+      if (is_urdf) yaml += QString("    urdf_path: %1\n").arg(source);
     }
     workcell_builder::persist_workcell_studio_layout(s.scene_dir, yaml.toStdString());
   }
@@ -985,7 +1033,41 @@ void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_s
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
-  // Asset Browser → Add/Place on Canvas → Configure Pose/Size → Save Layout → Validate → Generate/Preview
-  append_studio_log(QString("Add to Canvas: %1 (%2) from %3").arg(display_name, category, source_path));
+  if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
+  if (!digital_twin_scene_) return;
+  const QString prefix = id_prefix_from_category(category);
+  int suffix = 1;
+  QString new_id;
+  auto exists = [&](const QString & candidate){ for (auto * gi : digital_twin_scene_->items()) if (gi->data(RoleId).toString() == candidate) return true; return false; };
+  do { new_id = QString("%1_%2").arg(prefix).arg(suffix++, 2, 10, QLatin1Char('0')); } while (exists(new_id));
+
+  auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
+  QPointF placement = default_xy_for_category(category);
+  if (digital_twin_scene_->items().isEmpty()) {
+    placement = QPointF(0.0, 0.0);
+    QMessageBox::warning(this, "Default placement", "No robot/table found; placing asset at canvas center.");
+  }
+  item->setPos(placement);
+  item->setData(RoleId, new_id);
+  item->setData(RoleDisplayName, display_name);
+  item->setData(RoleType, prefix);
+  item->setData(RoleCategory, category);
+  item->setData(RoleRole, "asset");
+  item->setData(RoleSource, source_path);
+  item->setData(RoleSourcePackage, "");
+  item->setData(RolePoseZ, category.contains("camera", Qt::CaseInsensitive) ? 1.2 : 0.0);
+  item->setData(RoleRoll, 0.0); item->setData(RolePitch, 0.0); item->setData(RoleYaw, 0.0);
+  item->setData(RoleWidth, 0.35); item->setData(RoleDepth, 0.35); item->setData(RoleHeight, 0.35);
+  item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
+  item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
+  item->setData(RoleLocked, false);
+  item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
+  digital_twin_scene_->addItem(item);
+  digital_twin_scene_->clearSelection();
+  item->setSelected(true);
+  select_canvas_item(item);
+  undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false});
+  redo_stack_.clear();
   mark_layout_dirty("Add to Canvas");
+  append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
 }

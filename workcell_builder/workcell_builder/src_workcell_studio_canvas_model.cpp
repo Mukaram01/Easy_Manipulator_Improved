@@ -67,9 +67,16 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (p["xyz"] && p["xyz"].IsSequence() && p["xyz"].size() >= 3) { extra.x = p["xyz"][0].as<double>(); extra.y = p["xyz"][1].as<double>(); extra.z = p["xyz"][2].as<double>(); }
           if (p["rpy"] && p["rpy"].IsSequence() && p["rpy"].size() >= 3) { extra.roll = p["rpy"][0].as<double>(); extra.pitch = p["rpy"][1].as<double>(); extra.yaw = p["rpy"][2].as<double>(); }
         }
-        if (node["size"] && node["size"].IsSequence() && node["size"].size() >= 3) {
-          extra.width = node["size"][0].as<double>(); extra.depth = node["size"][1].as<double>(); extra.height = node["size"][2].as<double>();
+        if (node["size"]) {
+          if (node["size"].IsMap()) {
+            if (node["size"]["width"]) extra.width = node["size"]["width"].as<double>();
+            if (node["size"]["depth"]) extra.depth = node["size"]["depth"].as<double>();
+            if (node["size"]["height"]) extra.height = node["size"]["height"].as<double>();
+          } else if (node["size"].IsSequence() && node["size"].size() >= 3) {
+            extra.width = node["size"][0].as<double>(); extra.depth = node["size"][1].as<double>(); extra.height = node["size"][2].as<double>();
+          }
         }
+        extra.locked = node["locked"] ? node["locked"].as<bool>() : false;
         m.items.push_back(extra);
       }
     }
