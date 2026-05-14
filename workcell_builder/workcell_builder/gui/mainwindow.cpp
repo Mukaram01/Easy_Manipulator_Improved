@@ -330,9 +330,6 @@ void MainWindow::setup_studio_shell()
     return;
   }
 
-  auto make_badge = [](const QString & text) {
-    return QString("<span style='padding:3px 8px;border-radius:8px;border:1px solid #3a6e91;background:#162637;'>%1</span>").arg(text);
-  };
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
   studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
@@ -466,7 +463,8 @@ void MainWindow::setup_studio_shell()
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
   addToolBar(Qt::TopToolBarArea, top_bar);
   top_bar->setObjectName("studioTopBar");
-  for (const QString & label : {"New Cell","Open Scene","Validate","Demo Mode","Preview Launch","Generate Scene","Export"}) {
+  const QStringList action_labels = {"New Cell", "Open Scene", "Validate", "Demo Mode", "Preview Launch", "Generate Scene", "Export"};
+  for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
     if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
@@ -581,8 +579,13 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
     append_studio_log("Copied demo summary"); return;
   } else if (artifact=="layout_merge_report") {
     const QString p = QString::fromStdString((s.scene_dir/"generated/workcell_studio_layout_merge_report.json").string());
-    if (QFileInfo::exists(p)) QDesktopServices::openUrl(QUrl::fromLocalFile(p));
-    else QMessageBox::information(this,"Workcell Studio","Layout merge report missing. Run Layout Merge first"); return;
+    if (QFileInfo::exists(p)) {
+      QDesktopServices::openUrl(QUrl::fromLocalFile(p));
+      return;
+    } else {
+      QMessageBox::information(this, "Workcell Studio", "Layout merge report missing. Run Layout Merge first");
+      return;
+    }
   } else if (artifact=="run_acceptance") {
     const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
     const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
@@ -1020,8 +1023,31 @@ QString MainWindow::diagnostics_status_from_counts(int blocked, int warn) const
 void MainWindow::append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path)
 { if (!diagnostics_table_) return; int r = diagnostics_table_->rowCount(); diagnostics_table_->insertRow(r); diagnostics_table_->setItem(r,0,new QTableWidgetItem(name)); diagnostics_table_->setItem(r,1,new QTableWidgetItem(status)); diagnostics_table_->setItem(r,2,new QTableWidgetItem(details)); diagnostics_table_->setItem(r,3,new QTableWidgetItem(fix)); diagnostics_table_->setItem(r,4,new QTableWidgetItem(related_path)); }
 
-void MainWindow::write_diagnostics_report(const QJsonObject & report, const QString & summary, const QString & dashboard_html)
-{ const QDir().mkpath(diagnostics_output_root()); QFile jf(diagnostics_output_root()+"/workcell_studio_diagnostics_report.json"); if (jf.open(QIODevice::WriteOnly|QIODevice::Text)) jf.write(QJsonDocument(report).toJson()); QFile sf(diagnostics_output_root()+"/workcell_studio_diagnostics_summary.txt"); if (sf.open(QIODevice::WriteOnly|QIODevice::Text)) sf.write(summary.toUtf8()); QFile hf(diagnostics_output_root()+"/workcell_studio_diagnostics_dashboard.html"); if (hf.open(QIODevice::WriteOnly|QIODevice::Text)) hf.write(dashboard_html.toUtf8()); }
+void MainWindow::write_diagnostics_report(
+  const QJsonObject & report,
+  const QString & summary,
+  const QString & dashboard_html)
+{
+  const QString output_root = diagnostics_output_root();
+
+  QDir dir;
+  dir.mkpath(output_root);
+
+  QFile jf(output_root + "/workcell_studio_diagnostics_report.json");
+  if (jf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    jf.write(QJsonDocument(report).toJson());
+  }
+
+  QFile sf(output_root + "/workcell_studio_diagnostics_summary.txt");
+  if (sf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    sf.write(summary.toUtf8());
+  }
+
+  QFile hf(output_root + "/workcell_studio_diagnostics_dashboard.html");
+  if (hf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    hf.write(dashboard_html.toUtf8());
+  }
+}
 
 void MainWindow::refresh_diagnostics_quick_status()
 { int blocked = 0; int warn = 0; const QString ws = detect_workspace_root(); if (ws.isEmpty()) blocked++; if (!QFileInfo::exists(ws + "/scenes")) warn++; const QString st = diagnostics_status_from_counts(blocked, warn); if (diagnostics_status_label_) diagnostics_status_label_->setText("Status: "+st); if (diagnostics_indicator_label_) diagnostics_indicator_label_->setText("Diagnostics: "+st); }
