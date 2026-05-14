@@ -267,7 +267,7 @@ void MainWindow::setup_studio_shell()
   auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
   if (!root_layout) return;
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes"});
+  studio_nav_->addItems({"Dashboard", "Scene Builder", "Existing Scenes", "Demo Mode"});
   studio_pages_ = new QStackedWidget(content);
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
   dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2>"));
@@ -280,16 +280,46 @@ void MainWindow::setup_studio_shell()
   readiness_label_=new QLabel("No robot motion commanded
 Preview/offline validation only
 Runtime execution remains disabled unless explicitly enabled elsewhere"); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+
+  auto * demo = new QWidget(studio_pages_); auto * dm=new QVBoxLayout(demo);
+  dm->addWidget(new QLabel("<h2>Workcell Studio Demo Readiness</h2>"));
+  dm->addWidget(new QLabel("No robot motion commanded\nOffline/fake-hardware preview only\nRuntime execution remains disabled unless explicitly enabled elsewhere"));
+  auto * run_demo = new QPushButton("Run Demo Readiness", demo); dm->addWidget(run_demo);
+  auto * run_acc = new QPushButton("Run Acceptance", demo); dm->addWidget(run_acc);
+  auto * run_smoke = new QPushButton("Run Offline Smoke Check", demo); dm->addWidget(run_smoke);
+  auto * gen_prev = new QPushButton("Generate Preview Bundle", demo); dm->addWidget(gen_prev);
+  auto * open_dash = new QPushButton("Open Demo Dashboard", demo); dm->addWidget(open_dash);
+  auto * open_folder = new QPushButton("Open Scene Folder", demo); dm->addWidget(open_folder);
+  auto * copy_build = new QPushButton("Copy Build Command", demo); dm->addWidget(copy_build);
+  auto * copy_launch = new QPushButton("Copy Fake-Hardware Launch Command", demo); dm->addWidget(copy_launch);
+  auto * copy_summary = new QPushButton("Copy Demo Summary", demo); dm->addWidget(copy_summary);
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
   el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
   existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing);
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); root_layout->addWidget(studio_log_);
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(1); });
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(1);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  refresh_scene_browser_ui();
+  
+  connect(run_demo, &QPushButton::clicked, this, [this](){
+    if(selected_scene_index_ < 0){ append_studio_log("Missing selected scene for Demo Mode"); return; }
+    const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    const QString cmd = QString("python3 scripts/workcell_studio_demo_mode.py '%1' --json").arg(QString::fromStdString(sc.scene_path));
+    const int rc = std::system(cmd.toStdString().c_str());
+    append_studio_log(rc==0?"Demo readiness completed":"Demo readiness blocked. See generated demo report.");
+    refresh_scene_browser_ui();
+  });
+  connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
+  connect(open_folder, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("folder"); });
+  connect(copy_build, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("colcon build --symlink-install --packages-select "+QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); });
+  connect(copy_launch, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
+  connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
+  connect(run_acc, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_acceptance"); });
+  connect(run_smoke, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_smoke"); });
+  connect(gen_prev, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_preview"); });
+refresh_scene_browser_ui();
 }
 
 void MainWindow::refresh_scene_browser_ui()
@@ -334,7 +364,21 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; fs::path target;
   if (artifact=="preview") target = s.scene_dir / "preview" / "static_preview.html";
   else if (artifact=="smoke") target = s.scene_dir / "smoke" / "offline_smoke_report.html";
-  else target = s.scene_dir;
+  else if (artifact=="demo_dashboard") target = s.scene_dir / "demo" / "workcell_studio_demo_dashboard.html";
+  else if (artifact=="folder") target = s.scene_dir;
+  else if (artifact=="demo_summary_copy") {
+    const fs::path summary = s.scene_dir / "demo" / "workcell_studio_demo_summary.txt";
+    if (!fs::exists(summary)) { QMessageBox::warning(this,"Workcell Studio",QString("Missing artifact: %1").arg(QString::fromStdString(summary.string()))); return; }
+    QFile f(QString::fromStdString(summary.string())); if (f.open(QIODevice::ReadOnly|QIODevice::Text)) QApplication::clipboard()->setText(QString::fromUtf8(f.readAll()));
+    append_studio_log("Copied demo summary"); return;
+  } else if (artifact=="run_acceptance") {
+    const QString cmd = QString("python3 scripts/validate_workcell_studio_generated_scene.py '%1' --json").arg(QString::fromStdString(s.scene_dir.string()));
+    const int rc = std::system(cmd.toStdString().c_str()); append_studio_log(rc==0?"Acceptance completed":"Acceptance blocked"); refresh_scene_browser_ui(); return;
+  } else if (artifact=="run_smoke") {
+    QMessageBox::information(this,"Workcell Studio","Offline smoke check runner is report-only in Demo Mode. Missing artifact will be reported in demo summary."); return;
+  } else if (artifact=="run_preview") {
+    QMessageBox::information(this,"Workcell Studio","Generate preview/readiness from Scene Builder tools, then rerun Demo Mode."); return;
+  } else target = s.scene_dir;
   if (!fs::exists(target)) { QMessageBox::warning(this,"Workcell Studio",QString("Missing artifact: %1").arg(QString::fromStdString(target.string()))); return; }
   QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(target.string())));
 }
