@@ -33,6 +33,9 @@
 #include <QClipboard>
 #include <QDir>
 #include <QUrl>
+#include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QDesktopServices>
 #include <QHeaderView>
 #include <QTableWidget>
@@ -326,7 +329,20 @@ Runtime execution remains disabled unless explicitly enabled elsewhere"); readin
   connect(run_acc, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_acceptance"); });
   connect(run_smoke, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_smoke"); });
   connect(gen_prev, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_preview"); });
+  connect(run_build_button_, &QPushButton::clicked, this, &MainWindow::run_preview_build);
+  connect(run_preview_button_, &QPushButton::clicked, this, &MainWindow::run_fake_hardware_preview);
+  connect(stop_preview_button_, &QPushButton::clicked, this, &MainWindow::stop_preview_process);
+  connect(copy_build_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
+  connect(copy_source_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
+  connect(copy_launch_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); write_preview_launch_transcript(false, selected_scene_launch_command(), "copy_launch"); });
+  connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
+  connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
+  connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
+  connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
+  connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
 refresh_scene_browser_ui();
+refresh_preview_launch_ui();
 }
 
 void MainWindow::refresh_scene_browser_ui()
@@ -362,7 +378,9 @@ Runtime execution remains disabled unless explicitly enabled elsewhere
 colcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"
 source install/setup.bash
 "+selected_scene_launch_command());
+  refresh_preview_launch_ui();
 }
+
 
 QString MainWindow::selected_scene_launch_command() const { if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return ""; return QString("ros2 launch %1 demo.launch.py use_fake_hardware:=true").arg(QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); }
 
@@ -385,6 +403,10 @@ void MainWindow::open_selected_scene_artifact(const QString & artifact)
     QMessageBox::information(this,"Workcell Studio","Offline smoke check runner is report-only in Demo Mode. Missing artifact will be reported in demo summary."); return;
   } else if (artifact=="run_preview") {
     QMessageBox::information(this,"Workcell Studio","Generate preview/readiness from Scene Builder tools, then rerun Demo Mode."); return;
+  } else if (artifact=="preview_launch_folder") {
+    target = s.scene_dir / "preview_launch";
+  } else if (artifact=="preview_launch_transcript") {
+    target = s.scene_dir / "preview_launch" / "preview_launch_session.json";
   } else target = s.scene_dir;
   if (!fs::exists(target)) { QMessageBox::warning(this,"Workcell Studio",QString("Missing artifact: %1").arg(QString::fromStdString(target.string()))); return; }
   QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(target.string())));
@@ -688,3 +710,69 @@ bool MainWindow::is_good_scene(boost::filesystem::path original_path, std::strin
 // Legacy hardening markers: Asset Browser | if (title == "Open Existing Scene" || title == "Scene Builder")
 // Scenario Templates | label == "Validate" || label == "Generate Scene"
 // title == "Validate" || title == "Generate Scene"
+
+QString MainWindow::detect_workspace_root() const
+{
+  const fs::path cwd(QDir::currentPath().toStdString());
+  if (fs::exists(cwd / "src") && fs::is_directory(cwd / "src")) return QString::fromStdString(cwd.string());
+  if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) {
+    fs::path p = scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir;
+    while (!p.empty()) {
+      if (fs::exists(p / "src") && fs::is_directory(p / "src")) return QString::fromStdString(p.string());
+      p = p.parent_path();
+    }
+  }
+  return "";
+}
+
+QString MainWindow::selected_scene_build_command() const { if (selected_scene_index_ < 0) return ""; return QString("cd %1 && source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select %2").arg(detect_workspace_root(), QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)); }
+QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
+QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
+
+bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
+{
+  if (selected_scene_index_ < 0) { if (blockers) blockers->append("No scene selected"); return false; }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  if (QString::fromStdString(s.status).contains("BLOCKED")) { if (blockers) blockers->append("BLOCKED acceptance scene"); return false; }
+  if (QString::fromStdString(s.status).contains("PREVIEW_ONLY")) { if (blockers) blockers->append("PREVIEW_ONLY scenes cannot run"); return false; }
+  return true;
+}
+bool MainWindow::preview_command_is_safe(const QString & command, QStringList * blockers) const
+{ bool ok = command.contains("use_fake_hardware:=true") && !command.contains("use_fake_hardware:=false");
+  const QStringList deny{ "real_hardware:=true", "runtime_execution_enabled:=true", "execute:=true", "command_robot:=true", "send_motion:=true"};
+  for (const auto & d : deny) if (command.contains(d)) { ok=false; if (blockers) blockers->append("Unsafe launch argument detected: "+d); }
+  if (!command.contains("use_fake_hardware:=true") && blockers) blockers->append("Missing required use_fake_hardware:=true");
+  return ok; }
+
+void MainWindow::set_preview_state(const QString & state){ preview_state_=state; refresh_preview_launch_ui(); }
+
+void MainWindow::refresh_preview_launch_ui()
+{
+  if (preview_status_label_) preview_status_label_->setText("State: "+preview_state_);
+  bool has_scene = selected_scene_index_ >= 0;
+  bool has_ws = !detect_workspace_root().isEmpty();
+  if (preview_scene_label_ && has_scene) preview_scene_label_->setText("Scene: "+QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)+" | Workspace: "+(has_ws?detect_workspace_root():"not detected"));
+  if (preview_commands_) preview_commands_->setPlainText(selected_scene_preview_command_block());
+  if (run_build_button_) run_build_button_->setEnabled(has_scene && has_ws && (preview_state_=="IDLE"||preview_state_=="BUILD_FAILED"||preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_FAILED"||preview_state_=="PREVIEW_EXITED"));
+  if (run_preview_button_) run_preview_button_->setEnabled(has_scene && has_ws && (preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_EXITED"));
+  if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
+}
+
+void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} active_preview_command_=selected_scene_build_command(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
+void MainWindow::run_fake_hardware_preview(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } QString command = "cd "+detect_workspace_root()+" && source install/setup.bash && "+selected_scene_launch_command(); if(!preview_command_is_safe(command,&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } auto rc = QMessageBox::question(this,"Confirm Fake-Hardware Preview", "Command:\n"+command+"\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded."); if(rc!=QMessageBox::Yes) return; active_preview_command_=command; if(preview_log_) preview_log_->appendPlainText("$ "+command); set_preview_state("PREVIEW_RUNNING"); write_preview_launch_transcript(true, command, "preview_started"); preview_process_->start("/bin/bash", {"-lc", command}); }
+void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); if(!preview_process_->waitForFinished(2000)){ preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); preview_process_->waitForFinished(1000);} }
+void MainWindow::handle_preview_stdout(){ if(preview_log_) preview_log_->appendPlainText(QString::fromUtf8(preview_process_->readAllStandardOutput())); }
+void MainWindow::handle_preview_stderr(){ if(preview_log_) preview_log_->appendPlainText(QString::fromUtf8(preview_process_->readAllStandardError())); }
+void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); }
+
+void MainWindow::write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code)
+{
+  if (selected_scene_index_ < 0) return;
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  fs::path out = s.scene_dir / "preview_launch"; boost::system::error_code ec; fs::create_directories(out, ec);
+  const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+  QJsonObject root{{"scene_name", QString::fromStdString(s.scene_name)}, {"command", command}, {"event", event}, {"started_at", ran_process?now:QString()}, {"finished_at", now}, {"exit_code", exit_code}, {"status", preview_state_}, {"safety_flags", QJsonObject{{"fake_hardware_only", true}, {"runtime_execution_enabled", false}}}, {"no_robot_motion_commanded", true}};
+  QFile f(QString::fromStdString((out / (command.contains("colcon build")?"build_session.json":"preview_launch_session.json")).string())); if(f.open(QIODevice::WriteOnly|QIODevice::Text)) f.write(QJsonDocument(root).toJson());
+  QFile sfile(QString::fromStdString((out / (command.contains("colcon build")?"build_summary.txt":"preview_launch_summary.txt")).string())); if(sfile.open(QIODevice::WriteOnly|QIODevice::Text)) sfile.write(QString("scene_name=%1\ncommand=%2\nstatus=%3\nno_robot_motion_commanded=true\n").arg(QString::fromStdString(s.scene_name), command, preview_state_).toUtf8());
+  QFile c(QString::fromStdString((out / "latest_console.log").string())); if(c.open(QIODevice::WriteOnly|QIODevice::Text) && preview_log_) c.write(preview_log_->toPlainText().toUtf8());
+}
