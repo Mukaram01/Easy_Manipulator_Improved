@@ -19,6 +19,8 @@
 #include <QFutureWatcher>
 #include <QStackedWidget>
 #include <QMainWindow>
+#include <QTableWidget>
+#include <QLabel>
 #include <QString>
 #include <atomic>
 #include <boost/filesystem.hpp>
@@ -26,6 +28,7 @@
 #include <vector>
 
 #include "attributes/workcell.h"
+#include "workcell_studio_scene_browser.hpp"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
@@ -66,11 +69,24 @@ private:
   void apply_studio_theme();
   void append_studio_log(const QString & message);
   void show_not_wired_message(const QString & action_label);
+  void refresh_scene_browser_ui();
+  void select_scene_by_row(int row);
+  void open_selected_scene_artifact(const QString & artifact);
+  QString selected_scene_launch_command() const;
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
   QPushButton * full_screen_button_{ nullptr };
   QTextEdit * studio_log_{ nullptr };
+  QTableWidget * dashboard_scene_table_{ nullptr };
+  QTableWidget * existing_scene_table_{ nullptr };
+  QLabel * dashboard_summary_label_{ nullptr };
+  QLabel * scene_builder_title_{ nullptr };
+  QLabel * scene_preview_label_{ nullptr };
+  QLabel * inspector_label_{ nullptr };
+  QLabel * readiness_label_{ nullptr };
+  workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
+  int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
   {
     bool success{ false };
