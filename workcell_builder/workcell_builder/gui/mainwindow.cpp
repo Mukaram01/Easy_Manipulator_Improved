@@ -623,10 +623,10 @@ void MainWindow::refresh_scene_browser_ui()
   QString summary = QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Workspace: %5 | Loaded from: %6")
     .arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(QString::fromStdString(workspace_root.string())).arg(root_used);
   if (!scene_browser_result_.root_exists) {
-    summary += " | Warning: no scene folders found. Searched:
- - " + searched.join("
- - ") + "
-Check selected workspace or symlink ~/workcell_ws/src/scenes";
+    summary += QString(
+      " | Warning: no scene folders found. Searched:\\n - %1\\n"
+      "Check selected workspace or symlink ~/workcell_ws/src/scenes")
+      .arg(searched.join("\\n - "));
     append_studio_log("No scenes found. Searched paths: " + searched.join(" | "));
   } else {
     append_studio_log(QString("Loaded %1 scenes from %2").arg(scene_browser_result_.scenes.size()).arg(root_used));

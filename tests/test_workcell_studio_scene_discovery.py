@@ -22,3 +22,9 @@ def test_dashboard_safety_and_non_plain_table_ui_tokens_present():
 def test_scene_validation_tokens_present():
     for token in ['environment.yaml', 'scene_manifest.yaml', 'launch" / "demo.launch.py', 'environment.urdf.xacro']:
         assert token in SRC_BROWSER
+
+
+def test_dashboard_no_scenes_warning_uses_escaped_newlines_in_qstring():
+    assert 'Searched:\\n - %1' in MAIN_CPP
+    assert 'searched.join("\\\\n - ")' in MAIN_CPP
+    assert 'searched.join("\n - ")' not in MAIN_CPP
