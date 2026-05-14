@@ -3071,6 +3071,59 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
   append_success("Copied fake-hardware launch command to clipboard.");
 }
 
+void SceneSelect::on_run_offline_smoke_check_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  if (scene_dir.empty()) { append_error("No scene selected."); return; }
+  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
+  latest_offline_smoke_result_ = workcell_builder::run_offline_smoke_check(curr_scene, scene_dir);
+  std::string err;
+  workcell_builder::write_offline_smoke_report(latest_offline_smoke_result_, &err);
+  const auto status = workcell_builder::offline_smoke_status_label(latest_offline_smoke_result_.status);
+  append_info("Offline smoke status=" + status +
+    " scene selected=" + latest_offline_smoke_result_.scene_name +
+    " blockers count=" + std::to_string(latest_offline_smoke_result_.blockers.size()) +
+    " warnings count=" + std::to_string(latest_offline_smoke_result_.warnings.size()) +
+    " next recommended action=" + latest_offline_smoke_result_.next_action);
+  refresh_scene_status(true, "Run Offline Smoke Check");
+}
+
+void SceneSelect::on_open_smoke_report_clicked()
+{
+  const fs::path scene_dir = scene_dir_for_current_selection();
+  const fs::path html = scene_dir / "smoke" / "offline_smoke_report.html";
+  if (fs::exists(html)) {
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string())));
+    return;
+  }
+  append_warning("Smoke report not found. Run Offline Smoke Check first.");
+}
+
+void SceneSelect::on_export_smoke_report_clicked()
+{
+  if (latest_offline_smoke_result_.scene_dir.empty()) {
+    append_warning("Run Offline Smoke Check first.");
+    return;
+  }
+  std::string err;
+  if (workcell_builder::write_offline_smoke_report(latest_offline_smoke_result_, &err)) append_success("Exported smoke/offline_smoke_report.json|html|summary.txt");
+  else append_error("Failed exporting smoke report: " + err);
+}
+
+void SceneSelect::on_copy_smoke_summary_clicked()
+{
+  if (latest_offline_smoke_result_.scene_dir.empty()) { append_warning("Run Offline Smoke Check first."); return; }
+  const QString summary = QString("scene selected=%1\nlifecycle state=%2\nblockers count=%3\nwarnings count=%4\nnext recommended action=%5")
+    .arg(QString::fromStdString(latest_offline_smoke_result_.scene_name))
+    .arg(QString::fromStdString(workcell_builder::offline_smoke_status_label(latest_offline_smoke_result_.status)))
+    .arg(static_cast<int>(latest_offline_smoke_result_.blockers.size()))
+    .arg(static_cast<int>(latest_offline_smoke_result_.warnings.size()))
+    .arg(QString::fromStdString(latest_offline_smoke_result_.next_action));
+  QApplication::clipboard()->setText(summary);
+  append_success("Copied smoke summary.");
+}
+
 // compatibility note: missing one of [package.xml, CMakeLists.txt, urdf/]
 
 void SceneSelect::on_generate_full_scene_package_start_clicked()
