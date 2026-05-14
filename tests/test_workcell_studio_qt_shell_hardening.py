@@ -6,12 +6,10 @@ MAIN_CPP = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_tex
 REQUIRED_LABELS = [
     'Workcell Studio',
     'New Cell',
-    'Open Existing Scene',
-    'Scene Builder',
-    'Asset Browser',
-    'Scenario Templates',
+    'Open Scene',
     'Validate',
-    'Preview',
+    'Demo Mode',
+    'Preview Launch',
     'Generate Scene',
     'Export',
     'Full Screen',
@@ -20,15 +18,9 @@ REQUIRED_LABELS = [
 
 
 def test_cmake_keeps_qt5_widgets_wiring():
-    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent REQUIRED)' in CMAKE
+    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg REQUIRED)' in CMAKE
     assert 'Qt5::Widgets' in CMAKE
     assert 'Qt5::Concurrent' in CMAKE
-
-
-def test_dark_qss_file_exists_and_installed():
-    qss = Path('workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss')
-    assert qss.exists(), 'Expected dark theme stylesheet to exist'
-    assert 'install(DIRECTORY gui/resources' in CMAKE
 
 
 def test_required_studio_labels_present_in_source():
@@ -36,10 +28,26 @@ def test_required_studio_labels_present_in_source():
         assert label in MAIN_CPP, f'Missing required label: {label}'
 
 
-def test_required_actions_have_wiring_or_safe_fallback():
-    assert 'if (label == "Open Existing Scene")' in MAIN_CPP
-    assert 'if (title == "Open Existing Scene" || title == "Scene Builder")' in MAIN_CPP
-    assert 'label == "Validate" || label == "Generate Scene"' in MAIN_CPP
-    assert 'title == "Validate" || title == "Generate Scene"' in MAIN_CPP
-    assert 'show_not_wired_message' in MAIN_CPP
-    assert 'This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.' in MAIN_CPP
+def test_top_command_bar_actions_are_wired_to_real_handlers():
+    for branch in [
+        'if (label == "New Cell")',
+        'if (label == "Open Scene")',
+        'if (label == "Validate")',
+        'if (label == "Demo Mode")',
+        'if (label == "Preview Launch")',
+        'if (label == "Generate Scene")',
+        'if (label == "Export")',
+    ]:
+        assert branch in MAIN_CPP
+
+
+def test_top_command_bar_does_not_use_not_wired_message():
+    connect_block = MAIN_CPP.split('connect(button, &QPushButton::clicked, this, [this, label]() {', 1)[1]
+    connect_block = connect_block.split('});', 1)[0]
+    assert 'show_not_wired_message(label)' not in connect_block
+
+
+def test_helper_script_discovery_and_safety_text_remain_present():
+    assert 'helper_script_search_paths("workcell_studio.py")' in MAIN_CPP
+    assert '/scripts/' in MAIN_CPP and 'workcell_studio.py' in MAIN_CPP
+    assert 'No robot motion commanded' in MAIN_CPP

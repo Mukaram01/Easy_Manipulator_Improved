@@ -484,7 +484,50 @@ void MainWindow::setup_studio_shell()
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
     if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
-    connect(button, &QPushButton::clicked, this, [this, label]() { if (label == "Generate Scene") { run_layout_merge_for_selected_scene(true); return; } show_not_wired_message(label); });
+    connect(button, &QPushButton::clicked, this, [this, label]() {
+      if (label == "New Cell") {
+        append_studio_log("New Cell: opening scene creation flow.");
+        studio_nav_->setCurrentRow(1);
+        return;
+      }
+      if (label == "Open Scene") {
+        append_studio_log("Open Scene: switching to Existing Scenes.");
+        studio_nav_->setCurrentRow(3);
+        if (!scene_browser_result_.scenes.empty()) {
+          select_scene_by_row(std::max(0, selected_scene_index_));
+        }
+        return;
+      }
+      if (label == "Validate") {
+        append_studio_log(QString("Validate: offline validation for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
+        studio_nav_->setCurrentRow(9);
+        run_preview_build();
+        return;
+      }
+      if (label == "Demo Mode") {
+        append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
+        studio_nav_->setCurrentRow(6);
+        open_selected_scene_artifact("run_smoke");
+        return;
+      }
+      if (label == "Preview Launch") {
+        append_studio_log(QString("Preview Launch: prepared fake-hardware commands for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
+        studio_nav_->setCurrentRow(7);
+        refresh_preview_launch_ui();
+        return;
+      }
+      if (label == "Generate Scene") {
+        append_studio_log(QString("Generate Scene: requested for scene '%1'.").arg(selected_scene_name()));
+        run_layout_merge_for_selected_scene(true);
+        return;
+      }
+      if (label == "Export") {
+        append_studio_log(QString("Export: opening export actions for scene '%1'.").arg(selected_scene_name()));
+        studio_nav_->setCurrentRow(10);
+        open_selected_scene_artifact("demo_dashboard");
+        return;
+      }
+    });
     top_bar->addWidget(button);
   }
   full_screen_button_ = new QPushButton("Full Screen", this);
@@ -636,10 +679,13 @@ void MainWindow::show_not_wired_message(const QString & action_label)
 {
   append_studio_log(action_label + ": Action not wired yet");
   append_studio_log("No robot motion commanded");
+  const QStringList searched_paths = helper_script_search_paths("workcell_studio.py");
+  const QString details = QString("Could not find Workcell Studio helper script.\nSearched:\n - %1").arg(
+    searched_paths.join("\n - "));
   QMessageBox::information(
     this,
     "Workcell Studio",
-    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.\n\nCould not find Workcell Studio helper script");
+    "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.\n\n" + details);
 }
 
 MainWindow::~MainWindow()
@@ -1092,7 +1138,43 @@ QString MainWindow::diagnostics_output_root() const
 { const QString ws = detect_workspace_root(); return ws.isEmpty() ? (QDir::homePath() + "/diagnostics") : (ws + "/diagnostics"); }
 
 bool MainWindow::helper_script_exists(const QString & script_name, QString * path) const
-{ const QString p = QDir::currentPath() + "/scripts/" + script_name; if (QFileInfo::exists(p)) { if (path) *path = p; return true; } return false; }
+{
+  const QStringList candidates = helper_script_search_paths(script_name);
+  for (const auto & candidate : candidates) {
+    if (QFileInfo::exists(candidate)) {
+      if (path) {
+        *path = candidate;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+QStringList MainWindow::helper_script_search_paths(const QString & script_name) const
+{
+  QStringList candidates;
+  const QString workspace_root = detect_workspace_root();
+  if (!workspace_root.isEmpty()) {
+    candidates << (workspace_root + "/src/easy_manipulation_deployment/scripts/" + script_name);
+  }
+  candidates << (QCoreApplication::applicationDirPath() + "/../../../scripts/" + script_name);
+  try {
+    const auto share_dir = ament_index_cpp::get_package_share_directory("workcell_builder");
+    candidates << (QString::fromStdString(share_dir) + "/scripts/" + script_name);
+  } catch (const std::exception &) {
+  }
+  candidates << (QDir::currentPath() + "/scripts/" + script_name);
+  return candidates;
+}
+
+QString MainWindow::selected_scene_name() const
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    return "none";
+  }
+  return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name);
+}
 
 QString MainWindow::diagnostics_status_from_counts(int blocked, int warn) const
 { if (blocked > 0) return "BLOCKED"; if (warn > 0) return "WARN"; return "PASS"; }
