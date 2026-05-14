@@ -314,6 +314,7 @@ Scene path: %2
 Status: %3
 Robot: %4
 End effector: %5
+Gripper Mount RPY: -1.5708 -1.5708 0
 Objects count: %6
 Task recipe: %7
 Smoke report: %8
