@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QString>
 #include <atomic>
+#include <QProcess>
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -37,6 +38,7 @@ class QProgressDialog;
 class QListWidget;
 class QPushButton;
 class QTextEdit;
+class QPlainTextEdit;
 
 class MainWindow: public QMainWindow
 {
@@ -73,6 +75,13 @@ private:
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
   QString selected_scene_launch_command() const;
+  QString selected_scene_build_command() const;
+  QString selected_scene_source_command() const;
+  QString selected_scene_preview_command_block() const;
+  bool selected_scene_preview_ready(QStringList * blockers = nullptr) const;
+  bool preview_command_is_safe(const QString & command, QStringList * blockers = nullptr) const;
+  void refresh_preview_launch_ui();
+  void write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code = -1);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -85,6 +94,14 @@ private:
   QLabel * scene_preview_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QLabel * readiness_label_{ nullptr };
+  QLabel * preview_scene_label_{ nullptr };
+  QLabel * preview_status_label_{ nullptr };
+  QLabel * preview_safety_label_{ nullptr };
+  QTextEdit * preview_commands_{ nullptr };
+  QPlainTextEdit * preview_log_{ nullptr };
+  QPushButton * run_preview_button_{ nullptr };
+  QPushButton * stop_preview_button_{ nullptr };
+  QProcess * preview_process_{ nullptr };
   workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
   int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
