@@ -24,3 +24,8 @@ Layout editing remains preview-only. No runtime robot motion is commanded from c
 - Validation warnings include reach, camera coverage, overlap, and missing zones.
 - Safety: layout editing is metadata-only and never commands robot motion.
 
+
+## Interactive Digital-Twin Canvas
+- The Scene Builder canvas now supports direct drag interactions, inspector pose editing, and live metadata updates per item.
+- Save Layout writes current canvas state to `layout/workcell_studio_layout.yaml`; Revert Layout reloads from saved/default scene state.
+- Validation warnings are surfaced during editing without enabling runtime execution or motion commands.

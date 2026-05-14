@@ -21,3 +21,10 @@
 - Validation warnings include reach, camera coverage, overlap, and missing zones.
 - Safety: layout editing is metadata-only and never commands robot motion.
 
+
+## Live Canvas Interactions
+- Drag/drop now uses real `QGraphicsItem` movement for movable assets with snap-to-grid behavior.
+- Locked assets (robot/reach/safety) remain guarded, and robot base unlock prompts warning first.
+- Inspector pose fields (x/y/z/roll/pitch/yaw) apply live to selected item and mark layout dirty.
+- Undo/redo, duplicate/delete, and Save/Revert Layout now operate on live canvas state.
+- Safety behavior is unchanged: fake-hardware-first and no robot motion command execution.

@@ -41,7 +41,9 @@
 #include <QTableWidget>
 #include <QGraphicsView>
 #include <QGraphicsScene>
+#include <QGraphicsRectItem>
 #include <QCheckBox>
+#include <QDoubleSpinBox>
 #include <QSvgGenerator>
 #include <QPainter>
 #include <QVBoxLayout>
@@ -56,6 +58,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include "workcell_builder_ui_utils.hpp"
@@ -68,6 +71,7 @@
 #include "include/workcell_directory_inspection.h"
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_canvas_model.hpp"
+#include "workcell_studio_layout_editor.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -88,6 +92,21 @@ bool is_good_scene_path(const fs::path & scene_path)
   return has_file("urdf") && has_file("environment.yaml") && has_file("CMakeLists.txt") &&
     has_file("package.xml");
 }
+
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleType, RoleLocked, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleSource, RoleSize };
+
+class DraggableCanvasItem : public QGraphicsRectItem {
+public:
+  explicit DraggableCanvasItem(const QRectF & r): QGraphicsRectItem(r) {}
+protected:
+  QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
+    if (change == ItemPositionChange && scene()) {
+      QPointF pos = value.toPointF();
+      return QPointF(std::round(pos.x() / 10.0) * 10.0, std::round(pos.y() / 10.0) * 10.0);
+    }
+    return QGraphicsRectItem::itemChange(change, value);
+  }
+};
 
 bool is_empty_directory(const fs::path & directory_path)
 {
@@ -320,7 +339,17 @@ void MainWindow::setup_studio_shell()
   sl->addLayout(layout_controls);
   layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); sl->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); sl->addWidget(canvas_legend_label_);
-  inspector_label_=new QLabel("<b>Inspector</b><br/>Scene | Robot | End Effector | Layout | Task | Readiness | Safety"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
+  inspector_label_=new QLabel("<b>Inspector</b><br/>Live pose editing"); inspector_label_->setWordWrap(true); sl->addWidget(inspector_label_);
+  live_coordinate_label_ = new QLabel("Selected: none", scene_builder); sl->addWidget(live_coordinate_label_);
+  auto * pose_row = new QHBoxLayout();
+  inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_row->addWidget(inspector_x_);
+  inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("y "); pose_row->addWidget(inspector_y_);
+  inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("z "); pose_row->addWidget(inspector_z_);
+  inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("r "); pose_row->addWidget(inspector_roll_);
+  inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_row->addWidget(inspector_pitch_);
+  inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("y θ "); pose_row->addWidget(inspector_yaw_);
+  sl->addLayout(pose_row);
+  inspector_warning_label_ = new QLabel("Warnings: none", scene_builder); sl->addWidget(inspector_warning_label_);
   readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
 
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
@@ -409,10 +438,11 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
   connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
-  connect(undo_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Undo"); });
-  connect(redo_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Redo"); });
-  connect(duplicate_layout_button_, &QPushButton::clicked, this, [this](){ mark_layout_dirty("Duplicate Selected"); });
-  connect(delete_layout_button_, &QPushButton::clicked, this, [this](){ QMessageBox::warning(this, "Delete Selected", "Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); mark_layout_dirty("Delete Selected"); });
+  connect(undo_layout_button_, &QPushButton::clicked, this, &MainWindow::undo_layout_edit);
+  connect(redo_layout_button_, &QPushButton::clicked, this, &MainWindow::redo_layout_edit);
+  connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
+  connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
+  for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ apply_inspector_pose_to_item(); });
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
   connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
   connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
@@ -862,14 +892,35 @@ void MainWindow::rebuild_digital_twin_canvas()
   if (!digital_twin_scene_) {
     digital_twin_scene_ = new QGraphicsScene(digital_twin_canvas_);
     digital_twin_canvas_->setScene(digital_twin_scene_);
+    connect(digital_twin_scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::on_canvas_selection_changed);
+  }
+  digital_twin_scene_->clear();
+  if (selected_scene_index_ < 0) return;
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  for (const auto & entry : model.items) {
+    auto * item = new DraggableCanvasItem(QRectF(0, 0, entry.width * 100.0, entry.depth * 100.0));
+    item->setPos(entry.x * 100.0, entry.y * 100.0);
+    item->setData(RoleId, QString::fromStdString(entry.id));
+    item->setData(RoleType, QString::fromStdString(entry.type));
+    item->setData(RoleLocked, entry.locked);
+    item->setData(RolePoseZ, entry.z);
+    item->setData(RoleRoll, entry.roll); item->setData(RolePitch, entry.pitch); item->setData(RoleYaw, entry.yaw);
+    item->setData(RoleSource, QString::fromStdString(entry.source_file));
+    item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
+    digital_twin_scene_->addItem(item);
   }
 }
 
-void MainWindow::select_canvas_item(const QString & text)
+void MainWindow::select_canvas_item(QGraphicsItem * item)
 {
-  if (inspector_label_) {
-    inspector_label_->setText(QString("Inspector selection:\n%1\nx/y coordinate live update enabled").arg(text));
-  }
+  if (!item || !inspector_label_) return;
+  inspector_update_guard_ = true;
+  inspector_label_->setText("Inspector selection: " + item->data(RoleId).toString() + " [" + item->data(RoleType).toString() + "]");
+  inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
+  inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
+  live_coordinate_label_->setText(QString("Live coordinates: x=%1 y=%2").arg(inspector_x_->value()).arg(inspector_y_->value()));
+  inspector_update_guard_ = false;
 }
 
 void MainWindow::mark_layout_dirty(const QString & reason)
@@ -882,6 +933,16 @@ void MainWindow::mark_layout_dirty(const QString & reason)
 
 void MainWindow::save_layout_changes()
 {
+  if (selected_scene_index_ >= 0) {
+    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    QString yaml = "schema_version: workcell_studio_layout/v1\nscene_name: " + QString::fromStdString(s.scene_name) + "\nsaved_at_utc: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + "\nfake_hardware_first: true\nruntime_execution_enabled: false\nmotion_command_sent: false\ngripper_mount_rpy: [-1.5708, -1.5708, 0]\nitems:\n";
+    for (auto * gi : digital_twin_scene_->items()) {
+      yaml += QString("  - id: %1\n    type: %2\n    source: %3\n    locked: %4\n    pose:\n      xyz: [%5, %6, %7]\n      rpy: [%8, %9, %10]\n")
+        .arg(gi->data(RoleId).toString(), gi->data(RoleType).toString(), gi->data(RoleSource).toString(), gi->data(RoleLocked).toBool() ? "true" : "false")
+        .arg(gi->pos().x()/100.0).arg(gi->pos().y()/100.0).arg(gi->data(RolePoseZ).toDouble()).arg(gi->data(RoleRoll).toDouble()).arg(gi->data(RolePitch).toDouble()).arg(gi->data(RoleYaw).toDouble());
+    }
+    workcell_builder::persist_workcell_studio_layout(s.scene_dir, yaml.toStdString());
+  }
   layout_dirty_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
   append_studio_log("Save Layout requested");
@@ -889,7 +950,16 @@ void MainWindow::save_layout_changes()
 
 void MainWindow::revert_layout_changes()
 {
+  rebuild_digital_twin_canvas();
   layout_dirty_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
   append_studio_log("Revert Layout requested");
 }
+
+void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; select_canvas_item(digital_twin_scene_->selectedItems().front()); }
+void MainWindow::on_canvas_item_moved(QGraphicsItem *, const QPointF &, const QPointF &, const QString & reason){ mark_layout_dirty(reason); }
+void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
+void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
+void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
+void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()) return; auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); }
+void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Delete Selected","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Delete Selected","Delete selected item?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", s->data(RoleId).toString(), s->pos(), s->pos(), false, true}); delete s; mark_layout_dirty("Delete Selected"); }
