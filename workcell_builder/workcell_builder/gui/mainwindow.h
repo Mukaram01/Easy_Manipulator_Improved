@@ -88,6 +88,7 @@ private:
   void apply_studio_theme();
   void append_studio_log(const QString & message);
   void show_not_wired_message(const QString & action_label);
+  QString selected_scene_name() const;
   void refresh_scene_browser_ui();
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
@@ -128,6 +129,7 @@ private:
   void copy_diagnostics_report();
   void open_diagnostics_folder();
   bool helper_script_exists(const QString & script_name, QString * path = nullptr) const;
+  QStringList helper_script_search_paths(const QString & script_name) const;
   QString diagnostics_output_root() const;
   QString diagnostics_status_from_counts(int blocked, int warn) const;
   void append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path);
