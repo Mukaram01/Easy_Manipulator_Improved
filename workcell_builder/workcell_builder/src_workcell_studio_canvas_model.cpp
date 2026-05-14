@@ -42,14 +42,35 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     for (const auto & node : layout["items"]) {
       if (!node["id"]) continue;
       const auto id = node["id"].as<std::string>();
+      bool matched_existing = false;
       for (auto & item : m.items) {
         if (item.id == id) {
+          matched_existing = true;
           if (node["pose"]) {
             auto p = node["pose"];
             if (p["xyz"] && p["xyz"].IsSequence() && p["xyz"].size() >= 3) { item.x = p["xyz"][0].as<double>(); item.y = p["xyz"][1].as<double>(); item.z = p["xyz"][2].as<double>(); }
             if (p["rpy"] && p["rpy"].IsSequence() && p["rpy"].size() >= 3) { item.roll = p["rpy"][0].as<double>(); item.pitch = p["rpy"][1].as<double>(); item.yaw = p["rpy"][2].as<double>(); }
           }
         }
+      }
+      if (!matched_existing) {
+        WorkcellStudioCanvasItem extra;
+        extra.id = id;
+        extra.type = node["type"] ? node["type"].as<std::string>() : "object";
+        extra.role = node["role"] ? node["role"].as<std::string>() : "preview";
+        const auto category = node["category"] ? node["category"].as<std::string>() : "Custom / Imported";
+        if (category == "Pick/Place Zones") extra.type = "zone";
+        extra.label = node["display_name"] ? node["display_name"].as<std::string>() : id;
+        extra.source_file = node["source_path"] ? node["source_path"].as<std::string>() : "layout/workcell_studio_layout.yaml";
+        if (node["pose"]) {
+          auto p = node["pose"];
+          if (p["xyz"] && p["xyz"].IsSequence() && p["xyz"].size() >= 3) { extra.x = p["xyz"][0].as<double>(); extra.y = p["xyz"][1].as<double>(); extra.z = p["xyz"][2].as<double>(); }
+          if (p["rpy"] && p["rpy"].IsSequence() && p["rpy"].size() >= 3) { extra.roll = p["rpy"][0].as<double>(); extra.pitch = p["rpy"][1].as<double>(); extra.yaw = p["rpy"][2].as<double>(); }
+        }
+        if (node["size"] && node["size"].IsSequence() && node["size"].size() >= 3) {
+          extra.width = node["size"][0].as<double>(); extra.depth = node["size"][1].as<double>(); extra.height = node["size"][2].as<double>();
+        }
+        m.items.push_back(extra);
       }
     }
   }

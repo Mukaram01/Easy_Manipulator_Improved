@@ -316,6 +316,7 @@ void MainWindow::setup_studio_shell()
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); sl->addWidget(scene_preview_label_);
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY | Fake Hardware | No Robot Motion"); canvas_header_label_->setWordWrap(true); sl->addWidget(canvas_header_label_);
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); sl->addWidget(task_flow_label_);
+  asset_catalog_panel_label_ = new QLabel("<b>Scene Hierarchy</b> | <b>Asset Catalog</b><br/>Categories: Robots, End Effectors, Cameras, Tables, Conveyors, Bins, Fixtures, Objects / STLs, Pick/Place Zones, Custom / Imported"); asset_catalog_panel_label_->setWordWrap(true); sl->addWidget(asset_catalog_panel_label_);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setMinimumHeight(340); sl->addWidget(digital_twin_canvas_);
   auto * controls = new QHBoxLayout();
   auto * fit_button = new QPushButton("Fit Cell", scene_builder); controls->addWidget(fit_button);
@@ -350,7 +351,24 @@ void MainWindow::setup_studio_shell()
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("y θ "); pose_row->addWidget(inspector_yaw_);
   sl->addLayout(pose_row);
   inspector_warning_label_ = new QLabel("Warnings: none", scene_builder); sl->addWidget(inspector_warning_label_);
-  readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+  readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen. gripper mount RPY: -1.5708 -1.5708 0"); readiness_label_->setWordWrap(true); sl->addWidget(readiness_label_);
+
+  auto * catalog_actions = new QHBoxLayout();
+  auto * add_to_canvas_button = new QPushButton("Add to Canvas", scene_builder); catalog_actions->addWidget(add_to_canvas_button);
+  auto * open_asset_folder_button = new QPushButton("Open Asset Folder", scene_builder); catalog_actions->addWidget(open_asset_folder_button);
+  auto * copy_asset_path_button = new QPushButton("Copy Asset Path", scene_builder); catalog_actions->addWidget(copy_asset_path_button);
+  auto * import_asset_button = new QPushButton("Import STL / URDF", scene_builder); catalog_actions->addWidget(import_asset_button);
+  auto * add_existing_stl_button = new QPushButton("Add Existing STL to Canvas", scene_builder); catalog_actions->addWidget(add_existing_stl_button);
+  auto * placeholder_button = new QPushButton("Generate Simple Box/Cylinder Placeholder", scene_builder); catalog_actions->addWidget(placeholder_button);
+  sl->addLayout(catalog_actions);
+
+  auto * task_binding_actions = new QHBoxLayout();
+  auto * pick_source_button = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button);
+  auto * place_target_button = new QPushButton("Use Selected as Place Target", scene_builder); task_binding_actions->addWidget(place_target_button);
+  auto * pick_zone_button = new QPushButton("Use Selected as Pick Zone", scene_builder); task_binding_actions->addWidget(pick_zone_button);
+  auto * place_zone_button = new QPushButton("Use Selected as Place Zone", scene_builder); task_binding_actions->addWidget(place_zone_button);
+  auto * camera_button = new QPushButton("Use Selected as Camera", scene_builder); task_binding_actions->addWidget(camera_button);
+  sl->addLayout(task_binding_actions);
 
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
   el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
@@ -963,3 +981,11 @@ void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_sce
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
 void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()) return; auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); }
 void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Delete Selected","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Delete Selected","Delete selected item?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", s->data(RoleId).toString(), s->pos(), s->pos(), false, true}); delete s; mark_layout_dirty("Delete Selected"); }
+
+
+void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
+{
+  // Asset Browser → Add/Place on Canvas → Configure Pose/Size → Save Layout → Validate → Generate/Preview
+  append_studio_log(QString("Add to Canvas: %1 (%2) from %3").arg(display_name, category, source_path));
+  mark_layout_dirty("Add to Canvas");
+}

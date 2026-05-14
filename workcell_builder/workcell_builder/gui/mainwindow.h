@@ -111,6 +111,7 @@ private:
   void redo_layout_edit();
   void duplicate_selected_item();
   void delete_selected_item();
+  void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
   Ui::MainWindow * ui;
   QStackedWidget * studio_pages_{ nullptr };
   QListWidget * studio_nav_{ nullptr };
@@ -133,6 +134,7 @@ private:
   QLabel * readiness_label_{ nullptr };
   QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
+  QLabel * asset_catalog_panel_label_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
   QGraphicsView * digital_twin_canvas_{ nullptr };
   QGraphicsScene * digital_twin_scene_{ nullptr };
