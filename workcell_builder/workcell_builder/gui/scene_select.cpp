@@ -758,6 +758,8 @@ SceneSelect::SceneSelect(QWidget * parent)
 
   ui->fake_hardware_default_label->setToolTip(
     "Fake hardware is the safe default. Real hardware launch is intentionally not default.");
+
+  initialize_task_grasp_editor();
   ui->generate_files->hide();
   ui->validate_cell->show();
   ui->validate_cell->setText("Run Offline Validation");
@@ -2073,7 +2075,28 @@ void SceneSelect::on_generate_files_clicked()
       make_object_xacro(object, object_urdf_dir.string());
     }
     generate_scene_files(curr_scene);
-    write_task_recipe_yaml(scene_dir_for_current_selection(), infer_task_grasp_defaults(curr_scene));
+    TaskGraspConfig cfg = infer_task_grasp_defaults(curr_scene);
+    cfg.task_type = task_editor_state_.task_type;
+    cfg.pick_source = !task_editor_state_.pick_source_id.empty() ? task_editor_state_.pick_source_id : task_editor_state_.pick_source_type;
+    cfg.place_target = !task_editor_state_.place_target_id.empty() ? task_editor_state_.place_target_id : task_editor_state_.place_target_type;
+    cfg.grasp_strategy = task_editor_state_.grasp_strategy;
+    cfg.orientation_mode = task_editor_state_.orientation_mode;
+    cfg.approach_axis = task_editor_state_.approach_axis;
+    cfg.approach_distance_m = task_editor_state_.approach_distance_m;
+    cfg.retreat_distance_m = task_editor_state_.retreat_distance_m;
+    cfg.place_clearance_m = task_editor_state_.place_clearance_m;
+    cfg.release_strategy = task_editor_state_.release_strategy;
+    write_task_recipe_yaml(scene_dir_for_current_selection(), cfg);
+    std::ofstream intent((scene_dir_for_current_selection()/"config"/"workcell_builder_task_intent.yaml").string());
+    intent << "schema_version: workcell_task_intent/v1\n";
+    intent << "task:\n  type: " << task_editor_state_.task_type << "\n";
+    intent << "pick:\n  source:\n    id: " << cfg.pick_source << "\n    type: " << task_editor_state_.pick_source_type << "\n";
+    intent << "place:\n  target:\n    id: " << cfg.place_target << "\n    type: " << task_editor_state_.place_target_type << "\n";
+    intent << "grasp:\n  strategy_ref: " << cfg.grasp_strategy << "\n  orientation_mode: " << cfg.orientation_mode << "\n";
+    intent << "release:\n  strategy: " << cfg.release_strategy << "\n";
+    intent << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+    task_editor_state_.unsaved_task_edits = false;
+    rerun_task_validation();
     bool blocked = false;
     const std::string readiness = build_workcell_readiness_report(curr_scene, scene_dir_for_current_selection(), true, &blocked);
     int blocker_count = latest_dashboard_result_.blocker_count;
@@ -2902,6 +2925,8 @@ void SceneSelect::refresh_preview_status()
   QObject::connect(scene, &QGraphicsScene::selectionChanged, ui->visual_layout_canvas, [this, scene]() {
     const auto sel = scene->selectedItems(); if (sel.empty()) return; auto * i=sel.front();
     selected_item_id = i->data(3).toString().toStdString();
+    selected_canvas_item_id_ = selected_item_id;
+    selected_canvas_item_type_ = i->data(1).toString().toStdString();
     unsaved_layout_edits = true;
     ui->inspector_help->setText(QString("zone_inspector_token id=%1 name=%2 type=%3 | %4 | layout_unsaved=true | rerun zone validation")
       .arg(i->data(3).toString(), i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
@@ -2926,6 +2951,97 @@ void SceneSelect::export_preview_layout()
   append_success("Export Preview created: preview/layout_preview.svg | .html | .json");
 }
 
+
+void SceneSelect::initialize_task_grasp_editor()
+{
+  sync_task_editor_from_model();
+  connect(ui->task_type_combo, &QComboBox::currentTextChanged, this, [this](const QString &){ sync_task_model_from_editor(); });
+  connect(ui->pick_source_combo, &QComboBox::currentTextChanged, this, [this](const QString &){ sync_task_model_from_editor(); });
+  connect(ui->place_target_combo, &QComboBox::currentTextChanged, this, [this](const QString &){ sync_task_model_from_editor(); });
+  connect(ui->grasp_strategy_combo, &QComboBox::currentTextChanged, this, [this](const QString &){ sync_task_model_from_editor(); });
+  connect(ui->release_strategy_combo, &QComboBox::currentTextChanged, this, [this](const QString &){ sync_task_model_from_editor(); });
+  connect(ui->reset_task_defaults_button, &QPushButton::clicked, this, [this](){ apply_tool_defaults(false); });
+  connect(ui->validate_task_button, &QPushButton::clicked, this, [this](){ rerun_task_validation(); });
+  connect(ui->use_selected_item_as_pick_source_button, &QPushButton::clicked, this, [this](){ assign_selected_canvas_item("pick"); });
+  connect(ui->use_selected_item_as_place_target_button, &QPushButton::clicked, this, [this](){ assign_selected_canvas_item("place"); });
+  connect(ui->use_selected_zone_as_pick_zone_button, &QPushButton::clicked, this, [this](){ assign_selected_canvas_item("pick_zone"); });
+  connect(ui->use_selected_zone_as_place_zone_button, &QPushButton::clicked, this, [this](){ assign_selected_canvas_item("place_zone"); });
+}
+
+void SceneSelect::sync_task_editor_from_model()
+{
+  ui->task_type_combo->setCurrentText(QString::fromStdString(task_editor_state_.task_type));
+  ui->pick_source_combo->setCurrentText(QString::fromStdString(task_editor_state_.pick_source_type));
+  ui->place_target_combo->setCurrentText(QString::fromStdString(task_editor_state_.place_target_type));
+  ui->grasp_strategy_combo->setCurrentText(QString::fromStdString(task_editor_state_.grasp_strategy));
+  ui->orientation_mode_combo->setCurrentText(QString::fromStdString(task_editor_state_.orientation_mode));
+  ui->approach_distance_edit->setText(QString::number(task_editor_state_.approach_distance_m));
+  ui->retreat_distance_edit->setText(QString::number(task_editor_state_.retreat_distance_m));
+  ui->task_place_clearance_edit->setText(QString::number(task_editor_state_.place_clearance_m));
+  ui->task_selected_object_id_edit->setText(QString::fromStdString(task_editor_state_.selected_object_id));
+  ui->task_selected_target_id_edit->setText(QString::fromStdString(task_editor_state_.place_target_id));
+}
+
+void SceneSelect::sync_task_model_from_editor()
+{
+  task_editor_state_.task_type = ui->task_type_combo->currentText().toStdString();
+  task_editor_state_.pick_source_type = ui->pick_source_combo->currentText().toStdString();
+  task_editor_state_.place_target_type = ui->place_target_combo->currentText().toStdString();
+  task_editor_state_.grasp_strategy = ui->grasp_strategy_combo->currentText().toStdString();
+  task_editor_state_.orientation_mode = ui->orientation_mode_combo->currentText().toStdString();
+  task_editor_state_.approach_axis = ui->task_approach_axis_combo->currentText().toStdString();
+  task_editor_state_.retreat_axis = ui->task_retreat_axis_combo->currentText().toStdString();
+  bool ok1=false, ok2=false, ok3=false;
+  const double a = ui->approach_distance_edit->text().toDouble(&ok1);
+  const double r = ui->retreat_distance_edit->text().toDouble(&ok2);
+  const double c = ui->task_place_clearance_edit->text().toDouble(&ok3);
+  if (ok1) task_editor_state_.approach_distance_m = a;
+  if (ok2) task_editor_state_.retreat_distance_m = r;
+  if (ok3) task_editor_state_.place_clearance_m = c;
+  task_editor_state_.release_strategy = ui->release_strategy_combo->currentText().toStdString();
+  task_editor_state_.selected_object_id = ui->task_selected_object_id_edit->text().toStdString();
+  task_editor_state_.place_target_id = ui->task_selected_target_id_edit->text().toStdString();
+  task_editor_state_.unsaved_task_edits = true;
+  rerun_task_validation();
+}
+
+void SceneSelect::apply_tool_defaults(bool force)
+{
+  if (task_editor_state_.unsaved_task_edits && !force) { append_warning("Unsaved task edits present; reset skipped. Press Save first or force reset."); return; }
+  if (task_editor_state_.tool_profile.find("suction") != std::string::npos) { task_editor_state_.grasp_strategy="suction_top"; task_editor_state_.release_strategy="vacuum_off"; task_editor_state_.requires_io=true; }
+  else { task_editor_state_.grasp_strategy="finger_top"; task_editor_state_.release_strategy="open_gripper"; task_editor_state_.requires_io=false; }
+  task_editor_state_.approach_axis = "z_down"; task_editor_state_.retreat_axis = "z_up"; task_editor_state_.orientation_mode = "vertical";
+  task_editor_state_.unsaved_task_edits = true;
+  sync_task_editor_from_model();
+  rerun_task_validation();
+}
+
+void SceneSelect::rerun_task_validation()
+{
+  task_editor_state_.warnings.clear(); task_editor_state_.blockers.clear();
+  if (task_editor_state_.pick_source_id.empty() && task_editor_state_.selected_pick_zone_id.empty() && task_editor_state_.selected_object_id.empty()) task_editor_state_.blockers.push_back("pick source missing");
+  if (task_editor_state_.place_target_id.empty() && task_editor_state_.selected_place_zone_id.empty()) task_editor_state_.blockers.push_back("place target missing");
+  if (task_editor_state_.approach_distance_m <= 0.0) task_editor_state_.blockers.push_back("approach distance must be > 0");
+  if (task_editor_state_.retreat_distance_m <= 0.0) task_editor_state_.blockers.push_back("retreat distance must be > 0");
+  if (task_editor_state_.place_clearance_m < 0.0) task_editor_state_.blockers.push_back("place clearance must be >= 0");
+  if (task_editor_state_.requires_io) task_editor_state_.warnings.push_back("tool requires IO; runtime_execution_enabled remains false");
+  const QString state = task_editor_state_.unsaved_task_edits ? "Unsaved Task Edits: visible" : "Unsaved Task Edits: none";
+  ui->task_unsaved_state_label->setText(state);
+  ui->task_preview_only_label->setText(task_editor_state_.preview_only ? "preview-only/runtime disabled" : "offline recipe ready");
+}
+
+bool SceneSelect::assign_selected_canvas_item(const std::string & role)
+{
+  if (selected_canvas_item_id_.empty()) { append_warning("No canvas selection. Pick an item/zone first."); return false; }
+  if (role == "pick") { task_editor_state_.pick_source_id = selected_canvas_item_id_; task_editor_state_.selected_object_id = selected_canvas_item_id_; }
+  else if (role == "place") { task_editor_state_.place_target_id = selected_canvas_item_id_; }
+  else if (role == "pick_zone") { task_editor_state_.selected_pick_zone_id = selected_canvas_item_id_; task_editor_state_.pick_source_type = "pick_zone"; }
+  else if (role == "place_zone") { task_editor_state_.selected_place_zone_id = selected_canvas_item_id_; task_editor_state_.place_target_type = "place_zone"; }
+  task_editor_state_.unsaved_task_edits = true;
+  sync_task_editor_from_model();
+  rerun_task_validation();
+  return true;
+}
 void SceneSelect::on_open_output_folder_clicked()
 {
   const fs::path scene_dir = scenes_path;

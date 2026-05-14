@@ -24,6 +24,40 @@
 #include <string>
 #include <vector>
 
+#include <map>
+
+struct TaskGraspEditorState
+{
+  std::string task_type{"pick_place"};
+  std::string pick_source_type{"selected_object"};
+  std::string pick_source_id;
+  std::string place_target_type{"selected_bin"};
+  std::string place_target_id;
+  std::string selected_object_id;
+  std::string selected_bin_id;
+  std::string selected_pick_zone_id;
+  std::string selected_place_zone_id;
+  std::string grasp_strategy{"finger_top"};
+  std::string orientation_mode{"vertical"};
+  std::string approach_axis{"z_down"};
+  std::string retreat_axis{"z_up"};
+  double approach_distance_m{0.12};
+  double retreat_distance_m{0.10};
+  double place_clearance_m{0.05};
+  std::string allowed_yaw_angles_deg{"-180..180"};
+  std::string allowed_roll_angles_deg{"-10..10"};
+  std::string tcp_offset_xyz{"0 0 0"};
+  std::string tcp_offset_rpy{"0 0 0"};
+  std::string release_strategy{"open_gripper"};
+  std::string tool_profile{"unknown"};
+  bool requires_io{false};
+  bool preview_only{false};
+  bool unsaved_task_edits{false};
+  std::vector<std::string> warnings;
+  std::vector<std::string> blockers;
+  std::map<std::string,std::string> class_routing;
+};
+
 #include "yaml-cpp/yaml.h"
 #include "attributes/workcell.h"
 #include "conveyor_sorting_run_console.h"
@@ -135,6 +169,12 @@ private:
   bool generate_full_scene_package_from_scene(const boost::filesystem::path & scene_dir);
   void update_new_scene_lifecycle_and_canvas(const boost::filesystem::path & scene_dir);
   std::string sanitize_scene_name(const std::string & raw_name) const;
+  void initialize_task_grasp_editor();
+  void sync_task_editor_from_model();
+  void sync_task_model_from_editor();
+  void apply_tool_defaults(bool force = false);
+  void rerun_task_validation();
+  bool assign_selected_canvas_item(const std::string & role);
 
   Ui::SceneSelect * ui;
   QListWidget * scenario_template_catalog_ = nullptr;
@@ -159,6 +199,9 @@ private:
   workcell_builder::SceneStatusReport latest_scene_status_report_;
   std::string latest_demo_scene_name_;
   boost::filesystem::path latest_demo_scene_dir_;
+  TaskGraspEditorState task_editor_state_;
+  std::string selected_canvas_item_id_;
+  std::string selected_canvas_item_type_;
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
