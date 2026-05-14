@@ -41,7 +41,7 @@ find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
-find_package(Qt5 COMPONENTS Widgets Concurrent REQUIRED)
+find_package(Qt5 COMPONENTS Widgets Concurrent Svg REQUIRED)
 
 include_directories(include)
 include_directories(include/attributes)
@@ -178,6 +178,7 @@ ament_target_dependencies(workcell_builder
 target_link_libraries(workcell_builder
   Qt5::Widgets
   Qt5::Concurrent
+  Qt5::Svg
   yaml-cpp
   ${Boost_LIBRARIES}
 )
@@ -393,6 +394,14 @@ install(PROGRAMS
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
   DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS
+  ../../scripts/workcell_studio_layout_merge.py
+  ../../scripts/validate_workcell_studio_generated_scene.py
+  ../../scripts/workcell_studio_demo_mode.py
+  ../../scripts/workcell_studio_preview_launch.py
+  ../../scripts/run_workcell_studio_golden_flow.py
+  DESTINATION share/${PROJECT_NAME}/scripts)
 
 install(DIRECTORY ${WORKCELL_BUILDER_SECONDARY_ASSETS_DIR}/
   DESTINATION share/${PROJECT_NAME}/legacy_assets)
