@@ -4,7 +4,8 @@
   "Create Scene From Template", "Scene Template Library", "Template Category",
   "Pick and Place Cell", "Sorting Cell", "Camera Inspection Cell",
   "Conveyor Pick Cell", "Palletizing Cell", "Instantiate Template",
-  "Template Validation Status"
+  "Template Validation Status",
+  "Run Generated Scene Acceptance", "Open Acceptance Report", "Copy Acceptance Summary"
 };
 
 // Scene round-trip UI labels:
