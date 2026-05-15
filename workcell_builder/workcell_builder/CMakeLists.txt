@@ -53,6 +53,8 @@ add_executable(workcell_builder
     gui/mainwindow.cpp
     gui/mainwindow.h
     gui/mainwindow.ui
+    gui/scene_preview_widget.cpp
+    gui/scene_preview_widget.h
 
     gui/replacewarning.cpp
     gui/replacewarning.h

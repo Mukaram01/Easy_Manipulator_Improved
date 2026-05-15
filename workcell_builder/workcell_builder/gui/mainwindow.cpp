@@ -94,6 +94,7 @@
 #include "include/workcell_directory_inspection.h"
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_canvas_model.hpp"
+#include "scene_preview_widget.h"
 #include "workcell_studio_layout_editor.hpp"
 
 namespace fs = boost::filesystem;
@@ -596,6 +597,8 @@ void MainWindow::setup_studio_shell()
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
   canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
+  scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
+  connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
   auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
@@ -645,7 +648,9 @@ void MainWindow::setup_studio_shell()
   canvas_more_actions->setMenu(canvas_more_menu);
   controls->addWidget(canvas_more_actions);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_layout->addLayout(controls);
-  digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420); center_layout->addWidget(digital_twin_canvas_, 1);
+  digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
+  scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
+  center_layout->addWidget(scene_preview_widget_, 1);
   minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);

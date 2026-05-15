@@ -58,3 +58,20 @@ def test_validation_actions_and_no_not_wired():
     ]
     for token in forbidden:
         assert token not in CPP
+
+
+PREVIEW_WIDGET_CPP = Path('workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
+
+
+def test_preview_mode_toggle_and_fallback_tokens_present():
+    for token in [
+        "3D Preview",
+        "2D Layout",
+        "No scene selected",
+        "Open a scene or create a new cell to preview it.",
+        "3D preview unavailable",
+        "Reset View",
+        "Fit Scene",
+        "Overlays",
+    ]:
+        assert token in PREVIEW_WIDGET_CPP
