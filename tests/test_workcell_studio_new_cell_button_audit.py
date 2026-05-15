@@ -39,8 +39,16 @@ def test_required_handlers_connected_and_named():
         '&MainWindow::run_fake_hardware_preview',
         '&MainWindow::stop_preview_process',
         'selected_scene_launch_command()',
+        'open_new_scene_creation_flow',
+        'open_scene_builder_for_selected_scene',
     ]:
         assert token in (MAIN + HEADER + SCENE)
+
+
+def test_open_in_scene_builder_targets_scene_builder_page_and_selection_guard():
+    assert 'show_studio_page(StudioPage::SceneBuilderPage)' in MAIN
+    assert 'Select a scene first.' in MAIN
+    assert 'opened Scene Builder for' in MAIN
 
 
 def test_no_new_cell_workflow_not_wired_message_usage():

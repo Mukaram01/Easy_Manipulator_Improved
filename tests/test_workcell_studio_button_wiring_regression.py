@@ -11,3 +11,17 @@ def test_critical_buttons_wired_or_safe_fallback():
     ]
     for token in wiring_tokens:
         assert token in text
+
+
+def test_top_bar_uses_named_page_enum_and_no_invalid_indexes():
+    cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    header = Path("workcell_builder/workcell_builder/gui/mainwindow.h").read_text(encoding="utf-8")
+    assert "enum class StudioPage" in header
+    assert "show_studio_page(StudioPage::DashboardPage)" in cpp
+    assert "show_studio_page(StudioPage::SceneBuilderPage)" in cpp
+    assert "show_studio_page(StudioPage::ExistingScenesPage)" in cpp
+    assert "show_studio_page(StudioPage::ValidationPage)" in cpp
+    assert "show_studio_page(StudioPage::PlanSimulatePage)" in cpp
+    assert "show_studio_page(StudioPage::ExportPage)" in cpp
+    assert "setCurrentRow(9)" not in cpp
+    assert "setCurrentRow(10)" not in cpp

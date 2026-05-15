@@ -67,3 +67,8 @@ def test_secondary_controls_moved_to_menus_and_theme_tokens_present():
         'QMenu',
     ]:
         assert token in CPP or token in Path('workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss').read_text(encoding='utf-8')
+
+
+def test_redundant_workspace_change_controls_removed_from_studio_pages():
+    assert 'Change Workspace' not in CPP
+    assert 'Workcell Studio change workspace' not in CPP
