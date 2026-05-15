@@ -520,10 +520,16 @@ void MainWindow::setup_studio_shell()
   dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2><p>Scene overview and investor-demo readiness</p>"));
   dashboard_summary_label_=new QLabel("Loading scenes..."); dashboard_summary_label_->setWordWrap(true); dl->addWidget(dashboard_summary_label_);
   dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
-  dashboard_scene_table_->setStyleSheet("QTableWidget{background:#1f2937;color:#e5e7eb;gridline-color:#374151;} QHeaderView::section{background:#111827;color:#93c5fd;}");
   dashboard_scene_table_->setAlternatingRowColors(true);
-  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+  dashboard_scene_table_->setColumnWidth(0, 320);
   dashboard_scene_table_->verticalHeader()->setDefaultSectionSize(30);
+  dashboard_scene_table_->setWordWrap(false);
   dl->addWidget(dashboard_scene_table_);
   auto * dashboard_actions = new QHBoxLayout();
   auto * dash_open_scene_builder = new QPushButton("Open in Scene Builder", dashboard); dashboard_actions->addWidget(dash_open_scene_builder);
@@ -594,19 +600,27 @@ void MainWindow::setup_studio_shell()
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
   auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
   auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
-  auto * camera_view = new QComboBox(scene_builder); camera_view->addItems({"Camera View: Perspective", "Top", "Left", "Right", "Front"}); controls->addWidget(camera_view);
-  auto * fit_button = new QPushButton("Fit Cell", scene_builder); controls->addWidget(fit_button);
-  auto * reset_button = new QPushButton("Reset View", scene_builder); controls->addWidget(reset_button);
-  auto * zoom_in = new QPushButton("Zoom In", scene_builder); controls->addWidget(zoom_in);
-  auto * zoom_out = new QPushButton("Zoom Out", scene_builder); controls->addWidget(zoom_out);
-  toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true); controls->addWidget(toggle_grid_box_);
-  snap_to_grid_box_ = new QCheckBox("Snap Grid", scene_builder); snap_to_grid_box_->setChecked(true); controls->addWidget(snap_to_grid_box_);
-  snap_step_label_ = new QLabel("Grid 0.05 m", scene_builder); controls->addWidget(snap_step_label_);
-  fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder); controls->addWidget(fine_move_mode_box_);
-  unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder); controls->addWidget(unlock_robot_base_box_);
-  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true); controls->addWidget(toggle_labels_box_);
-  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true); controls->addWidget(toggle_warnings_box_);
-  auto * minimap_toggle = new QCheckBox("Minimap", scene_builder); minimap_toggle->setChecked(true); controls->addWidget(minimap_toggle);
+  auto * camera_view = new QToolButton(scene_builder); camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
+  auto * camera_view_menu = new QMenu(camera_view);
+  camera_view_menu->addAction("Perspective");
+  camera_view_menu->addAction("Top");
+  camera_view_menu->addAction("Left");
+  camera_view_menu->addAction("Right");
+  camera_view_menu->addAction("Front");
+  auto * fit_button = camera_view_menu->addAction("Fit Cell");
+  auto * reset_button = camera_view_menu->addAction("Reset View");
+  auto * zoom_in = camera_view_menu->addAction("Zoom In");
+  auto * zoom_out = camera_view_menu->addAction("Zoom Out");
+  camera_view->setMenu(camera_view_menu);
+  controls->addWidget(camera_view);
+  toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true);
+  snap_to_grid_box_ = new QCheckBox("Snap Grid", scene_builder); snap_to_grid_box_->setChecked(true);
+  snap_step_label_ = new QLabel("Grid 0.05 m", scene_builder);
+  fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder);
+  unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder);
+  toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
+  toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true);
+  auto * minimap_toggle = new QCheckBox("Minimap", scene_builder); minimap_toggle->setChecked(true);
   auto * overlays_button = new QToolButton(scene_builder); overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
@@ -617,6 +631,19 @@ void MainWindow::setup_studio_shell()
   mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_);
   overlays_menu->addAction("Show Warnings")->setCheckable(true); overlays_menu->addAction("Show Labels")->setCheckable(true);
   overlays_button->setMenu(overlays_menu); controls->addWidget(overlays_button);
+  auto * canvas_more_actions = new QToolButton(scene_builder);
+  canvas_more_actions->setText("Canvas More");
+  canvas_more_actions->setPopupMode(QToolButton::InstantPopup);
+  auto * canvas_more_menu = new QMenu(canvas_more_actions);
+  auto * snap_action = canvas_more_menu->addAction("Snap/Grid settings"); snap_action->setCheckable(true); snap_action->setChecked(true);
+  auto * fine_move_action = canvas_more_menu->addAction("Fine Move Mode"); fine_move_action->setCheckable(true);
+  auto * unlock_action = canvas_more_menu->addAction("Unlock Robot Base"); unlock_action->setCheckable(true);
+  auto * minimap_action = canvas_more_menu->addAction("Minimap"); minimap_action->setCheckable(true); minimap_action->setChecked(true);
+  canvas_more_menu->addSeparator();
+  canvas_more_menu->addAction("Toggle Labels")->setCheckable(true);
+  canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
+  canvas_more_actions->setMenu(canvas_more_menu);
+  controls->addWidget(canvas_more_actions);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420); center_layout->addWidget(digital_twin_canvas_, 1);
   minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
@@ -820,7 +847,7 @@ void MainWindow::setup_studio_shell()
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
   addToolBar(Qt::TopToolBarArea, top_bar);
   top_bar->setObjectName("studioTopBar");
-  const QStringList action_labels = {"New Cell", "Open Scene", "Validate", "Demo Mode", "Plan & Simulate", "Generate Scene Package", "Export"};
+  const QStringList action_labels = {"Dashboard", "New Cell", "Open Scene", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"};
   for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
@@ -843,12 +870,6 @@ void MainWindow::setup_studio_shell()
         append_studio_log(QString("Validate: offline validation for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
         studio_nav_->setCurrentRow(9);
         run_preview_build();
-        return;
-      }
-      if (label == "Demo Mode") {
-        append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
-        studio_nav_->setCurrentRow(6);
-        open_selected_scene_artifact("run_smoke");
         return;
       }
       if (label == "Plan & Simulate") {
@@ -876,10 +897,25 @@ void MainWindow::setup_studio_shell()
   full_screen_button_->setToolTip("Press Esc to exit full screen");
   top_bar->addWidget(full_screen_button_);
   connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
+  auto * top_more_actions = new QToolButton(this);
+  top_more_actions->setText("More Actions");
+  top_more_actions->setPopupMode(QToolButton::InstantPopup);
+  auto * top_more_menu = new QMenu(top_more_actions);
+  top_more_menu->addAction("Demo Mode", this, [this](){
+    append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
+    studio_nav_->setCurrentRow(6);
+    open_selected_scene_artifact("run_smoke");
+  });
+  top_more_menu->addAction("Open Diagnostics", this, [this](){ studio_nav_->setCurrentRow(8); });
+  top_more_menu->addAction("Open Validation Report", this, [this](){ open_validation_report(); });
+  top_more_actions->setMenu(top_more_menu);
+  top_bar->addWidget(top_more_actions);
   top_bar->addSeparator();
   mode_chip_label_ = new QLabel("Design | Plan | Simulate | Hardware Guarded", this);
   top_bar->addWidget(mode_chip_label_);
-  top_bar->addWidget(new QLabel("Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked"));
+  auto * safety_pill = new QLabel("Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked", this);
+  safety_pill->setObjectName("safetyPill");
+  top_bar->addWidget(safety_pill);
   diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", this);
   top_bar->addWidget(diagnostics_indicator_label_);
 
@@ -943,10 +979,10 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_build_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select workcell_builder"); });
   connect(copy_source_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("source install/setup.bash"); });
   connect(open_logs_cmd, &QPushButton::clicked, this, [this](){ open_diagnostics_folder(); });
-  connect(fit_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
-  connect(reset_button, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
-  connect(zoom_in, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
-  connect(zoom_out, &QPushButton::clicked, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
+  connect(fit_button, &QAction::triggered, this, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
+  connect(reset_button, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
+  connect(zoom_in, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
+  connect(zoom_out, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
   connect(toggle_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
@@ -964,12 +1000,20 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(move_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
   connect(inspect_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Inspect); });
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(snap_action, &QAction::toggled, snap_to_grid_box_, &QCheckBox::setChecked);
+  connect(snap_to_grid_box_, &QCheckBox::toggled, snap_action, &QAction::setChecked);
+  connect(fine_move_action, &QAction::toggled, fine_move_mode_box_, &QCheckBox::setChecked);
+  connect(fine_move_mode_box_, &QCheckBox::toggled, fine_move_action, &QAction::setChecked);
+  connect(unlock_action, &QAction::toggled, unlock_robot_base_box_, &QCheckBox::setChecked);
+  connect(unlock_robot_base_box_, &QCheckBox::toggled, unlock_action, &QAction::setChecked);
+  connect(minimap_action, &QAction::toggled, minimap_toggle, &QCheckBox::setChecked);
+  connect(minimap_toggle, &QCheckBox::toggled, minimap_action, &QAction::setChecked);
   connect(minimap_toggle, &QCheckBox::toggled, this, [this](bool on){ if(minimap_view_) minimap_view_->setVisible(on); });
   for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
-  auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QPushButton::click);
+  auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
   connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
   connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
@@ -1147,7 +1191,7 @@ void MainWindow::refresh_scene_browser_ui()
     append_studio_log(QString("Loaded %1 scenes from %2").arg(scene_browser_result_.scenes.size()).arg(root_used));
   }
   dashboard_summary_label_->setText(summary);
-  auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; t->setItem(i,0,new QTableWidgetItem(QString::fromStdString(sc.scene_name))); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
+  auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; auto scene_name = QString::fromStdString(sc.scene_name); auto *scene_item=new QTableWidgetItem(t==dashboard_scene_table_ ? QFontMetrics(t->font()).elidedText(scene_name, Qt::ElideRight, 300) : scene_name); scene_item->setToolTip(scene_name); t->setItem(i,0,scene_item); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill(dashboard_scene_table_); fill(existing_scene_table_);
 }
 
@@ -2256,3 +2300,8 @@ void MainWindow::refresh_new_cell_checklist()
           "<br/><code>python3 scripts/run_workcell_studio_acceptance_gate.py --mode scratch --scene-name scratch_ur5_2f_acceptance --output-root /tmp/workcell_studio_acceptance</code>";
   new_cell_checklist_label_->setText(text);
 }
+      if (label == "Dashboard") {
+        append_studio_log("Dashboard: returning to scene overview.");
+        studio_nav_->setCurrentRow(0);
+        return;
+      }
