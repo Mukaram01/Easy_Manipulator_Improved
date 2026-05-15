@@ -15,5 +15,5 @@ def test_generate_scene_uses_layout_merge_path():
 def test_command_bar_logs_no_motion_for_sensitive_actions():
     assert "Validate: offline validation" in MAIN_CPP
     assert "Demo Mode: switched" in MAIN_CPP
-    assert "Preview Launch: prepared fake-hardware commands" in MAIN_CPP
+    assert "Plan & Simulate: prepared fake-hardware" in MAIN_CPP
     assert 'No robot motion commanded' in MAIN_CPP

@@ -11,7 +11,7 @@ def test_canonical_action_labels_exist():
         'Use Selected as Pick Zone',
         'Use Selected as Place Zone',
         'Use Selected as Camera',
-        'Copy Fake-Hardware Launch Command',
+        'Copy Launch Command',
         'Run Offline Validation',
         'Generate Readiness Pack',
         'Open Readiness Dashboard',
@@ -32,7 +32,7 @@ def test_removed_duplicate_execution_labels_not_present():
         'Generate Preview Bundle',
         'Open Scene Folder", demo',
         'Copy Build Command", demo',
-        'Copy Fake-Hardware Launch Command", demo',
+        'Copy Launch Command", demo',
     ]
     for label in removed:
         assert label not in CPP
@@ -55,7 +55,7 @@ def test_safety_text_remains_and_no_not_wired_usage():
     forbidden = [
         'show_not_wired_message("Run Offline Validation")',
         'show_not_wired_message("Generate Readiness Pack")',
-        'show_not_wired_message("Copy Fake-Hardware Launch Command")',
+        'show_not_wired_message("Copy Launch Command")',
     ]
     for token in forbidden:
         assert token not in CPP
