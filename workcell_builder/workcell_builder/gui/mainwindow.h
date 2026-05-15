@@ -139,6 +139,10 @@ private:
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
   void open_layout_merge_report();
   void copy_layout_merge_summary();
+  void refresh_scene_bundle_export_panel();
+  void export_scene_bundle_for_selected_scene();
+  void import_scene_bundle_into_scenes_root();
+  void open_scene_bundle_export_folder();
   bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
   void refresh_diagnostics_quick_status();
   void populate_scene_hierarchy();
@@ -242,6 +246,10 @@ private:
   QLabel * validation_task_intent_status_label_{ nullptr };
   QLabel * validation_scene_package_status_label_{ nullptr };
   QLabel * validation_next_fix_label_{ nullptr };
+  QLabel * scene_bundle_selected_scene_label_{ nullptr };
+  QLabel * scene_bundle_destination_label_{ nullptr };
+  QLabel * scene_bundle_contents_label_{ nullptr };
+  QString last_scene_bundle_export_folder_;
   QProcess * preview_process_{ nullptr };
   QString preview_state_{ "IDLE" };
   QString active_preview_command_;
