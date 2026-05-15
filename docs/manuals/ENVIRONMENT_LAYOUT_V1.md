@@ -94,3 +94,15 @@ To make Workcell Studio previews resolve exact coordinates (no fallback), author
 - optional `camera` pose for preview/readiness reporting
 
 Builder task intent and routing should reference these IDs directly (for example `pick_zone_main` and `bin_red`).
+
+## Workcell Studio Layout Editing (Preview-Only)
+
+In **Scene Builder**, selecting an asset in **Asset Catalog** and pressing **Add to Canvas** creates a persistent layout instance in the selected scene's `environment_layout.yaml`.
+
+- Edit pose in Inspector (`x/y/z/roll/pitch/yaw`).
+- Click **Save Layout** to write metadata to `environment_layout/v1` (`placed_assets`).
+- Use **Validate Layout** to run offline validation checks (no launch, no motion).
+- Use **Remove Selected Layout Item** to delete only the placed instance metadata (never source mesh/URDF files).
+- If an existing `environment_layout.yaml` is malformed, Studio creates a timestamped backup before rewriting.
+
+Safety: layout editing is **preview metadata only** and does **not** execute robot motion.

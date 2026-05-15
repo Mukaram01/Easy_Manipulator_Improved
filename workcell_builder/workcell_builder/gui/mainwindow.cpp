@@ -521,7 +521,7 @@ void MainWindow::setup_studio_shell()
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
   duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder); layout_controls->addWidget(duplicate_layout_button_);
-  delete_layout_button_ = new QPushButton("Delete Selected", scene_builder); layout_controls->addWidget(delete_layout_button_);
+  delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder); layout_controls->addWidget(delete_layout_button_);
   save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
   revert_layout_button_ = new QPushButton("Revert Layout", scene_builder); layout_controls->addWidget(revert_layout_button_);
   auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder); layout_controls->addWidget(run_layout_merge_button);
@@ -647,6 +647,7 @@ void MainWindow::setup_studio_shell()
   validation_scene_package_status_label_ = new QLabel("<b>Scene Package Status</b><br/>-"); validation_scene_package_status_label_->setObjectName("studioCard"); validation_scene_package_status_label_->setWordWrap(true); vl->addWidget(validation_scene_package_status_label_);
   validation_next_fix_label_ = new QLabel("<b>Next Fix Suggestions</b><br/>Select scene and run offline validation."); validation_next_fix_label_->setObjectName("studioCard"); validation_next_fix_label_->setWordWrap(true); vl->addWidget(validation_next_fix_label_);
   auto * run_offline_validation_button = new QPushButton("Run Offline Validation", validation); vl->addWidget(run_offline_validation_button);
+  auto * validate_layout_button = new QPushButton("Validate Layout", validation); vl->addWidget(validate_layout_button);
   auto * open_validation_report_button = new QPushButton("Open Validation Report", validation); vl->addWidget(open_validation_report_button);
   auto * copy_validation_summary_button = new QPushButton("Copy Validation Summary", validation); vl->addWidget(copy_validation_summary_button);
   auto * generate_readiness_pack_button = new QPushButton("Generate Readiness Pack", validation); vl->addWidget(generate_readiness_pack_button);
@@ -761,6 +762,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
   connect(run_offline_validation_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
+  connect(validate_layout_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
   connect(open_validation_report_button, &QPushButton::clicked, this, &MainWindow::open_validation_report);
   connect(copy_validation_summary_button, &QPushButton::clicked, this, &MainWindow::copy_validation_summary);
   connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
@@ -1804,30 +1806,81 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   }
 }
 
+static fs::path selected_scene_environment_layout_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
+{
+  if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
+  return browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir / "environment_layout.yaml";
+}
+
+static YAML::Node minimal_environment_layout(const std::string & scene_name)
+{
+  YAML::Node root(YAML::NodeType::Map);
+  root["schema_version"] = "environment_layout/v1";
+  root["scene_name"] = scene_name;
+  root["placed_assets"] = YAML::Node(YAML::NodeType::Sequence);
+  return root;
+}
+
 void MainWindow::save_layout_changes()
 {
-  if (selected_scene_index_ >= 0) {
-    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-    QString yaml = "schema_version: workcell_studio_layout/v1\nscene_name: " + QString::fromStdString(s.scene_name) + "\nsaved_at_utc: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + "\nfake_hardware_first: true\nruntime_execution_enabled: false\nmotion_command_sent: false\ngripper_mount_rpy: [-1.5708, -1.5708, 0]\nitems:\n";
-    for (auto * gi : digital_twin_scene_->items()) {
-      const QString source = gi->data(RoleSource).toString();
-      const bool is_mesh = source.endsWith(".stl", Qt::CaseInsensitive);
-      const bool is_urdf = source.endsWith(".urdf", Qt::CaseInsensitive);
-      yaml += QString("  - id: %1\n    display_name: %2\n    type: %3\n    category: %4\n    role: %5\n    source_path: %6\n    source_package: %7\n    pose:\n      xyz: [%8, %9, %10]\n      rpy: [%11, %12, %13]\n    size:\n      width: %14\n      depth: %15\n      height: %16\n    imported: %17\n    generated_placeholder: %18\n    locked: %19\n")
-        .arg(gi->data(RoleId).toString(), gi->data(RoleDisplayName).toString(), gi->data(RoleType).toString(), gi->data(RoleCategory).toString(), gi->data(RoleRole).toString(), source, gi->data(RoleSourcePackage).toString())
-        .arg(gi->pos().x()/100.0).arg(gi->pos().y()/100.0).arg(gi->data(RolePoseZ).toDouble()).arg(gi->data(RoleRoll).toDouble()).arg(gi->data(RolePitch).toDouble()).arg(gi->data(RoleYaw).toDouble())
-        .arg(gi->data(RoleWidth).toDouble()).arg(gi->data(RoleDepth).toDouble()).arg(gi->data(RoleHeight).toDouble())
-        .arg(gi->data(RoleImported).toBool() ? "true" : "false")
-        .arg(gi->data(RoleGeneratedPlaceholder).toBool() ? "true" : "false")
-        .arg(gi->data(RoleLocked).toBool() ? "true" : "false");
-      if (is_mesh) yaml += QString("    mesh_path: %1\n").arg(source);
-      if (is_urdf) yaml += QString("    urdf_path: %1\n").arg(source);
+  if (!digital_twin_scene_) return;
+  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  if (layout_path.empty()) return;
+  YAML::Node root;
+  bool malformed_existing = false;
+  if (fs::exists(layout_path)) {
+    try {
+      root = YAML::LoadFile(layout_path.string());
+    } catch (...) {
+      malformed_existing = true;
     }
-    workcell_builder::persist_workcell_studio_layout(s.scene_dir, yaml.toStdString());
   }
+  if (malformed_existing) {
+    const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    const fs::path backup = layout_path.parent_path() / (layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
+    boost::system::error_code ec;
+    fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
+    if (ec) {
+      append_studio_log(QString("Malformed environment_layout.yaml detected; backup failed (%1). Save aborted.").arg(QString::fromStdString(ec.message())));
+      QMessageBox::warning(this, "Save Layout", "Malformed environment_layout.yaml backup failed. Not overwriting.");
+      return;
+    }
+    append_studio_log(QString("Malformed environment_layout.yaml backed up to %1").arg(QString::fromStdString(backup.string())));
+    root = YAML::Node();
+  }
+  if (!root || !root.IsMap()) {
+    const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ? scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
+    root = minimal_environment_layout(scene_name);
+  }
+  root["schema_version"] = "environment_layout/v1";
+  YAML::Node placed(YAML::NodeType::Sequence);
+  for (auto * gi : digital_twin_scene_->items()) {
+    if (gi->data(RoleRole).toString() != "asset") continue;
+    YAML::Node item(YAML::NodeType::Map);
+    item["id"] = gi->data(RoleId).toString().toStdString();
+    item["name"] = gi->data(RoleDisplayName).toString().toStdString();
+    item["category"] = gi->data(RoleCategory).toString().toStdString();
+    item["type"] = gi->data(RoleType).toString().toStdString();
+    item["source_path"] = gi->data(RoleSource).toString().toStdString();
+    item["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
+    YAML::Node pose(YAML::NodeType::Map);
+    pose["x"] = gi->pos().x() / 100.0; pose["y"] = gi->pos().y() / 100.0; pose["z"] = gi->data(RolePoseZ).toDouble();
+    pose["roll"] = gi->data(RoleRoll).toDouble(); pose["pitch"] = gi->data(RolePitch).toDouble(); pose["yaw"] = gi->data(RoleYaw).toDouble();
+    item["pose"] = pose;
+    YAML::Node meta(YAML::NodeType::Map); meta["preview_only"] = true; item["metadata"] = meta;
+    placed.push_back(item);
+    append_studio_log(QString("Saved layout item %1 to environment_layout.yaml").arg(gi->data(RoleId).toString()));
+  }
+  root["placed_assets"] = placed;
+  std::ofstream out(layout_path.string());
+  out << root;
+  out.close();
   layout_dirty_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
-  append_studio_log("Save Layout requested");
+  append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
+  populate_scene_hierarchy();
+  rebuild_digital_twin_canvas();
+  refresh_scene_browser_ui();
 }
 
 void MainWindow::revert_layout_changes()
@@ -1844,7 +1897,7 @@ void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
 void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()) return; auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); }
-void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Delete Selected","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Delete Selected","Delete selected item?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", s->data(RoleId).toString(), s->pos(), s->pos(), false, true}); delete s; mark_layout_dirty("Delete Selected"); }
+void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
 
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
@@ -1886,6 +1939,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   redo_stack_.clear();
   mark_layout_dirty("Add to Canvas");
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
+  save_layout_changes();
 }
 
 
