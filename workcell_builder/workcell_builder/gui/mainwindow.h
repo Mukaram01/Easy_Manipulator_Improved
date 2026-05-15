@@ -53,6 +53,9 @@ class QGraphicsSceneMouseEvent;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QComboBox;
+class QToolButton;
+class QMenu;
+class QSplitter;
 
 class MainWindow: public QMainWindow
 {
@@ -193,6 +196,7 @@ private:
   QLabel * grasp_details_label_{ nullptr };
   QLabel * approach_retreat_details_label_{ nullptr };
   QLabel * preview_actions_label_{ nullptr };
+  QLabel * mode_chip_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
@@ -240,6 +244,10 @@ private:
   QPushButton * copy_all_button_{ nullptr };
   QPushButton * open_preview_folder_button_{ nullptr };
   QPushButton * open_preview_transcript_button_{ nullptr };
+  QToolButton * scene_builder_more_actions_button_{ nullptr };
+  QToolButton * preview_more_actions_button_{ nullptr };
+  QToolButton * validation_more_actions_button_{ nullptr };
+  QToolButton * export_more_actions_button_{ nullptr };
   QLabel * validation_summary_label_{ nullptr };
   QLabel * validation_blockers_label_{ nullptr };
   QLabel * validation_warnings_label_{ nullptr };
