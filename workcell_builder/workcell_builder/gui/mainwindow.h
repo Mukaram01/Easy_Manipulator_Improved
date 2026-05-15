@@ -51,6 +51,7 @@ class QCheckBox;
 class QPushButton;
 class QDoubleSpinBox;
 class QGraphicsSceneMouseEvent;
+class ScenePreviewWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QComboBox;
@@ -212,6 +213,7 @@ private:
   QLabel * canvas_mode_label_{ nullptr };
   QLabel * snap_step_label_{ nullptr };
   QGraphicsView * digital_twin_canvas_{ nullptr };
+  ScenePreviewWidget * scene_preview_widget_{ nullptr };
   QGraphicsScene * digital_twin_scene_{ nullptr };
   QGraphicsScene * minimap_scene_{ nullptr };
   QCheckBox * toggle_grid_box_{ nullptr };
