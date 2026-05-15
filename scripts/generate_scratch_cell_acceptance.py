@@ -17,7 +17,7 @@ CELL_TMPL='''cell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\n  plan
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); ap.add_argument('--run-file-output-audit',action='store_true',default=True); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'file_output_audit':{}}
+ r={'scene_name':a.scene_name,'scene_dir':'','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'file_output_audit':{},'state_transition_audit':{}}
  try:a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc:r['blockers'].append(f'invalid output root: {a.output_root} ({exc})'); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
@@ -46,6 +46,16 @@ def main():
    try:r['file_output_audit']=json.loads(audit_json.read_text(encoding='utf-8'))
    except Exception:r['warnings'].append('file-output audit json could not be parsed')
   if arc!=0:r['warnings'].append('File-output audit reported non-PASS status')
+ 
+ state_json=sd/'state_transition_audit.json'
+ try:
+  src,sout=_run([sys.executable,str(SCRIPTS/'audit_new_cell_state_transitions.py'),'--scene-dir',str(sd),'--scene-name',sd.name,'--json-out',str(state_json)])
+  if state_json.exists():
+   try:r['state_transition_audit']=json.loads(state_json.read_text(encoding='utf-8'))
+   except Exception:r['warnings'].append('state-transition audit json could not be parsed')
+  if src!=0:r['warnings'].append('State-transition audit reported non-zero status')
+ except Exception as exc:
+  r['warnings'].append(f'State-transition audit unavailable: {exc}')
  
  for cmd in [[sys.executable,str(SCRIPTS/'validate_cell_definition.py'),str(cell),'--json'],[sys.executable,str(SCRIPTS/'validate_environment_layout.py'),str(layout),'--json']]:
   vrc,_=_run(cmd)

@@ -127,3 +127,50 @@ Status meanings:
 - `PASS`: required files exist, required tokens are present, and no blockers were found.
 - `WARNINGS`: no hard blockers, but cross-reference or metadata quality warnings were found.
 - `BLOCKED`: missing required files, malformed required content, or scene/package mismatch that blocks readiness.
+
+## Point 3: State-transition Audit
+
+State names:
+- `NO_WORKSPACE`
+- `WORKSPACE_READY`
+- `CELL_DRAFT_CREATED`
+- `LAYOUT_CREATED`
+- `LAYOUT_SAVED`
+- `TASK_INTENT_CREATED`
+- `SCENE_PACKAGE_GENERATED`
+- `FILE_OUTPUTS_CHECKED`
+- `VALIDATION_READY`
+- `VALIDATION_PASSED`
+- `VALIDATION_BLOCKED`
+- `PLAN_SIMULATE_READY`
+- `SIMULATION_RUNNING`
+- `SIMULATION_STOPPED`
+
+Required files/conditions by progression:
+- Layout milestone: `environment_layout.yaml`
+- Task intent milestone: `config/workcell_builder_task_intent.yaml`
+- Scene package milestone: `package.xml`, `CMakeLists.txt`, `launch/demo.launch.py`
+- File-output audit milestone: `file_output_audit.json`
+- Validation milestone: `smoke/offline_smoke_report.json`
+- Simulation milestone: fake-hardware process running/stopped only
+
+Allowed next actions:
+- `Save Layout`
+- `Generate/Update Task Intent`
+- `Generate Scene Package`
+- `Run Offline Validation`
+- `Open Plan & Simulate`
+
+Blocked conditions and recovery:
+- Missing `environment_layout.yaml` → recover with `Save Layout`.
+- Missing `config/workcell_builder_task_intent.yaml` → recover with `Generate/Update Task Intent`.
+- Missing package outputs (`package.xml`, `CMakeLists.txt`, `launch/demo.launch.py`) → recover with `Generate Scene Package`.
+- Plan & Simulate remains blocked until launch/package outputs exist.
+
+Audit script:
+```bash
+python3 scripts/audit_new_cell_state_transitions.py \
+  --scene-dir <path> \
+  --scene-name <name> \
+  --json-out <path>
+```
