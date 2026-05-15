@@ -69,6 +69,25 @@ protected:
       if (show_warnings && it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
       if (show_pick_place && (it.role.contains("pick") || it.role.contains("place"))) p.drawEllipse(project(it.x,it.y+it.sy+0.1,it.z), 4, 4);
     }
+    auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c,const QString &name){
+      QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
+      Q_UNUSED(sz);
+      QPolygonF poly;
+      poly << a << b << c1 << d;
+      p.setPen(QPen(c,2));
+      p.drawPolygon(poly);
+      p.drawText(project(x,y+sy+0.1,z), name);
+    };
+    p.setPen(QPen(QColor("#ef4444"),2)); p.drawLine(project(0,0,0), project(1.2,0,0)); p.drawText(project(1.25,0,0), "X");
+    p.setPen(QPen(QColor("#22c55e"),2)); p.drawLine(project(0,0,0), project(0,1.2,0)); p.drawText(project(0,1.3,0), "Y");
+    p.setPen(QPen(QColor("#3b82f6"),2)); p.drawLine(project(0,0,0), project(0,0,1.2)); p.drawText(project(0,0,1.3), "Z");
+    drawBox(-1.2,0,-1.0,2.4,0.15,1.6,QColor("#64748b"),"table");
+    drawBox(1.6,0,-0.8,0.8,0.8,0.8,QColor("#f59e0b"),"bin");
+    drawBox(-2.4,0,-0.2,1.2,0.1,0.6,QColor("#06b6d4"),"conveyor");
+    drawBox(-0.2,0,-2.2,0.5,0.8,0.5,QColor("#a78bfa"),"robot base");
+    drawBox(0.8,0.8,-1.8,0.2,0.2,0.2,QColor("#38bdf8"),"camera");
+    drawBox(-0.8,0.15,-0.7,0.3,0.3,0.3,QColor("#34d399"),"pick src");
+    drawBox(1.3,0.15,-0.1,0.3,0.3,0.3,QColor("#fb7185"),"place tgt");
   }
 private:
   QPoint last_;
