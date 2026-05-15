@@ -386,7 +386,8 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
   ui->next->hide();
   success = false;
   ui->error_label->setWordWrap(true);
-  ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
+  ui->error_label->setProperty("status", "error");
+  ui->error_label->setText("Workcell not available");
   ui->filepath->setToolTip("Selected ROS workspace root (contains assets/ and scenes/)");
   ui->ros_distro->setToolTip("Choose the ROS 2 distro that will be used for generated launch/config files");
   setup_compact_header();
@@ -426,8 +427,8 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
   } else {
     ui->ros_distro->setDisabled(true);
     ui->error_label->setText(
-      "<font color='#C0392B'>No ROS 2 installation detected. Install ROS 2 under /opt/ros, then reopen "
-      "Workcell Builder.</font>");
+      "No ROS 2 installation detected. Install ROS 2 under /opt/ros, then reopen Workcell Builder.");
+    ui->error_label->setProperty("status", "error");
     statusBar()->showMessage("ROS 2 not detected in /opt/ros.");
   }
 
@@ -449,10 +450,12 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
       update_next_button_state();
       if (success && !has_selected_ros_distro()) {
         ui->error_label->setText(
-          "<font color='#C0392B'>Workcell loaded. Please select a ROS distro to continue.</font>");
+          "Workcell loaded. Please select a ROS distro to continue.");
+        ui->error_label->setProperty("status", "error");
         statusBar()->showMessage("Select a ROS distro to enable the Next step.");
       } else if (success) {
-        ui->error_label->setText("<font color='#27AE60'>Workcell loaded</font>");
+        ui->error_label->setProperty("status", "success");
+        ui->error_label->setText("Workcell loaded");
         statusBar()->showMessage("Ready: open scene setup.");
       }
     });
@@ -570,6 +573,25 @@ void MainWindow::setup_studio_shell()
     return;
   }
 
+  auto detach_widget = [root_layout](QWidget * widget) {
+      if (!widget) {
+        return;
+      }
+      root_layout->removeWidget(widget);
+      widget->setVisible(false);
+      widget->setMaximumHeight(0);
+      widget->setMinimumHeight(0);
+    };
+  detach_widget(ui->quick_start_label);
+  detach_widget(ui->filepath_label);
+  detach_widget(ui->filepath);
+  detach_widget(ui->label);
+  detach_widget(ui->ros_distro);
+  detach_widget(ui->load_workcell);
+  detach_widget(ui->change_workcell);
+  detach_widget(ui->next);
+  detach_widget(ui->error_label);
+
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
   studio_nav_->addItems({"🏠 Dashboard","🛠 Scene Builder","📚 Existing Scenes","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
@@ -597,8 +619,7 @@ void MainWindow::setup_studio_shell()
   auto * dash_preview = new QPushButton("Preview Launch", dashboard); dashboard_actions->addWidget(dash_preview);
   auto * dash_export = new QPushButton("Export", dashboard); dashboard_actions->addWidget(dash_export);
   dl->addLayout(dashboard_actions);
-  auto * dash_safety = new QLabel("Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded", dashboard); dl->addWidget(dash_safety);
-
+  
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
@@ -798,7 +819,7 @@ void MainWindow::setup_studio_shell()
   auto * grasp_card = new QFrame(right_panel); grasp_card->setObjectName("studioCard"); auto * grasp_layout = new QVBoxLayout(grasp_card);
   grasp_layout->addWidget(new QLabel("<b>Grasp Strategy</b>"));
   grasp_details_label_ = new QLabel("Strategy/ref: unknown\nTool/End Effector: unknown\nApproach axis: unknown\nOrientation mode: unknown\nAllowed roll/yaw: unknown"); grasp_details_label_->setWordWrap(true); grasp_layout->addWidget(grasp_details_label_);
-  readiness_label_=new QLabel("Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded<br/>No uncontrolled robot motion."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
+  readiness_label_=new QLabel("Safety posture: guarded (fake hardware default, no uncontrolled robot motion)."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
   right_layout->addWidget(grasp_card);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
@@ -1523,7 +1544,8 @@ void MainWindow::on_load_workcell_clicked()
   ui->next->setDisabled(true);
   ui->load_workcell->setDisabled(true);
   ui->change_workcell->setDisabled(true);
-  ui->error_label->setText("<font color='#2E86C1'>Loading workcell...</font>");
+  ui->error_label->setProperty("status", "info");
+  ui->error_label->setText("Loading workcell...");
   statusBar()->showMessage("Loading workspace. Please wait...");
 
   if (progress_dialog_) {
@@ -1698,12 +1720,13 @@ void MainWindow::on_load_workcell_clicked()
       workcell_path = result.workcell_path;
       if (has_selected_ros_distro()) {
         ui->error_label->setText(
-          QString("<font color='#27AE60'>Workcell loaded%1</font>").arg(result.workcell_root_label));
+          QString("Workcell loaded%1").arg(result.workcell_root_label));
+        ui->error_label->setProperty("status", "success");
         statusBar()->showMessage("Ready: open scene setup.");
       } else {
         ui->error_label->setText(
-          "<font color='#C0392B'>Workcell loaded, but no ROS distro is selected. Select a ROS distro "
-          "to continue.</font>");
+          "Workcell loaded, but no ROS distro is selected. Select a ROS distro to continue.");
+        ui->error_label->setProperty("status", "error");
         statusBar()->showMessage("Workspace loaded. Select a ROS distro.");
       }
       success = true;
@@ -1713,7 +1736,8 @@ void MainWindow::on_load_workcell_clicked()
     } else {
       const QString error_text = result.cancelled ? "Workcell load cancelled" :
         QString("Failed to load workcell: %1").arg(result.error);
-      ui->error_label->setText(QString("<font color='#C0392B'>%1</font>").arg(error_text));
+      ui->error_label->setProperty("status", "error");
+      ui->error_label->setText(error_text);
       statusBar()->showMessage(error_text);
       success = false;
       update_next_button_state();
@@ -1726,13 +1750,15 @@ void MainWindow::on_load_workcell_clicked()
 void MainWindow::on_next_clicked()
 {
   if (!success) {
-    ui->error_label->setText("<font color='#C0392B'>Please load a workcell before continuing.</font>");
+    ui->error_label->setProperty("status", "error");
+    ui->error_label->setText("Please load a workcell before continuing.");
     statusBar()->showMessage("Load a workspace before continuing.");
     return;
   }
   if (!has_selected_ros_distro()) {
     ui->error_label->setText(
-      "<font color='#C0392B'>Please select a ROS distro before continuing.</font>");
+      "Please select a ROS distro before continuing.");
+    ui->error_label->setProperty("status", "error");
     statusBar()->showMessage("Select a ROS distro before continuing.");
     update_next_button_state();
     return;
@@ -1751,7 +1777,8 @@ void MainWindow::on_next_clicked()
 void MainWindow::on_change_workcell_clicked()
 {
   success = false;
-  ui->error_label->setText("<font color='#C0392B'>Workcell not available</font>");
+  ui->error_label->setProperty("status", "error");
+  ui->error_label->setText("Workcell not available");
   statusBar()->showMessage("Select a new workspace directory.");
   apply_startup_selection();
   refresh_header_status();
@@ -1769,19 +1796,19 @@ void MainWindow::setup_compact_header()
   if (!root_layout || studio_title_label_) return;
 
   auto * header = new QWidget(content);
-  header->setMaximumHeight(64);
   auto * hl = new QHBoxLayout(header);
   hl->setContentsMargins(8, 6, 8, 6);
   studio_title_label_ = new QLabel("<b>Workcell Studio</b>", header);
   studio_ros_label_ = new QLabel("ROS 2: not selected", header);
-  studio_workspace_path_ = new QLineEdit(header);
-  studio_workspace_path_->setReadOnly(true);
-  studio_workspace_path_->setMinimumWidth(280);
+  studio_workspace_chip_ = new QLabel("Workspace: unknown", header);
+  studio_workspace_chip_->setObjectName("workspaceChip");
+  studio_workspace_chip_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
   hl->addWidget(studio_title_label_);
   hl->addSpacing(12);
   hl->addWidget(studio_ros_label_);
   hl->addSpacing(12);
-  hl->addWidget(studio_workspace_path_, 1);
+  hl->addWidget(studio_workspace_chip_);
+  hl->addStretch(1);
   root_layout->insertWidget(0, header);
 }
 
@@ -1791,10 +1818,10 @@ void MainWindow::refresh_header_status()
     const QString ros_text = has_selected_ros_distro() ? ui->ros_distro->currentText() : QString("Humble");
     studio_ros_label_->setText("ROS 2 " + ros_text);
   }
-  if (studio_workspace_path_) {
+  if (studio_workspace_chip_) {
     const QString ws = detect_workspace_root();
-    studio_workspace_path_->setText(ws);
-    studio_workspace_path_->setToolTip(ws);
+    studio_workspace_chip_->setText(QString("Workspace: %1").arg(ws.isEmpty() ? QString("unknown") : ws));
+    studio_workspace_chip_->setToolTip(ws);
   }
 }
 
