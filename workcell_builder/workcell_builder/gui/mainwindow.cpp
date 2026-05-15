@@ -2099,7 +2099,12 @@ static YAML::Node minimal_environment_layout(const std::string & scene_name)
 
 void MainWindow::save_layout_changes()
 {
-  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
+  QString selected_preview_id;
+  if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
+    selected_preview_id = scene_hierarchy_tree_->currentItem()->data(0, Qt::UserRole + 1).toString();
+  } else if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
+    selected_preview_id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString();
+  }
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
@@ -2157,6 +2162,13 @@ void MainWindow::save_layout_changes()
   append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
   populate_scene_hierarchy();
   rebuild_digital_twin_canvas();
+  if (scene_preview_widget_) {
+    if (!selected_preview_id.isEmpty()) {
+      scene_preview_widget_->select_preview_item(selected_preview_id);
+    } else {
+      append_studio_log("Save Layout: no selected preview item id to reselect.");
+    }
+  }
   refresh_scene_browser_ui();
 }
 
@@ -2180,7 +2192,6 @@ void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_s
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
-  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
   if (!digital_twin_scene_) return;
   const QString prefix = id_prefix_from_category(category);
   int suffix = 1;
@@ -2220,6 +2231,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
   append_studio_log("ghost placement preview committed");
   save_layout_changes();
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
 }
 
 
@@ -2249,12 +2261,13 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   const QString category = item->data(0, Qt::UserRole + 2).toString();
   const QString pose = item->data(0, Qt::UserRole + 3).toString();
   const QString source = item->data(0, Qt::UserRole + 4).toString();
+  const QString selected_id = item->data(0, Qt::UserRole + 1).toString();
   inspector_label_->setText(QString("Selected: %1\nCategory: %2\nPose: %3\nSource: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
   live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(name, pose.isEmpty()?"pose unknown":pose));
-  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
   if (!digital_twin_scene_) return;
   for (auto * gi : digital_twin_scene_->items()) {
-    if (gi->data(RoleId).toString() == item->data(0, Qt::UserRole + 1).toString() || gi->data(RoleDisplayName).toString() == name) {
+    if (gi->data(RoleId).toString() == selected_id || gi->data(RoleDisplayName).toString() == name) {
       digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi); return;
     }
   }
