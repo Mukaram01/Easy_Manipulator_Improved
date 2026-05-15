@@ -2138,9 +2138,6 @@ static YAML::Node minimal_environment_layout(const std::string & scene_name)
 {
   YAML::Node root(YAML::NodeType::Map);
   root["schema_version"] = "environment_layout/v1";
-  const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-  const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
-  if (fs::exists(layout_path)) { boost::system::error_code ec; fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec); if (!ec) append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string()))); }
   root["scene_name"] = scene_name;
   root["placed_assets"] = YAML::Node(YAML::NodeType::Sequence);
   return root;
@@ -2186,7 +2183,16 @@ void MainWindow::save_layout_changes()
   root["schema_version"] = "environment_layout/v1";
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
   const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
-  if (fs::exists(layout_path)) { boost::system::error_code ec; fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec); if (!ec) append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string()))); }
+  if (fs::exists(layout_path)) {
+    boost::system::error_code ec;
+    fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
+    if (!ec) {
+      append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string())));
+    } else {
+      append_studio_log(QString("Warning: backup before write failed (%1). Continuing save without backup.")
+        .arg(QString::fromStdString(ec.message())));
+    }
+  }
   YAML::Node placed(YAML::NodeType::Sequence);
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
