@@ -1379,7 +1379,10 @@ bool MainWindow::is_safe_scene_path_for_trash_move(const fs::path & scene_path, 
     if (reason) *reason = "No scene is selected.";
     return false;
   }
-  const fs::path scenes_root = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scenes_root;
+  fs::path scenes_root = scene_browser_result_.scene_root;
+  if (scenes_root.empty()) {
+    scenes_root = scene_path.parent_path();
+  }
   boost::system::error_code ec;
   const fs::path canonical_scene = fs::weakly_canonical(scene_path, ec);
   if (ec) {
@@ -1442,7 +1445,10 @@ void MainWindow::delete_selected_scene()
     return;
   }
   boost::system::error_code ec;
-  const fs::path scenes_root = scene.scenes_root;
+  fs::path scenes_root = scene_browser_result_.scene_root;
+  if (scenes_root.empty()) {
+    scenes_root = scene.scene_dir.parent_path();
+  }
   const fs::path trash_root = scenes_root / ".workcell_studio_trash";
   fs::create_directories(trash_root, ec);
   const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss");
