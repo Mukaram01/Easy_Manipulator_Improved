@@ -599,6 +599,19 @@ void MainWindow::setup_studio_shell()
   canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
+  connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id){
+    if (!scene_hierarchy_tree_) return;
+    bool matched=false;
+    for (int i=0;i<scene_hierarchy_tree_->topLevelItemCount();++i){
+      auto *top=scene_hierarchy_tree_->topLevelItem(i);
+      for (int j=0;j<top->childCount();++j){
+        auto *c=top->child(j);
+        if (c->data(0, Qt::UserRole + 1).toString() == id){ scene_hierarchy_tree_->setCurrentItem(c); on_hierarchy_item_selected(c); matched=true; break; }
+      }
+      if (matched) break;
+    }
+    if (!matched && !id.isEmpty()) append_studio_log(QString("No preview item linked: %1").arg(id));
+  });
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
   auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
@@ -2086,6 +2099,7 @@ static YAML::Node minimal_environment_layout(const std::string & scene_name)
 
 void MainWindow::save_layout_changes()
 {
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
@@ -2166,6 +2180,7 @@ void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_s
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
   if (!digital_twin_scene_) return;
   const QString prefix = id_prefix_from_category(category);
   int suffix = 1;
@@ -2236,6 +2251,7 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   const QString source = item->data(0, Qt::UserRole + 4).toString();
   inspector_label_->setText(QString("Selected: %1\nCategory: %2\nPose: %3\nSource: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
   live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(name, pose.isEmpty()?"pose unknown":pose));
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(0, Qt::UserRole + 1).toString());
   if (!digital_twin_scene_) return;
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleId).toString() == item->data(0, Qt::UserRole + 1).toString() || gi->data(RoleDisplayName).toString() == name) {
@@ -2255,6 +2271,24 @@ void MainWindow::populate_scene_hierarchy()
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path d=s.scene_dir;
   const std::vector<std::string> files={"environment.yaml","scene_manifest.yaml","cell_definition.yaml","environment_layout.yaml"};
+  QVector<ScenePreviewWidget::PreviewItem> preview_items;
+  auto add_preview_item = [&](const QString &id, const QString &name, const QString &category, const QString &role, const QString &status, const QString &source, bool metadata_complete){
+    ScenePreviewWidget::PreviewItem p; p.id=id; p.display_name=name; p.category=category; p.role=role; p.status=status; p.source_path=source; p.metadata_complete=metadata_complete;
+    if (category.contains("Robot", Qt::CaseInsensitive)) { p.sx=0.5; p.sy=0.8; p.sz=0.5; }
+    if (category.contains("Conveyor", Qt::CaseInsensitive)) { p.sx=1.2; p.sy=0.2; p.sz=0.5; }
+    if (category.contains("Table", Qt::CaseInsensitive)) { p.sx=1.6; p.sy=0.2; p.sz=1.0; }
+    p.x = preview_items.size()*0.45 - 1.2; p.y = 0.0; p.z = -0.8 + 0.2*(preview_items.size()%4);
+    preview_items.push_back(p);
+  };
+  add_preview_item("robot_base","robot base","Robot","robot","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("end_effector","end effector","End Effector","tool","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("camera_main","camera","Camera / Sensor","camera","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("conveyor_main","conveyor","Conveyor","conveyor","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("table_main","workbench","Work Table / Surface","table","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("bin_pick","pick source bin","Pick Source / Bin","pick source","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("fixture_place","place target fixture","Place Target / Fixture","place target","ready",QString::fromStdString(s.scene_dir.string()),true);
+  add_preview_item("safety_zone_a","safety zone","Safety","safety zone","warning",QString::fromStdString(s.scene_dir.string()),false);
+  add_preview_item("warning_marker_a","warning marker","Safety","warning marker","warning",QString::fromStdString(s.scene_dir.string()),false);
   for (const auto & fn : files) {
     const fs::path pth=d/fn; if (!fs::exists(pth)) continue;
     auto *n = new QTreeWidgetItem(tops["Other Objects / Imported Assets"], {QString::fromStdString(fn), "OK"});
@@ -2262,6 +2296,15 @@ void MainWindow::populate_scene_hierarchy()
     n->setData(0, Qt::UserRole + 2, "Other Objects / Imported Assets");
     n->setData(0, Qt::UserRole + 4, QString::fromStdString(pth.string()));
   }
+  for (const auto & p : preview_items) {
+    auto *node = new QTreeWidgetItem(tops[p.category], {p.display_name, p.status});
+    node->setData(0, Qt::UserRole + 1, p.id);
+    node->setData(0, Qt::UserRole + 2, p.category);
+    node->setData(0, Qt::UserRole + 3, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
+    node->setData(0, Qt::UserRole + 4, p.source_path);
+    if (!p.metadata_complete) append_studio_log(QString("Preview item metadata incomplete: %1").arg(p.display_name));
+  }
+  if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
 }
 
 void MainWindow::populate_asset_catalog()
