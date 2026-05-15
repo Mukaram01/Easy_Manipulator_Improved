@@ -969,14 +969,14 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
   connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
   connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
-  connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int){ Q_UNUSED(int); on_hierarchy_item_selected(item); });
+  connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
-  connect(open_asset_folder_button, &QPushButton::clicked, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
-  connect(copy_asset_path_button, &QPushButton::clicked, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
+  connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
+  connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect(add_to_canvas_button, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
-  connect(import_asset_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
-  connect(add_existing_stl_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
-  connect(placeholder_button, &QPushButton::clicked, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
+  connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
+  connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
+  connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
   connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; fs::path out; if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) { const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png"; } else { out = fs::path(diagnostics_output_root().toStdString()) / "preview" / "workcell_studio_canvas_snapshot.png"; } fs::create_directories(out.parent_path()); QImage image(1280, 800, QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#0f131a")); QPainter painter(&image); digital_twin_canvas_->scene()->render(&painter); painter.end(); image.save(QString::fromStdString(out.string())); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
@@ -1687,7 +1687,7 @@ void MainWindow::refresh_preview_launch_ui()
     else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
     if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot summary: %3<br/>gripper/tool summary: %4<br/>task file status: %5<br/>launch/demo.launch.py status: %6<br/>package.xml/CMakeLists status: %7<br/>preview snapshot path: %8")
       .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.scene_dir.string()), QString::fromStdString(s.robot_summary), QString::fromStdString(s.gripper_summary),
-      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", s.has_package_files ? "present" : "missing",
+      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && s.has_launch_demo) ? "present" : "missing",
       QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
     if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
   }
@@ -1923,7 +1923,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleSourcePackage, QString(""));
     item->setData(RoleWidth, entry.width); item->setData(RoleDepth, entry.depth); item->setData(RoleHeight, entry.height);
     item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, false);
-    item->setData(RoleWarning, QString::fromStdString(entry.warning));
+    item->setData(RoleWarning, QString::fromStdString(entry.warnings.empty() ? std::string() : entry.warnings.front()));
     item->setData(RolePoseText, QString("x=%1 y=%2 z=%3 r=%4 p=%5 y=%6").arg(entry.x).arg(entry.y).arg(entry.z).arg(entry.roll).arg(entry.pitch).arg(entry.yaw));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
@@ -1952,7 +1952,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     QStringList issues;
     if (!s.has_environment_yaml) issues << "missing environment.yaml";
     if (!s.has_package_xml) issues << "missing package.xml";
-    if (!s.has_launch_file) issues << "missing launch/demo.launch.py";
+    if (!s.has_launch_demo) issues << "missing launch/demo.launch.py";
     auto task = load_scene_task_intent_summary(s.scene_dir);
     if (task.status != "READY") issues << "missing task intent";
     if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
@@ -2003,8 +2003,7 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
   live_coordinate_label_->setText(QString("Live coordinates: x=%1 y=%2 | %3").arg(inspector_x_->value()).arg(inspector_y_->value()).arg(item->data(RolePoseText).toString()));
   inspector_warning_label_->setText("Warnings: " + (item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString()));
-  if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QString("
-Linked hierarchy item: %1").arg(item->data(RoleId).toString()));
+  if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QStringLiteral("\nLinked hierarchy item: %1").arg(item->data(RoleId).toString()));
   inspector_update_guard_ = false;
 }
 
