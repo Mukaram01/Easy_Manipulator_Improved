@@ -2305,8 +2305,3 @@ void MainWindow::refresh_new_cell_checklist()
           "<br/><code>python3 scripts/run_workcell_studio_acceptance_gate.py --mode scratch --scene-name scratch_ur5_2f_acceptance --output-root /tmp/workcell_studio_acceptance</code>";
   new_cell_checklist_label_->setText(text);
 }
-      if (label == "Dashboard") {
-        append_studio_log("Dashboard: returning to scene overview.");
-        studio_nav_->setCurrentRow(0);
-        return;
-      }

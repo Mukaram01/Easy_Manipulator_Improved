@@ -39,7 +39,12 @@ protected:
     for (int i=-10;i<=10;++i){ p.drawLine(project(i*0.4,0,-4), project(i*0.4,0,4)); p.drawLine(project(-4,0,i*0.4), project(4,0,i*0.4)); }
     auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c,const QString &name){
       QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
-      p.setPen(QPen(c,2)); p.drawPolygon(QPolygonF{a,b,c1,d}); p.drawText(project(x,y+sy+0.1,z), name);
+      Q_UNUSED(sz);
+      QPolygonF poly;
+      poly << a << b << c1 << d;
+      p.setPen(QPen(c,2));
+      p.drawPolygon(poly);
+      p.drawText(project(x,y+sy+0.1,z), name);
     };
     p.setPen(QPen(QColor("#ef4444"),2)); p.drawLine(project(0,0,0), project(1.2,0,0)); p.drawText(project(1.25,0,0), "X");
     p.setPen(QPen(QColor("#22c55e"),2)); p.drawLine(project(0,0,0), project(0,1.2,0)); p.drawText(project(0,1.3,0), "Y");
