@@ -390,7 +390,6 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
   ui->error_label->setText("Workcell not available");
   ui->filepath->setToolTip("Selected ROS workspace root (contains assets/ and scenes/)");
   ui->ros_distro->setToolTip("Choose the ROS 2 distro that will be used for generated launch/config files");
-  setup_compact_header();
   statusBar()->showMessage("Initializing Workcell Studio...");
   // Scene Status panel action labels (preview-only contract)
   static const char * kSceneStatusGraspActions[] = {"Check Grasp Strategy", "Generate EMD Grasp Request", "Open EMD Grasp Request", "Open Grasp Visualization Docs"};
@@ -461,7 +460,6 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
     });
 
   apply_startup_selection();
-  refresh_header_status();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
@@ -599,9 +597,15 @@ void MainWindow::setup_studio_shell()
   studio_pages_ = new QStackedWidget(content);
 
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
-  dl->addWidget(new QLabel("<h2>Workcell Studio Dashboard</h2><p>Scene overview and investor-demo readiness</p>"));
-  dashboard_summary_label_=new QLabel("Loading scenes..."); dashboard_summary_label_->setWordWrap(true); dl->addWidget(dashboard_summary_label_);
-  dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
+  dashboard->setObjectName("workcellStudioDashboardPage");
+  auto * dashboard_title = new QLabel("Workcell Studio Dashboard", dashboard);
+  dashboard_title->setObjectName("dashboardTitleLabel");
+  dl->addWidget(dashboard_title);
+  auto * dashboard_subtitle = new QLabel("Scene overview and investor-demo readiness", dashboard);
+  dashboard_subtitle->setObjectName("dashboardSubtitleLabel");
+  dl->addWidget(dashboard_subtitle);
+  dashboard_summary_label_=new QLabel("Loading scenes..."); dashboard_summary_label_->setObjectName("dashboardSummaryLabel"); dashboard_summary_label_->setWordWrap(true); dl->addWidget(dashboard_summary_label_);
+  dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setObjectName("dashboardSceneTable"); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
   dashboard_scene_table_->setAlternatingRowColors(true);
   dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
   dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -1359,8 +1363,8 @@ void MainWindow::refresh_scene_browser_ui()
   int ready=0,warn=0,blocked=0; for (const auto & s : scene_browser_result_.scenes){ if(s.status=="READY") ++ready; else if(s.status=="WARNINGS") ++warn; else ++blocked; }
   const QString root_used = QString::fromStdString(scene_browser_result_.scene_root.string());
   const QStringList searched = [&](){ QStringList out; for (const auto & p : scene_browser_result_.searched_roots) out << QString::fromStdString(p.string()); return out; }();
-  QString summary = QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Workspace: %5 | Loaded from: %6")
-    .arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(QString::fromStdString(workspace_root.string())).arg(root_used);
+  QString summary = QString("Total scenes: %1 | Ready: %2 | Warnings: %3 | Blocked/Scaffold: %4 | Source: %5")
+    .arg(scene_browser_result_.scenes.size()).arg(ready).arg(warn).arg(blocked).arg(root_used);
   if (!scene_browser_result_.root_exists) {
     summary += QString(
       " | Warning: no scene folders found. Searched:\\n - %1\\n"
@@ -1731,8 +1735,7 @@ void MainWindow::on_load_workcell_clicked()
       }
       success = true;
       selected_workspace_ = result.workcell_file;
-      refresh_header_status();
-      update_next_button_state();
+          update_next_button_state();
     } else {
       const QString error_text = result.cancelled ? "Workcell load cancelled" :
         QString("Failed to load workcell: %1").arg(result.error);
@@ -1781,7 +1784,6 @@ void MainWindow::on_change_workcell_clicked()
   ui->error_label->setText("Workcell not available");
   statusBar()->showMessage("Select a new workspace directory.");
   apply_startup_selection();
-  refresh_header_status();
   update_next_button_state();
   setup_studio_shell();
   apply_studio_theme();
@@ -1789,41 +1791,6 @@ void MainWindow::on_change_workcell_clicked()
 
 
 
-void MainWindow::setup_compact_header()
-{
-  QWidget * content = ui->centralwidget;
-  auto * root_layout = qobject_cast<QVBoxLayout *>(content->layout());
-  if (!root_layout || studio_title_label_) return;
-
-  auto * header = new QWidget(content);
-  auto * hl = new QHBoxLayout(header);
-  hl->setContentsMargins(8, 6, 8, 6);
-  studio_title_label_ = new QLabel("<b>Workcell Studio</b>", header);
-  studio_ros_label_ = new QLabel("ROS 2: not selected", header);
-  studio_workspace_chip_ = new QLabel("Workspace: unknown", header);
-  studio_workspace_chip_->setObjectName("workspaceChip");
-  studio_workspace_chip_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
-  hl->addWidget(studio_title_label_);
-  hl->addSpacing(12);
-  hl->addWidget(studio_ros_label_);
-  hl->addSpacing(12);
-  hl->addWidget(studio_workspace_chip_);
-  hl->addStretch(1);
-  root_layout->insertWidget(0, header);
-}
-
-void MainWindow::refresh_header_status()
-{
-  if (studio_ros_label_) {
-    const QString ros_text = has_selected_ros_distro() ? ui->ros_distro->currentText() : QString("Humble");
-    studio_ros_label_->setText("ROS 2 " + ros_text);
-  }
-  if (studio_workspace_chip_) {
-    const QString ws = detect_workspace_root();
-    studio_workspace_chip_->setText(QString("Workspace: %1").arg(ws.isEmpty() ? QString("unknown") : ws));
-    studio_workspace_chip_->setToolTip(ws);
-  }
-}
 
 void MainWindow::apply_startup_selection()
 {
@@ -1838,7 +1805,6 @@ void MainWindow::apply_startup_selection()
     selected_workspace_ = startup_workspace_.trimmed();
     on_load_workcell_clicked();
   }
-  refresh_header_status();
 }
 
 bool MainWindow::has_selected_ros_distro() const

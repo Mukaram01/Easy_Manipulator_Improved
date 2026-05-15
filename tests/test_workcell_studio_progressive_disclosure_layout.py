@@ -79,10 +79,30 @@ def test_legacy_startup_header_rows_removed_from_studio_shell():
         'Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded',
         'Workcell loaded (using selected path/src as workcell root)',
         'studio_workspace_path_ = new QLineEdit',
+        'ROS 2 humble',
+        'Workspace:',
     ]
     for token in banned:
         assert token not in CPP
-    assert 'Workspace: ' in CPP
+    assert 'workspaceChip' not in CPP
+
+
+def test_dashboard_has_named_widgets_and_readable_qss_palette():
+    for token in [
+        'setObjectName("workcellStudioDashboardPage")',
+        'setObjectName("dashboardTitleLabel")',
+        'setObjectName("dashboardSummaryLabel")',
+        'setObjectName("dashboardSceneTable")',
+        'Workcell Studio Dashboard',
+    ]:
+        assert token in CPP
+
+    qss = Path('workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss').read_text(encoding='utf-8')
+    for color in ['#f8fafc', '#cbd5e1', '#94a3b8']:
+        assert color in qss
+    lowered_color_lines = [line.strip().lower() for line in qss.splitlines() if line.strip().lower().startswith('color:')]
+    for banned in ['color: black', 'color: #000', 'color: #0b1118', 'color: #111827', 'color: #0f172a']:
+        assert banned not in lowered_color_lines
 
 
 def test_dark_qss_has_readable_explicit_foreground_rules_and_no_banned_dark_text_colors():

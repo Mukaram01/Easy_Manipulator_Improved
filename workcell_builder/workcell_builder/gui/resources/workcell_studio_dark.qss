@@ -19,12 +19,36 @@ QLabel[status="error"], QLabel[badge="blocked"] { color: #f87171; }
 QLabel[status="success"], QLabel[badge="ready"], QLabel[badge="pass"], QLabel[badge="accepted"] { color: #22c55e; }
 QLabel[status="info"], QLabel[badge="safety"] { color: #38bdf8; }
 QLabel[badge="warning"] { color: #f59e0b; }
-QLabel#safetyPill, QLabel#workspaceChip {
+QLabel#safetyPill {
   background-color: #162131;
   border: 1px solid #334155;
   border-radius: 10px;
   padding: 4px 10px;
   color: #cbd5e1;
+}
+QWidget#workcellStudioDashboardPage {
+  background-color: #0b1118;
+}
+QLabel#dashboardTitleLabel {
+  color: #f8fafc;
+  font-size: 26px;
+  font-weight: 700;
+}
+QLabel#dashboardSubtitleLabel {
+  color: #cbd5e1;
+  font-size: 14px;
+}
+QLabel#dashboardSummaryLabel {
+  color: #cbd5e1;
+}
+QTableWidget#dashboardSceneTable {
+  background-color: #111827;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  gridline-color: #334155;
+}
+QTableWidget#dashboardSceneTable::item {
+  color: #f8fafc;
 }
 QLabel:disabled, QCheckBox:disabled, QGroupBox:disabled, QPushButton:disabled, QToolButton:disabled,
 QLineEdit:disabled, QComboBox:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
