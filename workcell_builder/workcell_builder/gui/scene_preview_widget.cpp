@@ -64,7 +64,10 @@ protected:
       else if (it.category.contains("bin",Qt::CaseInsensitive) || it.role.contains("pick", Qt::CaseInsensitive)) c=QColor("#34d399");
       else if (it.role.contains("place", Qt::CaseInsensitive)) c=QColor("#fb7185");
       QPointF a=project(it.x,it.y,it.z), b=project(it.x+it.sx,it.y,it.z), c1=project(it.x+it.sx,it.y+it.sy,it.z), d=project(it.x,it.y+it.sy,it.z);
-      p.setPen(QPen(selected ? QColor("#fde047") : c, selected ? 3 : 2)); p.drawPolygon(QPolygonF{a,b,c1,d});
+      p.setPen(QPen(selected ? QColor("#fde047") : c, selected ? 3 : 2));
+      QPolygonF poly;  // Qt5-compatible polygon construction (initializer-list ctor is not available).
+      poly << a << b << c1 << d;
+      p.drawPolygon(poly);
       if (show_labels || selected) p.drawText(project(it.x,it.y+it.sy+0.08,it.z), selected ? (it.display_name + " [selected]") : it.display_name);
       if (show_warnings && it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
       if (show_pick_place && (it.role.contains("pick") || it.role.contains("place"))) p.drawEllipse(project(it.x,it.y+it.sy+0.1,it.z), 4, 4);
