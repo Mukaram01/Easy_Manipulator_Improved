@@ -654,11 +654,11 @@ void MainWindow::setup_studio_shell()
   dashboard_selected_scene_details_->setWordWrap(true);
   selected_row->addWidget(dashboard_selected_scene_details_);
   auto * dashboard_actions = new QHBoxLayout();
-  auto * dash_open_scene_builder = new QPushButton("Open", dashboard_selected_scene_card_); dash_open_scene_builder->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dash_open_scene_builder);
-  auto * dash_validate = new QPushButton("Validate", dashboard_selected_scene_card_); dash_validate->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dash_validate);
-  auto * dash_preview = new QPushButton("Plan", dashboard_selected_scene_card_); dash_preview->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dash_preview);
-  auto * dash_export = new QPushButton("Export", dashboard_selected_scene_card_); dash_export->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dash_export);
-  auto * dash_delete_scene = new QPushButton("Delete", dashboard_selected_scene_card_); dash_delete_scene->setObjectName("studioHomeDangerButton"); dashboard_actions->addWidget(dash_delete_scene);
+  dashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_); dashboard_open_scene_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_open_scene_button_);
+  dashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_); dashboard_validate_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_validate_button_);
+  dashboard_plan_button_ = new QPushButton("Plan & Simulate", dashboard_selected_scene_card_); dashboard_plan_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_plan_button_);
+  dashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_); dashboard_export_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_export_button_);
+  dashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_); dashboard_delete_button_->setObjectName("studioHomeDangerButton"); dashboard_actions->addWidget(dashboard_delete_button_);
   dashboard_actions->addStretch(1);
   selected_row->addLayout(dashboard_actions);
   auto * dashboard_middle_split = new QSplitter(Qt::Horizontal, dashboard);
@@ -1098,11 +1098,11 @@ void MainWindow::setup_studio_shell()
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
-  connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); run_offline_validation(); });
-  connect(dash_preview, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
-  connect(dash_export, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
-  connect(dash_delete_scene, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
+  connect(dashboard_open_scene_button_, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
+  connect(dashboard_validate_button_, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); run_offline_validation(); });
+  connect(dashboard_plan_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
+  connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
+  connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
   connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
@@ -1443,7 +1443,14 @@ void MainWindow::refresh_studio_home_scene_table()
     if (status_filter == "Blocked" && (status == "READY" || status == "WARNINGS")) continue;
     const int row = dashboard_scene_table_->rowCount(); dashboard_scene_table_->insertRow(row);
     auto *scene_item = new QTableWidgetItem(QFontMetrics(dashboard_scene_table_->font()).elidedText(scene_name, Qt::ElideRight, 320)); scene_item->setToolTip(scene_name); scene_item->setData(Qt::UserRole, (int)i);
-    dashboard_scene_table_->setItem(row,0,scene_item); dashboard_scene_table_->setItem(row,1,new QTableWidgetItem(status)); dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked"));
+    dashboard_scene_table_->setItem(row,0,scene_item);
+    auto * status_item = new QTableWidgetItem(status);
+    if (status == "READY") status_item->setBackground(QColor("#1f6f3d"));
+    else if (status == "WARNINGS") status_item->setBackground(QColor("#8a6500"));
+    else status_item->setBackground(QColor("#7a1e1e"));
+    status_item->setForeground(Qt::white);
+    dashboard_scene_table_->setItem(row,1,status_item);
+    dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked"));
   }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
 }
@@ -1560,11 +1567,27 @@ void MainWindow::select_scene_by_row(int row)
 void MainWindow::refresh_selected_scene_details_card()
 {
   if (!dashboard_selected_scene_details_) return;
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { dashboard_selected_scene_details_->setText("Select a scene to view details."); return; }
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) {
+    dashboard_selected_scene_details_->setText("Select a scene to view details.");
+    if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(false);
+    if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(false);
+    if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(false);
+    if (dashboard_export_button_) dashboard_export_button_->setEnabled(false);
+    if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(false);
+    return;
+  }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  dashboard_selected_scene_details_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nGripper: %4\nTask recipe: %5\nLaunch: %6\nWarnings: %7")
-    .arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.has_task_recipe ? "present" : "missing").arg(s.has_launch_demo ? "ready" : "blocked").arg(s.status == "WARNINGS" ? "review scene artifacts" : "none"));
-  if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Selected Scene\n%1").arg(QString::fromStdString(s.scene_name)));
+  const QString status_chip = (s.status == "READY") ? "<span style='background:#1f6f3d;color:white;padding:2px 8px;border-radius:8px;'>READY</span>"
+    : (s.status == "WARNINGS") ? "<span style='background:#8a6500;color:white;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
+    : "<span style='background:#7a1e1e;color:white;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
+  dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><b>Gripper:</b> %4<br/><b>Task Recipe:</b> %5<br/><b>Launch:</b> %6<br/><b>Source:</b> %7")
+    .arg(QString::fromStdString(s.scene_name)).arg(status_chip).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.has_task_recipe ? "present" : "missing").arg(s.has_launch_demo ? "ready" : "blocked").arg(QString::fromStdString(s.scene_dir.string())));
+  if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Source Path\n%1").arg(QString::fromStdString(scene_browser_result_.scene_root.string())));
+  if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(true);
+  if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(true);
+  if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(s.has_launch_demo);
+  if (dashboard_export_button_) dashboard_export_button_->setEnabled(s.has_task_recipe);
+  if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(true);
 }
 
 
