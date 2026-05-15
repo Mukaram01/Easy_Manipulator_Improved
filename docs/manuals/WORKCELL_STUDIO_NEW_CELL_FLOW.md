@@ -174,3 +174,27 @@ python3 scripts/audit_new_cell_state_transitions.py \
   --scene-name <name> \
   --json-out <path>
 ```
+
+
+## Point 4: Error-message Audit
+
+Standard message format fields:
+- code
+- severity (ERROR/BLOCKER/WARNING/INFO)
+- title
+- detail
+- why_it_matters
+- next_action
+- recovery_command
+- related_file
+- related_page
+
+Common blockers include missing workspace, invalid scene name, missing layout, missing task intent, missing package files, missing launch file, missing fake-hardware arg, and validation blocked.
+
+Interpretation:
+- BLOCKED: Must resolve blocker before Plan & Simulate.
+- WARNINGS: Flow can continue, but quality/safety issues should be fixed.
+
+Good message example:
+- Missing launch/demo.launch.py. Generate Scene Package before opening Plan & Simulate.
+- Task intent references pick_zone_01, but that id was not found in environment_layout.yaml. Open Scene Builder and bind a pick zone.

@@ -265,7 +265,7 @@ static NewCellStateAudit audit_new_cell_state(
   const QStringList all_states = {"NO_WORKSPACE","WORKSPACE_READY","CELL_DRAFT_CREATED","LAYOUT_CREATED","LAYOUT_SAVED","TASK_INTENT_CREATED","SCENE_PACKAGE_GENERATED","FILE_OUTPUTS_CHECKED","VALIDATION_READY","VALIDATION_PASSED","VALIDATION_BLOCKED","PLAN_SIMULATE_READY","SIMULATION_RUNNING","SIMULATION_STOPPED"};
   if (workspace_path.trimmed().isEmpty()) {
     out.pending_states = all_states;
-    out.blockers << "Workspace path not selected";
+    out.blockers << "Workspace not selected|Select a valid workspace in the header workspace picker.|Dashboard > New Cell|";
     out.blocked_states << "NO_WORKSPACE";
     return out;
   }
@@ -276,7 +276,7 @@ static NewCellStateAudit audit_new_cell_state(
     out.pending_states = all_states;
     out.pending_states.removeAll("NO_WORKSPACE");
     out.pending_states.removeAll("WORKSPACE_READY");
-    out.blockers << "No scene selected";
+    out.blockers << "No scene selected|Create or select a New Cell scene from Existing Scenes.|Dashboard > New Cell|";
     out.blocked_states << "CELL_DRAFT_CREATED";
     return out;
   }
@@ -299,9 +299,9 @@ static NewCellStateAudit audit_new_cell_state(
   if (preview_process && preview_process->state() != QProcess::NotRunning) { out.completed_states << "SIMULATION_RUNNING"; out.current_state = "SIMULATION_RUNNING"; out.next_recommended_action = "Stop Simulation"; }
   else if (preview_state == "PREVIEW_STOPPED" || preview_state == "PREVIEW_EXITED") { out.completed_states << "SIMULATION_STOPPED"; out.current_state = "SIMULATION_STOPPED"; out.next_recommended_action = "Open Plan & Simulate"; }
   for (const auto & state : all_states) if (!out.completed_states.contains(state) && state != "NO_WORKSPACE") out.pending_states << state;
-  if (!has_layout) out.blockers << "Missing environment_layout.yaml (Save Layout)";
-  if (!has_task_intent) out.blockers << "Missing config/workcell_builder_task_intent.yaml";
-  if (!has_package) out.blockers << "Missing package outputs (package.xml/CMakeLists.txt/launch/demo.launch.py)";
+  if (!has_layout) out.blockers << "Missing environment_layout.yaml|Open Scene Builder and click Save Layout.|Scene Builder|python3 scripts/validate_environment_layout.py <scene>/environment_layout.yaml --json";
+  if (!has_task_intent) out.blockers << "Missing task intent|Click Generate/Update Task Intent to create config/workcell_builder_task_intent.yaml.|Task Intent|python3 scripts/create_or_update_builder_task_intent.py --scene-dir <scene>";
+  if (!has_package) out.blockers << "Missing scene package outputs|Generate Scene Package before opening Plan & Simulate.|Generate Scene Package|python3 scripts/audit_new_cell_file_outputs.py --scene-dir <scene> --scene-name <scene> --json-out <scene>/file_output_audit.json";
   if (!out.blockers.isEmpty()) out.blocked_states << out.current_state;
   return out;
 }
@@ -2240,7 +2240,10 @@ void MainWindow::refresh_new_cell_checklist()
 {
   if (!new_cell_checklist_label_) return;
   const NewCellStateAudit audit = audit_new_cell_state(selected_workspace_, scene_browser_result_, selected_scene_index_, preview_state_, preview_process_);
-  const QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>Blockers: %4<br/>Next action: <b>%5</b>")
-    .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), audit.blockers.isEmpty() ? "none" : audit.blockers.first(), audit.next_recommended_action);
+  QString blocker_title = "none"; QString blocker_next = audit.next_recommended_action; QString blocker_page = "New Cell"; QString blocker_cmd;
+  if (!audit.blockers.isEmpty()) { const QStringList parts = audit.blockers.first().split("|"); blocker_title = parts.value(0); blocker_next = parts.value(1, blocker_next); blocker_page = parts.value(2, blocker_page); blocker_cmd = parts.value(3); }
+  QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>First blocker: <b>%4</b><br/>Next action: <b>%5</b><br/>Related page: %6")
+    .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), blocker_title, blocker_next, blocker_page);
+  if (!blocker_cmd.trimmed().isEmpty()) text += QString("<br/>Recovery command: <code>%1</code>").arg(blocker_cmd.toHtmlEscaped());
   new_cell_checklist_label_->setText(text);
 }
