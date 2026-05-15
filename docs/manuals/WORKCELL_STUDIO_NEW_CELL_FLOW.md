@@ -309,3 +309,62 @@ Status interpretation:
 
 Safety guard:
 - Regression audit only validates fake-hardware launch paths and must not execute `use_fake_hardware:=false`.
+
+## Unified Workcell Studio Acceptance Gate
+
+Use one command to run the full 6-point New Cell acceptance flow and produce one consolidated readiness result for Plan & Simulate.
+
+### Script
+- `scripts/run_workcell_studio_acceptance_gate.py`
+
+### Modes
+- `--mode scratch`: generate + audit a scratch acceptance cell.
+- `--mode existing-scene`: audit an existing scene package.
+- `--mode regression`: run known-scene regression checks.
+
+### Included audits
+- Scratch-cell acceptance generation (`generate_scratch_cell_acceptance.py`)
+- File-output audit (`audit_new_cell_file_outputs.py`)
+- State-transition audit (`audit_new_cell_state_transitions.py`)
+- Error-message audit (`audit_new_cell_error_messages.py`)
+- Optional real build/run smoke (`smoke_test_scratch_cell_workspace.py`, only when `--run-smoke` is passed)
+- Regression audit (`audit_workcell_studio_regressions.py`, in regression mode)
+
+### Command examples
+```bash
+python3 scripts/run_workcell_studio_acceptance_gate.py \
+  --mode scratch \
+  --scene-name scratch_ur5_2f_acceptance \
+  --output-root /tmp/workcell_studio_acceptance
+
+python3 scripts/run_workcell_studio_acceptance_gate.py \
+  --mode regression \
+  --workspace ~/workcell_ws \
+  --scenes ur5_2f_test ur5_airpick4_test \
+  --output-root /tmp/workcell_studio_regression_acceptance
+
+python3 scripts/run_workcell_studio_acceptance_gate.py \
+  --mode scratch \
+  --workspace ~/workcell_ws \
+  --scene-name scratch_ur5_2f_acceptance \
+  --output-root /tmp/workcell_studio_acceptance_smoke \
+  --run-smoke \
+  --timeout-sec 30
+```
+
+### Status interpretation
+- `BLOCKED`: one or more required audits failed/blocked.
+- `WARNINGS`: required audits passed, but warnings remain.
+- `PASS`: required audits passed and no blockers are present.
+
+`--run-smoke` is opt-in and only blocks readiness when explicitly requested.
+
+### Output reports
+- JSON report: default `<output-root>/workcell_studio_acceptance_gate.json` (or `--json-out`).
+- Human summary: `<output-root>/acceptance_summary.md`.
+
+### Safety constraints
+- Acceptance gate launch guidance is always fake-hardware Plan & Simulate:
+  - `use_fake_hardware:=true`
+  - `launch_rviz:=true`
+- Real hardware execution is not enabled by this flow.

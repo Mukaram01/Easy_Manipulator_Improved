@@ -2248,5 +2248,7 @@ void MainWindow::refresh_new_cell_checklist()
   QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>First blocker: <b>%4</b><br/>Next action: <b>%5</b><br/>Related page: %6")
     .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), blocker_title, blocker_next, blocker_page);
   if (!blocker_cmd.trimmed().isEmpty()) text += QString("<br/>Recovery command: <code>%1</code>").arg(blocker_cmd.toHtmlEscaped());
+  text += "<br/><br/><b>Full Workcell Studio acceptance gate available</b>"
+          "<br/><code>python3 scripts/run_workcell_studio_acceptance_gate.py --mode scratch --scene-name scratch_ur5_2f_acceptance --output-root /tmp/workcell_studio_acceptance</code>";
   new_cell_checklist_label_->setText(text);
 }
