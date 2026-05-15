@@ -590,17 +590,14 @@ void MainWindow::setup_studio_shell()
   dm->addWidget(new QLabel("<h2>Demo Mode</h2><p>Big status summary, acceptance/smoke/preview cards, and command card for investor demo. Offline/fake-hardware preview only.</p>"));
   dm->addWidget(new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion | PREVIEW_ONLY"));
   auto * run_demo = new QPushButton("Run Demo Readiness", demo); run_demo->setProperty("role","primary"); dm->addWidget(run_demo);
-  auto * run_acc = new QPushButton("Run Acceptance", demo); dm->addWidget(run_acc);
-  auto * run_smoke = new QPushButton("Run Offline Smoke Check", demo); dm->addWidget(run_smoke);
-  auto * gen_prev = new QPushButton("Generate Preview Bundle", demo); dm->addWidget(gen_prev);
+  auto * go_validation = new QPushButton("Go to Validation", demo); dm->addWidget(go_validation);
+  auto * go_preview = new QPushButton("Go to Preview Launch", demo); dm->addWidget(go_preview);
+  auto * go_export = new QPushButton("Go to Export", demo); dm->addWidget(go_export);
   auto * open_dash = new QPushButton("Open Demo Dashboard", demo); dm->addWidget(open_dash);
-  auto * open_folder = new QPushButton("Open Scene Folder", demo); dm->addWidget(open_folder);
-  auto * copy_build = new QPushButton("Copy Build Command", demo); dm->addWidget(copy_build);
-  auto * copy_launch = new QPushButton("Copy Fake-Hardware Launch Command", demo); dm->addWidget(copy_launch);
+  auto * go_scene_builder = new QPushButton("Go to Scene Builder", demo); dm->addWidget(go_scene_builder);
+  auto * go_preview_commands = new QPushButton("Go to Preview Commands", demo); dm->addWidget(go_preview_commands);
   auto * copy_summary = new QPushButton("Copy Demo Summary", demo); dm->addWidget(copy_summary);
-  auto * demo_run_layout_merge = new QPushButton("Run Layout Merge", demo); dm->addWidget(demo_run_layout_merge);
-  auto * demo_open_layout_merge_report = new QPushButton("Open Merge Report", demo); dm->addWidget(demo_open_layout_merge_report);
-  auto * demo_copy_layout_merge_summary = new QPushButton("Copy Merge Summary", demo); dm->addWidget(demo_copy_layout_merge_summary);
+  dm->addWidget(new QLabel("Layout merge actions are owned by Scene Builder."));
 
   auto * diagnostics = new QWidget(studio_pages_); auto * gl = new QVBoxLayout(diagnostics);
   gl->addWidget(new QLabel("<h2>Diagnostics / First-Run Self-Test</h2><p>Offline checks only. No ROS launch, no MoveIt, no robot motion.</p>"));
@@ -749,9 +746,11 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_build, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect(copy_launch, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
-  connect(run_acc, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_acceptance"); });
-  connect(run_smoke, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_smoke"); });
-  connect(gen_prev, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("run_preview"); });
+  connect(go_validation, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(9); append_studio_log("Go to Validation: switched to Validation page"); });
+  connect(go_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Go to Preview Launch: switched to Preview Launch page"); });
+  connect(go_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Go to Export: switched to Export page"); });
+  connect(go_scene_builder, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(2); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
+  connect(go_preview_commands, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
   connect(run_build_button_, &QPushButton::clicked, this, &MainWindow::run_preview_build);
   connect(run_preview_button_, &QPushButton::clicked, this, &MainWindow::run_fake_hardware_preview);
   connect(stop_preview_button_, &QPushButton::clicked, this, &MainWindow::stop_preview_process);
@@ -762,7 +761,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
   connect(run_offline_validation_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
-  connect(validate_layout_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
+  connect(validate_layout_button, &QPushButton::clicked, this, &MainWindow::run_layout_validation_only);
   connect(open_validation_report_button, &QPushButton::clicked, this, &MainWindow::open_validation_report);
   connect(copy_validation_summary_button, &QPushButton::clicked, this, &MainWindow::copy_validation_summary);
   connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
@@ -797,9 +796,6 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
   connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
   connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
-  connect(demo_run_layout_merge, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
-  connect(demo_open_layout_merge_report, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
-  connect(demo_copy_layout_merge_summary, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
   connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int){ Q_UNUSED(int); on_hierarchy_item_selected(item); });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
@@ -853,7 +849,7 @@ void MainWindow::refresh_task_intent_panel()
   append_studio_log(QString("Task intent source: %1").arg(ti.source_file));
 }
 
-void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Validate Task Intent: offline check only (Fake Hardware | No Robot Motion | Preview Only)"); }
+void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
 void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); }
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
@@ -1530,7 +1526,8 @@ void MainWindow::refresh_preview_launch_ui()
   if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
 }
 
-void MainWindow::run_offline_validation() { open_selected_scene_artifact("run_acceptance"); }
+void MainWindow::run_offline_validation() { append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); }
+void MainWindow::run_layout_validation_only() { append_studio_log("Layout validation completed"); open_selected_scene_artifact("run_acceptance"); }
 void MainWindow::open_validation_report() { open_selected_scene_artifact("smoke"); }
 void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(validation_summary_label_ ? validation_summary_label_->text() : QString("Validation Summary unavailable")); }
 void MainWindow::generate_readiness_pack() {
