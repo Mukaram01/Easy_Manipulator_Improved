@@ -153,6 +153,7 @@ private:
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
   void run_offline_validation();
+  void run_layout_validation_only();
   void open_validation_report();
   void copy_validation_summary();
   void generate_readiness_pack();

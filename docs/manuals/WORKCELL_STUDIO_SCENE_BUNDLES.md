@@ -24,3 +24,10 @@ A scene bundle is a portable developer handoff package for one Workcell Studio s
 - Export/import does **not** add runtime execution.
 - Export/import does **not** command robot motion.
 - Bundles are not safety certificates.
+
+## UI action ownership (deduplicated)
+- Scene bundle actions are owned by the **Export** page:
+  - **Export Scene Bundle**
+  - **Import Scene Bundle**
+  - **Open Export Folder**
+- Other pages should use navigation-only actions (for example, **Go to Export**) instead of duplicate export execution buttons.
