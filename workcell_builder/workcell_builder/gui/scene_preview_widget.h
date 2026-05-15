@@ -56,6 +56,29 @@ public:
     QStringList warnings;
     bool selectable{true};
   };
+  enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
+  struct ReachabilityOverlayModel
+  {
+    QString robot_base_id{"unknown"};
+    QString planning_group{"unknown"};
+    double approximate_reach_min_m{0.25};
+    double approximate_reach_max_m{1.25};
+    double preferred_work_zone_radius_m{0.85};
+    QString pick_source_status{"unknown"};
+    QString place_target_status{"unknown"};
+    QString reject_target_status{"unknown"};
+    QString selected_item_status{"unknown"};
+    QString metadata_source{"preview"};
+    QStringList warnings;
+  };
+  struct CollisionOverlayModel
+  {
+    QString metadata_source{"preview"};
+    QStringList colliding_items;
+    QStringList near_miss_items;
+    QStringList warnings;
+  };
+
   struct TaskOverlayModel
   {
     QString task_type{"unknown"};
@@ -78,6 +101,8 @@ public:
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
   void set_task_overlay_model(const TaskOverlayModel & model);
+  void set_reachability_overlay_model(const ReachabilityOverlayModel & model);
+  void set_collision_overlay_model(const CollisionOverlayModel & model);
   void set_camera_overlay_model(const CameraOverlayModel & model);
   void set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections);
   void set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels);
@@ -115,6 +140,8 @@ private:
   QString unavailable_reason_;
   QVector<PreviewItem> preview_items_;
   TaskOverlayModel overlay_model_;
+  ReachabilityOverlayModel reachability_overlay_model_;
+  CollisionOverlayModel collision_overlay_model_;
   CameraOverlayModel camera_overlay_model_;
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;

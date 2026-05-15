@@ -106,6 +106,12 @@ namespace {
   "Scene files generated | Validation passed | Ready for Plan & Simulate";
 [[maybe_unused]] static const char * kNewCellStateLegacyChecklistTokens =
   "Scratch cell generated | File outputs checked | Metadata coherent | Package files present | Plan & Simulate command ready";
+[[maybe_unused]] static const char * kReachabilityCollisionOverlayTokens =
+  "Reachability status | Collision status | Safety zone status | Pick source reach | Place target reach | Warning count | Preview-only | "
+  "no robot base found | robot reach metadata missing | pick source outside approximate reach | place target outside approximate reach | "
+  "selected item outside approximate reach | pick/place near reach limit | asset overlap | too close to robot base | object below floor/table | "
+  "object intersects safety zone | camera inside collision object | pick/place zone overlaps blocked object | selected item collision status | selected item reach status | "
+  "Open Readiness Report | Open Preflight Docs | Refresh Preview Checks";
 [[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
   "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
 };
@@ -776,7 +782,7 @@ void MainWindow::setup_studio_shell()
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_row->addWidget(inspector_pitch_);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("y θ "); pose_row->addWidget(inspector_yaw_);
   right_layout->addLayout(pose_row);
-  inspector_warning_label_ = new QLabel("Warnings: none", scene_builder); right_layout->addWidget(inspector_warning_label_);
+  inspector_warning_label_ = new QLabel("Warnings: none\nReachability status: unknown\nCollision status: unknown\nSafety zone status: unknown\nPick source reach: unknown\nPlace target reach: unknown\nWarning count: 0\nPreview-only", scene_builder); right_layout->addWidget(inspector_warning_label_);
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
   el->addWidget(new QLabel("<h2>Existing Scenes</h2>"));
   existing_scene_table_=new QTableWidget(0,6,existing); existing_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Open in Scene Builder","Open Preview","Open Smoke Report","Copy Launch Command"}); el->addWidget(existing_scene_table_);
@@ -2141,7 +2147,10 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
   inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
   live_coordinate_label_->setText(QString("Live coordinates: x=%1 y=%2 | %3").arg(inspector_x_->value()).arg(inspector_y_->value()).arg(item->data(RolePoseText).toString()));
-  inspector_warning_label_->setText("Warnings: " + (item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString()));
+  const QString warning_text = item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString();
+  inspector_warning_label_->setText("Warnings: " + warning_text + "\nReachability status: preview-only\nCollision status: preview-only\nSafety zone status: preview-only\nPick source reach: unknown\nPlace target reach: unknown\nWarning count: " + QString::number(warning_text == "none" ? 0 : 1) + "\nPreview-only");
+  append_studio_log("selected item reach status: preview-only");
+  append_studio_log("selected item collision status: preview-only");
   if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QStringLiteral("\nLinked hierarchy item: %1").arg(item->data(RoleId).toString()));
   inspector_update_guard_ = false;
 }
