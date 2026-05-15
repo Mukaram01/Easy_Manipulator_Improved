@@ -27,3 +27,17 @@ def test_top_bar_uses_named_page_enum_and_no_invalid_indexes():
     assert "show_studio_page(StudioPage::ExportPage)" in cpp
     assert "setCurrentRow(9)" not in cpp
     assert "setCurrentRow(10)" not in cpp
+
+
+def test_delete_scene_uses_browser_scene_root_with_safe_fallback():
+    cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    assert "scene_browser_result_.scene_root" in cpp
+    assert "scene_browser_result_.scene_root;" in cpp
+    assert "scene_path.parent_path()" in cpp
+    assert "scene.scene_dir.parent_path()" in cpp
+    assert ".workcell_studio_trash" in cpp
+
+
+def test_scene_info_scenes_root_field_is_not_referenced():
+    cpp = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    assert ".scenes_root" not in cpp
