@@ -30,6 +30,13 @@ QToolBar {
   spacing: 8px;
   padding: 8px;
 }
+QLabel#safetyPill {
+  background-color: #0e2636;
+  border: 1px solid #2f5f7d;
+  border-radius: 10px;
+  padding: 4px 10px;
+  color: #d8ecff;
+}
 QPushButton {
   background-color: #1b2837;
   border: 1px solid #2f78a4;
@@ -46,6 +53,20 @@ QPushButton:disabled {
 }
 QPushButton[role="primary"] { background-color: #0f5f8f; border: 1px solid #71c9ff; color: #f3fbff; }
 QPushButton[role="secondary"] { background-color: #1a2230; border: 1px solid #445c73; }
+QToolButton {
+  background-color: #172536;
+  border: 1px solid #44647f;
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: #dcecff;
+}
+QToolButton::menu-indicator { image: none; width: 0px; }
+QMenu {
+  background-color: #111b28;
+  color: #dcecff;
+  border: 1px solid #35516a;
+}
+QMenu::item:selected { background-color: #1f4561; }
 QListWidget {
   background-color: #111925;
   border: 1px solid #2d4d66;
@@ -65,6 +86,7 @@ QTabBar::tab { background: #172230; color: #afc6dd; padding: 8px 14px; border-to
 QTabBar::tab:selected { background: #1f3850; color: #f1f8ff; }
 QTableWidget {
   background-color: #121b26;
+  color: #e6f0fb;
   gridline-color: #29435b;
   alternate-background-color: #101722;
   border: 1px solid #29435b;

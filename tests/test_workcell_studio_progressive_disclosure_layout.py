@@ -54,3 +54,16 @@ def test_mode_and_safety_chips_present():
         'Real robot motion: locked',
     ]:
         assert token in CPP
+
+
+def test_secondary_controls_moved_to_menus_and_theme_tokens_present():
+    for token in [
+        'Camera / View',
+        'Canvas More',
+        'Snap/Grid settings',
+        'More Actions',
+        'QLabel#safetyPill',
+        'QToolButton',
+        'QMenu',
+    ]:
+        assert token in CPP or token in Path('workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss').read_text(encoding='utf-8')

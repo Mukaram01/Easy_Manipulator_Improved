@@ -15,3 +15,13 @@ def test_presentation_sections_present():
         'Fake Hardware | No Robot Motion'
     ]:
         assert token in MAIN
+
+
+def test_dashboard_action_and_fullscreen_controls_are_explicit():
+    for token in [
+        'const QStringList action_labels = {"Dashboard", "New Cell", "Open Scene", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"}',
+        'Dashboard: returning to scene overview.',
+        'Full Screen',
+        'Exit Full Screen',
+    ]:
+        assert token in MAIN
