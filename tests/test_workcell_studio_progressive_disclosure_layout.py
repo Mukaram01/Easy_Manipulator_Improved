@@ -45,12 +45,12 @@ def test_advanced_actions_present_in_menus_and_not_wired_not_used():
 def test_mode_and_safety_chips_present():
     for token in [
         'Design',
-        'Preview',
+        'Plan',
         'Plan',
         'Simulate',
         'Hardware Guarded',
         'fake-hardware',
         'guarded',
-        'No uncontrolled robot motion',
+        'Real robot motion: locked',
     ]:
         assert token in CPP

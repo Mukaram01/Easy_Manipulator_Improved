@@ -652,7 +652,7 @@ void MainWindow::setup_studio_shell()
   dm->addWidget(new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion | PREVIEW_ONLY"));
   auto * run_demo = new QPushButton("Run Demo Readiness", demo); run_demo->setProperty("role","primary"); dm->addWidget(run_demo);
   auto * go_validation = new QPushButton("Go to Validation", demo); dm->addWidget(go_validation);
-  auto * go_preview = new QPushButton("Go to Preview Launch", demo); dm->addWidget(go_preview);
+  auto * go_preview = new QPushButton("Go to Plan & Simulate", demo); dm->addWidget(go_preview);
   auto * go_export = new QPushButton("Go to Export", demo); dm->addWidget(go_export);
   auto * open_dash = new QPushButton("Open Demo Dashboard", demo); dm->addWidget(open_dash);
   auto * go_scene_builder = new QPushButton("Go to Scene Builder", demo); dm->addWidget(go_scene_builder);
@@ -752,7 +752,7 @@ void MainWindow::setup_studio_shell()
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
   addToolBar(Qt::TopToolBarArea, top_bar);
   top_bar->setObjectName("studioTopBar");
-  const QStringList action_labels = {"New Cell", "Open Scene", "Validate", "Demo Mode", "Preview Launch", "Generate Scene", "Export"};
+  const QStringList action_labels = {"New Cell", "Open Scene", "Validate", "Demo Mode", "Plan & Simulate", "Generate Scene Package", "Export"};
   for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
@@ -783,14 +783,14 @@ void MainWindow::setup_studio_shell()
         open_selected_scene_artifact("run_smoke");
         return;
       }
-      if (label == "Preview Launch") {
+      if (label == "Plan & Simulate") {
         append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name()));
         studio_nav_->setCurrentRow(7);
         refresh_preview_launch_ui();
   refresh_new_cell_checklist();
         return;
       }
-      if (label == "Generate Scene") {
+      if (label == "Generate Scene Package") {
         append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name()));
         run_layout_merge_for_selected_scene(true);
         return;
@@ -838,7 +838,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
   connect(go_validation, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(9); append_studio_log("Go to Validation: switched to Validation page"); });
-  connect(go_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Go to Preview Launch: switched to Plan & Simulate page"); });
+  connect(go_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Go to Plan & Simulate: switched to Plan & Simulate page"); });
   connect(go_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Go to Export: switched to Export page"); });
   connect(go_scene_builder, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(2); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
   connect(go_preview_commands, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
@@ -919,6 +919,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
   refresh_new_cell_checklist();
+  append_studio_log("New Cell Action Map: Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate");
   refresh_diagnostics_quick_status();
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
