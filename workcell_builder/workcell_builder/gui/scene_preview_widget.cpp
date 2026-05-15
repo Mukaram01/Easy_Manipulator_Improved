@@ -22,7 +22,10 @@ public:
   QString selected_id;
   bool show_labels{true}, show_warnings{true}, show_safety{true}, show_pick_place{true};
   bool show_task_route{true}, show_approach_retreat{true};
+  bool show_camera_fov{true}, show_pick_coverage{true}, show_epd_detections{true}, show_detection_labels{true};
   ScenePreviewWidget::TaskOverlayModel task_overlay;
+  ScenePreviewWidget::CameraOverlayModel camera_overlay;
+  QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
   std::function<void(const QString&)> select_cb;
   void reset_view() { yaw_ = -0.9; pitch_ = 0.7; zoom_ = 1.0; update(); }
   void fit_scene() { zoom_ = 1.0; update(); }
@@ -92,6 +95,37 @@ protected:
       p.drawText(project(-0.55, 1.18, -0.7), QString("grasp=%1").arg(task_overlay.grasp_strategy));
     }
     if (!task_overlay.has_intent_metadata && show_warnings) p.drawText(project(-2.2, 1.2, -0.8), "Task overlay unavailable: missing task intent");
+
+    if (show_camera_fov) {
+      const QPointF c0 = project(camera_overlay.x, camera_overlay.y, camera_overlay.z);
+      const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);
+      const double v = qDegreesToRadians(camera_overlay.vertical_fov_deg * 0.5);
+      const double n = qMax(0.05, camera_overlay.range_min_m);
+      const double f = qMax(n + 0.05, camera_overlay.range_max_m);
+      auto rayPoint=[&](double r,double ah,double av){ return QVector3D(camera_overlay.x + r, camera_overlay.y + qTan(av)*r, camera_overlay.z + qTan(ah)*r); };
+      QVector3D nfl=rayPoint(n,-h,-v), nfr=rayPoint(n,h,-v), nbl=rayPoint(n,-h,v), nbr=rayPoint(n,h,v);
+      QVector3D ffl=rayPoint(f,-h,-v), ffr=rayPoint(f,h,-v), fbl=rayPoint(f,-h,v), fbr=rayPoint(f,h,v);
+      auto pp=[&](const QVector3D &v3){ return project(v3.x(), v3.y(), v3.z()); };
+      QColor camC = camera_overlay.status == "ready" ? QColor("#22c55e") : (camera_overlay.status == "warning" ? QColor("#f59e0b") : QColor("#94a3b8"));
+      p.setPen(QPen(camC,2));
+      p.drawLine(c0, pp(ffl)); p.drawLine(c0, pp(ffr)); p.drawLine(c0, pp(fbl)); p.drawLine(c0, pp(fbr));
+      QPolygonF nearP; nearP << pp(nfl) << pp(nfr) << pp(nbr) << pp(nbl); p.drawPolygon(nearP);
+      QPolygonF farP; farP << pp(ffl) << pp(ffr) << pp(fbr) << pp(fbl); p.drawPolygon(farP);
+      p.drawLine(c0, project(camera_overlay.x + f, camera_overlay.y, camera_overlay.z));
+      p.drawText(project(camera_overlay.x, camera_overlay.y + 0.25, camera_overlay.z), QString("%1 [%2]").arg(camera_overlay.display_name, camera_overlay.frame_id));
+    }
+    if (show_pick_coverage && show_warnings) {
+      for (int wi = 0; wi < camera_overlay.warnings.size(); ++wi) p.drawText(project(-2.2, 1.0 - 0.16*wi, -0.7), camera_overlay.warnings[wi]);
+    }
+    if (show_epd_detections) {
+      for (const auto & det : epd_detections) {
+        QColor dc = det.status == "ready" ? QColor("#22c55e") : (det.status == "warning" ? QColor("#f59e0b") : QColor("#64748b"));
+        p.setPen(QPen(dc,2));
+        p.drawEllipse(project(det.x, det.y, det.z), 6, 6);
+        if (show_detection_labels) p.drawText(project(det.x + 0.05, det.y + 0.08, det.z), QString("%1 %2").arg(det.label, det.confidence >= 0.0 ? QString("(%1)").arg(det.confidence,0,'f',2) : QString("")));
+      }
+    }
+
     auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c,const QString &name){
       QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
       Q_UNUSED(sz);
@@ -128,7 +162,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   controls->addWidget(mode_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Labels", "Safety Zones", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Labels", "Safety Zones", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -185,3 +219,7 @@ void ScenePreviewWidget::refresh_mode_and_state()
   simple_3d_view_->setVisible(use3d && scene_selected_);
   error_state_label_->setVisible(false);
 }
+
+void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->camera_overlay = model; simple_3d_view_->update(); }
+void ScenePreviewWidget::set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections){ epd_detections_ = detections; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->epd_detections = detections; simple_3d_view_->update(); }
+void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels){ auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->show_camera_fov=camera_fov; v->show_pick_coverage=pick_coverage; v->show_epd_detections=epd_detections; v->show_detection_labels=detection_labels; v->update(); }

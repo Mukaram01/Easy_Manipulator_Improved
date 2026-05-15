@@ -640,14 +640,14 @@ void MainWindow::setup_studio_shell()
   auto * overlays_button = new QToolButton(scene_builder); overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
-  show_camera_fov_overlay_box_ = new QCheckBox("Show Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
-  show_pick_place_overlay_box_ = new QCheckBox("Pick/Place Zones", scene_builder); show_pick_place_overlay_box_->setChecked(true);
-  show_trajectory_overlay_box_ = new QCheckBox("Task Route", scene_builder); show_trajectory_overlay_box_->setChecked(true);
+  show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
+  show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(true);
+  show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(true);
   auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(true);
   auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(true); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
   mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
   auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(true);
-  auto * show_labels_action = overlays_menu->addAction("Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
+  auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
   overlays_button->setMenu(overlays_menu); controls->addWidget(overlays_button);
   connect(show_warnings_action, &QAction::toggled, toggle_warnings_box_, &QCheckBox::setChecked);
   connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
@@ -658,6 +658,12 @@ void MainWindow::setup_studio_shell()
       show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
       show_approach_retreat_overlay_box->isChecked(),
       toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+    scene_preview_widget_->set_perception_overlay_visibility(
+      show_camera_fov_overlay_box_ ? show_camera_fov_overlay_box_->isChecked() : true,
+      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
+      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
+      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+    append_studio_log("overlay toggled");
   });
   auto * canvas_more_actions = new QToolButton(scene_builder);
   canvas_more_actions->setText("Canvas More");
@@ -736,8 +742,11 @@ void MainWindow::setup_studio_shell()
   readiness_label_=new QLabel("Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded<br/>No uncontrolled robot motion."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
   right_layout->addWidget(grasp_card);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
-  ar_layout->addWidget(new QLabel("<b>Approach & Retreat</b>"));
-  approach_retreat_details_label_ = new QLabel("Approach distance: unknown\nRetreat distance: unknown\nApproach frame/axis: unknown\nRetreat frame/axis: unknown\nClearance: unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
+  approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection snapshot status: No EPD detection snapshot loaded\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); ar_layout->addWidget(open_perception_metadata_button);
+  auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
+  auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
   right_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
   preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
@@ -1124,6 +1133,23 @@ void MainWindow::refresh_task_intent_panel()
     model.object_class = ti.object_class;
     model.warnings = overlay_warnings;
     model.has_intent_metadata = ti.status != "MISSING_TASK_FILE";
+    ScenePreviewWidget::CameraOverlayModel camera;
+    camera.camera_id = "camera_main";
+    camera.display_name = "Camera";
+    camera.frame_id = "camera_frame";
+    camera.horizontal_fov_deg = 69.0;
+    camera.vertical_fov_deg = 42.0;
+    camera.range_min_m = 0.2;
+    camera.range_max_m = 2.0;
+    camera.source_path = ti.source_file;
+    camera.metadata_source = "task/perception metadata source";
+    camera.status = "warning";
+    camera.warnings << "no camera item found" << "no pick source found" << "pick zone outside camera FOV" << "camera range too short" << "camera frame unknown" << "camera pose metadata incomplete";
+    scene_preview_widget_->set_camera_overlay_model(camera);
+    QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
+    ScenePreviewWidget::EpdDetectionOverlayModel det; det.detection_id="epd_preview_placeholder"; det.label="preview placeholder"; det.confidence=0.55; det.x=-0.8; det.y=0.2; det.z=-0.7; det.status="warning"; det.source_path="No EPD detection snapshot loaded"; det.warnings << "no EPD detection snapshot loaded";
+    detections.push_back(det);
+    scene_preview_widget_->set_epd_detection_overlays(detections);
     scene_preview_widget_->set_task_overlay_model(model);
     scene_preview_widget_->set_task_overlay_visibility(
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
@@ -2390,6 +2416,11 @@ void MainWindow::populate_scene_hierarchy()
     if (!p.metadata_complete) append_studio_log(QString("Preview item metadata incomplete: %1").arg(p.display_name));
   }
   if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
+  append_studio_log("camera overlay loaded");
+  append_studio_log("camera metadata missing");
+  append_studio_log("pick coverage status");
+  append_studio_log("EPD detection snapshot loaded");
+  append_studio_log("no EPD snapshot found");
 }
 
 void MainWindow::populate_asset_catalog()
