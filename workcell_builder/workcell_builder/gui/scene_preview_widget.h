@@ -28,6 +28,34 @@ public:
     bool selectable{ true };
     bool metadata_complete{ true };
   };
+  struct CameraOverlayModel
+  {
+    QString camera_id{"unknown"};
+    QString display_name{"camera"};
+    double x{0.0}, y{0.0}, z{0.0};
+    double roll{0.0}, pitch{0.0}, yaw{0.0};
+    QString frame_id{"unknown"};
+    double horizontal_fov_deg{69.0};
+    double vertical_fov_deg{42.0};
+    double range_min_m{0.2};
+    double range_max_m{2.0};
+    QString source_path;
+    QString metadata_source{"preview"};
+    QString status{"unknown"};
+    QStringList warnings;
+  };
+  struct EpdDetectionOverlayModel
+  {
+    QString detection_id{"unknown"};
+    QString label{"unknown"};
+    double confidence{-1.0};
+    double x{0.0}, y{0.0}, z{0.0};
+    double dx{0.08}, dy{0.08}, dz{0.08};
+    QString source_path;
+    QString status{"unknown"};
+    QStringList warnings;
+    bool selectable{true};
+  };
   struct TaskOverlayModel
   {
     QString task_type{"unknown"};
@@ -50,6 +78,9 @@ public:
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
   void set_task_overlay_model(const TaskOverlayModel & model);
+  void set_camera_overlay_model(const CameraOverlayModel & model);
+  void set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections);
+  void set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels);
   void set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
@@ -84,5 +115,7 @@ private:
   QString unavailable_reason_;
   QVector<PreviewItem> preview_items_;
   TaskOverlayModel overlay_model_;
+  CameraOverlayModel camera_overlay_model_;
+  QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
 };
