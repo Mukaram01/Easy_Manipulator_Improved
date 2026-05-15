@@ -11,7 +11,7 @@ def test_full_screen_presentation_tokens_present():
 
 def test_presentation_sections_present():
     for token in [
-        'Workcell Studio Dashboard', 'Scene Builder', 'Demo Mode', 'Preview Launch',
+        'Studio Home', 'Scene Builder', 'Demo Mode', 'Preview Launch',
         'Fake Hardware | No Robot Motion'
     ]:
         assert token in MAIN
@@ -19,8 +19,8 @@ def test_presentation_sections_present():
 
 def test_dashboard_action_and_fullscreen_controls_are_explicit():
     for token in [
-        'const QStringList action_labels = {"Dashboard", "New Cell", "Open Scene", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"}',
-        'Dashboard: switched to dashboard page.',
+        'const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"}',
+        'Studio Home: switched to scene manager page.',
         'Full Screen',
         'Exit Full Screen',
     ]:

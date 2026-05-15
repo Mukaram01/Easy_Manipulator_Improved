@@ -68,7 +68,7 @@ def test_no_new_cell_workflow_not_wired_message_usage():
 
 def test_plan_and_simulate_wording_and_fake_hardware_contract():
     assert 'Plan & Simulate' in MAIN
-    assert 'Preview Launch' not in MAIN.split('const QStringList action_labels =')[1].split(';', 1)[0]
+    assert 'Open Scene' not in MAIN.split('const QStringList action_labels =')[1].split(';', 1)[0]
     assert 'Generate Scene Package' in MAIN
     assert 'Copy Launch Command' in MAIN
     assert 'use_fake_hardware:=true' in MAIN

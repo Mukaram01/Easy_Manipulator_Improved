@@ -93,7 +93,7 @@ def test_dashboard_has_named_widgets_and_readable_qss_palette():
         'setObjectName("dashboardTitleLabel")',
         'setObjectName("dashboardSummaryLabel")',
         'setObjectName("dashboardSceneTable")',
-        'Workcell Studio Dashboard',
+        'Studio Home',
     ]:
         assert token in CPP
 
@@ -119,3 +119,21 @@ def test_dark_qss_has_readable_explicit_foreground_rules_and_no_banned_dark_text
     lowered_color_lines = [line.strip().lower() for line in qss.splitlines() if line.strip().lower().startswith('color:')]
     for banned in ['color: #111827', 'color: #0f172a', 'color: black', 'color: #000']:
         assert banned not in lowered_color_lines
+
+
+def test_studio_home_scene_management_and_safe_delete_tokens_present():
+    for token in [
+        'Manage scenes, review readiness, and open the selected workcell.',
+        'Open in Scene Builder',
+        'Validate',
+        'Plan & Simulate',
+        'Export',
+        'Delete Scene',
+        '.workcell_studio_trash',
+        'Selected path is outside scenes root.',
+        'Move scene',
+        'refresh_scene_browser_ui();',
+    ]:
+        assert token in CPP
+    assert 'rm -rf' not in CPP
+    assert 'show_not_wired_message("Delete Scene")' not in CPP

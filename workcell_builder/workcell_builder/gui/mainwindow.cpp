@@ -592,16 +592,16 @@ void MainWindow::setup_studio_shell()
 
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"🏠 Dashboard","🛠 Scene Builder","📚 Existing Scenes","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
+  studio_nav_->addItems({"🏠 Studio Home","🛠 Scene Builder","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
   studio_nav_->hide();
   studio_pages_ = new QStackedWidget(content);
 
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
   dashboard->setObjectName("workcellStudioDashboardPage");
-  auto * dashboard_title = new QLabel("Workcell Studio Dashboard", dashboard);
+  auto * dashboard_title = new QLabel("Studio Home", dashboard);
   dashboard_title->setObjectName("dashboardTitleLabel");
   dl->addWidget(dashboard_title);
-  auto * dashboard_subtitle = new QLabel("Scene overview and investor-demo readiness", dashboard);
+  auto * dashboard_subtitle = new QLabel("Manage scenes, review readiness, and open the selected workcell.", dashboard);
   dashboard_subtitle->setObjectName("dashboardSubtitleLabel");
   dl->addWidget(dashboard_subtitle);
   dashboard_summary_label_=new QLabel("Loading scenes..."); dashboard_summary_label_->setObjectName("dashboardSummaryLabel"); dashboard_summary_label_->setWordWrap(true); dl->addWidget(dashboard_summary_label_);
@@ -620,8 +620,9 @@ void MainWindow::setup_studio_shell()
   auto * dashboard_actions = new QHBoxLayout();
   auto * dash_open_scene_builder = new QPushButton("Open in Scene Builder", dashboard); dashboard_actions->addWidget(dash_open_scene_builder);
   auto * dash_validate = new QPushButton("Validate", dashboard); dashboard_actions->addWidget(dash_validate);
-  auto * dash_preview = new QPushButton("Preview Launch", dashboard); dashboard_actions->addWidget(dash_preview);
+  auto * dash_preview = new QPushButton("Plan & Simulate", dashboard); dashboard_actions->addWidget(dash_preview);
   auto * dash_export = new QPushButton("Export", dashboard); dashboard_actions->addWidget(dash_export);
+  auto * dash_delete_scene = new QPushButton("Delete Scene", dashboard); dashboard_actions->addWidget(dash_delete_scene);
   dl->addLayout(dashboard_actions);
   
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
@@ -977,28 +978,20 @@ void MainWindow::setup_studio_shell()
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
   addToolBar(Qt::TopToolBarArea, top_bar);
   top_bar->setObjectName("studioTopBar");
-  const QStringList action_labels = {"Dashboard", "New Cell", "Open Scene", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"};
+  const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"};
   for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
     if (label == "Generate Scene") button->setProperty("role", "primary");
-    if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
+    if (label == "Export") button->setProperty("role", "secondary");
     connect(button, &QPushButton::clicked, this, [this, label]() {
-      if (label == "Dashboard") {
+      if (label == "Studio Home") {
         show_studio_page(StudioPage::DashboardPage);
-        append_studio_log("Dashboard: switched to dashboard page.");
+        append_studio_log("Studio Home: switched to scene manager page.");
         return;
       }
       if (label == "New Cell") {
         append_studio_log("New Cell: opening scene creation flow.");
         open_new_scene_creation_flow();
-        return;
-      }
-      if (label == "Open Scene") {
-        append_studio_log("Open Scene: switching to Existing Scenes.");
-        show_studio_page(StudioPage::ExistingScenesPage);
-        if (!scene_browser_result_.scenes.empty()) {
-          select_scene_by_row(std::max(0, selected_scene_index_));
-        }
         return;
       }
       if (label == "Validate") {
@@ -1056,9 +1049,10 @@ void MainWindow::setup_studio_shell()
   show_studio_page(StudioPage::DashboardPage);
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); open_scene_builder_for_selected_scene("Dashboard double-click"); });
   connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); open_selected_scene_artifact("run_acceptance"); });
+  connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); run_offline_validation(); });
   connect(dash_preview, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
   connect(dash_export, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
+  connect(dash_delete_scene, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
   connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
@@ -1377,6 +1371,91 @@ void MainWindow::refresh_scene_browser_ui()
   dashboard_summary_label_->setText(summary);
   auto fill=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; auto scene_name = QString::fromStdString(sc.scene_name); auto *scene_item=new QTableWidgetItem(t==dashboard_scene_table_ ? QFontMetrics(t->font()).elidedText(scene_name, Qt::ElideRight, 300) : scene_name); scene_item->setToolTip(scene_name); t->setItem(i,0,scene_item); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill(dashboard_scene_table_); fill(existing_scene_table_);
+}
+
+bool MainWindow::is_safe_scene_path_for_trash_move(const fs::path & scene_path, QString * reason) const
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    if (reason) *reason = "No scene is selected.";
+    return false;
+  }
+  const fs::path scenes_root = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scenes_root;
+  boost::system::error_code ec;
+  const fs::path canonical_scene = fs::weakly_canonical(scene_path, ec);
+  if (ec) {
+    if (reason) *reason = "Failed to resolve selected scene path.";
+    return false;
+  }
+  const fs::path canonical_root = fs::weakly_canonical(scenes_root, ec);
+  if (ec) {
+    if (reason) *reason = "Failed to resolve scenes root path.";
+    return false;
+  }
+  const std::string scene_str = canonical_scene.string();
+  const std::string root_str = canonical_root.string();
+  if (!(scene_str == root_str || scene_str.rfind(root_str + "/", 0) == 0)) {
+    if (reason) *reason = "Selected path is outside scenes root.";
+    return false;
+  }
+  const std::vector<fs::path> blocked_paths = {
+    canonical_root.parent_path(),
+    canonical_root.parent_path() / "src",
+    canonical_root.parent_path() / "assets",
+    canonical_root / "assets",
+    fs::current_path()
+  };
+  for (const auto & blocked : blocked_paths) {
+    const fs::path canonical_blocked = fs::weakly_canonical(blocked, ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (canonical_scene == canonical_blocked) {
+      if (reason) *reason = QString("Refusing to delete protected path: %1").arg(QString::fromStdString(canonical_blocked.string()));
+      return false;
+    }
+  }
+  return true;
+}
+
+void MainWindow::delete_selected_scene()
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    QMessageBox::warning(this, "Delete Scene", "Select a scene first.");
+    return;
+  }
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const fs::path scene_path = scene.scene_dir;
+  QString safety_error;
+  if (!is_safe_scene_path_for_trash_move(scene_path, &safety_error)) {
+    QMessageBox::warning(this, "Delete Scene", safety_error);
+    append_studio_log("Delete Scene blocked: " + safety_error);
+    return;
+  }
+  const auto confirm = QMessageBox::question(
+    this, "Delete Scene",
+    QString("Move scene '%1' to Workcell Studio trash?").arg(QString::fromStdString(scene.scene_name)),
+    QMessageBox::Yes | QMessageBox::No,
+    QMessageBox::No);
+  if (confirm != QMessageBox::Yes) {
+    append_studio_log(QString("Delete Scene cancelled for '%1'.").arg(QString::fromStdString(scene.scene_name)));
+    return;
+  }
+  boost::system::error_code ec;
+  const fs::path scenes_root = scene.scenes_root;
+  const fs::path trash_root = scenes_root / ".workcell_studio_trash";
+  fs::create_directories(trash_root, ec);
+  const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss");
+  const fs::path trash_target = trash_root / (scene.scene_name + "_" + stamp.toStdString());
+  fs::rename(scene_path, trash_target, ec);
+  if (ec) {
+    QMessageBox::critical(this, "Delete Scene", "Failed to move scene to trash.");
+    append_studio_log("Delete Scene failed: " + QString::fromStdString(ec.message()));
+    return;
+  }
+  append_studio_log("Delete Scene moved to trash: " + QString::fromStdString(trash_target.string()));
+  selected_scene_index_ = -1;
+  refresh_scene_browser_ui();
 }
 
 void MainWindow::select_scene_by_row(int row)

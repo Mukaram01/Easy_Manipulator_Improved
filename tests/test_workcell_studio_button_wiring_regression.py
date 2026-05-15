@@ -8,6 +8,9 @@ def test_critical_buttons_wired_or_safe_fallback():
         "run_fake_hardware_preview", "stop_preview_process", "open_layout_merge_report",
         'open_selected_scene_artifact("run_acceptance")', 'open_selected_scene_artifact("demo_dashboard")',
         "show_not_wired_message",
+        "delete_selected_scene",
+        "is_safe_scene_path_for_trash_move",
+        ".workcell_studio_trash",
     ]
     for token in wiring_tokens:
         assert token in text
@@ -19,7 +22,6 @@ def test_top_bar_uses_named_page_enum_and_no_invalid_indexes():
     assert "enum class StudioPage" in header
     assert "show_studio_page(StudioPage::DashboardPage)" in cpp
     assert "show_studio_page(StudioPage::SceneBuilderPage)" in cpp
-    assert "show_studio_page(StudioPage::ExistingScenesPage)" in cpp
     assert "show_studio_page(StudioPage::ValidationPage)" in cpp
     assert "show_studio_page(StudioPage::PlanSimulatePage)" in cpp
     assert "show_studio_page(StudioPage::ExportPage)" in cpp
