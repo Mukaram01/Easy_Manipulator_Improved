@@ -607,7 +607,8 @@ void MainWindow::setup_studio_shell()
   auto * dashboard_subtitle = new QLabel("Design, validate, and preview robotic workcells.", hero_card);
   dashboard_subtitle->setObjectName("dashboardSubtitleLabel");
   hero_layout->addWidget(dashboard_subtitle);
-  auto * hero_safety = new QLabel("Design mode • Fake hardware by default • Real robot locked", hero_card); hero_safety->setObjectName("studioHomeSafetyPill"); hero_layout->addWidget(hero_safety, 0, Qt::AlignLeft);
+  auto * hero_safety = new QLabel("Fake hardware default / Real robot locked", hero_card); hero_safety->setObjectName("studioHomeSafetyPill"); hero_layout->addWidget(hero_safety, 0, Qt::AlignLeft);
+  auto * hero_diag = new QLabel("Diagnostics: offline checks available", hero_card); hero_diag->setObjectName("studioHomeSafetyPill"); hero_layout->addWidget(hero_diag, 0, Qt::AlignLeft);
   auto * hero_actions = new QHBoxLayout();
   auto * dash_new_cell = new QPushButton("New Cell", hero_card); dash_new_cell->setProperty("role", "primary"); dash_new_cell->setObjectName("studioHomePrimaryButton"); hero_actions->addWidget(dash_new_cell);
   auto * dash_open_selected_scene = new QPushButton("Open Selected Scene", hero_card); dash_open_selected_scene->setProperty("role", "primary"); dash_open_selected_scene->setObjectName("studioHomePrimaryButton"); hero_actions->addWidget(dash_open_selected_scene);
@@ -622,12 +623,9 @@ void MainWindow::setup_studio_shell()
   dashboard_last_updated_card_ = new QLabel("Selected Scene\nNone", dashboard); dashboard_last_updated_card_->setObjectName("studioHomeSummaryCard");
   summary_row->addWidget(dashboard_total_scenes_card_); summary_row->addWidget(dashboard_ready_scenes_card_); summary_row->addWidget(dashboard_warning_scenes_card_); summary_row->addWidget(dashboard_last_updated_card_);
   dl->addLayout(summary_row);
-  dl->addWidget(new QLabel("<b>Scenes</b>", dashboard));
-  auto * filter_row = new QHBoxLayout();
-  dashboard_scene_search_ = new QLineEdit(dashboard); dashboard_scene_search_->setObjectName("studioHomeSearchBox"); dashboard_scene_search_->setPlaceholderText("Search scenes...");
-  dashboard_scene_status_filter_ = new QComboBox(dashboard); dashboard_scene_status_filter_->setObjectName("studioHomeStatusFilter"); dashboard_scene_status_filter_->addItems({"All", "Ready", "Warning", "Blocked"});
-  filter_row->addWidget(dashboard_scene_search_, 1); filter_row->addWidget(dashboard_scene_status_filter_);
-  dl->addLayout(filter_row);
+  auto * source_label = new QLabel("Source scenes path: loading...", dashboard);
+  source_label->setObjectName("studioHomeDetailsCard");
+  dl->addWidget(source_label);
   dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setObjectName("studioHomeSceneTable"); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
   dashboard_scene_table_->setAlternatingRowColors(true);
   dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
@@ -639,7 +637,7 @@ void MainWindow::setup_studio_shell()
   dashboard_scene_table_->setColumnWidth(0, 320);
   dashboard_scene_table_->verticalHeader()->setDefaultSectionSize(36);
   dashboard_scene_table_->setWordWrap(false);
-  dashboard_scene_table_->setMinimumHeight(260);
+  dashboard_scene_table_->setMinimumHeight(320);
   dashboard_empty_state_card_ = new QFrame(dashboard); dashboard_empty_state_card_->setObjectName("studioCard");
   auto * empty_row = new QVBoxLayout(dashboard_empty_state_card_);
   dashboard_empty_state_title_ = new QLabel("No scenes found", dashboard_empty_state_card_);
@@ -653,20 +651,47 @@ void MainWindow::setup_studio_shell()
   dashboard_selected_scene_details_ = new QLabel("Select a scene to view details.", dashboard_selected_scene_card_);
   dashboard_selected_scene_details_->setWordWrap(true);
   selected_row->addWidget(dashboard_selected_scene_details_);
-  auto * dashboard_actions = new QHBoxLayout();
+  auto * dashboard_actions = new QVBoxLayout();
   dashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_); dashboard_open_scene_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_open_scene_button_);
   dashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_); dashboard_validate_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_validate_button_);
   dashboard_plan_button_ = new QPushButton("Plan & Simulate", dashboard_selected_scene_card_); dashboard_plan_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_plan_button_);
   dashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_); dashboard_export_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_export_button_);
   dashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_); dashboard_delete_button_->setObjectName("studioHomeDangerButton"); dashboard_actions->addWidget(dashboard_delete_button_);
-  dashboard_actions->addStretch(1);
   selected_row->addLayout(dashboard_actions);
   auto * dashboard_middle_split = new QSplitter(Qt::Horizontal, dashboard);
-  dashboard_middle_split->addWidget(dashboard_scene_table_);
+  auto * left_library_card = new QFrame(dashboard);
+  left_library_card->setObjectName("studioCard");
+  left_library_card->setMinimumWidth(280);
+  left_library_card->setMaximumWidth(320);
+  auto * left_library_layout = new QVBoxLayout(left_library_card);
+  left_library_layout->addWidget(new QLabel("<b>Scene Library</b>", left_library_card));
+  dashboard_library_search_ = new QLineEdit(left_library_card);
+  dashboard_library_search_->setPlaceholderText("Search library...");
+  left_library_layout->addWidget(dashboard_library_search_);
+  dashboard_library_status_filter_ = new QComboBox(left_library_card);
+  dashboard_library_status_filter_->addItems({"All", "Ready", "Warning", "Blocked"});
+  left_library_layout->addWidget(dashboard_library_status_filter_);
+  dashboard_library_list_ = new QListWidget(left_library_card);
+  left_library_layout->addWidget(dashboard_library_list_, 1);
+  auto * center_card = new QFrame(dashboard);
+  center_card->setObjectName("studioCard");
+  auto * center_layout = new QVBoxLayout(center_card);
+  center_layout->addWidget(new QLabel("<b>Scenes</b>", center_card));
+  auto * filter_row = new QHBoxLayout();
+  dashboard_scene_search_ = new QLineEdit(center_card); dashboard_scene_search_->setObjectName("studioHomeSearchBox"); dashboard_scene_search_->setPlaceholderText("Search scenes...");
+  dashboard_scene_status_filter_ = new QComboBox(center_card); dashboard_scene_status_filter_->setObjectName("studioHomeStatusFilter"); dashboard_scene_status_filter_->addItems({"All", "Ready", "Warning", "Blocked"});
+  filter_row->addWidget(dashboard_scene_search_, 1); filter_row->addWidget(dashboard_scene_status_filter_);
+  center_layout->addLayout(filter_row);
+  center_layout->addWidget(dashboard_scene_table_, 1);
+  dashboard_middle_split->addWidget(left_library_card);
+  dashboard_middle_split->addWidget(center_card);
   dashboard_middle_split->addWidget(dashboard_selected_scene_card_);
-  dashboard_middle_split->setStretchFactor(0, 3);
-  dashboard_middle_split->setStretchFactor(1, 2);
-  dashboard_middle_split->setCollapsible(1, false);
+  dashboard_middle_split->setStretchFactor(0, 1);
+  dashboard_middle_split->setStretchFactor(1, 4);
+  dashboard_middle_split->setStretchFactor(2, 2);
+  dashboard_middle_split->setCollapsible(0, false);
+  dashboard_middle_split->setCollapsible(2, false);
+  dashboard_middle_split->setSizes({280, 820, 360});
   dl->addWidget(dashboard_middle_split, 1);
   
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
@@ -1016,7 +1041,16 @@ void MainWindow::setup_studio_shell()
   studio_pages_->addWidget(validation);  // ValidationPage
   studio_pages_->addWidget(export_page);  // ExportPage
   auto * body=new QHBoxLayout(); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
-  studio_log_=new QTextEdit(content); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(100); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
+  auto * log_card = new QFrame(content); log_card->setObjectName("studioCard");
+  auto * log_layout = new QVBoxLayout(log_card);
+  auto * log_head = new QHBoxLayout();
+  log_head->addWidget(new QLabel("<b>Activity Log</b>", log_card));
+  auto * clear_log = new QPushButton("Clear", log_card);
+  log_head->addWidget(clear_log, 0, Qt::AlignRight);
+  log_layout->addLayout(log_head);
+  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); studio_log_->setPlaceholderText("Recent actions and diagnostics");
+  log_layout->addWidget(studio_log_);
+  root_layout->addWidget(log_card);
   preview_process_ = new QProcess(this);
 
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
@@ -1095,6 +1129,15 @@ void MainWindow::setup_studio_shell()
   connect(dashboard_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int){ select_scene_by_row(row); });
   connect(dashboard_scene_search_, &QLineEdit::textChanged, this, [this](const QString &){ refresh_studio_home_scene_table(); });
   connect(dashboard_scene_status_filter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){ refresh_studio_home_scene_table(); });
+  connect(dashboard_library_search_, &QLineEdit::textChanged, this, [this](const QString &){ refresh_studio_home_scene_table(); });
+  connect(dashboard_library_status_filter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){ refresh_studio_home_scene_table(); });
+  connect(dashboard_library_list_, &QListWidget::currentRowChanged, this, [this](int row){
+    if (row < 0) return;
+    auto * item = dashboard_library_list_->item(row);
+    if (!item) return;
+    select_scene_by_row(item->data(Qt::UserRole).toInt());
+  });
+  connect(clear_log, &QPushButton::clicked, this, [this](){ if (studio_log_) studio_log_->clear(); });
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
@@ -1432,7 +1475,10 @@ void MainWindow::refresh_studio_home_scene_table()
   if (!dashboard_scene_table_) return;
   const QString q = dashboard_scene_search_ ? dashboard_scene_search_->text().trimmed().toLower() : "";
   const QString status_filter = dashboard_scene_status_filter_ ? dashboard_scene_status_filter_->currentText() : "All";
+  const QString lq = dashboard_library_search_ ? dashboard_library_search_->text().trimmed().toLower() : "";
+  const QString lstatus = dashboard_library_status_filter_ ? dashboard_library_status_filter_->currentText() : "All";
   dashboard_scene_table_->setRowCount(0);
+  if (dashboard_library_list_) dashboard_library_list_->clear();
   for (size_t i = 0; i < scene_browser_result_.scenes.size(); ++i) {
     const auto & sc = scene_browser_result_.scenes[i];
     const QString scene_name = QString::fromStdString(sc.scene_name);
@@ -1451,6 +1497,15 @@ void MainWindow::refresh_studio_home_scene_table()
     status_item->setForeground(Qt::white);
     dashboard_scene_table_->setItem(row,1,status_item);
     dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked"));
+    if (dashboard_library_list_) {
+      const bool lmatch_q = lq.isEmpty() || scene_name.toLower().contains(lq);
+      const bool lmatch_status = (lstatus == "All") || (lstatus == "Ready" && status == "READY") || (lstatus == "Warning" && status == "WARNINGS") || (lstatus == "Blocked" && (status != "READY" && status != "WARNINGS"));
+      if (lmatch_q && lmatch_status) {
+        auto * item = new QListWidgetItem(QString("%1\n%2 | %3 | %4").arg(scene_name, QString::fromStdString(sc.robot_summary), QString::fromStdString(sc.gripper_summary), status));
+        item->setData(Qt::UserRole, static_cast<int>(i));
+        dashboard_library_list_->addItem(item);
+      }
+    }
   }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
 }

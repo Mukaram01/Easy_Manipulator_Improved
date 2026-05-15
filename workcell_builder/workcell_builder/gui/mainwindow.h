@@ -198,6 +198,9 @@ private:
   QPushButton * full_screen_button_{ nullptr };
   QTextEdit * studio_log_{ nullptr };
   QTableWidget * dashboard_scene_table_{ nullptr };
+  QListWidget * dashboard_library_list_{ nullptr };
+  QLineEdit * dashboard_library_search_{ nullptr };
+  QComboBox * dashboard_library_status_filter_{ nullptr };
   QLineEdit * dashboard_scene_search_{ nullptr };
   QComboBox * dashboard_scene_status_filter_{ nullptr };
   QLabel * dashboard_total_scenes_card_{ nullptr };
