@@ -21,9 +21,12 @@ public:
   QVector<ScenePreviewWidget::PreviewItem> items;
   QString selected_id;
   bool show_labels{true}, show_warnings{true}, show_safety{true}, show_pick_place{true};
+  bool show_reachability_heatmap{true}, show_collision_warnings{true}, show_work_envelope{true}, show_warning_labels{true};
   bool show_task_route{true}, show_approach_retreat{true};
   bool show_camera_fov{true}, show_pick_coverage{true}, show_epd_detections{true}, show_detection_labels{true};
   ScenePreviewWidget::TaskOverlayModel task_overlay;
+  ScenePreviewWidget::ReachabilityOverlayModel reach_overlay;
+  ScenePreviewWidget::CollisionOverlayModel collision_overlay;
   ScenePreviewWidget::CameraOverlayModel camera_overlay;
   QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
   std::function<void(const QString&)> select_cb;
@@ -77,6 +80,28 @@ protected:
       if (show_warnings && it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
       if (show_pick_place && (it.role.contains("pick") || it.role.contains("place"))) p.drawEllipse(project(it.x,it.y+it.sy+0.1,it.z), 4, 4);
     }
+
+    if (show_reachability_heatmap || show_work_envelope) {
+      const double base_x = -0.2, base_y = 0.0, base_z = -2.2;
+      QPointF center = project(base_x, base_y + 0.05, base_z);
+      const QPointF edgeMin = project(base_x + reach_overlay.approximate_reach_min_m, base_y + 0.05, base_z);
+      const QPointF edgePref = project(base_x + reach_overlay.preferred_work_zone_radius_m, base_y + 0.05, base_z);
+      const QPointF edgeMax = project(base_x + reach_overlay.approximate_reach_max_m, base_y + 0.05, base_z);
+      const double rMin = QLineF(center, edgeMin).length();
+      const double rPref = QLineF(center, edgePref).length();
+      const double rMax = QLineF(center, edgeMax).length();
+      if (show_work_envelope) {
+        p.setPen(QPen(QColor("#22c55e"), 2, Qt::DashLine));
+        p.drawEllipse(center, rPref, rPref);
+        p.drawText(project(base_x + 0.1, base_y + 0.25, base_z), "Work Envelope (preview-only)");
+      }
+      if (show_reachability_heatmap) {
+        p.setPen(QPen(QColor("#f59e0b"), 2, Qt::DotLine)); p.drawEllipse(center, rMin, rMin);
+        p.setPen(QPen(QColor("#ef4444"), 2)); p.drawEllipse(center, rMax, rMax);
+        p.drawText(project(base_x + 0.12, base_y + 0.4, base_z), "Reachability Heatmap (approximate, preview-only)");
+      }
+    }
+
     if (show_pick_place) {
       p.setPen(QPen(QColor("#00d1b2"), 2, Qt::DashLine)); p.drawText(project(-0.8, 0.5, -0.7), "pick source zone");
       p.setPen(QPen(QColor("#ff7b72"), 2, Qt::DashLine)); p.drawText(project(1.3, 0.5, -0.1), "place target zone");
@@ -162,7 +187,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   controls->addWidget(mode_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Labels", "Safety Zones", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -177,10 +202,17 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   connect(reset_view_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_reset_view_clicked);
   connect(fit_scene_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_fit_scene_clicked);
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    auto *v = static_cast<SimplePreview3DView *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();
-    if (choice == "Focus Selected") on_focus_selected_clicked();
+    if (choice == "Reachability Heatmap") v->show_reachability_heatmap = !v->show_reachability_heatmap;
+    else if (choice == "Collision Warnings") v->show_collision_warnings = !v->show_collision_warnings;
+    else if (choice == "Safety Zones") v->show_safety = !v->show_safety;
+    else if (choice == "Work Envelope") v->show_work_envelope = !v->show_work_envelope;
+    else if (choice == "Warning Labels") v->show_warning_labels = !v->show_warning_labels;
+    else if (choice == "Focus Selected") on_focus_selected_clicked();
     else if (choice == "Fit Selected") on_fit_scene_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
+    v->update();
   });
   static_cast<SimplePreview3DView *>(simple_3d_view_)->select_cb = [this](const QString & id){ select_preview_item(id); emit preview_item_selected(id); emit studio_log_requested(QString("Selected preview item: %1").arg(id)); };
   refresh_mode_and_state();
@@ -223,3 +255,7 @@ void ScenePreviewWidget::refresh_mode_and_state()
 void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->camera_overlay = model; simple_3d_view_->update(); }
 void ScenePreviewWidget::set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections){ epd_detections_ = detections; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->epd_detections = detections; simple_3d_view_->update(); }
 void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels){ auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->show_camera_fov=camera_fov; v->show_pick_coverage=pick_coverage; v->show_epd_detections=epd_detections; v->show_detection_labels=detection_labels; v->update(); }
+
+
+void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->reach_overlay = model; emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->collision_overlay = model; emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); simple_3d_view_->update(); }

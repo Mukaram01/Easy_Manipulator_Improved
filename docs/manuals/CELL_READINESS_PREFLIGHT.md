@@ -94,3 +94,8 @@ Open the static preview and dashboard manually:
 Use the RViz/MoveIt preview command manually from the summary only after sourcing ROS 2/workspace. The demo itself does **not** auto-launch RViz, does **not** call MoveIt planning services, and does **not** command robot motion.
 
 Visual preview artifacts are communication aids and do **not** certify real-hardware commissioning readiness.
+
+## 8) Studio preview validation note
+Workcell Studio 3D preview overlays now include approximate reachability/work-envelope and collision/spacing warnings for editor feedback.
+These checks are preview-only and approximate: no MoveIt planning call, no runtime execution, no robot motion, and no controller command publishing.
+Use "Open Preflight Docs" and "Open Readiness Report" from the status panel for readiness workflow handoff.
