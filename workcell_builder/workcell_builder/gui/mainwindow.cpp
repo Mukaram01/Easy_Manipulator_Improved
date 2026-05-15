@@ -468,30 +468,21 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
 
 void MainWindow::apply_studio_theme()
 {
-  QStringList style_candidates;
-  try {
-    const auto share_dir = ament_index_cpp::get_package_share_directory("workcell_builder");
-    style_candidates << QString::fromStdString(share_dir + "/gui/resources/workcell_studio_dark.qss");
-  } catch (const std::exception &) {
-    // Intentionally continue with fallback candidate paths.
-  }
-  style_candidates
-    << (QCoreApplication::applicationDirPath() + "/../share/workcell_builder/gui/resources/workcell_studio_dark.qss")
-    << "workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss";
-
-  QFile external_style;
-  for (const auto & candidate : style_candidates) {
-    external_style.setFileName(candidate);
-    if (external_style.open(QIODevice::ReadOnly | QIODevice::Text)) {
-      setStyleSheet(QString::fromUtf8(external_style.readAll()));
-      append_studio_log("Loaded Workcell Studio dark theme.");
-      statusBar()->showMessage("Workcell Studio dark theme loaded.");
-      return;
-    }
-  }
-
-  append_studio_log("Warning: dark theme missing. Using default Qt theme.");
-  statusBar()->showMessage("Dark theme not found. Using default Qt theme.");
+  setStyleSheet(
+    "QWidget#workcellStudioDashboardPage { background: #F5F7FA; color: #1F2933; }"
+    "QFrame#studioCard, QFrame#studioHomeHeroCard, QFrame#studioHomeDetailsCard, QFrame#studioPanel {"
+    " background: #FFFFFF; border: 1px solid #D0D7DE; border-radius: 8px; }"
+    "QLabel#dashboardTitleLabel { color: #1F2933; font-size: 24px; font-weight: 700; }"
+    "QLabel#dashboardSubtitleLabel, QLabel#dashboardSummaryLabel, QLabel#studioHomeSummaryCard { color: #5B6775; }"
+    "QTableWidget#studioHomeSceneTable { background: #FFFFFF; color: #1F2933; gridline-color: #D0D7DE; }"
+    "QHeaderView::section { background: #F5F7FA; color: #1F2933; border: 1px solid #D0D7DE; padding: 4px; }"
+    "QPushButton#studioHomePrimaryButton { background: #2563EB; color: white; border: 1px solid #1D4ED8; border-radius: 6px; padding: 6px 10px; font-weight: 600; }"
+    "QPushButton#studioHomeSecondaryButton { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; border-radius: 6px; padding: 6px 10px; }"
+    "QPushButton#studioHomeDangerButton { background: #FFFFFF; color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 6px; padding: 6px 10px; }"
+    "QLabel#studioHomeSafetyPill { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 2px 8px; }"
+    "QTextEdit#studioHomeLog { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; }");
+  append_studio_log("Loaded Workcell Studio light theme.");
+  statusBar()->showMessage("Workcell Studio light theme loaded.");
 }
 
 void MainWindow::toggle_full_screen()
@@ -637,7 +628,7 @@ void MainWindow::setup_studio_shell()
   dashboard_scene_table_->setColumnWidth(0, 320);
   dashboard_scene_table_->verticalHeader()->setDefaultSectionSize(36);
   dashboard_scene_table_->setWordWrap(false);
-  dashboard_scene_table_->setMinimumHeight(320);
+  dashboard_scene_table_->setMinimumHeight(260);
   dashboard_empty_state_card_ = new QFrame(dashboard); dashboard_empty_state_card_->setObjectName("studioCard");
   auto * empty_row = new QVBoxLayout(dashboard_empty_state_card_);
   dashboard_empty_state_title_ = new QLabel("No scenes found", dashboard_empty_state_card_);
@@ -1048,7 +1039,7 @@ void MainWindow::setup_studio_shell()
   auto * clear_log = new QPushButton("Clear", log_card);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
   log_layout->addLayout(log_head);
-  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); studio_log_->setPlaceholderText("Recent actions and diagnostics");
+  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(90); studio_log_->setPlaceholderText("Recent actions and diagnostics");
   log_layout->addWidget(studio_log_);
   root_layout->addWidget(log_card);
   preview_process_ = new QProcess(this);
@@ -1491,10 +1482,9 @@ void MainWindow::refresh_studio_home_scene_table()
     auto *scene_item = new QTableWidgetItem(QFontMetrics(dashboard_scene_table_->font()).elidedText(scene_name, Qt::ElideRight, 320)); scene_item->setToolTip(scene_name); scene_item->setData(Qt::UserRole, (int)i);
     dashboard_scene_table_->setItem(row,0,scene_item);
     auto * status_item = new QTableWidgetItem(status);
-    if (status == "READY") status_item->setBackground(QColor("#1f6f3d"));
-    else if (status == "WARNINGS") status_item->setBackground(QColor("#8a6500"));
-    else status_item->setBackground(QColor("#7a1e1e"));
-    status_item->setForeground(Qt::white);
+    if (status == "READY") { status_item->setBackground(QColor("#DCFCE7")); status_item->setForeground(QBrush(QColor("#15803D"))); }
+    else if (status == "WARNINGS") { status_item->setBackground(QColor("#FEF3C7")); status_item->setForeground(QBrush(QColor("#B45309"))); }
+    else { status_item->setBackground(QColor("#FEE2E2")); status_item->setForeground(QBrush(QColor("#B91C1C"))); }
     dashboard_scene_table_->setItem(row,1,status_item);
     dashboard_scene_table_->setItem(row,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); dashboard_scene_table_->setItem(row,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); dashboard_scene_table_->setItem(row,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); dashboard_scene_table_->setItem(row,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked"));
     if (dashboard_library_list_) {
@@ -1632,9 +1622,9 @@ void MainWindow::refresh_selected_scene_details_card()
     return;
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const QString status_chip = (s.status == "READY") ? "<span style='background:#1f6f3d;color:white;padding:2px 8px;border-radius:8px;'>READY</span>"
-    : (s.status == "WARNINGS") ? "<span style='background:#8a6500;color:white;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
-    : "<span style='background:#7a1e1e;color:white;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
+  const QString status_chip = (s.status == "READY") ? "<span style='background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:2px 8px;border-radius:8px;'>READY</span>"
+    : (s.status == "WARNINGS") ? "<span style='background:#FEF3C7;color:#B45309;border:1px solid #FCD34D;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
+    : "<span style='background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
   dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><b>Gripper:</b> %4<br/><b>Task Recipe:</b> %5<br/><b>Launch:</b> %6<br/><b>Source:</b> %7")
     .arg(QString::fromStdString(s.scene_name)).arg(status_chip).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.has_task_recipe ? "present" : "missing").arg(s.has_launch_demo ? "ready" : "blocked").arg(QString::fromStdString(s.scene_dir.string())));
   if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Source Path\n%1").arg(QString::fromStdString(scene_browser_result_.scene_root.string())));
@@ -2298,7 +2288,7 @@ void MainWindow::run_diagnostics_self_test()
   add("scenes root found", QFileInfo::exists(ws+"/scenes"), false, "Expected scenes root", "Create <workspace>/scenes", ws+"/scenes");
   add("assets root found", QFileInfo::exists(ws+"/assets"), false, "Expected assets root", "Create <workspace>/assets", ws+"/assets");
   QString p; add("helper scripts found", helper_script_exists("run_workcell_studio_golden_flow.py", &p), true, p.isEmpty()?"missing golden flow helper":p, "Ensure scripts folder is present", p);
-  add("dark theme/QSS loaded", !styleSheet().isEmpty(), false, styleSheet().isEmpty()?"theme missing":"dark theme active", "Install gui/resources/workcell_studio_dark.qss", "gui/resources/workcell_studio_dark.qss");
+  add("light theme loaded", !styleSheet().isEmpty(), false, styleSheet().isEmpty()?"default Qt theme active":"Workcell Studio light theme active", "Keep light/native Qt styling", "gui/mainwindow.cpp");
   add("Qt SVG support available", true, false, "QSvgGenerator linked", "Install Qt SVG runtime if missing", "QtSvg");
   add("scene browser working", scene_browser_result_.root_exists, false, scene_browser_result_.root_exists?"scene browser ready":"scene browser root missing", "Create scenes root and refresh", ws+"/scenes");
   add("layout merge script working", helper_script_exists("workcell_studio_layout_merge.py", &p), false, p.isEmpty()?"missing":p, "Restore script", p);
