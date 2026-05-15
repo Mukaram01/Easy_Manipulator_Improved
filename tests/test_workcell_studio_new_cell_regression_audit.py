@@ -2,7 +2,7 @@ from pathlib import Path
 
 SCRIPT = Path('scripts/audit_workcell_studio_regressions.py')
 TEXT = SCRIPT.read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 
 
 def test_regression_script_exists():

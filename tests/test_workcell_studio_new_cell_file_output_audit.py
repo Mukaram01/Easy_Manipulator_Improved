@@ -2,7 +2,7 @@ from pathlib import Path
 
 AUDIT = Path('scripts/audit_new_cell_file_outputs.py')
 ACCEPTANCE = Path('scripts/generate_scratch_cell_acceptance.py').read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 TEXT = AUDIT.read_text(encoding='utf-8')
 
 

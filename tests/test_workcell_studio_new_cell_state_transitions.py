@@ -2,7 +2,7 @@ from pathlib import Path
 
 MAIN_CPP = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
 SCRIPT = Path('scripts/audit_new_cell_state_transitions.py').read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 
 
 def test_state_names_exist_in_ui_and_script():

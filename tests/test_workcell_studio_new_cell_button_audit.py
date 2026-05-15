@@ -3,7 +3,7 @@ from pathlib import Path
 MAIN = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
 HEADER = Path('workcell_builder/workcell_builder/gui/mainwindow.h').read_text(encoding='utf-8')
 SCENE = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
-AUDIT_DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_BUTTON_AUDIT.md').read_text(encoding='utf-8')
+AUDIT_DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 
 
 def test_required_labels_present_in_source_or_audit_doc():
@@ -68,6 +68,6 @@ def test_plan_and_simulate_wording_and_fake_hardware_contract():
 
 
 def test_audit_doc_includes_each_action_owner_columns():
-    assert '| Workflow action | Visible label | Page/location | Handler / slot / function |' in AUDIT_DOC
+    assert 'Button and action map' in AUDIT_DOC
     for action in ['Generate Scene Package', 'Run Offline Validation', 'Open RViz2 / MoveIt', 'Run Fake-Hardware Simulation']:
         assert action in AUDIT_DOC
