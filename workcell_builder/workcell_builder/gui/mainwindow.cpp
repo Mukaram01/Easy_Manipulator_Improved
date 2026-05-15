@@ -513,6 +513,7 @@ void MainWindow::setup_studio_shell()
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
   studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
+  studio_nav_->hide();
   studio_pages_ = new QStackedWidget(content);
 
   auto * dashboard = new QWidget(studio_pages_); auto * dl=new QVBoxLayout(dashboard);
@@ -521,6 +522,8 @@ void MainWindow::setup_studio_shell()
   dashboard_scene_table_=new QTableWidget(0,6,dashboard); dashboard_scene_table_->setHorizontalHeaderLabels({"Scene","Status","Robot","Gripper","Task Recipe","Launch"});
   dashboard_scene_table_->setStyleSheet("QTableWidget{background:#1f2937;color:#e5e7eb;gridline-color:#374151;} QHeaderView::section{background:#111827;color:#93c5fd;}");
   dashboard_scene_table_->setAlternatingRowColors(true);
+  dashboard_scene_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+  dashboard_scene_table_->verticalHeader()->setDefaultSectionSize(30);
   dl->addWidget(dashboard_scene_table_);
   auto * dashboard_actions = new QHBoxLayout();
   auto * dash_open_scene_builder = new QPushButton("Open in Scene Builder", dashboard); dashboard_actions->addWidget(dash_open_scene_builder);
@@ -810,8 +813,8 @@ void MainWindow::setup_studio_shell()
   exl->addWidget(export_more_actions_button_);
 
   studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation); studio_pages_->addWidget(export_page);
-  auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
-  studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(130); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
+  auto * body=new QHBoxLayout(); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
+  studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(160); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); studio_log_->setStyleSheet("QTextEdit{color:#e5e7eb;background:#111827;border:1px solid #374151;}"); root_layout->addWidget(studio_log_);
   preview_process_ = new QProcess(this);
 
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
@@ -870,6 +873,7 @@ void MainWindow::setup_studio_shell()
     top_bar->addWidget(button);
   }
   full_screen_button_ = new QPushButton("Full Screen", this);
+  full_screen_button_->setToolTip("Press Esc to exit full screen");
   top_bar->addWidget(full_screen_button_);
   connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
   top_bar->addSeparator();
@@ -880,6 +884,7 @@ void MainWindow::setup_studio_shell()
   top_bar->addWidget(diagnostics_indicator_label_);
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
+  studio_nav_->setCurrentRow(0);
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(2); });
   connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ >= 0) { studio_nav_->setCurrentRow(2); append_studio_log("Open in Scene Builder: switched to Scene Builder"); }});
   connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); open_selected_scene_artifact("run_acceptance"); });
