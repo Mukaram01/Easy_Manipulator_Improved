@@ -13,7 +13,7 @@ def test_primary_actions_visible():
         'Add to Canvas',
         'Save Layout',
         'Generate/Update Task Intent',
-        'Run Fake-Hardware Preview',
+        'Run Fake-Hardware Simulation',
         'Copy Launch Command',
         'Run Offline Validation',
         'Generate Readiness Pack',
