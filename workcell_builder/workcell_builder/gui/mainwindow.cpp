@@ -1041,6 +1041,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect(add_to_canvas_button, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
@@ -2092,6 +2093,9 @@ static YAML::Node minimal_environment_layout(const std::string & scene_name)
 {
   YAML::Node root(YAML::NodeType::Map);
   root["schema_version"] = "environment_layout/v1";
+  const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+  const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
+  if (fs::exists(layout_path)) { boost::system::error_code ec; fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec); if (!ec) append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string()))); }
   root["scene_name"] = scene_name;
   root["placed_assets"] = YAML::Node(YAML::NodeType::Sequence);
   return root;
@@ -2135,6 +2139,9 @@ void MainWindow::save_layout_changes()
     root = minimal_environment_layout(scene_name);
   }
   root["schema_version"] = "environment_layout/v1";
+  const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+  const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
+  if (fs::exists(layout_path)) { boost::system::error_code ec; fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec); if (!ec) append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string()))); }
   YAML::Node placed(YAML::NodeType::Sequence);
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
@@ -2185,8 +2192,8 @@ void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, con
 void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
-void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()) return; auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); }
-void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
+void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); }
+void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; populate_scene_hierarchy(); mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
 
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
@@ -2212,13 +2219,27 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   item->setData(RoleCategory, category);
   item->setData(RoleRole, "asset");
   item->setData(RoleSource, source_path);
-  item->setData(RoleSourcePackage, "");
+  item->setData(RoleSourcePackage, "asset_catalog");
   item->setData(RolePoseZ, category.contains("camera", Qt::CaseInsensitive) ? 1.2 : 0.0);
   item->setData(RoleRoll, 0.0); item->setData(RolePitch, 0.0); item->setData(RoleYaw, 0.0);
   item->setData(RoleWidth, 0.35); item->setData(RoleDepth, 0.35); item->setData(RoleHeight, 0.35);
   item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
   item->setData(RoleLocked, false);
+  QStringList warnings;
+  if (source_path.trimmed().isEmpty()) warnings << "missing dimensions/source metadata";
+  if (source_path.contains("robot", Qt::CaseInsensitive) || category.contains("Robot", Qt::CaseInsensitive) || category.contains("Tool", Qt::CaseInsensitive)) {
+    item->setData(RoleLocked, true);
+    warnings << "locked item";
+  }
+  if (QLineF(item->pos(), QPointF(-20.0, -220.0)).length() < 80.0) warnings << "too close to robot base";
+  for (auto *existing : digital_twin_scene_->items()) {
+    if (existing == item || existing->data(RoleRole).toString() != "asset") continue;
+    if (QLineF(existing->pos(), item->pos()).length() < 40.0) { warnings << "overlap"; break; }
+  }
+  if (item->pos().x() < -260.0 || item->pos().x() > 260.0 || item->pos().y() < -260.0 || item->pos().y() > 260.0) warnings << "outside workspace";
+  if (item->data(RolePoseZ).toDouble() < 0.0) warnings << "below floor/table";
+  item->setData(RoleWarning, warnings.join(", "));
   item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
   item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
   digital_twin_scene_->addItem(item);
@@ -2227,10 +2248,10 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   select_canvas_item(item);
   undo_stack_.push_back({"add", new_id, item->pos(), item->pos(), true, false});
   redo_stack_.clear();
-  mark_layout_dirty("Add to Canvas");
+  set_canvas_interaction_mode(CanvasInteractionMode::Place);
+  mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
   append_studio_log("ghost placement preview committed");
-  save_layout_changes();
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
 }
 
@@ -2339,7 +2360,9 @@ void MainWindow::populate_asset_catalog()
       if (path.contains("table", Qt::CaseInsensitive)) category="Tables";
       if (path.contains("conveyor", Qt::CaseInsensitive)) category="Conveyors";
       if (path.contains("bin", Qt::CaseInsensitive)) category="Bins";
-      if (path.contains("fixture", Qt::CaseInsensitive)) category="Fixtures";
+      if (path.contains("fixture", Qt::CaseInsensitive)) category="fixture";
+      if (path.contains("pick", Qt::CaseInsensitive) && path.contains("zone", Qt::CaseInsensitive)) category="pick zone";
+      if (path.contains("place", Qt::CaseInsensitive) && path.contains("zone", Qt::CaseInsensitive)) category="place zone";
       if (ext==".urdf") type="URDF"; else if (ext==".xacro") type="Xacro"; else if (ext==".stl") type="STL";
       auto * item = new QTreeWidgetItem(asset_catalog_tree_, {it->path().filename().string().c_str(), category, type});
       item->setData(0, Qt::UserRole, path);
