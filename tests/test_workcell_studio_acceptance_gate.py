@@ -2,7 +2,7 @@ from pathlib import Path
 
 SCRIPT = Path('scripts/run_workcell_studio_acceptance_gate.py')
 TEXT = SCRIPT.read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_ACCEPTANCE_GATE.md').read_text(encoding='utf-8')
 CPP = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
 
 

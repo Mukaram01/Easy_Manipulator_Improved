@@ -2,7 +2,7 @@ from pathlib import Path
 
 ERR = Path('scripts/workcell_studio_error_messages.py').read_text(encoding='utf-8')
 CPP = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 
 
 def test_standard_fields_exist():

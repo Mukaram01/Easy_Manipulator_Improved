@@ -3,7 +3,7 @@ from pathlib import Path
 SMOKE = Path('scripts/smoke_test_scratch_cell_workspace.py')
 TEXT = SMOKE.read_text(encoding='utf-8')
 ERR = Path('scripts/workcell_studio_error_messages.py').read_text(encoding='utf-8')
-DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FLOW.md').read_text(encoding='utf-8')
+DOC = Path('docs/manuals/WORKCELL_STUDIO_NEW_CELL_FROM_SCRATCH.md').read_text(encoding='utf-8')
 
 
 def test_smoke_script_exists_and_references_acceptance_generator():
