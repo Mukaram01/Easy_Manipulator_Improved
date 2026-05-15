@@ -35,5 +35,5 @@ def test_safe_suffix_and_missing_asset_blockers_exist():
 
 
 def test_ui_has_scratch_acceptance_status_lines():
-    for token in ['Scratch cell generated', 'Package files ready', 'Plan & Simulate command ready']:
+    for token in ['Scratch cell generated', 'File outputs checked', 'Metadata coherent', 'Package files present', 'Plan & Simulate command ready']:
         assert token in MAIN

@@ -105,3 +105,25 @@ Known limitations:
 - Offline generation and validation only; it does not guarantee real robot execution readiness.
 - RViz/MoveIt launch is not required during automated tests.
 - Missing UR5/Robotiq assets are reported as blockers with searched paths.
+
+
+## Point 2: File-output Audit
+
+Run a dedicated audit after `Generate Scene Package` and before Plan & Simulate:
+
+```bash
+python3 scripts/audit_new_cell_file_outputs.py \
+  --scene-dir /tmp/workcell_studio_file_audit/scratch_ur5_2f_file_audit \
+  --scene-name scratch_ur5_2f_file_audit \
+  --json-out /tmp/workcell_studio_file_audit/file_output_audit.json
+```
+
+The audit checks expected file locations and minimum content coherence for:
+- metadata files: `environment.yaml`, `environment_layout.yaml`, `scene_manifest.yaml`, `cell_definition.yaml`, `config/workcell_builder_task_intent.yaml`
+- generated package files: `package.xml`, `CMakeLists.txt`, `launch/demo.launch.py`, and URDF/Xacro entrypoints where present
+- task/layout/package cross-references (scene-name, pick/place IDs, and launch package target)
+
+Status meanings:
+- `PASS`: required files exist, required tokens are present, and no blockers were found.
+- `WARNINGS`: no hard blockers, but cross-reference or metadata quality warnings were found.
+- `BLOCKED`: missing required files, malformed required content, or scene/package mismatch that blocks readiness.
