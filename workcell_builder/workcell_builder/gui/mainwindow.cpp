@@ -2179,7 +2179,7 @@ void MainWindow::refresh_new_cell_checklist()
   const QString scene = selected_scene_name().trimmed();
   const bool has_scene = !scene.isEmpty() && scene != "none";
   const QString done = "✅ done"; const QString pending = "⏳ pending";
-  const QString text = QString("<b>New Cell Checklist</b><br/>%1: Workspace selected<br/>%2: Cell name set<br/>%3: Robot selected (UR5 default)<br/>%4: Tool selected (Robotiq 2F default)<br/>%5: Environment layout created (table + pick zone + place zone + camera)<br/>%6: Task intent created (pick_place)<br/>%7: Scene files generated<br/>%8: Validation passed<br/>%9: Ready for Plan & Simulate")
+  const QString text = QString("<b>New Cell Checklist</b><br/>%1: Workspace selected<br/>%2: Cell name set<br/>%3: Robot selected (UR5 default)<br/>%4: Tool selected (Robotiq 2F default)<br/>%5: Environment layout created (table + pick zone + place zone + camera)<br/>%6: Task intent created (pick_place)<br/>%7: Scratch cell generated<br/>%8: Package files ready<br/>%9: Plan & Simulate command ready")
     .arg(done).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending);
   new_cell_checklist_label_->setText(text);
 }
