@@ -60,6 +60,10 @@
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QStatusBar>
+#include <QToolButton>
+#include <QMenu>
+#include <QSplitter>
+#include <QGroupBox>
 #include <QMetaObject>
 #include <QPointer>
 #include <QProgressDialog>
@@ -457,20 +461,25 @@ void MainWindow::setup_studio_shell()
   auto * dash_preview = new QPushButton("Preview Launch", dashboard); dashboard_actions->addWidget(dash_preview);
   auto * dash_export = new QPushButton("Export", dashboard); dashboard_actions->addWidget(dash_export);
   dl->addLayout(dashboard_actions);
-  auto * dash_safety = new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion", dashboard); dl->addWidget(dash_safety);
+  auto * dash_safety = new QLabel("Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded", dashboard); dl->addWidget(dash_safety);
 
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
   auto * scene_shell_layout = new QVBoxLayout(scene_shell);
-  auto * scene_top = new QHBoxLayout();
+  auto * scene_splitter = new QSplitter(Qt::Horizontal, scene_shell);
   auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("studioPanel"); left_panel->setMinimumWidth(280); left_panel->setMaximumWidth(330);
   auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("studioPanel");
   auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("studioPanel"); right_panel->setMinimumWidth(320); right_panel->setMaximumWidth(380);
-  scene_top->addWidget(left_panel);
-  scene_top->addWidget(center_panel, 1);
-  scene_top->addWidget(right_panel);
-  scene_shell_layout->addLayout(scene_top, 1);
+  scene_splitter->addWidget(left_panel);
+  scene_splitter->addWidget(center_panel);
+  scene_splitter->addWidget(right_panel);
+  scene_splitter->setCollapsible(0, true);
+  scene_splitter->setCollapsible(2, true);
+  scene_splitter->setStretchFactor(0, 1);
+  scene_splitter->setStretchFactor(1, 4);
+  scene_splitter->setStretchFactor(2, 1);
+  scene_shell_layout->addWidget(scene_splitter, 1);
   sl->addWidget(scene_shell, 1);
 
   auto * left_layout = new QVBoxLayout(left_panel);
@@ -493,16 +502,22 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type"});
   catalog_layout->addWidget(asset_catalog_tree_, 1);
   auto * add_to_canvas_button = new QPushButton("Add to Canvas", scene_builder); catalog_layout->addWidget(add_to_canvas_button);
-  auto * open_asset_folder_button = new QPushButton("Open Asset Folder", scene_builder); catalog_layout->addWidget(open_asset_folder_button);
-  auto * copy_asset_path_button = new QPushButton("Copy Asset Path", scene_builder); catalog_layout->addWidget(copy_asset_path_button);
-  auto * import_asset_button = new QPushButton("Import STL / URDF", scene_builder); catalog_layout->addWidget(import_asset_button);
-  auto * add_existing_stl_button = new QPushButton("Add Existing STL to Canvas", scene_builder); catalog_layout->addWidget(add_existing_stl_button);
-  auto * placeholder_button = new QPushButton("Generate Simple Box/Cylinder Placeholder", scene_builder); catalog_layout->addWidget(placeholder_button);
+  auto * asset_more_actions = new QToolButton(scene_builder);
+  asset_more_actions->setText("More Actions");
+  asset_more_actions->setPopupMode(QToolButton::InstantPopup);
+  auto * asset_more_menu = new QMenu(asset_more_actions);
+  auto * open_asset_folder_action = asset_more_menu->addAction("Open Asset Folder");
+  auto * copy_asset_path_action = asset_more_menu->addAction("Copy Asset Path");
+  auto * import_asset_action = asset_more_menu->addAction("Import STL / URDF");
+  auto * add_existing_stl_action = asset_more_menu->addAction("Add Existing STL to Canvas");
+  auto * placeholder_action = asset_more_menu->addAction("Generate Simple Box/Cylinder Placeholder");
+  asset_more_actions->setMenu(asset_more_menu);
+  catalog_layout->addWidget(asset_more_actions);
   left_layout->addWidget(catalog_card, 1);
 
   auto * center_layout = new QVBoxLayout(center_panel);
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_layout->addWidget(scene_preview_label_);
-  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY | Fake Hardware | No Robot Motion | Preview Only"); canvas_header_label_->setWordWrap(true); center_layout->addWidget(canvas_header_label_);
+  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
   auto * camera_view = new QComboBox(scene_builder); camera_view->addItems({"Camera View: Perspective", "Top", "Left", "Right", "Front"}); controls->addWidget(camera_view);
   auto * fit_button = new QPushButton("Fit Cell", scene_builder); controls->addWidget(fit_button);
@@ -543,33 +558,42 @@ void MainWindow::setup_studio_shell()
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
   right_layout->addWidget(task_intent);
-  auto * pick_place = new QFrame(right_panel); pick_place->setObjectName("studioCard"); auto * pick_place_layout = new QVBoxLayout(pick_place);
-  pick_place_layout->addWidget(new QLabel("<b>Pick-Place Configuration</b>"));
+  auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   auto * task_binding_actions = new QHBoxLayout();
   auto * pick_source_button = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button);
   auto * place_target_button = new QPushButton("Use Selected as Place Target", scene_builder); task_binding_actions->addWidget(place_target_button);
-  auto * pick_zone_button = new QPushButton("Use Selected as Pick Zone", scene_builder); task_binding_actions->addWidget(pick_zone_button);
-  auto * place_zone_button = new QPushButton("Use Selected as Place Zone", scene_builder); task_binding_actions->addWidget(place_zone_button);
-  auto * camera_button = new QPushButton("Use Selected as Camera", scene_builder); task_binding_actions->addWidget(camera_button);
+  auto * pick_zone_button = new QPushButton("Use Selected as Pick Zone", scene_builder);
+  auto * place_zone_button = new QPushButton("Use Selected as Place Zone", scene_builder);
+  auto * camera_button = new QPushButton("Use Selected as Camera", scene_builder);
   pick_place_layout->addLayout(task_binding_actions);
   pick_place_details_label_ = new QLabel("Pick source: unknown\nPlace target: unknown\nReject target: unknown\nLinked hierarchy item: unknown"); pick_place_details_label_->setWordWrap(true); pick_place_layout->addWidget(pick_place_details_label_);
   right_layout->addWidget(pick_place);
   auto * grasp_card = new QFrame(right_panel); grasp_card->setObjectName("studioCard"); auto * grasp_layout = new QVBoxLayout(grasp_card);
   grasp_layout->addWidget(new QLabel("<b>Grasp Strategy</b>"));
   grasp_details_label_ = new QLabel("Strategy/ref: unknown\nTool/End Effector: unknown\nApproach axis: unknown\nOrientation mode: unknown\nAllowed roll/yaw: unknown"); grasp_details_label_->setWordWrap(true); grasp_layout->addWidget(grasp_details_label_);
-  readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
+  readiness_label_=new QLabel("Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded<br/>No uncontrolled robot motion."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
   right_layout->addWidget(grasp_card);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Approach & Retreat</b>"));
   approach_retreat_details_label_ = new QLabel("Approach distance: unknown\nRetreat distance: unknown\nApproach frame/axis: unknown\nRetreat frame/axis: unknown\nClearance: unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
   right_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
-  preview_actions_label_=new QLabel("<b>Preview Actions</b><br/>Validate Task Intent | Generate/Update Task Intent | Open Task File | Copy Task Summary | Preview Offline Plan"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
-  auto * validate_task_button = new QPushButton("Validate Task Intent", scene_builder); preview_actions_layout->addWidget(validate_task_button);
+  preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
+  auto * validate_task_button = new QPushButton("Validate Layout", scene_builder); preview_actions_layout->addWidget(validate_task_button);
   auto * generate_task_button = new QPushButton("Generate/Update Task Intent", scene_builder); preview_actions_layout->addWidget(generate_task_button);
-  auto * open_task_button = new QPushButton("Open Task File", scene_builder); preview_actions_layout->addWidget(open_task_button);
-  auto * copy_task_summary_button = new QPushButton("Copy Task Summary", scene_builder); preview_actions_layout->addWidget(copy_task_summary_button);
-  auto * preview_offline_plan_button = new QPushButton("Preview Offline Plan", scene_builder); preview_actions_layout->addWidget(preview_offline_plan_button);
+  scene_builder_more_actions_button_ = new QToolButton(scene_builder);
+  scene_builder_more_actions_button_->setText("More Actions");
+  scene_builder_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
+  auto * scene_builder_more_menu = new QMenu(scene_builder_more_actions_button_);
+  auto * open_task_action = scene_builder_more_menu->addAction("Open Task File");
+  auto * copy_task_summary_action = scene_builder_more_menu->addAction("Copy Task Summary");
+  auto * preview_offline_plan_action = scene_builder_more_menu->addAction("Preview Offline Plan");
+  scene_builder_more_menu->addAction("Remove Selected Layout Item");
+  scene_builder_more_menu->addAction("Use Selected as Pick Zone");
+  scene_builder_more_menu->addAction("Use Selected as Place Zone");
+  scene_builder_more_menu->addAction("Use Selected as Camera");
+  scene_builder_more_actions_button_->setMenu(scene_builder_more_menu);
+  preview_actions_layout->addWidget(scene_builder_more_actions_button_);
   right_layout->addWidget(preview_actions_card);
   inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); right_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); right_layout->addWidget(live_coordinate_label_);
@@ -619,18 +643,29 @@ void MainWindow::setup_studio_shell()
   pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Workcell Studio safe preview console. Fake Hardware | No Robot Motion | Preview Only | Real hardware is not launched from this page.</p>"));
   preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
   preview_status_label_ = new QLabel("<b>Readiness Gate</b><br/>BLOCKED_MISSING_SCENE"); preview_status_label_->setObjectName("studioCard"); preview_status_label_->setWordWrap(true); pl->addWidget(preview_status_label_);
-  preview_safety_label_ = new QLabel("<b>Safety banner</b><br/>Fake Hardware | No Robot Motion | Preview Only | Real hardware is not launched from this page"); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
+  preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Preview | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded"); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
   preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); pl->addWidget(preview_commands_);
   preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("Live Log: command started / command output / command finished or failed / transcript path"); preview_log_->setObjectName("studioCard"); pl->addWidget(preview_log_);
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Validate | Run Fake-Hardware Preview | Stop Preview | Copy commands"));
   run_build_button_ = new QPushButton("Validate", preview); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Fake-Hardware Preview", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   stop_preview_button_ = new QPushButton("Stop Preview", preview); pl->addWidget(stop_preview_button_);
-  copy_build_button_ = new QPushButton("Copy Build Command", preview); pl->addWidget(copy_build_button_);
-  copy_source_button_ = new QPushButton("Copy Source Command", preview); pl->addWidget(copy_source_button_);
   copy_launch_button_ = new QPushButton("Copy Fake-Hardware Launch Command", preview); pl->addWidget(copy_launch_button_);
-  copy_all_button_ = new QPushButton("Copy Full Command Block", preview); pl->addWidget(copy_all_button_);
-  open_preview_folder_button_ = new QPushButton("Open Scene Folder", preview); pl->addWidget(open_preview_folder_button_);
+  preview_more_actions_button_ = new QToolButton(preview);
+  preview_more_actions_button_->setText("More Actions");
+  preview_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
+  auto * preview_more_menu = new QMenu(preview_more_actions_button_);
+  auto * open_scene_folder_action = preview_more_menu->addAction("Open Scene Folder");
+  auto * open_preview_report_action = preview_more_menu->addAction("Open Preview Report");
+  auto * open_dashboard_action = preview_more_menu->addAction("Open Dashboard");
+  auto * copy_source_action = preview_more_menu->addAction("Copy Source Command");
+  auto * copy_build_action = preview_more_menu->addAction("Copy Build Command");
+  preview_more_actions_button_->setMenu(preview_more_menu);
+  pl->addWidget(preview_more_actions_button_);
+  copy_build_button_ = new QPushButton("Copy Build Command", preview);
+  copy_source_button_ = new QPushButton("Copy Source Command", preview);
+  copy_all_button_ = new QPushButton("Copy Full Command Block", preview);
+  open_preview_folder_button_ = new QPushButton("Open Scene Folder", preview);
   pl->addWidget(new QLabel("<b>Reports / Artifacts</b><br/>environment.yaml | scene_manifest.yaml | task intent YAML | task recipe YAML | preview/static_preview.html | preview/static_preview.svg | preview/workcell_studio_canvas_snapshot.png | smoke/offline_smoke_report.json/html | readiness dashboard"));
   open_preview_transcript_button_ = new QPushButton("Open Reports", preview); pl->addWidget(open_preview_transcript_button_);
 
@@ -645,10 +680,16 @@ void MainWindow::setup_studio_shell()
   validation_next_fix_label_ = new QLabel("<b>Next Fix Suggestions</b><br/>Select scene and run offline validation."); validation_next_fix_label_->setObjectName("studioCard"); validation_next_fix_label_->setWordWrap(true); vl->addWidget(validation_next_fix_label_);
   auto * run_offline_validation_button = new QPushButton("Run Offline Validation", validation); vl->addWidget(run_offline_validation_button);
   auto * validate_layout_button = new QPushButton("Validate Layout", validation); vl->addWidget(validate_layout_button);
-  auto * open_validation_report_button = new QPushButton("Open Validation Report", validation); vl->addWidget(open_validation_report_button);
-  auto * copy_validation_summary_button = new QPushButton("Copy Validation Summary", validation); vl->addWidget(copy_validation_summary_button);
+  validation_more_actions_button_ = new QToolButton(validation);
+  validation_more_actions_button_->setText("More Actions");
+  validation_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
+  auto * validation_more_menu = new QMenu(validation_more_actions_button_);
+  auto * open_validation_report_action = validation_more_menu->addAction("Open Validation Report");
+  auto * copy_validation_summary_action = validation_more_menu->addAction("Copy Validation Summary");
+  auto * open_readiness_dashboard_action = validation_more_menu->addAction("Open Readiness Dashboard");
+  validation_more_actions_button_->setMenu(validation_more_menu);
+  vl->addWidget(validation_more_actions_button_);
   auto * generate_readiness_pack_button = new QPushButton("Generate Readiness Pack", validation); vl->addWidget(generate_readiness_pack_button);
-  auto * open_readiness_dashboard_button = new QPushButton("Open Readiness Dashboard", validation); vl->addWidget(open_readiness_dashboard_button);
   auto * export_page = new QWidget(studio_pages_); auto * exl = new QVBoxLayout(export_page);
   exl->addWidget(new QLabel("<h2>Portable Scene Bundle</h2><p>Safe export/import for developer handoff. Preview only; no robot motion commands.</p>"));
   scene_bundle_selected_scene_label_ = new QLabel("Selected scene: none", export_page); scene_bundle_selected_scene_label_->setObjectName("studioCard"); scene_bundle_selected_scene_label_->setWordWrap(true); exl->addWidget(scene_bundle_selected_scene_label_);
@@ -656,7 +697,15 @@ void MainWindow::setup_studio_shell()
   scene_bundle_contents_label_ = new QLabel("Bundle contents summary: select a scene", export_page); scene_bundle_contents_label_->setObjectName("studioCard"); scene_bundle_contents_label_->setWordWrap(true); exl->addWidget(scene_bundle_contents_label_);
   auto * export_scene_bundle_button = new QPushButton("Export Scene Bundle", export_page); export_scene_bundle_button->setProperty("role", "primary"); exl->addWidget(export_scene_bundle_button);
   auto * import_scene_bundle_button = new QPushButton("Import Scene Bundle", export_page); exl->addWidget(import_scene_bundle_button);
-  auto * open_export_folder_button = new QPushButton("Open Export Folder", export_page); exl->addWidget(open_export_folder_button);
+  export_more_actions_button_ = new QToolButton(export_page);
+  export_more_actions_button_->setText("More Actions");
+  export_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
+  auto * export_more_menu = new QMenu(export_more_actions_button_);
+  auto * open_export_folder_action = export_more_menu->addAction("Open Export Folder");
+  export_more_menu->addAction("Copy Bundle Summary");
+  export_more_menu->addAction("Open Bundle Docs");
+  export_more_actions_button_->setMenu(export_more_menu);
+  exl->addWidget(export_more_actions_button_);
 
   studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation); studio_pages_->addWidget(export_page);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
@@ -721,7 +770,9 @@ void MainWindow::setup_studio_shell()
   top_bar->addWidget(full_screen_button_);
   connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
   top_bar->addSeparator();
-  top_bar->addWidget(new QLabel("Fake Hardware | No Robot Motion"));
+  mode_chip_label_ = new QLabel("Design | Preview | Plan | Simulate | Hardware Guarded", this);
+  top_bar->addWidget(mode_chip_label_);
+  top_bar->addWidget(new QLabel("Fake Hardware | No Robot Motion | Preview Only"));
   diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", this);
   top_bar->addWidget(diagnostics_indicator_label_);
 
@@ -734,17 +785,19 @@ void MainWindow::setup_studio_shell()
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(2);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
   connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
-  connect(open_task_button, &QPushButton::clicked, this, &MainWindow::open_selected_task_file);
-  connect(copy_task_summary_button, &QPushButton::clicked, this, &MainWindow::copy_selected_task_summary);
-  connect(preview_offline_plan_button, &QPushButton::clicked, this, &MainWindow::preview_offline_plan_for_selected_scene);
+  connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
+  connect(copy_task_summary_action, &QAction::triggered, this, &MainWindow::copy_selected_task_summary);
+  connect(preview_offline_plan_action, &QAction::triggered, this, &MainWindow::preview_offline_plan_for_selected_scene);
+  connect(open_asset_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("asset_folder"); });
+  connect(copy_asset_path_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
+  connect(import_asset_action, &QAction::triggered, this, [this](){ append_studio_log("Import STL / URDF: choose asset import flow from Asset Browser."); });
+  connect(add_existing_stl_action, &QAction::triggered, this, [this](){ append_studio_log("Add Existing STL to Canvas: choose STL in Asset Browser and click Add to Canvas."); });
+  connect(placeholder_action, &QAction::triggered, this, [this](){ append_studio_log("Generate Simple Box/Cylinder Placeholder: use quick-add placeholders in catalog."); });
   connect(pick_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_pick_zone);
   connect(place_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_place_zone);
   connect(camera_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_camera);
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
-  connect(open_folder, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("folder"); });
-  connect(copy_build, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
-  connect(copy_launch, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
   connect(go_validation, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(9); append_studio_log("Go to Validation: switched to Validation page"); });
   connect(go_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Go to Preview Launch: switched to Preview Launch page"); });
@@ -762,13 +815,18 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
   connect(run_offline_validation_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
   connect(validate_layout_button, &QPushButton::clicked, this, &MainWindow::run_layout_validation_only);
-  connect(open_validation_report_button, &QPushButton::clicked, this, &MainWindow::open_validation_report);
-  connect(copy_validation_summary_button, &QPushButton::clicked, this, &MainWindow::copy_validation_summary);
+  connect(open_validation_report_action, &QAction::triggered, this, &MainWindow::open_validation_report);
+  connect(copy_validation_summary_action, &QAction::triggered, this, &MainWindow::copy_validation_summary);
   connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
-  connect(open_readiness_dashboard_button, &QPushButton::clicked, this, &MainWindow::open_readiness_dashboard);
+  connect(open_readiness_dashboard_action, &QAction::triggered, this, &MainWindow::open_readiness_dashboard);
   connect(export_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::export_scene_bundle_for_selected_scene);
   connect(import_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::import_scene_bundle_into_scenes_root);
-  connect(open_export_folder_button, &QPushButton::clicked, this, &MainWindow::open_scene_bundle_export_folder);
+  connect(open_export_folder_action, &QAction::triggered, this, &MainWindow::open_scene_bundle_export_folder);
+  connect(open_scene_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
+  connect(open_preview_report_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect(open_dashboard_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
+  connect(copy_source_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
+  connect(copy_build_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect(run_self_test_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_self_test);
   connect(run_golden_flow_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
   connect(copy_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::copy_diagnostics_report);
