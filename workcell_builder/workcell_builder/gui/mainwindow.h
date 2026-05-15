@@ -58,6 +58,7 @@ class QComboBox;
 class QToolButton;
 class QMenu;
 class QSplitter;
+class QFrame;
 
 class MainWindow: public QMainWindow
 {
@@ -111,6 +112,8 @@ private:
   void show_not_wired_message(const QString & action_label);
   QString selected_scene_name() const;
   void refresh_scene_browser_ui();
+  void refresh_studio_home_scene_table();
+  void refresh_selected_scene_details_card();
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
   void delete_selected_scene();
@@ -195,6 +198,17 @@ private:
   QPushButton * full_screen_button_{ nullptr };
   QTextEdit * studio_log_{ nullptr };
   QTableWidget * dashboard_scene_table_{ nullptr };
+  QLineEdit * dashboard_scene_search_{ nullptr };
+  QComboBox * dashboard_scene_status_filter_{ nullptr };
+  QLabel * dashboard_total_scenes_card_{ nullptr };
+  QLabel * dashboard_ready_scenes_card_{ nullptr };
+  QLabel * dashboard_warning_scenes_card_{ nullptr };
+  QLabel * dashboard_last_updated_card_{ nullptr };
+  QLabel * dashboard_empty_state_title_{ nullptr };
+  QLabel * dashboard_empty_state_hint_{ nullptr };
+  QFrame * dashboard_empty_state_card_{ nullptr };
+  QFrame * dashboard_selected_scene_card_{ nullptr };
+  QLabel * dashboard_selected_scene_details_{ nullptr };
   QTableWidget * existing_scene_table_{ nullptr };
   QLabel * dashboard_summary_label_{ nullptr };
   QLabel * scene_builder_title_{ nullptr };

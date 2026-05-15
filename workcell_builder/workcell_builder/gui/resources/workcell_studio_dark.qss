@@ -41,11 +41,23 @@ QLabel#dashboardSubtitleLabel {
 QLabel#dashboardSummaryLabel {
   color: #cbd5e1;
 }
+QLabel#dashboardSummaryCard {
+  background-color: #162131;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #f8fafc;
+  font-weight: 600;
+}
 QTableWidget#dashboardSceneTable {
   background-color: #111827;
   color: #f8fafc;
   border: 1px solid #334155;
   gridline-color: #334155;
+}
+QTableWidget#dashboardSceneTable::item:selected {
+  background-color: #0369a1;
+  color: #f8fafc;
 }
 QTableWidget#dashboardSceneTable::item {
   color: #f8fafc;
