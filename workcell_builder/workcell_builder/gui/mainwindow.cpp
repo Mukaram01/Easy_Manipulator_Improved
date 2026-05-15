@@ -652,6 +652,9 @@ void MainWindow::setup_studio_shell()
     "pending: Environment layout created (table + pick zone + place zone + camera) → click Use Recommended Layout<br/>"
     "pending: Task intent created (pick_place) → click Generate/Update Task Intent<br/>"
     "pending: Scene files generated → click Generate Scene Package<br/>"
+    "hint: Local build/run smoke test available<br/>"
+    "hint: Use terminal command: python3 scripts/smoke_test_scratch_cell_workspace.py --workspace ~/workcell_ws --scene-name scratch_ur5_2f_smoke --timeout-sec 30<br/>"
+    "hint: Smoke report: smoke_report.json<br/>"
     "pending: Validation passed → click Run Offline Validation<br/>"
     "pending: Ready for Plan & Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
   new_cell_checklist_label_->setObjectName("studioCard");
