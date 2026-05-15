@@ -36,6 +36,7 @@
 #include <QDir>
 #include <QUrl>
 #include <QDateTime>
+#include <QIODevice>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -69,6 +70,8 @@
 #include <array>
 #include <cstdlib>
 #include <cmath>
+#include <ctime>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include "workcell_builder_ui_utils.hpp"
@@ -687,6 +690,9 @@ void MainWindow::setup_studio_shell()
   connect(open_task_button, &QPushButton::clicked, this, &MainWindow::open_selected_task_file);
   connect(copy_task_summary_button, &QPushButton::clicked, this, &MainWindow::copy_selected_task_summary);
   connect(preview_offline_plan_button, &QPushButton::clicked, this, &MainWindow::preview_offline_plan_for_selected_scene);
+  connect(pick_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_pick_zone);
+  connect(place_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_place_zone);
+  connect(camera_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_camera);
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(open_folder, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("folder"); });
@@ -775,6 +781,101 @@ void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (select
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
 void MainWindow::preview_offline_plan_for_selected_scene(){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
+QString MainWindow::selected_scene_binding_id() const
+{
+  if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
+    const QString id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString().trimmed();
+    if (!id.isEmpty()) return id;
+  }
+  if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
+    const QString id = scene_hierarchy_tree_->currentItem()->data(0, Qt::UserRole + 1).toString().trimmed();
+    if (!id.isEmpty()) return id;
+    const QString text = scene_hierarchy_tree_->currentItem()->text(0).trimmed();
+    if (!text.isEmpty()) return text;
+  }
+  return "";
+}
+
+bool MainWindow::update_selected_scene_task_intent_binding(
+  const QString & binding_label, const std::vector<std::string> & key_path, const QString & selected_id)
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return false;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path task_intent_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml";
+  fs::create_directories(task_intent_path.parent_path());
+  YAML::Node root;
+  bool has_existing = fs::exists(task_intent_path);
+  if (has_existing) {
+    try {
+      root = YAML::LoadFile(task_intent_path.string());
+    } catch (const std::exception & ex) {
+      const fs::path backup = task_intent_path.string() + ".malformed." + std::to_string(std::time(nullptr)) + ".bak";
+      boost::system::error_code ec;
+      fs::copy_file(task_intent_path, backup, fs::copy_option::overwrite_if_exists, ec);
+      if (ec) {
+        append_studio_log(QString("Task binding blocked: malformed YAML at %1 and backup failed (%2)")
+          .arg(QString::fromStdString(task_intent_path.string()), QString::fromStdString(ec.message())));
+        return false;
+      }
+      append_studio_log(QString("Malformed task intent YAML detected; backup created at %1 before rewrite.")
+        .arg(QString::fromStdString(backup.string())));
+      root = YAML::Node(YAML::NodeType::Map);
+    }
+  }
+  if (!root || !root.IsMap()) root = YAML::Node(YAML::NodeType::Map);
+  if (!root["task"]) root["task"] = YAML::Node(YAML::NodeType::Map);
+  if (!root["task"]["type"]) root["task"]["type"] = "pick_place";
+  if (!root["task"]["family"]) root["task"]["family"] = "pick_place";
+  if (!root["grasp"]) root["grasp"] = YAML::Node(YAML::NodeType::Map);
+  if (!root["grasp"]["strategy"]) root["grasp"]["strategy"] = "auto";
+  if (!root["safety"]) root["safety"] = YAML::Node(YAML::NodeType::Map);
+  root["safety"]["preview_only"] = true;
+  root["safety"]["use_fake_hardware"] = true;
+  root["safety"]["no_robot_motion"] = true;
+  YAML::Node cursor = root;
+  for (size_t i = 0; i + 1 < key_path.size(); ++i) {
+    if (!cursor[key_path[i]]) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
+    cursor = cursor[key_path[i]];
+  }
+  cursor[key_path.back()] = selected_id.toStdString();
+  std::ofstream out(task_intent_path.string());
+  out << root;
+  out.close();
+  append_studio_log(QString("%1 updated to '%2' in %3 (Preview Only | Fake Hardware | No Robot Motion)")
+    .arg(binding_label, selected_id, QString::fromStdString(task_intent_path.string())));
+  refresh_task_intent_panel();
+  return true;
+}
+
+void MainWindow::bind_selected_item_as_pick_zone()
+{
+  const QString selected_id = selected_scene_binding_id();
+  if (selected_id.isEmpty()) {
+    append_studio_log("Use Selected as Pick Zone: no hierarchy/canvas item selected; task intent unchanged.");
+    return;
+  }
+  update_selected_scene_task_intent_binding("Pick Zone", {"pick", "source", "id"}, selected_id);
+}
+
+void MainWindow::bind_selected_item_as_place_zone()
+{
+  const QString selected_id = selected_scene_binding_id();
+  if (selected_id.isEmpty()) {
+    append_studio_log("Use Selected as Place Zone: no hierarchy/canvas item selected; task intent unchanged.");
+    return;
+  }
+  update_selected_scene_task_intent_binding("Place Zone", {"place", "target", "id"}, selected_id);
+}
+
+void MainWindow::bind_selected_item_as_camera()
+{
+  const QString selected_id = selected_scene_binding_id();
+  if (selected_id.isEmpty()) {
+    append_studio_log("Use Selected as Camera: no hierarchy/canvas item selected; task intent unchanged.");
+    return;
+  }
+  update_selected_scene_task_intent_binding("Camera", {"perception", "camera", "id"}, selected_id);
+}
 void MainWindow::refresh_scene_browser_ui()
 {
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
@@ -1621,6 +1722,7 @@ void MainWindow::populate_scene_hierarchy()
   for (const auto & fn : files) {
     const fs::path pth=d/fn; if (!fs::exists(pth)) continue;
     auto *n = new QTreeWidgetItem(tops["Other Objects / Imported Assets"], {QString::fromStdString(fn), "OK"});
+    n->setData(0, Qt::UserRole + 1, QString::fromStdString(fn));
     n->setData(0, Qt::UserRole + 2, "Other Objects / Imported Assets");
     n->setData(0, Qt::UserRole + 4, QString::fromStdString(pth.string()));
   }

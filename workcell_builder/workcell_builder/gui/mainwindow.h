@@ -101,6 +101,14 @@ private:
   void open_selected_task_file();
   void copy_selected_task_summary();
   void preview_offline_plan_for_selected_scene();
+  void bind_selected_item_as_pick_zone();
+  void bind_selected_item_as_place_zone();
+  void bind_selected_item_as_camera();
+  QString selected_scene_binding_id() const;
+  bool update_selected_scene_task_intent_binding(
+    const QString & binding_label,
+    const std::vector<std::string> & key_path,
+    const QString & selected_id);
   QString selected_scene_launch_command() const;
   QString selected_scene_build_command() const;
   QString selected_scene_source_command() const;
