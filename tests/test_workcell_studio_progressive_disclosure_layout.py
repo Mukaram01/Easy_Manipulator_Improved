@@ -72,3 +72,30 @@ def test_secondary_controls_moved_to_menus_and_theme_tokens_present():
 def test_redundant_workspace_change_controls_removed_from_studio_pages():
     assert 'Change Workspace' not in CPP
     assert 'Workcell Studio change workspace' not in CPP
+
+
+def test_legacy_startup_header_rows_removed_from_studio_shell():
+    banned = [
+        'Mode: Design | Runtime: Disabled | Hardware: Fake by default | Safety: Guarded',
+        'Workcell loaded (using selected path/src as workcell root)',
+        'studio_workspace_path_ = new QLineEdit',
+    ]
+    for token in banned:
+        assert token not in CPP
+    assert 'Workspace: ' in CPP
+
+
+def test_dark_qss_has_readable_explicit_foreground_rules_and_no_banned_dark_text_colors():
+    qss = Path('workcell_builder/workcell_builder/gui/resources/workcell_studio_dark.qss').read_text(encoding='utf-8')
+    for token in [
+        'QLabel { color: #f8fafc;',
+        'QPushButton',
+        'QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox',
+        'QTreeWidget, QTableWidget',
+        'QTextEdit, QPlainTextEdit',
+        ':disabled',
+    ]:
+        assert token in qss
+    lowered_color_lines = [line.strip().lower() for line in qss.splitlines() if line.strip().lower().startswith('color:')]
+    for banned in ['color: #111827', 'color: #0f172a', 'color: black', 'color: #000']:
+        assert banned not in lowered_color_lines

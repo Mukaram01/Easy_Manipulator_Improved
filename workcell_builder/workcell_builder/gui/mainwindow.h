@@ -315,6 +315,6 @@ private:
   QString selected_workspace_;
   QLabel * studio_title_label_{ nullptr };
   QLabel * studio_ros_label_{ nullptr };
-  QLineEdit * studio_workspace_path_{ nullptr };
+  QLabel * studio_workspace_chip_{ nullptr };
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
