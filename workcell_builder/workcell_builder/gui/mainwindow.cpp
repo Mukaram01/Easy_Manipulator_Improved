@@ -61,6 +61,7 @@
 #include <QLineEdit>
 #include <QHBoxLayout>
 #include <QtConcurrent>
+#include <yaml-cpp/yaml.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
@@ -163,6 +164,68 @@ bool is_ros2_prefix(const fs::path & prefix)
   const fs::path ament_index_path = share_path / "ament_index";
   const fs::path rclcpp_path = share_path / "rclcpp";
   return (fs::exists(ament_index_path, ec) && !ec) || (fs::exists(rclcpp_path, ec) && !ec);
+}
+struct SceneTaskIntentSummary
+{
+  QString status{"MISSING_TASK_FILE"};
+  QString source_file{"unknown"};
+  QString source_basename{"unknown"};
+  QString task_type{"unknown"};
+  QString pick_source{"unknown"};
+  QString place_target{"unknown"};
+  QString reject_target{"unknown"};
+  QString object_class{"unknown"};
+  QString grasp_strategy{"unknown"};
+  QString approach_axis{"unknown"};
+  QString approach_distance{"unknown"};
+  QString retreat_axis{"unknown"};
+  QString retreat_distance{"unknown"};
+  QString orientation_mode{"unknown"};
+  QString allowed_roll_yaw{"unknown"};
+  QString tool_id{"unknown"};
+  QString perception_mode{"unknown"};
+  QString clearance{"unknown"};
+  QStringList searched_paths;
+};
+
+static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
+static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n||!n[k]) return "unknown"; n=n[k]; } return ystr(n); }
+static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(...){return false;} }
+static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
+{
+  SceneTaskIntentSummary s;
+  const std::vector<fs::path> candidates = {scene_dir/"config"/"workcell_builder_task_intent.yaml", scene_dir/"config"/"task_recipe.yaml", scene_dir/"task_recipe.yaml", scene_dir/"cell_definition.yaml", scene_dir/"environment_layout.yaml"};
+  for (const auto & p : candidates) s.searched_paths << QString::fromStdString(p.string());
+  YAML::Node root; fs::path selected;
+  for (const auto & p : candidates) { if (read_yaml(p, &root)) { selected = p; break; } }
+  if (selected.empty()) return s;
+  s.source_file = QString::fromStdString(selected.string()); s.source_basename = QString::fromStdString(selected.filename().string());
+  s.status = "INCOMPLETE_TASK";
+  const YAML::Node task = root["task"] ? root["task"] : root;
+  s.task_type = scalar_path(task, {"type"});
+  if (s.task_type == "unknown") s.task_type = scalar_path(task, {"family"});
+  s.pick_source = scalar_path(task, {"pick","source"});
+  if (s.pick_source == "unknown") s.pick_source = scalar_path(task, {"pick_source"});
+  s.place_target = scalar_path(task, {"place","target"});
+  if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place_target"});
+  s.reject_target = scalar_path(task, {"reject","target"});
+  if (s.reject_target == "unknown") s.reject_target = scalar_path(task, {"reject_target"});
+  s.object_class = scalar_path(task, {"object","class"});
+  if (s.object_class == "unknown") s.object_class = scalar_path(task, {"object_class"});
+  s.grasp_strategy = scalar_path(task, {"grasp","strategy"});
+  if (s.grasp_strategy == "unknown") s.grasp_strategy = scalar_path(task, {"grasp_strategy"});
+  s.approach_axis = scalar_path(task, {"approach","axis"});
+  s.approach_distance = scalar_path(task, {"approach","distance"});
+  s.retreat_axis = scalar_path(task, {"retreat","axis"});
+  s.retreat_distance = scalar_path(task, {"retreat","distance"});
+  s.orientation_mode = scalar_path(task, {"orientation","mode"});
+  s.allowed_roll_yaw = scalar_path(task, {"orientation","allowed_roll_yaw"});
+  s.tool_id = scalar_path(task, {"tool","id"});
+  if (s.tool_id == "unknown") s.tool_id = scalar_path(task, {"end_effector"});
+  s.perception_mode = scalar_path(task, {"perception","mode"});
+  s.clearance = scalar_path(task, {"clearance"});
+  if (s.pick_source != "unknown" && s.place_target != "unknown" && s.grasp_strategy != "unknown") s.status = "READY";
+  return s;
 }
 }  // namespace
 
@@ -451,6 +514,7 @@ void MainWindow::setup_studio_shell()
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
+  task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
   right_layout->addWidget(task_intent);
   auto * pick_place = new QFrame(right_panel); pick_place->setObjectName("studioCard"); auto * pick_place_layout = new QVBoxLayout(pick_place);
   pick_place_layout->addWidget(new QLabel("<b>Pick-Place Configuration</b>"));
@@ -461,13 +525,26 @@ void MainWindow::setup_studio_shell()
   auto * place_zone_button = new QPushButton("Use Selected as Place Zone", scene_builder); task_binding_actions->addWidget(place_zone_button);
   auto * camera_button = new QPushButton("Use Selected as Camera", scene_builder); task_binding_actions->addWidget(camera_button);
   pick_place_layout->addLayout(task_binding_actions);
+  pick_place_details_label_ = new QLabel("Pick source: unknown\nPlace target: unknown\nReject target: unknown\nLinked hierarchy item: unknown"); pick_place_details_label_->setWordWrap(true); pick_place_layout->addWidget(pick_place_details_label_);
   right_layout->addWidget(pick_place);
   auto * grasp_card = new QFrame(right_panel); grasp_card->setObjectName("studioCard"); auto * grasp_layout = new QVBoxLayout(grasp_card);
   grasp_layout->addWidget(new QLabel("<b>Grasp Strategy</b>"));
+  grasp_details_label_ = new QLabel("Strategy/ref: unknown\nTool/End Effector: unknown\nApproach axis: unknown\nOrientation mode: unknown\nAllowed roll/yaw: unknown"); grasp_details_label_->setWordWrap(true); grasp_layout->addWidget(grasp_details_label_);
   readiness_label_=new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion<br/>PREVIEW_ONLY guarded execution. Press Esc to exit full screen."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
   right_layout->addWidget(grasp_card);
-  right_layout->addWidget(new QLabel("<b>Approach & Retreat</b><br/>Approach vector and retreat heights come from selected scene parameters."));
-  inspector_label_=new QLabel("<b>Preview Actions</b><br/>Inspector + safety-aware validation/export actions"); inspector_label_->setWordWrap(true); right_layout->addWidget(inspector_label_);
+  auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
+  ar_layout->addWidget(new QLabel("<b>Approach & Retreat</b>"));
+  approach_retreat_details_label_ = new QLabel("Approach distance: unknown\nRetreat distance: unknown\nApproach frame/axis: unknown\nRetreat frame/axis: unknown\nClearance: unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  right_layout->addWidget(ar_card);
+  auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
+  preview_actions_label_=new QLabel("<b>Preview Actions</b><br/>Validate Task Intent | Generate/Update Task Intent | Open Task File | Copy Task Summary | Preview Offline Plan"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
+  auto * validate_task_button = new QPushButton("Validate Task Intent", scene_builder); preview_actions_layout->addWidget(validate_task_button);
+  auto * generate_task_button = new QPushButton("Generate/Update Task Intent", scene_builder); preview_actions_layout->addWidget(generate_task_button);
+  auto * open_task_button = new QPushButton("Open Task File", scene_builder); preview_actions_layout->addWidget(open_task_button);
+  auto * copy_task_summary_button = new QPushButton("Copy Task Summary", scene_builder); preview_actions_layout->addWidget(copy_task_summary_button);
+  auto * preview_offline_plan_button = new QPushButton("Preview Offline Plan", scene_builder); preview_actions_layout->addWidget(preview_offline_plan_button);
+  right_layout->addWidget(preview_actions_card);
+  inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); right_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); right_layout->addWidget(live_coordinate_label_);
   auto * pose_row = new QHBoxLayout();
   inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_row->addWidget(inspector_x_);
@@ -605,6 +682,11 @@ void MainWindow::setup_studio_shell()
   connect(dash_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Preview Launch: prepared fake-hardware commands"); refresh_preview_launch_ui(); });
   connect(dash_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Export: switched to export page"); });
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(2);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
+  connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
+  connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
+  connect(open_task_button, &QPushButton::clicked, this, &MainWindow::open_selected_task_file);
+  connect(copy_task_summary_button, &QPushButton::clicked, this, &MainWindow::copy_selected_task_summary);
+  connect(preview_offline_plan_button, &QPushButton::clicked, this, &MainWindow::preview_offline_plan_for_selected_scene);
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(open_folder, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("folder"); });
@@ -672,7 +754,27 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
   populate_asset_catalog();
+  refresh_task_intent_panel();
 }
+
+void MainWindow::refresh_task_intent_panel()
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const auto ti = load_scene_task_intent_summary(sc.scene_dir);
+  const QString missing = ti.status == "MISSING_TASK_FILE" ? QString("\nNo task intent file found.\nSearched:\n - %1").arg(ti.searched_paths.join("\n - ")) : "";
+  task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing));
+  pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
+  grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
+  approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance));
+  append_studio_log(QString("Task intent source: %1").arg(ti.source_file));
+}
+
+void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Validate Task Intent: offline check only (Fake Hardware | No Robot Motion | Preview Only)"); }
+void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); }
+void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
+void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
+void MainWindow::preview_offline_plan_for_selected_scene(){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
 void MainWindow::refresh_scene_browser_ui()
 {
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
