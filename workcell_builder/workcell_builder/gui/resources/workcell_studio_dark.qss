@@ -19,12 +19,13 @@ QLabel[status="error"], QLabel[badge="blocked"] { color: #f87171; }
 QLabel[status="success"], QLabel[badge="ready"], QLabel[badge="pass"], QLabel[badge="accepted"] { color: #22c55e; }
 QLabel[status="info"], QLabel[badge="safety"] { color: #38bdf8; }
 QLabel[badge="warning"] { color: #f59e0b; }
-QLabel#safetyPill {
+QLabel#studioHomeSafetyPill {
   background-color: #162131;
   border: 1px solid #334155;
-  border-radius: 10px;
-  padding: 4px 10px;
-  color: #cbd5e1;
+  border-radius: 12px;
+  padding: 5px 10px;
+  color: #dbeafe;
+  font-weight: 600;
 }
 QWidget#workcellStudioDashboardPage {
   background-color: #0b1118;
@@ -41,26 +42,74 @@ QLabel#dashboardSubtitleLabel {
 QLabel#dashboardSummaryLabel {
   color: #cbd5e1;
 }
-QLabel#dashboardSummaryCard {
+QFrame#studioHomeHeroCard {
+  background-color: #111827;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 8px;
+}
+QLabel#studioHomeSummaryCard {
   background-color: #162131;
   border: 1px solid #334155;
   border-radius: 10px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   color: #f8fafc;
   font-weight: 600;
+  font-size: 19px;
 }
-QTableWidget#dashboardSceneTable {
+QTableWidget#studioHomeSceneTable {
   background-color: #111827;
   color: #f8fafc;
   border: 1px solid #334155;
-  gridline-color: #334155;
+  gridline-color: #263244;
+  alternate-background-color: #162131;
 }
-QTableWidget#dashboardSceneTable::item:selected {
+QTableWidget#studioHomeSceneTable::item:selected {
   background-color: #0369a1;
   color: #f8fafc;
 }
-QTableWidget#dashboardSceneTable::item {
+QTableWidget#studioHomeSceneTable::item {
   color: #f8fafc;
+}
+QHeaderView::section {
+  background-color: #162131;
+  color: #cbd5e1;
+  border: none;
+  border-right: 1px solid #334155;
+  padding: 8px;
+  font-weight: 700;
+}
+QLineEdit#studioHomeSearchBox, QComboBox#studioHomeStatusFilter {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #475569;
+}
+QLineEdit#studioHomeSearchBox::placeholder {
+  color: #94a3b8;
+}
+QFrame#studioHomeDetailsCard {
+  background-color: #111827;
+  border: 1px solid #334155;
+  border-radius: 12px;
+}
+QTextEdit#studioHomeLog {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+QPushButton#studioHomePrimaryButton {
+  background-color: #0e7490;
+  border: 1px solid #38bdf8;
+}
+QPushButton#studioHomeSecondaryButton {
+  background-color: #162131;
+  border: 1px solid #334155;
+}
+QPushButton#studioHomeDangerButton {
+  background-color: #3f1d1d;
+  border: 1px solid #ef4444;
+  color: #fecaca;
 }
 QLabel:disabled, QCheckBox:disabled, QGroupBox:disabled, QPushButton:disabled, QToolButton:disabled,
 QLineEdit:disabled, QComboBox:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
@@ -114,14 +163,6 @@ QListWidget::item:hover { background: #1f2e42; color: #f8fafc; }
 QListWidget::item:selected, QTableWidget::item:selected, QTreeWidget::item:selected {
   background-color: #0e7490;
   color: #f8fafc;
-}
-QHeaderView::section {
-  background-color: #162131;
-  color: #cbd5e1;
-  border: none;
-  border-right: 1px solid #334155;
-  padding: 8px;
-  font-weight: 700;
 }
 QGroupBox {
   color: #cbd5e1;
