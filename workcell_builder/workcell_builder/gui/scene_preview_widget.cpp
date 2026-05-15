@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QStackedWidget>
+#include <QVector3D>
 #include <QVBoxLayout>
 #include <QtMath>
 
