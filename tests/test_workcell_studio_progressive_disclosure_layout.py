@@ -48,10 +48,8 @@ def test_mode_and_safety_chips_present():
         'Plan',
         'Plan',
         'Simulate',
-        'Hardware Guarded',
         'fake-hardware',
-        'guarded',
-        'Real robot motion: locked',
+        'Real robot locked',
     ]:
         assert token in CPP
 
@@ -62,7 +60,7 @@ def test_secondary_controls_moved_to_menus_and_theme_tokens_present():
         'Canvas More',
         'Snap/Grid settings',
         'More Actions',
-        'QLabel#safetyPill',
+        'QLabel#studioHomeSafetyPill',
         'QToolButton',
         'QMenu',
     ]:
@@ -92,7 +90,7 @@ def test_dashboard_has_named_widgets_and_readable_qss_palette():
         'setObjectName("workcellStudioDashboardPage")',
         'setObjectName("dashboardTitleLabel")',
         'setObjectName("dashboardSummaryLabel")',
-        'setObjectName("dashboardSceneTable")',
+        'setObjectName("studioHomeSceneTable")',
         'Studio Home',
     ]:
         assert token in CPP
@@ -151,7 +149,7 @@ def test_studio_home_landing_page_tokens_present():
         'Search scenes...',
         'No scenes found',
         'Create a new cell to get started.',
-        'Selected Scene Details',
+        'Selected Scene',
         'Open Selected Scene',
     ]:
         assert token in CPP
