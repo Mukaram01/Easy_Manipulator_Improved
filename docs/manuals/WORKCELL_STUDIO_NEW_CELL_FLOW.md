@@ -64,3 +64,44 @@
 - **Missing scripts**: show searched script paths and next fix.
 - **Missing assets/layout blockers**: show blocker + recommended fix action.
 - **Missing workspace/scenes root**: no crash; prompt to choose scenes folder/workspace.
+
+## Scratch Cell Acceptance Test
+
+Use the acceptance generator to create a default scratch scene package using UR5 + Robotiq 2F + pick_place with fake hardware defaults.
+
+```bash
+python3 scripts/generate_scratch_cell_acceptance.py \
+  --scene-name scratch_ur5_2f_acceptance \
+  --output-root /tmp/workcell_studio_scratch_acceptance
+```
+
+Generated outputs include:
+- `cell_definition.yaml`
+- `environment_layout.yaml`
+- `environment.yaml` (legacy compatibility)
+- `config/workcell_builder_task_intent.yaml`
+- `scene_manifest.yaml`
+- `package.xml`
+- `CMakeLists.txt`
+- `launch/demo.launch.py`
+- `urdf/environment.urdf.xacro` or equivalent URDF/Xacro entrypoint
+
+Validation command:
+
+```bash
+python3 scripts/validate_cell_definition.py <scene_dir>/cell_definition.yaml
+python3 scripts/validate_environment_layout.py <scene_dir>/environment_layout.yaml
+```
+
+Build and launch contract:
+
+```bash
+colcon build --symlink-install --packages-select scratch_ur5_2f_acceptance
+source install/setup.bash
+ros2 launch scratch_ur5_2f_acceptance demo.launch.py use_fake_hardware:=true launch_rviz:=true
+```
+
+Known limitations:
+- Offline generation and validation only; it does not guarantee real robot execution readiness.
+- RViz/MoveIt launch is not required during automated tests.
+- Missing UR5/Robotiq assets are reported as blockers with searched paths.
