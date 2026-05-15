@@ -242,3 +242,70 @@ ros2 launch scratch_ur5_2f_smoke demo.launch.py use_fake_hardware:=true launch_r
 
 Safety guard:
 - This audit never executes with `use_fake_hardware:=false`.
+
+## Point 6: Regression Audit
+
+Regression audit available.
+
+Run lightweight regression checks across existing/golden scenes and optional generated scratch scene:
+
+```bash
+python3 scripts/audit_workcell_studio_regressions.py \
+  --workspace ~/workcell_ws \
+  --scenes ur5_2f_test ur5_airpick4_test \
+  --include-scratch \
+  --json-out /tmp/workcell_studio_regression_audit.json
+```
+
+Optional smoke (opt-in only):
+
+```bash
+python3 scripts/audit_workcell_studio_regressions.py \
+  --workspace ~/workcell_ws \
+  --scenes ur5_2f_test ur5_airpick4_test \
+  --include-scratch \
+  --run-smoke \
+  --json-out /tmp/workcell_studio_regression_smoke_audit.json
+```
+
+Scenes checked (when present):
+- `ur5_2f_test`
+- `ur5_airpick4_test`
+- `ur5_3f_test`
+- `ur3_suction_test`
+- `ur10_2f_test`
+- generated scratch fixture (`scratch_ur5_2f_acceptance`)
+
+Report fields:
+- `workspace`
+- `checked_scenes`
+- `missing_scenes`
+- `per_scene_results`
+- `file_output_status_by_scene`
+- `state_status_by_scene`
+- `launch_command_by_scene`
+- `smoke_status_by_scene`
+- `blockers`
+- `warnings`
+- `regression_status`
+
+Per-scene result fields:
+- `scene_name`
+- `scene_dir`
+- `detected_files`
+- `missing_required_files`
+- `launch_file_present`
+- `launch_command`
+- `fake_hardware_default_detected`
+- `rviz_launch_arg_detected`
+- `plan_simulate_ready`
+- `blockers`
+- `warnings`
+
+Status interpretation:
+- `PASS`: no blockers and no warnings detected.
+- `WARNINGS`: warnings or missing optional scene coverage detected, but no blockers.
+- `BLOCKED`: one or more required checks failed.
+
+Safety guard:
+- Regression audit only validates fake-hardware launch paths and must not execute `use_fake_hardware:=false`.
