@@ -198,3 +198,47 @@ Interpretation:
 Good message example:
 - Missing launch/demo.launch.py. Generate Scene Package before opening Plan & Simulate.
 - Task intent references pick_zone_01, but that id was not found in environment_layout.yaml. Open Scene Builder and bind a pick zone.
+
+## Point 5: Real Build/Run Audit
+
+Run local ROS 2 workspace smoke test for generated scratch cells:
+
+```bash
+python3 scripts/smoke_test_scratch_cell_workspace.py \
+  --workspace ~/workcell_ws \
+  --scene-name scratch_ur5_2f_smoke \
+  --timeout-sec 30
+```
+
+What it checks:
+- workspace exists and has `src/`
+- `ros2` and `colcon` exist in PATH
+- scratch scene generation through `scripts/generate_scratch_cell_acceptance.py`
+- scene placement into workspace scenes root (`src/easy_manipulation_deployment/scenes` preferred, `src/scenes` fallback)
+- `colcon build --symlink-install --packages-select <scene_name>`
+- `ros2 pkg prefix <scene_name>` discovery
+- `ros2 launch <scene_name> demo.launch.py --show-args`
+- short fake-hardware-only smoke launch: `use_fake_hardware:=true launch_rviz:=false`
+
+Expected report path and fields:
+- default report: `/tmp/workcell_studio_scratch_smoke/smoke_report.json`
+- fields: `scene_name`, `workspace`, `scene_dir`, `workspace_scene_dir`, `placement_method`, `build_command`, `build_returncode`, `package_discovery_command`, `package_discovery_returncode`, `launch_show_args_command`, `launch_show_args_returncode`, `launch_smoke_command`, `launch_smoke_returncode`, `ready_for_rviz_moveit`, `blockers`, `warnings`, `logs_tail`
+
+Common blockers:
+- `MISSING_ROS2`
+- `MISSING_COLCON`
+- `MISSING_WORKSPACE_SRC`
+- `COLCON_BUILD_FAILED`
+- `ROS_PACKAGE_NOT_DISCOVERABLE`
+- `LAUNCH_SHOW_ARGS_FAILED`
+- `LAUNCH_SMOKE_FAILED`
+
+After smoke passes, manually run RViz2/MoveIt launch:
+
+```bash
+source ~/workcell_ws/install/setup.bash
+ros2 launch scratch_ur5_2f_smoke demo.launch.py use_fake_hardware:=true launch_rviz:=true
+```
+
+Safety guard:
+- This audit never executes with `use_fake_hardware:=false`.
