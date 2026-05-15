@@ -651,8 +651,16 @@ void MainWindow::setup_studio_shell()
   auto * copy_validation_summary_button = new QPushButton("Copy Validation Summary", validation); vl->addWidget(copy_validation_summary_button);
   auto * generate_readiness_pack_button = new QPushButton("Generate Readiness Pack", validation); vl->addWidget(generate_readiness_pack_button);
   auto * open_readiness_dashboard_button = new QPushButton("Open Readiness Dashboard", validation); vl->addWidget(open_readiness_dashboard_button);
+  auto * export_page = new QWidget(studio_pages_); auto * exl = new QVBoxLayout(export_page);
+  exl->addWidget(new QLabel("<h2>Portable Scene Bundle</h2><p>Safe export/import for developer handoff. Preview only; no robot motion commands.</p>"));
+  scene_bundle_selected_scene_label_ = new QLabel("Selected scene: none", export_page); scene_bundle_selected_scene_label_->setObjectName("studioCard"); scene_bundle_selected_scene_label_->setWordWrap(true); exl->addWidget(scene_bundle_selected_scene_label_);
+  scene_bundle_destination_label_ = new QLabel("Export destination: pending", export_page); scene_bundle_destination_label_->setObjectName("studioCard"); scene_bundle_destination_label_->setWordWrap(true); exl->addWidget(scene_bundle_destination_label_);
+  scene_bundle_contents_label_ = new QLabel("Bundle contents summary: select a scene", export_page); scene_bundle_contents_label_->setObjectName("studioCard"); scene_bundle_contents_label_->setWordWrap(true); exl->addWidget(scene_bundle_contents_label_);
+  auto * export_scene_bundle_button = new QPushButton("Export Scene Bundle", export_page); export_scene_bundle_button->setProperty("role", "primary"); exl->addWidget(export_scene_bundle_button);
+  auto * import_scene_bundle_button = new QPushButton("Import Scene Bundle", export_page); exl->addWidget(import_scene_bundle_button);
+  auto * open_export_folder_button = new QPushButton("Open Export Folder", export_page); exl->addWidget(open_export_folder_button);
 
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation);
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation); studio_pages_->addWidget(export_page);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(130); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
   preview_process_ = new QProcess(this);
@@ -757,6 +765,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_validation_summary_button, &QPushButton::clicked, this, &MainWindow::copy_validation_summary);
   connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
   connect(open_readiness_dashboard_button, &QPushButton::clicked, this, &MainWindow::open_readiness_dashboard);
+  connect(export_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::export_scene_bundle_for_selected_scene);
+  connect(import_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::import_scene_bundle_into_scenes_root);
+  connect(open_export_folder_button, &QPushButton::clicked, this, &MainWindow::open_scene_bundle_export_folder);
   connect(run_self_test_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_self_test);
   connect(run_golden_flow_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
   connect(copy_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::copy_diagnostics_report);
@@ -807,6 +818,24 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   populate_scene_hierarchy();
   populate_asset_catalog();
   refresh_task_intent_panel();
+  refresh_scene_bundle_export_panel();
+}
+
+void MainWindow::refresh_scene_bundle_export_panel()
+{
+  if (!scene_bundle_selected_scene_label_ || !scene_bundle_destination_label_ || !scene_bundle_contents_label_) return;
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) {
+    scene_bundle_selected_scene_label_->setText("Selected scene: none");
+    scene_bundle_destination_label_->setText("Export destination: select a scene first");
+    scene_bundle_contents_label_->setText("Bundle contents summary: manifest + scene metadata + preview/readiness artifacts (when present)");
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path out_dir = s.scene_dir / "exports";
+  const fs::path zip_out = out_dir / (s.scene_name + "_workcell_studio_bundle.zip");
+  scene_bundle_selected_scene_label_->setText(QString("Selected scene: %1\nPath: %2").arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.scene_dir.string())));
+  scene_bundle_destination_label_->setText(QString("Export destination: %1").arg(QString::fromStdString(zip_out.string())));
+  scene_bundle_contents_label_->setText("Bundle contents summary:\n- environment.yaml\n- scene_manifest.yaml\n- cell_definition.yaml\n- environment_layout.yaml\n- task_recipe.yaml\n- config/workcell_builder_task_intent.yaml\n- preview/ artifacts\n- validation/readiness reports\n- launch command notes\n- manifest.json");
 }
 
 void MainWindow::refresh_task_intent_panel()
@@ -957,6 +986,7 @@ void MainWindow::select_scene_by_row(int row)
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
   populate_asset_catalog();
+  refresh_scene_bundle_export_panel();
 }
 
 
@@ -1024,6 +1054,66 @@ void MainWindow::show_not_wired_message(const QString & action_label)
     this,
     "Workcell Studio",
     "This Workcell Studio action is not wired yet. No files changed and no robot motion was commanded.\n\n" + details);
+}
+
+void MainWindow::export_scene_bundle_for_selected_scene()
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) {
+    append_studio_log("Export Scene Bundle: no scene selected.");
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const fs::path export_root = s.scene_dir / "exports";
+  fs::create_directories(export_root);
+  const fs::path zip_out = export_root / (s.scene_name + "_workcell_studio_bundle.zip");
+  const QString script = "scripts/export_workcell_scene_bundle.py";
+  const QString cmd = QString("python3 '%1' --scene-dir '%2' --output '%3' --validate --include-assets")
+    .arg(script, QString::fromStdString(s.scene_dir.string()), QString::fromStdString(zip_out.string()));
+  append_studio_log("Export Scene Bundle: running " + cmd);
+  const int rc = std::system(cmd.toStdString().c_str());
+  if (rc == 0) {
+    append_studio_log("Export Scene Bundle: completed -> " + QString::fromStdString(zip_out.string()));
+    last_scene_bundle_export_folder_ = QString::fromStdString(export_root.string());
+  } else {
+    append_studio_log("Export Scene Bundle: failed.");
+  }
+  refresh_scene_bundle_export_panel();
+}
+
+void MainWindow::import_scene_bundle_into_scenes_root()
+{
+  QString selected = QFileDialog::getOpenFileName(this, "Select Scene Bundle .zip", QDir::homePath(), "Zip files (*.zip)");
+  if (selected.isEmpty()) selected = QFileDialog::getExistingDirectory(this, "Select Scene Bundle Folder", QDir::homePath());
+  if (selected.isEmpty()) return;
+  fs::path scenes_root = scene_browser_result_.scene_root.empty() ? (workcell_path / "src" / "scenes") : scene_browser_result_.scene_root;
+  fs::create_directories(scenes_root);
+  const QString script = "scripts/import_workcell_scene_bundle.py";
+  QString cmd;
+  if (QFileInfo(selected).isDir()) {
+    cmd = QString("python3 '%1' --bundle '%2' --target-scenes-dir '%3' --validate --print-summary")
+      .arg(script, selected, QString::fromStdString(scenes_root.string()));
+  } else {
+    cmd = QString("python3 '%1' --bundle '%2' --target-scenes-dir '%3' --validate --print-summary")
+      .arg(script, selected, QString::fromStdString(scenes_root.string()));
+  }
+  append_studio_log("Import Scene Bundle: running " + cmd);
+  const int rc = std::system(cmd.toStdString().c_str());
+  append_studio_log(rc == 0 ? "Import Scene Bundle: completed. Imported Scene Ready." : "Import Scene Bundle: failed.");
+  refresh_scene_browser_ui();
+}
+
+void MainWindow::open_scene_bundle_export_folder()
+{
+  if (last_scene_bundle_export_folder_.isEmpty() && selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) {
+    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    last_scene_bundle_export_folder_ = QString::fromStdString((s.scene_dir / "exports").string());
+  }
+  if (last_scene_bundle_export_folder_.isEmpty() || !QFileInfo::exists(last_scene_bundle_export_folder_)) {
+    append_studio_log("Open Export Folder: export folder missing. Export a scene bundle first.");
+    return;
+  }
+  QDesktopServices::openUrl(QUrl::fromLocalFile(last_scene_bundle_export_folder_));
+  append_studio_log("Open Export Folder: " + last_scene_bundle_export_folder_);
 }
 
 MainWindow::~MainWindow()
