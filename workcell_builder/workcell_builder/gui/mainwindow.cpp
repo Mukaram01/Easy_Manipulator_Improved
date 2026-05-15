@@ -81,6 +81,7 @@
 #include <cmath>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
 #include "workcell_builder_ui_utils.hpp"
@@ -119,11 +120,11 @@ enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCat
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
   explicit DraggableCanvasItem(const QRectF & r): QGraphicsRectItem(r) {}
+  std::function<QPointF(const QPointF &)> position_filter;
 protected:
   QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
-    if (change == ItemPositionChange && scene()) {
-      QPointF pos = value.toPointF();
-      return QPointF(std::round(pos.x() / 10.0) * 10.0, std::round(pos.y() / 10.0) * 10.0);
+    if (change == ItemPositionChange && scene() && position_filter) {
+      return position_filter(value.toPointF());
     }
     return QGraphicsRectItem::itemChange(change, value);
   }
@@ -519,19 +520,37 @@ void MainWindow::setup_studio_shell()
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_layout->addWidget(scene_preview_label_);
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
+  canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
+  auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
+  auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
+  auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
+  auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
   auto * camera_view = new QComboBox(scene_builder); camera_view->addItems({"Camera View: Perspective", "Top", "Left", "Right", "Front"}); controls->addWidget(camera_view);
   auto * fit_button = new QPushButton("Fit Cell", scene_builder); controls->addWidget(fit_button);
   auto * reset_button = new QPushButton("Reset View", scene_builder); controls->addWidget(reset_button);
   auto * zoom_in = new QPushButton("Zoom In", scene_builder); controls->addWidget(zoom_in);
   auto * zoom_out = new QPushButton("Zoom Out", scene_builder); controls->addWidget(zoom_out);
   toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true); controls->addWidget(toggle_grid_box_);
-  snap_to_grid_box_ = new QCheckBox("Snap to Grid", scene_builder); snap_to_grid_box_->setChecked(true); controls->addWidget(snap_to_grid_box_);
+  snap_to_grid_box_ = new QCheckBox("Snap Grid", scene_builder); snap_to_grid_box_->setChecked(true); controls->addWidget(snap_to_grid_box_);
+  snap_step_label_ = new QLabel("Grid 0.05 m", scene_builder); controls->addWidget(snap_step_label_);
   fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder); controls->addWidget(fine_move_mode_box_);
   unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder); controls->addWidget(unlock_robot_base_box_);
   toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true); controls->addWidget(toggle_labels_box_);
   toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true); controls->addWidget(toggle_warnings_box_);
+  auto * minimap_toggle = new QCheckBox("Minimap", scene_builder); minimap_toggle->setChecked(true); controls->addWidget(minimap_toggle);
+  auto * overlays_button = new QToolButton(scene_builder); overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
+  auto * overlays_menu = new QMenu(overlays_button);
+  show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
+  show_camera_fov_overlay_box_ = new QCheckBox("Show Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
+  show_pick_place_overlay_box_ = new QCheckBox("Show Pick/Place", scene_builder); show_pick_place_overlay_box_->setChecked(true);
+  show_trajectory_overlay_box_ = new QCheckBox("Show Trajectory", scene_builder); show_trajectory_overlay_box_->setChecked(true);
+  auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(true); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
+  mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_);
+  overlays_menu->addAction("Show Warnings")->setCheckable(true); overlays_menu->addAction("Show Labels")->setCheckable(true);
+  overlays_button->setMenu(overlays_menu); controls->addWidget(overlays_button);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420); center_layout->addWidget(digital_twin_canvas_, 1);
+  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
@@ -851,6 +870,17 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ apply_inspector_pose_to_item(); });
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
+  connect(select_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
+  connect(place_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
+  connect(move_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
+  connect(inspect_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Inspect); });
+  connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(minimap_toggle, &QCheckBox::toggled, this, [this](bool on){ if(minimap_view_) minimap_view_->setVisible(on); });
+  for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
+  auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
+  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
+  auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QPushButton::click);
   connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
   connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
   connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
@@ -1783,7 +1813,7 @@ void MainWindow::rebuild_digital_twin_canvas()
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
 
-  digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
+  if (!show_reach_overlay_box_ || show_reach_overlay_box_->isChecked()) digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
   auto * robot_base = digital_twin_scene_->addEllipse(-14, -14, 28, 28, QPen(QColor("#60a5fa"), 2), QBrush(QColor("#1d4ed8")));
   robot_base->setToolTip("Robot base marker");
 
@@ -1809,24 +1839,28 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleWarning, QString::fromStdString(entry.warning));
     item->setData(RolePoseText, QString("x=%1 y=%2 z=%3 r=%4 p=%5 y=%6").arg(entry.x).arg(entry.y).arg(entry.z).arg(entry.roll).arg(entry.pitch).arg(entry.yaw));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
+    item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
     digital_twin_scene_->addItem(item);
 
     if (toggle_labels_box_ && toggle_labels_box_->isChecked()) {
       auto * txt = digital_twin_scene_->addSimpleText(QString::fromStdString(entry.label));
       txt->setBrush(QBrush(QColor("#d8dee9"))); txt->setPos(item->pos() + QPointF(0, -18));
     }
-    if (category.contains("camera", Qt::CaseInsensitive)) {
+    if ((!show_camera_fov_overlay_box_ || show_camera_fov_overlay_box_->isChecked()) && category.contains("camera", Qt::CaseInsensitive)) {
       QPolygonF fov; fov << QPointF(item->pos().x()+12, item->pos().y()+12) << QPointF(item->pos().x()+150, item->pos().y()-40) << QPointF(item->pos().x()+150, item->pos().y()+64);
       digital_twin_scene_->addPolygon(fov, QPen(QColor("#ffd166"), 2), QBrush(QColor(255, 209, 102, 45))); // camera FOV wedge/cone
     }
-    if (category.contains("pick", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
-    if (category.contains("place", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
+    if (!show_pick_place_overlay_box_ || show_pick_place_overlay_box_->isChecked()) {
+      if (category.contains("pick", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
+      if (category.contains("place", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
+    }
     if (toggle_warnings_box_ && toggle_warnings_box_->isChecked() && !item->data(RoleWarning).toString().isEmpty()) {
       auto * w = digital_twin_scene_->addSimpleText(QString("⚠ %1").arg(item->data(RoleWarning).toString()));
       w->setBrush(QBrush(QColor("#ff8e72"))); w->setPos(item->pos() + QPointF(0, item->boundingRect().height() + 4));
     }
   }
 
+  if (!show_trajectory_overlay_box_ || show_trajectory_overlay_box_->isChecked()) digital_twin_scene_->addLine(20, 10, 180, -60, QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
   if (toggle_warnings_box_ && toggle_warnings_box_->isChecked()) {
     QStringList issues;
     if (!s.has_environment_yaml) issues << "missing environment.yaml";
@@ -1837,6 +1871,40 @@ void MainWindow::rebuild_digital_twin_canvas()
     if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
     if (!issues.isEmpty()) digital_twin_scene_->addSimpleText("Safety Warning Overlay: " + issues.join(" | "))->setPos(-380, -280);
   }
+}
+
+
+void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
+{
+  canvas_mode_ = mode;
+  if (canvas_mode_label_) {
+    QString n = "Select";
+    if (mode == CanvasInteractionMode::Place) n = "Place";
+    if (mode == CanvasInteractionMode::Move) n = "Move";
+    if (mode == CanvasInteractionMode::Inspect) n = "Inspect";
+    canvas_mode_label_->setText("Mode: " + n);
+  }
+}
+
+QPointF MainWindow::snap_canvas_position(const QPointF & pos) const
+{
+  if (!snap_to_grid_box_ || !snap_to_grid_box_->isChecked()) return pos;
+  const double step_px = std::max(1.0, snap_step_m_ * 100.0);
+  return QPointF(std::round(pos.x() / step_px) * step_px, std::round(pos.y() / step_px) * step_px);
+}
+
+void MainWindow::refresh_minimap_card()
+{
+  if (!minimap_view_ || !digital_twin_scene_) return;
+  if (!minimap_scene_) minimap_scene_ = new QGraphicsScene(minimap_view_);
+  minimap_scene_->clear();
+  minimap_scene_->setSceneRect(digital_twin_scene_->sceneRect());
+  for (auto * gi : digital_twin_scene_->items()) {
+    if (!gi->data(RoleRole).isValid() || gi->data(RoleRole).toString() != "asset") continue;
+    minimap_scene_->addRect(gi->sceneBoundingRect(), QPen(QColor("#94a3b8"), 1), QBrush(QColor(148,163,184,90)));
+  }
+  minimap_view_->setScene(minimap_scene_);
+  minimap_view_->fitInView(minimap_scene_->sceneRect(), Qt::KeepAspectRatio);
 }
 
 void MainWindow::select_canvas_item(QGraphicsItem * item)
@@ -1946,8 +2014,8 @@ void MainWindow::revert_layout_changes()
   append_studio_log("Revert Layout requested");
 }
 
-void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto * sel=digital_twin_scene_->selectedItems().front(); if (auto * rect=qgraphicsitem_cast<QGraphicsRectItem*>(sel)) rect->setPen(QPen(QColor("#f8fafc"),3)); select_canvas_item(sel); }
-void MainWindow::on_canvas_item_moved(QGraphicsItem *, const QPointF &, const QPointF &, const QString & reason){ mark_layout_dirty(reason); }
+void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_) return; if (digital_twin_scene_->selectedItems().isEmpty()) { if(live_coordinate_label_) live_coordinate_label_->setText("Selected: none"); return; } auto * sel=digital_twin_scene_->selectedItems().front(); if (auto * rect=qgraphicsitem_cast<QGraphicsRectItem*>(sel)) { rect->setPen(QPen(QColor("#f8fafc"),3)); auto b=rect->sceneBoundingRect(); digital_twin_scene_->addRect(QRectF(b.topLeft()-QPointF(4,4), QSizeF(8,8)), QPen(QColor("#93c5fd")), QBrush(QColor("#93c5fd"))); } select_canvas_item(sel); }
+void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, const QPointF &, const QString & reason){ if(item) select_canvas_item(item); mark_layout_dirty(reason); }
 void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
@@ -1986,6 +2054,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
   item->setData(RoleLocked, false);
   item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
+  item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
   digital_twin_scene_->addItem(item);
   digital_twin_scene_->clearSelection();
   item->setSelected(true);
@@ -1994,6 +2063,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   redo_stack_.clear();
   mark_layout_dirty("Add to Canvas");
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
+  append_studio_log("ghost placement preview committed");
   save_layout_changes();
 }
 
