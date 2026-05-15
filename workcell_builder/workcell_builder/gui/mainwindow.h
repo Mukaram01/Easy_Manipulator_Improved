@@ -100,6 +100,7 @@ private:
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
   void refresh_task_intent_panel();
+  void refresh_new_cell_checklist();
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
   void open_selected_task_file();
@@ -196,6 +197,7 @@ private:
   QLabel * readiness_label_{ nullptr };
   QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
+  QLabel * new_cell_checklist_label_{ nullptr };
   QLabel * task_intent_details_label_{ nullptr };
   QLabel * pick_place_details_label_{ nullptr };
   QLabel * grasp_details_label_{ nullptr };

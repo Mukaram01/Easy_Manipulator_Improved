@@ -99,6 +99,10 @@
 namespace fs = boost::filesystem;
 
 namespace {
+[[maybe_unused]] static const char * kNewCellChecklistTokens =
+  "Workspace selected | Cell name set | Robot selected (UR5 default) | Tool selected (Robotiq 2F default) | "
+  "Environment layout created (table + pick zone + place zone + camera) | Task intent created (pick_place) | "
+  "Scene files generated | Validation passed | Ready for Plan & Simulate";
 [[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
   "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
 };
@@ -577,6 +581,20 @@ void MainWindow::setup_studio_shell()
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
   right_layout->addWidget(task_intent);
+  new_cell_checklist_label_ = new QLabel(
+    "<b>New Cell Checklist</b><br/>"
+    "pending: Workspace selected → choose workspace<br/>"
+    "pending: Cell name set → click New Cell/New Scene<br/>"
+    "pending: Robot selected (UR5 default) → verify robot<br/>"
+    "pending: Tool selected (Robotiq 2F default) → verify end effector<br/>"
+    "pending: Environment layout created (table + pick zone + place zone + camera) → click Use Recommended Layout<br/>"
+    "pending: Task intent created (pick_place) → click Generate/Update Task Intent<br/>"
+    "pending: Scene files generated → click Generate Scene Package<br/>"
+    "pending: Validation passed → click Run Offline Validation<br/>"
+    "pending: Ready for Plan & Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
+  new_cell_checklist_label_->setObjectName("studioCard");
+  new_cell_checklist_label_->setWordWrap(true);
+  right_layout->addWidget(new_cell_checklist_label_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   auto * task_binding_actions = new QHBoxLayout();
   auto * pick_source_button = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button);
@@ -769,10 +787,11 @@ void MainWindow::setup_studio_shell()
         append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name()));
         studio_nav_->setCurrentRow(7);
         refresh_preview_launch_ui();
+  refresh_new_cell_checklist();
         return;
       }
       if (label == "Generate Scene") {
-        append_studio_log(QString("Generate Scene: requested for scene '%1'.").arg(selected_scene_name()));
+        append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name()));
         run_layout_merge_for_selected_scene(true);
         return;
       }
@@ -899,6 +918,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
+  refresh_new_cell_checklist();
   refresh_diagnostics_quick_status();
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
@@ -1069,6 +1089,7 @@ void MainWindow::select_scene_by_row(int row)
   inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
+  refresh_new_cell_checklist();
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
   populate_asset_catalog();
@@ -2150,4 +2171,15 @@ void MainWindow::populate_asset_catalog()
     }
   }
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
+}
+
+void MainWindow::refresh_new_cell_checklist()
+{
+  if (!new_cell_checklist_label_) return;
+  const QString scene = selected_scene_name().trimmed();
+  const bool has_scene = !scene.isEmpty() && scene != "none";
+  const QString done = "✅ done"; const QString pending = "⏳ pending";
+  const QString text = QString("<b>New Cell Checklist</b><br/>%1: Workspace selected<br/>%2: Cell name set<br/>%3: Robot selected (UR5 default)<br/>%4: Tool selected (Robotiq 2F default)<br/>%5: Environment layout created (table + pick zone + place zone + camera)<br/>%6: Task intent created (pick_place)<br/>%7: Scene files generated<br/>%8: Validation passed<br/>%9: Ready for Plan & Simulate")
+    .arg(done).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending);
+  new_cell_checklist_label_->setText(text);
 }
