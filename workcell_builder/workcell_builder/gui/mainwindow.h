@@ -148,6 +148,11 @@ private:
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
+  void run_offline_validation();
+  void open_validation_report();
+  void copy_validation_summary();
+  void generate_readiness_pack();
+  void open_readiness_dashboard();
   void copy_diagnostics_report();
   void open_diagnostics_folder();
   bool helper_script_exists(const QString & script_name, QString * path = nullptr) const;
@@ -230,6 +235,13 @@ private:
   QPushButton * copy_all_button_{ nullptr };
   QPushButton * open_preview_folder_button_{ nullptr };
   QPushButton * open_preview_transcript_button_{ nullptr };
+  QLabel * validation_summary_label_{ nullptr };
+  QLabel * validation_blockers_label_{ nullptr };
+  QLabel * validation_warnings_label_{ nullptr };
+  QLabel * validation_required_files_label_{ nullptr };
+  QLabel * validation_task_intent_status_label_{ nullptr };
+  QLabel * validation_scene_package_status_label_{ nullptr };
+  QLabel * validation_next_fix_label_{ nullptr };
   QProcess * preview_process_{ nullptr };
   QString preview_state_{ "IDLE" };
   QString active_preview_command_;

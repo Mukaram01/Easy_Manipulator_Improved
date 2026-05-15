@@ -619,12 +619,13 @@ void MainWindow::setup_studio_shell()
   auto * open_logs_cmd = new QPushButton("Open Logs Folder", diagnostics); d_actions->addWidget(open_logs_cmd);
   gl->addLayout(d_actions);
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
-  pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Safe control console with selected scene card, readiness gate card, command card, and live log console.</p>"));
-  preview_scene_label_ = new QLabel("Selected scene card: none"); pl->addWidget(preview_scene_label_);
-  preview_status_label_ = new QLabel("Readiness gate: BLOCKED"); pl->addWidget(preview_status_label_);
-  preview_safety_label_ = new QLabel("Fake Hardware | No Robot Motion | Stop Preview only stops UI started process"); pl->addWidget(preview_safety_label_);
-  preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); pl->addWidget(preview_commands_);
-  preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("command console"); pl->addWidget(preview_log_);
+  pl->addWidget(new QLabel("<h2>Preview Launch</h2><p>Workcell Studio safe preview console. Fake Hardware | No Robot Motion | Preview Only | Real hardware is not launched from this page.</p>"));
+  preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
+  preview_status_label_ = new QLabel("<b>Readiness Gate</b><br/>BLOCKED_MISSING_SCENE"); preview_status_label_->setObjectName("studioCard"); preview_status_label_->setWordWrap(true); pl->addWidget(preview_status_label_);
+  preview_safety_label_ = new QLabel("<b>Safety banner</b><br/>Fake Hardware | No Robot Motion | Preview Only | Real hardware is not launched from this page"); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
+  preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); pl->addWidget(preview_commands_);
+  preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("Live Log: command started / command output / command finished or failed / transcript path"); preview_log_->setObjectName("studioCard"); pl->addWidget(preview_log_);
+  pl->addWidget(new QLabel("<b>Preview Process</b><br/>Validate | Run Fake-Hardware Preview | Stop Preview | Copy commands"));
   run_build_button_ = new QPushButton("Validate", preview); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Fake-Hardware Preview", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   stop_preview_button_ = new QPushButton("Stop Preview", preview); pl->addWidget(stop_preview_button_);
@@ -633,9 +634,25 @@ void MainWindow::setup_studio_shell()
   copy_launch_button_ = new QPushButton("Copy Fake-Hardware Launch Command", preview); pl->addWidget(copy_launch_button_);
   copy_all_button_ = new QPushButton("Copy Full Command Block", preview); pl->addWidget(copy_all_button_);
   open_preview_folder_button_ = new QPushButton("Open Scene Folder", preview); pl->addWidget(open_preview_folder_button_);
+  pl->addWidget(new QLabel("<b>Reports / Artifacts</b><br/>environment.yaml | scene_manifest.yaml | task intent YAML | task recipe YAML | preview/static_preview.html | preview/static_preview.svg | preview/workcell_studio_canvas_snapshot.png | smoke/offline_smoke_report.json/html | readiness dashboard"));
   open_preview_transcript_button_ = new QPushButton("Open Reports", preview); pl->addWidget(open_preview_transcript_button_);
 
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics);
+  auto * validation = new QWidget(studio_pages_); auto * vl = new QVBoxLayout(validation);
+  vl->addWidget(new QLabel("<h2>Validation</h2><p>Validation Summary, Blockers, Warnings, Required Files, Task Intent Status, Scene Package Status, Next Fix Suggestions. Fake Hardware | No Robot Motion | Preview Only.</p>"));
+  validation_summary_label_ = new QLabel("<b>Validation Summary</b><br/>No scene selected"); validation_summary_label_->setObjectName("studioCard"); validation_summary_label_->setWordWrap(true); vl->addWidget(validation_summary_label_);
+  validation_blockers_label_ = new QLabel("<b>Blockers</b><br/>-"); validation_blockers_label_->setObjectName("studioCard"); validation_blockers_label_->setWordWrap(true); vl->addWidget(validation_blockers_label_);
+  validation_warnings_label_ = new QLabel("<b>Warnings</b><br/>-"); validation_warnings_label_->setObjectName("studioCard"); validation_warnings_label_->setWordWrap(true); vl->addWidget(validation_warnings_label_);
+  validation_required_files_label_ = new QLabel("<b>Required Files</b><br/>-"); validation_required_files_label_->setObjectName("studioCard"); validation_required_files_label_->setWordWrap(true); vl->addWidget(validation_required_files_label_);
+  validation_task_intent_status_label_ = new QLabel("<b>Task Intent Status</b><br/>-"); validation_task_intent_status_label_->setObjectName("studioCard"); validation_task_intent_status_label_->setWordWrap(true); vl->addWidget(validation_task_intent_status_label_);
+  validation_scene_package_status_label_ = new QLabel("<b>Scene Package Status</b><br/>-"); validation_scene_package_status_label_->setObjectName("studioCard"); validation_scene_package_status_label_->setWordWrap(true); vl->addWidget(validation_scene_package_status_label_);
+  validation_next_fix_label_ = new QLabel("<b>Next Fix Suggestions</b><br/>Select scene and run offline validation."); validation_next_fix_label_->setObjectName("studioCard"); validation_next_fix_label_->setWordWrap(true); vl->addWidget(validation_next_fix_label_);
+  auto * run_offline_validation_button = new QPushButton("Run Offline Validation", validation); vl->addWidget(run_offline_validation_button);
+  auto * open_validation_report_button = new QPushButton("Open Validation Report", validation); vl->addWidget(open_validation_report_button);
+  auto * copy_validation_summary_button = new QPushButton("Copy Validation Summary", validation); vl->addWidget(copy_validation_summary_button);
+  auto * generate_readiness_pack_button = new QPushButton("Generate Readiness Pack", validation); vl->addWidget(generate_readiness_pack_button);
+  auto * open_readiness_dashboard_button = new QPushButton("Open Readiness Dashboard", validation); vl->addWidget(open_readiness_dashboard_button);
+
+  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation);
   auto * body=new QHBoxLayout(); body->addWidget(studio_nav_); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(130); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); root_layout->addWidget(studio_log_);
   preview_process_ = new QProcess(this);
@@ -735,6 +752,11 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
   connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
   connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect(run_offline_validation_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
+  connect(open_validation_report_button, &QPushButton::clicked, this, &MainWindow::open_validation_report);
+  connect(copy_validation_summary_button, &QPushButton::clicked, this, &MainWindow::copy_validation_summary);
+  connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
+  connect(open_readiness_dashboard_button, &QPushButton::clicked, this, &MainWindow::open_readiness_dashboard);
   connect(run_self_test_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_self_test);
   connect(run_golden_flow_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
   connect(copy_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::copy_diagnostics_report);
@@ -1390,15 +1412,43 @@ void MainWindow::set_preview_state(const QString & state){ preview_state_=state;
 
 void MainWindow::refresh_preview_launch_ui()
 {
-  if (preview_status_label_) preview_status_label_->setText("State: "+preview_state_);
+  QString readiness = "BLOCKED_MISSING_SCENE";
   bool has_scene = selected_scene_index_ >= 0;
   bool has_ws = !detect_workspace_root().isEmpty();
-  if (preview_scene_label_ && has_scene) preview_scene_label_->setText("Scene: "+QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name)+" | Workspace: "+(has_ws?detect_workspace_root():"not detected"));
+  QStringList blockers;
+  if (has_scene) {
+    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    if (!s.has_launch_demo) readiness = "BLOCKED_MISSING_LAUNCH";
+    else if (!s.has_task_intent) readiness = "BLOCKED_MISSING_TASK_INTENT";
+    else if (!selected_scene_preview_ready(&blockers)) readiness = "WARNINGS_PRESENT";
+    else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
+    if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot summary: %3<br/>gripper/tool summary: %4<br/>task file status: %5<br/>launch/demo.launch.py status: %6<br/>package.xml/CMakeLists status: %7<br/>preview snapshot path: %8")
+      .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.scene_dir.string()), QString::fromStdString(s.robot_summary), QString::fromStdString(s.gripper_summary),
+      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", s.has_package_files ? "present" : "missing",
+      QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
+    if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
+  }
+  if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness Gate</b><br/>%1<br/>state: %2").arg(readiness, preview_state_));
   if (preview_commands_) preview_commands_->setPlainText(selected_scene_preview_command_block());
+  if (preview_commands_) preview_commands_->append(QString("\n# Safe Commands (Fake Hardware / Offline / No Robot Motion)\n# build selected scene package\n%1\n# source workspace\n%2\n# fake-hardware launch command\n%3\n# optional offline validation command\npython3 scripts/validate_builder_generated_scene.py '%4' --json")
+    .arg(selected_scene_build_command(), selected_scene_source_command(), selected_scene_launch_command(), has_scene ? QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string()) : QString("")));
+  if (validation_next_fix_label_) validation_next_fix_label_->setText(QString("<b>Next Fix Suggestions</b><br/>%1").arg(blockers.isEmpty() ? "No blockers. You can run Fake-Hardware Preview." : blockers.join("<br/>")));
   if (run_build_button_) run_build_button_->setEnabled(has_scene && has_ws && (preview_state_=="IDLE"||preview_state_=="BUILD_FAILED"||preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_FAILED"||preview_state_=="PREVIEW_EXITED"));
   if (run_preview_button_) run_preview_button_->setEnabled(has_scene && has_ws && (preview_state_=="BUILD_PASSED"||preview_state_=="PREVIEW_STOPPED"||preview_state_=="PREVIEW_EXITED"));
   if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
 }
+
+void MainWindow::run_offline_validation() { open_selected_scene_artifact("run_acceptance"); }
+void MainWindow::open_validation_report() { open_selected_scene_artifact("smoke"); }
+void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(validation_summary_label_ ? validation_summary_label_->text() : QString("Validation Summary unavailable")); }
+void MainWindow::generate_readiness_pack() {
+  if (selected_scene_index_ < 0) return;
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const QString cmd = QString("python3 scripts/generate_workcell_studio_readiness_pack.py '%1'").arg(QString::fromStdString(s.scene_dir.string()));
+  append_studio_log("Generate Readiness Pack: " + cmd);
+  std::system(cmd.toStdString().c_str());
+}
+void MainWindow::open_readiness_dashboard() { open_selected_scene_artifact("demo_dashboard"); }
 
 void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} active_preview_command_=selected_scene_build_command(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
 void MainWindow::run_fake_hardware_preview(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } QString command = "cd "+detect_workspace_root()+" && source install/setup.bash && "+selected_scene_launch_command(); if(!preview_command_is_safe(command,&blockers)){ QMessageBox::warning(this,"Preview Launch",blockers.join("\n")); return; } auto rc = QMessageBox::question(this,"Confirm Fake-Hardware Preview", "Command:\n"+command+"\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded."); if(rc!=QMessageBox::Yes) return; active_preview_command_=command; if(preview_log_) preview_log_->appendPlainText("$ "+command); set_preview_state("PREVIEW_RUNNING"); write_preview_launch_transcript(true, command, "preview_started"); preview_process_->start("/bin/bash", {"-lc", command}); }
