@@ -21,6 +21,8 @@ public:
   QVector<ScenePreviewWidget::PreviewItem> items;
   QString selected_id;
   bool show_labels{true}, show_warnings{true}, show_safety{true}, show_pick_place{true};
+  bool show_task_route{true}, show_approach_retreat{true};
+  ScenePreviewWidget::TaskOverlayModel task_overlay;
   std::function<void(const QString&)> select_cb;
   void reset_view() { yaw_ = -0.9; pitch_ = 0.7; zoom_ = 1.0; update(); }
   void fit_scene() { zoom_ = 1.0; update(); }
@@ -72,6 +74,24 @@ protected:
       if (show_warnings && it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
       if (show_pick_place && (it.role.contains("pick") || it.role.contains("place"))) p.drawEllipse(project(it.x,it.y+it.sy+0.1,it.z), 4, 4);
     }
+    if (show_pick_place) {
+      p.setPen(QPen(QColor("#00d1b2"), 2, Qt::DashLine)); p.drawText(project(-0.8, 0.5, -0.7), "pick source zone");
+      p.setPen(QPen(QColor("#ff7b72"), 2, Qt::DashLine)); p.drawText(project(1.3, 0.5, -0.1), "place target zone");
+      if (task_overlay.reject_target_id != "unknown") { p.setPen(QPen(QColor("#f59e0b"), 2, Qt::DashLine)); p.drawText(project(1.7, 0.5, 0.3), "reject target zone"); }
+    }
+    if (show_task_route) {
+      p.setPen(QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
+      p.drawLine(project(-0.8,0.3,-0.7), project(1.3,0.3,-0.1));
+      p.drawText(project(0.3, 0.45, -0.4), "Task Route");
+      if (task_overlay.reject_target_id != "unknown") p.drawLine(project(-0.8,0.32,-0.7), project(1.8,0.32,0.3));
+    }
+    if (show_approach_retreat) {
+      p.setPen(QPen(QColor("#22c55e"), 2)); p.drawLine(project(-0.8,0.65,-0.7), project(-0.8,1.1,-0.7));
+      p.drawText(project(-0.7, 1.1, -0.7), "Approach/Retreat");
+      p.setPen(QPen(QColor("#ef4444"), 2)); p.drawLine(project(-0.7,1.05,-0.7), project(-0.7,0.72,-0.7));
+      p.drawText(project(-0.55, 1.18, -0.7), QString("grasp=%1").arg(task_overlay.grasp_strategy));
+    }
+    if (!task_overlay.has_intent_metadata && show_warnings) p.drawText(project(-2.2, 1.2, -0.8), "Task overlay unavailable: missing task intent");
     auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c,const QString &name){
       QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
       Q_UNUSED(sz);
@@ -108,7 +128,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   controls->addWidget(mode_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Labels", "Safety Zones", "Pick/Place Arrows", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Labels", "Safety Zones", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -136,6 +156,15 @@ void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = se
 void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){ preview3d_available_ = available; unavailable_reason_ = reason; refresh_mode_and_state(); }
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
 void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; static_cast<SimplePreview3DView *>(simple_3d_view_)->items = preview_items_; emit studio_log_requested(QString("Loaded %1 preview items.").arg(preview_items_.size())); update(); }
+void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<SimplePreview3DView *>(simple_3d_view_)->task_overlay = model; simple_3d_view_->update(); }
+void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels){
+  auto * v = static_cast<SimplePreview3DView *>(simple_3d_view_);
+  v->show_task_route = task_route;
+  v->show_pick_place = pick_place_zones;
+  v->show_approach_retreat = approach_retreat;
+  v->show_labels = labels;
+  v->update();
+}
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<SimplePreview3DView *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->reset_view(); }

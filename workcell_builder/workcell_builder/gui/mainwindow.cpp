@@ -641,12 +641,24 @@ void MainWindow::setup_studio_shell()
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
   show_camera_fov_overlay_box_ = new QCheckBox("Show Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
-  show_pick_place_overlay_box_ = new QCheckBox("Show Pick/Place", scene_builder); show_pick_place_overlay_box_->setChecked(true);
-  show_trajectory_overlay_box_ = new QCheckBox("Show Trajectory", scene_builder); show_trajectory_overlay_box_->setChecked(true);
+  show_pick_place_overlay_box_ = new QCheckBox("Pick/Place Zones", scene_builder); show_pick_place_overlay_box_->setChecked(true);
+  show_trajectory_overlay_box_ = new QCheckBox("Task Route", scene_builder); show_trajectory_overlay_box_->setChecked(true);
+  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(true);
   auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(true); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
-  mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_);
-  overlays_menu->addAction("Show Warnings")->setCheckable(true); overlays_menu->addAction("Show Labels")->setCheckable(true);
+  mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
+  auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(true);
+  auto * show_labels_action = overlays_menu->addAction("Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
   overlays_button->setMenu(overlays_menu); controls->addWidget(overlays_button);
+  connect(show_warnings_action, &QAction::toggled, toggle_warnings_box_, &QCheckBox::setChecked);
+  connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
+  connect(show_approach_retreat_overlay_box, &QCheckBox::toggled, this, [this, show_approach_retreat_overlay_box](bool){
+    if (!scene_preview_widget_) return;
+    scene_preview_widget_->set_task_overlay_visibility(
+      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
+      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
+      show_approach_retreat_overlay_box->isChecked(),
+      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+  });
   auto * canvas_more_actions = new QToolButton(scene_builder);
   canvas_more_actions->setText("Canvas More");
   canvas_more_actions->setPopupMode(QToolButton::InstantPopup);
@@ -1083,11 +1095,44 @@ void MainWindow::refresh_task_intent_panel()
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const auto ti = load_scene_task_intent_summary(sc.scene_dir);
+  QStringList overlay_warnings;
+  if (ti.pick_source == "unknown") overlay_warnings << "missing pick source";
+  if (ti.place_target == "unknown") overlay_warnings << "missing place target";
+  if (ti.approach_axis == "unknown") overlay_warnings << "unknown approach axis";
+  if (ti.grasp_strategy == "unknown") overlay_warnings << "unknown grasp strategy";
+  if (ti.pick_source != "unknown" && ti.pick_source == ti.place_target) overlay_warnings << "pick/place overlap";
+  if (ti.status == "MISSING_TASK_FILE") overlay_warnings << "Task overlay unavailable: missing task intent";
   const QString missing = ti.status == "MISSING_TASK_FILE" ? QString("\nNo task intent file found.\nSearched:\n - %1").arg(ti.searched_paths.join("\n - ")) : "";
   task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing));
   pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
   grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
   approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance));
+  if (!overlay_warnings.isEmpty()) {
+    approach_retreat_details_label_->setText(approach_retreat_details_label_->text() + QString("\nOverlay warnings: %1").arg(overlay_warnings.join(" | ")));
+  }
+  if (scene_preview_widget_) {
+    ScenePreviewWidget::TaskOverlayModel model;
+    model.task_type = ti.task_type;
+    model.pick_source_id = ti.pick_source;
+    model.place_target_id = ti.place_target;
+    model.reject_target_id = ti.reject_target;
+    model.grasp_strategy = ti.grasp_strategy;
+    model.approach_axis = ti.approach_axis;
+    model.approach_distance = ti.approach_distance;
+    model.retreat_axis = ti.retreat_axis;
+    model.retreat_distance = ti.retreat_distance;
+    model.object_class = ti.object_class;
+    model.warnings = overlay_warnings;
+    model.has_intent_metadata = ti.status != "MISSING_TASK_FILE";
+    scene_preview_widget_->set_task_overlay_model(model);
+    scene_preview_widget_->set_task_overlay_visibility(
+      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
+      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
+      true,
+      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
+  }
+  if (ti.status == "MISSING_TASK_FILE") append_studio_log("task overlay missing");
+  else append_studio_log("task overlay loaded");
   append_studio_log(QString("Task intent source: %1").arg(ti.source_file));
 }
 

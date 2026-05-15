@@ -2,6 +2,7 @@
 
 #include <QWidget>
 #include <QVector>
+#include <QStringList>
 
 class QComboBox;
 class QLabel;
@@ -27,12 +28,29 @@ public:
     bool selectable{ true };
     bool metadata_complete{ true };
   };
+  struct TaskOverlayModel
+  {
+    QString task_type{"unknown"};
+    QString pick_source_id{"unknown"};
+    QString place_target_id{"unknown"};
+    QString reject_target_id{"unknown"};
+    QString grasp_strategy{"unknown"};
+    QString approach_axis{"unknown"};
+    QString approach_distance{"unknown"};
+    QString retreat_axis{"unknown"};
+    QString retreat_distance{"unknown"};
+    QString object_class{"unknown"};
+    QStringList warnings;
+    bool has_intent_metadata{ false };
+  };
   explicit ScenePreviewWidget(QWidget * parent = nullptr);
 
   void set_fallback_2d_view(QGraphicsView * view);
   void set_scene_selected(bool selected);
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
+  void set_task_overlay_model(const TaskOverlayModel & model);
+  void set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
 
@@ -65,5 +83,6 @@ private:
   bool preview3d_available_{ true };
   QString unavailable_reason_;
   QVector<PreviewItem> preview_items_;
+  TaskOverlayModel overlay_model_;
   QString selected_preview_item_id_;
 };
