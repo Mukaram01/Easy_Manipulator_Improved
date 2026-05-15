@@ -675,14 +675,14 @@ void MainWindow::setup_studio_shell()
   left_library_layout->addWidget(dashboard_library_list_, 1);
   auto * center_card = new QFrame(dashboard);
   center_card->setObjectName("studioCard");
-  auto * center_layout = new QVBoxLayout(center_card);
-  center_layout->addWidget(new QLabel("<b>Scenes</b>", center_card));
+  auto * center_card_layout = new QVBoxLayout(center_card);
+  center_card_layout->addWidget(new QLabel("<b>Scenes</b>", center_card));
   auto * filter_row = new QHBoxLayout();
   dashboard_scene_search_ = new QLineEdit(center_card); dashboard_scene_search_->setObjectName("studioHomeSearchBox"); dashboard_scene_search_->setPlaceholderText("Search scenes...");
   dashboard_scene_status_filter_ = new QComboBox(center_card); dashboard_scene_status_filter_->setObjectName("studioHomeStatusFilter"); dashboard_scene_status_filter_->addItems({"All", "Ready", "Warning", "Blocked"});
   filter_row->addWidget(dashboard_scene_search_, 1); filter_row->addWidget(dashboard_scene_status_filter_);
-  center_layout->addLayout(filter_row);
-  center_layout->addWidget(dashboard_scene_table_, 1);
+  center_card_layout->addLayout(filter_row);
+  center_card_layout->addWidget(dashboard_scene_table_, 1);
   dashboard_middle_split->addWidget(left_library_card);
   dashboard_middle_split->addWidget(center_card);
   dashboard_middle_split->addWidget(dashboard_selected_scene_card_);
@@ -746,9 +746,9 @@ void MainWindow::setup_studio_shell()
   catalog_layout->addWidget(asset_more_actions);
   left_layout->addWidget(catalog_card, 1);
 
-  auto * center_layout = new QVBoxLayout(center_panel);
-  scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_layout->addWidget(scene_preview_label_);
-  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_layout->addWidget(canvas_header_label_);
+  auto * center_panel_layout = new QVBoxLayout(center_panel);
+  scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_panel_layout->addWidget(scene_preview_label_);
+  canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_panel_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
   canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
@@ -832,11 +832,11 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
   canvas_more_actions->setMenu(canvas_more_menu);
   controls->addWidget(canvas_more_actions);
-  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_layout->addLayout(controls);
+  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
-  center_layout->addWidget(scene_preview_widget_, 1);
-  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
+  center_panel_layout->addWidget(scene_preview_widget_, 1);
+  minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
@@ -847,15 +847,15 @@ void MainWindow::setup_studio_shell()
   auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder); layout_controls->addWidget(run_layout_merge_button);
   auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder); layout_controls->addWidget(open_layout_merge_report_button);
   auto * copy_layout_merge_summary_button = new QPushButton("Copy Merge Summary", scene_builder); layout_controls->addWidget(copy_layout_merge_summary_button);
-  center_layout->addLayout(layout_controls);
-  layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); center_layout->addWidget(layout_state_label_);
-  canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); center_layout->addWidget(canvas_legend_label_);
+  center_panel_layout->addLayout(layout_controls);
+  layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); center_panel_layout->addWidget(layout_state_label_);
+  canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); center_panel_layout->addWidget(canvas_legend_label_);
   auto * bottom_cards = new QHBoxLayout();
   bottom_cards->addWidget(new QLabel("<b>Validation</b><br/>Selected Scene: pending<br/>Preview Only safety gate enabled."));
   bottom_cards->addWidget(new QLabel("<b>Readiness Checks</b><br/>Fake Hardware<br/>No Robot Motion"));
   bottom_cards->addWidget(new QLabel("<b>Simulation Log</b><br/>Recent studio command summary appears in Studio Log."));
   bottom_cards->addWidget(new QLabel("<b>Cycle/Timing Summary</b><br/>Offline estimate only."));
-  center_layout->addLayout(bottom_cards);
+  center_panel_layout->addLayout(bottom_cards);
 
   auto * right_layout = new QVBoxLayout(right_panel);
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
