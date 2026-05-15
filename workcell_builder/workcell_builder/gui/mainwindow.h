@@ -95,6 +95,12 @@ private:
   void refresh_scene_browser_ui();
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
+  void refresh_task_intent_panel();
+  void validate_task_intent_for_selected_scene();
+  void generate_or_update_task_intent_for_selected_scene();
+  void open_selected_task_file();
+  void copy_selected_task_summary();
+  void preview_offline_plan_for_selected_scene();
   QString selected_scene_launch_command() const;
   QString selected_scene_build_command() const;
   QString selected_scene_source_command() const;
@@ -164,6 +170,11 @@ private:
   QLabel * readiness_label_{ nullptr };
   QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
+  QLabel * task_intent_details_label_{ nullptr };
+  QLabel * pick_place_details_label_{ nullptr };
+  QLabel * grasp_details_label_{ nullptr };
+  QLabel * approach_retreat_details_label_{ nullptr };
+  QLabel * preview_actions_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
