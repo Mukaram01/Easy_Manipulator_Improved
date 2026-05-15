@@ -39,7 +39,7 @@ def test_removed_duplicate_execution_labels_not_present():
 
 
 def test_demo_uses_navigation_instead_of_duplicate_actions():
-    for label in ['Go to Validation', 'Go to Preview Launch', 'Go to Export']:
+    for label in ['Go to Validation', 'Go to Plan & Simulate', 'Go to Export']:
         assert label in CPP
 
 
