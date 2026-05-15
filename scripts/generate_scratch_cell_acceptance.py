@@ -16,8 +16,8 @@ def _run(cmd:list[str]):
 CELL_TMPL='''cell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\n  planning_group: manipulator\n  base_frame: world\n  tool_link: tool0\n  home_named_target: home\n  safe_joint_state: []\nend_effector:\n  id: robotiq_2f\n  type: finger\n  brand: robotiq\n  grasp_frame: ee_palm\n  allowed_touch_links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]\ncamera:\n  id: realsense_d435i\n  type: depth_camera\n  frame: camera_depth_optical_frame\n  pointcloud_topic: /camera/camera/depth/color/points\ntask:\n  type: pick_place\nenvironment:\n  layout: environment_layout.yaml\n'''
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False}
+ ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); ap.add_argument('--run-file-output-audit',action='store_true',default=True); a=ap.parse_args()
+ r={'scene_name':a.scene_name,'scene_dir':'','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'file_output_audit':{}}
  try:a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc:r['blockers'].append(f'invalid output root: {a.output_root} ({exc})'); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
@@ -38,6 +38,15 @@ def main():
  urdf_dir=sd/'urdf'
  if not ((urdf_dir/'environment.urdf.xacro').exists() or (urdf_dir.exists() and list(urdf_dir.glob('*.xacro')))): r['missing_files'].append('urdf/environment.urdf.xacro or equivalent')
  if 'use_fake_hardware:=false' in r['launch_command']: r['blockers'].append('Generated unsafe launch command with use_fake_hardware:=false')
+
+ audit_json=sd/'file_output_audit.json'
+ if a.run_file_output_audit:
+  arc,aout=_run([sys.executable,str(SCRIPTS/'audit_new_cell_file_outputs.py'),'--scene-dir',str(sd),'--scene-name',sd.name,'--json-out',str(audit_json)])
+  if audit_json.exists():
+   try:r['file_output_audit']=json.loads(audit_json.read_text(encoding='utf-8'))
+   except Exception:r['warnings'].append('file-output audit json could not be parsed')
+  if arc!=0:r['warnings'].append('File-output audit reported non-PASS status')
+ 
  for cmd in [[sys.executable,str(SCRIPTS/'validate_cell_definition.py'),str(cell),'--json'],[sys.executable,str(SCRIPTS/'validate_environment_layout.py'),str(layout),'--json']]:
   vrc,_=_run(cmd)
   if vrc!=0:r['warnings'].append('Validator reported issues: '+' '.join(cmd[1:3]))
