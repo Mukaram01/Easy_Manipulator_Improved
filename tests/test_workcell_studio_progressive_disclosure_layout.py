@@ -122,8 +122,9 @@ def test_dark_qss_has_readable_explicit_foreground_rules_and_no_banned_dark_text
 
 
 def test_studio_home_scene_management_and_safe_delete_tokens_present():
+    assert ('Manage scenes, review readiness, and open the selected workcell.' in CPP or
+            'Design, validate, and preview robotic workcells.' in CPP)
     for token in [
-        'Manage scenes, review readiness, and open the selected workcell.',
         'Open in Scene Builder',
         'Validate',
         'Plan & Simulate',
@@ -137,3 +138,20 @@ def test_studio_home_scene_management_and_safe_delete_tokens_present():
         assert token in CPP
     assert 'rm -rf' not in CPP
     assert 'show_not_wired_message("Delete Scene")' not in CPP
+
+
+def test_studio_home_landing_page_tokens_present():
+    for token in [
+        'Workcell Studio',
+        'Design, validate, and preview robotic workcells.',
+        'Design mode • Fake hardware by default • Real robot locked',
+        'Total Scenes',
+        'Ready / Validated',
+        'Warnings / Blocked',
+        'Search scenes...',
+        'No scenes found',
+        'Create a new cell to get started.',
+        'Selected Scene Details',
+        'Open Selected Scene',
+    ]:
+        assert token in CPP
