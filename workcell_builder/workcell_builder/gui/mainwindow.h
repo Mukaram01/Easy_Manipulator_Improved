@@ -113,6 +113,8 @@ private:
   void refresh_scene_browser_ui();
   void select_scene_by_row(int row);
   void open_selected_scene_artifact(const QString & artifact);
+  void delete_selected_scene();
+  bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
   void refresh_task_intent_panel();
   void refresh_new_cell_checklist();
   void validate_task_intent_for_selected_scene();
