@@ -89,6 +89,19 @@ private slots:
   void handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status);
 
 private:
+  enum class StudioPage : int {
+    DashboardPage = 0,
+    SceneBuilderPage,
+    ExistingScenesPage,
+    DemoModePage,
+    PlanSimulatePage,
+    DiagnosticsPage,
+    ValidationPage,
+    ExportPage
+  };
+  void show_studio_page(StudioPage page);
+  bool open_scene_builder_for_selected_scene(const QString & source_action);
+  void open_new_scene_creation_flow();
   bool has_selected_ros_distro() const;
   void update_next_button_state();
   void toggle_full_screen();
@@ -303,6 +316,5 @@ private:
   QLabel * studio_title_label_{ nullptr };
   QLabel * studio_ros_label_{ nullptr };
   QLineEdit * studio_workspace_path_{ nullptr };
-  QPushButton * studio_change_workspace_button_{ nullptr };
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_

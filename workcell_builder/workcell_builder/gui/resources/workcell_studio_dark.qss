@@ -67,6 +67,27 @@ QMenu {
   border: 1px solid #35516a;
 }
 QMenu::item:selected { background-color: #1f4561; }
+QLabel { color: #e8f1fb; }
+QLabel:disabled, QCheckBox:disabled, QGroupBox:disabled {
+  color: #b7c3d1;
+}
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+  background-color: #111b28;
+  color: #e8f1fb;
+  border: 1px solid #35516a;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+QTreeWidget {
+  background-color: #121b26;
+  color: #e6f0fb;
+  alternate-background-color: #101722;
+  border: 1px solid #29435b;
+}
+QTableWidget::item:selected, QTreeWidget::item:selected {
+  background-color: #1f4561;
+  color: #f6fbff;
+}
 QListWidget {
   background-color: #111925;
   border: 1px solid #2d4d66;

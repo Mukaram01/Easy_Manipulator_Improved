@@ -508,6 +508,59 @@ void MainWindow::toggle_full_screen()
   }
 }
 
+void MainWindow::show_studio_page(StudioPage page)
+{
+  if (studio_nav_) {
+    studio_nav_->setCurrentRow(static_cast<int>(page));
+  }
+}
+
+bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_action)
+{
+  if (selected_scene_index_ < 0 && dashboard_scene_table_ && dashboard_scene_table_->currentRow() >= 0) {
+    select_scene_by_row(dashboard_scene_table_->currentRow());
+  }
+  if (selected_scene_index_ < 0) {
+    QMessageBox::information(this, "Workcell Studio", "Select a scene first.");
+    append_studio_log(source_action + ": no scene selected.");
+    return false;
+  }
+  show_studio_page(StudioPage::SceneBuilderPage);
+  append_studio_log(
+    QString("%1: opened Scene Builder for '%2'.").arg(source_action, selected_scene_name()));
+  return true;
+}
+
+void MainWindow::open_new_scene_creation_flow()
+{
+  const QString scene_name = QInputDialog::getText(
+    this, "Create New Scene", "Scene name:", QLineEdit::Normal, "");
+  if (scene_name.trimmed().isEmpty()) {
+    return;
+  }
+  const fs::path scenes_root = fs::path(detect_workspace_root().toStdString()) / "src" / "scenes";
+  const fs::path scene_dir = scenes_root / scene_name.trimmed().toStdString();
+  boost::system::error_code ec;
+  fs::create_directories(scene_dir, ec);
+  fs::create_directories(scene_dir / "config", ec);
+  std::ofstream env_file((scene_dir / "environment.yaml").string(), std::ios::out | std::ios::trunc);
+  env_file << "scene_name: " << scene_name.trimmed().toStdString() << "\n";
+  env_file << "fake_hardware_first: true\n";
+  env_file << "runtime_execution_enabled: false\n";
+  env_file.close();
+  if (!fs::exists(scene_dir / "package.xml")) {
+    QMessageBox::warning(this, "Workcell Studio", "Created minimal scene scaffold. Generate Scene Package next.");
+  }
+  refresh_scene_browser_ui();
+  for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
+    if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == scene_name.trimmed().toStdString()) {
+      select_scene_by_row(i);
+      break;
+    }
+  }
+  open_scene_builder_for_selected_scene("Create New Scene");
+}
+
 void MainWindow::setup_studio_shell()
 {
   QWidget * content = ui->centralwidget;
@@ -519,7 +572,7 @@ void MainWindow::setup_studio_shell()
 
   // status badge | safety banner | scene overview | digital twin preview | command console
   studio_nav_ = new QListWidget(content);
-  studio_nav_->addItems({"🏠 Dashboard","🧩 New Cell","🛠 Scene Builder","📚 Existing Scenes","🧪 Scenario Templates","📦 Asset Browser","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
+  studio_nav_->addItems({"🏠 Dashboard","🛠 Scene Builder","📚 Existing Scenes","🎬 Demo Mode","🚀 Preview Launch","🩺 Diagnostics","✅ Validation","📤 Export"});
   studio_nav_->hide();
   studio_pages_ = new QStackedWidget(content);
 
@@ -884,7 +937,14 @@ void MainWindow::setup_studio_shell()
   export_more_actions_button_->setMenu(export_more_menu);
   exl->addWidget(export_more_actions_button_);
 
-  studio_pages_->addWidget(dashboard); studio_pages_->addWidget(scene_builder); studio_pages_->addWidget(existing); studio_pages_->addWidget(demo); studio_pages_->addWidget(preview); studio_pages_->addWidget(diagnostics); studio_pages_->addWidget(validation); studio_pages_->addWidget(export_page);
+  studio_pages_->addWidget(dashboard);  // DashboardPage
+  studio_pages_->addWidget(scene_builder);  // SceneBuilderPage
+  studio_pages_->addWidget(existing);  // ExistingScenesPage
+  studio_pages_->addWidget(demo);  // DemoModePage
+  studio_pages_->addWidget(preview);  // PlanSimulatePage
+  studio_pages_->addWidget(diagnostics);  // DiagnosticsPage
+  studio_pages_->addWidget(validation);  // ValidationPage
+  studio_pages_->addWidget(export_page);  // ExportPage
   auto * body=new QHBoxLayout(); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
   studio_log_=new QTextEdit(content); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(160); studio_log_->setPlaceholderText("Readiness | Logs | Commands | Reports"); studio_log_->setStyleSheet("QTextEdit{color:#e5e7eb;background:#111827;border:1px solid #374151;}"); root_layout->addWidget(studio_log_);
   preview_process_ = new QProcess(this);
@@ -898,14 +958,19 @@ void MainWindow::setup_studio_shell()
     if (label == "Generate Scene") button->setProperty("role", "primary");
     if (label == "Open Scene" || label == "Export") button->setProperty("role", "secondary");
     connect(button, &QPushButton::clicked, this, [this, label]() {
+      if (label == "Dashboard") {
+        show_studio_page(StudioPage::DashboardPage);
+        append_studio_log("Dashboard: switched to dashboard page.");
+        return;
+      }
       if (label == "New Cell") {
         append_studio_log("New Cell: opening scene creation flow.");
-        studio_nav_->setCurrentRow(1);
+        open_new_scene_creation_flow();
         return;
       }
       if (label == "Open Scene") {
         append_studio_log("Open Scene: switching to Existing Scenes.");
-        studio_nav_->setCurrentRow(3);
+        show_studio_page(StudioPage::ExistingScenesPage);
         if (!scene_browser_result_.scenes.empty()) {
           select_scene_by_row(std::max(0, selected_scene_index_));
         }
@@ -913,13 +978,13 @@ void MainWindow::setup_studio_shell()
       }
       if (label == "Validate") {
         append_studio_log(QString("Validate: offline validation for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
-        studio_nav_->setCurrentRow(9);
-        run_preview_build();
+        show_studio_page(StudioPage::ValidationPage);
+        run_offline_validation();
         return;
       }
       if (label == "Plan & Simulate") {
         append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name()));
-        studio_nav_->setCurrentRow(7);
+        show_studio_page(StudioPage::PlanSimulatePage);
         refresh_preview_launch_ui();
   refresh_new_cell_checklist();
         return;
@@ -931,8 +996,7 @@ void MainWindow::setup_studio_shell()
       }
       if (label == "Export") {
         append_studio_log(QString("Export: opening export actions for scene '%1'.").arg(selected_scene_name()));
-        studio_nav_->setCurrentRow(10);
-        open_selected_scene_artifact("demo_dashboard");
+        show_studio_page(StudioPage::ExportPage);
         return;
       }
     });
@@ -948,10 +1012,9 @@ void MainWindow::setup_studio_shell()
   auto * top_more_menu = new QMenu(top_more_actions);
   top_more_menu->addAction("Demo Mode", this, [this](){
     append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
-    studio_nav_->setCurrentRow(6);
-    open_selected_scene_artifact("run_smoke");
+    show_studio_page(StudioPage::DemoModePage);
   });
-  top_more_menu->addAction("Open Diagnostics", this, [this](){ studio_nav_->setCurrentRow(8); });
+  top_more_menu->addAction("Open Diagnostics", this, [this](){ show_studio_page(StudioPage::DiagnosticsPage); });
   top_more_menu->addAction("Open Validation Report", this, [this](){ open_validation_report(); });
   top_more_actions->setMenu(top_more_menu);
   top_bar->addWidget(top_more_actions);
@@ -965,13 +1028,13 @@ void MainWindow::setup_studio_shell()
   top_bar->addWidget(diagnostics_indicator_label_);
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
-  studio_nav_->setCurrentRow(0);
-  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); studio_nav_->setCurrentRow(2); });
-  connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ >= 0) { studio_nav_->setCurrentRow(2); append_studio_log("Open in Scene Builder: switched to Scene Builder"); }});
+  show_studio_page(StudioPage::DashboardPage);
+  connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int){ select_scene_by_row(row); open_scene_builder_for_selected_scene("Dashboard double-click"); });
+  connect(dash_open_scene_builder, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
   connect(dash_validate, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); open_selected_scene_artifact("run_acceptance"); });
-  connect(dash_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
-  connect(dash_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Export: switched to export page"); });
-  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){studio_nav_->setCurrentRow(2);} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
+  connect(dash_preview, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
+  connect(dash_export, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
+  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
   connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
   connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
@@ -988,11 +1051,11 @@ void MainWindow::setup_studio_shell()
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
-  connect(go_validation, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(9); append_studio_log("Go to Validation: switched to Validation page"); });
-  connect(go_preview, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Go to Plan & Simulate: switched to Plan & Simulate page"); });
-  connect(go_export, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(10); append_studio_log("Go to Export: switched to Export page"); });
-  connect(go_scene_builder, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(2); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
-  connect(go_preview_commands, &QPushButton::clicked, this, [this](){ studio_nav_->setCurrentRow(7); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
+  connect(go_validation, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ValidationPage); append_studio_log("Go to Validation: switched to Validation page"); });
+  connect(go_preview, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); refresh_preview_launch_ui(); append_studio_log("Go to Plan & Simulate: switched to Plan & Simulate page"); });
+  connect(go_export, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Go to Export: switched to Export page"); });
+  connect(go_scene_builder, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::SceneBuilderPage); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
+  connect(go_preview_commands, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
   connect(run_build_button_, &QPushButton::clicked, this, &MainWindow::run_preview_build);
   connect(run_preview_button_, &QPushButton::clicked, this, &MainWindow::run_fake_hardware_preview);
   connect(stop_preview_button_, &QPushButton::clicked, this, &MainWindow::stop_preview_process);
@@ -1172,7 +1235,7 @@ void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_
 void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
-void MainWindow::preview_offline_plan_for_selected_scene(){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
+void MainWindow::preview_offline_plan_for_selected_scene(){ show_studio_page(StudioPage::PlanSimulatePage); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
 QString MainWindow::selected_scene_binding_id() const
 {
   if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
@@ -1714,14 +1777,11 @@ void MainWindow::setup_compact_header()
   studio_workspace_path_ = new QLineEdit(header);
   studio_workspace_path_->setReadOnly(true);
   studio_workspace_path_->setMinimumWidth(280);
-  studio_change_workspace_button_ = new QPushButton("Change Workspace", header);
-  connect(studio_change_workspace_button_, &QPushButton::clicked, this, &MainWindow::on_change_workcell_clicked);
   hl->addWidget(studio_title_label_);
   hl->addSpacing(12);
   hl->addWidget(studio_ros_label_);
   hl->addSpacing(12);
   hl->addWidget(studio_workspace_path_, 1);
-  hl->addWidget(studio_change_workspace_button_);
   root_layout->insertWidget(0, header);
 }
 
