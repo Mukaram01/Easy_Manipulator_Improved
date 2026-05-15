@@ -49,6 +49,11 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsRectItem>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsPolygonItem>
+#include <QGraphicsSimpleTextItem>
+#include <QPen>
+#include <QBrush>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QSvgGenerator>
@@ -105,7 +110,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
 
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
@@ -249,6 +254,25 @@ QString id_prefix_from_category(const QString & category){
   if (c.contains("place_zone")) return "place_zone";
   if (c.contains("fixture")) return "fixture";
   return "object";
+}
+
+
+
+static QColor category_color(const QString & category)
+{
+  const QString c = normalized_slug(category);
+  if (c.contains("robot")) return QColor("#4fa3ff");
+  if (c.contains("effector")) return QColor("#8bc34a");
+  if (c.contains("camera") || c.contains("sensor")) return QColor("#ffd166");
+  if (c.contains("table") || c.contains("surface")) return QColor("#8d99ae");
+  if (c.contains("conveyor")) return QColor("#f4a261");
+  if (c.contains("bin")) return QColor("#9d4edd");
+  if (c.contains("pick")) return QColor("#00d1b2");
+  if (c.contains("place")) return QColor("#ff7b72");
+  if (c.contains("fixture")) return QColor("#f28482");
+  if (c.contains("safety")) return QColor("#ff595e");
+  if (c.contains("import") || c.contains("stl")) return QColor("#adb5bd");
+  return QColor("#5b6472");
 }
 
 QPointF default_xy_for_category(const QString & category){
@@ -750,7 +774,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(import_asset_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_button, &QPushButton::clicked, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_button, &QPushButton::clicked, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
-  connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size() || !digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const fs::path out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.svg"; fs::create_directories(out.parent_path()); QSvgGenerator gen; gen.setFileName(QString::fromStdString(out.string())); gen.setSize(QSize(1280, 800)); QPainter painter(&gen); digital_twin_canvas_->scene()->render(&painter); painter.end(); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
+  connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; fs::path out; if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) { const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png"; } else { out = fs::path(diagnostics_output_root().toStdString()) / "preview" / "workcell_studio_canvas_snapshot.png"; } fs::create_directories(out.parent_path()); QImage image(1280, 800, QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#0f131a")); QPainter painter(&image); digital_twin_canvas_->scene()->render(&painter); painter.end(); image.save(QString::fromStdString(out.string())); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
@@ -1545,12 +1569,34 @@ void MainWindow::rebuild_digital_twin_canvas()
     connect(digital_twin_scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::on_canvas_selection_changed);
   }
   digital_twin_scene_->clear();
+  digital_twin_scene_->setSceneRect(-400, -300, 1200, 900);
+  digital_twin_canvas_->setBackgroundBrush(QColor("#10161f"));
+
+  if (toggle_grid_box_ && toggle_grid_box_->isChecked()) {
+    QPen grid_pen(QColor("#1f2a36")); grid_pen.setWidth(1);
+    for (int x = -400; x <= 800; x += 40) digital_twin_scene_->addLine(x, -300, x, 600, grid_pen);
+    for (int y = -300; y <= 600; y += 40) digital_twin_scene_->addLine(-400, y, 800, y, grid_pen);
+  }
+  QPen axis_pen(QColor("#3a4b5c")); axis_pen.setWidth(2);
+  digital_twin_scene_->addLine(-400, 0, 800, 0, axis_pen); digital_twin_scene_->addLine(0, -300, 0, 600, axis_pen);
+  auto * origin = digital_twin_scene_->addEllipse(-4, -4, 8, 8, QPen(QColor("#d9e2ec")), QBrush(QColor("#d9e2ec")));
+  origin->setToolTip("World origin marker");
+
   if (selected_scene_index_ < 0) return;
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+
+  digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
+  auto * robot_base = digital_twin_scene_->addEllipse(-14, -14, 28, 28, QPen(QColor("#60a5fa"), 2), QBrush(QColor("#1d4ed8")));
+  robot_base->setToolTip("Robot base marker");
+
   for (const auto & entry : model.items) {
-    auto * item = new DraggableCanvasItem(QRectF(0, 0, entry.width * 100.0, entry.depth * 100.0));
+    const QString category = QString::fromStdString(entry.type);
+    auto * item = new DraggableCanvasItem(QRectF(0, 0, std::max(20.0, entry.width * 100.0), std::max(20.0, entry.depth * 100.0)));
     item->setPos(entry.x * 100.0, entry.y * 100.0);
+    item->setPen(QPen(category_color(category).lighter(130), 2));
+    item->setBrush(QBrush(category_color(category), Qt::SolidPattern));
+    item->setToolTip(QString("%1 (%2)").arg(QString::fromStdString(entry.label), category));
     item->setData(RoleId, QString::fromStdString(entry.id));
     item->setData(RoleDisplayName, QString::fromStdString(entry.label));
     item->setData(RoleType, QString::fromStdString(entry.type));
@@ -1561,13 +1607,38 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleRoll, entry.roll); item->setData(RolePitch, entry.pitch); item->setData(RoleYaw, entry.yaw);
     item->setData(RoleSource, QString::fromStdString(entry.source_file));
     item->setData(RoleSourcePackage, QString(""));
-    item->setData(RoleWidth, entry.width);
-    item->setData(RoleDepth, entry.depth);
-    item->setData(RoleHeight, entry.height);
-    item->setData(RoleImported, false);
-    item->setData(RoleGeneratedPlaceholder, false);
+    item->setData(RoleWidth, entry.width); item->setData(RoleDepth, entry.depth); item->setData(RoleHeight, entry.height);
+    item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, false);
+    item->setData(RoleWarning, QString::fromStdString(entry.warning));
+    item->setData(RolePoseText, QString("x=%1 y=%2 z=%3 r=%4 p=%5 y=%6").arg(entry.x).arg(entry.y).arg(entry.z).arg(entry.roll).arg(entry.pitch).arg(entry.yaw));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     digital_twin_scene_->addItem(item);
+
+    if (toggle_labels_box_ && toggle_labels_box_->isChecked()) {
+      auto * txt = digital_twin_scene_->addSimpleText(QString::fromStdString(entry.label));
+      txt->setBrush(QBrush(QColor("#d8dee9"))); txt->setPos(item->pos() + QPointF(0, -18));
+    }
+    if (category.contains("camera", Qt::CaseInsensitive)) {
+      QPolygonF fov; fov << QPointF(item->pos().x()+12, item->pos().y()+12) << QPointF(item->pos().x()+150, item->pos().y()-40) << QPointF(item->pos().x()+150, item->pos().y()+64);
+      digital_twin_scene_->addPolygon(fov, QPen(QColor("#ffd166"), 2), QBrush(QColor(255, 209, 102, 45))); // camera FOV wedge/cone
+    }
+    if (category.contains("pick", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
+    if (category.contains("place", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
+    if (toggle_warnings_box_ && toggle_warnings_box_->isChecked() && !item->data(RoleWarning).toString().isEmpty()) {
+      auto * w = digital_twin_scene_->addSimpleText(QString("⚠ %1").arg(item->data(RoleWarning).toString()));
+      w->setBrush(QBrush(QColor("#ff8e72"))); w->setPos(item->pos() + QPointF(0, item->boundingRect().height() + 4));
+    }
+  }
+
+  if (toggle_warnings_box_ && toggle_warnings_box_->isChecked()) {
+    QStringList issues;
+    if (!s.has_environment_yaml) issues << "missing environment.yaml";
+    if (!s.has_package_xml) issues << "missing package.xml";
+    if (!s.has_launch_file) issues << "missing launch/demo.launch.py";
+    auto task = load_scene_task_intent_summary(s.scene_dir);
+    if (task.status != "READY") issues << "missing task intent";
+    if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
+    if (!issues.isEmpty()) digital_twin_scene_->addSimpleText("Safety Warning Overlay: " + issues.join(" | "))->setPos(-380, -280);
   }
 }
 
@@ -1578,7 +1649,10 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   inspector_label_->setText("Inspector selection: " + item->data(RoleId).toString() + " [" + item->data(RoleType).toString() + "]");
   inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
   inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
-  live_coordinate_label_->setText(QString("Live coordinates: x=%1 y=%2").arg(inspector_x_->value()).arg(inspector_y_->value()));
+  live_coordinate_label_->setText(QString("Live coordinates: x=%1 y=%2 | %3").arg(inspector_x_->value()).arg(inspector_y_->value()).arg(item->data(RolePoseText).toString()));
+  inspector_warning_label_->setText("Warnings: " + (item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString()));
+  if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QString("
+Linked hierarchy item: %1").arg(item->data(RoleId).toString()));
   inspector_update_guard_ = false;
 }
 
@@ -1624,7 +1698,7 @@ void MainWindow::revert_layout_changes()
   append_studio_log("Revert Layout requested");
 }
 
-void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; select_canvas_item(digital_twin_scene_->selectedItems().front()); }
+void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto * sel=digital_twin_scene_->selectedItems().front(); if (auto * rect=qgraphicsitem_cast<QGraphicsRectItem*>(sel)) rect->setPen(QPen(QColor("#f8fafc"),3)); select_canvas_item(sel); }
 void MainWindow::on_canvas_item_moved(QGraphicsItem *, const QPointF &, const QPointF &, const QString & reason){ mark_layout_dirty(reason); }
 void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
@@ -1701,11 +1775,14 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   const QString category = item->data(0, Qt::UserRole + 2).toString();
   const QString pose = item->data(0, Qt::UserRole + 3).toString();
   const QString source = item->data(0, Qt::UserRole + 4).toString();
-  inspector_label_->setText(QString("Selected: %1
-Category: %2
-Pose: %3
-Source: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
+  inspector_label_->setText(QString("Selected: %1\nCategory: %2\nPose: %3\nSource: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
   live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(name, pose.isEmpty()?"pose unknown":pose));
+  if (!digital_twin_scene_) return;
+  for (auto * gi : digital_twin_scene_->items()) {
+    if (gi->data(RoleId).toString() == item->data(0, Qt::UserRole + 1).toString() || gi->data(RoleDisplayName).toString() == name) {
+      digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi); return;
+    }
+  }
 }
 
 void MainWindow::populate_scene_hierarchy()
