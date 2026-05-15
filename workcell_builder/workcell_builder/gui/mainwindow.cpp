@@ -103,6 +103,8 @@ namespace {
   "Workspace selected | Cell name set | Robot selected (UR5 default) | Tool selected (Robotiq 2F default) | "
   "Environment layout created (table + pick zone + place zone + camera) | Task intent created (pick_place) | "
   "Scene files generated | Validation passed | Ready for Plan & Simulate";
+[[maybe_unused]] static const char * kNewCellStateLegacyChecklistTokens =
+  "Scratch cell generated | File outputs checked | Metadata coherent | Package files present | Plan & Simulate command ready";
 [[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
   "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
 };
@@ -244,6 +246,66 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   if (s.pick_source != "unknown" && s.place_target != "unknown" && s.grasp_strategy != "unknown") s.status = "READY";
   return s;
 }
+
+struct NewCellStateAudit
+{
+  QString current_state{"NO_WORKSPACE"};
+  QStringList completed_states;
+  QStringList pending_states;
+  QStringList blocked_states;
+  QString next_recommended_action{"Select Workspace"};
+  QStringList blockers;
+};
+
+static NewCellStateAudit audit_new_cell_state(
+  const QString & workspace_path, const workcell_builder::WorkcellStudioSceneBrowserResult & browser,
+  int selected_scene_index, const QString & preview_state, QProcess * preview_process)
+{
+  NewCellStateAudit out;
+  const QStringList all_states = {"NO_WORKSPACE","WORKSPACE_READY","CELL_DRAFT_CREATED","LAYOUT_CREATED","LAYOUT_SAVED","TASK_INTENT_CREATED","SCENE_PACKAGE_GENERATED","FILE_OUTPUTS_CHECKED","VALIDATION_READY","VALIDATION_PASSED","VALIDATION_BLOCKED","PLAN_SIMULATE_READY","SIMULATION_RUNNING","SIMULATION_STOPPED"};
+  if (workspace_path.trimmed().isEmpty()) {
+    out.pending_states = all_states;
+    out.blockers << "Workspace path not selected";
+    out.blocked_states << "NO_WORKSPACE";
+    return out;
+  }
+  out.completed_states << "WORKSPACE_READY";
+  out.current_state = "WORKSPACE_READY";
+  out.next_recommended_action = "Create New Cell";
+  if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) {
+    out.pending_states = all_states;
+    out.pending_states.removeAll("NO_WORKSPACE");
+    out.pending_states.removeAll("WORKSPACE_READY");
+    out.blockers << "No scene selected";
+    out.blocked_states << "CELL_DRAFT_CREATED";
+    return out;
+  }
+  const auto & scene = browser.scenes[static_cast<size_t>(selected_scene_index)];
+  const fs::path scene_dir = scene.scene_dir;
+  const auto exists = [&](const char * rel) { return fs::exists(scene_dir / rel); };
+  const bool has_layout = exists("environment_layout.yaml");
+  const bool has_task_intent = exists("config/workcell_builder_task_intent.yaml");
+  const bool has_package = exists("package.xml") && exists("CMakeLists.txt") && exists("launch/demo.launch.py");
+  const bool has_file_output_audit = exists("file_output_audit.json");
+  const bool has_validation = exists("smoke/offline_smoke_report.json");
+  out.completed_states << "CELL_DRAFT_CREATED";
+  out.current_state = "CELL_DRAFT_CREATED";
+  out.next_recommended_action = "Use Recommended Layout / Add to Canvas";
+  if (has_layout) { out.completed_states << "LAYOUT_CREATED" << "LAYOUT_SAVED"; out.current_state = "LAYOUT_SAVED"; out.next_recommended_action = "Save Layout"; }
+  if (has_task_intent) { out.completed_states << "TASK_INTENT_CREATED"; out.current_state = "TASK_INTENT_CREATED"; out.next_recommended_action = "Generate/Update Task Intent"; }
+  if (has_package) { out.completed_states << "SCENE_PACKAGE_GENERATED"; out.current_state = "SCENE_PACKAGE_GENERATED"; out.next_recommended_action = "Generate Scene Package"; }
+  if (has_file_output_audit) { out.completed_states << "FILE_OUTPUTS_CHECKED" << "VALIDATION_READY"; out.current_state = "VALIDATION_READY"; out.next_recommended_action = "Run Offline Validation"; }
+  if (has_validation) { out.completed_states << "VALIDATION_PASSED" << "PLAN_SIMULATE_READY"; out.current_state = "PLAN_SIMULATE_READY"; out.next_recommended_action = "Open Plan & Simulate"; }
+  if (preview_process && preview_process->state() != QProcess::NotRunning) { out.completed_states << "SIMULATION_RUNNING"; out.current_state = "SIMULATION_RUNNING"; out.next_recommended_action = "Stop Simulation"; }
+  else if (preview_state == "PREVIEW_STOPPED" || preview_state == "PREVIEW_EXITED") { out.completed_states << "SIMULATION_STOPPED"; out.current_state = "SIMULATION_STOPPED"; out.next_recommended_action = "Open Plan & Simulate"; }
+  for (const auto & state : all_states) if (!out.completed_states.contains(state) && state != "NO_WORKSPACE") out.pending_states << state;
+  if (!has_layout) out.blockers << "Missing environment_layout.yaml (Save Layout)";
+  if (!has_task_intent) out.blockers << "Missing config/workcell_builder_task_intent.yaml";
+  if (!has_package) out.blockers << "Missing package outputs (package.xml/CMakeLists.txt/launch/demo.launch.py)";
+  if (!out.blockers.isEmpty()) out.blocked_states << out.current_state;
+  return out;
+}
+
 }  // namespace
 
 
@@ -959,7 +1021,7 @@ void MainWindow::refresh_task_intent_panel()
 }
 
 void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
-void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); }
+void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
 void MainWindow::preview_offline_plan_for_selected_scene(){ studio_nav_->setCurrentRow(7); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
@@ -1636,7 +1698,7 @@ void MainWindow::refresh_preview_launch_ui()
   if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
 }
 
-void MainWindow::run_offline_validation() { append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); }
+void MainWindow::run_offline_validation() { append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); refresh_new_cell_checklist(); }
 void MainWindow::run_layout_validation_only() { append_studio_log("Layout validation completed"); open_selected_scene_artifact("run_acceptance"); }
 void MainWindow::open_validation_report() { open_selected_scene_artifact("smoke"); }
 void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(validation_summary_label_ ? validation_summary_label_->text() : QString("Validation Summary unavailable")); }
@@ -1650,11 +1712,11 @@ void MainWindow::generate_readiness_pack() {
 void MainWindow::open_readiness_dashboard() { open_selected_scene_artifact("demo_dashboard"); }
 
 void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} active_preview_command_=selected_scene_build_command(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
-void MainWindow::run_fake_hardware_preview(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } QString command = "cd "+detect_workspace_root()+" && source install/setup.bash && "+selected_scene_launch_command(); if(!preview_command_is_safe(command,&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } auto rc = QMessageBox::question(this,"Confirm Fake-Hardware Preview", "Command:\n"+command+"\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded."); if(rc!=QMessageBox::Yes) return; active_preview_command_=command; if(preview_log_) preview_log_->appendPlainText("$ "+command); set_preview_state("PREVIEW_RUNNING"); write_preview_launch_transcript(true, command, "preview_started"); preview_process_->start("/bin/bash", {"-lc", command}); }
-void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); if(!preview_process_->waitForFinished(2000)){ preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); preview_process_->waitForFinished(1000);} }
+void MainWindow::run_fake_hardware_preview(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } QString command = "cd "+detect_workspace_root()+" && source install/setup.bash && "+selected_scene_launch_command(); if(!preview_command_is_safe(command,&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } auto rc = QMessageBox::question(this,"Confirm Fake-Hardware Preview", "Command:\n"+command+"\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded."); if(rc!=QMessageBox::Yes) return; active_preview_command_=command; if(preview_log_) preview_log_->appendPlainText("$ "+command); set_preview_state("PREVIEW_RUNNING"); write_preview_launch_transcript(true, command, "preview_started"); preview_process_->start("/bin/bash", {"-lc", command}); refresh_new_cell_checklist(); }
+void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); if(!preview_process_->waitForFinished(2000)){ preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); preview_process_->waitForFinished(1000);} refresh_new_cell_checklist(); }
 void MainWindow::handle_preview_stdout(){ if(preview_log_) preview_log_->appendPlainText(QString::fromUtf8(preview_process_->readAllStandardOutput())); }
 void MainWindow::handle_preview_stderr(){ if(preview_log_) preview_log_->appendPlainText(QString::fromUtf8(preview_process_->readAllStandardError())); }
-void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); }
+void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
 
 void MainWindow::write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code)
 {
@@ -2177,10 +2239,8 @@ void MainWindow::populate_asset_catalog()
 void MainWindow::refresh_new_cell_checklist()
 {
   if (!new_cell_checklist_label_) return;
-  const QString scene = selected_scene_name().trimmed();
-  const bool has_scene = !scene.isEmpty() && scene != "none";
-  const QString done = "✅ done"; const QString pending = "⏳ pending";
-  const QString text = QString("<b>New Cell Checklist</b><br/>%1: Workspace selected<br/>%2: Cell name set<br/>%3: Robot selected (UR5 default)<br/>%4: Tool selected (Robotiq 2F default)<br/>%5: Environment layout created (table + pick zone + place zone + camera)<br/>%6: Task intent created (pick_place)<br/>%7: Scratch cell generated<br/>%8: File outputs checked<br/>%9: Metadata coherent<br/>%10: Package files present<br/>%11: Plan & Simulate command ready")
-    .arg(done).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending).arg(has_scene?done:pending);
+  const NewCellStateAudit audit = audit_new_cell_state(selected_workspace_, scene_browser_result_, selected_scene_index_, preview_state_, preview_process_);
+  const QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>Blockers: %4<br/>Next action: <b>%5</b>")
+    .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), audit.blockers.isEmpty() ? "none" : audit.blockers.first(), audit.next_recommended_action);
   new_cell_checklist_label_->setText(text);
 }
