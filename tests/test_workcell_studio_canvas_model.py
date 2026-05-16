@@ -19,3 +19,21 @@ def test_canvas_model_depth_and_fallback_schema_tokens_present():
     c = (ROOT / "workcell_builder/workcell_builder/src_workcell_studio_canvas_model.cpp").read_text(encoding="utf-8")
     for token in ["items[].size.depth", "size.depth", "has invalid or missing schema_version", "layout/workcell_studio_layout.yaml is missing"]:
         assert token in c
+
+
+def test_canvas_model_fallback_role_anchor_tokens_and_log_token_present():
+    c = (ROOT / "workcell_builder/workcell_builder/src_workcell_studio_canvas_model.cpp").read_text(encoding="utf-8")
+    for token in [
+        "item.role == \"robot\"",
+        "item.role == \"table\"",
+        "item.role == \"conveyor\"",
+        "item.role == \"pick_zone\"",
+        "item.role == \"place_zone\"",
+        "item.role == \"bin\"",
+        "item.role == \"camera\"",
+        "item.role.find(\"safety\") != std::string::npos",
+        "item.role == \"object\"",
+        "Using deterministic 3D fallback layout because layout metadata is incomplete.",
+        "layout/workcell_studio_layout.yaml has incomplete placement metadata",
+    ]:
+        assert token in c
