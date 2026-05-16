@@ -50,6 +50,28 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
   return NormalizedRole::Generic;
 }
 
+
+
+bool include_in_fit_bounds_physical_only(const ScenePreviewWidget::PreviewItem & it)
+{
+  // FIT_PHYSICAL_ONLY_FILTER: keep fit_scene() bounds focused on physical geometry.
+  const NormalizedRole role = classify_item_role(it);
+  switch (role) {
+    case NormalizedRole::SafetyZone:
+    case NormalizedRole::WarningAnchor:
+      return false;  // FIT_EXCLUDE_OVERLAY_ONLY: safety envelope + warning markers.
+    case NormalizedRole::RobotBase:
+    case NormalizedRole::Table:
+    case NormalizedRole::Conveyor:
+    case NormalizedRole::Camera:
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
+    case NormalizedRole::Object:
+    case NormalizedRole::Generic:
+      return true;
+  }
+  return true;
+}
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
   switch (classify_item_role(it)) {
@@ -86,7 +108,10 @@ void Scene3DViewportWidget::fit_scene() {
   if (items.isEmpty()) { set_isometric_view(); return; }
   QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
   QVector3D bmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  bool has_physical_item = false;
   for (const auto & it : items) {
+    if (!include_in_fit_bounds_physical_only(it)) continue;
+    has_physical_item = true;
     bmin.setX(std::min(bmin.x(), static_cast<float>(it.x)));
     bmin.setY(std::min(bmin.y(), static_cast<float>(it.y)));
     bmin.setZ(std::min(bmin.z(), static_cast<float>(it.z)));
@@ -94,6 +119,7 @@ void Scene3DViewportWidget::fit_scene() {
     bmax.setY(std::max(bmax.y(), static_cast<float>(it.y + it.sy)));
     bmax.setZ(std::max(bmax.z(), static_cast<float>(it.z + it.sz)));
   }
+  if (!has_physical_item) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
