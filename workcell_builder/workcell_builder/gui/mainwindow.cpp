@@ -51,6 +51,7 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsSimpleTextItem>
+#include <QScrollBar>
 #include <QPen>
 #include <QBrush>
 #include <QCheckBox>
@@ -882,7 +883,7 @@ void MainWindow::setup_studio_shell()
   unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder);
   toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
   toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true);
-  auto * minimap_toggle = new QCheckBox("Minimap", scene_builder); minimap_toggle->setChecked(true);
+  show_minimap_box_ = new QCheckBox("Show Minimap", scene_builder); show_minimap_box_->setChecked(true);
   auto * overlays_button = new QToolButton(scene_builder); overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
@@ -918,7 +919,7 @@ void MainWindow::setup_studio_shell()
   auto * snap_action = canvas_more_menu->addAction("Snap/Grid settings"); snap_action->setCheckable(true); snap_action->setChecked(true);
   auto * fine_move_action = canvas_more_menu->addAction("Fine Move Mode"); fine_move_action->setCheckable(true);
   auto * unlock_action = canvas_more_menu->addAction("Unlock Robot Base"); unlock_action->setCheckable(true);
-  auto * minimap_action = canvas_more_menu->addAction("Minimap"); minimap_action->setCheckable(true); minimap_action->setChecked(true);
+  auto * minimap_action = canvas_more_menu->addAction("Show Minimap"); minimap_action->setCheckable(true); minimap_action->setChecked(true);
   canvas_more_menu->addSeparator();
   canvas_more_menu->addAction("Toggle Labels")->setCheckable(true);
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
@@ -1354,9 +1355,14 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(fine_move_mode_box_, &QCheckBox::toggled, fine_move_action, &QAction::setChecked);
   connect(unlock_action, &QAction::toggled, unlock_robot_base_box_, &QCheckBox::setChecked);
   connect(unlock_robot_base_box_, &QCheckBox::toggled, unlock_action, &QAction::setChecked);
-  connect(minimap_action, &QAction::toggled, minimap_toggle, &QCheckBox::setChecked);
-  connect(minimap_toggle, &QCheckBox::toggled, minimap_action, &QAction::setChecked);
-  connect(minimap_toggle, &QCheckBox::toggled, this, [this](bool on){ if(minimap_view_) minimap_view_->setVisible(on); });
+  connect(minimap_action, &QAction::toggled, show_minimap_box_, &QCheckBox::setChecked);
+  connect(show_minimap_box_, &QCheckBox::toggled, minimap_action, &QAction::setChecked);
+  connect(show_minimap_box_, &QCheckBox::toggled, this, [this](bool on){
+    minimap_requested_visible_ = on;
+    refresh_minimap_card();
+  });
+  connect(digital_twin_canvas_->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int){ refresh_minimap_card(); });
+  connect(digital_twin_canvas_->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int){ refresh_minimap_card(); });
   for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
@@ -2766,6 +2772,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     const QRectF bounds = digital_twin_canvas_->scene()->itemsBoundingRect();
     if (!bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24, -24, 24, 24), Qt::KeepAspectRatio);
   }
+  refresh_minimap_card();
 }
 
 void MainWindow::refresh_scene_builder_left_explorer()
@@ -2801,13 +2808,32 @@ void MainWindow::refresh_minimap_card()
   if (!minimap_view_ || !digital_twin_scene_) return;
   if (!minimap_scene_) minimap_scene_ = new QGraphicsScene(minimap_view_);
   minimap_scene_->clear();
-  minimap_scene_->setSceneRect(digital_twin_scene_->sceneRect());
+  QRectF physical_bounds;
+  bool has_physical_items = false;
   for (auto * gi : digital_twin_scene_->items()) {
     if (!gi->data(RoleRole).isValid() || gi->data(RoleRole).toString() != "asset") continue;
+    if (!has_physical_items) {
+      physical_bounds = gi->sceneBoundingRect();
+      has_physical_items = true;
+    } else {
+      physical_bounds = physical_bounds.united(gi->sceneBoundingRect());
+    }
     minimap_scene_->addRect(gi->sceneBoundingRect(), QPen(QColor("#94a3b8"), 1), QBrush(QColor(148,163,184,90)));
   }
+  if (!has_physical_items) {
+    minimap_view_->setVisible(false);
+    return;
+  }
+  const QRectF padded_bounds = physical_bounds.adjusted(-20.0, -20.0, 20.0, 20.0);
+  minimap_scene_->setSceneRect(padded_bounds);
+  if (digital_twin_canvas_) {
+    const QRect viewport = digital_twin_canvas_->viewport()->rect();
+    const QRectF visible_rect = digital_twin_canvas_->mapToScene(viewport).boundingRect();
+    minimap_scene_->addRect(visible_rect, QPen(QColor("#38bdf8"), 2), Qt::NoBrush);
+  }
   minimap_view_->setScene(minimap_scene_);
-  minimap_view_->fitInView(minimap_scene_->sceneRect(), Qt::KeepAspectRatio);
+  minimap_view_->setVisible(minimap_requested_visible_);
+  minimap_view_->fitInView(padded_bounds, Qt::KeepAspectRatio);
 }
 
 void MainWindow::select_canvas_item(QGraphicsItem * item)
