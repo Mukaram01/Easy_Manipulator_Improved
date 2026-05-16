@@ -178,7 +178,6 @@ private:
   void refresh_scene_builder_left_explorer();
   void populate_scene_hierarchy();
   void populate_asset_catalog();
-  void populate_scene_files_tab();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
   void validate_asset_catalog_selection();
