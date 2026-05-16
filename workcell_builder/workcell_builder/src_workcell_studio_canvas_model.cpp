@@ -13,6 +13,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   WorkcellStudioCanvasModel m; m.scene_name = scene_name; m.status = "WARNINGS";
   std::string deterministic_fallback_reason;
   bool deterministic_fallback_layout = false;
+  bool warned_incomplete_placement_metadata = false;
   const auto enable_deterministic_fallback = [&](const std::string & reason) {
     if (deterministic_fallback_layout) return;
     deterministic_fallback_layout = true;
@@ -74,6 +75,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
   YAML::Node layout_items = yaml_map_key(layout, "items");
   if (layout_ok && schema_version == "workcell_studio_layout/v1") {
+    bool incomplete_placement_metadata = false;
     if (!layout_items.IsDefined() || !layout_items.IsSequence()) {
       if (layout_items.IsDefined()) add_warning("items", "expected sequence; skipping malformed items");
     } else {
@@ -89,18 +91,25 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (pose.IsDefined() && pose.IsMap()) {
             YAML::Node xyz = yaml_map_key(pose, "xyz");
             if (xyz.IsDefined() && xyz.IsSequence()) {
+              if (xyz.size() < 3) incomplete_placement_metadata = true;
               item.x = read_double_or_warn(yaml_seq_index(xyz, 0), "items[].pose.xyz[0]", item.x);
               item.y = read_double_or_warn(yaml_seq_index(xyz, 1), "items[].pose.xyz[1]", item.y);
               item.z = read_double_or_warn(yaml_seq_index(xyz, 2), "items[].pose.xyz[2]", item.z);
-            } else if (xyz.IsDefined()) add_warning("items[].pose.xyz", "expected sequence; using defaults");
+            } else if (xyz.IsDefined()) { add_warning("items[].pose.xyz", "expected sequence; using defaults"); incomplete_placement_metadata = true; }
+            else { incomplete_placement_metadata = true; }
             YAML::Node rpy = yaml_map_key(pose, "rpy");
             if (rpy.IsDefined() && rpy.IsSequence()) {
+              if (rpy.size() < 3) incomplete_placement_metadata = true;
               item.roll = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].pose.rpy[0]", item.roll);
               item.pitch = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].pose.rpy[1]", item.pitch);
               item.yaw = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].pose.rpy[2]", item.yaw);
-            } else if (rpy.IsDefined()) add_warning("items[].pose.rpy", "expected sequence; using defaults");
+            } else if (rpy.IsDefined()) { add_warning("items[].pose.rpy", "expected sequence; using defaults"); incomplete_placement_metadata = true; }
+            else { incomplete_placement_metadata = true; }
           } else if (pose.IsDefined()) {
             add_warning("items[].pose", "expected map; using defaults");
+            incomplete_placement_metadata = true;
+          } else {
+            incomplete_placement_metadata = true;
           }
         }
       }
@@ -149,22 +158,28 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       }
     }
     }
+    if (incomplete_placement_metadata) {
+      warned_incomplete_placement_metadata = true;
+      enable_deterministic_fallback("layout/workcell_studio_layout.yaml has incomplete placement metadata");
+    }
   } else if (layout_ok) {
     enable_deterministic_fallback("layout/workcell_studio_layout.yaml has invalid or missing schema_version");
   }
 
   if (deterministic_fallback_layout) {
     for (auto & item : m.items) {
-      if (item.id == "robot_base") { item.x = 0.0; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "table") { item.x = 0.7; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "conveyor") { item.x = -0.8; item.y = -0.3; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "pick_zone") { item.x = 0.55; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "place_zone") { item.x = 1.0; item.y = 0.1; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "bin_a") { item.x = 1.3; item.y = -0.5; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
-      else if (item.id == "camera") { item.x = -0.2; item.y = 1.0; item.z = 1.2; item.roll = 0.0; item.pitch = 0.0; item.yaw = -1.57; }
-      else if (item.id == "home_pose") { item.x = -0.4; item.y = 0.5; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      if (item.id == "robot_base" || item.role == "robot") { item.x = -0.90; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "table" || item.role == "table") { item.x = 0.0; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "conveyor" || item.role == "conveyor") { item.x = -1.30; item.y = -0.60; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "pick_zone" || item.role == "pick_zone") { item.x = -0.35; item.y = 0.15; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "place_zone" || item.role == "place_zone") { item.x = 0.75; item.y = 0.15; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "bin_a" || item.role == "bin") { item.x = 1.10; item.y = -0.35; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "camera" || item.role == "camera") { item.x = -0.10; item.y = 0.95; item.z = 1.45; item.roll = 0.0; item.pitch = -0.40; item.yaw = -1.20; }
+      else if (item.id == "home_pose" || item.role.find("safety") != std::string::npos) { item.x = 0.0; item.y = 0.95; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "object_a" || item.role == "object") { item.x = -0.25; item.y = 0.10; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
     }
-    m.warnings.push_back("Using deterministic 3D fallback layout because " + deterministic_fallback_reason + ".");
+    m.warnings.push_back("Using deterministic 3D fallback layout because layout metadata is incomplete.");
+    if (!deterministic_fallback_reason.empty() && !warned_incomplete_placement_metadata) m.warnings.push_back("Fallback detail: " + deterministic_fallback_reason + ".");
   }
 
   std::stable_sort(m.items.begin(), m.items.end(), [](const WorkcellStudioCanvasItem & a, const WorkcellStudioCanvasItem & b) {
