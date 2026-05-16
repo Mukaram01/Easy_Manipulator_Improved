@@ -4,6 +4,8 @@
 #include <QMatrix4x4>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QVector3D>
+#include <QVector4D>
 #include <QtMath>
 
 #include <algorithm>
@@ -30,13 +32,8 @@ void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
 void Scene3DViewportWidget::paintGL()
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  const float aspect = height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0f;
-  QMatrix4x4 proj;
-  proj.perspective(50.0f, aspect, 0.05f, 100.0f);
-  QMatrix4x4 view;
-  view.translate(0.0f, -0.5f, -6.0f * zoom_);
-  view.rotate(qRadiansToDegrees(pitch_), 1.0f, 0.0f, 0.0f);
-  view.rotate(qRadiansToDegrees(yaw_), 0.0f, 1.0f, 0.0f);
+  QMatrix4x4 proj, view;
+  camera_matrices(proj, view);
   glMatrixMode(GL_PROJECTION);
   glLoadMatrixf(proj.constData());
   glMatrixMode(GL_MODELVIEW);
@@ -53,12 +50,18 @@ void Scene3DViewportWidget::paintGL()
     if (it.category.contains("safety", Qt::CaseInsensitive)) transparent.push_back(&it);
     else solids.push_back(&it);
   }
-  for (const auto * it : solids) draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
+  for (const auto * it : solids) {
+    draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
+    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#f8fafc"));
+  }
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   std::sort(transparent.begin(), transparent.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
-  for (const auto * it : transparent) draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it), true);
+  for (const auto * it : transparent) {
+    draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it), true);
+    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#e2e8f0"));
+  }
   if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 96), true);
   glDisable(GL_BLEND);
 }
@@ -74,6 +77,30 @@ void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx,
   glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x + sx, y, z + sz);
   glEnd();
 }
+void Scene3DViewportWidget::draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width)
+{
+  glDisable(GL_CULL_FACE);
+  glLineWidth(line_width);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), 1.0f);
+  const double x = cx, y = cy, z = cz;
+  glBegin(GL_LINES);
+  glVertex3f(x, y, z); glVertex3f(x + sx, y, z);
+  glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z);
+  glVertex3f(x + sx, y + sy, z); glVertex3f(x, y + sy, z);
+  glVertex3f(x, y + sy, z); glVertex3f(x, y, z);
+
+  glVertex3f(x, y, z + sz); glVertex3f(x + sx, y, z + sz);
+  glVertex3f(x + sx, y, z + sz); glVertex3f(x + sx, y + sy, z + sz);
+  glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x, y + sy, z + sz);
+  glVertex3f(x, y + sy, z + sz); glVertex3f(x, y, z + sz);
+
+  glVertex3f(x, y, z); glVertex3f(x, y, z + sz);
+  glVertex3f(x + sx, y, z); glVertex3f(x + sx, y, z + sz);
+  glVertex3f(x + sx, y + sy, z); glVertex3f(x + sx, y + sy, z + sz);
+  glVertex3f(x, y + sy, z); glVertex3f(x, y + sy, z + sz);
+  glEnd();
+  glEnable(GL_CULL_FACE);
+}
 void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent)
 { glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.25f : 1.0f); glBegin(GL_TRIANGLE_FAN); glVertex3f(cx, cy, cz); for (int i = 0; i <= 32; ++i) { const double a = 2.0 * M_PI * i / 32.0; glVertex3f(cx + radius * qCos(a), cy, cz + radius * qSin(a)); } glEnd(); Q_UNUSED(height); }
 void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
@@ -88,6 +115,69 @@ void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
   glBegin(GL_TRIANGLE_FAN); glVertex3f(camera_overlay.x, camera_overlay.y, camera_overlay.z); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glVertex3f(ffr.x(), ffr.y(), ffr.z()); glVertex3f(fbr.x(), fbr.y(), fbr.z()); glVertex3f(fbl.x(), fbl.y(), fbl.z()); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glEnd();
 }
 QPointF Scene3DViewportWidget::project_to_screen(double x, double y, double z) const { return QPointF(width() * 0.5 + x * 50.0, height() * 0.6 - y * 50.0 + z * 5.0); }
-void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) { last_ = e->pos(); if (e->button() != Qt::LeftButton) return; QString best; double bestd = 1e18; for (const auto & item : items) { if (!item.selectable) continue; const double d = QLineF(project_to_screen(item.x, item.y, item.z), e->pos()).length(); if (d < bestd) { bestd = d; best = item.id; } } if (!best.isEmpty() && bestd < 50.0 && select_cb) select_cb(best); }
+void Scene3DViewportWidget::camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const
+{
+  const float aspect = height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0f;
+  out_proj.setToIdentity();
+  out_proj.perspective(50.0f, aspect, 0.05f, 100.0f);
+  out_view.setToIdentity();
+  out_view.translate(0.0f, -0.5f, -6.0f * zoom_);
+  out_view.rotate(qRadiansToDegrees(pitch_), 1.0f, 0.0f, 0.0f);
+  out_view.rotate(qRadiansToDegrees(yaw_), 0.0f, 1.0f, 0.0f);
+}
+bool Scene3DViewportWidget::ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
+                                                const ScenePreviewWidget::PreviewItem & item, float & out_t) const
+{
+  const QVector3D bmin(item.x, item.y, item.z);
+  const QVector3D bmax(item.x + item.sx, item.y + item.sy, item.z + item.sz);
+  float tmin = 0.0f;
+  float tmax = 1e9f;
+  for (int axis = 0; axis < 3; ++axis) {
+    const float origin = axis == 0 ? ray_origin.x() : (axis == 1 ? ray_origin.y() : ray_origin.z());
+    const float dir = axis == 0 ? ray_dir.x() : (axis == 1 ? ray_dir.y() : ray_dir.z());
+    const float minv = axis == 0 ? bmin.x() : (axis == 1 ? bmin.y() : bmin.z());
+    const float maxv = axis == 0 ? bmax.x() : (axis == 1 ? bmax.y() : bmax.z());
+    if (qAbs(dir) < 1e-6f) {
+      if (origin < minv || origin > maxv) return false;
+      continue;
+    }
+    const float invd = 1.0f / dir;
+    float t0 = (minv - origin) * invd;
+    float t1 = (maxv - origin) * invd;
+    if (t0 > t1) std::swap(t0, t1);
+    tmin = qMax(tmin, t0);
+    tmax = qMin(tmax, t1);
+    if (tmax < tmin) return false;
+  }
+  out_t = tmin;
+  return true;
+}
+void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
+  last_ = e->pos();
+  if (e->button() != Qt::LeftButton) return;
+  QMatrix4x4 proj, view;
+  camera_matrices(proj, view);
+  const QMatrix4x4 inv = (proj * view).inverted();
+  const float ndc_x = (2.0f * static_cast<float>(e->position().x()) / qMax(1, width())) - 1.0f;
+  const float ndc_y = 1.0f - (2.0f * static_cast<float>(e->position().y()) / qMax(1, height()));
+  QVector4D near_h = inv * QVector4D(ndc_x, ndc_y, -1.0f, 1.0f);
+  QVector4D far_h = inv * QVector4D(ndc_x, ndc_y, 1.0f, 1.0f);
+  if (qFuzzyIsNull(near_h.w()) || qFuzzyIsNull(far_h.w())) return;
+  QVector3D p0 = near_h.toVector3DAffine();
+  QVector3D p1 = far_h.toVector3DAffine();
+  QVector3D dir = (p1 - p0).normalized();
+  QString best_id, best_role;
+  float best_t = 1e9f;
+  for (const auto & item : items) {
+    if (!item.selectable) continue;
+    float t = 0.0f;
+    if (ray_intersects_aabb(p0, dir, item, t) && t < best_t) {
+      best_t = t;
+      best_id = item.id;
+      best_role = item.role.trimmed().isEmpty() ? QStringLiteral("unknown") : item.role.trimmed();
+    }
+  }
+  if (!best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
+}
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e) { auto d = e->pos() - last_; last_ = e->pos(); if (e->buttons() & Qt::LeftButton) { yaw_ += d.x() * 0.01; pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4); update(); } }
 void Scene3DViewportWidget::wheelEvent(QWheelEvent * e) { zoom_ = qBound(0.4, zoom_ + (e->angleDelta().y() > 0 ? -0.1 : 0.1), 2.2); update(); }

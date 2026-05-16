@@ -854,18 +854,8 @@ void MainWindow::setup_studio_shell()
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::SelectedOnly);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
-  connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id){
-    if (!scene_hierarchy_tree_) return;
-    bool matched=false;
-    for (int i=0;i<scene_hierarchy_tree_->topLevelItemCount();++i){
-      auto *top=scene_hierarchy_tree_->topLevelItem(i);
-      for (int j=0;j<top->childCount();++j){
-        auto *c=top->child(j);
-        if (c->data(0, TreeRoleId).toString() == id){ scene_hierarchy_tree_->setCurrentItem(c); on_hierarchy_item_selected(c); matched=true; break; }
-      }
-      if (matched) break;
-    }
-    if (!matched && !id.isEmpty()) append_studio_log(QString("No preview item linked: %1").arg(id));
+  connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
+    apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
