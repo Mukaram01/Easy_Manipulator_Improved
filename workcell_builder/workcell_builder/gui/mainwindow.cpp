@@ -1597,8 +1597,20 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   out.close();
   append_studio_log(QString("%1 updated to '%2' in %3 (Preview Only | Fake Hardware | No Robot Motion)")
     .arg(binding_label, selected_id, QString::fromStdString(task_intent_path.string())));
-  refresh_task_intent_panel();
+  refresh_after_task_binding_change(binding_label, selected_id);
   return true;
+}
+
+void MainWindow::refresh_after_task_binding_change(const QString & binding_label, const QString & selected_id)
+{
+  append_studio_log(QString("Task binding refresh started: %1 -> %2").arg(binding_label, selected_id));
+  refresh_task_intent_panel();
+  refresh_new_cell_checklist();
+  populate_scene_hierarchy();
+  populate_scene_files_tab();
+  rebuild_digital_twin_canvas();
+  refresh_selected_scene_item_labels(current_selected_scene_item());
+  append_studio_log(QString("Task binding refresh completed: %1 -> %2").arg(binding_label, selected_id));
 }
 
 void MainWindow::bind_selected_item_as_pick_zone()
