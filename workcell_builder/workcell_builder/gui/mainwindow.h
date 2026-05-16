@@ -178,6 +178,7 @@ private:
   QPointF snap_canvas_position(const QPointF & pos) const;
   void refresh_minimap_card();
   void select_canvas_item(QGraphicsItem * item);
+  void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
   void mark_layout_dirty(const QString & reason);
   void save_layout_changes();
   void revert_layout_changes();
@@ -310,6 +311,8 @@ private:
   double snap_step_m_{ 0.05 };
   bool layout_dirty_{ false };
   bool inspector_update_guard_{ false };
+  bool selection_update_guard_{ false };
+  QString current_selected_scene_item_id_;
   struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; };
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
