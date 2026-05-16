@@ -155,6 +155,8 @@ add_executable(workcell_builder
     gui/conveyor_sorting_run_console.cpp
     gui/conveyor_sorting_run_console.h
     gui/conveyor_sorting_run_console.ui
+    gui/new_cell_wizard.cpp
+    gui/new_cell_wizard.h
 
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp
@@ -256,11 +258,20 @@ if(BUILD_TESTING)
     test/robot_tool_compatibility_inference_test.cpp
     src_robot_tool_compatibility.cpp)
 
+  ament_add_gtest(workcell_new_cell_wizard_test
+    test/new_cell_wizard_test.cpp
+    gui/new_cell_wizard.cpp)
+
   ament_add_gtest(workcell_workspace_validation_test
     test/workspace_validation_test.cpp
     src_workspace_validation.cpp)
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_new_cell_wizard_test)
+    target_link_libraries(workcell_new_cell_wizard_test Qt5::Widgets ${Boost_LIBRARIES})
+    target_include_directories(workcell_new_cell_wizard_test PRIVATE ${Boost_INCLUDE_DIRS})
   endif()
 
   foreach(workcell_builder_yaml_boost_test

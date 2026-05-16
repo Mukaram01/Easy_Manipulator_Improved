@@ -525,32 +525,32 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
 
 void MainWindow::open_new_scene_creation_flow()
 {
-  const QString scene_name = QInputDialog::getText(
-    this, "Create New Scene", "Scene name:", QLineEdit::Normal, "");
-  if (scene_name.trimmed().isEmpty()) {
+  const QString workspace_root = detect_workspace_root();
+  if (workspace_root.trimmed().isEmpty()) {
+    QMessageBox::warning(this, "Workcell Studio", "Select a valid workspace first.");
     return;
   }
-  const fs::path scenes_root = fs::path(detect_workspace_root().toStdString()) / "src" / "scenes";
-  const fs::path scene_dir = scenes_root / scene_name.trimmed().toStdString();
-  boost::system::error_code ec;
-  fs::create_directories(scene_dir, ec);
-  fs::create_directories(scene_dir / "config", ec);
-  std::ofstream env_file((scene_dir / "environment.yaml").string(), std::ios::out | std::ios::trunc);
-  env_file << "scene_name: " << scene_name.trimmed().toStdString() << "\n";
-  env_file << "fake_hardware_first: true\n";
-  env_file << "runtime_execution_enabled: false\n";
-  env_file.close();
-  if (!fs::exists(scene_dir / "package.xml")) {
-    QMessageBox::warning(this, "Workcell Studio", "Created minimal scene scaffold. Generate Scene Package next.");
+  NewCellWizard wizard(workspace_root, this);
+  if (wizard.exec() != QDialog::Accepted) {
+    append_studio_log("New Cell Wizard cancelled.");
+    return;
   }
+  const auto created = wizard.result();
+  if (!created.created) {
+    return;
+  }
+  append_studio_log(QString("New Cell Wizard: created '%1' (fake hardware default / real robot locked).")
+    .arg(created.scene_name));
   refresh_scene_browser_ui();
   for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
-    if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == scene_name.trimmed().toStdString()) {
+    if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == created.scene_name.toStdString()) {
       select_scene_by_row(i);
       break;
     }
   }
-  open_scene_builder_for_selected_scene("Create New Scene");
+  if (created.open_in_scene_builder) {
+    open_scene_builder_for_selected_scene("New Cell Wizard");
+  }
 }
 
 void MainWindow::setup_studio_shell()
