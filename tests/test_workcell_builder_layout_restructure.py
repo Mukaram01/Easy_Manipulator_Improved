@@ -1,24 +1,30 @@
 from pathlib import Path
 
-UI = Path('workcell_builder/workcell_builder/gui/scene_select.ui').read_text()
-CPP = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text()
+ROOT = Path(__file__).resolve().parents[1]
+MAIN = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
 
 
-def test_workflow_pages_exist():
-    for token in ['Start', 'Templates', 'Assets', 'Scenes', 'Layout', 'Task', 'Perception', 'Grasp', 'Validate &amp; Generate']:
-        assert token in UI
+def test_scene_builder_uses_main_splitter_layout():
+    for token in [
+        'sceneBuilderMainSplitter',
+        'QSplitter(Qt::Horizontal, scene_shell)',
+        'setSizes({290, 980, 350})',
+    ]:
+        assert token in MAIN
 
 
-def test_home_not_overloaded_and_catalogs_moved():
-    assert 'name="templates_tab"' in UI
-    assert 'name="assets_tab"' in UI
-    assert 'name="scenes_tab"' in UI
-    assert 'scene_catalog_table' in UI
+def test_left_and_right_tabs_exist():
+    for token in ['addTab(scene_tab, "Scene")', 'addTab(assets_tab, "Assets")', 'addTab(files_tab, "Files")']:
+        assert token in MAIN
+    for token in ['addTab(selection_tab, "Selection")', 'addTab(task_tab, "Task")', 'addTab(readiness_tab, "Readiness")', 'addTab(actions_tab, "Actions")']:
+        assert token in MAIN
 
 
-def test_fullscreen_and_window_controls_tokens_exist():
-    assert 'Qt::WindowMinimizeButtonHint' in CPP
-    assert 'Qt::WindowMaximizeButtonHint' in CPP
-    assert 'Qt::WindowCloseButtonHint' in CPP
-    assert 'Qt::Key_F11' in CPP
-    assert 'Qt::Key_Escape' in CPP
+def test_inspector_scroll_and_activity_log_toggle_exist():
+    for token in ['QScrollArea(right_panel)', 'setWidgetResizable(true)', 'Show Log', 'Hide Log', '<b>Activity Log</b>']:
+        assert token in MAIN
+
+
+def test_canvas_more_menu_and_safety_text_present():
+    for token in ['Canvas More...', 'Fake Hardware', 'No Robot Motion']:
+        assert token in MAIN
