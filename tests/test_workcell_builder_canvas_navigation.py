@@ -55,7 +55,26 @@ def test_real_3d_viewport_and_camera_depth_tokens_present():
 
 
 def test_orbit_pan_zoom_interaction_tokens_present():
-    for token in ["mouseMoveEvent", "yaw_ += d.x() * 0.01", "pitch_ = qBound", "wheelEvent", "zoom_ = qBound"]:
+    for token in [
+        "mouseMoveEvent",
+        "yaw_ += d.x() * 0.01",
+        "pitch_ = qBound",
+        "Qt::MiddleButton",
+        "Qt::ShiftModifier",
+        "orbit_offset_ +=",
+        "wheelEvent",
+        "distance_ = qBound(min_distance_, distance_ * zoom_factor, max_distance_);",
+    ]:
+        assert token in VIEW3D_CPP
+
+
+def test_camera_fit_and_view_matrices_tokens_present():
+    for token in [
+        "out_view.lookAt(eye, orbit_offset_, QVector3D(0.0f, 1.0f, 0.0f));",
+        "scene_radius_ = radius;",
+        "orbit_offset_ = (bmin + bmax) * 0.5f;",
+        "distance_ = qBound(min_distance_, fit_distance, max_distance_);",
+    ]:
         assert token in VIEW3D_CPP
 
 

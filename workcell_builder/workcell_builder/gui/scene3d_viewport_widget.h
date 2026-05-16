@@ -71,7 +71,7 @@ private:
   double yaw_{ -0.9 };
   double pitch_{ 0.7 };
   double distance_{ 6.0 };
-  double zoom_{ 1.0 };
+  double scene_radius_{ 2.0 };
   const double min_distance_{ 0.35 };
   const double max_distance_{ 80.0 };
 };
