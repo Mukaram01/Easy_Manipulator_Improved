@@ -68,6 +68,25 @@ def test_orbit_pan_zoom_interaction_tokens_present():
         assert token in VIEW3D_CPP
 
 
+def test_3d_hover_and_click_share_ray_pick_path_and_tooltip_tokens_present():
+    for token in [
+        "pick_item_at_screen",
+        "ray_intersects_aabb",
+        "QToolTip::showText",
+        "Item: %1\\nRole: %2\\nWarnings: %3",
+        "if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);",
+    ]:
+        assert token in VIEW3D_CPP
+
+
+def test_selected_outline_uses_role_bounds_tokens_present():
+    for token in [
+        "const ItemBounds bounds = item_bounds_for_role(*it);",
+        "draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor(\"#f8fafc\"));",
+    ]:
+        assert token in VIEW3D_CPP
+
+
 def test_camera_fit_and_view_matrices_tokens_present():
     for token in [
         "out_view.lookAt(eye, orbit_offset_, QVector3D(0.0f, 1.0f, 0.0f));",
