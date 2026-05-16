@@ -70,6 +70,7 @@
 #include <QProgressDialog>
 #include <QSettings>
 #include <QLineEdit>
+#include <QSet>
 #include <QHBoxLayout>
 #include <QtConcurrent>
 #include <yaml-cpp/yaml.h>
@@ -3111,11 +3112,22 @@ void MainWindow::populate_scene_hierarchy()
     if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
     if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface/table");
     if (lower.contains("conveyor")) return QString("conveyor");
-    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick_source/pick_zone");
-    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target/bin");
-    if (lower.contains("safety")) return QString("safety_zone");
+    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick source/zone");
+    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place target/bin");
+    if (lower.contains("safety")) return QString("safety zone");
     if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
-    return QString("unknown");
+    return QString("object");
+  };
+  const QSet<QString> allowed_scene_roles = {
+    "robot",
+    "end_effector/tool",
+    "support_surface/table",
+    "conveyor",
+    "camera",
+    "pick source/zone",
+    "place target/bin",
+    "object",
+    "safety zone"
   };
   QMap<QString, QString> yaml_status_by_id;
   auto ingest_status_file = [&](const fs::path & path, const QString & source_tag) {
@@ -3214,7 +3226,9 @@ void MainWindow::populate_scene_hierarchy()
       preview_warning_details << QString("%1 (%2): metadata incomplete").arg(p.id, p.role);
     }
     preview_items.push_back(p);
-    add_tree_node(p);
+    if (allowed_scene_roles.contains(p.role)) {
+      add_tree_node(p);
+    }
 
     if (!metadata_complete) {
       ++preview_warning_count;
@@ -3242,7 +3256,9 @@ void MainWindow::populate_scene_hierarchy()
     p.sy = item.depth;
     p.sz = item.height;
     preview_items.push_back(p);
-    add_tree_node(p);
+    if (allowed_scene_roles.contains(p.role)) {
+      add_tree_node(p);
+    }
 
     if (!item.warnings.empty()) {
       ++preview_warning_count;
@@ -3276,14 +3292,23 @@ void MainWindow::populate_scene_hierarchy()
     "launch/demo.launch.py"
   };
 
+  const QSet<QString> excluded_scene_file_artifacts = {
+    "package.xml",
+    "CMakeLists.txt",
+    "launch/demo.launch.py",
+    "environment.yaml",
+    "scene_manifest.yaml"
+  };
   for (const auto & rel : key_files) {
+    const QString rel_q = QString::fromStdString(rel);
+    if (excluded_scene_file_artifacts.contains(rel_q)) continue;
     const fs::path path = d / rel;
     if (!fs::exists(path)) continue;
 
     auto * node = new QTreeWidgetItem(
       scene_hierarchy_tree_,
       {QString::fromStdString(rel), "file", "present"});
-    node->setData(0, TreeRoleId, QString::fromStdString(rel));
+    node->setData(0, TreeRoleId, rel_q);
     node->setData(0, TreeRoleCategory, "file");
     node->setData(0, TreeRoleSource, QString::fromStdString(path.string()));
     node->setData(0, TreeRolePoseAvailable, false);
