@@ -61,8 +61,38 @@ TEST(NewCellWizard, PlaceholderDefaults)
   EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, model).toStdString(), "preview_group");
 }
 
+TEST(NewCellWizard, RobotFamilyModelMappingsAreDeterministic)
+{
+  const QString ur_family = "Universal Robots / UR";
+  const QString panda_family = "Franka / Panda";
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(ur_family, "UR10").toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(ur_family, "UR10").toStdString(), "ee_link");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(ur_family, "UR10").toStdString(), "manipulator");
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(panda_family, "FR3").toStdString(), "panda_link0");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(panda_family, "FR3").toStdString(), "panda_hand");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(panda_family, "FR3").toStdString(), "panda_arm");
+
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link("Custom / Placeholder", "my_placeholder_robot").toStdString(), "tool0_placeholder");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group("Custom / Placeholder", "my_placeholder_robot").toStdString(), "preview_group");
+}
+
 TEST(NewCellWizard, RobotiqDefaults)
 {
   EXPECT_EQ(NewCellWizard::default_end_effector_attach_link("robotiq_85").toStdString(), "gripper_base_link");
   EXPECT_EQ(NewCellWizard::default_end_effector_tcp_link("robotiq_85").toStdString(), "ee_palm");
+}
+
+TEST(NewCellWizard, SuctionDefaults)
+{
+  EXPECT_EQ(NewCellWizard::default_end_effector_attach_link("single_suction").toStdString(), "tool_mount_link");
+  EXPECT_EQ(NewCellWizard::default_end_effector_tcp_link("single_suction").toStdString(), "tcp_link");
+  EXPECT_EQ(NewCellWizard::default_end_effector_type("single_suction").toStdString(), "suction");
+}
+
+TEST(NewCellWizard, ScaffoldReadinessClassification)
+{
+  EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Custom / Placeholder").toStdString(), "SCAFFOLD");
+  EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Robotiq").toStdString(), "READY");
 }
