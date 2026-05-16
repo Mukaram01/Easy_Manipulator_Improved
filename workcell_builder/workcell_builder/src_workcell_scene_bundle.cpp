@@ -192,13 +192,58 @@ SceneBundleResult export_scene_bundle(const SceneBundleExportOptions & options)
 SceneBundleResult import_scene_bundle(const SceneBundleImportOptions & options)
 {
   SceneBundleResult result;
+  const std::string parser_context = "scene_bundle_manifest";
   const fs::path manifest_path = options.bundle_dir / "bundle_manifest.yaml";
   if (!fs::exists(manifest_path)) {
     result.message = "bundle_manifest.yaml missing";
     return result;
   }
-  YAML::Node manifest = YAML::LoadFile(manifest_path.string());
-  const std::string scene_name = manifest["exported_scene_name"].as<std::string>();
+  YAML::Node manifest;
+  try {
+    manifest = YAML::LoadFile(manifest_path.string());
+  } catch (const YAML::Exception & e) {
+    result.ok = false;
+    result.message =
+      "Failed to parse scene bundle manifest (" + parser_context + ") at " +
+      manifest_path.string() + ": " + e.what();
+    result.warnings.push_back(result.message);
+    return result;
+  } catch (const std::exception & e) {
+    result.ok = false;
+    result.message =
+      "Failed to load scene bundle manifest (" + parser_context + ") at " +
+      manifest_path.string() + ": " + e.what();
+    result.warnings.push_back(result.message);
+    return result;
+  }
+  if (!manifest || !manifest.IsMap()) {
+    result.ok = false;
+    result.message =
+      "Invalid scene bundle manifest (" + parser_context + ") at " +
+      manifest_path.string() + ": root node must be a map";
+    result.warnings.push_back(result.message);
+    return result;
+  }
+
+  const YAML::Node exported_scene_name_node = manifest["exported_scene_name"];
+  if (!exported_scene_name_node) {
+    result.ok = false;
+    result.message =
+      "Invalid scene bundle manifest (" + parser_context + ") at " +
+      manifest_path.string() + ": missing 'exported_scene_name'";
+    result.warnings.push_back(result.message);
+    return result;
+  }
+  const std::string scene_name = yaml_named_or_scalar(manifest["exported_scene_name"], "name");
+  if (scene_name.empty()) {
+    result.ok = false;
+    result.message =
+      "Invalid scene bundle manifest (" + parser_context + ") at " +
+      manifest_path.string() + ": 'exported_scene_name' must be a non-empty scalar or {name: ...}";
+    result.warnings.push_back(result.message);
+    return result;
+  }
+
   const fs::path source_scene = options.bundle_dir / "scenes" / scene_name;
   if (!fs::exists(source_scene / "environment.yaml")) {
     result.message = "scene environment.yaml missing in bundle";
