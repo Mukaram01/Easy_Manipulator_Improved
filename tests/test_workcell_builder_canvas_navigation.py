@@ -113,6 +113,14 @@ def test_fallback_mode_and_banner_tokens_present():
         assert token in PREVIEW
 
 
+def test_warning_badge_compact_and_long_text_debug_gated_tokens_present():
+    assert 'warning_badge_text(it.warnings)' in VIEW3D_CPP
+    assert 'if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty())' in VIEW3D_CPP
+    assert 'warning_debug_text(it.warnings)' in VIEW3D_CPP
+
+
+def test_task_overlay_label_toggle_preserves_selected_only_default_tokens_present():
+    assert 'else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;' in PREVIEW
 def test_debug_overlays_remains_3d_and_fallback_is_unavailable_only():
     for token in [
         'viewport->debug_overlays_mode = (mode == "Debug Overlays")',

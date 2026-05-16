@@ -90,7 +90,8 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   v->show_task_route = task_route;
   v->show_pick_place = pick_place_zones;
   v->show_approach_retreat = approach_retreat;
-  v->label_mode = labels ? LabelMode::All : LabelMode::Off;
+  if (labels) v->label_mode = LabelMode::All;
+  else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
   v->update();
 }
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
