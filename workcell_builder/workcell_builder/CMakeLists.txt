@@ -328,6 +328,20 @@ if(BUILD_TESTING)
     target_include_directories(workcell_conveyor_pick_preview_test PRIVATE ${Boost_INCLUDE_DIRS} include)
   endif()
 
+  if(TARGET workcell_yaml_utils_test)
+    target_link_libraries(workcell_yaml_utils_test
+      yaml-cpp
+      ${Boost_LIBRARIES}
+    )
+    target_include_directories(workcell_yaml_utils_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        include/attributes
+        include/yaml_parser
+    )
+  endif()
+
   if(TARGET workcell_scene_status_test)
     target_link_libraries(workcell_scene_status_test
       yaml-cpp
