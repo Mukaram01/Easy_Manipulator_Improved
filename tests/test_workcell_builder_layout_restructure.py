@@ -23,9 +23,9 @@ def test_left_and_right_tabs_exist():
 def test_scene_tree_headers_include_name_role_status():
     for token in [
         'scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"})',
-        'header->setSectionResizeMode(0, QHeaderView::Stretch);',
-        'header->setSectionResizeMode(1, QHeaderView::ResizeToContents);',
-        'header->setSectionResizeMode(2, QHeaderView::ResizeToContents);',
+        'header->setSectionResizeMode(0, QHeaderView::Interactive);',
+        'header->setSectionResizeMode(1, QHeaderView::Interactive);',
+        'header->setSectionResizeMode(2, QHeaderView::Interactive);',
     ]:
         assert token in MAIN
 
@@ -44,12 +44,12 @@ def test_scene_population_role_taxonomy_tokens_present():
 
 
 def test_inspector_scroll_and_activity_log_toggle_exist():
-    for token in ['QScrollArea(right_panel)', 'setWidgetResizable(true)', 'Show Log', 'Hide Log', '<b>Activity Log</b>']:
+    for token in ['QScrollArea(right_panel)', 'setWidgetResizable(true)', 'Show Log', 'Hide Log', 'Activity Log']:
         assert token in MAIN
 
 
 def test_canvas_more_menu_and_safety_text_present():
-    for token in ['Canvas More...', 'Duplicate Selected', 'Remove Selected Layout Item', 'Revert Layout', 'Run Layout Merge', 'Open Merge Report', 'Copy Merge Summary', 'Export Canvas Snapshot', 'Fake Hardware', 'No Robot Motion']:
+    for token in ['Canvas More', 'Duplicate Selected', 'Remove Selected Layout Item', 'Revert Layout', 'Run Layout Merge', 'Open Merge Report', 'Copy Merge Summary', 'Export Canvas Snapshot', 'Fake Hardware', 'No Robot Motion']:
         assert token in MAIN
 
 

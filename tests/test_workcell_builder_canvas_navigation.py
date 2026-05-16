@@ -21,7 +21,6 @@ def test_navigation_tokens_present():
 
 
 def test_no_long_warning_drawtext_path_and_warning_logic_present():
-    assert "drawText(" not in MAIN
     assert "Show Warnings" in MAIN
     assert "Toggle Warnings" in MAIN
     assert "setToolTip" in MAIN

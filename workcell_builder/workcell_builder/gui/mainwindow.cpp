@@ -721,12 +721,19 @@ void MainWindow::setup_studio_shell()
   
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
+  auto * scene_header_row = new QHBoxLayout();
+  scene_builder_status_chip_ = new QLabel("READY", scene_builder); scene_builder_status_chip_->setObjectName("sceneStatusChip");
+  scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(true);
+  auto * copy_scene_path_header = new QToolButton(scene_builder); copy_scene_path_header->setText("Copy");
+  QObject::connect(copy_scene_path_header, &QToolButton::clicked, this, [this](){ if (!selected_scene_path().isEmpty()) QApplication::clipboard()->setText(selected_scene_path()); });
+  scene_header_row->addWidget(scene_builder_status_chip_); scene_header_row->addWidget(scene_builder_path_label_,1); scene_header_row->addWidget(copy_scene_path_header);
+  sl->addLayout(scene_header_row);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
   auto * scene_shell_layout = new QVBoxLayout(scene_shell);
   auto * scene_splitter = new QSplitter(Qt::Horizontal, scene_shell);
   scene_builder_splitter_ = scene_splitter;
   scene_splitter->setObjectName("sceneBuilderMainSplitter");
-  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("studioPanel"); left_panel->setMinimumWidth(260);
+  auto * left_panel = new QFrame(scene_builder); left_panel->setObjectName("studioPanel"); left_panel->setMinimumWidth(360);
   auto * center_panel = new QFrame(scene_builder); center_panel->setObjectName("studioPanel");
   auto * right_panel = new QFrame(scene_builder); right_panel->setObjectName("studioPanel"); right_panel->setMinimumWidth(320);
   scene_splitter->addWidget(left_panel);
@@ -914,7 +921,7 @@ void MainWindow::setup_studio_shell()
     append_studio_log("overlay toggled");
   });
   auto * canvas_more_actions = new QToolButton(scene_builder);
-  canvas_more_actions->setText("Canvas More...");
+  canvas_more_actions->setText("Canvas More");
   canvas_more_actions->setPopupMode(QToolButton::InstantPopup);
   auto * canvas_more_menu = new QMenu(canvas_more_actions);
   auto * snap_action = canvas_more_menu->addAction("Snap/Grid settings"); snap_action->setCheckable(true); snap_action->setChecked(true);
@@ -1161,7 +1168,7 @@ void MainWindow::setup_studio_shell()
   auto * log_card = new QFrame(content); log_card->setObjectName("studioCard");
   auto * log_layout = new QVBoxLayout(log_card);
   auto * log_head = new QHBoxLayout();
-  log_head->addWidget(new QLabel("<b>Activity Log</b>", log_card));
+  log_head->addWidget(new QLabel("Activity Log", log_card));
   scene_builder_log_toggle_button_ = new QPushButton("Hide Log", log_card);
   scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   log_head->addWidget(scene_builder_log_toggle_button_, 0, Qt::AlignRight);
@@ -1568,7 +1575,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   refresh_selection_binding_actions(state);
   if (!state.valid) {
     inspector_label_->setText("Inspector selection: none");
-    live_coordinate_label_->setText("Selected: none");
+    live_coordinate_label_->setText("No item selected — showing scene summary");
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -2547,6 +2554,8 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   if (!has_selected_scene()) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
+    if (scene_builder_status_chip_) scene_builder_status_chip_->setText("READY");
+    if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
     if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false);
@@ -2555,6 +2564,8 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
+  if (scene_builder_path_label_) { const QString sp = selected_scene_path(); scene_builder_path_label_->setText(QString("Path: %1").arg(sp)); scene_builder_path_label_->setToolTip(sp); }
+  if (scene_builder_status_chip_) scene_builder_status_chip_->setText(QString::fromStdString(s.status));
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
@@ -3245,6 +3256,7 @@ void MainWindow::populate_scene_hierarchy()
 
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
     auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {p.display_name, p.role, p.status});
+    node->setToolTip(0, p.display_name); node->setToolTip(1, p.role); node->setToolTip(2, p.status);
     node->setToolTip(0, p.display_name);
     node->setToolTip(1, p.role);
     node->setToolTip(2, p.status);
@@ -3383,9 +3395,13 @@ void MainWindow::populate_scene_hierarchy()
 
   auto * header = scene_hierarchy_tree_->header();
   if (header) {
-    header->setSectionResizeMode(0, QHeaderView::Stretch);
-    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(0, QHeaderView::Interactive);
+    header->setSectionResizeMode(1, QHeaderView::Interactive);
+    header->setSectionResizeMode(2, QHeaderView::Interactive);
+    scene_hierarchy_tree_->setColumnWidth(0, 200);
+    scene_hierarchy_tree_->setColumnWidth(1, 120);
+    scene_hierarchy_tree_->setColumnWidth(2, 80);
+    header->setStretchLastSection(false);
   }
 
   const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);

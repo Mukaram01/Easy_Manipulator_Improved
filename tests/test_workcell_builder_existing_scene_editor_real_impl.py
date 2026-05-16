@@ -44,3 +44,9 @@ def test_selection_sync_hooks_and_standardized_selected_item_log_format():
         'append_studio_log("Selected item: <none> (unknown)");',
     ]:
         assert token in main
+
+
+def test_scene_builder_header_chip_and_path_present():
+    main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    for token in ['sceneStatusChip', 'scene_builder_path_label_', 'Path: (none)']:
+        assert token in main

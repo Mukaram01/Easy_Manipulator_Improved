@@ -327,7 +327,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   auto * controls = new QHBoxLayout();
   controls->addWidget(new QLabel("View mode", this));
   mode_selector_ = new QComboBox(this);
-  mode_selector_->addItems({"3D Preview", "2D Layout"});
+  mode_selector_->addItems({"2D Layout", "Pseudo-3D", "Debug Overlays"});
   controls->addWidget(mode_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
@@ -341,7 +341,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
   error_state_label_ = new QLabel("3D preview unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
   view2d_container_ = new QWidget(this); view2d_container_->setLayout(new QVBoxLayout());
-  fallback_banner_label_ = new QLabel("2D fallback preview active", view2d_container_);
+  fallback_banner_label_ = new QLabel("2D layout preview active", view2d_container_);
   fallback_banner_label_->setAlignment(Qt::AlignCenter);
   fallback_banner_label_->setVisible(false);
   view2d_container_->layout()->addWidget(fallback_banner_label_);
@@ -402,7 +402,7 @@ void ScenePreviewWidget::refresh_mode_and_state()
     return;
   }
   fallback_banner_label_->setVisible(false);
-  bool use3d = mode_selector_->currentText() == "3D Preview";
+  bool use3d = mode_selector_->currentText() == "Pseudo-3D";
   stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   const bool has_preview_items = !preview_items_.isEmpty();
   empty_state_label_->setVisible(use3d && !scene_selected_);
