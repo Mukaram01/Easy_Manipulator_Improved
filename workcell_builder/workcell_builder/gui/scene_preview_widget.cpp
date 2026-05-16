@@ -52,6 +52,23 @@ protected:
   void mouseMoveEvent(QMouseEvent * e) override {
     auto d = e->pos() - last_; last_ = e->pos();
     if (e->buttons() & Qt::LeftButton) { yaw_ += d.x() * 0.01; pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4); update(); }
+    QString tooltip;
+    QString hovered_id;
+    double bestd = 1e18;
+    for (const auto & item : items) {
+      const QPointF c = project(item.x, item.y, item.z);
+      const double dist = QLineF(c, e->pos()).length();
+      if (dist < bestd) { bestd = dist; hovered_id = item.id; }
+    }
+    if (bestd < 45.0) {
+      for (const auto & item : items) {
+        if (item.id != hovered_id || item.warnings.isEmpty()) continue;
+        tooltip = QString("id: %1\nrole: %2\nwarnings:\n- %3")
+          .arg(item.id, item.role, item.warnings.join("\n- "));
+        break;
+      }
+    }
+    setToolTip(tooltip);
   }
   void wheelEvent(QWheelEvent * e) override { zoom_ = qBound(0.4, zoom_ + (e->angleDelta().y() > 0 ? -0.1 : 0.1), 2.2); update(); }
   QPointF project(double x, double y, double z) const {
@@ -240,11 +257,13 @@ protected:
   void drawWarningBadges(QPainter & p) const {
     if (!show_warnings) return;
     for (const auto & it : items) {
-      if (it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
-    }
-    if (!task_overlay.has_intent_metadata) p.drawText(project(-2.2, 1.2, -0.8), "Task overlay unavailable: missing task intent");
-    if (show_pick_coverage) {
-      for (int wi = 0; wi < camera_overlay.warnings.size(); ++wi) p.drawText(project(-2.2, 1.0 - 0.16*wi, -0.7), camera_overlay.warnings[wi]);
+      if (it.warnings.isEmpty()) continue;
+      const QPointF badge_center = project(it.x + it.sx * 0.5, it.y + it.sy + 0.08, it.z);
+      p.setPen(Qt::NoPen);
+      p.setBrush(QColor("#f59e0b"));
+      p.drawEllipse(badge_center, 8, 8);
+      p.setPen(QPen(QColor("#111827"), 2));
+      p.drawText(QRectF(badge_center.x() - 8, badge_center.y() - 8, 16, 16), Qt::AlignCenter, it.warnings.size() > 1 ? QString::number(it.warnings.size()) : "!");
     }
   }
 private:

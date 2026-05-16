@@ -3153,6 +3153,7 @@ void MainWindow::populate_scene_hierarchy()
 
   QVector<ScenePreviewWidget::PreviewItem> preview_items;
   int preview_warning_count = 0;
+  QStringList preview_warning_details;
 
   auto status_for_item = [&](const workcell_builder::WorkcellStudioCanvasItem & item) {
     const QString id = QString::fromStdString(item.id);
@@ -3204,6 +3205,10 @@ void MainWindow::populate_scene_hierarchy()
     p.status = status;
     p.source_path = source_path;
     p.metadata_complete = metadata_complete;
+    if (!metadata_complete) {
+      p.warnings << "metadata incomplete";
+      preview_warning_details << QString("%1 (%2): metadata incomplete").arg(p.id, p.role);
+    }
     preview_items.push_back(p);
     add_tree_node(p);
 
@@ -3222,6 +3227,7 @@ void MainWindow::populate_scene_hierarchy()
     p.status = status_for_item(item);
     p.source_path = QString::fromStdString(item.source_file);
     p.metadata_complete = item.warnings.empty();
+    for (const auto & warning : item.warnings) p.warnings << QString::fromStdString(warning);
     p.x = item.x;
     p.y = item.y;
     p.z = item.z;
@@ -3236,7 +3242,9 @@ void MainWindow::populate_scene_hierarchy()
 
     if (!item.warnings.empty()) {
       ++preview_warning_count;
-      append_studio_log(QString("Preview warning: %1").arg(QString::fromStdString(item.warnings.front())));
+      const QString warning_text = QString::fromStdString(item.warnings.front());
+      preview_warning_details << QString("%1 (%2): %3").arg(p.id, p.role, warning_text);
+      append_studio_log(QString("Preview warning: %1").arg(warning_text));
     }
   }
 
@@ -3326,6 +3334,7 @@ void MainWindow::populate_scene_hierarchy()
   }
 
   if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_items(preview_items); }
+  preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
   const bool live_selected = task_summary.perception_mode.compare("live_epd", Qt::CaseInsensitive) == 0;
@@ -3436,4 +3445,15 @@ void MainWindow::refresh_new_cell_checklist()
   text += "<br/><br/><b>Full Workcell Studio acceptance gate available</b>"
           "<br/><code>python3 scripts/run_workcell_studio_acceptance_gate.py --mode scratch --scene-name scratch_ur5_2f_acceptance --output-root /tmp/workcell_studio_acceptance</code>";
   new_cell_checklist_label_->setText(text);
+
+  if (readiness_label_) {
+    QString readiness_text =
+      "Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere";
+    if (!preview_warning_details_.isEmpty()) {
+      readiness_text += QString("\n\nWarnings (%1):\n- %2").arg(preview_warning_details_.size()).arg(preview_warning_details_.join("\n- "));
+    } else {
+      readiness_text += "\n\nWarnings: none";
+    }
+    readiness_label_->setText(readiness_text);
+  }
 }

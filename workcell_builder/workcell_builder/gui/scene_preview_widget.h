@@ -29,6 +29,7 @@ public:
     QString role;
     bool selectable{ true };
     bool metadata_complete{ true };
+    QStringList warnings;
   };
   struct CameraOverlayModel
   {
