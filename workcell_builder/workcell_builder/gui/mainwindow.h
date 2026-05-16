@@ -178,6 +178,7 @@ private:
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
+  void validate_asset_catalog_selection();
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
   void run_diagnostics_golden_flow_dry_run();
@@ -247,6 +248,7 @@ private:
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
+  QPushButton * add_to_canvas_button_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
   QLabel * canvas_mode_label_{ nullptr };
   QLabel * snap_step_label_{ nullptr };

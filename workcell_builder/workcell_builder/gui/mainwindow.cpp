@@ -738,7 +738,9 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
   asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type"});
   catalog_layout->addWidget(asset_catalog_tree_, 1);
-  auto * add_to_canvas_button = new QPushButton("Add to Canvas", scene_builder); catalog_layout->addWidget(add_to_canvas_button);
+  add_to_canvas_button_ = new QPushButton("Add to Canvas", scene_builder);
+  add_to_canvas_button_->setEnabled(false);
+  catalog_layout->addWidget(add_to_canvas_button_);
   auto * asset_more_actions = new QToolButton(scene_builder);
   asset_more_actions->setText("More Actions");
   asset_more_actions->setPopupMode(QToolButton::InstantPopup);
@@ -1282,8 +1284,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
-  connect(add_to_canvas_button, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
@@ -2720,6 +2723,23 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
 }
 
 
+void MainWindow::validate_asset_catalog_selection()
+{
+  if (!add_to_canvas_button_) return;
+  bool can_add = false;
+  if (asset_catalog_tree_) {
+    auto * item = asset_catalog_tree_->currentItem();
+    if (item && !item->isHidden()) {
+      const QString source = item->data(0, Qt::UserRole).toString().trimmed();
+      const bool has_valid_path = !source.isEmpty() && (QFileInfo::exists(source) || QFileInfo(source).isAbsolute());
+      const bool has_placeholder_token = source.startsWith("placeholder://");
+      can_add = has_valid_path || has_placeholder_token;
+    }
+  }
+  add_to_canvas_button_->setEnabled(can_add);
+}
+
+
 QString MainWindow::selected_catalog_item_path() const
 {
   if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) {
@@ -2737,6 +2757,7 @@ void MainWindow::on_asset_filter_changed(int)
     const bool visible = (selected == "All" || item->text(1) == selected);
     item->setHidden(!visible);
   }
+  validate_asset_catalog_selection();
 }
 
 void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
@@ -2884,6 +2905,7 @@ void MainWindow::populate_asset_catalog()
     }
   }
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
+  validate_asset_catalog_selection();
 }
 
 void MainWindow::refresh_new_cell_checklist()
