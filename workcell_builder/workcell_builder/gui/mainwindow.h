@@ -148,6 +148,10 @@ private:
     double yaw{ 0.0 };
     QString pose_text;
   };
+  bool is_pick_source_candidate(const SelectedSceneItemState & state) const;
+  bool is_place_target_candidate(const SelectedSceneItemState & state) const;
+  bool is_camera_candidate(const SelectedSceneItemState & state) const;
+  void refresh_selection_binding_actions(const SelectedSceneItemState & state);
   SelectedSceneItemState current_selected_scene_item() const;
   void refresh_selected_scene_item_labels(const SelectedSceneItemState & state);
   QString selected_scene_binding_id() const;
@@ -273,6 +277,9 @@ private:
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
+  QPushButton * pick_source_button_{ nullptr };
+  QPushButton * place_target_button_{ nullptr };
+  QPushButton * camera_button_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
   QLabel * canvas_mode_label_{ nullptr };
   QLabel * snap_step_label_{ nullptr };

@@ -988,11 +988,10 @@ void MainWindow::setup_studio_shell()
   readiness_tab_layout->addWidget(new_cell_checklist_label_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   auto * task_binding_actions = new QHBoxLayout();
-  auto * pick_source_button = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button);
-  auto * place_target_button = new QPushButton("Use Selected as Place Target", scene_builder); task_binding_actions->addWidget(place_target_button);
-  auto * pick_zone_button = new QPushButton("Use Selected as Pick Zone", scene_builder);
-  auto * place_zone_button = new QPushButton("Use Selected as Place Zone", scene_builder);
-  auto * camera_button = new QPushButton("Use Selected as Camera", scene_builder);
+  pick_source_button_ = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button_);
+  place_target_button_ = new QPushButton("Use Selected as Place Target", scene_builder); task_binding_actions->addWidget(place_target_button_);
+  camera_button_ = new QPushButton("Use Selected as Camera", scene_builder);
+  task_binding_actions->addWidget(camera_button_);
   pick_place_layout->addLayout(task_binding_actions);
   pick_place_details_label_ = new QLabel("Pick source: unknown\nPlace target: unknown\nReject target: unknown\nLinked hierarchy item: unknown"); pick_place_details_label_->setWordWrap(true); pick_place_layout->addWidget(pick_place_details_label_);
   task_tab_layout->addWidget(pick_place);
@@ -1280,9 +1279,9 @@ void MainWindow::setup_studio_shell()
   connect(import_asset_action, &QAction::triggered, this, [this](){ append_studio_log("Import STL / URDF: choose asset import flow from Asset Browser."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ append_studio_log("Add Existing STL to Canvas: choose STL in Asset Browser and click Add to Canvas."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ append_studio_log("Generate Simple Box/Cylinder Placeholder: use quick-add placeholders in catalog."); });
-  connect(pick_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_pick_zone);
-  connect(place_zone_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_place_zone);
-  connect(camera_button, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_camera);
+  connect(pick_source_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_pick_zone);
+  connect(place_target_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_place_zone);
+  connect(camera_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_camera);
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
@@ -1556,6 +1555,7 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
 void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState & state)
 {
   if (!inspector_label_ || !live_coordinate_label_) return;
+  refresh_selection_binding_actions(state);
   if (!state.valid) {
     inspector_label_->setText("Inspector selection: none");
     live_coordinate_label_->setText("Selected: none");
@@ -1567,6 +1567,34 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
   inspector_label_->setText(QString("Selected: %1\nID: %2\nRole/Category: %3\nSource: %4\nPose: %5").arg(display, state.id, role, source, pose));
   live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(display, pose));
+}
+
+bool MainWindow::is_pick_source_candidate(const SelectedSceneItemState & state) const
+{
+  if (!state.valid || state.id.trimmed().isEmpty()) return false;
+  const QString tag = state.role_or_category.trimmed().toLower();
+  return tag.contains("pick") || tag.contains("source") || tag.contains("bin") || tag.contains("tray") || tag.contains("zone");
+}
+
+bool MainWindow::is_place_target_candidate(const SelectedSceneItemState & state) const
+{
+  if (!state.valid || state.id.trimmed().isEmpty()) return false;
+  const QString tag = state.role_or_category.trimmed().toLower();
+  return tag.contains("place") || tag.contains("target") || tag.contains("drop") || tag.contains("zone") || tag.contains("tray");
+}
+
+bool MainWindow::is_camera_candidate(const SelectedSceneItemState & state) const
+{
+  if (!state.valid || state.id.trimmed().isEmpty()) return false;
+  const QString tag = state.role_or_category.trimmed().toLower();
+  return tag.contains("camera") || tag.contains("sensor") || tag.contains("vision") || tag.contains("realsense");
+}
+
+void MainWindow::refresh_selection_binding_actions(const SelectedSceneItemState & state)
+{
+  if (pick_source_button_) pick_source_button_->setEnabled(is_pick_source_candidate(state));
+  if (place_target_button_) place_target_button_->setEnabled(is_place_target_candidate(state));
+  if (camera_button_) camera_button_->setEnabled(is_camera_candidate(state));
 }
 
 QString MainWindow::selected_scene_binding_id() const
@@ -1624,8 +1652,9 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   std::ofstream out(task_intent_path.string());
   out << root;
   out.close();
-  append_studio_log(QString("%1 updated to '%2' in %3 (Preview Only | Fake Hardware | No Robot Motion)")
-    .arg(binding_label, selected_id, QString::fromStdString(task_intent_path.string())));
+  append_studio_log(QString("%1 updated to '%2'").arg(binding_label, selected_id));
+  append_studio_log(QString("Task intent updated at %1 (Preview Only | Fake Hardware | No Robot Motion)")
+    .arg(QString::fromStdString(task_intent_path.string())));
   refresh_after_task_binding_change(binding_label, selected_id);
   return true;
 }
@@ -1644,32 +1673,47 @@ void MainWindow::refresh_after_task_binding_change(const QString & binding_label
 
 void MainWindow::bind_selected_item_as_pick_zone()
 {
-  const QString selected_id = selected_scene_binding_id();
-  if (selected_id.isEmpty()) {
-    append_studio_log("Use Selected as Pick Zone: no hierarchy/canvas item selected; task intent unchanged.");
+  const auto state = current_selected_scene_item();
+  if (!state.valid || state.id.trimmed().isEmpty()) {
+    append_studio_log("Use Selected as Pick Source/Zone blocked: no selection.");
     return;
   }
-  update_selected_scene_task_intent_binding("Pick Zone", {"pick", "source", "id"}, selected_id);
+  if (!is_pick_source_candidate(state)) {
+    append_studio_log(QString("Use Selected as Pick Source/Zone blocked: selected item '%1' is incompatible (role/category: %2).")
+      .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
+    return;
+  }
+  update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
 }
 
 void MainWindow::bind_selected_item_as_place_zone()
 {
-  const QString selected_id = selected_scene_binding_id();
-  if (selected_id.isEmpty()) {
-    append_studio_log("Use Selected as Place Zone: no hierarchy/canvas item selected; task intent unchanged.");
+  const auto state = current_selected_scene_item();
+  if (!state.valid || state.id.trimmed().isEmpty()) {
+    append_studio_log("Use Selected as Place Target/Zone blocked: no selection.");
     return;
   }
-  update_selected_scene_task_intent_binding("Place Zone", {"place", "target", "id"}, selected_id);
+  if (!is_place_target_candidate(state)) {
+    append_studio_log(QString("Use Selected as Place Target/Zone blocked: selected item '%1' is incompatible (role/category: %2).")
+      .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
+    return;
+  }
+  update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
 }
 
 void MainWindow::bind_selected_item_as_camera()
 {
-  const QString selected_id = selected_scene_binding_id();
-  if (selected_id.isEmpty()) {
-    append_studio_log("Use Selected as Camera: no hierarchy/canvas item selected; task intent unchanged.");
+  const auto state = current_selected_scene_item();
+  if (!state.valid || state.id.trimmed().isEmpty()) {
+    append_studio_log("Use Selected as Camera blocked: no selection.");
     return;
   }
-  update_selected_scene_task_intent_binding("Camera", {"perception", "camera", "id"}, selected_id);
+  if (!is_camera_candidate(state)) {
+    append_studio_log(QString("Use Selected as Camera blocked: selected item '%1' is incompatible (role/category: %2).")
+      .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
+    return;
+  }
+  update_selected_scene_task_intent_binding("Camera", {"perception", "camera", "id"}, state.id.trimmed());
 }
 void MainWindow::refresh_scene_browser_ui()
 {
