@@ -19,6 +19,7 @@
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include <array>
 #include <fstream>
 #include <regex>
 
@@ -109,5 +110,98 @@ void NewCellWizard::refresh_validation(){ const int row=steps_->currentRow(); co
 
 void NewCellWizard::refresh_summary(){ QString readiness="READY"; if(!scene_name_error().isEmpty()) readiness="BLOCKED"; else if(task_warning_->text().contains("missing")) readiness="BLOCKED"; else if(task_warning_->text().contains("unknown")) readiness="WARNINGS"; summary_->setText(QString("<b>Robot:</b> %1 | base=%2 tip=%3 planning=%4<br/><b>Tool:</b> %5 | attach=%6 | tcp=%7 | type=%8 | mount rpy=%9,%10,%11<br/><b>Task:</b> pick zone=%12 camera=%13 pick source=%14 place target=%15 place link=%16 grasp=%17 approach=%18m retreat=%19m<br/><b>Readiness:</b> %20").arg(robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness)); }
 
-bool NewCellWizard::create_scene_scaffold(bool open_in_builder){ if(!scene_name_error().isEmpty()||!scene_name_warning().isEmpty()) return false; const fs::path scene_dir=scenes_root_path()/scene_name_->text().trimmed().toStdString(); boost::system::error_code ec; fs::create_directories(scene_dir/"config",ec); if(ec) return false; std::ofstream out((scene_dir/"environment.yaml").string()); out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n"; out<<"robot: "<<robot_->currentText().toStdString()<<"\n"; out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n"; out<<"workcell_studio:\n  frames:\n    robot_base_link: "<<robot_base_link_->currentText().toStdString()<<"\n    robot_tip_link: "<<robot_tip_link_->currentText().toStdString()<<"\n    planning_group: "<<robot_planning_group_->currentText().toStdString()<<"\n    end_effector_attach_link: "<<ee_attach_link_->currentText().toStdString()<<"\n    end_effector_tcp_link: "<<ee_tcp_link_->currentText().toStdString()<<"\n  pick_zone:\n    source: "<<pick_zone_source_->currentText().toStdString()<<"\n    camera: "<<pick_camera_->currentText().toStdString()<<"\n    pick_object_source: "<<pick_source_->currentText().toStdString()<<"\n  place_zone:\n    target: "<<place_target_->currentText().toStdString()<<"\n  task_intent:\n    grasp_strategy: "<<grasp_strategy_->currentText().toStdString()<<"\n    approach_axis: "<<approach_axis_->currentText().toStdString()<<"\n";
- out<<"fake_hardware_first: true\nreal_robot_locked: true\nruntime_execution_enabled: false\nscaffold_only: true\n"; out.close(); result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=scene_dir; return true; }
+bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
+ if(!scene_name_error().isEmpty()||!scene_name_warning().isEmpty()) return false;
+ const fs::path scene_dir=scenes_root_path()/scene_name_->text().trimmed().toStdString();
+ boost::system::error_code ec;
+ fs::create_directories(scene_dir/"config",ec);
+ if(ec) return false;
+
+ auto yaml_scalar=[](const QString &value){
+   std::string s=value.toStdString();
+   size_t pos=0;
+   while((pos=s.find("'",pos))!=std::string::npos){ s.insert(pos,"'"); pos+=2; }
+   return std::string("'")+s+"'";
+ };
+ auto pose_number=[](QDoubleSpinBox *spin){ return spin->value(); };
+
+ const QString warning_text=task_warning_->text().trimmed();
+ const bool place_target_missing=place_target_->currentText().trimmed().isEmpty();
+ const bool unknown_links=warning_text.contains("unknown");
+ QString readiness="READY";
+ if(place_target_missing) readiness="BLOCKED";
+ else if(unknown_links) readiness="WARNINGS";
+
+ std::ofstream out((scene_dir/"environment.yaml").string());
+ out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n";
+ out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
+ out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
+ out<<"workcell_studio:\n";
+ out<<"  frames:\n";
+ out<<"    robot_base_link: "<<yaml_scalar(robot_base_link_->currentText())<<"\n";
+ out<<"    robot_tip_link: "<<yaml_scalar(robot_tip_link_->currentText())<<"\n";
+ out<<"    planning_group: "<<yaml_scalar(robot_planning_group_->currentText())<<"\n";
+ out<<"    end_effector_attach_link: "<<yaml_scalar(ee_attach_link_->currentText())<<"\n";
+ out<<"    end_effector_tcp_link: "<<yaml_scalar(ee_tcp_link_->currentText())<<"\n";
+ out<<"    robot_mount_pose:\n";
+ out<<"      xyz: ["<<pose_number(robot_x_)<<", "<<pose_number(robot_y_)<<", "<<pose_number(robot_z_)<<"]\n";
+ out<<"      rpy: ["<<pose_number(robot_roll_)<<", "<<pose_number(robot_pitch_)<<", "<<pose_number(robot_yaw_)<<"]\n";
+ out<<"    tool_mount_pose:\n";
+ out<<"      xyz: ["<<pose_number(ee_x_)<<", "<<pose_number(ee_y_)<<", "<<pose_number(ee_z_)<<"]\n";
+ out<<"      rpy: ["<<pose_number(ee_roll_)<<", "<<pose_number(ee_pitch_)<<", "<<pose_number(ee_yaw_)<<"]\n";
+
+ out<<"  environment_objects:\n";
+ for(int r=0;r<env_objects_table_->rowCount();++r){
+   auto*cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0));
+   if(!cb||!cb->isChecked()) continue;
+   auto cell=[this,r](int c){ auto*item=env_objects_table_->item(r,c); return item?item->text().trimmed():QString(); };
+   out<<"    - id: "<<yaml_scalar(cell(1))<<"\n";
+   out<<"      asset_type: "<<yaml_scalar(cell(2))<<"\n";
+   out<<"      parent_object: "<<yaml_scalar(cell(3))<<"\n";
+   out<<"      parent_link: "<<yaml_scalar(cell(4))<<"\n";
+   out<<"      child_link: "<<yaml_scalar(cell(5))<<"\n";
+   out<<"      joint_type: "<<yaml_scalar(cell(6))<<"\n";
+   out<<"      semantic_role: "<<yaml_scalar(cell(7))<<"\n";
+   std::array<double,6> pose_values{0.0,0.0,0.0,0.0,0.0,0.0};
+   const std::string pose_summary=cell(8).toStdString();
+   std::regex number_re(R"(([+-]?\d*\.?\d+))");
+   auto begin=std::sregex_iterator(pose_summary.begin(),pose_summary.end(),number_re);
+   auto end=std::sregex_iterator();
+   size_t i=0;
+   for(auto it=begin;it!=end && i<pose_values.size();++it,++i) pose_values[i]=std::stod((*it)[1].str());
+   out<<"      pose:\n";
+   out<<"        xyz: ["<<pose_values[0]<<", "<<pose_values[1]<<", "<<pose_values[2]<<"]\n";
+   out<<"        rpy: ["<<pose_values[3]<<", "<<pose_values[4]<<", "<<pose_values[5]<<"]\n";
+ }
+
+ out<<"  pick_zone:\n";
+ out<<"    source: "<<yaml_scalar(pick_zone_source_->currentText())<<"\n";
+ out<<"    camera: "<<yaml_scalar(pick_camera_->currentText())<<"\n";
+ out<<"    pick_object_source: "<<yaml_scalar(pick_source_->currentText())<<"\n";
+ out<<"    zone_frame: "<<yaml_scalar(pick_zone_frame_->currentText())<<"\n";
+ out<<"    detection_source: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+
+ out<<"  place_zone:\n";
+ out<<"    target: "<<yaml_scalar(place_target_->currentText())<<"\n";
+ out<<"    place_frame_link: "<<yaml_scalar(place_frame_link_->currentText())<<"\n";
+ out<<"    placement_mode: "<<yaml_scalar(placement_mode_->currentText())<<"\n";
+ out<<"    placement_alignment: "<<yaml_scalar(placement_alignment_->currentText())<<"\n";
+
+ out<<"  task_intent:\n";
+ out<<"    task_family: "<<yaml_scalar(task_family_->currentText())<<"\n";
+ out<<"    intent_text: "<<yaml_scalar(task_intent_text_->toPlainText().trimmed())<<"\n";
+ out<<"    grasp_strategy: "<<yaml_scalar(grasp_strategy_->currentText())<<"\n";
+ out<<"    approach_axis: "<<yaml_scalar(approach_axis_->currentText())<<"\n";
+ out<<"    release_strategy: "<<yaml_scalar(release_strategy_->currentText())<<"\n";
+ out<<"    approach_distance_m: "<<approach_distance_->value()<<"\n";
+ out<<"    retreat_distance_m: "<<retreat_distance_->value()<<"\n";
+ out<<"    readiness: "<<yaml_scalar(readiness)<<"\n";
+
+ out<<"  warnings:\n";
+ if(warning_text.isEmpty()) out<<"    - "<<yaml_scalar("none")<<"\n";
+ else out<<"    - "<<yaml_scalar(warning_text)<<"\n";
+
+ out<<"fake_hardware_first: true\nreal_robot_locked: true\nruntime_execution_enabled: false\nscaffold_only: true\n";
+ out.close();
+ result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=scene_dir; return true;
+}
