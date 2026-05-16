@@ -216,8 +216,8 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   QMatrix4x4 proj, view;
   camera_matrices(proj, view);
   const QMatrix4x4 inv = (proj * view).inverted();
-  const float ndc_x = (2.0f * static_cast<float>(e->position().x()) / qMax(1, width())) - 1.0f;
-  const float ndc_y = 1.0f - (2.0f * static_cast<float>(e->position().y()) / qMax(1, height()));
+  const float ndc_x = (2.0f * static_cast<float>(e->pos().x()) / qMax(1, width())) - 1.0f;
+  const float ndc_y = 1.0f - (2.0f * static_cast<float>(e->pos().y()) / qMax(1, height()));
   QVector4D near_h = inv * QVector4D(ndc_x, ndc_y, -1.0f, 1.0f);
   QVector4D far_h = inv * QVector4D(ndc_x, ndc_y, 1.0f, 1.0f);
   if (qFuzzyIsNull(near_h.w()) || qFuzzyIsNull(far_h.w())) return;
@@ -247,14 +247,14 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
     update();
     return;
   }
-  const QPointF pos = e->position();
+  const QPointF pos = e->pos();
   QString hovered;
   for (const auto & it : items) {
     const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
     if (QLineF(pos, p).length() < 20.0) {
       hovered = it.id;
       if (!it.warnings.isEmpty()) {
-        QToolTip::showText(e->globalPosition().toPoint(), it.warnings.join("\n"), this);
+        QToolTip::showText(e->globalPos(), it.warnings.join("\n"), this);
       }
       break;
     }
