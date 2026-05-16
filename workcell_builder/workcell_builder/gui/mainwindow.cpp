@@ -219,6 +219,8 @@ struct SceneTaskIntentSummary
 
 static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
 static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n||!n[k]) return "unknown"; n=n[k]; } return ystr(n); }
+static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
+
 static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(...){return false;} }
 static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
 {
@@ -233,9 +235,11 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   const YAML::Node task = root["task"] ? root["task"] : root;
   s.task_type = scalar_path(task, {"type"});
   if (s.task_type == "unknown") s.task_type = scalar_path(task, {"family"});
-  s.pick_source = scalar_path(task, {"pick","source"});
+  s.pick_source = scalar_path(task, {"pick","source","id"});
+  if (s.pick_source == "unknown") s.pick_source = scalar_path(task, {"pick","source"});
   if (s.pick_source == "unknown") s.pick_source = scalar_path(task, {"pick_source"});
-  s.place_target = scalar_path(task, {"place","target"});
+  s.place_target = scalar_path(task, {"place","target","id"});
+  if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place","target"});
   if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place_target"});
   s.reject_target = scalar_path(task, {"reject","target"});
   if (s.reject_target == "unknown") s.reject_target = scalar_path(task, {"reject_target"});
@@ -3203,7 +3207,6 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleRole, "file");
   }
 
-  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_items(preview_items); }
 
   auto * header = scene_hierarchy_tree_->header();
   if (header) {
@@ -3213,6 +3216,46 @@ void MainWindow::populate_scene_hierarchy()
   }
 
   const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);
+  const QString active_pick_id = normalize_bound_id(task_summary.pick_source);
+  const QString active_place_id = normalize_bound_id(task_summary.place_target);
+  QString active_camera_id = "unknown";
+  YAML::Node task_intent_root;
+  if (read_yaml(d / "config" / "workcell_builder_task_intent.yaml", &task_intent_root)) {
+    const YAML::Node task = task_intent_root["task"] ? task_intent_root["task"] : task_intent_root;
+    active_camera_id = normalize_bound_id(scalar_path(task, {"perception","camera","id"}));
+    if (active_camera_id == "unknown") active_camera_id = normalize_bound_id(scalar_path(task, {"camera","id"}));
+  }
+
+  auto role_tag_for_id = [&](const QString & id) {
+    if (id.isEmpty()) return QString();
+    QStringList tags;
+    if (active_pick_id != "unknown" && id == active_pick_id) tags << "[Pick Source]";
+    if (active_place_id != "unknown" && id == active_place_id) tags << "[Place Target]";
+    if (active_camera_id != "unknown" && id == active_camera_id) tags << "[Camera]";
+    return tags.join(" ");
+  };
+
+  for (auto & p : preview_items) {
+    const QString tag = role_tag_for_id(p.id);
+    if (!tag.isEmpty()) {
+      p.display_name = QString("%1 %2").arg(p.display_name, tag);
+    }
+  }
+
+  for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
+    auto * node = scene_hierarchy_tree_->topLevelItem(i);
+    if (!node) continue;
+    const QString item_id = node->data(0, TreeRoleId).toString().trimmed();
+    const QString tag = role_tag_for_id(item_id);
+    if (!tag.isEmpty() && node->data(0, TreeRoleCategory).toString() != "file") {
+      const QString base_name = node->text(0);
+      node->setText(0, QString("%1 %2").arg(base_name, tag));
+      node->setToolTip(0, node->text(0));
+    }
+  }
+
+  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_items(preview_items); }
+
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
   const bool live_selected = task_summary.perception_mode.compare("live_epd", Qt::CaseInsensitive) == 0;
   const bool manual_selected = task_summary.perception_mode.compare("manual_simulated", Qt::CaseInsensitive) == 0;
