@@ -15,6 +15,7 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QTableWidget;
 class QGroupBox;
+class QListWidgetItem;
 
 struct NewCellWizardResult {
   bool created{false};
@@ -48,6 +49,10 @@ private:
   QStringList readiness_warnings() const;
   QStringList readiness_blockers() const;
   void apply_recommended_environment_layout();
+  void refresh_environment_review_table();
+  void add_environment_asset_row(const QString &id, const QString &asset, const QString &parent, const QString &parent_link, const QString &child_link, const QString &role);
+  void select_environment_substep(int index);
+  QStringList discover_environment_asset_catalog() const;
   bool create_scene_scaffold(bool open_in_builder);
   QString scene_name_error() const;
   QString scene_name_warning() const;
@@ -93,7 +98,17 @@ private:
   QComboBox *ee_type_{nullptr};
   QGroupBox *ee_advanced_group_{nullptr};
 
+  QListWidget *env_substeps_{nullptr};
+  QStackedWidget *env_substep_stack_{nullptr};
   QTableWidget *env_objects_table_{nullptr};
+  QTableWidget *env_review_table_{nullptr};
+  QComboBox *env_add_asset_combo_{nullptr};
+  QComboBox *env_parent_combo_{nullptr};
+  QComboBox *env_parent_link_combo_{nullptr};
+  QComboBox *env_child_link_combo_{nullptr};
+  QComboBox *env_role_combo_{nullptr};
+  QComboBox *env_frame_combo_{nullptr};
+  QPushButton *env_edit_selected_button_{nullptr};
   QLabel *env_preview_{nullptr};
 
   QComboBox *task_family_{nullptr};

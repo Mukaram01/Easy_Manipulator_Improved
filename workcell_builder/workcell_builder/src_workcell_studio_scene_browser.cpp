@@ -5,6 +5,7 @@
 
 #include <set>
 #include <cstdlib>
+#include <iostream>
 
 namespace fs = boost::filesystem;
 
@@ -54,15 +55,36 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
 
 void try_parse_env(WorkcellStudioSceneInfo * s)
 {
+  if (s == nullptr) return;
+  const fs::path environment_yaml = s->scene_dir / "environment.yaml";
+  std::cerr << "[workcell_builder] context=scene_browser/environment_yaml path="
+            << environment_yaml.string() << std::endl;
+
   try {
-    YAML::Node n = YAML::LoadFile((s->scene_dir / "environment.yaml").string());
-    const std::string robot = yaml_named_or_scalar(n["robot"], "name");
-    const std::string gripper = yaml_named_or_scalar(n["end_effector"], "name");
+    YAML::Node n = YAML::LoadFile(environment_yaml.string());
+
+    const std::string robot = yaml_name_from_node(n["robot"]);
+
+    std::string gripper = yaml_name_from_node(n["end_effector"]);
+    if (gripper.empty()) {
+      // Legacy alias support.
+      gripper = yaml_name_from_node(n["gripper"]);
+    }
+
+    std::size_t object_count = 0U;
+    const YAML::Node object = n["object"];
+    if (object && object.IsSequence()) object_count = object.size();
+    if (object_count == 0U) {
+      const YAML::Node objects = n["objects"];
+      if (objects && objects.IsSequence()) object_count = objects.size();
+    }
+
     if (!robot.empty()) s->robot_summary = robot;
     if (!gripper.empty()) s->gripper_summary = gripper;
-    if (n["object"] && n["object"].IsSequence()) s->object_count = n["object"].size();
-  } catch (const std::exception &) {
-    s->parse_warning = "Could not parse environment.yaml";
+    s->object_count = object_count;
+  } catch (const std::exception & e) {
+    s->parse_warning = std::string("Could not parse environment.yaml: ") + e.what() +
+      " (file: " + environment_yaml.string() + ")";
   }
 }
 }
