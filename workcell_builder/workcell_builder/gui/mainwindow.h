@@ -200,6 +200,7 @@ private:
   bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
   void refresh_diagnostics_quick_status();
   void refresh_scene_builder_left_explorer();
+  void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
@@ -252,6 +253,8 @@ private:
   QLabel * scene_builder_title_{ nullptr };
   QLabel * scene_preview_label_{ nullptr };
   QLabel * scene_builder_status_chip_{ nullptr };
+  QString scene_builder_status_base_{"READY"};
+  bool scene_builder_is_3d_view_{ true };
   QLabel * scene_builder_path_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
