@@ -26,7 +26,14 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); }
 void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
-void Scene3DViewportWidget::set_isometric_view() { yaw_ = -0.9; pitch_ = 0.7; orbit_offset_ = QVector3D(0.0f, 0.0f, 0.0f); distance_ = 6.0; update(); }
+void Scene3DViewportWidget::set_isometric_view()
+{
+  yaw_ = -0.78539816339;
+  pitch_ = 0.61547970867;
+  orbit_offset_ = QVector3D(0.0f, 0.0f, 0.0f);
+  distance_ = 6.0;
+  update();
+}
 void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
 void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
@@ -45,6 +52,7 @@ void Scene3DViewportWidget::fit_scene() {
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
+  scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
   const double fit_distance = (radius / qTan(fov * 0.5)) * 1.25;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
@@ -176,12 +184,18 @@ QPointF Scene3DViewportWidget::project_to_screen(double x, double y, double z) c
 void Scene3DViewportWidget::camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const
 {
   const float aspect = height() > 0 ? static_cast<float>(width()) / static_cast<float>(height()) : 1.0f;
+  const float clamped_distance = static_cast<float>(qBound(min_distance_, distance_, max_distance_));
+  const float cp = static_cast<float>(qCos(pitch_));
+  const QVector3D forward(
+    cp * static_cast<float>(qSin(yaw_)),
+    static_cast<float>(qSin(pitch_)),
+    cp * static_cast<float>(qCos(yaw_)));
+  const QVector3D eye = orbit_offset_ - (forward * clamped_distance);
+  const float far_plane = qMax(100.0f, clamped_distance + static_cast<float>(scene_radius_ * 6.0));
   out_proj.setToIdentity();
-  out_proj.perspective(50.0f, aspect, 0.05f, 100.0f);
+  out_proj.perspective(50.0f, aspect, 0.05f, far_plane);
   out_view.setToIdentity();
-  out_view.translate(0.0f, -0.5f, -6.0f * zoom_);
-  out_view.rotate(qRadiansToDegrees(pitch_), 1.0f, 0.0f, 0.0f);
-  out_view.rotate(qRadiansToDegrees(yaw_), 0.0f, 1.0f, 0.0f);
+  out_view.lookAt(eye, orbit_offset_, QVector3D(0.0f, 1.0f, 0.0f));
 }
 bool Scene3DViewportWidget::ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
                                                 const ScenePreviewWidget::PreviewItem & item, float & out_t) const
@@ -241,6 +255,21 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
 {
   auto d = e->pos() - last_;
   last_ = e->pos();
+  const bool pan_mode = (e->buttons() & Qt::MiddleButton) || ((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ShiftModifier));
+  if (pan_mode) {
+    const float pan_scale = static_cast<float>(distance_ * 0.0018);
+    const QVector3D forward(
+      static_cast<float>(qCos(pitch_) * qSin(yaw_)),
+      static_cast<float>(qSin(pitch_)),
+      static_cast<float>(qCos(pitch_) * qCos(yaw_)));
+    const QVector3D world_up(0.0f, 1.0f, 0.0f);
+    QVector3D right = QVector3D::crossProduct(forward, world_up).normalized();
+    if (right.lengthSquared() < 1e-6f) right = QVector3D(1.0f, 0.0f, 0.0f);
+    const QVector3D up = QVector3D::crossProduct(right, forward).normalized();
+    orbit_offset_ += (-right * (d.x() * pan_scale)) + (up * (d.y() * pan_scale));
+    update();
+    return;
+  }
   if (e->buttons() & Qt::LeftButton) {
     yaw_ += d.x() * 0.01;
     pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4);
@@ -262,4 +291,10 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
   if (hovered.isEmpty()) QToolTip::hideText();
   hovered_id_ = hovered;
 }
-void Scene3DViewportWidget::wheelEvent(QWheelEvent * e) { zoom_ = qBound(0.4, zoom_ + (e->angleDelta().y() > 0 ? -0.1 : 0.1), 2.2); update(); }
+void Scene3DViewportWidget::wheelEvent(QWheelEvent * e)
+{
+  const double delta_steps = static_cast<double>(e->angleDelta().y()) / 120.0;
+  const double zoom_factor = std::pow(0.9, delta_steps);
+  distance_ = qBound(min_distance_, distance_ * zoom_factor, max_distance_);
+  update();
+}
