@@ -25,3 +25,10 @@ def test_save_scene_creates_timestamped_backup_and_canvas_refresh():
     assert 'environment.yaml.' in CPP and '.bak' in CPP
     assert 'QDateTime::currentDateTimeUtc().toString("yyyyMMddhhmmss")' in CPP
     assert 'refresh_canvas_from_scene(scene_window.scene);' in CPP
+
+
+def test_scene_selection_hook_updates_inspector_and_canvas_selection():
+    main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    assert 'connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });' in main
+    assert 'inspector_label_->setText(QString("Selected: %1\\nCategory: %2\\nPose: %3\\nSource: %4")' in main
+    assert 'digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi);' in main
