@@ -36,10 +36,9 @@ def test_scene_population_role_taxonomy_tokens_present():
         'return QString("end_effector/tool")',
         'return QString("camera")',
         'return QString("support_surface/table")',
-        'return QString("pick_source/pick_zone")',
-        'return QString("place_target/bin")',
-        'return QString("safety_zone")',
-        'return QString("unknown")',
+        'return QString("pick source/zone")',
+        'return QString("place target/bin")',
+        'return QString("safety zone")',
     ]:
         assert token in MAIN
 
@@ -60,5 +59,26 @@ def test_scene_preview_selected_state_updates_and_compact_inspector_pose_grid_pr
         'scene_preview_widget_->set_scene_selected(false);',
         'auto * pose_grid = new QGridLayout();',
         'scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);',
+    ]:
+        assert token in MAIN
+
+
+def test_scene_tree_excludes_file_artifact_rows_but_files_tab_keeps_required_artifacts():
+    for token in [
+        'const QSet<QString> excluded_scene_file_artifacts = {',
+        '"package.xml",',
+        '"CMakeLists.txt",',
+        '"launch/demo.launch.py",',
+        '"environment.yaml",',
+        '"scene_manifest.yaml"',
+    ]:
+        assert token in MAIN
+
+    for token in [
+        '{"ROS Package File", "package.xml"}',
+        '{"CMake File", "CMakeLists.txt"}',
+        '{"Demo Launch", "launch/demo.launch.py"}',
+        '{"Environment YAML", "environment.yaml"}',
+        '{"Scene Manifest", "scene_manifest.yaml"}',
     ]:
         assert token in MAIN
