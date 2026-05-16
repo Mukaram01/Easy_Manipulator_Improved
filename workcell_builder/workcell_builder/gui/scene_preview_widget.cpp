@@ -61,90 +61,172 @@ protected:
     double s = 220.0 / (zz * zoom_);
     return QPointF(width()*0.5 + rx*s, height()*0.6 - ry*s);
   }
+  enum class RenderLayer {
+    BackgroundGrid,
+    RobotReachLayer,
+    SafetyZones,
+    SupportSurfaces,
+    BinsFixturesObjects,
+    CamerasAndFov,
+    PickPlaceZones,
+    SelectionHighlight,
+    CompactLabels,
+    WarningBadges,
+  };
+
+  // Render order is intentional: base geometry first, selection highlight next,
+  // then labels and warning badges on top for readability.
   void paintEvent(QPaintEvent *) override {
-    QPainter p(this); p.fillRect(rect(), QColor("#0b1020")); p.setRenderHint(QPainter::Antialiasing, true);
+    QPainter p(this);
+    p.fillRect(rect(), QColor("#0b1020"));
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    drawBackgroundGrid(p);
+    drawRobotReachLayer(p);
+    drawSafetyZones(p);
+    drawSupportSurfaces(p);
+    drawBinsFixturesObjects(p);
+    drawCamerasAndFov(p);
+    drawPickPlaceZones(p);
+    drawSelectionHighlight(p);
+    drawCompactLabels(p);
+    drawWarningBadges(p);
+  }
+
+  QColor itemColor(const ScenePreviewWidget::PreviewItem & it) const {
+    if (it.category.contains("robot",Qt::CaseInsensitive)) return QColor("#a78bfa");
+    if (it.category.contains("camera",Qt::CaseInsensitive)) return QColor("#38bdf8");
+    if (it.category.contains("conveyor",Qt::CaseInsensitive)) return QColor("#06b6d4");
+    if (it.category.contains("bin",Qt::CaseInsensitive) || it.role.contains("pick", Qt::CaseInsensitive)) return QColor("#34d399");
+    if (it.role.contains("place", Qt::CaseInsensitive)) return QColor("#fb7185");
+    return QColor("#94a3b8");
+  }
+
+  void drawItemPolygon(QPainter & p, const ScenePreviewWidget::PreviewItem & it, const QColor & color, int width) const {
+    QPointF a=project(it.x,it.y,it.z), b=project(it.x+it.sx,it.y,it.z), c1=project(it.x+it.sx,it.y+it.sy,it.z), d=project(it.x,it.y+it.sy,it.z);
+    p.setPen(QPen(color, width));
+    QPolygonF poly;
+    poly << a << b << c1 << d;
+    p.drawPolygon(poly);
+  }
+
+  void drawBackgroundGrid(QPainter & p) const {
     p.setPen(QPen(QColor("#1f2937"),1));
     for (int i=-10;i<=10;++i){ p.drawLine(project(i*0.4,0,-4), project(i*0.4,0,4)); p.drawLine(project(-4,0,i*0.4), project(4,0,i*0.4)); }
+  }
+
+  void drawRobotReachLayer(QPainter & p) const {
+    if (!(show_reachability_heatmap || show_work_envelope)) return;
+    const double base_x = -0.2, base_y = 0.0, base_z = -2.2;
+    QPointF center = project(base_x, base_y + 0.05, base_z);
+    const QPointF edgeMin = project(base_x + reach_overlay.approximate_reach_min_m, base_y + 0.05, base_z);
+    const QPointF edgePref = project(base_x + reach_overlay.preferred_work_zone_radius_m, base_y + 0.05, base_z);
+    const QPointF edgeMax = project(base_x + reach_overlay.approximate_reach_max_m, base_y + 0.05, base_z);
+    const double rMin = QLineF(center, edgeMin).length();
+    const double rPref = QLineF(center, edgePref).length();
+    const double rMax = QLineF(center, edgeMax).length();
+    if (show_work_envelope) {
+      p.setPen(QPen(QColor("#22c55e"), 2, Qt::DashLine));
+      p.drawEllipse(center, rPref, rPref);
+    }
+    if (show_reachability_heatmap) {
+      p.setPen(QPen(QColor("#f59e0b"), 2, Qt::DotLine)); p.drawEllipse(center, rMin, rMin);
+      p.setPen(QPen(QColor("#ef4444"), 2)); p.drawEllipse(center, rMax, rMax);
+    }
+  }
+
+  void drawSafetyZones(QPainter & p) const {
+    if (!show_safety) return;
+    for (const auto & it : items) {
+      if (!it.category.contains("safety", Qt::CaseInsensitive)) continue;
+      drawItemPolygon(p, it, itemColor(it), 2);
+    }
+  }
+
+  void drawSupportSurfaces(QPainter & p) const {
+    auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c){
+      Q_UNUSED(sz);
+      QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
+      QPolygonF poly; poly << a << b << c1 << d;
+      p.setPen(QPen(c,2)); p.drawPolygon(poly);
+    };
+    drawBox(-1.2,0,-1.0,2.4,0.15,1.6,QColor("#64748b"));
+    drawBox(-2.4,0,-0.2,1.2,0.1,0.6,QColor("#06b6d4"));
+  }
+
+  void drawBinsFixturesObjects(QPainter & p) const {
     for (const auto & it : items) {
       if (!show_safety && it.category.contains("safety", Qt::CaseInsensitive)) continue;
-      const bool selected = it.id == selected_id;
-      QColor c = QColor("#94a3b8");
-      if (it.category.contains("robot",Qt::CaseInsensitive)) c=QColor("#a78bfa");
-      else if (it.category.contains("camera",Qt::CaseInsensitive)) c=QColor("#38bdf8");
-      else if (it.category.contains("conveyor",Qt::CaseInsensitive)) c=QColor("#06b6d4");
-      else if (it.category.contains("bin",Qt::CaseInsensitive) || it.role.contains("pick", Qt::CaseInsensitive)) c=QColor("#34d399");
-      else if (it.role.contains("place", Qt::CaseInsensitive)) c=QColor("#fb7185");
-      QPointF a=project(it.x,it.y,it.z), b=project(it.x+it.sx,it.y,it.z), c1=project(it.x+it.sx,it.y+it.sy,it.z), d=project(it.x,it.y+it.sy,it.z);
-      p.setPen(QPen(selected ? QColor("#fde047") : c, selected ? 3 : 2));
-      QPolygonF poly;  // Qt5-compatible polygon construction (initializer-list ctor is not available).
-      poly << a << b << c1 << d;
-      p.drawPolygon(poly);
+      if (it.id == selected_id) continue;
+      drawItemPolygon(p, it, itemColor(it), 2);
+    }
+  }
+
+  void drawCamerasAndFov(QPainter & p) const {
+    auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c){
+      Q_UNUSED(sz);
+      QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
+      QPolygonF poly; poly << a << b << c1 << d;
+      p.setPen(QPen(c,2)); p.drawPolygon(poly);
+    };
+    drawBox(0.8,0.8,-1.8,0.2,0.2,0.2,QColor("#38bdf8"));
+
+    if (!show_camera_fov) return;
+    const QPointF c0 = project(camera_overlay.x, camera_overlay.y, camera_overlay.z);
+    const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);
+    const double v = qDegreesToRadians(camera_overlay.vertical_fov_deg * 0.5);
+    const double n = qMax(0.05, camera_overlay.range_min_m);
+    const double f = qMax(n + 0.05, camera_overlay.range_max_m);
+    auto rayPoint=[&](double r,double ah,double av){ return QVector3D(camera_overlay.x + r, camera_overlay.y + qTan(av)*r, camera_overlay.z + qTan(ah)*r); };
+    QVector3D nfl=rayPoint(n,-h,-v), nfr=rayPoint(n,h,-v), nbl=rayPoint(n,-h,v), nbr=rayPoint(n,h,v);
+    QVector3D ffl=rayPoint(f,-h,-v), ffr=rayPoint(f,h,-v), fbl=rayPoint(f,-h,v), fbr=rayPoint(f,h,v);
+    auto pp=[&](const QVector3D &v3){ return project(v3.x(), v3.y(), v3.z()); };
+    QColor camC = camera_overlay.status == "ready" ? QColor("#22c55e") : (camera_overlay.status == "warning" ? QColor("#f59e0b") : QColor("#94a3b8"));
+    p.setPen(QPen(camC,2));
+    p.drawLine(c0, pp(ffl)); p.drawLine(c0, pp(ffr)); p.drawLine(c0, pp(fbl)); p.drawLine(c0, pp(fbr));
+    QPolygonF nearP; nearP << pp(nfl) << pp(nfr) << pp(nbr) << pp(nbl); p.drawPolygon(nearP);
+    QPolygonF farP; farP << pp(ffl) << pp(ffr) << pp(fbr) << pp(fbl); p.drawPolygon(farP);
+    p.drawLine(c0, project(camera_overlay.x + f, camera_overlay.y, camera_overlay.z));
+  }
+
+  void drawPickPlaceZones(QPainter & p) const {
+    auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c){
+      Q_UNUSED(sz);
+      QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
+      QPolygonF poly; poly << a << b << c1 << d;
+      p.setPen(QPen(c,2)); p.drawPolygon(poly);
+    };
+    drawBox(-0.8,0.15,-0.7,0.3,0.3,0.3,QColor("#34d399"));
+    drawBox(1.3,0.15,-0.1,0.3,0.3,0.3,QColor("#fb7185"));
+    if (!show_pick_place) return;
+    p.setPen(QPen(QColor("#00d1b2"), 2, Qt::DashLine));
+    p.setPen(QPen(QColor("#ff7b72"), 2, Qt::DashLine));
+  }
+
+  void drawSelectionHighlight(QPainter & p) const {
+    for (const auto & it : items) {
+      if (it.id != selected_id) continue;
+      drawItemPolygon(p, it, QColor("#fde047"), 3);
+      break;
+    }
+  }
+
+  void drawCompactLabels(QPainter & p) const {
+    for (const auto & it : items) {
+      if (!show_safety && it.category.contains("safety", Qt::CaseInsensitive)) continue;
+      const bool selected = (it.id == selected_id);
       if (show_labels || selected) p.drawText(project(it.x,it.y+it.sy+0.08,it.z), selected ? (it.display_name + " [selected]") : it.display_name);
-      if (show_warnings && it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
-      if (show_pick_place && (it.role.contains("pick") || it.role.contains("place"))) p.drawEllipse(project(it.x,it.y+it.sy+0.1,it.z), 4, 4);
     }
-
-    if (show_reachability_heatmap || show_work_envelope) {
-      const double base_x = -0.2, base_y = 0.0, base_z = -2.2;
-      QPointF center = project(base_x, base_y + 0.05, base_z);
-      const QPointF edgeMin = project(base_x + reach_overlay.approximate_reach_min_m, base_y + 0.05, base_z);
-      const QPointF edgePref = project(base_x + reach_overlay.preferred_work_zone_radius_m, base_y + 0.05, base_z);
-      const QPointF edgeMax = project(base_x + reach_overlay.approximate_reach_max_m, base_y + 0.05, base_z);
-      const double rMin = QLineF(center, edgeMin).length();
-      const double rPref = QLineF(center, edgePref).length();
-      const double rMax = QLineF(center, edgeMax).length();
-      if (show_work_envelope) {
-        p.setPen(QPen(QColor("#22c55e"), 2, Qt::DashLine));
-        p.drawEllipse(center, rPref, rPref);
-        p.drawText(project(base_x + 0.1, base_y + 0.25, base_z), "Work Envelope (preview-only)");
-      }
-      if (show_reachability_heatmap) {
-        p.setPen(QPen(QColor("#f59e0b"), 2, Qt::DotLine)); p.drawEllipse(center, rMin, rMin);
-        p.setPen(QPen(QColor("#ef4444"), 2)); p.drawEllipse(center, rMax, rMax);
-        p.drawText(project(base_x + 0.12, base_y + 0.4, base_z), "Reachability Heatmap (approximate, preview-only)");
-      }
-    }
-
+    if (show_work_envelope) p.drawText(project(-0.1, 0.25, -2.2), "Work Envelope (preview-only)");
+    if (show_reachability_heatmap) p.drawText(project(-0.08, 0.4, -2.2), "Reachability Heatmap (approximate, preview-only)");
     if (show_pick_place) {
       p.setPen(QPen(QColor("#00d1b2"), 2, Qt::DashLine)); p.drawText(project(-0.8, 0.5, -0.7), "pick source zone");
       p.setPen(QPen(QColor("#ff7b72"), 2, Qt::DashLine)); p.drawText(project(1.3, 0.5, -0.1), "place target zone");
       if (task_overlay.reject_target_id != "unknown") { p.setPen(QPen(QColor("#f59e0b"), 2, Qt::DashLine)); p.drawText(project(1.7, 0.5, 0.3), "reject target zone"); }
     }
-    if (show_task_route) {
-      p.setPen(QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
-      p.drawLine(project(-0.8,0.3,-0.7), project(1.3,0.3,-0.1));
-      p.drawText(project(0.3, 0.45, -0.4), "Task Route");
-      if (task_overlay.reject_target_id != "unknown") p.drawLine(project(-0.8,0.32,-0.7), project(1.8,0.32,0.3));
-    }
-    if (show_approach_retreat) {
-      p.setPen(QPen(QColor("#22c55e"), 2)); p.drawLine(project(-0.8,0.65,-0.7), project(-0.8,1.1,-0.7));
-      p.drawText(project(-0.7, 1.1, -0.7), "Approach/Retreat");
-      p.setPen(QPen(QColor("#ef4444"), 2)); p.drawLine(project(-0.7,1.05,-0.7), project(-0.7,0.72,-0.7));
-      p.drawText(project(-0.55, 1.18, -0.7), QString("grasp=%1").arg(task_overlay.grasp_strategy));
-    }
-    if (!task_overlay.has_intent_metadata && show_warnings) p.drawText(project(-2.2, 1.2, -0.8), "Task overlay unavailable: missing task intent");
-
-    if (show_camera_fov) {
-      const QPointF c0 = project(camera_overlay.x, camera_overlay.y, camera_overlay.z);
-      const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);
-      const double v = qDegreesToRadians(camera_overlay.vertical_fov_deg * 0.5);
-      const double n = qMax(0.05, camera_overlay.range_min_m);
-      const double f = qMax(n + 0.05, camera_overlay.range_max_m);
-      auto rayPoint=[&](double r,double ah,double av){ return QVector3D(camera_overlay.x + r, camera_overlay.y + qTan(av)*r, camera_overlay.z + qTan(ah)*r); };
-      QVector3D nfl=rayPoint(n,-h,-v), nfr=rayPoint(n,h,-v), nbl=rayPoint(n,-h,v), nbr=rayPoint(n,h,v);
-      QVector3D ffl=rayPoint(f,-h,-v), ffr=rayPoint(f,h,-v), fbl=rayPoint(f,-h,v), fbr=rayPoint(f,h,v);
-      auto pp=[&](const QVector3D &v3){ return project(v3.x(), v3.y(), v3.z()); };
-      QColor camC = camera_overlay.status == "ready" ? QColor("#22c55e") : (camera_overlay.status == "warning" ? QColor("#f59e0b") : QColor("#94a3b8"));
-      p.setPen(QPen(camC,2));
-      p.drawLine(c0, pp(ffl)); p.drawLine(c0, pp(ffr)); p.drawLine(c0, pp(fbl)); p.drawLine(c0, pp(fbr));
-      QPolygonF nearP; nearP << pp(nfl) << pp(nfr) << pp(nbr) << pp(nbl); p.drawPolygon(nearP);
-      QPolygonF farP; farP << pp(ffl) << pp(ffr) << pp(fbr) << pp(fbl); p.drawPolygon(farP);
-      p.drawLine(c0, project(camera_overlay.x + f, camera_overlay.y, camera_overlay.z));
-      p.drawText(project(camera_overlay.x, camera_overlay.y + 0.25, camera_overlay.z), QString("%1 [%2]").arg(camera_overlay.display_name, camera_overlay.frame_id));
-    }
-    if (show_pick_coverage && show_warnings) {
-      for (int wi = 0; wi < camera_overlay.warnings.size(); ++wi) p.drawText(project(-2.2, 1.0 - 0.16*wi, -0.7), camera_overlay.warnings[wi]);
-    }
+    if (show_task_route) { p.setPen(QPen(QColor("#38bdf8"), 2, Qt::DashDotLine)); p.drawLine(project(-0.8,0.3,-0.7), project(1.3,0.3,-0.1)); p.drawText(project(0.3, 0.45, -0.4), "Task Route"); }
+    if (show_approach_retreat) { p.setPen(QPen(QColor("#22c55e"), 2)); p.drawLine(project(-0.8,0.65,-0.7), project(-0.8,1.1,-0.7)); p.drawText(project(-0.7, 1.1, -0.7), "Approach/Retreat"); }
+    if (show_camera_fov) p.drawText(project(camera_overlay.x, camera_overlay.y + 0.25, camera_overlay.z), QString("%1 [%2]").arg(camera_overlay.display_name, camera_overlay.frame_id));
     if (show_epd_detections) {
       for (const auto & det : epd_detections) {
         QColor dc = det.status == "ready" ? QColor("#22c55e") : (det.status == "warning" ? QColor("#f59e0b") : QColor("#64748b"));
@@ -153,26 +235,17 @@ protected:
         if (show_detection_labels) p.drawText(project(det.x + 0.05, det.y + 0.08, det.z), QString("%1 %2").arg(det.label, det.confidence >= 0.0 ? QString("(%1)").arg(det.confidence,0,'f',2) : QString("")));
       }
     }
+  }
 
-    auto drawBox=[&](double x,double y,double z,double sx,double sy,double sz,QColor c,const QString &name){
-      QPointF a=project(x,y,z), b=project(x+sx,y,z), c1=project(x+sx,y+sy,z), d=project(x,y+sy,z);
-      Q_UNUSED(sz);
-      QPolygonF poly;
-      poly << a << b << c1 << d;
-      p.setPen(QPen(c,2));
-      p.drawPolygon(poly);
-      p.drawText(project(x,y+sy+0.1,z), name);
-    };
-    p.setPen(QPen(QColor("#ef4444"),2)); p.drawLine(project(0,0,0), project(1.2,0,0)); p.drawText(project(1.25,0,0), "X");
-    p.setPen(QPen(QColor("#22c55e"),2)); p.drawLine(project(0,0,0), project(0,1.2,0)); p.drawText(project(0,1.3,0), "Y");
-    p.setPen(QPen(QColor("#3b82f6"),2)); p.drawLine(project(0,0,0), project(0,0,1.2)); p.drawText(project(0,0,1.3), "Z");
-    drawBox(-1.2,0,-1.0,2.4,0.15,1.6,QColor("#64748b"),"table");
-    drawBox(1.6,0,-0.8,0.8,0.8,0.8,QColor("#f59e0b"),"bin");
-    drawBox(-2.4,0,-0.2,1.2,0.1,0.6,QColor("#06b6d4"),"conveyor");
-    drawBox(-0.2,0,-2.2,0.5,0.8,0.5,QColor("#a78bfa"),"robot base");
-    drawBox(0.8,0.8,-1.8,0.2,0.2,0.2,QColor("#38bdf8"),"camera");
-    drawBox(-0.8,0.15,-0.7,0.3,0.3,0.3,QColor("#34d399"),"pick src");
-    drawBox(1.3,0.15,-0.1,0.3,0.3,0.3,QColor("#fb7185"),"place tgt");
+  void drawWarningBadges(QPainter & p) const {
+    if (!show_warnings) return;
+    for (const auto & it : items) {
+      if (it.status == "warning") p.drawText(project(it.x,it.y+it.sy+0.2,it.z), "metadata incomplete");
+    }
+    if (!task_overlay.has_intent_metadata) p.drawText(project(-2.2, 1.2, -0.8), "Task overlay unavailable: missing task intent");
+    if (show_pick_coverage) {
+      for (int wi = 0; wi < camera_overlay.warnings.size(); ++wi) p.drawText(project(-2.2, 1.0 - 0.16*wi, -0.7), camera_overlay.warnings[wi]);
+    }
   }
 private:
   QPoint last_;
