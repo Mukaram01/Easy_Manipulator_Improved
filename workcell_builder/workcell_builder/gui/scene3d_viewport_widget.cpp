@@ -1,6 +1,5 @@
 #include "scene3d_viewport_widget.h"
 
-#include <QLineF>
 #include <QMatrix4x4>
 #include <QMouseEvent>
 #include <QPainter>
@@ -30,6 +29,12 @@ enum class NormalizedRole
 QString normalized_token(const QString & value)
 {
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+}
+QString summarize_warnings(const QStringList & warnings)
+{
+  if (warnings.isEmpty()) return QStringLiteral("none");
+  if (warnings.size() == 1) return warnings.front();
+  return QStringLiteral("%1 (+%2 more)").arg(warnings.front()).arg(warnings.size() - 1);
 }
 
 NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
@@ -167,7 +172,10 @@ void Scene3DViewportWidget::paintGL()
       case NormalizedRole::WarningAnchor: draw_warning_badge_anchor(*it); break;
       case NormalizedRole::Generic: draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it)); break;
     }
-    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#f8fafc"));
+    if (it->id == selected_id) {
+      const ItemBounds bounds = item_bounds_for_role(*it);
+      draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
+    }
   }
 
   glDisable(GL_BLEND);
@@ -201,7 +209,7 @@ void Scene3DViewportWidget::paintGL()
     }
     if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(QColor("#fca5a5"));
-      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), it.warnings.join(" | "));
+      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), summarize_warnings(it.warnings));
     }
   }
 }
@@ -324,8 +332,9 @@ void Scene3DViewportWidget::camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & 
 bool Scene3DViewportWidget::ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
                                                 const ScenePreviewWidget::PreviewItem & item, float & out_t) const
 {
-  const QVector3D bmin(item.x, item.y, item.z);
-  const QVector3D bmax(item.x + item.sx, item.y + item.sy, item.z + item.sz);
+  const ItemBounds bounds = item_bounds_for_role(item);
+  const QVector3D bmin(bounds.x, bounds.y, bounds.z);
+  const QVector3D bmax(bounds.x + bounds.sx, bounds.y + bounds.sy, bounds.z + bounds.sz);
   float tmin = 0.0f;
   float tmax = 1e9f;
   for (int axis = 0; axis < 3; ++axis) {
@@ -348,32 +357,58 @@ bool Scene3DViewportWidget::ray_intersects_aabb(const QVector3D & ray_origin, co
   out_t = tmin;
   return true;
 }
-void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
-  last_ = e->pos();
-  if (e->button() != Qt::LeftButton) return;
+Scene3DViewportWidget::ItemBounds Scene3DViewportWidget::item_bounds_for_role(const ScenePreviewWidget::PreviewItem & item) const
+{
+  const NormalizedRole role = classify_item_role(item);
+  if (role == NormalizedRole::Object || role == NormalizedRole::WarningAnchor) {
+    const double cube = (role == NormalizedRole::Object)
+      ? qMax(0.05, qMin(item.sx, qMin(item.sy, item.sz)))
+      : qMax(0.04, qMin(item.sx, qMin(item.sy, item.sz)));
+    return { item.x, item.y, item.z, cube, cube, cube };
+  }
+  return { item.x, item.y, item.z, item.sx, item.sy, item.sz };
+}
+bool Scene3DViewportWidget::pick_item_at_screen(
+  const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip) const
+{
   QMatrix4x4 proj, view;
   camera_matrices(proj, view);
   const QMatrix4x4 inv = (proj * view).inverted();
-  const float ndc_x = (2.0f * static_cast<float>(e->pos().x()) / qMax(1, width())) - 1.0f;
-  const float ndc_y = 1.0f - (2.0f * static_cast<float>(e->pos().y()) / qMax(1, height()));
+  const float ndc_x = (2.0f * static_cast<float>(pos.x()) / qMax(1, width())) - 1.0f;
+  const float ndc_y = 1.0f - (2.0f * static_cast<float>(pos.y()) / qMax(1, height()));
   QVector4D near_h = inv * QVector4D(ndc_x, ndc_y, -1.0f, 1.0f);
   QVector4D far_h = inv * QVector4D(ndc_x, ndc_y, 1.0f, 1.0f);
-  if (qFuzzyIsNull(near_h.w()) || qFuzzyIsNull(far_h.w())) return;
-  QVector3D p0 = near_h.toVector3DAffine();
-  QVector3D p1 = far_h.toVector3DAffine();
-  QVector3D dir = (p1 - p0).normalized();
-  QString best_id, best_role;
+  if (qFuzzyIsNull(near_h.w()) || qFuzzyIsNull(far_h.w())) return false;
+  const QVector3D p0 = near_h.toVector3DAffine();
+  const QVector3D p1 = far_h.toVector3DAffine();
+  const QVector3D dir = (p1 - p0).normalized();
+
   float best_t = 1e9f;
+  const ScenePreviewWidget::PreviewItem * best_item = nullptr;
   for (const auto & item : items) {
     if (!item.selectable) continue;
     float t = 0.0f;
     if (ray_intersects_aabb(p0, dir, item, t) && t < best_t) {
       best_t = t;
-      best_id = item.id;
-      best_role = item.role.trimmed().isEmpty() ? QStringLiteral("unknown") : item.role.trimmed();
+      best_item = &item;
     }
   }
-  if (!best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
+  if (best_item == nullptr) return false;
+  out_id = best_item->id;
+  out_role = best_item->role.trimmed().isEmpty() ? QStringLiteral("unknown") : best_item->role.trimmed();
+  if (out_tooltip != nullptr) {
+    const QString role_normalized = normalized_token(out_role);
+    *out_tooltip = QStringLiteral("Item: %1\nRole: %2\nWarnings: %3")
+      .arg(out_id, role_normalized, summarize_warnings(best_item->warnings));
+    if (!best_item->warnings.isEmpty()) *out_tooltip += QStringLiteral("\n\nDetails:\n- ") + best_item->warnings.join("\n- ");
+  }
+  return true;
+}
+void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
+  last_ = e->pos();
+  if (e->button() != Qt::LeftButton) return;
+  QString best_id, best_role;
+  if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
 }
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
 {
@@ -400,19 +435,12 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
     update();
     return;
   }
-  const QPointF pos = e->pos();
-  QString hovered;
-  for (const auto & it : items) {
-    const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
-    if (QLineF(pos, p).length() < 20.0) {
-      hovered = it.id;
-      if (!it.warnings.isEmpty()) {
-        QToolTip::showText(e->globalPos(), it.warnings.join("\n"), this);
-      }
-      break;
-    }
+  QString hovered, hovered_role, hover_tooltip;
+  if (pick_item_at_screen(e->pos(), hovered, hovered_role, &hover_tooltip) && !hovered.isEmpty()) {
+    QToolTip::showText(e->globalPos(), hover_tooltip, this);
+  } else {
+    QToolTip::hideText();
   }
-  if (hovered.isEmpty()) QToolTip::hideText();
   hovered_id_ = hovered;
 }
 void Scene3DViewportWidget::wheelEvent(QWheelEvent * e)

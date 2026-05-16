@@ -2,13 +2,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+VIEW3D = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
 
 
 def test_scene_builder_uses_main_splitter_layout():
     for token in [
         'sceneBuilderMainSplitter',
-        'QSplitter(Qt::Horizontal, scene_shell)',
-        'setSizes({320, 940, 400})',
+        'new QSplitter(Qt::Horizontal, scene_shell)',
+        'setSizes({300, 1180, 360})',
     ]:
         assert token in MAIN
 
@@ -93,3 +94,11 @@ def test_selection_sync_invokes_apply_scene_selection_from_preview_signal():
         "apply_scene_selection(id, role, id.trimmed().isEmpty(), false);",
     ]:
         assert token in MAIN
+
+
+def test_selection_callback_path_and_log_format_tokens_preserved():
+    for token in [
+        'if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);',
+        'append_studio_log(QString("Selected item: %1 (%2)").arg(selected_id, selected_role));',
+    ]:
+        assert token in VIEW3D or token in MAIN
