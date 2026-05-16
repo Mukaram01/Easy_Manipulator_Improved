@@ -78,6 +78,17 @@ def test_camera_fit_and_view_matrices_tokens_present():
         assert token in VIEW3D_CPP
 
 
+def test_fit_scene_excludes_overlay_only_items_tokens_present():
+    for token in [
+        "FIT_PHYSICAL_ONLY_FILTER",
+        "FIT_EXCLUDE_OVERLAY_ONLY",
+        "if (!include_in_fit_bounds_physical_only(it)) continue;",
+        "FIT_FALLBACK_ISO_IF_NO_PHYSICAL",
+        "if (!has_physical_item) { set_isometric_view(); return; }",
+    ]:
+        assert token in VIEW3D_CPP
+
+
 def test_fallback_mode_and_banner_tokens_present():
     for token in ["2D Layout", "2D fallback preview active", "3D View unavailable, using 2D Layout"]:
         assert token in PREVIEW
