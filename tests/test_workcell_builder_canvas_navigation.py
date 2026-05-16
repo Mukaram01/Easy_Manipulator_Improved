@@ -111,3 +111,13 @@ def test_fit_scene_excludes_overlay_only_items_tokens_present():
 def test_fallback_mode_and_banner_tokens_present():
     for token in ["2D Layout", "2D fallback preview active", "3D View unavailable, using 2D Layout"]:
         assert token in PREVIEW
+
+
+def test_warning_badge_compact_and_long_text_debug_gated_tokens_present():
+    assert 'warning_badge_text(it.warnings)' in VIEW3D_CPP
+    assert 'if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty())' in VIEW3D_CPP
+    assert 'warning_debug_text(it.warnings)' in VIEW3D_CPP
+
+
+def test_task_overlay_label_toggle_preserves_selected_only_default_tokens_present():
+    assert 'else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;' in PREVIEW

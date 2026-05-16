@@ -30,7 +30,14 @@ QString normalized_token(const QString & value)
 {
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
 }
-QString summarize_warnings(const QStringList & warnings)
+QString warning_badge_text(const QStringList & warnings)
+{
+  if (warnings.isEmpty()) return QStringLiteral("!");
+  if (warnings.size() == 1) return QStringLiteral("!");
+  return QStringLiteral("%1").arg(qMin(warnings.size(), 9));
+}
+
+QString warning_debug_text(const QStringList & warnings)
 {
   if (warnings.isEmpty()) return QStringLiteral("none");
   if (warnings.size() == 1) return warnings.front();
@@ -200,7 +207,7 @@ void Scene3DViewportWidget::paintGL()
       painter.setBrush(QColor("#f59e0b"));
       painter.drawEllipse(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0));
       painter.setPen(QColor("#111827"));
-      painter.drawText(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0), Qt::AlignCenter, "!");
+      painter.drawText(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0), Qt::AlignCenter, warning_badge_text(it.warnings));
     }
     if (draw_label) {
       const QString text = selected ? it.id : compact_role(it.role);
@@ -209,7 +216,7 @@ void Scene3DViewportWidget::paintGL()
     }
     if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(QColor("#fca5a5"));
-      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), summarize_warnings(it.warnings));
+      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), warning_debug_text(it.warnings));
     }
   }
 }
@@ -399,7 +406,7 @@ bool Scene3DViewportWidget::pick_item_at_screen(
   if (out_tooltip != nullptr) {
     const QString role_normalized = normalized_token(out_role);
     *out_tooltip = QStringLiteral("Item: %1\nRole: %2\nWarnings: %3")
-      .arg(out_id, role_normalized, summarize_warnings(best_item->warnings));
+      .arg(out_id, role_normalized, warning_debug_text(best_item->warnings));
     if (!best_item->warnings.isEmpty()) *out_tooltip += QStringLiteral("\n\nDetails:\n- ") + best_item->warnings.join("\n- ");
   }
   return true;
