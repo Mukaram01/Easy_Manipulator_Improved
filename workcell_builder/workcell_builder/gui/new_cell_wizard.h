@@ -39,8 +39,23 @@ public:
   static QString default_end_effector_attach_link(const QString &model);
   static QString default_end_effector_tcp_link(const QString &model);
   static QString default_end_effector_type(const QString &model);
+  static QString default_end_effector_family_readiness(const QString &family);
 
 private:
+  struct ToolSelectionReadiness { QString status; QString reason; };
+  struct ToolModelProfile {
+    QString family;
+    QString model;
+    QString ee_type;
+    QString attach_link;
+    QString tcp_link;
+    double roll{-1.5708};
+    double pitch{-1.5708};
+    double yaw{0.0};
+    QString readiness{"READY"};
+    QString reason{"Built-in tool profile defaults applied."};
+  };
+
   void build_ui();
   void refresh_validation();
   void refresh_summary();
@@ -56,6 +71,13 @@ private:
   QStringList discover_robot_models_for_family(const QString &robot_family) const;
   QStringList discover_robot_models_from_assets(const QString &robot_family) const;
   QStringList discover_robot_models_from_catalog(const QString &robot_family) const;
+  QStringList discover_tool_models_from_catalog(const QString &tool_family) const;
+  QString normalize_tool_family(const QString &raw_family) const;
+  QStringList builtin_tool_models_for_family(const QString &tool_family) const;
+  ToolModelProfile tool_profile_for_selection(const QString &tool_family, const QString &tool_model) const;
+  void refresh_tool_model_options(const QString &tool_family);
+  void apply_tool_profile_selection();
+  ToolSelectionReadiness evaluate_tool_readiness() const;
   QString normalize_robot_family(const QString &raw_family) const;
   void refresh_robot_model_options(const QString &robot_family);
   void refresh_robot_links_for_selection();
@@ -95,6 +117,7 @@ private:
   QGroupBox *robot_advanced_group_{nullptr};
 
   QComboBox *ee_{nullptr};
+  QComboBox *ee_family_{nullptr};
   QDoubleSpinBox *ee_x_{nullptr};
   QDoubleSpinBox *ee_y_{nullptr};
   QDoubleSpinBox *ee_z_{nullptr};
@@ -105,6 +128,7 @@ private:
   QComboBox *ee_tcp_link_{nullptr};
   QComboBox *ee_type_{nullptr};
   QGroupBox *ee_advanced_group_{nullptr};
+  QLabel *ee_readiness_banner_{nullptr};
 
   QListWidget *env_substeps_{nullptr};
   QStackedWidget *env_substep_stack_{nullptr};
