@@ -9,6 +9,24 @@ def test_asset_discovery_helper_paths_and_statuses_present():
     assert 'READY' in text
     assert 'MISSING_MOVEIT_CONFIG' in text
     assert 'MISSING_DESCRIPTION' in text
+    assert 'easy_manipulation_deployment/assets/environment' in text
+    assert 'easy_manipulation_deployment/assets/environment_objects' in text
+    assert '/src/assets/environment' in text
+    assert '/src/assets/environment_objects' in text
+
+
+def test_empty_asset_catalog_diagnostic_includes_searched_paths():
+    main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    assert 'No assets found. Searched paths:' in main
+    assert '{"No assets found", "Info", "Searched paths", "Unavailable"}' in main
+
+
+def test_add_to_canvas_button_is_disabled_then_enabled_via_selection_signal():
+    main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    assert 'add_to_canvas_button_->setEnabled(false);' in main
+    assert 'connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });' in main
+    assert 'validate_asset_catalog_selection();' in main
+    assert 'add_to_canvas_button_->setEnabled(can_add);' in main
 
 
 def test_end_effector_type_inference_keywords():
