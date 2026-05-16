@@ -13,16 +13,61 @@
 #include <limits>
 
 namespace {
+enum class NormalizedRole
+{
+  RobotBase,
+  Table,
+  Conveyor,
+  Camera,
+  PickZone,
+  PlaceBin,
+  Object,
+  SafetyZone,
+  WarningAnchor,
+  Generic
+};
+
+QString normalized_token(const QString & value)
+{
+  return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+}
+
+NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
+{
+  const QString role = normalized_token(it.role);
+  const QString category = normalized_token(it.category);
+  const QString mix = role + "|" + category;
+
+  if (mix.contains("robot_base") || mix.contains("robot")) return NormalizedRole::RobotBase;
+  if (mix.contains("support_surface") || mix.contains("table") || mix.contains("work_surface")) return NormalizedRole::Table;
+  if (mix.contains("conveyor") || mix.contains("belt")) return NormalizedRole::Conveyor;
+  if (mix.contains("camera") || mix.contains("sensor")) return NormalizedRole::Camera;
+  if (mix.contains("pick_zone") || mix.contains("pick_area") || mix.contains("pick")) return NormalizedRole::PickZone;
+  if (mix.contains("place_zone") || mix.contains("place_target") || mix.contains("place") || mix.contains("bin")) return NormalizedRole::PlaceBin;
+  if (mix.contains("safety_zone") || mix.contains("safety")) return NormalizedRole::SafetyZone;
+  if (mix.contains("warning_anchor") || mix.contains("warning_badge")) return NormalizedRole::WarningAnchor;
+  if (mix.contains("object") || mix.contains("part") || mix.contains("item")) return NormalizedRole::Object;
+  return NormalizedRole::Generic;
+}
+
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
-  if (it.category.contains("robot", Qt::CaseInsensitive)) return QColor("#a78bfa");
-  if (it.category.contains("camera", Qt::CaseInsensitive)) return QColor("#38bdf8");
-  if (it.category.contains("conveyor", Qt::CaseInsensitive)) return QColor("#06b6d4");
-  if (it.category.contains("bin", Qt::CaseInsensitive) || it.role.contains("pick", Qt::CaseInsensitive)) return QColor("#34d399");
-  if (it.role.contains("place", Qt::CaseInsensitive)) return QColor("#fb7185");
+  switch (classify_item_role(it)) {
+    case NormalizedRole::RobotBase: return QColor("#a78bfa");
+    case NormalizedRole::Table: return QColor("#64748b");
+    case NormalizedRole::Conveyor: return QColor("#06b6d4");
+    case NormalizedRole::Camera: return QColor("#38bdf8");
+    case NormalizedRole::PickZone: return QColor("#22c55e");
+    case NormalizedRole::PlaceBin: return QColor("#fb7185");
+    case NormalizedRole::Object: return QColor("#94a3b8");
+    case NormalizedRole::SafetyZone: return QColor("#f59e0b");
+    case NormalizedRole::WarningAnchor: return QColor("#fbbf24");
+    case NormalizedRole::Generic: return QColor("#94a3b8");
+  }
   return QColor("#94a3b8");
 }
 }
+
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); }
 void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
@@ -65,29 +110,32 @@ void Scene3DViewportWidget::paintGL()
   glLoadMatrixf(view.constData());
 
   draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.01, QColor(34, 197, 94, 70), true);
-  draw_box(-1.2, 0.07, -1.0, 2.4, 0.15, 1.6, QColor("#64748b"));
-  draw_box(-2.4, 0.05, -0.2, 1.2, 0.1, 0.6, QColor("#06b6d4"));
-
-  std::vector<const ScenePreviewWidget::PreviewItem *> solids;
-  std::vector<const ScenePreviewWidget::PreviewItem *> transparent;
-  for (const auto & it : items) {
-    if (!show_safety && it.category.contains("safety", Qt::CaseInsensitive)) continue;
-    if (it.category.contains("safety", Qt::CaseInsensitive)) transparent.push_back(&it);
-    else solids.push_back(&it);
-  }
-  for (const auto * it : solids) {
-    draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
-    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#f8fafc"));
-  }
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  std::sort(transparent.begin(), transparent.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
-  for (const auto * it : transparent) {
-    draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it), true);
-    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#e2e8f0"));
+  std::vector<const ScenePreviewWidget::PreviewItem *> draw_items;
+  for (const auto & it : items) draw_items.push_back(&it);
+  std::sort(draw_items.begin(), draw_items.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
+
+  for (const auto * it : draw_items) {
+    const NormalizedRole role = classify_item_role(*it);
+    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+
+    switch (role) {
+      case NormalizedRole::RobotBase: draw_robot_base_with_axis(*it); break;
+      case NormalizedRole::Table: draw_table_slab(*it); break;
+      case NormalizedRole::Conveyor: draw_conveyor(*it); break;
+      case NormalizedRole::Camera: draw_camera_body_with_frustum(*it); break;
+      case NormalizedRole::PickZone: draw_pick_zone(*it); break;
+      case NormalizedRole::PlaceBin: draw_place_target_bin(*it); break;
+      case NormalizedRole::Object: draw_object_cube(*it); break;
+      case NormalizedRole::SafetyZone: draw_safety_zone(*it); break;
+      case NormalizedRole::WarningAnchor: draw_warning_badge_anchor(*it); break;
+      case NormalizedRole::Generic: draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it)); break;
+    }
+    if (it->id == selected_id) draw_box_outline(it->x, it->y, it->z, it->sx, it->sy, it->sz, QColor("#f8fafc"));
   }
-  if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 96), true);
+
   glDisable(GL_BLEND);
 
   QPainter painter(this);
@@ -108,9 +156,9 @@ void Scene3DViewportWidget::paintGL()
     if (show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
-      painter.drawEllipse(QRectF(p.x() - 8.0, p.y() - 20.0, 16.0, 16.0));
+      painter.drawEllipse(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0));
       painter.setPen(QColor("#111827"));
-      painter.drawText(QRectF(p.x() - 8.0, p.y() - 20.0, 16.0, 16.0), Qt::AlignCenter, "!");
+      painter.drawText(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0), Qt::AlignCenter, "!");
     }
     if (draw_label) {
       const QString text = selected ? it.id : compact_role(it.role);
@@ -122,6 +170,56 @@ void Scene3DViewportWidget::paintGL()
       painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), it.warnings.join(" | "));
     }
   }
+}
+
+
+void Scene3DViewportWidget::draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it)
+{
+  const double radius = qMax(0.06, qMin(it.sx, it.sz) * 0.45);
+  draw_cylinder(it.x + it.sx * 0.5, it.y, it.z + it.sz * 0.5, radius, qMax(0.05, it.sy), item_color(it));
+  glColor4f(0.96f, 0.97f, 0.99f, 1.0f);
+  glLineWidth(2.0f);
+  glBegin(GL_LINES);
+  glVertex3f(it.x + it.sx * 0.5, it.y, it.z + it.sz * 0.5);
+  glVertex3f(it.x + it.sx * 0.5, it.y + qMax(0.2, it.sy * 2.0), it.z + it.sz * 0.5);
+  glEnd();
+}
+void Scene3DViewportWidget::draw_table_slab(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it)); }
+void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem & it)
+{
+  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
+  const double mid_y = it.y + it.sy + 0.01;
+  const double start_x = it.x + it.sx * 0.25, end_x = it.x + it.sx * 0.75, z = it.z + it.sz * 0.5;
+  glColor4f(0.92f, 0.98f, 1.0f, 1.0f);
+  glLineWidth(2.0f);
+  glBegin(GL_LINES);
+  glVertex3f(start_x, mid_y, z); glVertex3f(end_x, mid_y, z);
+  glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z - 0.06);
+  glVertex3f(end_x, mid_y, z); glVertex3f(end_x - 0.08, mid_y, z + 0.06);
+  glEnd();
+}
+void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it)
+{
+  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
+  if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 96), true);
+}
+void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 96), true); }
+void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
+{
+  draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
+  const double wall = qMax(0.02, qMin(it.sx, it.sz) * 0.1);
+  draw_box_outline(it.x + wall, it.y + wall, it.z + wall, qMax(0.01, it.sx - 2 * wall), qMax(0.01, it.sy - wall), qMax(0.01, it.sz - 2 * wall), QColor("#fecdd3"), 1.5f);
+}
+void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
+{
+  const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
+  draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
+}
+void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 96), true); }
+void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it)
+{
+  const double cube = qMax(0.04, qMin(it.sx, qMin(it.sy, it.sz)));
+  draw_box(it.x, it.y, it.z, cube, cube, cube, QColor("#f59e0b"));
 }
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)
