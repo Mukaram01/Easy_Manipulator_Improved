@@ -5,12 +5,12 @@ using namespace workcell_builder;
 
 namespace {
 WorkZone make_zone(
-  const QString & id, const QString & type,
-  const QString & linked_camera = QString(), const QString & linked_robot = QString(),
-  const QString & destination = QString(), const QString & purpose = QString())
+  const std::string & name, const std::string & type,
+  const std::string & linked_camera = "", const std::string & linked_robot = "",
+  const std::string & destination = "", const std::string & purpose = "")
 {
   WorkZone zone{};
-  zone.id = id;
+  zone.name = name;
   zone.type = type;
   zone.linked_camera = linked_camera;
   zone.linked_robot = linked_robot;
