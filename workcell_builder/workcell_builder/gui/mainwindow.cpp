@@ -2680,6 +2680,7 @@ void MainWindow::open_diagnostics_folder()
 
 void MainWindow::rebuild_digital_twin_canvas()
 {
+  const QString preserved_selected_id = current_selected_scene_item_id_;
   if (!digital_twin_canvas_) return;
   if (!digital_twin_scene_) {
     digital_twin_scene_ = new QGraphicsScene(digital_twin_canvas_);
@@ -2769,6 +2770,9 @@ void MainWindow::rebuild_digital_twin_canvas()
     if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
     if (!issues.isEmpty()) digital_twin_scene_->addSimpleText("Safety Warning Overlay: " + issues.join(" | "))->setPos(-380, -280);
   }
+  if (!preserved_selected_id.isEmpty()) {
+    apply_scene_selection(preserved_selected_id, QStringLiteral("unknown"), false, false);
+  }
   if (digital_twin_canvas_ && digital_twin_canvas_->scene()) {
     const QRectF bounds = digital_twin_canvas_->scene()->itemsBoundingRect();
     if (!bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24, -24, 24, 24), Qt::KeepAspectRatio);
@@ -2850,6 +2854,68 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   append_studio_log("selected item collision status: preview-only");
   if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QStringLiteral("\nLinked hierarchy item: %1").arg(item->data(RoleId).toString()));
   inspector_update_guard_ = false;
+}
+
+void MainWindow::apply_scene_selection(const QString & id, const QString & role, bool intentional_clear, bool center_canvas)
+{
+  const QString selected_id = id.trimmed();
+  const QString selected_role = role.trimmed().isEmpty() ? QStringLiteral("unknown") : role.trimmed();
+
+  if (selected_id.isEmpty()) {
+    if (!intentional_clear) return;
+    current_selected_scene_item_id_.clear();
+    selection_update_guard_ = true;
+    if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
+    if (digital_twin_scene_) digital_twin_scene_->clearSelection();
+    if (scene_preview_widget_) scene_preview_widget_->select_preview_item(QString());
+    selection_update_guard_ = false;
+    refresh_selected_scene_item_labels(current_selected_scene_item());
+    append_studio_log("Selected item: <none> (unknown)");
+    return;
+  }
+
+  current_selected_scene_item_id_ = selected_id;
+  selection_update_guard_ = true;
+
+  if (scene_hierarchy_tree_) {
+    QTreeWidgetItem * matched = nullptr;
+    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
+      auto * tree_item = scene_hierarchy_tree_->topLevelItem(row);
+      if (tree_item && tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id) {
+        matched = tree_item;
+        break;
+      }
+    }
+    if (matched) scene_hierarchy_tree_->setCurrentItem(matched);
+  }
+
+  QGraphicsItem * matched_canvas_item = nullptr;
+  if (digital_twin_scene_) {
+    for (auto * gi : digital_twin_scene_->items()) {
+      if (gi->data(RoleId).toString().trimmed() == selected_id) {
+        matched_canvas_item = gi;
+        break;
+      }
+    }
+    if (matched_canvas_item) {
+      digital_twin_scene_->clearSelection();
+      matched_canvas_item->setSelected(true);
+      if (center_canvas && digital_twin_canvas_) digital_twin_canvas_->centerOn(matched_canvas_item);
+      if (auto * rect = qgraphicsitem_cast<QGraphicsRectItem *>(matched_canvas_item)) {
+        rect->setPen(QPen(QColor("#f8fafc"), 3));
+      }
+    }
+  }
+
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
+  selection_update_guard_ = false;
+
+  if (matched_canvas_item) {
+    select_canvas_item(matched_canvas_item);
+  } else {
+    refresh_selected_scene_item_labels(current_selected_scene_item());
+  }
+  append_studio_log(QString("Selected item: %1 (%2)").arg(selected_id, selected_role));
 }
 
 void MainWindow::mark_layout_dirty(const QString & reason)
@@ -2969,7 +3035,20 @@ void MainWindow::revert_layout_changes()
   append_studio_log("Revert Layout requested");
 }
 
-void MainWindow::on_canvas_selection_changed(){ if (!digital_twin_scene_) return; if (digital_twin_scene_->selectedItems().isEmpty()) { refresh_selected_scene_item_labels(current_selected_scene_item()); return; } auto * sel=digital_twin_scene_->selectedItems().front(); if (auto * rect=qgraphicsitem_cast<QGraphicsRectItem*>(sel)) { rect->setPen(QPen(QColor("#f8fafc"),3)); auto b=rect->sceneBoundingRect(); digital_twin_scene_->addRect(QRectF(b.topLeft()-QPointF(4,4), QSizeF(8,8)), QPen(QColor("#93c5fd")), QBrush(QColor("#93c5fd"))); } select_canvas_item(sel); }
+void MainWindow::on_canvas_selection_changed()
+{
+  if (!digital_twin_scene_ || selection_update_guard_) return;
+  if (digital_twin_scene_->selectedItems().isEmpty()) {
+    if (current_selected_scene_item_id_.isEmpty()) {
+      refresh_selected_scene_item_labels(current_selected_scene_item());
+    }
+    return;
+  }
+  auto * sel = digital_twin_scene_->selectedItems().front();
+  const QString selected_id = sel->data(RoleId).toString().trimmed();
+  const QString selected_role = sel->data(RoleRole).toString().trimmed();
+  apply_scene_selection(selected_id, selected_role, false, false);
+}
 void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, const QPointF &, const QString & reason){ if(item) select_canvas_item(item); mark_layout_dirty(reason); }
 void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
@@ -3078,47 +3157,10 @@ void MainWindow::on_asset_filter_changed(int)
 
 void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
 {
-  if (!item) return;
-  const QString source = item->data(0, TreeRoleSource).toString();
+  if (!item || selection_update_guard_) return;
   const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
   const QString selected_role = item->data(0, TreeRoleRole).toString().trimmed();
-  const bool pose_available = item->data(0, TreeRolePoseAvailable).toBool();
-  refresh_selected_scene_item_labels(current_selected_scene_item());
-  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
-  if (!digital_twin_scene_) {
-    append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
-      .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
-        selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
-        source.isEmpty() ? QStringLiteral("unknown") : source,
-        pose_available ? QStringLiteral("true") : QStringLiteral("false")));
-    return;
-  }
-  for (auto * gi : digital_twin_scene_->items()) {
-    if (gi->data(RoleId).toString().trimmed() == selected_id) {
-      digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi);
-      if (pose_available) {
-        inspector_update_guard_ = true;
-        inspector_x_->setValue(item->data(0, TreeRolePoseX).toDouble());
-        inspector_y_->setValue(item->data(0, TreeRolePoseY).toDouble());
-        inspector_z_->setValue(item->data(0, TreeRolePoseZ).toDouble());
-        inspector_roll_->setValue(item->data(0, TreeRoleRoll).toDouble());
-        inspector_pitch_->setValue(item->data(0, TreeRolePitch).toDouble());
-        inspector_yaw_->setValue(item->data(0, TreeRoleYaw).toDouble());
-        inspector_update_guard_ = false;
-      }
-      append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
-        .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
-          selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
-          source.isEmpty() ? QStringLiteral("unknown") : source,
-          pose_available ? QStringLiteral("true") : QStringLiteral("false")));
-      return;
-    }
-  }
-  append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
-    .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
-      selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
-      source.isEmpty() ? QStringLiteral("unknown") : source,
-      pose_available ? QStringLiteral("true") : QStringLiteral("false")));
+  apply_scene_selection(selected_id, selected_role, false, true);
 }
 
 void MainWindow::populate_scene_hierarchy()
