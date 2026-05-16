@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QVector3D>
 #include <QVector4D>
+#include <QToolTip>
 #include <QtMath>
 
 #include <algorithm>
@@ -88,6 +89,39 @@ void Scene3DViewportWidget::paintGL()
   }
   if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 96), true);
   glDisable(GL_BLEND);
+
+  QPainter painter(this);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  const auto compact_role = [](const QString & role) {
+    const QString r = role.trimmed().toLower();
+    if (r.contains("pick")) return QStringLiteral("Pick");
+    if (r.contains("place")) return QStringLiteral("Place");
+    if (r.contains("camera")) return QStringLiteral("Cam");
+    if (r.contains("safety")) return QStringLiteral("Safe");
+    if (r.isEmpty()) return QStringLiteral("Item");
+    return role.left(10);
+  };
+  for (const auto & it : items) {
+    const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
+    const bool selected = (it.id == selected_id);
+    const bool draw_label = label_mode == ScenePreviewWidget::LabelMode::All || selected;
+    if (show_warning_labels && !it.warnings.isEmpty()) {
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(QColor("#f59e0b"));
+      painter.drawEllipse(QRectF(p.x() - 8.0, p.y() - 20.0, 16.0, 16.0));
+      painter.setPen(QColor("#111827"));
+      painter.drawText(QRectF(p.x() - 8.0, p.y() - 20.0, 16.0, 16.0), Qt::AlignCenter, "!");
+    }
+    if (draw_label) {
+      const QString text = selected ? it.id : compact_role(it.role);
+      painter.setPen(QColor("#e2e8f0"));
+      painter.drawText(QPointF(p.x() + 10.0, p.y() - 8.0), text);
+    }
+    if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
+      painter.setPen(QColor("#fca5a5"));
+      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), it.warnings.join(" | "));
+    }
+  }
 }
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)
@@ -203,5 +237,29 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   }
   if (!best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
 }
-void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e) { auto d = e->pos() - last_; last_ = e->pos(); if (e->buttons() & Qt::LeftButton) { yaw_ += d.x() * 0.01; pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4); update(); } }
+void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
+{
+  auto d = e->pos() - last_;
+  last_ = e->pos();
+  if (e->buttons() & Qt::LeftButton) {
+    yaw_ += d.x() * 0.01;
+    pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4);
+    update();
+    return;
+  }
+  const QPointF pos = e->position();
+  QString hovered;
+  for (const auto & it : items) {
+    const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
+    if (QLineF(pos, p).length() < 20.0) {
+      hovered = it.id;
+      if (!it.warnings.isEmpty()) {
+        QToolTip::showText(e->globalPosition().toPoint(), it.warnings.join("\n"), this);
+      }
+      break;
+    }
+  }
+  if (hovered.isEmpty()) QToolTip::hideText();
+  hovered_id_ = hovered;
+}
 void Scene3DViewportWidget::wheelEvent(QWheelEvent * e) { zoom_ = qBound(0.4, zoom_ + (e->angleDelta().y() > 0 ? -0.1 : 0.1), 2.2); update(); }

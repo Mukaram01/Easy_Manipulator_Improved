@@ -22,6 +22,7 @@ public:
   bool show_reachability_heatmap{ true }, show_collision_warnings{ true }, show_work_envelope{ true }, show_warning_labels{ true };
   bool show_task_route{ true }, show_approach_retreat{ true };
   bool show_camera_fov{ true }, show_pick_coverage{ true }, show_epd_detections{ true }, show_detection_labels{ true };
+  bool debug_overlays_mode{ false };
   ScenePreviewWidget::TaskOverlayModel task_overlay;
   ScenePreviewWidget::ReachabilityOverlayModel reach_overlay;
   ScenePreviewWidget::CollisionOverlayModel collision_overlay;
@@ -56,10 +57,12 @@ private:
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
   void draw_frustum(const QColor & color, bool translucent = true);
   QPoint last_;
+  QString hovered_id_;
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
   double pitch_{ 0.7 };
   double distance_{ 6.0 };
+  double zoom_{ 1.0 };
   const double min_distance_{ 0.35 };
   const double max_distance_{ 80.0 };
 };

@@ -110,6 +110,8 @@ void ScenePreviewWidget::refresh_mode_and_state()
   }
   fallback_banner_label_->setVisible(false);
   bool use3d = mode_selector_->currentText() == "3D View";
+  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  viewport->debug_overlays_mode = (mode_selector_->currentText() == "Debug Overlays");
   if (mode_selector_->currentText() == "Debug Overlays") use3d = false;
   stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   const bool has_preview_items = !preview_items_.isEmpty();
