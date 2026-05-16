@@ -119,7 +119,7 @@ public:
 
 signals:
   void studio_log_requested(const QString & message);
-  void preview_item_selected(const QString & id);
+  void preview_item_selected(const QString & id, const QString & role);
 
 private slots:
   void on_mode_changed(int index);

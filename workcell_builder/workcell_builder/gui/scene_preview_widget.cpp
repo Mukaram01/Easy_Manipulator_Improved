@@ -66,7 +66,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Clear Selection") on_clear_selection_clicked();
     v->update();
   });
-  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id){ select_preview_item(id); emit preview_item_selected(id); emit studio_log_requested(QString("Selected preview item: %1").arg(id)); };
+  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
   refresh_info_chip();
   refresh_mode_and_state();
 }
@@ -98,7 +98,7 @@ QString ScenePreviewWidget::selected_preview_item_id() const { return selected_p
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
 void ScenePreviewWidget::on_fit_scene_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->fit_scene(); fit_fallback_scene_to_items(); }
 void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->focus_selected(); }
-void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString()); }
+void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_mode_and_state()
 {
   if (!preview3d_available_) {

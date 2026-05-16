@@ -28,7 +28,7 @@ public:
   QString scene_name{ "No scene" };
   ScenePreviewWidget::CameraOverlayModel camera_overlay;
   QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
-  std::function<void(const QString &)> select_cb;
+  std::function<void(const QString &, const QString &)> select_cb;
 
   void reset_view();
   void fit_scene();
@@ -48,7 +48,11 @@ protected:
 
 private:
   QPointF project_to_screen(double x, double y, double z) const;
+  bool ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
+                           const ScenePreviewWidget::PreviewItem & item, float & out_t) const;
+  void camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const;
   void draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent = false);
+  void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
   void draw_frustum(const QColor & color, bool translucent = true);
   QPoint last_;
