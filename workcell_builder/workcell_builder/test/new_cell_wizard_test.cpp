@@ -27,9 +27,38 @@ TEST(NewCellWizard, RecommendedLayoutDefaults)
 
 TEST(NewCellWizard, UrDefaults)
 {
-  EXPECT_EQ(NewCellWizard::default_robot_base_link("UR5").toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link("UR5").toStdString(), "ee_link");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group("UR5").toStdString(), "manipulator");
+  const QString family = "Universal Robots / UR";
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR5").toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR5").toStdString(), "ee_link");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR5").toStdString(), "manipulator");
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR3").toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR3").toStdString(), "ee_link");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR3").toStdString(), "manipulator");
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR10").toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR10").toStdString(), "ee_link");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR10").toStdString(), "manipulator");
+}
+
+TEST(NewCellWizard, FrankaDefaults)
+{
+  const QString family = "Franka / Panda";
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "Panda").toStdString(), "panda_link0");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "Panda").toStdString(), "panda_hand");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "Panda").toStdString(), "panda_arm");
+}
+
+TEST(NewCellWizard, PlaceholderDefaults)
+{
+  const QString family = "Delta";
+  const QString model = "delta_placeholder";
+
+  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, model).toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, model).toStdString(), "tool0_placeholder");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, model).toStdString(), "preview_group");
 }
 
 TEST(NewCellWizard, RobotiqDefaults)
