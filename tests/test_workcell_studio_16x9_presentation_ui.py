@@ -25,3 +25,14 @@ def test_dashboard_action_and_fullscreen_controls_are_explicit():
         'Exit Full Screen',
     ]:
         assert token in MAIN
+
+
+def test_camera_view_menu_uses_explicit_3d_camera_tokens():
+    for token in ["Camera / View", "Perspective", "Top", "Left", "Right", "Front"]:
+        assert token in MAIN
+
+
+def test_misleading_pseudo3d_default_labels_are_not_present():
+    forbidden = ["Pseudo-3D", "Fake 3D", "2.5D"]
+    for token in forbidden:
+        assert token not in MAIN
