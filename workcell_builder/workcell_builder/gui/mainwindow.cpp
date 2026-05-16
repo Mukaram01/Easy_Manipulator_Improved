@@ -131,6 +131,7 @@ bool is_good_scene_path(const fs::path & scene_path)
 }
 
 enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
+enum SceneTreeRoles { TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole };
 
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
@@ -775,7 +776,7 @@ void MainWindow::setup_studio_shell()
       auto *top=scene_hierarchy_tree_->topLevelItem(i);
       for (int j=0;j<top->childCount();++j){
         auto *c=top->child(j);
-        if (c->data(0, Qt::UserRole + 1).toString() == id){ scene_hierarchy_tree_->setCurrentItem(c); on_hierarchy_item_selected(c); matched=true; break; }
+        if (c->data(0, TreeRoleId).toString() == id){ scene_hierarchy_tree_->setCurrentItem(c); on_hierarchy_item_selected(c); matched=true; break; }
       }
       if (matched) break;
     }
@@ -1395,7 +1396,7 @@ QString MainWindow::selected_scene_binding_id() const
     if (!id.isEmpty()) return id;
   }
   if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
-    const QString id = scene_hierarchy_tree_->currentItem()->data(0, Qt::UserRole + 1).toString().trimmed();
+    const QString id = scene_hierarchy_tree_->currentItem()->data(0, TreeRoleId).toString().trimmed();
     if (!id.isEmpty()) return id;
     const QString text = scene_hierarchy_tree_->currentItem()->text(0).trimmed();
     if (!text.isEmpty()) return text;
@@ -2560,7 +2561,7 @@ void MainWindow::save_layout_changes()
 {
   QString selected_preview_id;
   if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
-    selected_preview_id = scene_hierarchy_tree_->currentItem()->data(0, Qt::UserRole + 1).toString();
+    selected_preview_id = scene_hierarchy_tree_->currentItem()->data(0, TreeRoleId).toString();
   } else if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
     selected_preview_id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString();
   }
@@ -2743,19 +2744,49 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
 {
   if (!item) return;
   const QString name = item->text(0);
-  const QString category = item->data(0, Qt::UserRole + 2).toString();
-  const QString pose = item->data(0, Qt::UserRole + 3).toString();
-  const QString source = item->data(0, Qt::UserRole + 4).toString();
-  const QString selected_id = item->data(0, Qt::UserRole + 1).toString();
+  const QString category = item->data(0, TreeRoleCategory).toString();
+  const QString pose = item->data(0, TreeRolePoseText).toString();
+  const QString source = item->data(0, TreeRoleSource).toString();
+  const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
+  const QString selected_role = item->data(0, TreeRoleRole).toString().trimmed();
+  const bool pose_available = item->data(0, TreeRolePoseAvailable).toBool();
   inspector_label_->setText(QString("Selected: %1\nCategory: %2\nPose: %3\nSource: %4").arg(name, category.isEmpty()?"unknown":category, pose.isEmpty()?"unknown":pose, source.isEmpty()?"unknown":source));
   live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(name, pose.isEmpty()?"pose unknown":pose));
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
-  if (!digital_twin_scene_) return;
+  if (!digital_twin_scene_) {
+    append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
+      .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
+        selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
+        source.isEmpty() ? QStringLiteral("unknown") : source,
+        pose_available ? QStringLiteral("true") : QStringLiteral("false")));
+    return;
+  }
   for (auto * gi : digital_twin_scene_->items()) {
-    if (gi->data(RoleId).toString() == selected_id || gi->data(RoleDisplayName).toString() == name) {
-      digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi); return;
+    if (gi->data(RoleId).toString().trimmed() == selected_id) {
+      digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi);
+      if (pose_available) {
+        inspector_update_guard_ = true;
+        inspector_x_->setValue(item->data(0, TreeRolePoseX).toDouble());
+        inspector_y_->setValue(item->data(0, TreeRolePoseY).toDouble());
+        inspector_z_->setValue(item->data(0, TreeRolePoseZ).toDouble());
+        inspector_roll_->setValue(item->data(0, TreeRoleRoll).toDouble());
+        inspector_pitch_->setValue(item->data(0, TreeRolePitch).toDouble());
+        inspector_yaw_->setValue(item->data(0, TreeRoleYaw).toDouble());
+        inspector_update_guard_ = false;
+      }
+      append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
+        .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
+          selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
+          source.isEmpty() ? QStringLiteral("unknown") : source,
+          pose_available ? QStringLiteral("true") : QStringLiteral("false")));
+      return;
     }
   }
+  append_studio_log(QString("Studio selection: id=%1 role=%2 source=%3 pose_available=%4")
+    .arg(selected_id.isEmpty() ? QStringLiteral("<none>") : selected_id,
+      selected_role.isEmpty() ? QStringLiteral("unknown") : selected_role,
+      source.isEmpty() ? QStringLiteral("unknown") : source,
+      pose_available ? QStringLiteral("true") : QStringLiteral("false")));
 }
 
 void MainWindow::populate_scene_hierarchy()
@@ -2791,17 +2822,27 @@ void MainWindow::populate_scene_hierarchy()
   for (const auto & fn : files) {
     const fs::path pth=d/fn; if (!fs::exists(pth)) continue;
     auto *n = new QTreeWidgetItem(tops["Other Objects / Imported Assets"], {QString::fromStdString(fn), "OK"});
-    n->setData(0, Qt::UserRole + 1, QString::fromStdString(fn));
-    n->setData(0, Qt::UserRole + 2, "Other Objects / Imported Assets");
-    n->setData(0, Qt::UserRole + 4, QString::fromStdString(pth.string()));
+    n->setData(0, TreeRoleId, QString::fromStdString(fn));
+    n->setData(0, TreeRoleCategory, "Other Objects / Imported Assets");
+    n->setData(0, TreeRoleSource, QString::fromStdString(pth.string()));
+    n->setData(0, TreeRolePoseAvailable, false);
+    n->setData(0, TreeRoleRole, "file");
   }
   int preview_warning_count = 0;
   for (const auto & p : preview_items) {
     auto *node = new QTreeWidgetItem(tops[p.category], {p.display_name, p.status});
-    node->setData(0, Qt::UserRole + 1, p.id);
-    node->setData(0, Qt::UserRole + 2, p.category);
-    node->setData(0, Qt::UserRole + 3, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
-    node->setData(0, Qt::UserRole + 4, p.source_path);
+    node->setData(0, TreeRoleId, p.id);
+    node->setData(0, TreeRoleCategory, p.category);
+    node->setData(0, TreeRolePoseText, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
+    node->setData(0, TreeRoleSource, p.source_path);
+    node->setData(0, TreeRolePoseX, p.x);
+    node->setData(0, TreeRolePoseY, p.y);
+    node->setData(0, TreeRolePoseZ, p.z);
+    node->setData(0, TreeRoleRoll, p.roll);
+    node->setData(0, TreeRolePitch, p.pitch);
+    node->setData(0, TreeRoleYaw, p.yaw);
+    node->setData(0, TreeRolePoseAvailable, true);
+    node->setData(0, TreeRoleRole, p.role);
     if (!p.metadata_complete) {
       ++preview_warning_count;
       if (p.role == "safety zone") {
