@@ -1485,8 +1485,8 @@ void MainWindow::preview_offline_plan_for_selected_scene(){ show_studio_page(Stu
 MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() const
 {
   SelectedSceneItemState state;
-  if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
-    auto * item = scene_hierarchy_tree_->currentItem();
+  const auto fill_from_tree = [&](QTreeWidgetItem * item) {
+    if (!item) return false;
     state.id = item->data(0, TreeRoleId).toString().trimmed();
     if (state.id.isEmpty()) state.id = item->text(0).trimmed();
     state.display_name = item->text(0).trimmed();
@@ -1502,13 +1502,15 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.yaw = item->data(0, TreeRoleYaw).toDouble();
     state.pose_text = item->data(0, TreeRolePoseText).toString().trimmed();
     state.valid = !state.id.isEmpty();
-    if (state.valid) return state;
-  }
-  if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
-    auto * item = digital_twin_scene_->selectedItems().front();
+    return state.valid;
+  };
+  const auto fill_from_canvas = [&](QGraphicsItem * item, const QString & fallback_id = QString()) {
+    if (!item) return false;
     state.id = item->data(RoleId).toString().trimmed();
+    if (state.id.isEmpty()) state.id = fallback_id.trimmed();
     state.display_name = item->data(RoleDisplayName).toString().trimmed();
-    state.role_or_category = item->data(RoleCategory).toString().trimmed();
+    state.role_or_category = item->data(RoleRole).toString().trimmed();
+    if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleCategory).toString().trimmed();
     if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleType).toString().trimmed();
     state.source_path = item->data(RoleSource).toString().trimmed();
     state.pose_available = true;
@@ -1520,48 +1522,43 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.yaw = item->data(RoleYaw).toDouble();
     state.pose_text = item->data(RolePoseText).toString().trimmed();
     state.valid = !state.id.isEmpty();
-    if (state.valid) return state;
-  }
-  if (scene_preview_widget_) {
-    const QString preview_id = scene_preview_widget_->selected_preview_item_id().trimmed();
-    if (!preview_id.isEmpty()) {
-      if (scene_hierarchy_tree_) {
-        for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
-          auto * top = scene_hierarchy_tree_->topLevelItem(i);
-          for (int j = 0; top && j < top->childCount(); ++j) {
-            auto * child = top->child(j);
-            if (child && child->data(0, TreeRoleId).toString().trimmed() == preview_id) {
-              scene_hierarchy_tree_->setCurrentItem(child);
-              return current_selected_scene_item();
-            }
-          }
-        }
+    return state.valid;
+  };
+  const auto find_tree_item_by_id = [&](const QString & id) -> QTreeWidgetItem * {
+    if (!scene_hierarchy_tree_ || id.trimmed().isEmpty()) return nullptr;
+    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
+      auto * top = scene_hierarchy_tree_->topLevelItem(row);
+      if (!top) continue;
+      if (top->data(0, TreeRoleId).toString().trimmed() == id) return top;
+      for (int child = 0; child < top->childCount(); ++child) {
+        auto * node = top->child(child);
+        if (node && node->data(0, TreeRoleId).toString().trimmed() == id) return node;
       }
-      if (digital_twin_scene_) {
-        for (auto * gi : digital_twin_scene_->items()) {
-          if (gi && gi->data(RoleId).toString().trimmed() == preview_id) {
-            state.id = preview_id;
-            state.display_name = gi->data(RoleDisplayName).toString().trimmed();
-            state.role_or_category = gi->data(RoleCategory).toString().trimmed();
-            state.source_path = gi->data(RoleSource).toString().trimmed();
-            state.pose_available = true;
-            state.pose_x = gi->pos().x() / 100.0;
-            state.pose_y = gi->pos().y() / 100.0;
-            state.pose_z = gi->data(RolePoseZ).toDouble();
-            state.roll = gi->data(RoleRoll).toDouble();
-            state.pitch = gi->data(RolePitch).toDouble();
-            state.yaw = gi->data(RoleYaw).toDouble();
-            state.pose_text = gi->data(RolePoseText).toString().trimmed();
-            state.valid = true;
-            return state;
-          }
-        }
-      }
-      state.valid = true;
-      state.id = preview_id;
-      return state;
     }
+    return nullptr;
+  };
+  const auto find_canvas_item_by_id = [&](const QString & id) -> QGraphicsItem * {
+    if (!digital_twin_scene_ || id.trimmed().isEmpty()) return nullptr;
+    for (auto * gi : digital_twin_scene_->items()) {
+      if (gi && gi->data(RoleId).toString().trimmed() == id) return gi;
+    }
+    return nullptr;
+  };
+
+  const QString selected_id = !current_selected_scene_item_id_.trimmed().isEmpty() ? current_selected_scene_item_id_.trimmed() :
+    (scene_preview_widget_ ? scene_preview_widget_->selected_preview_item_id().trimmed() : QString());
+  if (!selected_id.isEmpty()) {
+    auto * tree_item = find_tree_item_by_id(selected_id);
+    if (fill_from_tree(tree_item)) return state;
+    auto * canvas_item = find_canvas_item_by_id(selected_id);
+    if (fill_from_canvas(canvas_item, selected_id)) return state;
+    state.valid = true;
+    state.id = selected_id;
+    return state;
   }
+  if (scene_hierarchy_tree_ && fill_from_tree(scene_hierarchy_tree_->currentItem())) return state;
+  if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty() &&
+    fill_from_canvas(digital_twin_scene_->selectedItems().front())) return state;
   return {};
 }
 
@@ -1605,9 +1602,10 @@ bool MainWindow::is_camera_candidate(const SelectedSceneItemState & state) const
 
 void MainWindow::refresh_selection_binding_actions(const SelectedSceneItemState & state)
 {
-  if (pick_source_button_) pick_source_button_->setEnabled(is_pick_source_candidate(state));
-  if (place_target_button_) place_target_button_->setEnabled(is_place_target_candidate(state));
-  if (camera_button_) camera_button_->setEnabled(is_camera_candidate(state));
+  const bool has_selection = state.valid && !state.id.trimmed().isEmpty();
+  if (pick_source_button_) pick_source_button_->setEnabled(has_selection);
+  if (place_target_button_) place_target_button_->setEnabled(has_selection);
+  if (camera_button_) camera_button_->setEnabled(has_selection);
 }
 
 QString MainWindow::selected_scene_binding_id() const
@@ -1692,11 +1690,11 @@ void MainWindow::bind_selected_item_as_pick_zone()
     return;
   }
   if (!is_pick_source_candidate(state)) {
-    append_studio_log(QString("Use Selected as Pick Source/Zone blocked: selected item '%1' is incompatible (role/category: %2).")
+    append_studio_log(QString("Use Selected as Pick Source/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
-    return;
   }
   update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
+  update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
 }
 
 void MainWindow::bind_selected_item_as_place_zone()
@@ -1707,11 +1705,11 @@ void MainWindow::bind_selected_item_as_place_zone()
     return;
   }
   if (!is_place_target_candidate(state)) {
-    append_studio_log(QString("Use Selected as Place Target/Zone blocked: selected item '%1' is incompatible (role/category: %2).")
+    append_studio_log(QString("Use Selected as Place Target/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
-    return;
   }
   update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
+  update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
 }
 
 void MainWindow::bind_selected_item_as_camera()
@@ -1722,9 +1720,8 @@ void MainWindow::bind_selected_item_as_camera()
     return;
   }
   if (!is_camera_candidate(state)) {
-    append_studio_log(QString("Use Selected as Camera blocked: selected item '%1' is incompatible (role/category: %2).")
+    append_studio_log(QString("Use Selected as Camera warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
-    return;
   }
   update_selected_scene_task_intent_binding("Camera", {"perception", "camera", "id"}, state.id.trimmed());
 }
