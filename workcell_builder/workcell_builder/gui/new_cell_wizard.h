@@ -45,6 +45,9 @@ private:
   void refresh_validation();
   void refresh_summary();
   void refresh_environment_parent_options();
+  void apply_task_family_defaults();
+  QStringList readiness_warnings() const;
+  QStringList readiness_blockers() const;
   void apply_recommended_environment_layout();
   void refresh_environment_review_table();
   void add_environment_asset_row(const QString &id, const QString &asset, const QString &parent, const QString &parent_link, const QString &child_link, const QString &role);
@@ -125,6 +128,7 @@ private:
   QDoubleSpinBox *retreat_distance_{nullptr};
   QTextEdit *task_intent_text_{nullptr};
   QLabel *task_warning_{nullptr};
+  QLabel *task_readiness_label_{nullptr};
 
   QLabel *summary_{nullptr};
 
