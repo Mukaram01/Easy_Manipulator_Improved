@@ -23,7 +23,8 @@ public:
   explicit SimplePreview3DView(QWidget * parent=nullptr) : QOpenGLWidget(parent) { setMinimumHeight(420); }
   QVector<ScenePreviewWidget::PreviewItem> items;
   QString selected_id;
-  bool show_labels{true}, show_warnings{true}, show_safety{true}, show_pick_place{true};
+  ScenePreviewWidget::LabelMode label_mode{ScenePreviewWidget::LabelMode::SelectedOnly};
+  bool show_warnings{true}, show_safety{true}, show_pick_place{true};
   bool show_reachability_heatmap{true}, show_collision_warnings{true}, show_work_envelope{true}, show_warning_labels{true};
   bool show_task_route{true}, show_approach_retreat{true};
   bool show_camera_fov{true}, show_pick_coverage{true}, show_epd_detections{true}, show_detection_labels{true};
@@ -228,11 +229,40 @@ protected:
     }
   }
 
+  QString shortRoleLabel(const ScenePreviewWidget::PreviewItem & it) const {
+    const QString category = it.category.toLower();
+    const QString role = it.role.toLower();
+    if (category.contains("robot")) return "Robot";
+    if (category.contains("table")) return "Table";
+    if (category.contains("conveyor")) return "Conveyor";
+    if (category.contains("camera")) return "Camera";
+    if (role.contains("pick") || category.contains("pick")) return "Pick";
+    if (role.contains("place") || category.contains("place")) return "Place";
+    if (category.contains("bin")) return "Bin";
+    return QString();
+  }
+
   void drawCompactLabels(QPainter & p) const {
+    QVector<QRectF> used_label_rects;
     for (const auto & it : items) {
       if (!show_safety && it.category.contains("safety", Qt::CaseInsensitive)) continue;
       const bool selected = (it.id == selected_id);
-      if (show_labels || selected) p.drawText(project(it.x,it.y+it.sy+0.08,it.z), selected ? (it.display_name + " [selected]") : it.display_name);
+      if (label_mode == ScenePreviewWidget::LabelMode::Off) continue;
+      if (label_mode == ScenePreviewWidget::LabelMode::SelectedOnly && !selected) continue;
+      const QString short_label = shortRoleLabel(it);
+      if (short_label.isEmpty()) continue;
+      const QPointF anchor = project(it.x, it.y + it.sy + 0.08, it.z);
+      const QRectF label_rect = QFontMetricsF(p.font()).boundingRect(short_label).translated(anchor);
+      bool intersects_existing = false;
+      for (const QRectF & used : used_label_rects) {
+        if (used.intersects(label_rect)) {
+          intersects_existing = true;
+          break;
+        }
+      }
+      if (intersects_existing) continue;
+      p.drawText(anchor, selected ? (short_label + " [selected]") : short_label);
+      used_label_rects.push_back(label_rect);
     }
     if (show_work_envelope) p.drawText(project(-0.1, 0.25, -2.2), "Work Envelope (preview-only)");
     if (show_reachability_heatmap) p.drawText(project(-0.08, 0.4, -2.2), "Reachability Heatmap (approximate, preview-only)");
@@ -327,7 +357,7 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   v->show_task_route = task_route;
   v->show_pick_place = pick_place_zones;
   v->show_approach_retreat = approach_retreat;
-  v->show_labels = labels;
+  v->label_mode = labels ? LabelMode::All : LabelMode::Off;
   v->update();
 }
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<SimplePreview3DView *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
@@ -386,3 +416,5 @@ void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool
 
 void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->reach_overlay = model; emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->collision_overlay = model; emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); simple_3d_view_->update(); }
+
+void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->label_mode = mode; v->update(); }

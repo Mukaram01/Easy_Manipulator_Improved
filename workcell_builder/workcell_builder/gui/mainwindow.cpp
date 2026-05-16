@@ -843,6 +843,7 @@ void MainWindow::setup_studio_shell()
   auto * controls = new QHBoxLayout();
   canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
+  scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::SelectedOnly);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id){
     if (!scene_hierarchy_tree_) return;
@@ -1331,7 +1332,10 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
   connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
-  connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool enabled){
+    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::All : ScenePreviewWidget::LabelMode::Off);
+    rebuild_digital_twin_canvas();
+  });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(undo_layout_button_, &QPushButton::clicked, this, &MainWindow::undo_layout_edit);
   connect(redo_layout_button_, &QPushButton::clicked, this, &MainWindow::redo_layout_edit);
