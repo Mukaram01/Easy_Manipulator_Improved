@@ -381,5 +381,6 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  QStringList preview_warning_details_;
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
