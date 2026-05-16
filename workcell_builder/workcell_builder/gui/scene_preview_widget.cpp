@@ -3,6 +3,8 @@
 #include <QComboBox>
 #include <QFrame>
 #include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsItem>
 #include <QHBoxLayout>
 #include <functional>
 #include <QLabel>
@@ -198,6 +200,10 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
   error_state_label_ = new QLabel("3D preview unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
   view2d_container_ = new QWidget(this); view2d_container_->setLayout(new QVBoxLayout());
+  fallback_banner_label_ = new QLabel("2D fallback preview active", view2d_container_);
+  fallback_banner_label_->setAlignment(Qt::AlignCenter);
+  fallback_banner_label_->setVisible(false);
+  view2d_container_->layout()->addWidget(fallback_banner_label_);
   stack_->addWidget(view3d_container_); stack_->addWidget(view2d_container_); root->addWidget(stack_, 1);
   connect(mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, &ScenePreviewWidget::on_mode_changed);
   connect(reset_view_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_reset_view_clicked);
@@ -222,7 +228,7 @@ void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d
 void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = selected; refresh_mode_and_state(); }
 void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){ preview3d_available_ = available; unavailable_reason_ = reason; refresh_mode_and_state(); }
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
-void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; static_cast<SimplePreview3DView *>(simple_3d_view_)->items = preview_items_; emit studio_log_requested(QString("Loaded %1 preview items.").arg(preview_items_.size())); update(); }
+void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; static_cast<SimplePreview3DView *>(simple_3d_view_)->items = preview_items_; emit studio_log_requested(QString("Loaded %1 preview items.").arg(preview_items_.size())); fit_fallback_scene_to_items(); update(); }
 void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<SimplePreview3DView *>(simple_3d_view_)->task_overlay = model; simple_3d_view_->update(); }
 void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels){
   auto * v = static_cast<SimplePreview3DView *>(simple_3d_view_);
@@ -234,8 +240,8 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
 }
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<SimplePreview3DView *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
-void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->reset_view(); }
-void ScenePreviewWidget::on_fit_scene_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->fit_scene(); }
+void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
+void ScenePreviewWidget::on_fit_scene_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->fit_scene(); fit_fallback_scene_to_items(); }
 void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<SimplePreview3DView *>(simple_3d_view_)->focus_selected(); }
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<SimplePreview3DView *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString()); }
 void ScenePreviewWidget::refresh_mode_and_state()
@@ -243,14 +249,42 @@ void ScenePreviewWidget::refresh_mode_and_state()
   if (!preview3d_available_) {
     mode_selector_->setCurrentText("2D Layout");
     stack_->setCurrentWidget(view2d_container_);
+    fallback_banner_label_->setVisible(scene_selected_);
     emit studio_log_requested(QString("3D preview fallback to 2D: %1").arg(unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_));
     return;
   }
+  fallback_banner_label_->setVisible(false);
   bool use3d = mode_selector_->currentText() == "3D Preview";
   stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
+  const bool has_preview_items = !preview_items_.isEmpty();
   empty_state_label_->setVisible(use3d && !scene_selected_);
   simple_3d_view_->setVisible(use3d && scene_selected_);
-  error_state_label_->setVisible(false);
+  const bool rendering_failed = scene_selected_ && has_preview_items && !simple_3d_view_->isVisible() && !preview3d_available_;
+  error_state_label_->setText(QString("Scene selected but preview rendering failed. Loaded %1 preview items. Check fallback 2D canvas.").arg(preview_items_.size()));
+  error_state_label_->setVisible(rendering_failed);
+}
+QRectF ScenePreviewWidget::rendered_items_bounds_2d() const
+{
+  if (!fallback_2d_view_ || !fallback_2d_view_->scene()) return QRectF();
+  QRectF bounds;
+  const auto items = fallback_2d_view_->scene()->items();
+  for (QGraphicsItem * item : items) {
+    if (!item || !item->isVisible()) continue;
+    bounds = bounds.isNull() ? item->sceneBoundingRect() : bounds.united(item->sceneBoundingRect());
+  }
+  return bounds;
+}
+void ScenePreviewWidget::fit_fallback_scene_to_items()
+{
+  if (!fallback_2d_view_) return;
+  const QRectF bounds = rendered_items_bounds_2d();
+  if (bounds.isValid() && !bounds.isEmpty()) fallback_2d_view_->fitInView(bounds.adjusted(-20, -20, 20, 20), Qt::KeepAspectRatio);
+}
+void ScenePreviewWidget::reset_fallback_scene_view()
+{
+  if (!fallback_2d_view_) return;
+  fallback_2d_view_->resetTransform();
+  fit_fallback_scene_to_items();
 }
 
 void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; auto *v=static_cast<SimplePreview3DView *>(simple_3d_view_); v->camera_overlay = model; simple_3d_view_->update(); }
