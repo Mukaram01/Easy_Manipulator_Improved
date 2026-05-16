@@ -320,6 +320,23 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
 out<<"workcell_studio:\n";
+ out<<"  robot:\n";
+ out<<"    family: "<<yaml_scalar(robot_family_->currentText())<<"\n";
+ out<<"    model: "<<yaml_scalar(robot_->currentText())<<"\n";
+ out<<"    base: "<<yaml_scalar(robot_base_link_->currentText())<<"\n";
+ out<<"    tip: "<<yaml_scalar(robot_tip_link_->currentText())<<"\n";
+ out<<"    planning_group: "<<yaml_scalar(robot_planning_group_->currentText())<<"\n";
+ out<<"    readiness: "<<yaml_scalar(robot_readiness_banner_->text())<<"\n";
+ out<<"  tool:\n";
+ out<<"    family: "<<yaml_scalar(ee_family_->currentText())<<"\n";
+ out<<"    model: "<<yaml_scalar(ee_->currentText())<<"\n";
+ out<<"    attach: "<<yaml_scalar(ee_attach_link_->currentText())<<"\n";
+ out<<"    tcp: "<<yaml_scalar(ee_tcp_link_->currentText())<<"\n";
+ out<<"    type: "<<yaml_scalar(ee_type_->currentText())<<"\n";
+ out<<"    mount_pose:\n";
+ out<<"      xyz: ["<<pose_number(ee_x_)<<", "<<pose_number(ee_y_)<<", "<<pose_number(ee_z_)<<"]\n";
+ out<<"      rpy: ["<<pose_number(ee_roll_)<<", "<<pose_number(ee_pitch_)<<", "<<pose_number(ee_yaw_)<<"]\n";
+ out<<"    readiness: "<<yaml_scalar(ee_readiness_banner_ ? ee_readiness_banner_->text() : "READY")<<"\n";
  out<<"  create_cell_metadata:\n";
  out<<"    robot_family: "<<yaml_scalar(robot_family_->currentText())<<"\n";
  out<<"    robot_model: "<<yaml_scalar(robot_->currentText())<<"\n";
@@ -341,8 +358,17 @@ out<<"workcell_studio:\n";
  out<<"      xyz: ["<<pose_number(robot_x_)<<", "<<pose_number(robot_y_)<<", "<<pose_number(robot_z_)<<"]\n";
  out<<"      rpy: ["<<pose_number(robot_roll_)<<", "<<pose_number(robot_pitch_)<<", "<<pose_number(robot_yaw_)<<"]\n";
  out<<"    tool_mount_pose:\n";
- out<<"      xyz: ["<<pose_number(ee_x_)<<", "<<pose_number(ee_y_)<<", "<<pose_number(ee_z_)<<"]\n";
- out<<"      rpy: ["<<pose_number(ee_roll_)<<", "<<pose_number(ee_pitch_)<<", "<<pose_number(ee_yaw_)<<"]\n";
+   out<<"      xyz: ["<<pose_number(ee_x_)<<", "<<pose_number(ee_y_)<<", "<<pose_number(ee_z_)<<"]\n";
+   out<<"      rpy: ["<<pose_number(ee_roll_)<<", "<<pose_number(ee_pitch_)<<", "<<pose_number(ee_yaw_)<<"]\n";
+
+ out<<"  perception:\n";
+ out<<"    mode: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+ out<<"    selected_topics:\n";
+ out<<"      detection_source: "<<yaml_scalar(pick_detection_source_->currentText())<<"\n";
+ out<<"      camera: "<<yaml_scalar(pick_camera_->currentText())<<"\n";
+ out<<"    profile_metadata:\n";
+ out<<"      pick_zone_source: "<<yaml_scalar(pick_zone_source_->currentText())<<"\n";
+ out<<"      scene_readiness: "<<yaml_scalar(readiness)<<"\n";
 
  out<<"  environment_objects:\n";
  for(int r=0;r<env_objects_table_->rowCount();++r){
