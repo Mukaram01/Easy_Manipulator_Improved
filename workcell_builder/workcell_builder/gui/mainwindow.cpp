@@ -3080,10 +3080,6 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRolePoseAvailable, false);
     node->setData(0, TreeRoleRole, "file");
   }
-      ++preview_warning_count;
-      append_studio_log(QString("Preview warning: %1").arg(QString::fromStdString(item.warnings.front())));
-    }
-  }
 
   if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
 
