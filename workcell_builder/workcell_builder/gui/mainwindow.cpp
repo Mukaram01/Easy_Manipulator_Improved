@@ -1,5 +1,4 @@
-// Copyright 2020 Advanced Remanufacturing and Technology Centre
-// Copyright 2020 ROS-Industrial Consortium Asia Pacific Team
+// Copyright 2026 Mukaram01
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -62,6 +61,7 @@
 #include <QStatusBar>
 #include <QToolButton>
 #include <QMenu>
+#include <QMap>
 #include <QSplitter>
 #include <QScrollArea>
 #include <QGroupBox>
@@ -726,7 +726,7 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
-  scene_hierarchy_tree_->setHeaderLabels({"Item", "Status"});
+  scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"});
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
   scene_tab_layout->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(assets_tab); catalog_card->setObjectName("studioCard");
@@ -737,9 +737,11 @@ void MainWindow::setup_studio_shell()
   catalog_layout->addWidget(asset_filter_combo_);
   asset_catalog_tree_ = new QTreeWidget(catalog_card);
   asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
-  asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type"});
+  asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type/Source", "Status"});
   catalog_layout->addWidget(asset_catalog_tree_, 1);
-  auto * add_to_canvas_button = new QPushButton("Add to Canvas", scene_builder); catalog_layout->addWidget(add_to_canvas_button);
+  add_to_canvas_button_ = new QPushButton("Add to Canvas", scene_builder);
+  add_to_canvas_button_->setEnabled(false);
+  catalog_layout->addWidget(add_to_canvas_button_);
   auto * asset_more_actions = new QToolButton(scene_builder);
   asset_more_actions->setText("More Actions");
   asset_more_actions->setPopupMode(QToolButton::InstantPopup);
@@ -1283,8 +1285,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
-  connect(add_to_canvas_button, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
@@ -2721,6 +2724,23 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
 }
 
 
+void MainWindow::validate_asset_catalog_selection()
+{
+  if (!add_to_canvas_button_) return;
+  bool can_add = false;
+  if (asset_catalog_tree_) {
+    auto * item = asset_catalog_tree_->currentItem();
+    if (item && !item->isHidden()) {
+      const QString source = item->data(0, Qt::UserRole).toString().trimmed();
+      const bool has_valid_path = !source.isEmpty() && (QFileInfo::exists(source) || QFileInfo(source).isAbsolute());
+      const bool has_placeholder_token = source.startsWith("placeholder://");
+      can_add = has_valid_path || has_placeholder_token;
+    }
+  }
+  add_to_canvas_button_->setEnabled(can_add);
+}
+
+
 QString MainWindow::selected_catalog_item_path() const
 {
   if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) {
@@ -2738,6 +2758,7 @@ void MainWindow::on_asset_filter_changed(int)
     const bool visible = (selected == "All" || item->text(1) == selected);
     item->setHidden(!visible);
   }
+  validate_asset_catalog_selection();
 }
 
 void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
@@ -2793,47 +2814,87 @@ void MainWindow::populate_scene_hierarchy()
 {
   if (!scene_hierarchy_tree_) return;
   scene_hierarchy_tree_->clear();
-  const QStringList groups = {"Robot","End Effector","Camera / Sensor","Conveyor","Work Table / Surface","Pick Source / Bin","Place Target / Fixture","Reject Bin","Safety","Lighting","Other Objects / Imported Assets"};
-  std::unordered_map<QString,QTreeWidgetItem*> tops;
-  for (const auto & g : groups) { auto *t = new QTreeWidgetItem(scene_hierarchy_tree_, {g, "unknown"}); tops[g]=t; }
+
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const fs::path d=s.scene_dir;
-  const std::vector<std::string> files={"environment.yaml","scene_manifest.yaml","cell_definition.yaml","environment_layout.yaml"};
-  const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);
-  QVector<ScenePreviewWidget::PreviewItem> preview_items;
-  auto add_preview_item = [&](const QString &id, const QString &name, const QString &category, const QString &role, const QString &status, const QString &source, bool metadata_complete){
-    ScenePreviewWidget::PreviewItem p; p.id=id; p.display_name=name; p.category=category; p.role=role; p.status=status; p.source_path=source; p.metadata_complete=metadata_complete;
-    if (category.contains("Robot", Qt::CaseInsensitive)) { p.sx=0.5; p.sy=0.8; p.sz=0.5; }
-    if (category.contains("Conveyor", Qt::CaseInsensitive)) { p.sx=1.2; p.sy=0.2; p.sz=0.5; }
-    if (category.contains("Table", Qt::CaseInsensitive)) { p.sx=1.6; p.sy=0.2; p.sz=1.0; }
-    p.x = preview_items.size()*0.45 - 1.2; p.y = 0.0; p.z = -0.8 + 0.2*(preview_items.size()%4);
-    preview_items.push_back(p);
+  const fs::path d = s.scene_dir;
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+
+  auto normalize_role = [](const QString & raw_role, const QString & fallback_text) {
+    const QString lower = (raw_role + " " + fallback_text).toLower();
+    if (lower.contains("robot")) return QString("robot");
+    if (lower.contains("end_effector") || lower.contains("gripper") || lower.contains("tool")) return QString("end_effector/tool");
+    if (lower.contains("camera") || lower.contains("sensor")) return QString("camera");
+    if (lower.contains("support_surface") || lower.contains("table") || lower.contains("workbench")) return QString("support_surface/table");
+    if (lower.contains("conveyor")) return QString("conveyor");
+    if (lower.contains("pick_source") || lower.contains("pick zone") || lower.contains("pick_zone")) return QString("pick_source/pick_zone");
+    if (lower.contains("place_target") || lower.contains("place zone") || lower.contains("place_zone") || lower.contains("bin")) return QString("place_target/bin");
+    if (lower.contains("safety")) return QString("safety_zone");
+    if (lower.contains("object") || lower.contains("fixture") || lower.contains("asset")) return QString("object");
+    return QString("unknown");
   };
-  add_preview_item("robot_base","robot base","Robot","robot","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("end_effector","end effector","End Effector","tool","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("camera_main","camera","Camera / Sensor","camera","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("conveyor_main","conveyor","Conveyor","conveyor","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("table_main","workbench","Work Table / Surface","table","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("bin_pick","pick source bin","Pick Source / Bin","pick source","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("fixture_place","place target fixture","Place Target / Fixture","place target","ready",QString::fromStdString(s.scene_dir.string()),true);
-  add_preview_item("safety_zone_a","safety zone","Safety","safety zone","warning",QString::fromStdString(s.scene_dir.string()),false);
-  add_preview_item("warning_marker_a","warning marker","Safety","warning marker","warning",QString::fromStdString(s.scene_dir.string()),false);
-  for (const auto & fn : files) {
-    const fs::path pth=d/fn; if (!fs::exists(pth)) continue;
-    auto *n = new QTreeWidgetItem(tops["Other Objects / Imported Assets"], {QString::fromStdString(fn), "OK"});
-    n->setData(0, TreeRoleId, QString::fromStdString(fn));
-    n->setData(0, TreeRoleCategory, "Other Objects / Imported Assets");
-    n->setData(0, TreeRoleSource, QString::fromStdString(pth.string()));
-    n->setData(0, TreeRolePoseAvailable, false);
-    n->setData(0, TreeRoleRole, "file");
-  }
+  QMap<QString, QString> yaml_status_by_id;
+  auto ingest_status_file = [&](const fs::path & path, const QString & source_tag) {
+    YAML::Node root;
+    if (!read_yaml(path, &root)) return;
+
+    auto ingest_sequence = [&](const YAML::Node & seq) {
+      if (!seq || !seq.IsSequence()) return;
+      for (const auto & node : seq) {
+        if (!node || !node.IsMap()) continue;
+
+        const QString id = ystr(node["id"]);
+        if (id == "unknown") continue;
+
+        QString status = ystr(node["status"]);
+        if (status == "unknown") {
+          bool enabled = true;
+          if (node["enabled"] && node["enabled"].IsScalar()) {
+            enabled = node["enabled"].as<bool>();
+          }
+          status = enabled ? "ready" : "disabled";
+        }
+
+        yaml_status_by_id[id] = status + " (" + source_tag + ")";
+      }
+    };
+
+    ingest_sequence(root["items"]);
+    ingest_sequence(root["objects"]);
+    ingest_sequence(root["assets"]);
+    ingest_sequence(root["layout"]);
+    ingest_sequence(root["placed_assets"]);
+  };
+
+  ingest_status_file(d / "environment.yaml", "environment.yaml");
+  ingest_status_file(d / "scene_manifest.yaml", "scene_manifest.yaml");
+  ingest_status_file(d / "environment_layout.yaml", "environment_layout.yaml");
+  ingest_status_file(d / "layout" / "workcell_studio_layout.yaml", "workcell_studio_layout.yaml");
+
+  QVector<ScenePreviewWidget::PreviewItem> preview_items;
   int preview_warning_count = 0;
-  for (const auto & p : preview_items) {
-    auto *node = new QTreeWidgetItem(tops[p.category], {p.display_name, p.status});
+
+  auto status_for_item = [&](const workcell_builder::WorkcellStudioCanvasItem & item) {
+    const QString id = QString::fromStdString(item.id);
+    if (yaml_status_by_id.contains(id)) return yaml_status_by_id[id];
+    if (!item.warnings.empty()) return QString("warning");
+    return QString("ready");
+  };
+
+  auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
+    auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {p.display_name, p.role, p.status});
     node->setData(0, TreeRoleId, p.id);
     node->setData(0, TreeRoleCategory, p.category);
-    node->setData(0, TreeRolePoseText, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
+    node->setData(
+      0,
+      TreeRolePoseText,
+      QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)")
+        .arg(p.x)
+        .arg(p.y)
+        .arg(p.z)
+        .arg(p.roll)
+        .arg(p.pitch)
+        .arg(p.yaw));
     node->setData(0, TreeRoleSource, p.source_path);
     node->setData(0, TreeRolePoseX, p.x);
     node->setData(0, TreeRolePoseY, p.y);
@@ -2843,88 +2904,206 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleYaw, p.yaw);
     node->setData(0, TreeRolePoseAvailable, true);
     node->setData(0, TreeRoleRole, p.role);
-    if (!p.metadata_complete) {
+  };
+
+  auto add_preview_item = [&](const QString & id,
+                              const QString & display_name,
+                              const QString & category,
+                              const QString & role_hint,
+                              const QString & status,
+                              const QString & source_path,
+                              bool metadata_complete) {
+    ScenePreviewWidget::PreviewItem p;
+    p.id = id;
+    p.display_name = display_name;
+    p.category = category;
+    p.role = normalize_role(role_hint, category + " " + display_name);
+    p.status = status;
+    p.source_path = source_path;
+    p.metadata_complete = metadata_complete;
+    preview_items.push_back(p);
+    add_tree_node(p);
+
+    if (!metadata_complete) {
       ++preview_warning_count;
-      if (p.role == "safety zone") {
-        append_studio_log("Preview warning: safety zone metadata is incomplete.");
-      } else if (p.role == "warning marker") {
-        append_studio_log("Preview warning: warning marker metadata is incomplete.");
-      }
+      append_studio_log(QString("Preview warning: metadata incomplete for %1").arg(id));
+    }
+  };
+
+  for (const auto & item : model.items) {
+    ScenePreviewWidget::PreviewItem p;
+    p.id = QString::fromStdString(item.id);
+    p.display_name = QString::fromStdString(item.label);
+    p.category = QString::fromStdString(item.type);
+    p.role = normalize_role(QString::fromStdString(item.role), p.category + " " + p.display_name);
+    p.status = status_for_item(item);
+    p.source_path = QString::fromStdString(item.source_file);
+    p.metadata_complete = item.warnings.empty();
+    p.x = item.x;
+    p.y = item.y;
+    p.z = item.z;
+    p.roll = item.roll;
+    p.pitch = item.pitch;
+    p.yaw = item.yaw;
+    p.sx = item.width;
+    p.sy = item.depth;
+    p.sz = item.height;
+    preview_items.push_back(p);
+    add_tree_node(p);
+
+    if (!item.warnings.empty()) {
+      ++preview_warning_count;
+      append_studio_log(QString("Preview warning: %1").arg(QString::fromStdString(item.warnings.front())));
     }
   }
+
+  if (preview_items.empty()) {
+    const QString scene_source = QString::fromStdString(s.scene_dir.string());
+    add_preview_item("robot_base", "robot base", "Robot", "robot", "ready", scene_source, true);
+    add_preview_item("end_effector", "end effector", "End Effector", "tool", "ready", scene_source, true);
+    add_preview_item("camera_main", "camera", "Camera / Sensor", "camera", "ready", scene_source, true);
+    add_preview_item("conveyor_main", "conveyor", "Conveyor", "conveyor", "ready", scene_source, true);
+    add_preview_item("table_main", "workbench", "Work Table / Surface", "table", "ready", scene_source, true);
+    add_preview_item("bin_pick", "pick source bin", "Pick Source / Bin", "pick source", "ready", scene_source, true);
+    add_preview_item("fixture_place", "place target fixture", "Place Target / Fixture", "place target", "ready", scene_source, true);
+    add_preview_item("safety_zone_a", "safety zone", "Safety", "safety zone", "warning", scene_source, false);
+    add_preview_item("warning_marker_a", "warning marker", "Safety", "warning marker", "warning", scene_source, false);
+  }
+
+  const std::vector<std::string> key_files = {
+    "environment.yaml",
+    "scene_manifest.yaml",
+    "environment_layout.yaml",
+    "layout/workcell_studio_layout.yaml",
+    "config/workcell_builder_task_intent.yaml",
+    "package.xml",
+    "CMakeLists.txt",
+    "launch/demo.launch.py"
+  };
+
+  for (const auto & rel : key_files) {
+    const fs::path path = d / rel;
+    if (!fs::exists(path)) continue;
+
+    auto * node = new QTreeWidgetItem(
+      scene_hierarchy_tree_,
+      {QString::fromStdString(rel), "file", "present"});
+    node->setData(0, TreeRoleId, QString::fromStdString(rel));
+    node->setData(0, TreeRoleCategory, "file");
+    node->setData(0, TreeRoleSource, QString::fromStdString(path.string()));
+    node->setData(0, TreeRolePoseAvailable, false);
+    node->setData(0, TreeRoleRole, "file");
+  }
+      ++preview_warning_count;
+      append_studio_log(QString("Preview warning: %1").arg(QString::fromStdString(item.warnings.front())));
+    }
+  }
+
   if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
 
-  // Single-cycle perception/camera status model.
+  auto * header = scene_hierarchy_tree_->header();
+  if (header) {
+    header->setSectionResizeMode(0, QHeaderView::Stretch);
+    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  }
+
+  const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
   const bool live_selected = task_summary.perception_mode.compare("live_epd", Qt::CaseInsensitive) == 0;
   const bool manual_selected = task_summary.perception_mode.compare("manual_simulated", Qt::CaseInsensitive) == 0;
   const QString perception_mode = snapshot_available ? "saved_snapshot" : (live_selected ? "live_epd" : (manual_selected ? "manual_simulated" : "not_configured"));
+
   QString camera_id;
   for (const auto & p : preview_items) {
-    if (p.role == "camera") {
-      camera_id = p.id;
-      break;
-    }
+    if (p.role == "camera") { camera_id = p.id; break; }
   }
   const bool has_camera_metadata = !camera_id.trimmed().isEmpty();
 
   QString perception_line;
-  if (perception_mode == "saved_snapshot") {
-    perception_line = "Perception: saved snapshot loaded.";
-  } else if (perception_mode == "live_epd") {
-    perception_line = "Perception: Live EPD/RealSense selected; saved snapshot not required.";
-  } else if (perception_mode == "manual_simulated") {
-    perception_line = "Perception: manual/simulated mode selected.";
-  } else {
-    perception_line = "Perception: not configured.";
-  }
-  const QString camera_line = has_camera_metadata ?
-    QString("Camera: %1 configured.").arg(camera_id) :
-    "Camera: no camera metadata in this scene.";
+  if (perception_mode == "saved_snapshot") perception_line = "Perception: saved snapshot loaded.";
+  else if (perception_mode == "live_epd") perception_line = "Perception: Live EPD/RealSense selected; saved snapshot not required.";
+  else if (perception_mode == "manual_simulated") perception_line = "Perception: manual/simulated mode selected.";
+  else perception_line = "Perception: not configured.";
+
+  const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
   const QString preview_line = QString("Preview: %1 items loaded, %2 metadata warnings.").arg(preview_items.size()).arg(preview_warning_count);
 
-  if (perception_line != last_perception_summary_log_) {
-    append_studio_log(perception_line);
-    last_perception_summary_log_ = perception_line;
-  }
-  if (camera_line != last_camera_summary_log_) {
-    append_studio_log(camera_line);
-    last_camera_summary_log_ = camera_line;
-  }
-  if (preview_line != last_preview_summary_log_) {
-    append_studio_log(preview_line);
-    last_preview_summary_log_ = preview_line;
-  }
+  if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
+  if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
+  if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
 }
 
 void MainWindow::populate_asset_catalog()
 {
   if (!asset_catalog_tree_) return;
   asset_catalog_tree_->clear();
+
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
-  std::vector<fs::path> roots = {workspace_root / "src" / "easy_manipulation_deployment" / "assets", workspace_root / "src" / "assets", fs::current_path() / "assets"};
-  for (const auto & root : roots) {
-    boost::system::error_code ec; if (!fs::exists(root, ec) || ec) continue;
+  const fs::path repo_root = fs::current_path();
+  QStringList searched_paths;
+  std::vector<fs::path> discovery_paths = {
+    repo_root / "assets" / "robots",
+    repo_root / "assets" / "end_effectors",
+    repo_root / "assets" / "environment",
+    repo_root / "assets" / "environment_objects",
+    workspace_root / "src" / "easy_manipulation_deployment" / "assets",
+    workspace_root / "src" / "assets",
+    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "easy_manipulation_deployment" / "assets",
+    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "assets"
+  };
+
+  const fs::path sensors_path = repo_root / "assets" / "sensors";
+  if (fs::exists(sensors_path)) discovery_paths.push_back(sensors_path);
+  const fs::path capabilities_path = repo_root / "catalog" / "capabilities";
+  if (fs::exists(capabilities_path)) discovery_paths.push_back(capabilities_path);
+
+  auto infer_category = [](const QString & path, const fs::path & root, const QString & ext) {
+    QString category = "Custom";
+    const QString root_name = QString::fromStdString(root.filename().string()).toLower();
+    if (root_name == "robots" || path.contains("robot", Qt::CaseInsensitive) || ext == ".urdf" || ext == ".xacro") category = "Robots";
+    if (root_name == "end_effectors" || path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) category = "End Effectors";
+    if (root_name == "sensors" || path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) category = "Sensors";
+    if (path.contains("table", Qt::CaseInsensitive)) category = "Tables";
+    if (path.contains("conveyor", Qt::CaseInsensitive)) category = "Conveyors";
+    if (path.contains("bin", Qt::CaseInsensitive)) category = "Bins";
+    if (path.contains("fixture", Qt::CaseInsensitive)) category = "Fixtures";
+    return category;
+  };
+
+  int discovered_assets = 0;
+  for (const auto & root : discovery_paths) {
+    searched_paths << QString::fromStdString(root.string());
+    boost::system::error_code ec;
+    if (!fs::exists(root, ec) || ec || !fs::is_directory(root, ec) || ec) continue;
     for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
       if (!fs::is_regular_file(it->path(), ec) || ec) continue;
       const QString path = QString::fromStdString(it->path().string());
       const QString ext = QString::fromStdString(it->path().extension().string()).toLower();
-      QString category="Custom"; QString type="Mesh";
-      if (path.contains("robot", Qt::CaseInsensitive) || ext==".urdf" || ext==".xacro") category="Robots";
-      if (path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) category="End Effectors";
-      if (path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) category="Sensors";
-      if (path.contains("table", Qt::CaseInsensitive)) category="Tables";
-      if (path.contains("conveyor", Qt::CaseInsensitive)) category="Conveyors";
-      if (path.contains("bin", Qt::CaseInsensitive)) category="Bins";
-      if (path.contains("fixture", Qt::CaseInsensitive)) category="fixture";
-      if (path.contains("pick", Qt::CaseInsensitive) && path.contains("zone", Qt::CaseInsensitive)) category="pick zone";
-      if (path.contains("place", Qt::CaseInsensitive) && path.contains("zone", Qt::CaseInsensitive)) category="place zone";
-      if (ext==".urdf") type="URDF"; else if (ext==".xacro") type="Xacro"; else if (ext==".stl") type="STL";
-      auto * item = new QTreeWidgetItem(asset_catalog_tree_, {it->path().filename().string().c_str(), category, type});
+      QString type = "File";
+      if (ext == ".urdf") type = "URDF";
+      else if (ext == ".xacro") type = "Xacro";
+      else if (ext == ".stl") type = "STL";
+      else if (ext == ".dae") type = "DAE";
+      else if (ext == ".yaml" || ext == ".yml") type = "YAML";
+      const QString category = infer_category(path, root, ext);
+      const QString status = (ext == ".urdf" || ext == ".xacro" || ext == ".stl" || ext == ".dae") ? "Ready" : "Preview-only";
+      const QString source = QString("%1 (%2)").arg(type, QString::fromStdString(root.filename().string()));
+      auto * item = new QTreeWidgetItem(asset_catalog_tree_, {QString::fromStdString(it->path().filename().string()), category, source, status});
       item->setData(0, Qt::UserRole, path);
+      ++discovered_assets;
     }
   }
+
+  if (discovered_assets == 0) {
+    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Searched paths", "Unavailable"});
+    info->setDisabled(true);
+    info->setToolTip(0, QString("No assets found. Searched paths:\n%1").arg(searched_paths.join("\n")));
+    info->setToolTip(2, searched_paths.join("\n"));
+  }
+
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
+  validate_asset_catalog_selection();
 }
 
 void MainWindow::refresh_new_cell_checklist()
