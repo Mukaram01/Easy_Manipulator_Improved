@@ -672,8 +672,10 @@ void write_task_recipe_yaml(const fs::path & scene_dir, const TaskGraspConfig & 
   out << "place:\n  clearance_m: " << config.place_clearance_m <<
     "\n  orientation_mode: preserve_object_orientation\n";
   out << "release:\n  strategy: " << config.release_strategy << "\n";
-  out << "safety:\n  fake_hardware_first: true\n  motion_command_sent: false\n";
-  out << "  runtime_execution_enabled: false\n";
+  out << "safety:\n  preview_only: false\n  use_fake_hardware: true\n";
+  out << "  allow_simulated_motion: true\n  allow_moveit_execution: true\n";
+  out << "  allow_rviz_motion: true\n  allow_real_hardware_motion: false\n";
+  out << "  real_robot_locked: true\n";
 }
 
 
@@ -1244,7 +1246,9 @@ bool SceneSelect::apply_recommended_layout_to_scene(const boost::filesystem::pat
   std::ofstream out((scene_dir / "config" / "recommended_layout.yaml").string());
   out << "layout_profile: canonical_new_scene_layout\n";
   out << "template_id: " << template_id << "\n";
-  out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+  out << "safety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n";
+  out << "  allow_moveit_execution: true\n  allow_rviz_motion: true\n";
+  out << "  allow_real_hardware_motion: false\n  real_robot_locked: true\n";
   out << "objects:\n  map_format: true\n";
   return out.good();
 }
@@ -2139,7 +2143,9 @@ void SceneSelect::on_generate_files_clicked()
     intent << "place:\n  target:\n    id: " << cfg.place_target << "\n    type: " << task_editor_state_.place_target_type << "\n";
     intent << "grasp:\n  strategy_ref: " << cfg.grasp_strategy << "\n  orientation_mode: " << cfg.orientation_mode << "\n";
     intent << "release:\n  strategy: " << cfg.release_strategy << "\n";
-    intent << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+    intent << "safety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n";
+    intent << "  allow_moveit_execution: true\n  allow_rviz_motion: true\n";
+    intent << "  allow_real_hardware_motion: false\n  real_robot_locked: true\n";
     task_editor_state_.unsaved_task_edits = false;
     rerun_task_validation();
     bool blocked = false;

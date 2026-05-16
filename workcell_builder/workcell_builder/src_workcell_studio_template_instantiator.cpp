@@ -96,13 +96,13 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
     "    - real robot locked\n"
     "    - no runtime motion commands\n"
     "task:\n  type: " + task_type + "\n  preview_only: " + std::string(preview_only ? "true" : "false") +
-    "\nsafety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n"
+    "\nsafety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n  allow_moveit_execution: true\n  allow_rviz_motion: true\n  allow_real_hardware_motion: false\n  real_robot_locked: true\n"
     "layout:\n  preset: " + request.layout_preset_id + "\n  include_camera: " + std::string(request.include_camera ? "true" : "false") + "\n  include_conveyor: " + std::string(request.include_conveyor ? "true" : "false") + "\n",
     r);
   write_file(scene_dir / "scene_manifest.yaml", "schema: workcell_scene_manifest/v1\nscene_name: " + scene_dir.filename().string() + "\ntemplate_id: " + request.template_id + "\n", r);
   write_file(scene_dir / "config" / "task_recipe.yaml", "task:\n  type: " + task_type + "\n  grasp_strategy: " + grasp + "\n", r);
   write_file(scene_dir / "config" / "workcell_builder_task_intent.yaml",
-    "schema: workcell_builder_task_intent/v1\nsafety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n",
+    "schema: workcell_builder_task_intent/v1\nsafety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n  allow_moveit_execution: true\n  allow_rviz_motion: true\n  allow_real_hardware_motion: false\n  real_robot_locked: true\n",
     r);
   write_file(scene_dir / "launch" / "demo.launch.py", "# generated launch placeholder\n# always use fake hardware\n", r);
   write_file(scene_dir / "GENERATED_SCENE_SUMMARY.md", "# Generated Scene\n\nNo robot motion commanded.\n", r);
