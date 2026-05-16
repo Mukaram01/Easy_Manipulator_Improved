@@ -41,6 +41,7 @@ QString NewCellWizard::default_robot_planning_group(const QString &family, const
 QString NewCellWizard::default_end_effector_attach_link(const QString &m){ return m=="robotiq_85"?"gripper_base_link":"tool_mount_link"; }
 QString NewCellWizard::default_end_effector_tcp_link(const QString &m){ return m=="robotiq_85"?"ee_palm":(m=="single_suction"?"tcp_link":"tool0"); }
 QString NewCellWizard::default_end_effector_type(const QString &m){ if(m=="robotiq_85") return "finger"; if(m=="single_suction") return "suction"; if(m.contains("vacuum")) return "vacuum_array"; return "placeholder"; }
+QString NewCellWizard::default_end_effector_family_readiness(const QString &family){ return family.contains("Custom") ? "SCAFFOLD" : "READY"; }
 
 void NewCellWizard::build_ui(){
  setWindowTitle("New Cell"); resize(1040,720); auto *root=new QVBoxLayout(this);
@@ -75,10 +76,11 @@ void NewCellWizard::build_ui(){
  robot_warning_=new QLabel(); robot_warning_->setWordWrap(true); robot_readiness_banner_=new QLabel(); robot_readiness_banner_->setWordWrap(true);
  f2->addRow("Robot family",robot_family_); f2->addRow("Robot model",robot_); f2->addRow("Robot base pose",robot_pose); f2->addRow(robot_advanced_group_); f2->addRow("Robot readiness",robot_readiness_banner_); f2->addRow("",robot_warning_); mk_page(s2);
 
- auto *s3=new QWidget(this); auto *f3=new QFormLayout(s3); ee_=new QComboBox(); ee_->addItems({"robotiq_85","single_suction","parallel_gripper","vacuum_array_placeholder"}); ee_attach_link_=new QComboBox(); ee_tcp_link_=new QComboBox(); ee_attach_link_->setEditable(true); ee_tcp_link_->setEditable(true); ee_type_=new QComboBox(); ee_type_->addItems({"finger","suction","vacuum_array","placeholder"});
+ auto *s3=new QWidget(this); auto *f3=new QFormLayout(s3); ee_family_=new QComboBox(); ee_family_->addItems({"Robotiq","Suction","Vacuum Array","Parallel Gripper","Custom / Placeholder"}); ee_=new QComboBox(); ee_attach_link_=new QComboBox(); ee_tcp_link_=new QComboBox(); ee_attach_link_->setEditable(true); ee_tcp_link_->setEditable(true); ee_type_=new QComboBox(); ee_type_->addItems({"finger","suction","vacuum_array","placeholder"});
  auto *ee_pose=mk_pose_editor(ee_x_,ee_y_,ee_z_,ee_roll_,ee_pitch_,ee_yaw_); ee_roll_->setValue(-1.5708); ee_pitch_->setValue(-1.5708);
  ee_advanced_group_=new QGroupBox("Advanced Tool Frames"); ee_advanced_group_->setCheckable(true); ee_advanced_group_->setChecked(false); auto*eaf=new QFormLayout(ee_advanced_group_); eaf->addRow("End-effector attach/base link",ee_attach_link_); eaf->addRow("End-effector TCP/tool link",ee_tcp_link_); eaf->addRow("End-effector type",ee_type_);
- f3->addRow("End effector",ee_); f3->addRow("End effector mount pose",ee_pose); f3->addRow(ee_advanced_group_); mk_page(s3);
+ ee_readiness_banner_=new QLabel(); ee_readiness_banner_->setWordWrap(true);
+ f3->addRow("Tool family",ee_family_); f3->addRow("Tool model",ee_); f3->addRow("End effector mount pose",ee_pose); f3->addRow(ee_advanced_group_); f3->addRow("Tool readiness",ee_readiness_banner_); mk_page(s3);
 
  auto *s4=new QWidget(this); auto *v4=new QVBoxLayout(s4); v4->addWidget(new QLabel("Environment Assets and relationships"));
  auto *split=new QHBoxLayout(); env_substeps_=new QListWidget(this); env_substeps_->addItems({"1 Select Assets","2 Attachments & Links","3 Frames & Role Mapping","4 Poses","5 Review"}); env_substeps_->setFixedWidth(220); split->addWidget(env_substeps_);
@@ -123,8 +125,66 @@ void NewCellWizard::build_ui(){
  connect(env_edit_selected_button_,&QPushButton::clicked,this,[this]{ if(env_review_table_->currentRow()>=0){ env_substeps_->setCurrentRow(1); }});
  connect(robot_family_,&QComboBox::currentTextChanged,this,[this](const QString&f){ refresh_robot_model_options(f); refresh_robot_links_for_selection(); refresh_validation();});
  connect(robot_,&QComboBox::currentTextChanged,this,[this](const QString&){ refresh_robot_links_for_selection(); refresh_validation();});
- connect(ee_,&QComboBox::currentTextChanged,this,[this](const QString&m){ee_attach_link_->clear(); ee_tcp_link_->clear(); ee_attach_link_->addItems({"gripper_base_link","robotiq_arg2f_base_link","ee_palm","tool0","tcp_link","suction_cup_link"}); ee_tcp_link_->addItems({"ee_palm","tcp_link","tool0","suction_cup_link"}); ee_attach_link_->setCurrentText(default_end_effector_attach_link(m)); ee_tcp_link_->setCurrentText(default_end_effector_tcp_link(m)); ee_type_->setCurrentText(default_end_effector_type(m)); if(m=="robotiq_85"||m=="single_suction"){ee_roll_->setValue(-1.5708);ee_pitch_->setValue(-1.5708);ee_yaw_->setValue(0);} refresh_validation();});
- robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_->setCurrentText("robotiq_85"); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout();
+ connect(ee_family_,&QComboBox::currentTextChanged,this,[this](const QString&f){ refresh_tool_model_options(f); apply_tool_profile_selection(); refresh_validation();});
+ connect(ee_,&QComboBox::currentTextChanged,this,[this](const QString&){ apply_tool_profile_selection(); refresh_validation();});
+ robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_family_->setCurrentText("Robotiq"); refresh_tool_model_options(ee_family_->currentText()); ee_->setCurrentText("robotiq_85"); apply_tool_profile_selection(); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout();
+}
+QString NewCellWizard::normalize_tool_family(const QString &raw_family) const {
+  const QString f = raw_family.toLower();
+  if (f.contains("robotiq")) return "robotiq";
+  if (f.contains("suction")) return "suction";
+  if (f.contains("vacuum")) return "vacuum_array";
+  if (f.contains("parallel")) return "parallel_gripper";
+  return "placeholder";
+}
+QStringList NewCellWizard::builtin_tool_models_for_family(const QString &tool_family) const {
+  if (tool_family == "Robotiq") return {"robotiq_85","robotiq_2f_140"};
+  if (tool_family == "Suction") return {"single_suction","onrobot_airpick4"};
+  if (tool_family == "Vacuum Array") return {"vacuum_array_placeholder","multi_cup_array"};
+  if (tool_family == "Parallel Gripper") return {"parallel_gripper","rg2"};
+  return {"custom_tool_placeholder"};
+}
+QStringList NewCellWizard::discover_tool_models_from_catalog(const QString &tool_family) const {
+  QStringList out; QDir dir(workspace_root_ + "/catalog/capabilities/end_effectors"); if (!dir.exists()) return out;
+  const QString key = normalize_tool_family(tool_family);
+  for (const auto &fn : dir.entryList(QStringList() << "*.yaml", QDir::Files)) {
+    QFile f(dir.absoluteFilePath(fn)); if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+    const QString text = QString::fromUtf8(f.readAll()).toLower();
+    if (!(text.contains(key) || fn.toLower().contains(key))) continue;
+    QRegularExpression id_re("id:\\s*([a-z0-9_\\-]+)"); auto m=id_re.match(text);
+    out << (m.hasMatch() ? m.captured(1) : QFileInfo(fn).baseName());
+  }
+  out.removeDuplicates(); return out;
+}
+void NewCellWizard::refresh_tool_model_options(const QString &tool_family) {
+  ee_->clear();
+  QStringList models = builtin_tool_models_for_family(tool_family);
+  models << discover_tool_models_from_catalog(tool_family);
+  models.removeDuplicates();
+  ee_->addItems(models);
+}
+NewCellWizard::ToolModelProfile NewCellWizard::tool_profile_for_selection(const QString &tool_family, const QString &tool_model) const {
+  ToolModelProfile p; p.family=tool_family; p.model=tool_model;
+  if (tool_family == "Robotiq" && tool_model == "robotiq_85") { p.ee_type="finger"; p.attach_link="gripper_base_link"; p.tcp_link="ee_palm"; }
+  else if (tool_family == "Suction") { p.ee_type="suction"; p.attach_link="suction_base_link"; p.tcp_link="tcp_link"; }
+  else if (tool_family == "Vacuum Array") { p.ee_type="vacuum_array"; p.attach_link="vacuum_array_base_link"; p.tcp_link="tcp_link"; }
+  else if (tool_family == "Parallel Gripper") { p.ee_type="finger"; p.attach_link="gripper_base_link"; p.tcp_link="tcp_link"; p.readiness="WARNINGS"; p.reason="Parallel gripper may require model-specific controller metadata."; }
+  else { p.ee_type="placeholder"; p.attach_link="tool_mount_link"; p.tcp_link="tool0"; p.readiness="SCAFFOLD"; p.reason="Custom/placeholder tool requires manual metadata."; }
+  return p;
+}
+void NewCellWizard::apply_tool_profile_selection() {
+  const auto p = tool_profile_for_selection(ee_family_->currentText(), ee_->currentText());
+  ee_attach_link_->clear(); ee_tcp_link_->clear();
+  ee_attach_link_->addItems({p.attach_link,"gripper_base_link","tool_mount_link","suction_base_link","vacuum_array_base_link","tool0"});
+  ee_tcp_link_->addItems({p.tcp_link,"ee_palm","tcp_link","suction_cup_link","tool0"});
+  ee_attach_link_->setCurrentText(p.attach_link); ee_tcp_link_->setCurrentText(p.tcp_link); ee_type_->setCurrentText(p.ee_type);
+  ee_roll_->setValue(p.roll); ee_pitch_->setValue(p.pitch); ee_yaw_->setValue(p.yaw);
+  const auto readiness = evaluate_tool_readiness();
+  ee_readiness_banner_->setText(readiness.status + " - " + readiness.reason);
+}
+NewCellWizard::ToolSelectionReadiness NewCellWizard::evaluate_tool_readiness() const {
+  const auto p = tool_profile_for_selection(ee_family_->currentText(), ee_->currentText());
+  return {p.readiness, p.reason};
 }
 
 QString NewCellWizard::normalize_robot_family(const QString &raw_family) const {
@@ -230,7 +290,7 @@ void NewCellWizard::refresh_validation(){
 
 void NewCellWizard::refresh_summary(){
  QString readiness=task_readiness_label_?task_readiness_label_->text():"READY";
- summary_->setText(QString("<b>Robot:</b> family=%1 model=%2 | base=%3 tip=%4 planning=%5<br/><b>Tool:</b> %6 | attach=%7 | tcp=%8 | type=%9 | mount rpy=%10,%11,%12<br/><b>Task:</b> family=%13 pick zone=%14 camera=%15 pick source=%16 place target=%17 place link=%18 grasp=%19 approach=%20m retreat=%21m<br/><b>Readiness:</b> %22<br/><b>Warnings/Blockers:</b><br/>%23").arg(robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),task_family_->currentText(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
+ summary_->setText(QString("<b>Robot:</b> family=%1 model=%2 | base=%3 tip=%4 planning=%5<br/><b>Tool:</b> family=%6 model=%7 | attach=%8 | tcp=%9 | type=%10 | mount rpy=%11,%12,%13 | readiness=%14<br/><b>Task:</b> family=%15 pick zone=%16 camera=%17 pick source=%18 place target=%19 place link=%20 grasp=%21 approach=%22m retreat=%23m<br/><b>Readiness:</b> %24<br/><b>Warnings/Blockers:</b><br/>%25").arg(robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_family_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),ee_readiness_banner_?ee_readiness_banner_->text():"READY",task_family_->currentText(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
 }
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
@@ -273,6 +333,10 @@ out<<"workcell_studio:\n";
  out<<"    planning_group: "<<yaml_scalar(robot_planning_group_->currentText())<<"\n";
  out<<"    end_effector_attach_link: "<<yaml_scalar(ee_attach_link_->currentText())<<"\n";
  out<<"    end_effector_tcp_link: "<<yaml_scalar(ee_tcp_link_->currentText())<<"\n";
+ out<<"    end_effector_family: "<<yaml_scalar(ee_family_->currentText())<<"\n";
+ out<<"    end_effector_model: "<<yaml_scalar(ee_->currentText())<<"\n";
+ out<<"    end_effector_type: "<<yaml_scalar(ee_type_->currentText())<<"\n";
+ out<<"    end_effector_readiness: "<<yaml_scalar(ee_readiness_banner_ ? ee_readiness_banner_->text() : "READY")<<"\n";
  out<<"    robot_mount_pose:\n";
  out<<"      xyz: ["<<pose_number(robot_x_)<<", "<<pose_number(robot_y_)<<", "<<pose_number(robot_z_)<<"]\n";
  out<<"      rpy: ["<<pose_number(robot_roll_)<<", "<<pose_number(robot_pitch_)<<", "<<pose_number(robot_yaw_)<<"]\n";
