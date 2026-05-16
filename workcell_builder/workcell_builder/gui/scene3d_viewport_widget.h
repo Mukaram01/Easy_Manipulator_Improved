@@ -56,6 +56,15 @@ private:
   void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
   void draw_frustum(const QColor & color, bool translucent = true);
+  void draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it);
+  void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);
+  void draw_conveyor(const ScenePreviewWidget::PreviewItem & it);
+  void draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it);
+  void draw_pick_zone(const ScenePreviewWidget::PreviewItem & it);
+  void draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it);
+  void draw_object_cube(const ScenePreviewWidget::PreviewItem & it);
+  void draw_safety_zone(const ScenePreviewWidget::PreviewItem & it);
+  void draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it);
   QPoint last_;
   QString hovered_id_;
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
