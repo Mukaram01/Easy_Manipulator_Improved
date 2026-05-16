@@ -1666,9 +1666,13 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   (void)ensure_map_path(task, {"pick", "source"});
   (void)ensure_map_path(task, {"place", "target"});
   (void)ensure_map_path(task, {"perception", "camera"});
-  safety["preview_only"] = true;
+  safety["preview_only"] = false;
   safety["use_fake_hardware"] = true;
-  safety["no_robot_motion"] = true;
+  safety["allow_simulated_motion"] = true;
+  safety["allow_moveit_execution"] = true;
+  safety["allow_rviz_motion"] = true;
+  safety["allow_real_hardware_motion"] = false;
+  safety["real_robot_locked"] = true;
   YAML::Node cursor = task;
   for (size_t i = 0; i + 1 < key_path.size(); ++i) {
     if (!cursor[key_path[i]] || !cursor[key_path[i]].IsMap()) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
@@ -1679,7 +1683,7 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   out << root;
   out.close();
   append_studio_log(QString("%1 updated to '%2'").arg(binding_label, selected_id));
-  append_studio_log(QString("Task intent updated at %1 (Preview Only | Fake Hardware | No Robot Motion)")
+  append_studio_log(QString("Task intent updated at %1 (Fake Hardware | Simulated Motion Enabled | Real Robot Locked)")
     .arg(QString::fromStdString(task_intent_path.string())));
   refresh_after_task_binding_change(binding_label, selected_id);
   return true;
