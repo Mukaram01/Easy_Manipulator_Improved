@@ -757,7 +757,44 @@ void MainWindow::setup_studio_shell()
   auto * files_card = new QFrame(files_tab); files_card->setObjectName("studioCard");
   auto * files_card_layout = new QVBoxLayout(files_card);
   files_card_layout->addWidget(new QLabel("<b>Scene Files</b>"));
-  files_card_layout->addWidget(new QLabel("Scene path and generated artifacts appear here after selection."));
+  scene_files_selected_path_label_ = new QLabel("Selected scene path: (none)", files_card);
+  scene_files_selected_path_label_->setWordWrap(true);
+  files_card_layout->addWidget(scene_files_selected_path_label_);
+  scene_files_tree_ = new QTreeWidget(files_card);
+  scene_files_tree_->setObjectName("studioSceneFilesTree");
+  scene_files_tree_->setHeaderLabels({"Artifact", "Relative Path", "Status"});
+  scene_files_tree_->setRootIsDecorated(false);
+  scene_files_tree_->setAlternatingRowColors(true);
+  files_card_layout->addWidget(scene_files_tree_, 1);
+  auto * files_actions_layout = new QHBoxLayout();
+  auto * open_scene_folder_button = new QPushButton("Open Scene Folder", files_card);
+  auto * copy_scene_path_button = new QPushButton("Copy Scene Path", files_card);
+  auto * refresh_scene_files_button = new QPushButton("Refresh Files", files_card);
+  files_actions_layout->addWidget(open_scene_folder_button);
+  files_actions_layout->addWidget(copy_scene_path_button);
+  files_actions_layout->addWidget(refresh_scene_files_button);
+  files_actions_layout->addStretch(1);
+  files_card_layout->addLayout(files_actions_layout);
+  connect(open_scene_folder_button, &QPushButton::clicked, this, [this]() {
+    if (!has_selected_scene()) {
+      append_studio_log("Open Scene Folder: no scene selected.");
+      return;
+    }
+    open_selected_scene_artifact("folder");
+  });
+  connect(copy_scene_path_button, &QPushButton::clicked, this, [this]() {
+    const QString scene_path = selected_scene_path();
+    if (scene_path.isEmpty()) {
+      append_studio_log("Copy Scene Path: no scene selected.");
+      return;
+    }
+    QApplication::clipboard()->setText(scene_path);
+    append_studio_log("Copied selected scene path.");
+  });
+  connect(refresh_scene_files_button, &QPushButton::clicked, this, [this]() {
+    populate_scene_files_tab();
+    append_studio_log("Scene Files tab refreshed.");
+  });
   files_tab_layout->addWidget(files_card);
   scene_builder_left_tabs_->addTab(scene_tab, "Scene");
   scene_builder_left_tabs_->addTab(assets_tab, "Assets");
@@ -1512,6 +1549,7 @@ void MainWindow::refresh_scene_browser_ui()
   refresh_studio_home_scene_table();
   auto fill_existing=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; auto scene_name = QString::fromStdString(sc.scene_name); t->setItem(i,0,new QTableWidgetItem(scene_name)); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill_existing(existing_scene_table_);
+  populate_scene_files_tab();
 }
 
 void MainWindow::refresh_studio_home_scene_table()
@@ -2314,6 +2352,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
+    populate_scene_files_tab();
     return;
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
@@ -2322,6 +2361,53 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
   if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  populate_scene_files_tab();
+}
+
+void MainWindow::populate_scene_files_tab()
+{
+  if (!scene_files_selected_path_label_ || !scene_files_tree_) {
+    return;
+  }
+  scene_files_tree_->clear();
+  scene_files_tree_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+  scene_files_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+  scene_files_tree_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+  if (!has_selected_scene()) {
+    scene_files_selected_path_label_->setText("Selected scene path: (none)");
+    return;
+  }
+
+  const auto & selected = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const fs::path scene_dir = selected.scene_dir;
+  scene_files_selected_path_label_->setText(QString("Selected scene path: %1").arg(QString::fromStdString(scene_dir.string())));
+  const std::vector<std::pair<QString, QString>> required_artifacts = {
+    {"Environment YAML", "environment.yaml"},
+    {"Scene Manifest", "scene_manifest.yaml"},
+    {"ROS Package File", "package.xml"},
+    {"CMake File", "CMakeLists.txt"},
+    {"Demo Launch", "launch/demo.launch.py"},
+    {"Task Intent", "config/workcell_builder_task_intent.yaml"},
+    {"Task Recipe (fallback)", "config/task_recipe.yaml"},
+    {"Legacy Task Recipe (fallback)", "task_recipe.yaml"},
+    {"Readiness Dashboard", "readiness/readiness_dashboard.html"},
+    {"Readiness Summary", "readiness/readiness_summary.txt"},
+    {"Preview HTML", "preview/static_preview.html"},
+    {"Preview SVG", "preview/static_preview.svg"}
+  };
+  boost::system::error_code ec;
+  for (const auto & artifact : required_artifacts) {
+    const fs::path file_path = scene_dir / artifact.second.toStdString();
+    const bool exists = fs::exists(file_path, ec) && !ec;
+    if (ec) {
+      ec.clear();
+    }
+    auto * item = new QTreeWidgetItem(scene_files_tree_);
+    item->setText(0, artifact.first);
+    item->setText(1, artifact.second);
+    item->setText(2, exists ? "present" : "missing");
+    item->setForeground(2, exists ? QBrush(QColor("#15803D")) : QBrush(QColor("#B91C1C")));
+  }
 }
 
 QString MainWindow::diagnostics_status_from_counts(int blocked, int warn) const
