@@ -2685,6 +2685,7 @@ void MainWindow::populate_scene_hierarchy()
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path d=s.scene_dir;
   const std::vector<std::string> files={"environment.yaml","scene_manifest.yaml","cell_definition.yaml","environment_layout.yaml"};
+  const SceneTaskIntentSummary task_summary = load_scene_task_intent_summary(d);
   QVector<ScenePreviewWidget::PreviewItem> preview_items;
   auto add_preview_item = [&](const QString &id, const QString &name, const QString &category, const QString &role, const QString &status, const QString &source, bool metadata_complete){
     ScenePreviewWidget::PreviewItem p; p.id=id; p.display_name=name; p.category=category; p.role=role; p.status=status; p.source_path=source; p.metadata_complete=metadata_complete;
@@ -2710,20 +2711,65 @@ void MainWindow::populate_scene_hierarchy()
     n->setData(0, Qt::UserRole + 2, "Other Objects / Imported Assets");
     n->setData(0, Qt::UserRole + 4, QString::fromStdString(pth.string()));
   }
+  int preview_warning_count = 0;
   for (const auto & p : preview_items) {
     auto *node = new QTreeWidgetItem(tops[p.category], {p.display_name, p.status});
     node->setData(0, Qt::UserRole + 1, p.id);
     node->setData(0, Qt::UserRole + 2, p.category);
     node->setData(0, Qt::UserRole + 3, QString("xyz=(%1,%2,%3) rpy=(%4,%5,%6)").arg(p.x).arg(p.y).arg(p.z).arg(p.roll).arg(p.pitch).arg(p.yaw));
     node->setData(0, Qt::UserRole + 4, p.source_path);
-    if (!p.metadata_complete) append_studio_log(QString("Preview item metadata incomplete: %1").arg(p.display_name));
+    if (!p.metadata_complete) {
+      ++preview_warning_count;
+      if (p.role == "safety zone") {
+        append_studio_log("Preview warning: safety zone metadata is incomplete.");
+      } else if (p.role == "warning marker") {
+        append_studio_log("Preview warning: warning marker metadata is incomplete.");
+      }
+    }
   }
   if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
-  append_studio_log("camera overlay loaded");
-  append_studio_log("camera metadata missing");
-  append_studio_log("pick coverage status");
-  append_studio_log("EPD detection snapshot loaded");
-  append_studio_log("no EPD snapshot found");
+
+  // Single-cycle perception/camera status model.
+  const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
+  const bool live_selected = task_summary.perception_mode.compare("live_epd", Qt::CaseInsensitive) == 0;
+  const bool manual_selected = task_summary.perception_mode.compare("manual_simulated", Qt::CaseInsensitive) == 0;
+  const QString perception_mode = snapshot_available ? "saved_snapshot" : (live_selected ? "live_epd" : (manual_selected ? "manual_simulated" : "not_configured"));
+  QString camera_id;
+  for (const auto & p : preview_items) {
+    if (p.role == "camera") {
+      camera_id = p.id;
+      break;
+    }
+  }
+  const bool has_camera_metadata = !camera_id.trimmed().isEmpty();
+
+  QString perception_line;
+  if (perception_mode == "saved_snapshot") {
+    perception_line = "Perception: saved snapshot loaded.";
+  } else if (perception_mode == "live_epd") {
+    perception_line = "Perception: Live EPD/RealSense selected; saved snapshot not required.";
+  } else if (perception_mode == "manual_simulated") {
+    perception_line = "Perception: manual/simulated mode selected.";
+  } else {
+    perception_line = "Perception: not configured.";
+  }
+  const QString camera_line = has_camera_metadata ?
+    QString("Camera: %1 configured.").arg(camera_id) :
+    "Camera: no camera metadata in this scene.";
+  const QString preview_line = QString("Preview: %1 items loaded, %2 metadata warnings.").arg(preview_items.size()).arg(preview_warning_count);
+
+  if (perception_line != last_perception_summary_log_) {
+    append_studio_log(perception_line);
+    last_perception_summary_log_ = perception_line;
+  }
+  if (camera_line != last_camera_summary_log_) {
+    append_studio_log(camera_line);
+    last_camera_summary_log_ = camera_line;
+  }
+  if (preview_line != last_preview_summary_log_) {
+    append_studio_log(preview_line);
+    last_preview_summary_log_ = preview_line;
+  }
 }
 
 void MainWindow::populate_asset_catalog()
