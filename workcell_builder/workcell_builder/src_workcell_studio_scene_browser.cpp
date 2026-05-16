@@ -1,4 +1,5 @@
 #include "workcell_studio_scene_browser.hpp"
+#include "workcell_yaml_utils.hpp"
 
 #include <yaml-cpp/yaml.h>
 
@@ -55,8 +56,10 @@ void try_parse_env(WorkcellStudioSceneInfo * s)
 {
   try {
     YAML::Node n = YAML::LoadFile((s->scene_dir / "environment.yaml").string());
-    if (n["robot"] && n["robot"]["name"]) s->robot_summary = n["robot"]["name"].as<std::string>();
-    if (n["end_effector"] && n["end_effector"]["name"]) s->gripper_summary = n["end_effector"]["name"].as<std::string>();
+    const std::string robot = yaml_named_or_scalar(n["robot"], "name");
+    const std::string gripper = yaml_named_or_scalar(n["end_effector"], "name");
+    if (!robot.empty()) s->robot_summary = robot;
+    if (!gripper.empty()) s->gripper_summary = gripper;
     if (n["object"] && n["object"].IsSequence()) s->object_count = n["object"].size();
   } catch (const std::exception &) {
     s->parse_warning = "Could not parse environment.yaml";

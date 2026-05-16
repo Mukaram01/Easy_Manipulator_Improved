@@ -164,6 +164,7 @@ add_executable(workcell_builder
     include/external_asset_import_dialog.hpp
     include/workspace_validation.hpp
     src_workspace_validation.cpp)
+target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
   rclcpp
@@ -235,7 +236,11 @@ if(BUILD_TESTING)
     src_class_routing_model.cpp
     src_planning_readiness.cpp
     src_workcell_zone_model.cpp
-    src_workcell_perception_snapshot.cpp)
+    src_workcell_perception_snapshot.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_yaml_utils_test
+    test/workcell_yaml_utils_test.cpp
+    src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)

@@ -1,4 +1,5 @@
 #include "workcell_scene_bundle.hpp"
+#include "workcell_yaml_utils.hpp"
 
 #include <yaml-cpp/yaml.h>
 #include <fstream>
@@ -90,14 +91,19 @@ bool copy_path_recursive(
 std::vector<std::string> discover_environment_assets(const fs::path & environment_yaml)
 {
   std::vector<std::string> out;
-  YAML::Node root = YAML::LoadFile(environment_yaml.string());
-  if (!root["objects"] || !root["objects"].IsSequence()) {
+  YAML::Node root;
+  try {
+    root = YAML::LoadFile(environment_yaml.string());
+  } catch (...) {
     return out;
   }
-  for (const auto & obj : root["objects"]) {
-    if (obj["name"]) {
-      out.push_back(obj["name"].as<std::string>());
-    }
+  const YAML::Node objects = root["objects"] ? root["objects"] : root["object"];
+  if (!objects || !objects.IsSequence()) {
+    return out;
+  }
+  for (const auto & obj : objects) {
+    const auto name = yaml_name_from_node(obj);
+    if (!name.empty()) out.push_back(name);
   }
   return out;
 }

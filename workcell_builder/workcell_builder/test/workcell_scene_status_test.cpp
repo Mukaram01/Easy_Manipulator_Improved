@@ -56,3 +56,17 @@ TEST(WorkcellSceneStatus, FakeHardwareCommand)
   EXPECT_NE(report.next_commands[2].find("use_fake_hardware:=true"), std::string::npos);
   EXPECT_FALSE(report.safety_notes.empty());
 }
+
+TEST(WorkcellSceneStatus, ScalarRobotAndMalformedYamlDoNotCrash)
+{
+  fs::path root = fs::temp_directory_path() / "wc_status_scalar_and_bad";
+  fs::remove_all(root);
+  fs::create_directories(root / "scenes" / "demo" / "launch");
+  std::ofstream(root / "scenes" / "demo" / "environment.yaml") << "robot: ur5\nend_effector: rg2\nobject:\n  - table\n";
+  std::ofstream(root / "scenes" / "demo" / "package.xml") << "<package/>\n";
+  std::ofstream(root / "scenes" / "demo" / "CMakeLists.txt") << "cmake_minimum_required(VERSION 3.5)\n";
+  std::ofstream(root / "scenes" / "demo" / "launch" / "demo.launch.py") << "# fake\n";
+  auto report = workcell_builder::inspect_scene_status(root, root / "scenes", root / "assets", "demo");
+  EXPECT_TRUE(report.environment_yaml_ok);
+  EXPECT_FALSE(report.items.empty());
+}

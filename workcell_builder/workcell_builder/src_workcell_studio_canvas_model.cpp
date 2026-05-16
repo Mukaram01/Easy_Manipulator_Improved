@@ -1,4 +1,5 @@
 #include "workcell_studio_canvas_model.hpp"
+#include "workcell_yaml_utils.hpp"
 #include <yaml-cpp/yaml.h>
 
 namespace fs = boost::filesystem;
@@ -19,9 +20,12 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   if (!task_ok) m.warnings.push_back("Task intent missing");
   if (!layout_ok && fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml; falling back safely");
 
-  m.template_name = manifest_ok && manifest["template_name"] ? manifest["template_name"].as<std::string>() : "unknown_template";
-  m.robot_summary = env_ok && env["robot"] && env["robot"]["name"] ? env["robot"]["name"].as<std::string>() : "Robot";
-  m.tool_summary = env_ok && env["end_effector"] && env["end_effector"]["name"] ? env["end_effector"]["name"].as<std::string>() : "Tool";
+  m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
+  if (m.template_name.empty()) m.template_name = "unknown_template";
+  m.robot_summary = env_ok ? yaml_named_or_scalar(env["robot"], "name") : "";
+  if (m.robot_summary.empty()) m.robot_summary = "Robot";
+  m.tool_summary = env_ok ? yaml_named_or_scalar(env["end_effector"], "name") : "";
+  if (m.tool_summary.empty()) m.tool_summary = "Tool";
   m.pick_source = task_ok && task["pick_source"] ? task["pick_source"].as<std::string>() : "Task intent missing";
   m.grasp_strategy = task_ok && task["grasp_strategy"] ? task["grasp_strategy"].as<std::string>() : "Generate task recipe to populate this panel";
   m.place_target = task_ok && task["place_target"] ? task["place_target"].as<std::string>() : "Task intent missing";
