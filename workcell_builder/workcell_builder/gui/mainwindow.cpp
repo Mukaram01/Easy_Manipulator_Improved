@@ -220,6 +220,27 @@ struct SceneTaskIntentSummary
 static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
 static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n||!n[k]) return "unknown"; n=n[k]; } return ystr(n); }
 static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(...){return false;} }
+static YAML::Node ensure_map_path(YAML::Node root, std::initializer_list<const char *> keys)
+{
+  YAML::Node cursor = root;
+  for (const auto * key : keys) {
+    if (!cursor[key] || !cursor[key].IsMap()) {
+      cursor[key] = YAML::Node(YAML::NodeType::Map);
+    }
+    cursor = cursor[key];
+  }
+  return cursor;
+}
+static std::string infer_default_grasp_strategy(const YAML::Node & root)
+{
+  const QString tool_id = scalar_path(root, {"task", "tool", "id"}) != "unknown" ?
+    scalar_path(root, {"task", "tool", "id"}) :
+    (scalar_path(root, {"tool", "id"}) != "unknown" ? scalar_path(root, {"tool", "id"}) : scalar_path(root, {"task", "end_effector"}));
+  const QString lower = tool_id.toLower();
+  if (lower.contains("suction")) return "suction_top";
+  if (lower.contains("finger") || lower.contains("gripper") || lower.contains("robotiq")) return "finger_top";
+  return "tool_profile_default";
+}
 static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
 {
   SceneTaskIntentSummary s;
@@ -233,15 +254,18 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   const YAML::Node task = root["task"] ? root["task"] : root;
   s.task_type = scalar_path(task, {"type"});
   if (s.task_type == "unknown") s.task_type = scalar_path(task, {"family"});
-  s.pick_source = scalar_path(task, {"pick","source"});
+  s.pick_source = scalar_path(task, {"pick","source","id"});
+  if (s.pick_source == "unknown") s.pick_source = scalar_path(task, {"pick","source"});
   if (s.pick_source == "unknown") s.pick_source = scalar_path(task, {"pick_source"});
-  s.place_target = scalar_path(task, {"place","target"});
+  s.place_target = scalar_path(task, {"place","target","id"});
+  if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place","target"});
   if (s.place_target == "unknown") s.place_target = scalar_path(task, {"place_target"});
   s.reject_target = scalar_path(task, {"reject","target"});
   if (s.reject_target == "unknown") s.reject_target = scalar_path(task, {"reject_target"});
   s.object_class = scalar_path(task, {"object","class"});
   if (s.object_class == "unknown") s.object_class = scalar_path(task, {"object_class"});
   s.grasp_strategy = scalar_path(task, {"grasp","strategy"});
+  if (s.grasp_strategy == "unknown") s.grasp_strategy = scalar_path(task, {"grasp","strategy_ref"});
   if (s.grasp_strategy == "unknown") s.grasp_strategy = scalar_path(task, {"grasp_strategy"});
   s.approach_axis = scalar_path(task, {"approach","axis"});
   s.approach_distance = scalar_path(task, {"approach","distance"});
@@ -1577,18 +1601,23 @@ bool MainWindow::update_selected_scene_task_intent_binding(
     }
   }
   if (!root || !root.IsMap()) root = YAML::Node(YAML::NodeType::Map);
-  if (!root["task"]) root["task"] = YAML::Node(YAML::NodeType::Map);
-  if (!root["task"]["type"]) root["task"]["type"] = "pick_place";
-  if (!root["task"]["family"]) root["task"]["family"] = "pick_place";
-  if (!root["grasp"]) root["grasp"] = YAML::Node(YAML::NodeType::Map);
-  if (!root["grasp"]["strategy"]) root["grasp"]["strategy"] = "auto";
-  if (!root["safety"]) root["safety"] = YAML::Node(YAML::NodeType::Map);
-  root["safety"]["preview_only"] = true;
-  root["safety"]["use_fake_hardware"] = true;
-  root["safety"]["no_robot_motion"] = true;
-  YAML::Node cursor = root;
+  YAML::Node task = ensure_map_path(root, {"task"});
+  if (!task["type"] || !task["type"].IsScalar()) task["type"] = "pick_place";
+  if (!task["family"] || !task["family"].IsScalar()) task["family"] = task["type"];
+  YAML::Node grasp = ensure_map_path(task, {"grasp"});
+  if (!grasp["strategy"] || !grasp["strategy"].IsScalar()) {
+    grasp["strategy"] = infer_default_grasp_strategy(root);
+  }
+  YAML::Node safety = ensure_map_path(root, {"safety"});
+  (void)ensure_map_path(task, {"pick", "source"});
+  (void)ensure_map_path(task, {"place", "target"});
+  (void)ensure_map_path(task, {"perception", "camera"});
+  safety["preview_only"] = true;
+  safety["use_fake_hardware"] = true;
+  safety["no_robot_motion"] = true;
+  YAML::Node cursor = task;
   for (size_t i = 0; i + 1 < key_path.size(); ++i) {
-    if (!cursor[key_path[i]]) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
+    if (!cursor[key_path[i]] || !cursor[key_path[i]].IsMap()) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
     cursor = cursor[key_path[i]];
   }
   cursor[key_path.back()] = selected_id.toStdString();

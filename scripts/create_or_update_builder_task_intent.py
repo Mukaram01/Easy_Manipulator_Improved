@@ -75,7 +75,30 @@ def _resolve_scene_label(scene_package: Path, target_id: str) -> tuple[str, bool
     return _readable_label(target_id), False
 
 def _default(scene_package: str) -> dict[str, Any]:
-    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","mode":"offline_preview","template":"pick_place"},"task_template":{"id":"pick_place","scenario":"pick_place","runtime_status":"supported","notes":"Template metadata only; runtime remains existing pick/place and sorting flows."},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy_ref":"finger_pinch_basic","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1,"place_clearance_m":0.05},"routing":{"rules":[]},"safety":{"metadata_only":True,"runtime_io_applied":False,"motion_started":False,"ros_launch_started":False}}
+    return {"schema":"workcell_builder_task_intent/v1","scene_package":scene_package,"task":{"id":"default_builder_task","type":"pick_place","family":"pick_place","mode":"offline_preview","template":"pick_place","pick":{"source":{"type":"zone","id":"pick_zone_main"}},"grasp":{"strategy":"finger_top","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1,"place_clearance_m":0.05},"perception":{"camera":{"id":"camera_main"}}},"task_template":{"id":"pick_place","scenario":"pick_place","runtime_status":"supported","notes":"Template metadata only; runtime remains existing pick/place and sorting flows."},"pick":{"source":{"type":"zone","id":"pick_zone_main"},"object_filter":{"class_id":"any","color":"any"}},"grasp":{"strategy":"finger_top","approach_axis":"z_down","approach_distance_m":0.1,"retreat_axis":"z_up","retreat_distance_m":0.1},"place":{"target":{"type":"bin","id":"bin_red"},"release_strategy":"tool_release","retreat_axis":"z_up","retreat_distance_m":0.1,"place_clearance_m":0.05},"routing":{"rules":[]},"safety":{"preview_only":True,"use_fake_hardware":True,"no_robot_motion":True}}
+
+def _ensure_map(parent: dict[str, Any], key: str) -> dict[str, Any]:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        value = {}
+        parent[key] = value
+    return value
+
+def _default_grasp_strategy(payload: dict[str, Any]) -> str:
+    task = payload.get("task") if isinstance(payload.get("task"), dict) else {}
+    tool_id = ""
+    if isinstance(task.get("tool"), dict):
+        tool_id = str(task["tool"].get("id") or "")
+    if not tool_id and isinstance(payload.get("tool"), dict):
+        tool_id = str(payload["tool"].get("id") or "")
+    if not tool_id:
+        tool_id = str(task.get("end_effector") or payload.get("end_effector") or "")
+    lowered = tool_id.lower()
+    if "suction" in lowered:
+        return "suction_top"
+    if "finger" in lowered or "gripper" in lowered or "robotiq" in lowered:
+        return "finger_top"
+    return "tool_profile_default"
 
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
@@ -112,7 +135,8 @@ def main() -> int:
     payload, _ = _seed(a.scene_package, a.output)
     out = a.output or (a.scene_package/'generated'/'workcell_builder_task_intent.yaml')
     payload['schema']='workcell_builder_task_intent/v1'; payload['scene_package']=a.scene_package.as_posix()
-    payload.setdefault('task',{}).update({'id':a.task_id,'type':a.task_type, 'template': a.task_template})
+    task = _ensure_map(payload, 'task')
+    task.update({'id':a.task_id,'type':a.task_type,'family':a.task_type,'template': a.task_template})
     template_meta: dict[str, Any] = {
         'id': a.task_template,
         'scenario': a.task_template,
@@ -151,23 +175,36 @@ def main() -> int:
         template_meta['conveyor_picking'] = {'source_area': a.pick_source, 'drop_target': a.place_target}
     payload['task_template'] = template_meta
     source_type = {'epd_detected_object':'perception','epd_replay':'replay_object'}.get(a.pick_source_type, a.pick_source_type)
-    payload.setdefault('pick',{}).setdefault('source',{}).update({'id':a.pick_source, 'type': source_type})
+    pick = _ensure_map(payload, 'pick')
+    pick_source = _ensure_map(pick, 'source')
+    pick_source.update({'id':a.pick_source, 'type': source_type})
     pick_label, pick_resolved = _resolve_scene_label(a.scene_package, a.pick_source)
-    payload['pick']['source']['label'] = pick_label
-    payload['pick'].setdefault('object_filter',{}).update({'class_id':a.object_class,'color':a.object_color})
-    payload.setdefault('grasp',{}).update({'strategy_ref':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
+    pick_source['label'] = pick_label
+    _ensure_map(pick, 'object_filter').update({'class_id':a.object_class,'color':a.object_color})
+    grasp = _ensure_map(payload, 'grasp')
+    grasp.update({'strategy':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
     
-    payload.setdefault('place',{}).setdefault('target',{}).update({'id':a.place_target})
-    payload['place'].setdefault('target',{}).setdefault('type', 'place_target')
+    place = _ensure_map(payload, 'place')
+    place_target = _ensure_map(place, 'target')
+    place_target.update({'id':a.place_target})
+    place_target.setdefault('type', 'place_target')
     place_label, place_resolved = _resolve_scene_label(a.scene_package, a.place_target)
-    payload['place']['target']['label'] = place_label
-    payload['place'].update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m, 'place_clearance_m': 0.05})
+    place_target['label'] = place_label
+    place.update({'release_strategy':a.release_strategy,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m, 'place_clearance_m': 0.05})
+    _ensure_map(_ensure_map(task, 'pick'), 'source').update({'id':a.pick_source, 'type': source_type})
+    _ensure_map(_ensure_map(task, 'place'), 'target').update({'id':a.place_target})
+    task_grasp = _ensure_map(task, 'grasp')
+    if not isinstance(task_grasp.get('strategy'), str) or not task_grasp.get('strategy'):
+        task_grasp['strategy'] = _default_grasp_strategy(payload)
+    task_grasp.update({'strategy':a.grasp_strategy,'approach_axis':a.approach_axis,'approach_distance_m':a.approach_distance_m,'retreat_axis':a.retreat_axis,'retreat_distance_m':a.retreat_distance_m})
+    _ensure_map(_ensure_map(task, 'perception'), 'camera').setdefault('id', 'camera_main')
     payload.setdefault('routing', {})['rules'] = [{
         'id': 'route_any_to_selected_place',
         'when': {'object_class': a.object_class, 'object_color': a.object_color},
         'place_target': a.place_target,
     }]
-    payload['safety']={'metadata_only':True,'runtime_io_applied':False,'motion_started':False,'ros_launch_started':False,'fake_hardware_first':True,'runtime_execution_enabled':False,'motion_command_sent':False}
+    payload['safety'] = _ensure_map(payload, 'safety')
+    payload['safety'].update({'preview_only':True,'use_fake_hardware':True,'no_robot_motion':True})
     _dump(out, payload)
     val={'status':'SKIP'}
     if a.validate:
