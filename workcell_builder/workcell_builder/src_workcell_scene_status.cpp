@@ -6,7 +6,9 @@
 #include "workcell_perception_snapshot.hpp"
 #include "task_intent_readiness.hpp"
 #include "planning_readiness.hpp"
+#include "workcell_yaml_utils.hpp"
 #include <fstream>
+#include <iostream>
 
 namespace fs = boost::filesystem;
 
@@ -68,12 +70,16 @@ SceneStatusReport inspect_scene_status(
   if (report.environment_yaml_ok) {
     try {
       const YAML::Node root = YAML::LoadFile(environment_yaml.string());
-      if (root["robot"] && root["robot"]["name"]) robot_pkg = root["robot"]["name"].as<std::string>();
-      if (root["endeffector"] && root["endeffector"]["name"]) ee_pkg = root["endeffector"]["name"].as<std::string>();
+      std::cerr << "[workcell_builder] parsed YAML: " << environment_yaml.string() << std::endl;
+      robot_pkg = yaml_named_or_scalar(root["robot"], "name");
+      if (robot_pkg.empty()) robot_pkg = "<unknown>";
+      ee_pkg = yaml_named_or_scalar(root["end_effector"], "name");
+      if (ee_pkg.empty()) ee_pkg = yaml_named_or_scalar(root["endeffector"], "name");
+      if (ee_pkg.empty()) ee_pkg = "<none>";
       if (root["object"]) {
         for (const auto & obj : root["object"]) {
-          if (obj["name"]) {
-            const std::string name = obj["name"].as<std::string>();
+          const std::string name = yaml_name_from_node(obj);
+          if (!name.empty()) {
             const fs::path asset_dir = assets_path / "environment" / (name + "_description");
             const bool ok = fs::exists(asset_dir);
             add_item(report, "environment asset: " + name, ok ? "OK" : "WARN", ok ? "Bundled/generated asset present" : "Imported bundle dependency missing", asset_dir);
@@ -84,8 +90,8 @@ SceneStatusReport inspect_scene_status(
 
       std::vector<WorkZone> zones; std::vector<ConveyorFlow> flows;
       parse_work_zones_from_yaml(root, &zones, &flows);
-      std::vector<std::string> camera_names; if (root["cameras"]) { for (const auto & c : root["cameras"]) { if (c["name"]) camera_names.push_back(c["name"].as<std::string>()); } }
-      std::vector<std::string> robots; if (root["robot"] && root["robot"]["name"]) robots.push_back(root["robot"]["name"].as<std::string>());
+      std::vector<std::string> camera_names; if (root["cameras"] && root["cameras"].IsSequence()) { for (const auto & c : root["cameras"]) { const auto n = yaml_name_from_node(c); if (!n.empty()) camera_names.push_back(n); } }
+      std::vector<std::string> robots; if (!robot_pkg.empty() && robot_pkg != "<unknown>") robots.push_back(robot_pkg);
       const auto zone_validation = validate_work_zones(zones, flows, camera_names, robots);
       add_item(report, "Detection zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "camera_detection"; }) ? "OK" : "WARN", "Metadata check");
       add_item(report, "Pick zone configured", std::any_of(zones.begin(), zones.end(), [](const WorkZone & z){ return z.type == "robot_pick"; }) ? "OK" : "WARN", "Metadata check");
@@ -148,18 +154,23 @@ SceneStatusReport inspect_scene_status(
       if (root["cameras"]) {
         add_item(report, "Camera configured", "OK", "camera metadata present", environment_yaml);
         for (const auto & c : root["cameras"]) {
-          const std::string pkg = c["package"] ? c["package"].as<std::string>() : "";
-          const std::string po = c["parent_object"] ? c["parent_object"].as<std::string>() : "world";
-          const std::string pl = c["parent_link"] ? c["parent_link"].as<std::string>() : "world";
+          if (!c.IsMap()) continue;
+          const std::string pkg = yaml_map_value_or_empty(c, "package");
+          const std::string po = yaml_map_value_or_empty(c, "parent_object").empty() ? "world" : yaml_map_value_or_empty(c, "parent_object");
+          const std::string pl = yaml_map_value_or_empty(c, "parent_link").empty() ? "world" : yaml_map_value_or_empty(c, "parent_link");
           add_item(report, "Camera package found", pkg == "realsense2_description" ? "OK" : "WARN", pkg);
           add_item(report, "Parent mount object found", po == "world" ? "WARN" : "OK", po == "world" ? "camera appears floating unless intentionally wall/world mounted" : po);
           add_item(report, "Parent mount link found", pl.empty() ? "ERROR" : "OK", pl.empty() ? "camera parent link missing" : pl);
-          add_item(report, "Runtime driver", "INFO", (c["runtime_driver"] ? c["runtime_driver"].as<std::string>() : "metadata_only") + " (metadata/URDF preview only)");
+          const std::string runtime_driver = yaml_map_value_or_empty(c, "runtime_driver").empty() ? "metadata_only" : yaml_map_value_or_empty(c, "runtime_driver");
+          add_item(report, "Runtime driver", "INFO", runtime_driver + " (metadata/URDF preview only)");
         }
       } else { add_item(report, "Camera configured", "WARN", "No camera metadata found", environment_yaml); }
-    } catch (...) {
+    } catch (const YAML::Exception & e) {
       report.warnings.push_back("environment.yaml parse warning");
-      add_item(report, "environment.yaml parse", "WARN", "Could not fully parse robot/tool/object dependencies", environment_yaml);
+      add_item(report, "environment.yaml parse", "WARN", std::string("YAML error in ") + environment_yaml.string() + ": " + e.what(), environment_yaml);
+    } catch (const std::exception & e) {
+      report.warnings.push_back("environment.yaml parse warning");
+      add_item(report, "environment.yaml parse", "WARN", std::string("Error in ") + environment_yaml.string() + ": " + e.what(), environment_yaml);
     }
   }
 
