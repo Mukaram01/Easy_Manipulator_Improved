@@ -3128,28 +3128,6 @@ void MainWindow::populate_scene_hierarchy()
   if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
 }
 
-void MainWindow::populate_scene_files_tab()
-{
-  if (!scene_files_summary_label_) return;
-  if (!has_selected_scene()) {
-    scene_files_summary_label_->setText("Scene path and generated artifacts appear here after selection.");
-    return;
-  }
-  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const fs::path d = s.scene_dir;
-  const std::vector<std::string> key_files = {
-    "environment.yaml", "scene_manifest.yaml", "environment_layout.yaml", "layout/workcell_studio_layout.yaml",
-    "config/workcell_builder_task_intent.yaml", "package.xml", "CMakeLists.txt", "launch/demo.launch.py"};
-  QStringList lines;
-  lines << QString("Scene: %1").arg(QString::fromStdString(s.scene_name));
-  lines << QString("Path: %1").arg(QString::fromStdString(d.string()));
-  lines << "Artifacts:";
-  for (const auto & rel : key_files) {
-    lines << QString(" - [%1] %2").arg(fs::exists(d / rel) ? "present" : "missing", QString::fromStdString(rel));
-  }
-  scene_files_summary_label_->setText(lines.join("\n"));
-}
-
 void MainWindow::populate_asset_catalog()
 {
   if (!asset_catalog_tree_) return;
