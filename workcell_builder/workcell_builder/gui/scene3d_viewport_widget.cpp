@@ -9,6 +9,7 @@
 #include <QtMath>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
@@ -23,9 +24,32 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 }
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); }
-void Scene3DViewportWidget::reset_view() { yaw_ = -0.9; pitch_ = 0.7; zoom_ = 1.0; update(); }
-void Scene3DViewportWidget::fit_scene() { zoom_ = 1.0; update(); }
-void Scene3DViewportWidget::focus_selected() { if (!selected_id.isEmpty()) zoom_ = 0.85; update(); }
+void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
+void Scene3DViewportWidget::set_isometric_view() { yaw_ = -0.9; pitch_ = 0.7; orbit_offset_ = QVector3D(0.0f, 0.0f, 0.0f); distance_ = 6.0; update(); }
+void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
+void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::fit_scene() {
+  if (items.isEmpty()) { set_isometric_view(); return; }
+  QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D bmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (const auto & it : items) {
+    bmin.setX(std::min(bmin.x(), static_cast<float>(it.x)));
+    bmin.setY(std::min(bmin.y(), static_cast<float>(it.y)));
+    bmin.setZ(std::min(bmin.z(), static_cast<float>(it.z)));
+    bmax.setX(std::max(bmax.x(), static_cast<float>(it.x + it.sx)));
+    bmax.setY(std::max(bmax.y(), static_cast<float>(it.y + it.sy)));
+    bmax.setZ(std::max(bmax.z(), static_cast<float>(it.z + it.sz)));
+  }
+  orbit_offset_ = (bmin + bmax) * 0.5f;
+  const QVector3D ext = bmax - bmin;
+  const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
+  const double fov = qDegreesToRadians(50.0);
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.25;
+  distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  update();
+}
+void Scene3DViewportWidget::focus_selected() { fit_scene(); }
 void Scene3DViewportWidget::initializeGL() { initializeOpenGLFunctions(); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE); glClearColor(0.04f, 0.06f, 0.12f, 1.0f); }
 void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
 
