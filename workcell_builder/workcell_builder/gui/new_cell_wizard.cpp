@@ -6,6 +6,8 @@
 #include <QDir>
 #include <QFormLayout>
 #include <QFrame>
+#include <QFile>
+#include <QFileInfo>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -14,10 +16,12 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QScrollArea>
+#include <QSet>
 #include <QVBoxLayout>
 
 #include <array>
@@ -31,9 +35,9 @@ NewCellWizard::NewCellWizard(const QString &workspace_root, QWidget *parent): QD
 bool NewCellWizard::is_valid_package_name(const QString &name){ static const std::regex re("^[a-z][a-z0-9_]*$"); return std::regex_match(name.toStdString(), re);} 
 QString NewCellWizard::default_gripper_rpy_text(){ return "-1.5708, -1.5708, 0"; }
 QStringList NewCellWizard::recommended_environment_assets(){ return {"workbench_01","source_bin_01","place_fixture_01","camera_01","safety_zone_01"}; }
-QString NewCellWizard::default_robot_base_link(const QString &){ return "base_link"; }
-QString NewCellWizard::default_robot_tip_link(const QString &r){ return r.toLower().contains("placeholder")?"tool0_placeholder":"ee_link"; }
-QString NewCellWizard::default_robot_planning_group(const QString &r){ return r.toLower().contains("placeholder")?"preview_group":"manipulator"; }
+QString NewCellWizard::default_robot_base_link(const QString &family, const QString &){ if (family == "Franka / Panda") return "panda_link0"; return "base_link"; }
+QString NewCellWizard::default_robot_tip_link(const QString &family, const QString &r){ if (family == "Franka / Panda") return "panda_hand"; return r.toLower().contains("placeholder")?"tool0_placeholder":"ee_link"; }
+QString NewCellWizard::default_robot_planning_group(const QString &family, const QString &r){ if (family == "Franka / Panda") return "panda_arm"; return r.toLower().contains("placeholder")?"preview_group":"manipulator"; }
 QString NewCellWizard::default_end_effector_attach_link(const QString &m){ return m=="robotiq_85"?"gripper_base_link":"tool_mount_link"; }
 QString NewCellWizard::default_end_effector_tcp_link(const QString &m){ return m=="robotiq_85"?"ee_palm":(m=="single_suction"?"tcp_link":"tool0"); }
 QString NewCellWizard::default_end_effector_type(const QString &m){ if(m=="robotiq_85") return "finger"; if(m=="single_suction") return "suction"; if(m.contains("vacuum")) return "vacuum_array"; return "placeholder"; }
@@ -63,13 +67,13 @@ void NewCellWizard::build_ui(){
 
  auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); description_=new QTextEdit(); template_=new QComboBox(); template_->addItems({"Pick & Place","Sorting","Inspection","Machine Tending","Conveyor Picking","Blank Cell"}); output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Template",template_); f1->addRow("Output scenes path",output_path_); mk_page(s1);
 
- auto *s2=new QWidget(this); auto *f2=new QFormLayout(s2); robot_=new QComboBox(); robot_->addItems({"UR5","UR10","UR3","Generic Cartesian Placeholder"}); robot_base_link_=new QComboBox(); robot_tip_link_=new QComboBox(); robot_planning_group_=new QComboBox();
+ auto *s2=new QWidget(this); auto *f2=new QFormLayout(s2); robot_family_=new QComboBox(); robot_family_->addItems({"Universal Robots / UR","Franka / Panda","Fanuc","ABB","Cartesian / Gantry","Delta","Custom / Placeholder"}); robot_=new QComboBox(); robot_base_link_=new QComboBox(); robot_tip_link_=new QComboBox(); robot_planning_group_=new QComboBox();
  for(auto*c:{robot_base_link_,robot_tip_link_,robot_planning_group_}) c->setEditable(true);
  robot_controller_name_=new QLineEdit("scaled_joint_trajectory_controller"); robot_controller_name_->setReadOnly(true);
  auto *robot_pose=mk_pose_editor(robot_x_,robot_y_,robot_z_,robot_roll_,robot_pitch_,robot_yaw_);
  robot_advanced_group_=new QGroupBox("Advanced Robot Frames"); robot_advanced_group_->setCheckable(true); robot_advanced_group_->setChecked(false); auto*raf=new QFormLayout(robot_advanced_group_); raf->addRow("Robot base link",robot_base_link_); raf->addRow("Robot end-effector/tip link",robot_tip_link_); raf->addRow("Planning group",robot_planning_group_); raf->addRow("Controller name",robot_controller_name_);
- robot_warning_=new QLabel(); robot_warning_->setWordWrap(true);
- f2->addRow("Robot",robot_); f2->addRow("Robot base pose",robot_pose); f2->addRow(robot_advanced_group_); f2->addRow("",robot_warning_); mk_page(s2);
+ robot_warning_=new QLabel(); robot_warning_->setWordWrap(true); robot_readiness_banner_=new QLabel(); robot_readiness_banner_->setWordWrap(true);
+ f2->addRow("Robot family",robot_family_); f2->addRow("Robot model",robot_); f2->addRow("Robot base pose",robot_pose); f2->addRow(robot_advanced_group_); f2->addRow("Robot readiness",robot_readiness_banner_); f2->addRow("",robot_warning_); mk_page(s2);
 
  auto *s3=new QWidget(this); auto *f3=new QFormLayout(s3); ee_=new QComboBox(); ee_->addItems({"robotiq_85","single_suction","parallel_gripper","vacuum_array_placeholder"}); ee_attach_link_=new QComboBox(); ee_tcp_link_=new QComboBox(); ee_attach_link_->setEditable(true); ee_tcp_link_->setEditable(true); ee_type_=new QComboBox(); ee_type_->addItems({"finger","suction","vacuum_array","placeholder"});
  auto *ee_pose=mk_pose_editor(ee_x_,ee_y_,ee_z_,ee_roll_,ee_pitch_,ee_yaw_); ee_roll_->setValue(-1.5708); ee_pitch_->setValue(-1.5708);
@@ -117,9 +121,63 @@ void NewCellWizard::build_ui(){
  connect(add_asset,&QPushButton::clicked,this,[this]{ const QString id=env_add_asset_combo_->currentText().trimmed(); if(id.isEmpty()) return; add_environment_asset_row(id,id, "world","world","asset_link","custom"); refresh_environment_parent_options(); refresh_environment_review_table(); });
  connect(env_substeps_,&QListWidget::currentRowChanged,this,&NewCellWizard::select_environment_substep);
  connect(env_edit_selected_button_,&QPushButton::clicked,this,[this]{ if(env_review_table_->currentRow()>=0){ env_substeps_->setCurrentRow(1); }});
- connect(robot_,&QComboBox::currentTextChanged,this,[this](const QString&r){robot_base_link_->clear(); robot_tip_link_->clear(); robot_planning_group_->clear(); robot_base_link_->addItems({"base_link","base","world"}); robot_tip_link_->addItems({"ee_link","tool0","wrist_3_link"}); robot_planning_group_->addItems({"manipulator","arm","preview_group"}); robot_base_link_->setCurrentText(default_robot_base_link(r)); robot_tip_link_->setCurrentText(default_robot_tip_link(r)); robot_planning_group_->setCurrentText(default_robot_planning_group(r)); refresh_validation();});
+ connect(robot_family_,&QComboBox::currentTextChanged,this,[this](const QString&f){ refresh_robot_model_options(f); refresh_robot_links_for_selection(); refresh_validation();});
+ connect(robot_,&QComboBox::currentTextChanged,this,[this](const QString&){ refresh_robot_links_for_selection(); refresh_validation();});
  connect(ee_,&QComboBox::currentTextChanged,this,[this](const QString&m){ee_attach_link_->clear(); ee_tcp_link_->clear(); ee_attach_link_->addItems({"gripper_base_link","robotiq_arg2f_base_link","ee_palm","tool0","tcp_link","suction_cup_link"}); ee_tcp_link_->addItems({"ee_palm","tcp_link","tool0","suction_cup_link"}); ee_attach_link_->setCurrentText(default_end_effector_attach_link(m)); ee_tcp_link_->setCurrentText(default_end_effector_tcp_link(m)); ee_type_->setCurrentText(default_end_effector_type(m)); if(m=="robotiq_85"||m=="single_suction"){ee_roll_->setValue(-1.5708);ee_pitch_->setValue(-1.5708);ee_yaw_->setValue(0);} refresh_validation();});
- robot_->setCurrentText("UR5"); ee_->setCurrentText("robotiq_85"); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout();
+ robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_->setCurrentText("robotiq_85"); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout();
+}
+
+QString NewCellWizard::normalize_robot_family(const QString &raw_family) const {
+  const QString f = raw_family.toLower();
+  if (f.contains("ur") || f.contains("universal")) return "ur";
+  if (f.contains("panda") || f.contains("franka")) return "panda";
+  if (f.contains("fanuc")) return "fanuc";
+  if (f.contains("abb")) return "abb";
+  if (f.contains("gantry") || f.contains("cartesian")) return "gantry";
+  if (f.contains("delta")) return "delta";
+  return "custom";
+}
+QStringList NewCellWizard::discover_robot_models_from_assets(const QString &robot_family) const {
+  QStringList out; QDir dir(workspace_root_ + "/assets/robots"); if (!dir.exists()) return out;
+  const QString key = normalize_robot_family(robot_family);
+  for (const auto &e : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) { if (e.toLower().contains(key)) out << e; }
+  return out;
+}
+QStringList NewCellWizard::discover_robot_models_from_catalog(const QString &robot_family) const {
+  QStringList out; QDir dir(workspace_root_ + "/catalog/capabilities/robots"); if (!dir.exists()) return out;
+  const QString key = normalize_robot_family(robot_family);
+  for (const auto &fn : dir.entryList(QStringList() << "*.yaml", QDir::Files)) {
+    QFile f(dir.absoluteFilePath(fn)); if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+    const QString text = QString::fromUtf8(f.readAll()).toLower();
+    if (text.contains("family: " + key) || text.contains("brand: " + key) || fn.toLower().contains(key)) {
+      QRegularExpression id_re("id:\\s*([a-z0-9_\\-]+)"); auto m=id_re.match(text); out << (m.hasMatch() ? m.captured(1) : QFileInfo(fn).baseName().replace("robot_",""));
+    }
+  }
+  return out;
+}
+QStringList NewCellWizard::discover_robot_models_for_family(const QString &robot_family) const {
+  QStringList models;
+  if (robot_family == "Universal Robots / UR") models << "UR5" << "UR10" << "UR3";
+  else if (robot_family == "Franka / Panda") models << "Panda" << "FR3";
+  else if (robot_family == "Fanuc") models << "M-10iA" << "LR Mate 200iD";
+  else if (robot_family == "ABB") models << "IRB 120" << "IRB 2600";
+  else if (robot_family == "Cartesian / Gantry") models << "Generic Cartesian Placeholder" << "Generic Gantry";
+  else if (robot_family == "Delta") models << "Generic Delta" << "Delta Placeholder";
+  else models << "Custom Placeholder";
+  models << discover_robot_models_from_assets(robot_family) << discover_robot_models_from_catalog(robot_family);
+  models.removeDuplicates(); return models;
+}
+void NewCellWizard::refresh_robot_model_options(const QString &robot_family) { robot_->clear(); robot_->addItems(discover_robot_models_for_family(robot_family)); }
+void NewCellWizard::refresh_robot_links_for_selection() {
+  const QString family = robot_family_->currentText(); const QString model = robot_->currentText(); const bool scaffold = model.toLower().contains("placeholder") || family=="Custom / Placeholder";
+  robot_base_link_->clear(); robot_tip_link_->clear(); robot_planning_group_->clear();
+  if (family == "Franka / Panda") { robot_base_link_->addItems({"panda_link0","base_link"}); robot_tip_link_->addItems({"panda_hand","panda_link8","ee_link"}); robot_planning_group_->addItems({"panda_arm","manipulator"}); }
+  else { robot_base_link_->addItems({"base_link","base","world"}); robot_tip_link_->addItems({"ee_link","tool0","wrist_3_link"}); robot_planning_group_->addItems({"manipulator","arm","preview_group"}); }
+  robot_base_link_->setCurrentText(default_robot_base_link(family, model)); robot_tip_link_->setCurrentText(default_robot_tip_link(family, model)); robot_planning_group_->setCurrentText(default_robot_planning_group(family, model));
+  const QString status = scaffold ? "SCAFFOLD" : "READY";
+  const QString reason = scaffold ? "Placeholder family/model without rich metadata." : "Robot metadata available or defaults applied.";
+  robot_readiness_banner_->setText(status + " - " + reason);
+  robot_warning_->setText(scaffold ? "Using scaffold robot setup. Review links/planning group." : "");
 }
 
 void NewCellWizard::add_environment_asset_row(const QString &id,const QString &asset,const QString &parent,const QString &plink,const QString &clink,const QString &role){int r=env_objects_table_->rowCount(); env_objects_table_->insertRow(r); env_objects_table_->setCellWidget(r,0,new QCheckBox()); static_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0))->setChecked(true); env_objects_table_->setItem(r,1,new QTableWidgetItem(id)); env_objects_table_->setItem(r,2,new QTableWidgetItem(asset)); env_objects_table_->setItem(r,3,new QTableWidgetItem(parent)); env_objects_table_->setItem(r,4,new QTableWidgetItem(plink)); env_objects_table_->setItem(r,5,new QTableWidgetItem(clink)); env_objects_table_->setItem(r,6,new QTableWidgetItem("fixed")); env_objects_table_->setItem(r,7,new QTableWidgetItem(role)); env_objects_table_->setItem(r,8,new QTableWidgetItem("x=0.000, y=0.000, z=0.000, r=0.0000, p=0.0000, y=0.0000")); }
@@ -172,7 +230,7 @@ void NewCellWizard::refresh_validation(){
 
 void NewCellWizard::refresh_summary(){
  QString readiness=task_readiness_label_?task_readiness_label_->text():"READY";
- summary_->setText(QString("<b>Robot:</b> %1 | base=%2 tip=%3 planning=%4<br/><b>Tool:</b> %5 | attach=%6 | tcp=%7 | type=%8 | mount rpy=%9,%10,%11<br/><b>Task:</b> family=%12 pick zone=%13 camera=%14 pick source=%15 place target=%16 place link=%17 grasp=%18 approach=%19m retreat=%20m<br/><b>Readiness:</b> %21<br/><b>Warnings/Blockers:</b><br/>%22").arg(robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),task_family_->currentText(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
+ summary_->setText(QString("<b>Robot:</b> family=%1 model=%2 | base=%3 tip=%4 planning=%5<br/><b>Tool:</b> %6 | attach=%7 | tcp=%8 | type=%9 | mount rpy=%10,%11,%12<br/><b>Task:</b> family=%13 pick zone=%14 camera=%15 pick source=%16 place target=%17 place link=%18 grasp=%19 approach=%20m retreat=%21m<br/><b>Readiness:</b> %22<br/><b>Warnings/Blockers:</b><br/>%23").arg(robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),task_family_->currentText(),pick_zone_source_->currentText(),pick_camera_->currentText(),pick_source_->currentText(),place_target_->currentText(),place_frame_link_->currentText(),grasp_strategy_->currentText(),approach_distance_->text(),retreat_distance_->text(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
 }
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
@@ -201,7 +259,14 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n";
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
- out<<"workcell_studio:\n";
+out<<"workcell_studio:\n";
+ out<<"  create_cell_metadata:\n";
+ out<<"    robot_family: "<<yaml_scalar(robot_family_->currentText())<<"\n";
+ out<<"    robot_model: "<<yaml_scalar(robot_->currentText())<<"\n";
+ out<<"    robot_base_link: "<<yaml_scalar(robot_base_link_->currentText())<<"\n";
+ out<<"    robot_tip_link: "<<yaml_scalar(robot_tip_link_->currentText())<<"\n";
+ out<<"    robot_planning_group: "<<yaml_scalar(robot_planning_group_->currentText())<<"\n";
+ out<<"    robot_readiness: "<<yaml_scalar(robot_readiness_banner_->text())<<"\n";
  out<<"  frames:\n";
  out<<"    robot_base_link: "<<yaml_scalar(robot_base_link_->currentText())<<"\n";
  out<<"    robot_tip_link: "<<yaml_scalar(robot_tip_link_->currentText())<<"\n";

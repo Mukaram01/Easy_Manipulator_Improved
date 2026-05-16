@@ -33,9 +33,9 @@ public:
   static bool is_valid_package_name(const QString &name);
   static QString default_gripper_rpy_text();
   static QStringList recommended_environment_assets();
-  static QString default_robot_base_link(const QString &robot_model);
-  static QString default_robot_tip_link(const QString &robot_model);
-  static QString default_robot_planning_group(const QString &robot_model);
+  static QString default_robot_base_link(const QString &robot_family, const QString &robot_model);
+  static QString default_robot_tip_link(const QString &robot_family, const QString &robot_model);
+  static QString default_robot_planning_group(const QString &robot_family, const QString &robot_model);
   static QString default_end_effector_attach_link(const QString &model);
   static QString default_end_effector_tcp_link(const QString &model);
   static QString default_end_effector_type(const QString &model);
@@ -53,6 +53,12 @@ private:
   void add_environment_asset_row(const QString &id, const QString &asset, const QString &parent, const QString &parent_link, const QString &child_link, const QString &role);
   void select_environment_substep(int index);
   QStringList discover_environment_asset_catalog() const;
+  QStringList discover_robot_models_for_family(const QString &robot_family) const;
+  QStringList discover_robot_models_from_assets(const QString &robot_family) const;
+  QStringList discover_robot_models_from_catalog(const QString &robot_family) const;
+  QString normalize_robot_family(const QString &raw_family) const;
+  void refresh_robot_model_options(const QString &robot_family);
+  void refresh_robot_links_for_selection();
   bool create_scene_scaffold(bool open_in_builder);
   QString scene_name_error() const;
   QString scene_name_warning() const;
@@ -72,6 +78,7 @@ private:
   QLabel *scene_error_{nullptr};
   QLabel *scene_warning_{nullptr};
 
+  QComboBox *robot_family_{nullptr};
   QComboBox *robot_{nullptr};
   QDoubleSpinBox *robot_x_{nullptr};
   QDoubleSpinBox *robot_y_{nullptr};
@@ -80,6 +87,7 @@ private:
   QDoubleSpinBox *robot_pitch_{nullptr};
   QDoubleSpinBox *robot_yaw_{nullptr};
   QLabel *robot_warning_{nullptr};
+  QLabel *robot_readiness_banner_{nullptr};
   QComboBox *robot_base_link_{nullptr};
   QComboBox *robot_tip_link_{nullptr};
   QComboBox *robot_planning_group_{nullptr};
