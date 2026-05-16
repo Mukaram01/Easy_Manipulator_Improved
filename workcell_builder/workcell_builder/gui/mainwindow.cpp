@@ -709,7 +709,7 @@ void MainWindow::setup_studio_shell()
   scene_splitter->setStretchFactor(0, 1);
   scene_splitter->setStretchFactor(1, 4);
   scene_splitter->setStretchFactor(2, 1);
-  scene_splitter->setSizes({290, 980, 350});
+  scene_splitter->setSizes({320, 940, 400});
   scene_shell_layout->addWidget(scene_splitter, 1);
   sl->addWidget(scene_shell, 1);
 
@@ -897,7 +897,7 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
   canvas_more_actions->setMenu(canvas_more_menu);
   controls->addWidget(canvas_more_actions);
-  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); controls->addWidget(export_snapshot); center_panel_layout->addLayout(controls);
+  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
@@ -905,13 +905,21 @@ void MainWindow::setup_studio_shell()
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
-  duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder); layout_controls->addWidget(duplicate_layout_button_);
-  delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder); layout_controls->addWidget(delete_layout_button_);
+  duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder);
+  delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder);
   save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
-  revert_layout_button_ = new QPushButton("Revert Layout", scene_builder); layout_controls->addWidget(revert_layout_button_);
-  auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder); layout_controls->addWidget(run_layout_merge_button);
-  auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder); layout_controls->addWidget(open_layout_merge_report_button);
-  auto * copy_layout_merge_summary_button = new QPushButton("Copy Merge Summary", scene_builder); layout_controls->addWidget(copy_layout_merge_summary_button);
+  revert_layout_button_ = new QPushButton("Revert Layout", scene_builder);
+  auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder);
+  auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder);
+  auto * copy_layout_merge_summary_button = new QPushButton("Copy Merge Summary", scene_builder);
+  canvas_more_menu->addSeparator();
+  canvas_more_menu->addAction("Duplicate Selected", this, [this](){ duplicate_selected_item(); });
+  canvas_more_menu->addAction("Remove Selected Layout Item", this, [this](){ delete_selected_item(); });
+  canvas_more_menu->addAction("Revert Layout", revert_layout_button_, &QPushButton::click);
+  canvas_more_menu->addAction("Run Layout Merge", run_layout_merge_button, &QPushButton::click);
+  canvas_more_menu->addAction("Open Merge Report", open_layout_merge_report_button, &QPushButton::click);
+  canvas_more_menu->addAction("Copy Merge Summary", copy_layout_merge_summary_button, &QPushButton::click);
+  canvas_more_menu->addAction("Export Canvas Snapshot", export_snapshot, &QPushButton::click);
   center_panel_layout->addLayout(layout_controls);
   layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); center_panel_layout->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); center_panel_layout->addWidget(canvas_legend_label_);
@@ -996,14 +1004,14 @@ void MainWindow::setup_studio_shell()
   actions_tab_layout->addWidget(preview_actions_card);
   inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selection_tab_layout->addWidget(live_coordinate_label_);
-  auto * pose_row = new QHBoxLayout();
-  inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_row->addWidget(inspector_x_);
-  inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("y "); pose_row->addWidget(inspector_y_);
-  inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("z "); pose_row->addWidget(inspector_z_);
-  inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("r "); pose_row->addWidget(inspector_roll_);
-  inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_row->addWidget(inspector_pitch_);
-  inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("y θ "); pose_row->addWidget(inspector_yaw_);
-  selection_tab_layout->addLayout(pose_row);
+  auto * pose_grid = new QGridLayout();
+  inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_grid->addWidget(inspector_x_, 0, 0);
+  inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("y "); pose_grid->addWidget(inspector_y_, 0, 1);
+  inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("z "); pose_grid->addWidget(inspector_z_, 0, 2);
+  inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("r "); pose_grid->addWidget(inspector_roll_, 1, 0);
+  inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_grid->addWidget(inspector_pitch_, 1, 1);
+  inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("yaw "); pose_grid->addWidget(inspector_yaw_, 1, 2);
+  selection_tab_layout->addLayout(pose_grid);
   inspector_warning_label_ = new QLabel("Warnings: none\nReachability status: unknown\nCollision status: unknown\nSafety zone status: unknown\nPick source reach: unknown\nPlace target reach: unknown\nWarning count: 0\nPreview-only", scene_builder); selection_tab_layout->addWidget(inspector_warning_label_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
   scene_builder_inspector_tabs_->addTab(task_tab, "Task");
@@ -1127,7 +1135,8 @@ void MainWindow::setup_studio_shell()
   auto * log_head = new QHBoxLayout();
   log_head->addWidget(new QLabel("<b>Activity Log</b>", log_card));
   scene_builder_log_toggle_button_ = new QPushButton("Hide Log", log_card);
-  log_head->addWidget(scene_builder_log_toggle_button_);
+  scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  log_head->addWidget(scene_builder_log_toggle_button_, 0, Qt::AlignRight);
   auto * clear_log = new QPushButton("Clear", log_card);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
   log_layout->addLayout(log_head);
@@ -2356,6 +2365,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
+    if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false);
     populate_scene_files_tab();
     return;
   }
@@ -2365,6 +2375,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
   if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
 }
 
@@ -2913,7 +2924,7 @@ void MainWindow::populate_scene_hierarchy()
   if (!scene_hierarchy_tree_) return;
   scene_hierarchy_tree_->clear();
 
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false); return; }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path d = s.scene_dir;
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
@@ -2981,6 +2992,9 @@ void MainWindow::populate_scene_hierarchy()
 
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
     auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {p.display_name, p.role, p.status});
+    node->setToolTip(0, p.display_name);
+    node->setToolTip(1, p.role);
+    node->setToolTip(2, p.status);
     node->setData(0, TreeRoleId, p.id);
     node->setData(0, TreeRoleCategory, p.category);
     node->setData(
@@ -3093,7 +3107,7 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleRole, "file");
   }
 
-  if (scene_preview_widget_) scene_preview_widget_->set_preview_items(preview_items);
+  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_items(preview_items); }
 
   auto * header = scene_hierarchy_tree_->header();
   if (header) {

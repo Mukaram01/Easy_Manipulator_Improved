@@ -9,6 +9,8 @@ class QLabel;
 class QPushButton;
 class QStackedWidget;
 class QGraphicsView;
+class QGraphicsScene;
+class QGraphicsItem;
 
 class ScenePreviewWidget : public QWidget
 {
@@ -123,6 +125,9 @@ private slots:
 
 private:
   void refresh_mode_and_state();
+  QRectF rendered_items_bounds_2d() const;
+  void fit_fallback_scene_to_items();
+  void reset_fallback_scene_view();
 
   QComboBox * mode_selector_{ nullptr };
   QPushButton * reset_view_button_{ nullptr };
@@ -133,6 +138,7 @@ private:
   QWidget * view2d_container_{ nullptr };
   QLabel * empty_state_label_{ nullptr };
   QLabel * error_state_label_{ nullptr };
+  QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
   QGraphicsView * fallback_2d_view_{ nullptr };
   bool scene_selected_{ false };

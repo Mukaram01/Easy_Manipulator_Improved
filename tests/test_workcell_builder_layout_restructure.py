@@ -8,7 +8,7 @@ def test_scene_builder_uses_main_splitter_layout():
     for token in [
         'sceneBuilderMainSplitter',
         'QSplitter(Qt::Horizontal, scene_shell)',
-        'setSizes({290, 980, 350})',
+        'setSizes({320, 940, 400})',
     ]:
         assert token in MAIN
 
@@ -23,6 +23,9 @@ def test_left_and_right_tabs_exist():
 def test_scene_tree_headers_include_name_role_status():
     for token in [
         'scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"})',
+        'header->setSectionResizeMode(0, QHeaderView::Stretch);',
+        'header->setSectionResizeMode(1, QHeaderView::ResizeToContents);',
+        'header->setSectionResizeMode(2, QHeaderView::ResizeToContents);',
     ]:
         assert token in MAIN
 
@@ -47,5 +50,15 @@ def test_inspector_scroll_and_activity_log_toggle_exist():
 
 
 def test_canvas_more_menu_and_safety_text_present():
-    for token in ['Canvas More...', 'Fake Hardware', 'No Robot Motion']:
+    for token in ['Canvas More...', 'Duplicate Selected', 'Remove Selected Layout Item', 'Revert Layout', 'Run Layout Merge', 'Open Merge Report', 'Copy Merge Summary', 'Export Canvas Snapshot', 'Fake Hardware', 'No Robot Motion']:
+        assert token in MAIN
+
+
+def test_scene_preview_selected_state_updates_and_compact_inspector_pose_grid_present():
+    for token in [
+        'scene_preview_widget_->set_scene_selected(true);',
+        'scene_preview_widget_->set_scene_selected(false);',
+        'auto * pose_grid = new QGridLayout();',
+        'scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);',
+    ]:
         assert token in MAIN
