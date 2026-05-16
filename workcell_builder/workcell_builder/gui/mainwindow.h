@@ -132,6 +132,24 @@ private:
   void bind_selected_item_as_pick_zone();
   void bind_selected_item_as_place_zone();
   void bind_selected_item_as_camera();
+  struct SelectedSceneItemState
+  {
+    bool valid{ false };
+    QString id;
+    QString display_name;
+    QString role_or_category;
+    QString source_path;
+    bool pose_available{ false };
+    double pose_x{ 0.0 };
+    double pose_y{ 0.0 };
+    double pose_z{ 0.0 };
+    double roll{ 0.0 };
+    double pitch{ 0.0 };
+    double yaw{ 0.0 };
+    QString pose_text;
+  };
+  SelectedSceneItemState current_selected_scene_item() const;
+  void refresh_selected_scene_item_labels(const SelectedSceneItemState & state);
   QString selected_scene_binding_id() const;
   bool update_selected_scene_task_intent_binding(
     const QString & binding_label,
