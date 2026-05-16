@@ -889,7 +889,7 @@ void MainWindow::setup_studio_shell()
   right_layout->addWidget(grasp_card);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
-  approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection snapshot status: No EPD detection snapshot loaded\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection mode: Not Configured\nDetection status: Waiting for live nodes\nDetails: Perception preview unavailable until mode/config is selected.\nModes: Live EPD / RealSense | Saved EPD Snapshot | Simulated / Manual | Not Configured\nStatuses: Configured | Missing metadata | Preview only | Waiting for live nodes\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
   auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); ar_layout->addWidget(open_perception_metadata_button);
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
@@ -1288,7 +1288,7 @@ void MainWindow::refresh_task_intent_panel()
   task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing));
   pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
   grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
-  approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance));
+  approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5\nDetection mode: %6\nDetection status: %7\nDetails: %8").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance, "Live EPD / RealSense", "Configured", "Live EPD/RealSense uses runtime camera and EPD topics. Saved snapshots are only for offline preview."));
   if (!overlay_warnings.isEmpty()) {
     approach_retreat_details_label_->setText(approach_retreat_details_label_->text() + QString("\nOverlay warnings: %1").arg(overlay_warnings.join(" | ")));
   }
@@ -1320,7 +1320,7 @@ void MainWindow::refresh_task_intent_panel()
     camera.warnings << "no camera item found" << "no pick source found" << "pick zone outside camera FOV" << "camera range too short" << "camera frame unknown" << "camera pose metadata incomplete";
     scene_preview_widget_->set_camera_overlay_model(camera);
     QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
-    ScenePreviewWidget::EpdDetectionOverlayModel det; det.detection_id="epd_preview_placeholder"; det.label="preview placeholder"; det.confidence=0.55; det.x=-0.8; det.y=0.2; det.z=-0.7; det.status="warning"; det.source_path="No EPD detection snapshot loaded"; det.warnings << "no EPD detection snapshot loaded";
+    ScenePreviewWidget::EpdDetectionOverlayModel det; det.detection_id="epd_preview_placeholder"; det.label="preview placeholder"; det.confidence=0.55; det.x=-0.8; det.y=0.2; det.z=-0.7; det.status="preview_only"; det.source_path="Perception preview unavailable until mode/config is selected."; det.warnings << "Perception preview unavailable until mode/config is selected." << "Live EPD/RealSense uses runtime camera and EPD topics. Saved snapshots are only for offline preview.";
     detections.push_back(det);
     scene_preview_widget_->set_epd_detection_overlays(detections);
     scene_preview_widget_->set_task_overlay_model(model);
