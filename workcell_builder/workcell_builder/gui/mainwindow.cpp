@@ -722,7 +722,7 @@ void MainWindow::setup_studio_shell()
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
   auto * scene_header_row = new QHBoxLayout();
-  scene_builder_status_chip_ = new QLabel("READY", scene_builder); scene_builder_status_chip_->setObjectName("sceneStatusChip");
+  scene_builder_status_chip_ = new QLabel("READY · 3D View", scene_builder); scene_builder_status_chip_->setObjectName("sceneStatusChip");
   scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(true);
   auto * copy_scene_path_header = new QToolButton(scene_builder); copy_scene_path_header->setText("Copy");
   QObject::connect(copy_scene_path_header, &QToolButton::clicked, this, [this](){ if (!selected_scene_path().isEmpty()) QApplication::clipboard()->setText(selected_scene_path()); });
@@ -742,9 +742,9 @@ void MainWindow::setup_studio_shell()
   scene_splitter->setCollapsible(0, true);
   scene_splitter->setCollapsible(2, true);
   scene_splitter->setStretchFactor(0, 1);
-  scene_splitter->setStretchFactor(1, 4);
-  scene_splitter->setStretchFactor(2, 1);
-  scene_splitter->setSizes({320, 940, 400});
+  scene_splitter->setStretchFactor(1, 7);
+  scene_splitter->setStretchFactor(2, 2);
+  scene_splitter->setSizes({300, 1180, 360});
   scene_shell_layout->addWidget(scene_splitter, 1);
   sl->addWidget(scene_shell, 1);
 
@@ -762,6 +762,12 @@ void MainWindow::setup_studio_shell()
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
   scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"});
+  scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Interactive);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::Interactive);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::Interactive);
+  scene_hierarchy_tree_->setColumnWidth(0, 320);
+  scene_hierarchy_tree_->setColumnWidth(1, 130);
+  scene_hierarchy_tree_->setColumnWidth(2, 100);
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
   scene_tab_layout->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(assets_tab); catalog_card->setObjectName("studioCard");
@@ -850,7 +856,7 @@ void MainWindow::setup_studio_shell()
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_panel_layout->addWidget(scene_preview_label_);
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_panel_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
-  canvas_mode_label_ = new QLabel("Mode: Select", scene_builder); controls->addWidget(canvas_mode_label_);
+  canvas_mode_label_ = new QLabel("Mode: Select · 3D View", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::SelectedOnly);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
@@ -863,11 +869,11 @@ void MainWindow::setup_studio_shell()
   auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
   auto * camera_view = new QToolButton(scene_builder); camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
   auto * camera_view_menu = new QMenu(camera_view);
-  camera_view_menu->addAction("Perspective");
-  camera_view_menu->addAction("Top");
-  camera_view_menu->addAction("Left");
-  camera_view_menu->addAction("Right");
-  camera_view_menu->addAction("Front");
+  auto * perspective_action = camera_view_menu->addAction("Perspective");
+  auto * top_action = camera_view_menu->addAction("Top");
+  auto * left_action = camera_view_menu->addAction("Left");
+  auto * right_action = camera_view_menu->addAction("Right");
+  auto * front_action = camera_view_menu->addAction("Front");
   auto * fit_button = camera_view_menu->addAction("Fit Cell");
   auto * reset_button = camera_view_menu->addAction("Reset View");
   auto * zoom_in = camera_view_menu->addAction("Zoom In");
@@ -1168,15 +1174,21 @@ void MainWindow::setup_studio_shell()
   scene_builder_log_panel_ = log_card;
   studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); studio_log_->setPlaceholderText("Recent actions and diagnostics");
   log_layout->addWidget(studio_log_);
+  studio_log_->setVisible(false);
+  scene_builder_log_toggle_button_->setText("Show Log");
   root_layout->addWidget(log_card);
   preview_process_ = new QProcess(this);
 
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
   addToolBar(Qt::TopToolBarArea, top_bar);
   top_bar->setObjectName("studioTopBar");
+  top_bar->setMovable(false);
+  top_bar->setFloatable(false);
+  top_bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
   const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"};
   for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
+    button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     if (label == "Generate Scene") button->setProperty("role", "primary");
     if (label == "Export") button->setProperty("role", "secondary");
     connect(button, &QPushButton::clicked, this, [this, label]() {
@@ -1327,6 +1339,12 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(reset_button, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
   connect(zoom_in, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
   connect(zoom_out, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
+  connect(perspective_action, &QAction::triggered, this, [this](){ scene_builder_is_3d_view_ = true; refresh_scene_builder_view_chips(); });
+  auto set_2d_layout_view = [this]() { scene_builder_is_3d_view_ = false; refresh_scene_builder_view_chips(); };
+  connect(top_action, &QAction::triggered, this, set_2d_layout_view);
+  connect(left_action, &QAction::triggered, this, set_2d_layout_view);
+  connect(right_action, &QAction::triggered, this, set_2d_layout_view);
+  connect(front_action, &QAction::triggered, this, set_2d_layout_view);
   connect(toggle_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
@@ -2544,7 +2562,8 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   if (!has_selected_scene()) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
-    if (scene_builder_status_chip_) scene_builder_status_chip_->setText("READY");
+  scene_builder_status_base_ = "READY";
+  refresh_scene_builder_view_chips();
     if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
@@ -2555,11 +2574,12 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
   if (scene_builder_path_label_) { const QString sp = selected_scene_path(); scene_builder_path_label_->setText(QString("Path: %1").arg(sp)); scene_builder_path_label_->setToolTip(sp); }
-  if (scene_builder_status_chip_) scene_builder_status_chip_->setText(QString::fromStdString(s.status));
+  scene_builder_status_base_ = QString::fromStdString(s.status);
+  refresh_scene_builder_view_chips();
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
-  if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command:\n%9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
 }
@@ -2786,17 +2806,28 @@ void MainWindow::refresh_scene_builder_left_explorer()
   populate_scene_files_tab();
 }
 
+void MainWindow::refresh_scene_builder_view_chips()
+{
+  const QString view_label = scene_builder_is_3d_view_ ? "3D View" : "2D Layout";
+  if (scene_builder_status_chip_) {
+    scene_builder_status_chip_->setText(scene_builder_status_base_ + " · " + view_label);
+  }
+  if (canvas_mode_label_) {
+    const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
+    canvas_mode_label_->setText(base_mode + " · " + view_label);
+  }
+}
+
 
 void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 {
   canvas_mode_ = mode;
-  if (canvas_mode_label_) {
-    QString n = "Select";
-    if (mode == CanvasInteractionMode::Place) n = "Place";
-    if (mode == CanvasInteractionMode::Move) n = "Move";
-    if (mode == CanvasInteractionMode::Inspect) n = "Inspect";
-    canvas_mode_label_->setText("Mode: " + n);
-  }
+  QString n = "Select";
+  if (mode == CanvasInteractionMode::Place) n = "Place";
+  if (mode == CanvasInteractionMode::Move) n = "Move";
+  if (mode == CanvasInteractionMode::Inspect) n = "Inspect";
+  if (canvas_mode_label_) canvas_mode_label_->setText("Mode: " + n);
+  refresh_scene_builder_view_chips();
 }
 
 QPointF MainWindow::snap_canvas_position(const QPointF & pos) const
