@@ -3,6 +3,9 @@ from pathlib import Path
 CPP = Path("workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
 MAIN = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 UI = Path("workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8")
+PREVIEW = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
+VIEW3D_CPP = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+VIEW3D_H = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h").read_text(encoding="utf-8")
 
 
 def test_navigation_tokens_present():
@@ -44,3 +47,18 @@ def test_fit_scene_and_minimap_viewport_behavior_tokens_present():
         "minimap_scene_->addRect(visible_rect",
     ]:
         assert token in MAIN
+
+
+def test_real_3d_viewport_and_camera_depth_tokens_present():
+    for token in ["class Scene3DViewportWidget : public QOpenGLWidget", "glEnable(GL_DEPTH_TEST)", "out_proj.perspective(50.0f", "set_isometric_view()"]:
+        assert token in VIEW3D_H or token in VIEW3D_CPP
+
+
+def test_orbit_pan_zoom_interaction_tokens_present():
+    for token in ["mouseMoveEvent", "yaw_ += d.x() * 0.01", "pitch_ = qBound", "wheelEvent", "zoom_ = qBound"]:
+        assert token in VIEW3D_CPP
+
+
+def test_fallback_mode_and_banner_tokens_present():
+    for token in ["2D Layout", "2D fallback preview active", "3D View unavailable, using 2D Layout"]:
+        assert token in PREVIEW

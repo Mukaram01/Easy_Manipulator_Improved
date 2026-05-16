@@ -26,6 +26,9 @@ def test_scene_tree_headers_include_name_role_status():
         'header->setSectionResizeMode(0, QHeaderView::Interactive);',
         'header->setSectionResizeMode(1, QHeaderView::Interactive);',
         'header->setSectionResizeMode(2, QHeaderView::Interactive);',
+        'header->setStretchLastSection(false);',
+        'scene_hierarchy_tree_->setColumnWidth(0, 200);',
+        'scene_hierarchy_tree_->setColumnWidth(1, 120);',
     ]:
         assert token in MAIN
 
@@ -80,5 +83,13 @@ def test_scene_tree_excludes_file_artifact_rows_but_files_tab_keeps_required_art
         '{"Demo Launch", "launch/demo.launch.py"}',
         '{"Environment YAML", "environment.yaml"}',
         '{"Scene Manifest", "scene_manifest.yaml"}',
+    ]:
+        assert token in MAIN
+
+
+def test_selection_sync_invokes_apply_scene_selection_from_preview_signal():
+    for token in [
+        "connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){",
+        "apply_scene_selection(id, role, id.trimmed().isEmpty(), false);",
     ]:
         assert token in MAIN
