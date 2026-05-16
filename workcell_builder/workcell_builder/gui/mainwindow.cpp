@@ -518,9 +518,12 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     append_studio_log(source_action + ": no scene selected.");
     return false;
   }
+  refresh_scene_builder_selected_scene_ui();
+  rebuild_digital_twin_canvas();
+  refresh_task_intent_panel();
   show_studio_page(StudioPage::SceneBuilderPage);
   append_studio_log(
-    QString("%1: opened Scene Builder for '%2'.").arg(source_action, selected_scene_name()));
+    QString("%1: opened Scene Builder for '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
   return true;
 }
 
@@ -1597,9 +1600,7 @@ void MainWindow::select_scene_by_row(int row)
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
   selected_scene_index_ = row; const auto & s = scene_browser_result_.scenes[(size_t)row];
-  scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
-  scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
-  inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  refresh_scene_builder_selected_scene_ui();
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
   refresh_new_cell_checklist();
@@ -2145,7 +2146,7 @@ void MainWindow::run_layout_validation_only() { append_studio_log("Layout valida
 void MainWindow::open_validation_report() { open_selected_scene_artifact("smoke"); }
 void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(validation_summary_label_ ? validation_summary_label_->text() : QString("Validation Summary unavailable")); }
 void MainWindow::generate_readiness_pack() {
-  if (selected_scene_index_ < 0) return;
+  if (!has_selected_scene()) return;
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const QString cmd = QString("python3 scripts/generate_workcell_studio_readiness_pack.py '%1'").arg(QString::fromStdString(s.scene_dir.string()));
   append_studio_log("Generate Readiness Pack: " + cmd);
@@ -2241,10 +2242,37 @@ QStringList MainWindow::helper_script_search_paths(const QString & script_name) 
 
 QString MainWindow::selected_scene_name() const
 {
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+  if (!has_selected_scene()) {
     return "none";
   }
   return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name);
+}
+
+QString MainWindow::selected_scene_path() const
+{
+  if (!has_selected_scene()) return "";
+  return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir.string());
+}
+
+bool MainWindow::has_selected_scene() const
+{
+  return selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size());
+}
+
+void MainWindow::refresh_scene_builder_selected_scene_ui()
+{
+  if (!has_selected_scene()) {
+    if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
+    if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
+    if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
+  if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
+  if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
+    .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
+  if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
 }
 
 QString MainWindow::diagnostics_status_from_counts(int blocked, int warn) const
@@ -2361,7 +2389,8 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleSource, QString::fromStdString(entry.source_file));
     item->setData(RoleSourcePackage, QString(""));
     item->setData(RoleWidth, entry.width); item->setData(RoleDepth, entry.depth); item->setData(RoleHeight, entry.height);
-    item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, false);
+    const bool is_preview_placeholder = category.contains("placeholder", Qt::CaseInsensitive) || category == "warning";
+    item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, is_preview_placeholder);
     item->setData(RoleWarning, QString::fromStdString(entry.warnings.empty() ? std::string() : entry.warnings.front()));
     item->setData(RolePoseText, QString("x=%1 y=%2 z=%3 r=%4 p=%5 y=%6").arg(entry.x).arg(entry.y).arg(entry.z).arg(entry.roll).arg(entry.pitch).arg(entry.yaw));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
@@ -2386,6 +2415,12 @@ void MainWindow::rebuild_digital_twin_canvas()
     }
   }
 
+  if (model.items.empty()) {
+    digital_twin_scene_->addSimpleText("Scene selected but no previewable layout metadata found. Run Generate Preview/Readiness Pack or add layout items.")->setPos(-360, -260);
+    append_studio_log(QString("Scene canvas: '%1' has no previewable layout items. Missing files may include environment.yaml, scene_manifest.yaml, layout/workcell_studio_layout.yaml.").arg(selected_scene_name()));
+  } else {
+    append_studio_log(QString("Scene canvas: loaded %1 item(s) for '%2' from %3.").arg(model.items.size()).arg(selected_scene_name(), selected_scene_path()));
+  }
   if (!show_trajectory_overlay_box_ || show_trajectory_overlay_box_->isChecked()) digital_twin_scene_->addLine(20, 10, 180, -60, QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
   if (toggle_warnings_box_ && toggle_warnings_box_->isChecked()) {
     QStringList issues;
@@ -2396,6 +2431,10 @@ void MainWindow::rebuild_digital_twin_canvas()
     if (task.status != "READY") issues << "missing task intent";
     if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
     if (!issues.isEmpty()) digital_twin_scene_->addSimpleText("Safety Warning Overlay: " + issues.join(" | "))->setPos(-380, -280);
+  }
+  if (digital_twin_canvas_ && digital_twin_canvas_->scene()) {
+    const QRectF bounds = digital_twin_canvas_->scene()->itemsBoundingRect();
+    if (!bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24, -24, 24, 24), Qt::KeepAspectRatio);
   }
 }
 

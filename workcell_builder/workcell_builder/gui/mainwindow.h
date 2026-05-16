@@ -111,6 +111,9 @@ private:
   void append_studio_log(const QString & message);
   void show_not_wired_message(const QString & action_label);
   QString selected_scene_name() const;
+  QString selected_scene_path() const;
+  bool has_selected_scene() const;
+  void refresh_scene_builder_selected_scene_ui();
   void refresh_scene_browser_ui();
   void refresh_studio_home_scene_table();
   void refresh_selected_scene_details_card();
