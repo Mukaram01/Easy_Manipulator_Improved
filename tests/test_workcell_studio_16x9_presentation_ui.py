@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+PREVIEW = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
 
 
 def test_full_screen_presentation_tokens_present():
@@ -36,3 +37,8 @@ def test_misleading_pseudo3d_default_labels_are_not_present():
     forbidden = ["Pseudo-3D", "Fake 3D", "2.5D"]
     for token in forbidden:
         assert token not in MAIN
+
+
+def test_preview_mode_chip_reports_fallback_state_tokens_present():
+    for token in ["Mode: %2", "2D Layout (Fallback)"]:
+        assert token in PREVIEW
