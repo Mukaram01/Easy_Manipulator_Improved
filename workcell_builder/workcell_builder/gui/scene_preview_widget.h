@@ -11,6 +11,7 @@ class QStackedWidget;
 class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
+class QGraphicsProxyWidget;
 
 class ScenePreviewWidget : public QWidget
 {
@@ -104,6 +105,7 @@ public:
   void set_scene_selected(bool selected);
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
+  void set_preview_scene_name(const QString & scene_name);
   void set_task_overlay_model(const TaskOverlayModel & model);
   void set_reachability_overlay_model(const ReachabilityOverlayModel & model);
   void set_collision_overlay_model(const CollisionOverlayModel & model);
@@ -131,6 +133,9 @@ private:
   QRectF rendered_items_bounds_2d() const;
   void fit_fallback_scene_to_items();
   void reset_fallback_scene_view();
+  void refresh_info_chip();
+  int total_warning_count() const;
+  bool task_is_ready() const;
 
   QComboBox * mode_selector_{ nullptr };
   QPushButton * reset_view_button_{ nullptr };
@@ -144,6 +149,9 @@ private:
   QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
   QGraphicsView * fallback_2d_view_{ nullptr };
+  QLabel * info_chip_label_{ nullptr };
+  QGraphicsProxyWidget * fallback_info_chip_proxy_{ nullptr };
+  QString preview_scene_name_{"No scene"};
   bool scene_selected_{ false };
   bool preview3d_available_{ true };
   QString unavailable_reason_;

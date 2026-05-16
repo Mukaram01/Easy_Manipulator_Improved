@@ -3168,7 +3168,7 @@ void MainWindow::populate_scene_hierarchy()
   if (!scene_hierarchy_tree_) return;
   scene_hierarchy_tree_->clear();
 
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false); return; }
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(false); scene_preview_widget_->set_preview_scene_name("No scene"); } return; }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path d = s.scene_dir;
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
@@ -3430,7 +3430,7 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
-  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_items(preview_items); }
+  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_scene_name(QString::fromStdString(s.scene_name)); scene_preview_widget_->set_preview_items(preview_items); }
   preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
