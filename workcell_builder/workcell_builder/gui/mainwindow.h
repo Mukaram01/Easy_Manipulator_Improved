@@ -175,8 +175,10 @@ private:
   void open_scene_bundle_export_folder();
   bool selected_scene_layout_merge_ready(QStringList * blockers = nullptr) const;
   void refresh_diagnostics_quick_status();
+  void refresh_scene_builder_left_explorer();
   void populate_scene_hierarchy();
   void populate_asset_catalog();
+  void populate_scene_files_tab();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
   void validate_asset_catalog_selection();
@@ -246,6 +248,7 @@ private:
   QLabel * preview_actions_label_{ nullptr };
   QLabel * mode_chip_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };
+  QLabel * scene_files_summary_label_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QLabel * scene_files_selected_path_label_{ nullptr };
