@@ -1445,6 +1445,16 @@ bool ensure_minimal_environment_yaml(const fs::path & scene_dir, const std::stri
   out << "objects: []\n";
   out << "external joints: []\n";
   out << "scene_name: \"" << scene_name << "\"\n";
+  out << "workcell_studio:\n";
+  out << "  robot: {family: unknown, model: unknown, base: base_link, tip: tool0, planning_group: manipulator, readiness: UNKNOWN}\n";
+  out << "  tool: {family: none, model: none, attach: tool0, tcp: tcp_link, type: none, readiness: UNKNOWN}\n";
+  out << "  frames: {}\n";
+  out << "  environment_objects: []\n";
+  out << "  perception: {mode: preview_only, selected_topics: {}, profile_metadata: {}}\n";
+  out << "  pick_zone: {source: default_from_environment}\n";
+  out << "  place_zone: {target: default_from_environment}\n";
+  out << "  task_intent: {task_family: blank, readiness: SCAFFOLD}\n";
+  out << "  warnings: [\"fake_hardware default true\", \"real robot locked\", \"no runtime motion commands\"]\n";
   return true;
 }
 
@@ -1462,6 +1472,32 @@ bool repair_scene_yaml_file(const fs::path & scene_dir, std::string * summary)
     return false;
   }
   bool changed = false;
+  auto ensure_ws_key = [&](const std::string & key, const YAML::Node & value){
+    if (!root["workcell_studio"][key]) {
+      root["workcell_studio"][key] = value;
+      changed = true;
+    }
+  };
+  if (!root["workcell_studio"] || !root["workcell_studio"].IsMap()) {
+    root["workcell_studio"] = YAML::Node(YAML::NodeType::Map);
+    changed = true;
+  }
+  ensure_ws_key("robot", YAML::Load("{family: unknown, model: unknown, base: base_link, tip: tool0, planning_group: manipulator, readiness: UNKNOWN}"));
+  ensure_ws_key("tool", YAML::Load("{family: none, model: none, attach: tool0, tcp: tcp_link, type: none, readiness: UNKNOWN}"));
+  ensure_ws_key("frames", YAML::Node(YAML::NodeType::Map));
+  ensure_ws_key("environment_objects", YAML::Node(YAML::NodeType::Sequence));
+  ensure_ws_key("perception", YAML::Load("{mode: preview_only, selected_topics: {}, profile_metadata: {}}"));
+  ensure_ws_key("pick_zone", YAML::Load("{source: default_from_environment}"));
+  ensure_ws_key("place_zone", YAML::Load("{target: default_from_environment}"));
+  ensure_ws_key("task_intent", YAML::Load("{task_family: blank, readiness: UNKNOWN}"));
+  if (!root["workcell_studio"]["warnings"]) {
+    YAML::Node warnings(YAML::NodeType::Sequence);
+    warnings.push_back("fake_hardware default true");
+    warnings.push_back("real robot locked");
+    warnings.push_back("no runtime motion commands");
+    root["workcell_studio"]["warnings"] = warnings;
+    changed = true;
+  }
   if (root["objects"] && root["objects"].IsSequence()) {
     YAML::Node map(YAML::NodeType::Map);
     for (const auto & obj : root["objects"]) {
