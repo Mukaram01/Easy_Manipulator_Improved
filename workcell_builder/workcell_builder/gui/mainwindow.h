@@ -115,6 +115,7 @@ private:
   bool has_selected_scene() const;
   void refresh_scene_builder_selected_scene_ui();
   void refresh_scene_browser_ui();
+  void populate_scene_files_tab();
   void refresh_studio_home_scene_table();
   void refresh_selected_scene_details_card();
   void select_scene_by_row(int row);
@@ -250,6 +251,8 @@ private:
   QLabel * scene_files_summary_label_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
+  QLabel * scene_files_selected_path_label_{ nullptr };
+  QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
