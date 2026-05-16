@@ -521,7 +521,7 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     return false;
   }
   refresh_scene_builder_selected_scene_ui();
-  rebuild_digital_twin_canvas();
+  refresh_scene_builder_left_explorer();
   refresh_task_intent_panel();
   show_studio_page(StudioPage::SceneBuilderPage);
   append_studio_log(
@@ -757,7 +757,9 @@ void MainWindow::setup_studio_shell()
   auto * files_card = new QFrame(files_tab); files_card->setObjectName("studioCard");
   auto * files_card_layout = new QVBoxLayout(files_card);
   files_card_layout->addWidget(new QLabel("<b>Scene Files</b>"));
-  files_card_layout->addWidget(new QLabel("Scene path and generated artifacts appear here after selection."));
+  scene_files_summary_label_ = new QLabel("Scene path and generated artifacts appear here after selection.");
+  scene_files_summary_label_->setWordWrap(true);
+  files_card_layout->addWidget(scene_files_summary_label_);
   files_tab_layout->addWidget(files_card);
   scene_builder_left_tabs_->addTab(scene_tab, "Scene");
   scene_builder_left_tabs_->addTab(assets_tab, "Assets");
@@ -1300,9 +1302,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   refresh_new_cell_checklist();
   append_studio_log("New Cell Action Map: Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate");
   refresh_diagnostics_quick_status();
-  rebuild_digital_twin_canvas();
-  populate_scene_hierarchy();
-  populate_asset_catalog();
+  refresh_scene_builder_left_explorer();
   refresh_task_intent_panel();
   refresh_scene_bundle_export_panel();
 }
@@ -1653,9 +1653,7 @@ void MainWindow::select_scene_by_row(int row)
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
   refresh_new_cell_checklist();
-  rebuild_digital_twin_canvas();
-  populate_scene_hierarchy();
-  populate_asset_catalog();
+  refresh_scene_builder_left_explorer();
   refresh_scene_bundle_export_panel();
   refresh_selected_scene_details_card();
 }
@@ -2235,9 +2233,7 @@ void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
   append_studio_log(QString::fromStdString(result.status ? "Layout merge completed" : "Layout merge blocked"));
   append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
   refresh_scene_browser_ui();
-  rebuild_digital_twin_canvas();
-  populate_scene_hierarchy();
-  populate_asset_catalog();
+  refresh_scene_builder_left_explorer();
 }
 
 void MainWindow::open_layout_merge_report()
@@ -2487,6 +2483,14 @@ void MainWindow::rebuild_digital_twin_canvas()
   }
 }
 
+void MainWindow::refresh_scene_builder_left_explorer()
+{
+  rebuild_digital_twin_canvas();
+  populate_scene_hierarchy();
+  populate_asset_catalog();
+  populate_scene_files_tab();
+}
+
 
 void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 {
@@ -2635,8 +2639,7 @@ void MainWindow::save_layout_changes()
   layout_dirty_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
   append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
-  populate_scene_hierarchy();
-  rebuild_digital_twin_canvas();
+  refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) {
     if (!selected_preview_id.isEmpty()) {
       scene_preview_widget_->select_preview_item(selected_preview_id);
@@ -2660,8 +2663,8 @@ void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, con
 void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
-void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); }
-void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; populate_scene_hierarchy(); mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
+void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); refresh_scene_builder_left_explorer(); }
+void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; refresh_scene_builder_left_explorer(); mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
 
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
@@ -2720,6 +2723,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
   append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
   append_studio_log("ghost placement preview committed");
+  refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
 }
 
@@ -3032,6 +3036,28 @@ void MainWindow::populate_scene_hierarchy()
   if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
   if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
   if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
+}
+
+void MainWindow::populate_scene_files_tab()
+{
+  if (!scene_files_summary_label_) return;
+  if (!has_selected_scene()) {
+    scene_files_summary_label_->setText("Scene path and generated artifacts appear here after selection.");
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const fs::path d = s.scene_dir;
+  const std::vector<std::string> key_files = {
+    "environment.yaml", "scene_manifest.yaml", "environment_layout.yaml", "layout/workcell_studio_layout.yaml",
+    "config/workcell_builder_task_intent.yaml", "package.xml", "CMakeLists.txt", "launch/demo.launch.py"};
+  QStringList lines;
+  lines << QString("Scene: %1").arg(QString::fromStdString(s.scene_name));
+  lines << QString("Path: %1").arg(QString::fromStdString(d.string()));
+  lines << "Artifacts:";
+  for (const auto & rel : key_files) {
+    lines << QString(" - [%1] %2").arg(fs::exists(d / rel) ? "present" : "missing", QString::fromStdString(rel));
+  }
+  scene_files_summary_label_->setText(lines.join("\n"));
 }
 
 void MainWindow::populate_asset_catalog()
