@@ -30,5 +30,17 @@ def test_save_scene_creates_timestamped_backup_and_canvas_refresh():
 def test_scene_selection_hook_updates_inspector_and_canvas_selection():
     main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
     assert 'connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });' in main
-    assert 'inspector_label_->setText(QString("Selected: %1\\nCategory: %2\\nPose: %3\\nSource: %4")' in main
-    assert 'digital_twin_scene_->clearSelection(); gi->setSelected(true); digital_twin_canvas_->centerOn(gi); select_canvas_item(gi);' in main
+    assert "Role/Category: %3" in main and "inspector_label_->setText(QString(\"Selected: %1" in main
+    assert 'if (matched_canvas_item) {\n      digital_twin_scene_->clearSelection();\n      matched_canvas_item->setSelected(true);' in main
+
+
+def test_selection_sync_hooks_and_standardized_selected_item_log_format():
+    main = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    for token in [
+        'connect(digital_twin_scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::on_canvas_selection_changed);',
+        'if (!digital_twin_scene_ || selection_update_guard_) return;',
+        'apply_scene_selection(selected_id, selected_role, false, false);',
+        'append_studio_log(QString("Selected item: %1 (%2)").arg(selected_id, selected_role));',
+        'append_studio_log("Selected item: <none> (unknown)");',
+    ]:
+        assert token in main
