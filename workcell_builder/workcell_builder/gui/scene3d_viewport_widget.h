@@ -7,6 +7,8 @@
 
 #include <functional>
 
+class QVector3D;
+
 class Scene3DViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
   Q_OBJECT
@@ -31,6 +33,10 @@ public:
   void reset_view();
   void fit_scene();
   void focus_selected();
+  void set_top_view();
+  void set_front_view();
+  void set_side_view();
+  void set_isometric_view();
 
 protected:
   void initializeGL() override;
@@ -46,5 +52,10 @@ private:
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
   void draw_frustum(const QColor & color, bool translucent = true);
   QPoint last_;
-  double yaw_{ -0.9 }, pitch_{ 0.7 }, zoom_{ 1.0 };
+  QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
+  double yaw_{ -0.9 };
+  double pitch_{ 0.7 };
+  double distance_{ 6.0 };
+  const double min_distance_{ 0.35 };
+  const double max_distance_{ 80.0 };
 };

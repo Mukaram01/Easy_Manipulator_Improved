@@ -4,9 +4,11 @@
 #include <QMatrix4x4>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QVector3D>
 #include <QtMath>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
@@ -21,9 +23,32 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 }
 
 Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); }
-void Scene3DViewportWidget::reset_view() { yaw_ = -0.9; pitch_ = 0.7; zoom_ = 1.0; update(); }
-void Scene3DViewportWidget::fit_scene() { zoom_ = 1.0; update(); }
-void Scene3DViewportWidget::focus_selected() { if (!selected_id.isEmpty()) zoom_ = 0.85; update(); }
+void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
+void Scene3DViewportWidget::set_isometric_view() { yaw_ = -0.9; pitch_ = 0.7; orbit_offset_ = QVector3D(0.0f, 0.0f, 0.0f); distance_ = 6.0; update(); }
+void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
+void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::fit_scene() {
+  if (items.isEmpty()) { set_isometric_view(); return; }
+  QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D bmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (const auto & it : items) {
+    bmin.setX(std::min(bmin.x(), static_cast<float>(it.x)));
+    bmin.setY(std::min(bmin.y(), static_cast<float>(it.y)));
+    bmin.setZ(std::min(bmin.z(), static_cast<float>(it.z)));
+    bmax.setX(std::max(bmax.x(), static_cast<float>(it.x + it.sx)));
+    bmax.setY(std::max(bmax.y(), static_cast<float>(it.y + it.sy)));
+    bmax.setZ(std::max(bmax.z(), static_cast<float>(it.z + it.sz)));
+  }
+  orbit_offset_ = (bmin + bmax) * 0.5f;
+  const QVector3D ext = bmax - bmin;
+  const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
+  const double fov = qDegreesToRadians(50.0);
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.25;
+  distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  update();
+}
+void Scene3DViewportWidget::focus_selected() { fit_scene(); }
 void Scene3DViewportWidget::initializeGL() { initializeOpenGLFunctions(); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE); glClearColor(0.04f, 0.06f, 0.12f, 1.0f); }
 void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
 
@@ -34,9 +59,10 @@ void Scene3DViewportWidget::paintGL()
   QMatrix4x4 proj;
   proj.perspective(50.0f, aspect, 0.05f, 100.0f);
   QMatrix4x4 view;
-  view.translate(0.0f, -0.5f, -6.0f * zoom_);
+  view.translate(0.0f, -0.5f, -distance_);
   view.rotate(qRadiansToDegrees(pitch_), 1.0f, 0.0f, 0.0f);
   view.rotate(qRadiansToDegrees(yaw_), 0.0f, 1.0f, 0.0f);
+  view.translate(-orbit_offset_);
   glMatrixMode(GL_PROJECTION);
   glLoadMatrixf(proj.constData());
   glMatrixMode(GL_MODELVIEW);
@@ -89,5 +115,30 @@ void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
 }
 QPointF Scene3DViewportWidget::project_to_screen(double x, double y, double z) const { return QPointF(width() * 0.5 + x * 50.0, height() * 0.6 - y * 50.0 + z * 5.0); }
 void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) { last_ = e->pos(); if (e->button() != Qt::LeftButton) return; QString best; double bestd = 1e18; for (const auto & item : items) { if (!item.selectable) continue; const double d = QLineF(project_to_screen(item.x, item.y, item.z), e->pos()).length(); if (d < bestd) { bestd = d; best = item.id; } } if (!best.isEmpty() && bestd < 50.0 && select_cb) select_cb(best); }
-void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e) { auto d = e->pos() - last_; last_ = e->pos(); if (e->buttons() & Qt::LeftButton) { yaw_ += d.x() * 0.01; pitch_ = qBound(-1.4, pitch_ + d.y() * 0.01, 1.4); update(); } }
-void Scene3DViewportWidget::wheelEvent(QWheelEvent * e) { zoom_ = qBound(0.4, zoom_ + (e->angleDelta().y() > 0 ? -0.1 : 0.1), 2.2); update(); }
+void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e) {
+  const QPoint d = e->pos() - last_;
+  last_ = e->pos();
+  const bool pan = (e->buttons() & Qt::MiddleButton) || ((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ShiftModifier));
+  if (pan) {
+    const float pan_scale = static_cast<float>(distance_ * 0.0018);
+    const float cy = static_cast<float>(qCos(yaw_));
+    const float sy = static_cast<float>(qSin(yaw_));
+    const QVector3D right(cy, 0.0f, sy);
+    const QVector3D up(0.0f, 1.0f, 0.0f);
+    orbit_offset_ += right * static_cast<float>(-d.x()) * pan_scale;
+    orbit_offset_ += up * static_cast<float>(d.y()) * pan_scale;
+    update();
+    return;
+  }
+  if (e->buttons() & Qt::LeftButton) {
+    yaw_ += d.x() * 0.01;
+    pitch_ = qBound(-1.5, pitch_ + d.y() * 0.01, 1.5);
+    update();
+  }
+}
+void Scene3DViewportWidget::wheelEvent(QWheelEvent * e) {
+  const double steps = e->angleDelta().y() / 120.0;
+  const double factor = qPow(0.88, steps);
+  distance_ = qBound(min_distance_, distance_ * factor, max_distance_);
+  update();
+}
