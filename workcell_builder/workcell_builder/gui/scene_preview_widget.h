@@ -154,6 +154,7 @@ private:
   QString preview_scene_name_{"No scene"};
   bool scene_selected_{ false };
   bool preview3d_available_{ true };
+  bool mode_default_initialized_{ false };
   QString unavailable_reason_;
   QVector<PreviewItem> preview_items_;
   TaskOverlayModel overlay_model_;

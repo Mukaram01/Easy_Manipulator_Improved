@@ -327,7 +327,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   auto * controls = new QHBoxLayout();
   controls->addWidget(new QLabel("View mode", this));
   mode_selector_ = new QComboBox(this);
-  mode_selector_->addItems({"2D Layout", "Pseudo-3D", "Debug Overlays"});
+  mode_selector_->addItems({"3D View", "2D Layout", "Debug Overlays"});
   controls->addWidget(mode_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
@@ -339,9 +339,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   simple_3d_view_ = new SimplePreview3DView(view3d_container_); v3->addWidget(simple_3d_view_);
   empty_state_label_ = new QLabel("No scene selected\nOpen a scene or create a new cell to preview it.", view3d_container_);
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
-  error_state_label_ = new QLabel("3D preview unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
+  error_state_label_ = new QLabel("3D View unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
   view2d_container_ = new QWidget(this); view2d_container_->setLayout(new QVBoxLayout());
-  fallback_banner_label_ = new QLabel("2D layout preview active", view2d_container_);
+  fallback_banner_label_ = new QLabel("2D fallback preview active", view2d_container_);
   fallback_banner_label_->setAlignment(Qt::AlignCenter);
   fallback_banner_label_->setVisible(false);
   view2d_container_->layout()->addWidget(fallback_banner_label_);
@@ -373,7 +373,15 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
 }
 void ScenePreviewWidget::set_fallback_2d_view(QGraphicsView * view){ fallback_2d_view_ = view; if (!view2d_container_->layout()) view2d_container_->setLayout(new QVBoxLayout()); view2d_container_->layout()->addWidget(view); if (fallback_2d_view_ && fallback_2d_view_->scene() && info_chip_label_ && !fallback_info_chip_proxy_) { fallback_info_chip_proxy_ = fallback_2d_view_->scene()->addWidget(info_chip_label_); fallback_info_chip_proxy_->setZValue(10000.0); fallback_info_chip_proxy_->setPos(12.0, 12.0); } refresh_info_chip(); }
 void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = selected; refresh_mode_and_state(); }
-void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){ preview3d_available_ = available; unavailable_reason_ = reason; refresh_mode_and_state(); }
+void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){
+  preview3d_available_ = available;
+  unavailable_reason_ = reason;
+  if (!mode_default_initialized_) {
+    mode_selector_->setCurrentText(preview3d_available_ ? "3D View" : "2D Layout");
+    mode_default_initialized_ = true;
+  }
+  refresh_mode_and_state();
+}
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
 void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; static_cast<SimplePreview3DView *>(simple_3d_view_)->items = preview_items_; const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; }); if (!has_selected && !selected_preview_item_id_.isEmpty()) { emit studio_log_requested(QString("Preview selection id no longer present: %1").arg(selected_preview_item_id_)); } else { static_cast<SimplePreview3DView *>(simple_3d_view_)->selected_id = selected_preview_item_id_; } emit studio_log_requested(QString("Loaded %1 preview items.").arg(preview_items_.size())); fit_fallback_scene_to_items(); refresh_info_chip(); update(); }
 void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name){ preview_scene_name_ = scene_name.trimmed().isEmpty() ? "No scene" : scene_name.trimmed(); auto * v = static_cast<SimplePreview3DView *>(simple_3d_view_); v->scene_name = preview_scene_name_; refresh_info_chip(); v->update(); }
@@ -398,11 +406,12 @@ void ScenePreviewWidget::refresh_mode_and_state()
     mode_selector_->setCurrentText("2D Layout");
     stack_->setCurrentWidget(view2d_container_);
     fallback_banner_label_->setVisible(scene_selected_);
-    emit studio_log_requested(QString("3D preview fallback to 2D: %1").arg(unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_));
+    emit studio_log_requested(QString("3D View unavailable, using 2D Layout: %1").arg(unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_));
     return;
   }
   fallback_banner_label_->setVisible(false);
-  bool use3d = mode_selector_->currentText() == "Pseudo-3D";
+  bool use3d = mode_selector_->currentText() == "3D View";
+  if (mode_selector_->currentText() == "Debug Overlays") use3d = false;
   stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   const bool has_preview_items = !preview_items_.isEmpty();
   empty_state_label_->setVisible(use3d && !scene_selected_);
