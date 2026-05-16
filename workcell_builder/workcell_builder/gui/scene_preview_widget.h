@@ -59,6 +59,7 @@ public:
     bool selectable{true};
   };
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
+  enum class LabelMode { Off, SelectedOnly, All };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -109,6 +110,7 @@ public:
   void set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections);
   void set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels);
   void set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels);
+  void set_label_mode(LabelMode mode);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
 
