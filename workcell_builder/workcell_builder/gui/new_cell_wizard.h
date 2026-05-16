@@ -13,6 +13,8 @@ class QLabel;
 class QPushButton;
 class QCheckBox;
 class QDoubleSpinBox;
+class QTableWidget;
+class QGroupBox;
 
 struct NewCellWizardResult {
   bool created{false};
@@ -30,11 +32,19 @@ public:
   static bool is_valid_package_name(const QString &name);
   static QString default_gripper_rpy_text();
   static QStringList recommended_environment_assets();
+  static QString default_robot_base_link(const QString &robot_model);
+  static QString default_robot_tip_link(const QString &robot_model);
+  static QString default_robot_planning_group(const QString &robot_model);
+  static QString default_end_effector_attach_link(const QString &model);
+  static QString default_end_effector_tcp_link(const QString &model);
+  static QString default_end_effector_type(const QString &model);
 
 private:
   void build_ui();
   void refresh_validation();
   void refresh_summary();
+  void refresh_environment_parent_options();
+  void apply_recommended_environment_layout();
   bool create_scene_scaffold(bool open_in_builder);
   QString scene_name_error() const;
   QString scene_name_warning() const;
@@ -62,6 +72,11 @@ private:
   QDoubleSpinBox *robot_pitch_{nullptr};
   QDoubleSpinBox *robot_yaw_{nullptr};
   QLabel *robot_warning_{nullptr};
+  QLineEdit *robot_base_link_{nullptr};
+  QLineEdit *robot_tip_link_{nullptr};
+  QLineEdit *robot_planning_group_{nullptr};
+  QLineEdit *robot_controller_name_{nullptr};
+  QGroupBox *robot_advanced_group_{nullptr};
 
   QComboBox *ee_{nullptr};
   QDoubleSpinBox *ee_x_{nullptr};
@@ -70,19 +85,24 @@ private:
   QDoubleSpinBox *ee_roll_{nullptr};
   QDoubleSpinBox *ee_pitch_{nullptr};
   QDoubleSpinBox *ee_yaw_{nullptr};
+  QLineEdit *ee_attach_link_{nullptr};
+  QLineEdit *ee_tcp_link_{nullptr};
+  QComboBox *ee_type_{nullptr};
+  QGroupBox *ee_advanced_group_{nullptr};
 
-  QCheckBox *env_table_{nullptr};
-  QCheckBox *env_source_{nullptr};
-  QCheckBox *env_place_{nullptr};
-  QCheckBox *env_reject_{nullptr};
-  QCheckBox *env_conveyor_{nullptr};
-  QCheckBox *env_camera_{nullptr};
-  QCheckBox *env_safety_{nullptr};
+  QTableWidget *env_objects_table_{nullptr};
   QLabel *env_preview_{nullptr};
 
   QComboBox *task_family_{nullptr};
-  QLineEdit *pick_source_{nullptr};
-  QLineEdit *place_target_{nullptr};
+  QComboBox *pick_zone_source_{nullptr};
+  QComboBox *pick_camera_{nullptr};
+  QComboBox *pick_detection_source_{nullptr};
+  QComboBox *pick_source_{nullptr};
+  QLineEdit *pick_zone_frame_{nullptr};
+  QComboBox *place_target_{nullptr};
+  QComboBox *place_frame_link_{nullptr};
+  QComboBox *placement_mode_{nullptr};
+  QComboBox *placement_alignment_{nullptr};
   QComboBox *grasp_strategy_{nullptr};
   QDoubleSpinBox *approach_distance_{nullptr};
   QDoubleSpinBox *retreat_distance_{nullptr};
