@@ -32,10 +32,12 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const bool manifest_ok = read_yaml(scene_dir / "scene_manifest.yaml", &manifest);
   const bool task_ok = read_yaml(scene_dir / "config" / "task_recipe.yaml", &task);
   const bool layout_ok = read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout);
+  const bool deterministic_fallback_layout = !layout_ok;
   if (!env_ok) m.warnings.push_back("Malformed or missing environment.yaml");
   if (!manifest_ok) m.warnings.push_back("Missing scene_manifest.yaml");
   if (!task_ok) m.warnings.push_back("Task intent missing");
   if (!layout_ok && fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml; falling back safely");
+  if (deterministic_fallback_layout) m.warnings.push_back("Using deterministic fallback layout because layout/workcell_studio_layout.yaml is missing.");
 
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";

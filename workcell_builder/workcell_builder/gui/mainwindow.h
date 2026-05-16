@@ -251,6 +251,8 @@ private:
   QLabel * dashboard_summary_label_{ nullptr };
   QLabel * scene_builder_title_{ nullptr };
   QLabel * scene_preview_label_{ nullptr };
+  QLabel * scene_builder_status_chip_{ nullptr };
+  QLabel * scene_builder_path_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
