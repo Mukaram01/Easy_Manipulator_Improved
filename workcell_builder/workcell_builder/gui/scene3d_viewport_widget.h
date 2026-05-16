@@ -4,10 +4,10 @@
 
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
+#include <QVector3D>
 
 #include <functional>
 
-class QVector3D;
 
 class Scene3DViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
