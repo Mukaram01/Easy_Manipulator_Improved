@@ -2925,7 +2925,6 @@ void SceneSelect::refresh_preview_status()
     {"Bins", true}, {"Conveyors", true}, {"Cameras", true}, {"Pick/place zones", true},
     {"Camera ROI/FOV", true}, {"Warnings/blockers", true}, {"Labels", true}};
   static std::string selected_item_id;
-  static bool unsaved_layout_edits = false;
   const int idx = ui->scene_list->currentIndex();
   if (idx < 0 || idx >= static_cast<int>(workcell.scene_vector.size())) {
     auto * empty_scene = new QGraphicsScene(ui->visual_layout_canvas);
@@ -2972,7 +2971,6 @@ void SceneSelect::refresh_preview_status()
     selected_item_id = i->data(3).toString().toStdString();
     selected_canvas_item_id_ = selected_item_id;
     selected_canvas_item_type_ = i->data(1).toString().toStdString();
-    unsaved_layout_edits = true;
     ui->inspector_help->setText(QString("zone_inspector_token id=%1 name=%2 type=%3 | %4 | layout_unsaved=true | rerun zone validation")
       .arg(i->data(3).toString(), i->data(0).toString(), i->data(1).toString(), i->data(2).toString()));
   });
