@@ -18,9 +18,22 @@ TEST(NewCellWizard, DefaultGripperRpy)
 TEST(NewCellWizard, RecommendedLayoutDefaults)
 {
   const auto items = NewCellWizard::recommended_environment_assets();
-  EXPECT_TRUE(items.contains("Work table"));
-  EXPECT_TRUE(items.contains("Source bin"));
-  EXPECT_TRUE(items.contains("Place fixture"));
-  EXPECT_TRUE(items.contains("RealSense D435i camera"));
-  EXPECT_TRUE(items.contains("Safety zone"));
+  EXPECT_TRUE(items.contains("workbench_01"));
+  EXPECT_TRUE(items.contains("source_bin_01"));
+  EXPECT_TRUE(items.contains("place_fixture_01"));
+  EXPECT_TRUE(items.contains("camera_01"));
+  EXPECT_TRUE(items.contains("safety_zone_01"));
+}
+
+TEST(NewCellWizard, UrDefaults)
+{
+  EXPECT_EQ(NewCellWizard::default_robot_base_link("UR5").toStdString(), "base_link");
+  EXPECT_EQ(NewCellWizard::default_robot_tip_link("UR5").toStdString(), "ee_link");
+  EXPECT_EQ(NewCellWizard::default_robot_planning_group("UR5").toStdString(), "manipulator");
+}
+
+TEST(NewCellWizard, RobotiqDefaults)
+{
+  EXPECT_EQ(NewCellWizard::default_end_effector_attach_link("robotiq_85").toStdString(), "gripper_base_link");
+  EXPECT_EQ(NewCellWizard::default_end_effector_tcp_link("robotiq_85").toStdString(), "ee_palm");
 }

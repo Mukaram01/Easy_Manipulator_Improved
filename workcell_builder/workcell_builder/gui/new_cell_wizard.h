@@ -72,9 +72,9 @@ private:
   QDoubleSpinBox *robot_pitch_{nullptr};
   QDoubleSpinBox *robot_yaw_{nullptr};
   QLabel *robot_warning_{nullptr};
-  QLineEdit *robot_base_link_{nullptr};
-  QLineEdit *robot_tip_link_{nullptr};
-  QLineEdit *robot_planning_group_{nullptr};
+  QComboBox *robot_base_link_{nullptr};
+  QComboBox *robot_tip_link_{nullptr};
+  QComboBox *robot_planning_group_{nullptr};
   QLineEdit *robot_controller_name_{nullptr};
   QGroupBox *robot_advanced_group_{nullptr};
 
@@ -85,8 +85,8 @@ private:
   QDoubleSpinBox *ee_roll_{nullptr};
   QDoubleSpinBox *ee_pitch_{nullptr};
   QDoubleSpinBox *ee_yaw_{nullptr};
-  QLineEdit *ee_attach_link_{nullptr};
-  QLineEdit *ee_tcp_link_{nullptr};
+  QComboBox *ee_attach_link_{nullptr};
+  QComboBox *ee_tcp_link_{nullptr};
   QComboBox *ee_type_{nullptr};
   QGroupBox *ee_advanced_group_{nullptr};
 
@@ -98,12 +98,14 @@ private:
   QComboBox *pick_camera_{nullptr};
   QComboBox *pick_detection_source_{nullptr};
   QComboBox *pick_source_{nullptr};
-  QLineEdit *pick_zone_frame_{nullptr};
+  QComboBox *pick_zone_frame_{nullptr};
   QComboBox *place_target_{nullptr};
   QComboBox *place_frame_link_{nullptr};
   QComboBox *placement_mode_{nullptr};
   QComboBox *placement_alignment_{nullptr};
   QComboBox *grasp_strategy_{nullptr};
+  QComboBox *approach_axis_{nullptr};
+  QComboBox *release_strategy_{nullptr};
   QDoubleSpinBox *approach_distance_{nullptr};
   QDoubleSpinBox *retreat_distance_{nullptr};
   QTextEdit *task_intent_text_{nullptr};
