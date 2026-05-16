@@ -1,5 +1,6 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "workcell_yaml_utils.hpp"
+#include <algorithm>
 #include <yaml-cpp/yaml.h>
 
 namespace fs = boost::filesystem;
@@ -10,6 +11,13 @@ static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & scene_dir, const std::string & scene_name)
 {
   WorkcellStudioCanvasModel m; m.scene_name = scene_name; m.status = "WARNINGS";
+  std::string deterministic_fallback_reason;
+  bool deterministic_fallback_layout = false;
+  const auto enable_deterministic_fallback = [&](const std::string & reason) {
+    if (deterministic_fallback_layout) return;
+    deterministic_fallback_layout = true;
+    deterministic_fallback_reason = reason;
+  };
   const auto add_warning = [&m](const std::string & context, const std::string & detail) {
     m.warnings.push_back("layout/workcell_studio_layout.yaml [" + context + "]: " + detail);
     m.has_warnings = true;
@@ -32,12 +40,14 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const bool manifest_ok = read_yaml(scene_dir / "scene_manifest.yaml", &manifest);
   const bool task_ok = read_yaml(scene_dir / "config" / "task_recipe.yaml", &task);
   const bool layout_ok = read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout);
-  const bool deterministic_fallback_layout = !layout_ok;
+  if (!layout_ok) {
+    if (fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
+    else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
+  }
   if (!env_ok) m.warnings.push_back("Malformed or missing environment.yaml");
   if (!manifest_ok) m.warnings.push_back("Missing scene_manifest.yaml");
   if (!task_ok) m.warnings.push_back("Task intent missing");
   if (!layout_ok && fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml; falling back safely");
-  if (deterministic_fallback_layout) m.warnings.push_back("Using deterministic fallback layout because layout/workcell_studio_layout.yaml is missing.");
 
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";
@@ -139,7 +149,27 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       }
     }
     }
+  } else if (layout_ok) {
+    enable_deterministic_fallback("layout/workcell_studio_layout.yaml has invalid or missing schema_version");
   }
+
+  if (deterministic_fallback_layout) {
+    for (auto & item : m.items) {
+      if (item.id == "robot_base") { item.x = 0.0; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "table") { item.x = 0.7; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "conveyor") { item.x = -0.8; item.y = -0.3; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "pick_zone") { item.x = 0.55; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "place_zone") { item.x = 1.0; item.y = 0.1; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "bin_a") { item.x = 1.3; item.y = -0.5; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+      else if (item.id == "camera") { item.x = -0.2; item.y = 1.0; item.z = 1.2; item.roll = 0.0; item.pitch = 0.0; item.yaw = -1.57; }
+      else if (item.id == "home_pose") { item.x = -0.4; item.y = 0.5; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
+    }
+    m.warnings.push_back("Using deterministic 3D fallback layout because " + deterministic_fallback_reason + ".");
+  }
+
+  std::stable_sort(m.items.begin(), m.items.end(), [](const WorkcellStudioCanvasItem & a, const WorkcellStudioCanvasItem & b) {
+    return a.id < b.id;
+  });
   if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; { WorkcellStudioCanvasItem w; w.id="warning"; w.type="warning"; w.role="warning"; w.label="warning"; w.source_file="environment.yaml"; w.x=-1.2; w.y=1.2; w.width=0.1; w.depth=0.1; w.height=0.0; w.warnings=m.warnings; m.items.push_back(w); } }
   else { m.status = "READY"; }
   return m;
