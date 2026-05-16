@@ -96,6 +96,7 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "workcell_studio_layout_editor.hpp"
+#include "gui/new_cell_wizard.h"
 
 namespace fs = boost::filesystem;
 
