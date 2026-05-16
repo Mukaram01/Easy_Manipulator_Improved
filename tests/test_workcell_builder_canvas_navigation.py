@@ -109,5 +109,16 @@ def test_fit_scene_excludes_overlay_only_items_tokens_present():
 
 
 def test_fallback_mode_and_banner_tokens_present():
-    for token in ["2D Layout", "2D fallback preview active", "3D View unavailable, using 2D Layout"]:
+    for token in ["2D Layout", "2D fallback preview active", "3D View unavailable, using 2D Layout", "2D Layout (Fallback)"]:
         assert token in PREVIEW
+
+
+def test_debug_overlays_remains_3d_and_fallback_is_unavailable_only():
+    for token in [
+        'viewport->debug_overlays_mode = (mode == "Debug Overlays")',
+        'const bool requested_3d = (mode == "3D View") || (mode == "Debug Overlays")',
+        "const bool use3d = requested_3d && preview3d_available_;",
+        "Mode: %2",
+    ]:
+        assert token in PREVIEW
+    assert 'if (mode_selector_->currentText() == "Debug Overlays") use3d = false;' not in PREVIEW
