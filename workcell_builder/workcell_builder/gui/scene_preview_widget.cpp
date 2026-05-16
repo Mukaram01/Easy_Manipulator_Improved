@@ -102,25 +102,28 @@ void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewpor
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_mode_and_state()
 {
+  const QString mode = mode_selector_->currentText();
+  const bool requested_3d = (mode == "3D View") || (mode == "Debug Overlays");
+  const bool use3d = requested_3d && preview3d_available_;
+  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  viewport->debug_overlays_mode = (mode == "Debug Overlays");
+
   if (!preview3d_available_) {
-    mode_selector_->setCurrentText("2D Layout");
     stack_->setCurrentWidget(view2d_container_);
     fallback_banner_label_->setVisible(scene_selected_);
-    emit studio_log_requested(QString("3D View unavailable, using 2D Layout: %1").arg(unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_));
-    return;
+    const QString reason = unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_;
+    emit studio_log_requested(QString("3D View unavailable, using 2D Layout: %1").arg(reason));
+  } else {
+    fallback_banner_label_->setVisible(false);
+    stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   }
-  fallback_banner_label_->setVisible(false);
-  bool use3d = mode_selector_->currentText() == "3D View";
-  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  viewport->debug_overlays_mode = (mode_selector_->currentText() == "Debug Overlays");
-  if (mode_selector_->currentText() == "Debug Overlays") use3d = false;
-  stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   const bool has_preview_items = !preview_items_.isEmpty();
   empty_state_label_->setVisible(use3d && !scene_selected_);
   simple_3d_view_->setVisible(use3d && scene_selected_);
-  const bool rendering_failed = scene_selected_ && has_preview_items && !simple_3d_view_->isVisible() && !preview3d_available_;
-  error_state_label_->setText(QString("Scene selected but preview rendering failed. Loaded %1 preview items. Check fallback 2D canvas.").arg(preview_items_.size()));
+  const bool rendering_failed = scene_selected_ && has_preview_items && requested_3d && !preview3d_available_;
+  error_state_label_->setText(QString("Scene selected but 3D preview is unavailable. Loaded %1 preview items. Using 2D fallback canvas.").arg(preview_items_.size()));
   error_state_label_->setVisible(rendering_failed);
+  refresh_info_chip();
 }
 QRectF ScenePreviewWidget::rendered_items_bounds_2d() const
 {
@@ -158,4 +161,4 @@ void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Sce
 
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
-void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; info_chip_label_->setText(QString("Scene: %1\nItems: %2  Warn: %3  Task: %4").arg(preview_scene_name_).arg(preview_items_.size()).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); }
+void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D View") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); info_chip_label_->setText(QString("Scene: %1\nMode: %2\nItems: %3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(preview_items_.size()).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); }
