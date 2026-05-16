@@ -297,6 +297,7 @@ private:
   QCheckBox * show_camera_fov_overlay_box_{ nullptr };
   QCheckBox * show_pick_place_overlay_box_{ nullptr };
   QCheckBox * show_trajectory_overlay_box_{ nullptr };
+  QCheckBox * show_minimap_box_{ nullptr };
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };
@@ -305,6 +306,7 @@ private:
   QPushButton * save_layout_button_{ nullptr };
   QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
+  bool minimap_requested_visible_{ true };
   QGraphicsRectItem * ghost_preview_item_{ nullptr };
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
   double snap_step_m_{ 0.05 };
