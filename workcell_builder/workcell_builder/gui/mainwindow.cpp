@@ -75,6 +75,7 @@
 #include <QHBoxLayout>
 #include <QtConcurrent>
 #include <yaml-cpp/yaml.h>
+#include "workcell_yaml_utils.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <boost/filesystem.hpp>
 #include <stdio.h>
@@ -223,7 +224,7 @@ static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString:
 static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n||!n[k]) return "unknown"; n=n[k]; } return ystr(n); }
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
 
-static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(...){return false;} }
+static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(const YAML::Exception&){ return false; } catch(const std::exception&){ return false; } }
 static YAML::Node ensure_map_path(YAML::Node root, std::initializer_list<const char *> keys)
 {
   YAML::Node cursor = root;
@@ -1650,6 +1651,18 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   if (has_existing) {
     try {
       root = YAML::LoadFile(task_intent_path.string());
+    } catch (const YAML::Exception & ex) {
+      const fs::path backup = task_intent_path.string() + ".malformed." + std::to_string(std::time(nullptr)) + ".bak";
+      boost::system::error_code ec;
+      fs::copy_file(task_intent_path, backup, fs::copy_option::overwrite_if_exists, ec);
+      if (ec) {
+        append_studio_log(QString("Task binding blocked: malformed YAML at %1 and backup failed (%2)")
+          .arg(QString::fromStdString(task_intent_path.string()), QString::fromStdString(ec.message())));
+        return false;
+      }
+      append_studio_log(QString("Malformed task intent YAML detected; backup created at %1 before rewrite.")
+        .arg(QString::fromStdString(backup.string())));
+      root = YAML::Node(YAML::NodeType::Map);
     } catch (const std::exception & ex) {
       const fs::path backup = task_intent_path.string() + ".malformed." + std::to_string(std::time(nullptr)) + ".bak";
       boost::system::error_code ec;
@@ -3000,7 +3013,9 @@ void MainWindow::save_layout_changes()
   if (fs::exists(layout_path)) {
     try {
       root = YAML::LoadFile(layout_path.string());
-    } catch (...) {
+    } catch (const YAML::Exception &) {
+      malformed_existing = true;
+    } catch (const std::exception &) {
       malformed_existing = true;
     }
   }
@@ -3256,8 +3271,8 @@ void MainWindow::populate_scene_hierarchy()
         QString status = ystr(node["status"]);
         if (status == "unknown") {
           bool enabled = true;
-          if (node["enabled"] && node["enabled"].IsScalar()) {
-            enabled = node["enabled"].as<bool>();
+          if (const auto enabled_like = get_bool_like(node, "enabled")) {
+            enabled = *enabled_like;
           }
           status = enabled ? "ready" : "disabled";
         }

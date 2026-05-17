@@ -34,6 +34,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include "workcell_builder_ui_utils.hpp"
+#include "workcell_yaml_utils.hpp"
 
 
 #include <QDesktopServices>
@@ -1471,7 +1472,10 @@ bool repair_scene_yaml_file(const fs::path & scene_dir, std::string * summary)
     return false;
   }
   YAML::Node root;
-  try { root = YAML::LoadFile(environment_file.string()); } catch (const std::exception & e) {
+  try { root = YAML::LoadFile(environment_file.string()); } catch (const YAML::Exception & e) {
+    if (summary) *summary = std::string("YAML parse failure: ") + e.what();
+    return false;
+  } catch (const std::exception & e) {
     if (summary) *summary = std::string("YAML parse failure: ") + e.what();
     return false;
   }
@@ -2196,6 +2200,10 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
     return false;
+  } catch (const std::exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
   }
   if (!yaml.IsMap()) {
     append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
@@ -2392,6 +2400,10 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     }
   }
   } catch (const YAML::Exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
+  } catch (const std::exception & error) {
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
     return false;
@@ -3288,7 +3300,8 @@ static void write_conveyor_pick_preview_artifacts(const boost::filesystem::path 
     boost::filesystem::create_directories(preview_dir);
     std::ofstream(preview_dir.string() + "/conveyor_pick_preview.yaml") << workcell_builder::serialize_preview_to_yaml(preview);
     std::ofstream(preview_dir.string() + "/conveyor_pick_preview.json") << workcell_builder::serialize_preview_to_json(preview);
-  } catch (...) {}
+  } catch (const YAML::Exception &) {
+  } catch (const std::exception &) {}
 }
 
 void SceneSelect::on_refresh_status_button_clicked()
