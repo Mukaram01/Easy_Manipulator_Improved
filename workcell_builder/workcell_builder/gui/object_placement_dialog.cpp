@@ -11,6 +11,9 @@
 #include <QVBoxLayout>
 #include <array>
 #include "environment_layout_editor.hpp"
+#include "placed_object_preview_writer.hpp"
+#include <QApplication>
+#include <QClipboard>
 
 namespace workcell_builder
 {
@@ -50,6 +53,20 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     rebuild_table();
   });
   mk("Refresh Preview", [this]() { rebuild_table(); });
+  mk("Open RViz STL Preview", [this]() {
+    PlacedObjectPreviewWriter writer;
+    std::string out_dir;
+    std::vector<std::string> warns;
+    writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+    const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
+    QApplication::clipboard()->setText(cmd);
+    QMessageBox::information(this, "Open RViz STL Preview", QString::fromStdString("Preview generated at: " + out_dir + "
+
+Command copied to clipboard:
+") + cmd + "
+
+Visual-only/offline-only preview.");
+  });
   mk("Open Visual Layout Editor", [this]() {
     EnvironmentLayoutEditor editor(this);
     editor.setWindowTitle("Open Visual Layout Editor");

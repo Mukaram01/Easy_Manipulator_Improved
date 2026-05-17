@@ -148,6 +148,7 @@ add_executable(workcell_builder
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
     gui/environment_layout_editor.cpp
+    gui/placed_object_preview_writer.cpp
     gui/external_asset_import_dialog.cpp
     gui/workcell_builder_ui_utils.cpp
     gui/startup_dialog.cpp
@@ -164,6 +165,7 @@ add_executable(workcell_builder
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp
     include/environment_layout_editor.hpp
+    include/placed_object_preview_writer.hpp
     include/external_asset_import_dialog.hpp
     include/workspace_validation.hpp
     src_workspace_validation.cpp

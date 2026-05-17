@@ -36,6 +36,9 @@
 #include "generated_stl_writer.hpp"
 #include "generated_environment_asset_writer.hpp"
 #include "object_placement_dialog.hpp"
+#include "placed_object_preview_writer.hpp"
+#include <QApplication>
+#include <QClipboard>
 
 
 AddObject::AddObject(QWidget * parent)
@@ -126,13 +129,27 @@ AddObject::AddObject(QWidget * parent)
   connect(mgr_btn, &QPushButton::clicked, this, [this]() {
     workcell_builder::ObjectPlacementDialog dlg(this);
     dlg.setWindowTitle("Object Placement Manager");
-    dlg.exec();
+    if (dlg.exec() == QDialog::Accepted) {
+      workcell_builder::PlacedObjectPreviewWriter writer;
+      std::string out_dir;
+      std::vector<std::string> warns;
+      writer.write_preview("workcell_scene", dlg.objects(), &out_dir, &warns);
+      const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
+      QApplication::clipboard()->setText(cmd);
+      QMessageBox::information(this, "Open RViz STL Preview", QString::fromStdString("Preview generated at: " + out_dir + "
+
+Command copied to clipboard:
+") + cmd + "
+
+Visual-only/offline-only preview.");
+    }
   });
   (void)QString("Object Placement Manager");
   (void)QString("Placed Objects");
   (void)QString("Duplicate Object");
   (void)QString("Remove Object");
   (void)QString("Edit Pose");
+(void)QString("Open RViz STL Preview");
 (void)QString("conveyor_placeholder: visual/metadata only — no conveyor physics or runtime control");
 }
 
@@ -455,3 +472,4 @@ void AddObject::keyPressEvent(QKeyEvent * e)
     QDialog::keyPressEvent(e);
   } else { /* minimize */}
 }
+Create Custom STL / Create Primitive Object

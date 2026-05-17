@@ -48,3 +48,12 @@ placed_objects:
 ## Safety note
 
 This is generation-time/offline-only workflow. No MoveIt planning call, no trajectory execution, and no real-hardware enablement is introduced by object placement management.
+
+
+## Preview real STL assets in RViz
+
+- Object Placement Manager can import/select STL assets and place them with XYZ/RPY pose metadata.
+- Use **Open RViz STL Preview** to generate offline preview artifacts in `/tmp/workcell_builder_preview/<scene_name>/`.
+- Generated files include `placed_objects_preview.yaml`, `placed_objects_preview.urdf.xacro`, `preview_scene.launch.py`, and `README_PREVIEW.md`.
+- This preview is visual-only/offline-only and does not use MoveIt, controllers, trajectories, or robot motion.
+- Full generated scene flow still requires **Generate YAML** and **Generate Files** in Workcell Studio.

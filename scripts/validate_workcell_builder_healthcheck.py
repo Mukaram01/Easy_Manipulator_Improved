@@ -63,6 +63,8 @@ def main() -> int:
         repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp",
         repo_root / "workcell_builder/workcell_builder/include/environment_layout_editor.hpp",
         repo_root / "workcell_builder/workcell_builder/gui/environment_layout_editor.cpp",
+        repo_root / "workcell_builder/workcell_builder/include/placed_object_preview_writer.hpp",
+        repo_root / "workcell_builder/workcell_builder/gui/placed_object_preview_writer.cpp",
         repo_root / "workcell_builder/workcell_builder/include/robot_tool_compatibility.hpp",
         repo_root / "workcell_builder/workcell_builder/src_robot_tool_compatibility.cpp",
         repo_root / "workcell_builder/workcell_builder/include/validation_dashboard_model.hpp",
@@ -110,7 +112,7 @@ def main() -> int:
 
     for artifact in ["workcell_studio_summary.json", "workcell_studio_summary.md", "workcell_preview.svg", "workcell_preview.html"]:
         _check(artifact in scene_cpp, f"artifact string present: {artifact}", errors)
-    for marker in ["Camera / Perception", "RealSense D435i", "Validate Camera", "Apply Camera Defaults", "Perception Metadata Export", "EPD Adapter Metadata", "EPD remains external/separate", "Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:"]:
+    for marker in ["Camera / Perception", "RealSense D435i", "Validate Camera", "Apply Camera Defaults", "Perception Metadata Export", "EPD Adapter Metadata", "EPD remains external/separate", "Object Placement Manager", "Placed Objects", "Add Asset Object", "Import STL to Asset Library", "Duplicate Object", "Remove Object", "Edit Pose", "asset_stl", "generated_primitive", "external_stl_warning", "custom_meshes", "placed_objects:", "Open RViz STL Preview"]:
         _check(marker in scene_cpp or marker in addobject_cpp, f"object placement marker present: {marker}", errors)
     for marker in ["Operator Workflow (Main)", "Validation Dashboard", "Run Offline Validation", "Developer Tools: Create Golden UR5 + Robotiq 2F Cell", "blocker_count", "warning_count"]:
         _check(marker in scene_cpp or marker in (repo_root / "workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8"), f"operator UX marker present: {marker}", errors)
@@ -309,3 +311,8 @@ if __name__ == "__main__":
 # healthcheck artifact marker: preview/workcell_preview.svg
 
 # healthcheck artifact marker: preview/workcell_preview.html
+
+
+    docs_obj = (repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md").read_text(encoding="utf-8")
+    for marker in ["Preview real STL assets in RViz", "/tmp/workcell_builder_preview", "visual-only", "does not use MoveIt", "controllers", "robot motion"]:
+        _check(marker in docs_obj, f"object placement docs marker present: {marker}", errors)
