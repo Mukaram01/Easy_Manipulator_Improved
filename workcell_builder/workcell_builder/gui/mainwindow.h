@@ -124,8 +124,13 @@ private:
   bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
   void refresh_task_intent_panel();
   void refresh_new_cell_checklist();
+  QString scene_workflow_checklist_html() const;
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
+  void generate_yaml_draft_for_selected_scene();
+  void generate_scene_package_for_selected_scene();
+  void validate_generated_scene_for_selected_scene();
+  void copy_build_launch_commands_for_selected_scene();
   void open_selected_task_file();
   void copy_selected_task_summary();
   void preview_offline_plan_for_selected_scene();
