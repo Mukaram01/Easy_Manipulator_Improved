@@ -181,6 +181,7 @@ private:
   enum class CanvasInteractionMode { Select, Place, Move, Inspect };
   void set_canvas_interaction_mode(CanvasInteractionMode mode);
   QPointF snap_canvas_position(const QPointF & pos) const;
+  double current_nudge_step_m(Qt::KeyboardModifiers modifiers) const;
   void refresh_minimap_card();
   void select_canvas_item(QGraphicsItem * item);
   void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
@@ -207,6 +208,7 @@ private:
   void refresh_scene_builder_left_explorer();
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
+  void keyPressEvent(QKeyEvent * event) override;
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
