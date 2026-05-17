@@ -50,6 +50,24 @@ bool validate_placed_object(const PlacedObject & object, std::string * warning)
   return true;
 }
 
+bool validate_camera_placement(const CameraPlacement & camera, std::string * warning)
+{
+  if (camera.name.empty()) {
+    if (warning) *warning = "camera name is required";
+    return false;
+  }
+  const bool finite_pose = std::isfinite(camera.x) && std::isfinite(camera.y) && std::isfinite(camera.z) &&
+    std::isfinite(camera.roll) && std::isfinite(camera.pitch) && std::isfinite(camera.yaw);
+  if (!finite_pose) {
+    if (warning) *warning = "camera pose values must be finite";
+    return false;
+  }
+  if (warning && (std::fabs(camera.x) > 100.0 || std::fabs(camera.y) > 100.0 || std::fabs(camera.z) > 100.0)) {
+    *warning = "suspicious camera coordinate magnitude";
+  }
+  return true;
+}
+
 std::string normalize_mesh_path_for_scene(const std::string & mesh_path)
 {
   if (mesh_path.rfind("package://", 0) == 0 || mesh_path.rfind("meshes/", 0) == 0) {

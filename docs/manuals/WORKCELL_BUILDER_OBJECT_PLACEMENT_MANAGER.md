@@ -104,3 +104,15 @@ Preview files are temporary. `environment.yaml` is the scene persistence point. 
 - Generated URDF/Xacro is the runtime source used by RViz/MoveIt after generation/build.
 - This feature does not enable robot motion, controller execution, or real hardware execution.
 
+
+
+## Camera placement and frustum preview
+1. Add camera.
+2. Set XYZ/RPY.
+3. Save Cameras to Scene YAML.
+4. Open Camera Frustum Preview.
+5. Generate YAML.
+6. Confirm cell_definition.yaml camera block.
+7. Later use metadata for EPD/RealSense integration.
+
+This is visual/configuration only: it does not start RealSense hardware, does not start EPD, and does not enable robot motion.

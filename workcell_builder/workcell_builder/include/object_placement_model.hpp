@@ -20,8 +20,32 @@ struct PlacedObject
   std::string status;
 };
 
+struct CameraPlacement
+{
+  std::string name{"camera_01"};
+  std::string type{"realsense_d435i"};
+  std::string source{"camera_asset"};
+  std::string parent_frame{"world"};
+  double x{0.0}, y{0.0}, z{0.0};
+  double roll{0.0}, pitch{0.0}, yaw{0.0};
+  std::string link_frame{"camera_01_link"};
+  std::string optical_frame{"camera_01_color_optical_frame"};
+  std::string depth_frame{"camera_01_depth_optical_frame"};
+  std::string color_topic{"/camera/color/image_raw"};
+  std::string depth_topic{"/camera/depth/image_rect_raw"};
+  std::string pointcloud_topic{"/camera/depth/color/points"};
+  std::string camera_info_topic{"/camera/color/camera_info"};
+  double horizontal_fov_deg{69.0};
+  double vertical_fov_deg{42.0};
+  double near_m{0.15};
+  double far_m{1.5};
+  bool enabled{true};
+  std::string status;
+};
+
 std::string sanitize_object_name(const std::string & name);
 bool validate_placed_object(const PlacedObject & object, std::string * warning);
+bool validate_camera_placement(const CameraPlacement & camera, std::string * warning);
 std::string normalize_mesh_path_for_scene(const std::string & mesh_path);
 std::string import_stl_to_asset_library(
   const std::string & stl_path,

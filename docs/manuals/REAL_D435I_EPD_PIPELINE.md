@@ -226,3 +226,15 @@ The golden Workcell Studio readiness demo now emits `generated/perception_profil
 Offline replay is validated with `tests/fixtures/perception/detected_objects_snapshot_golden.yaml` so CI can verify perception mapping without launching live RealSense or EPD nodes. This is a dry-run readiness signal only and is **not** live hardware certification.
 
 Live validation later will require explicit runtime bring-up and guarded commissioning checks; this change does not command robot motion.
+
+
+## Camera placement and frustum preview
+1. Add camera.
+2. Set XYZ/RPY.
+3. Save Cameras to Scene YAML.
+4. Open Camera Frustum Preview.
+5. Generate YAML.
+6. Confirm cell_definition.yaml camera block.
+7. Later use metadata for EPD/RealSense integration.
+
+This is visual/configuration only: it does not start RealSense hardware, does not start EPD, and does not enable robot motion.

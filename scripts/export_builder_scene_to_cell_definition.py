@@ -278,7 +278,13 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "grasp_frame": ee_env.get("base_link", "tool0"),
             "allowed_touch_links": [],
         },
-        "camera": ({"id": (sensors_meta[0].get("capability_id") or "realsense_d435i"), "type": (sensors_meta[0].get("family") or "depth_camera"), "frame": "camera_depth_optical_frame"} if sensors_meta and isinstance(sensors_meta[0], dict) else {"id": "realsense_d435i", "type": "depth_camera", "frame": "camera_depth_optical_frame"}),
+        "camera": ({"id": (env.get("camera_placements", [{}])[0].get("name") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("capability_id") if sensors_meta and isinstance(sensors_meta[0], dict) else "realsense_d435i")),
+                   "type": (env.get("camera_placements", [{}])[0].get("type") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("family") if sensors_meta and isinstance(sensors_meta[0], dict) else "depth_camera")),
+                   "parent_frame": (env.get("camera_placements", [{}])[0].get("parent_frame") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else "world"),
+                   "pose": (env.get("camera_placements", [{}])[0].get("pose") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"xyz": [0.0,0.0,1.0], "rpy": [0.0,0.0,0.0]}),
+                   "frames": {"optical_frame": ((env.get("camera_placements", [{}])[0].get("frames") or {}).get("optical_frame", "camera_01_color_optical_frame")},
+                   "topics": ((env.get("camera_placements", [{}])[0].get("topics") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"pointcloud": "/camera/depth/color/points", "color": "/camera/color/image_raw", "depth": "/camera/depth/image_rect_raw", "camera_info": "/camera/color/camera_info"}))
+                   }),
         "environment": {
             "frame": "world",
             "layout": "generated/environment_layout.yaml",

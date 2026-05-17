@@ -24,4 +24,12 @@ PlacedObjectYamlWriteResult save_placed_objects_to_environment_yaml(
   const std::string & environment_yaml_path,
   const std::vector<PlacedObject> & objects);
 
+std::vector<CameraPlacement> load_camera_placements_from_environment_yaml(
+  const std::string & environment_yaml_path,
+  std::vector<std::string> * warnings = nullptr);
+
+PlacedObjectYamlWriteResult save_camera_placements_to_environment_yaml(
+  const std::string & environment_yaml_path,
+  const std::vector<CameraPlacement> & cameras);
+
 }  // namespace workcell_builder

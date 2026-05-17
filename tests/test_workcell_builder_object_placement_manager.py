@@ -30,6 +30,12 @@ def test_object_placement_manager_ui_strings_exist():
         "Proposed XYZ/RPY",
         "safe_for_robot_motion",
         "placed_objects_feedback.yaml",
+        "Add Camera",
+        "Edit Camera Pose",
+        "Open Camera Frustum Preview",
+        "Save Cameras to Scene YAML",
+        "camera_placements",
+        "camera frustum",
     ]:
         assert needle in txt
 

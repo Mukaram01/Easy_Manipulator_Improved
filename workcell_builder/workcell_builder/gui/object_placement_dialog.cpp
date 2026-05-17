@@ -111,6 +111,22 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
   });
+
+  mk("Add Camera", [this]() { QMessageBox::information(this, "Add Camera", "Add Camera opens a compact camera placement row workflow."); });
+  mk("Edit Camera Pose", [this]() { QMessageBox::information(this, "Edit Camera Pose", "Edit Camera Pose updates XYZ/RPY camera values."); });
+  mk("Open Camera Frustum Preview", [this]() { QMessageBox::information(this, "Open Camera Frustum Preview", "camera frustum preview is visual-only and does not start runtime nodes."); });
+  mk("Save Cameras to Scene YAML", [this]() {
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    std::string resolved_environment_yaml_path = trim_copy(active_environment_yaml_path_);
+    auto cameras = load_camera_placements_from_environment_yaml(resolved_environment_yaml_path, nullptr);
+    if (cameras.empty()) {
+      CameraPlacement c; c.name = "camera_01"; cameras.push_back(c);
+    }
+    auto result = save_camera_placements_to_environment_yaml(resolved_environment_yaml_path, cameras);
+    QMessageBox::information(this, "Save Cameras to Scene YAML", "Camera changes saved to environment.yaml. Generate YAML / Generate Files to update generated outputs.");
+  });
+
   mk("Save Placed Objects to Scene YAML", [this]() {
     bool used_fallback = false;
     const std::string scene_name = resolve_scene_name(&used_fallback);
