@@ -157,6 +157,18 @@ bool normalized_spawn_gripper_controller(const EndEffector & ee)
   }
   return ee.spawn_gripper_controller;
 }
+
+void emit_origin_map(YAML::Emitter * out, const Origin & origin)
+{
+  *out << YAML::BeginMap;
+  *out << YAML::Key << "xyz";
+  *out << YAML::Value << YAML::Flow << YAML::BeginSeq << origin.x << origin.y << origin.z <<
+    YAML::EndSeq;
+  *out << YAML::Key << "rpy";
+  *out << YAML::Value << YAML::Flow << YAML::BeginSeq << origin.roll << origin.pitch << origin.yaw <<
+    YAML::EndSeq;
+  *out << YAML::EndMap;
+}
 }  // namespace
 
 
@@ -190,6 +202,24 @@ public:
       if (scene.robot_vector[0].origin.is_origin) {
         OriginParser::generate_origin(&out, scene.robot_vector[0].origin);
       }
+      out << YAML::Key << "robot_mount";
+      out << YAML::Value << YAML::BeginMap;
+      out << YAML::Key << "pose";
+      out << YAML::Value;
+      if (scene.robot_vector[0].origin.is_origin) {
+        emit_origin_map(&out, scene.robot_vector[0].origin);
+      } else {
+        Origin fallback{};
+        fallback.is_origin = true;
+        fallback.x = 0.0F;
+        fallback.y = 0.0F;
+        fallback.z = 0.0F;
+        fallback.roll = 0.0F;
+        fallback.pitch = 0.0F;
+        fallback.yaw = 0.0F;
+        emit_origin_map(&out, fallback);
+      }
+      out << YAML::EndMap;
       out << YAML::Key << "links";
       out << YAML::Value << YAML::BeginSeq;
 
@@ -249,6 +279,21 @@ public:
       out << YAML::EndMap;
 
       OriginParser::generate_origin(&out, resolve_end_effector_mount_origin(scene.ee_vector[0]));
+      const Origin ee_mount_origin = resolve_end_effector_mount_origin(scene.ee_vector[0]);
+      out << YAML::Key << "tool_attachment";
+      out << YAML::Value << YAML::BeginMap;
+      const std::string default_joint_name =
+        scene.ee_vector[0].name.empty() ? "ee_fixed_joint" : scene.ee_vector[0].name + "_fixed_joint";
+      out << YAML::Key << "joint_name";
+      out << YAML::Value << default_joint_name;
+      out << YAML::Key << "parent_link";
+      out << YAML::Value << scene.ee_vector[0].robot_link;
+      out << YAML::Key << "child_link";
+      out << YAML::Value << scene.ee_vector[0].base_link;
+      out << YAML::Key << "origin";
+      out << YAML::Value;
+      emit_origin_map(&out, ee_mount_origin);
+      out << YAML::EndMap;
 
       out << YAML::Key << "links";
       out << YAML::Value << YAML::BeginSeq;
