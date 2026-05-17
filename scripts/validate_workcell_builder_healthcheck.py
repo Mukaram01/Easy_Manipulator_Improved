@@ -294,6 +294,62 @@ def main() -> int:
     itest = itest_path.read_text(encoding="utf-8") if itest_path.exists() else ""
     _check("safe_for_robot_motion" in itest and "Rejected feedback" in itest, "tests include safe_for_robot_motion rejection coverage", errors)
 
+    # Placed-object end-to-end generation checks with actionable file-path hints.
+    placed_yaml_header = repo_root / "workcell_builder/workcell_builder/include/object_placement_yaml_io.hpp"
+    placed_yaml_source = repo_root / "workcell_builder/workcell_builder/gui/object_placement_yaml_io.cpp"
+    _check(
+        placed_yaml_header.exists(),
+        f"placed-object YAML IO header exists: {placed_yaml_header.relative_to(repo_root)} (add declaration here)",
+        errors,
+    )
+    _check(
+        placed_yaml_source.exists(),
+        f"placed-object YAML IO source exists: {placed_yaml_source.relative_to(repo_root)} (add implementation here)",
+        errors,
+    )
+
+    generated_scene_test_path = repo_root / "tests/test_workcell_builder_generated_scene_placed_objects.py"
+    generated_scene_test = generated_scene_test_path.read_text(encoding="utf-8") if generated_scene_test_path.exists() else ""
+    _check(
+        generated_scene_test_path.exists(),
+        f"generated-scene placed-object test exists: {generated_scene_test_path.relative_to(repo_root)} (add end-to-end scene assertions)",
+        errors,
+    )
+    _check(
+        any(marker in generated_scene_test.lower() for marker in ["urdf", "link", "joint", "mesh"]),
+        f"generated-scene test asserts URDF link/joint/mesh expectations in: {generated_scene_test_path.relative_to(repo_root)}",
+        errors,
+    )
+
+    docs_path = repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md"
+    docs_text = docs_path.read_text(encoding="utf-8") if docs_path.exists() else ""
+    _check(
+        "Placed object end-to-end generation" in docs_text,
+        f"docs include exact section phrase 'Placed object end-to-end generation' in: {docs_path.relative_to(repo_root)}",
+        errors,
+    )
+
+    roundtrip_path = repo_root / "workcell_builder/workcell_builder/src_workcell_scene_roundtrip.cpp"
+    roundtrip_text = roundtrip_path.read_text(encoding="utf-8") if roundtrip_path.exists() else ""
+    _check(
+        ("active_scene" in roundtrip_text.lower()) or ("loaded scene" in roundtrip_text.lower()),
+        f"scene round-trip handles active scene in: {roundtrip_path.relative_to(repo_root)} (avoid hardcoded-only workcell_scene behavior)",
+        errors,
+    )
+    _check(
+        "workcell_scene" in roundtrip_text.lower(),
+        f"scene round-trip includes workcell_scene serialization path in: {roundtrip_path.relative_to(repo_root)}",
+        errors,
+    )
+
+    opd_path = repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp"
+    opd_text = opd_path.read_text(encoding="utf-8") if opd_path.exists() else ""
+    _check(
+        "Save Placed Objects to Scene YAML" in opd_text,
+        f"UI marker exists in {opd_path.relative_to(repo_root)}: 'Save Placed Objects to Scene YAML'",
+        errors,
+    )
+
     if errors:
         print("WORKCELL_BUILDER_HEALTHCHECK: FAIL")
         return 1
