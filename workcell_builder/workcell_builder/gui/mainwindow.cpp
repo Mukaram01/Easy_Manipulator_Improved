@@ -1217,22 +1217,26 @@ void MainWindow::setup_studio_shell()
   studio_pages_->addWidget(validation);  // ValidationPage
   studio_pages_->addWidget(export_page);  // ExportPage
   auto * body=new QHBoxLayout(); body->addWidget(studio_pages_,1); root_layout->insertLayout(0,body,1);
+  constexpr int kCollapsedLogPanelHeight = 52;
+  constexpr int kExpandedLogPanelHeight = 240;
   auto * log_card = new QFrame(content); log_card->setObjectName("studioCard");
+  log_card->setMaximumHeight(kCollapsedLogPanelHeight);
   auto * log_layout = new QVBoxLayout(log_card);
   auto * log_head = new QHBoxLayout();
   log_head->addWidget(new QLabel("Activity Log", log_card));
-  scene_builder_log_toggle_button_ = new QPushButton("Hide Log", log_card);
+  scene_builder_log_toggle_button_ = new QPushButton("Show Log", log_card);
   scene_builder_log_toggle_button_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   log_head->addWidget(scene_builder_log_toggle_button_, 0, Qt::AlignRight);
   auto * clear_log = new QPushButton("Clear", log_card);
   log_head->addWidget(clear_log, 0, Qt::AlignRight);
   log_layout->addLayout(log_head);
   scene_builder_log_panel_ = log_card;
-  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(110); studio_log_->setPlaceholderText("Recent actions and diagnostics");
+  studio_log_=new QTextEdit(log_card); studio_log_->setObjectName("studioHomeLog"); studio_log_->setReadOnly(true); studio_log_->setMaximumHeight(kExpandedLogPanelHeight); studio_log_->setPlaceholderText("Recent actions and diagnostics");
   log_layout->addWidget(studio_log_);
   studio_log_->setVisible(false);
-  scene_builder_log_toggle_button_->setText("Show Log");
-  root_layout->addWidget(log_card);
+  root_layout->addWidget(log_card, 0);
+  root_layout->setStretch(0, 1);
+  root_layout->setStretch(1, 0);
   preview_process_ = new QProcess(this);
 
   QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
@@ -1325,9 +1329,12 @@ void MainWindow::setup_studio_shell()
   });
   connect(clear_log, &QPushButton::clicked, this, [this](){ if (studio_log_) studio_log_->clear(); });
   connect(scene_builder_log_toggle_button_, &QPushButton::clicked, this, [this]() {
-    if (!studio_log_ || !scene_builder_log_toggle_button_) return;
+    if (!studio_log_ || !scene_builder_log_toggle_button_ || !scene_builder_log_panel_) return;
+    constexpr int kCollapsedLogPanelHeight = 52;
+    constexpr int kExpandedLogPanelHeight = 240;
     const bool show = !studio_log_->isVisible();
     studio_log_->setVisible(show);
+    scene_builder_log_panel_->setMaximumHeight(show ? kExpandedLogPanelHeight : kCollapsedLogPanelHeight);
     scene_builder_log_toggle_button_->setText(show ? "Hide Log" : "Show Log");
   });
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
