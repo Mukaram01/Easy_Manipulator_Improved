@@ -19,6 +19,7 @@
 #include <set>
 #include "environment_layout_editor.hpp"
 #include "placed_object_preview_writer.hpp"
+#include "object_placement_yaml_io.hpp"
 #include <QApplication>
 #include <QClipboard>
 
@@ -105,6 +106,21 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
+  });
+  mk("Save Placed Objects to Scene YAML", [this]() {
+    const QString target = QInputDialog::getText(this, "Save Placed Objects to Scene YAML", "Path to environment.yaml");
+    if (target.isEmpty()) {
+      QMessageBox::warning(this, "Save Placed Objects to Scene YAML", "No active scene path is known. Preview artifacts were not persisted to environment.yaml.");
+      return;
+    }
+    auto result = save_placed_objects_to_environment_yaml(target.toStdString(), model_.objects());
+    QString summary = QString("objects saved: %1\npath written: %2\nnext step: Generate Files")
+      .arg(static_cast<int>(result.objects_saved)).arg(QString::fromStdString(result.path_written));
+    if (!result.warnings.empty()) {
+      summary += "\n\nwarnings:\n";
+      for (const auto & w : result.warnings) summary += QString::fromStdString("- " + w + "\n");
+    }
+    QMessageBox::information(this, "Save Placed Objects to Scene YAML", summary);
   });
   mk("Import RViz Pose Feedback", [this]() {
     const std::string scene_name = "workcell_scene";
@@ -415,6 +431,7 @@ void ObjectPlacementDialog::apply_and_generate_preview()
   }
 
   QMessageBox::information(this, "Object Placement Applied", message);
+  QMessageBox::information(this, "Pending changes", "Placed object changes are pending. Click Save Placed Objects to Scene YAML before Generate Files.");
   accept();
 }
 

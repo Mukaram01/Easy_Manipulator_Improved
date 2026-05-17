@@ -81,3 +81,8 @@ def test_matched_object_updates_pose_only_name_source_mesh_unchanged():
 def test_examples_contain_safe_for_robot_motion_false():
     assert 'safe_for_robot_motion: false' in PREVIEW_CPP
     assert 'safe_for_robot_motion' in PREVIEW_NODE and 'False' in PREVIEW_NODE
+
+
+def test_safe_for_robot_motion_rejection_coverage_marker():
+    assert "safe_for_robot_motion" in IMPORTER_CPP
+    assert "Rejected feedback" in IMPORTER_CPP

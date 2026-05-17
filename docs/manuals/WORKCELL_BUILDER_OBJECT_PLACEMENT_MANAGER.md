@@ -68,3 +68,18 @@ This is generation-time/offline-only workflow. No MoveIt planning call, no traje
 - There is no automatic overwrite of `environment.yaml`, `scene_manifest.yaml`, `cell_definition.yaml`, or generated package files.
 - **Save/Generate remains an explicit user action** after review and optional apply.
 - No MoveIt planning, no controller execution, and no real hardware execution are performed by this workflow.
+
+
+## Persisting placed objects to real generated scenes
+1. Add/import STL object.
+2. Open STL preview.
+3. Open interactive RViz preview.
+4. Drag/rotate object.
+5. Import RViz Pose Feedback.
+6. Review/apply valid updates.
+7. **Save Placed Objects to Scene YAML**.
+8. Generate YAML / Generate Files.
+9. Build scene package.
+10. Launch generated scene in RViz/MoveIt fake hardware mode.
+
+Preview files are temporary. `environment.yaml` is the scene persistence point. Real scene files are updated only by explicit save/generate actions. This workflow introduces no controller execution and no real hardware execution.

@@ -1,0 +1,27 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "object_placement_model.hpp"
+
+namespace workcell_builder
+{
+
+struct PlacedObjectYamlWriteResult
+{
+  bool ok{false};
+  std::string path_written;
+  std::vector<std::string> warnings;
+  size_t objects_saved{0};
+};
+
+std::vector<PlacedObject> load_placed_objects_from_environment_yaml(
+  const std::string & environment_yaml_path,
+  std::vector<std::string> * warnings = nullptr);
+
+PlacedObjectYamlWriteResult save_placed_objects_to_environment_yaml(
+  const std::string & environment_yaml_path,
+  const std::vector<PlacedObject> & objects);
+
+}  // namespace workcell_builder
