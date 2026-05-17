@@ -1,4 +1,5 @@
 #include "workcell_yaml_utils.hpp"
+#include <algorithm>
 
 namespace workcell_builder
 {
@@ -63,5 +64,46 @@ YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index)
 {
   if (!node.IsDefined() || !node.IsSequence() || index >= node.size()) return YAML::Node();
   return node[index];
+}
+
+YAML::Node get_map(const YAML::Node & node, const char * key)
+{
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  const YAML::Node child = node[key];
+  return (child && child.IsMap()) ? child : YAML::Node();
+}
+
+YAML::Node get_scalar(const YAML::Node & node, const char * key)
+{
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  const YAML::Node child = node[key];
+  return (child && child.IsScalar()) ? child : YAML::Node();
+}
+
+YAML::Node get_sequence(const YAML::Node & node, const char * key)
+{
+  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
+  const YAML::Node child = node[key];
+  return (child && child.IsSequence()) ? child : YAML::Node();
+}
+
+std::optional<bool> bool_like(const YAML::Node & node)
+{
+  if (!node || !node.IsScalar()) return std::nullopt;
+  try {
+    return node.as<bool>();
+  } catch (...) {}
+  try {
+    std::string value = node.as<std::string>();
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    if (value == "1" || value == "true" || value == "yes" || value == "on" || value == "enabled") return true;
+    if (value == "0" || value == "false" || value == "no" || value == "off" || value == "disabled") return false;
+  } catch (...) {}
+  return std::nullopt;
+}
+
+std::optional<bool> get_bool_like(const YAML::Node & node, const char * key)
+{
+  return bool_like(get_scalar(node, key));
 }
 }

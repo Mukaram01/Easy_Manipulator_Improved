@@ -3,13 +3,33 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include "workcell_yaml_utils.hpp"
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 namespace {
-std::array<double,3> a3(const YAML::Node&n){ if(!n||!n.IsSequence()||n.size()<3) return {{0,0,0}}; return {{n[0].as<double>(),n[1].as<double>(),n[2].as<double>()}}; }
+std::array<double,3> a3(const YAML::Node&n){ if(!n||!n.IsSequence()||n.size()<3||!n[0].IsScalar()||!n[1].IsScalar()||!n[2].IsScalar()) return {{0,0,0}}; return {{n[0].as<double>(),n[1].as<double>(),n[2].as<double>()}}; }
 }
-PerceptionSnapshot parse_detection_snapshot_yaml(const std::string & path){ YAML::Node root=YAML::LoadFile(path); auto s=root["detection_snapshot"]; PerceptionSnapshot out; if(s["schema_version"]) out.schema_version=s["schema_version"].as<int>(); if(s["source"]) out.source=s["source"].as<std::string>(); if(s["runtime_mode"]) out.runtime_mode=s["runtime_mode"].as<std::string>(); if(s["camera"]) out.camera=s["camera"].as<std::string>(); if(s["camera_frame"]) out.camera_frame=s["camera_frame"].as<std::string>(); if(s["timestamp_sec"]) out.timestamp_sec=s["timestamp_sec"].as<double>(); if(s["detections"]) for(const auto &d:s["detections"]){ PerceptionDetection pd; if(d["id"]) pd.id=d["id"].as<std::string>(); if(d["class_label"]) pd.class_label=d["class_label"].as<std::string>(); if(d["confidence"]) pd.confidence=d["confidence"].as<double>(); if(d["center_px"]&&d["center_px"].size()>=2){ pd.center_px={{d["center_px"][0].as<double>(),d["center_px"][1].as<double>()}}; } if(d["bbox_px"]&&d["bbox_px"].size()>=4){ pd.bbox_px={{d["bbox_px"][0].as<double>(),d["bbox_px"][1].as<double>(),d["bbox_px"][2].as<double>(),d["bbox_px"][3].as<double>()}}; } pd.estimated_xyz_camera=a3(d["estimated_xyz_camera"]); if(d["estimated_xyz_world"]&&d["estimated_xyz_world"].IsSequence()&&d["estimated_xyz_world"].size()>=3){ pd.estimated_xyz_world=a3(d["estimated_xyz_world"]); pd.has_world_xyz=true; } if(d["zone_hint"]) pd.zone_hint=d["zone_hint"].as<std::string>(); if(d["tracking_id"]) pd.tracking_id=d["tracking_id"].as<std::string>(); out.detections.push_back(pd);} return out; }
+PerceptionSnapshot parse_detection_snapshot_yaml(const std::string & path){
+  PerceptionSnapshot out;
+  try {
+    const YAML::Node root = YAML::LoadFile(path);
+    const YAML::Node s = get_map(root, "detection_snapshot");
+    if (!s) return out;
+    if (const auto n = get_scalar(s, "schema_version")) out.schema_version = n.as<int>();
+    if (const auto n = get_scalar(s, "source")) out.source = n.as<std::string>();
+    if (const auto n = get_scalar(s, "runtime_mode")) out.runtime_mode = n.as<std::string>();
+    if (const auto n = get_scalar(s, "camera")) out.camera = n.as<std::string>();
+    if (const auto n = get_scalar(s, "camera_frame")) out.camera_frame = n.as<std::string>();
+    if (const auto n = get_scalar(s, "timestamp_sec")) out.timestamp_sec = n.as<double>();
+    if (const auto detections = get_sequence(s, "detections")) for(const auto &d:detections){ if(!d||!d.IsMap()) continue; PerceptionDetection pd; if(const auto n=get_scalar(d,"id")) pd.id=n.as<std::string>(); if(const auto n=get_scalar(d,"class_label")) pd.class_label=n.as<std::string>(); if(const auto n=get_scalar(d,"confidence")) pd.confidence=n.as<double>(); const YAML::Node center=get_sequence(d,"center_px"); if(center&&center.size()>=2&&center[0].IsScalar()&&center[1].IsScalar()){ pd.center_px={{center[0].as<double>(),center[1].as<double>()}}; } const YAML::Node bbox=get_sequence(d,"bbox_px"); if(bbox&&bbox.size()>=4&&bbox[0].IsScalar()&&bbox[1].IsScalar()&&bbox[2].IsScalar()&&bbox[3].IsScalar()){ pd.bbox_px={{bbox[0].as<double>(),bbox[1].as<double>(),bbox[2].as<double>(),bbox[3].as<double>()}}; } pd.estimated_xyz_camera=a3(get_sequence(d,"estimated_xyz_camera")); const YAML::Node world=get_sequence(d,"estimated_xyz_world"); if(world&&world.size()>=3){ pd.estimated_xyz_world=a3(world); pd.has_world_xyz=true; } if(const auto n=get_scalar(d,"zone_hint")) pd.zone_hint=n.as<std::string>(); if(const auto n=get_scalar(d,"tracking_id")) pd.tracking_id=n.as<std::string>(); out.detections.push_back(pd);} 
+  } catch (const YAML::Exception &) {
+    return out;
+  } catch (const std::exception &) {
+    return out;
+  }
+  return out;
+}
 PerceptionSnapshot parse_detection_snapshot_json(const std::string & path){ return parse_detection_snapshot_yaml(path); }
 std::string serialize_detection_snapshot_yaml(const PerceptionSnapshot & s){ YAML::Emitter out; out<<YAML::BeginMap<<YAML::Key<<"detection_snapshot"<<YAML::Value<<YAML::BeginMap<<YAML::Key<<"schema_version"<<YAML::Value<<s.schema_version<<YAML::Key<<"source"<<YAML::Value<<s.source<<YAML::Key<<"runtime_mode"<<YAML::Value<<s.runtime_mode<<YAML::Key<<"camera"<<YAML::Value<<s.camera<<YAML::Key<<"camera_frame"<<YAML::Value<<s.camera_frame<<YAML::Key<<"timestamp_sec"<<YAML::Value<<s.timestamp_sec<<YAML::Key<<"detections"<<YAML::Value<<YAML::BeginSeq; for(const auto&d:s.detections){ out<<YAML::BeginMap<<YAML::Key<<"id"<<YAML::Value<<d.id<<YAML::Key<<"class_label"<<YAML::Value<<d.class_label<<YAML::Key<<"confidence"<<YAML::Value<<d.confidence<<YAML::Key<<"center_px"<<YAML::Value<<YAML::Flow<<std::vector<double>{d.center_px[0],d.center_px[1]}<<YAML::Key<<"bbox_px"<<YAML::Value<<YAML::Flow<<std::vector<double>{d.bbox_px[0],d.bbox_px[1],d.bbox_px[2],d.bbox_px[3]}<<YAML::Key<<"estimated_xyz_camera"<<YAML::Value<<YAML::Flow<<std::vector<double>{d.estimated_xyz_camera[0],d.estimated_xyz_camera[1],d.estimated_xyz_camera[2]}; if(d.has_world_xyz) out<<YAML::Key<<"estimated_xyz_world"<<YAML::Value<<YAML::Flow<<std::vector<double>{d.estimated_xyz_world[0],d.estimated_xyz_world[1],d.estimated_xyz_world[2]}; out<<YAML::Key<<"zone_hint"<<YAML::Value<<d.zone_hint<<YAML::Key<<"tracking_id"<<YAML::Value<<d.tracking_id<<YAML::EndMap;} out<<YAML::EndSeq<<YAML::EndMap<<YAML::EndMap; return out.c_str(); }
 std::string serialize_detection_snapshot_json(const PerceptionSnapshot & s){ std::ostringstream ss; ss<<"{\n  \"detection_snapshot\": {\n    \"schema_version\": "<<s.schema_version<<",\n    \"source\": \""<<s.source<<"\",\n    \"runtime_mode\": \""<<s.runtime_mode<<"\",\n    \"camera\": \""<<s.camera<<"\",\n    \"camera_frame\": \""<<s.camera_frame<<"\",\n    \"timestamp_sec\": "<<s.timestamp_sec<<",\n    \"detections\": []\n  }\n}"; return ss.str(); }
