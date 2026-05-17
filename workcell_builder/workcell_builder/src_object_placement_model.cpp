@@ -104,6 +104,35 @@ bool ObjectPlacementModel::remove_object(const std::string & name)
   return false;
 }
 
+bool ObjectPlacementModel::update_object_pose(
+  const std::string & name, double x, double y, double z, double roll, double pitch, double yaw,
+  std::string * warning)
+{
+  for (auto & obj : objects_) {
+    if (obj.name != name) {
+      continue;
+    }
+    PlacedObject updated = obj;
+    updated.x = x;
+    updated.y = y;
+    updated.z = z;
+    updated.roll = roll;
+    updated.pitch = pitch;
+    updated.yaw = yaw;
+    std::string validation_warning;
+    if (!validate_placed_object(updated, &validation_warning)) {
+      if (warning) *warning = validation_warning;
+      return false;
+    }
+    obj = updated;
+    obj.status = validation_warning;
+    if (warning) *warning = validation_warning;
+    return true;
+  }
+  if (warning) *warning = "object not found";
+  return false;
+}
+
 std::vector<PlacedObject> ObjectPlacementModel::objects() const { return objects_; }
 
 std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects)

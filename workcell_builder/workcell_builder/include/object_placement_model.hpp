@@ -35,6 +35,9 @@ public:
   void add_object(const PlacedObject & object);
   bool duplicate_object(const std::string & name);
   bool remove_object(const std::string & name);
+  bool update_object_pose(
+    const std::string & name, double x, double y, double z, double roll, double pitch, double yaw,
+    std::string * warning = nullptr);
   std::vector<PlacedObject> objects() const;
 
 private:
