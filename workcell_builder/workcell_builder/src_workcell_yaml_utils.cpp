@@ -106,4 +106,35 @@ std::optional<bool> get_bool_like(const YAML::Node & node, const char * key)
 {
   return bool_like(get_scalar(node, key));
 }
+
+PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & task_or_root)
+{
+  PerceptionContractSummary out;
+  const YAML::Node task = (task_or_root && task_or_root.IsMap() && task_or_root["task"]) ?
+    task_or_root["task"] : task_or_root;
+  if (!task || !task.IsMap()) {
+    out.warning = "perception is not a map; downgraded to legacy disabled mode";
+    return out;
+  }
+  const YAML::Node perception = task["perception"];
+  if (!perception) {
+    out.warning = "perception missing; downgraded to legacy disabled mode";
+    return out;
+  }
+  if (!perception.IsMap()) {
+    out.warning = "perception is not a map; downgraded to legacy disabled mode";
+    return out;
+  }
+  if (perception.size() == 0) {
+    out.warning = "perception map is empty; downgraded to legacy disabled mode";
+    return out;
+  }
+  out.enabled = true;
+  out.mode = yaml_map_value_or_empty(perception, "mode");
+  if (out.mode.empty()) {
+    out.mode = "enabled_partial";
+    out.warning = "perception map present but mode missing";
+  }
+  return out;
+}
 }

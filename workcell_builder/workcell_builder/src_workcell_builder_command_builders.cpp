@@ -77,4 +77,20 @@ ScriptCommandPlan build_generate_workcell_command_plan(
   return plan;
 }
 
+ScriptCommandPlan build_validate_generated_scene_command_plan(
+  const QString & script_path,
+  const QString & scene_dir)
+{
+  ScriptCommandPlan plan;
+  plan.script_name = "validate_builder_generated_scene.py";
+  plan.script_path = script_path;
+  plan.scene_dir = scene_dir;
+  append_missing_if_empty(script_path, "helper script path", &plan.missing_fields);
+  append_missing_if_empty(scene_dir, "scene directory", &plan.missing_fields);
+  if (plan.ready()) {
+    plan.arguments << "--json" << scene_dir;
+  }
+  return plan;
+}
+
 }  // namespace workcell_builder

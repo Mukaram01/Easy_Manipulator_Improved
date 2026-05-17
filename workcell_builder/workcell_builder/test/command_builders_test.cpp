@@ -30,3 +30,16 @@ TEST(CommandBuildersTest, command_text_contains_expected_flags)
   EXPECT_NE(cmd.indexOf("--scene-dir"), -1);
   EXPECT_NE(cmd.indexOf("--scene-name"), -1);
 }
+
+TEST(CommandBuildersTest, validate_generated_scene_uses_json_and_positional_scene_path)
+{
+  const auto plan = workcell_builder::build_validate_generated_scene_command_plan(
+    "/tmp/validate_builder_generated_scene.py", "/tmp/scene");
+  ASSERT_TRUE(plan.ready());
+  const auto cmd = plan.display_command();
+  EXPECT_NE(cmd.indexOf("validate_builder_generated_scene.py"), -1);
+  EXPECT_NE(cmd.indexOf("--json"), -1);
+  EXPECT_NE(cmd.indexOf("/tmp/scene"), -1);
+  EXPECT_EQ(cmd.indexOf("--scene-dir"), -1);
+  EXPECT_EQ(cmd.indexOf("--scene-name"), -1);
+}

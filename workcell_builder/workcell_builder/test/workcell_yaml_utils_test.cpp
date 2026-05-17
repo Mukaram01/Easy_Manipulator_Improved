@@ -50,3 +50,24 @@ TEST(WorkcellYamlUtils, BoolLikeHandlesLegacyDisabledTokens)
   EXPECT_EQ(workcell_builder::get_map(empty_map, "perception").IsMap(), true);
   EXPECT_FALSE(workcell_builder::get_map(missing, "perception").IsDefined());
 }
+
+TEST(WorkcellYamlUtils, PerceptionContractSummaryHandlesScalarAndMissing)
+{
+  const YAML::Node disabled = YAML::Load("task:\n  perception: disabled");
+  const YAML::Node false_scalar = YAML::Load("task:\n  perception: false");
+  const YAML::Node none_scalar = YAML::Load("task:\n  perception: none");
+  const YAML::Node empty_map = YAML::Load("task:\n  perception: {}");
+  const YAML::Node missing = YAML::Load("task:\n  type: pick_place");
+
+  const auto a = workcell_builder::parse_perception_contract_summary(disabled);
+  const auto b = workcell_builder::parse_perception_contract_summary(false_scalar);
+  const auto c = workcell_builder::parse_perception_contract_summary(none_scalar);
+  const auto d = workcell_builder::parse_perception_contract_summary(empty_map);
+  const auto e = workcell_builder::parse_perception_contract_summary(missing);
+
+  EXPECT_FALSE(a.enabled); EXPECT_EQ(a.mode, "legacy_disabled"); EXPECT_FALSE(a.warning.empty());
+  EXPECT_FALSE(b.enabled); EXPECT_EQ(b.mode, "legacy_disabled"); EXPECT_FALSE(b.warning.empty());
+  EXPECT_FALSE(c.enabled); EXPECT_EQ(c.mode, "legacy_disabled"); EXPECT_FALSE(c.warning.empty());
+  EXPECT_FALSE(d.enabled); EXPECT_EQ(d.mode, "legacy_disabled"); EXPECT_FALSE(d.warning.empty());
+  EXPECT_FALSE(e.enabled); EXPECT_EQ(e.mode, "legacy_disabled"); EXPECT_FALSE(e.warning.empty());
+}
