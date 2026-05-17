@@ -3563,6 +3563,16 @@ void MainWindow::populate_scene_hierarchy()
     p.sx = item.width;
     p.sy = item.depth;
     p.sz = item.height;
+    p.mesh_path = QString::fromStdString(item.mesh_path);
+    p.mesh_type = QString::fromStdString(item.mesh_type);
+    p.mesh_scale_x = item.mesh_scale_x;
+    p.mesh_scale_y = item.mesh_scale_y;
+    p.mesh_scale_z = item.mesh_scale_z;
+    p.mesh_roll = item.mesh_r;
+    p.mesh_pitch = item.mesh_p;
+    p.mesh_yaw = item.mesh_y;
+    p.mesh_available = item.mesh_available;
+    p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     preview_items.push_back(p);
     if (allowed_scene_roles.contains(p.role)) {
       add_tree_node(p);
