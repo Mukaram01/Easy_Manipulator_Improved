@@ -126,12 +126,13 @@ private slots:
   void on_reset_view_clicked();
   void on_fit_scene_clicked();
   void on_focus_selected_clicked();
+  void on_fit_overlays_clicked();
   void on_clear_selection_clicked();
 
 private:
   void refresh_mode_and_state();
-  QRectF rendered_items_bounds_2d() const;
-  void fit_fallback_scene_to_items();
+  QRectF rendered_items_bounds_2d(bool include_overlays) const;
+  void fit_fallback_scene_to_items(bool include_overlays = false);
   void reset_fallback_scene_view();
   void refresh_info_chip();
   int total_warning_count() const;
