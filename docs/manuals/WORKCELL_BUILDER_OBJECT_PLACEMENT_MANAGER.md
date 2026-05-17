@@ -59,11 +59,12 @@ This is generation-time/offline-only workflow. No MoveIt planning call, no traje
 - Full generated scene flow still requires **Generate YAML** and **Generate Files** in Workcell Studio.
 
 
-## Interactive RViz pose editing
+## Apply RViz pose feedback
 
-- Visual STL preview shows placed meshes only.
-- **Open Interactive RViz Preview** generates interactive marker preview artifacts under `/tmp/workcell_builder_preview/<scene_name>/`.
-- Interactive RViz edits write suggestion feedback to `placed_objects_feedback.yaml`.
-- Feedback is not automatically applied to real scene files (`environment.yaml`, `scene_manifest.yaml`) in this PR.
-- No MoveIt/controllers/robot execution are started.
-- This is offline preview/editing only and fake-hardware-first safe.
+- Interactive RViz edits produce `placed_objects_feedback.yaml` in `/tmp/workcell_builder_preview/<scene_name>/`.
+- The Object Placement Manager can import this feedback for operator review before any pose update is applied.
+- Only feedback entries that match existing placed object names are pose-updated.
+- Unknown object names, malformed pose rows, and other invalid entries are warned and skipped.
+- There is no automatic overwrite of `environment.yaml`, `scene_manifest.yaml`, `cell_definition.yaml`, or generated package files.
+- **Save/Generate remains an explicit user action** after review and optional apply.
+- No MoveIt planning, no controller execution, and no real hardware execution are performed by this workflow.
