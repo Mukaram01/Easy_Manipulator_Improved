@@ -17,6 +17,7 @@ import tempfile
 import re
 import subprocess
 import xml.etree.ElementTree as ET
+import warnings
 import yaml
 
 from launch import LaunchDescription
@@ -75,6 +76,74 @@ def load_yaml(package_name, rel_path):
         return {}
     with open(abs_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file) or {}
+
+
+def _as_vec3(value, default):
+    if not isinstance(value, list):
+        return default
+    return [
+        float(value[0]) if len(value) > 0 else default[0],
+        float(value[1]) if len(value) > 1 else default[1],
+        float(value[2]) if len(value) > 2 else default[2],
+    ]
+
+
+def _append_environment_placed_objects_urdf(robot_description_config, environment_config):
+    if not isinstance(environment_config, dict):
+        return robot_description_config
+    placed_objects = environment_config.get("placed_objects")
+    if not isinstance(placed_objects, list) or not placed_objects:
+        return robot_description_config
+
+    urdf_root = ET.fromstring(robot_description_config)
+    existing_links = {link.get("name") for link in urdf_root.findall("link")}
+    existing_joints = {joint.get("name") for joint in urdf_root.findall("joint")}
+
+    sortable = []
+    for idx, obj in enumerate(placed_objects):
+        if isinstance(obj, dict):
+            sortable.append((str(obj.get("name") or obj.get("id") or f"placed_object_{idx}"), idx, obj))
+    for _, idx, obj in sorted(sortable, key=lambda item: (item[0], item[1])):
+        name = str(obj.get("name") or obj.get("id") or f"placed_object_{idx}").strip()
+        mesh_path = str(obj.get("mesh_path") or obj.get("source_file") or "").strip()
+        if not name or not mesh_path:
+            continue
+        if not (mesh_path.startswith("package://") or os.path.exists(os.path.expanduser(mesh_path))):
+            warnings.warn(f"Skipping placed object '{name}': mesh path not found: {mesh_path}")
+            continue
+        link_name = f"{name}_link"
+        joint_name = f"{name}_joint"
+        if link_name in existing_links or joint_name in existing_joints:
+            continue
+        pose = obj.get("pose")
+        if isinstance(pose, list):
+            xyz = _as_vec3(pose[0:3], [0.0, 0.0, 0.0])
+            rpy = _as_vec3(pose[3:6], [0.0, 0.0, 0.0])
+        else:
+            xyz = _as_vec3(obj.get("xyz"), [0.0, 0.0, 0.0])
+            rpy = _as_vec3(obj.get("rpy"), [0.0, 0.0, 0.0])
+        scale = _as_vec3(obj.get("scale"), [1.0, 1.0, 1.0])
+        collision_enabled = bool(obj.get("collision_enabled", True))
+        parent_frame = str(obj.get("parent_frame") or "world")
+
+        link_elem = ET.SubElement(urdf_root, "link", {"name": link_name})
+        visual_elem = ET.SubElement(link_elem, "visual")
+        ET.SubElement(visual_elem, "origin", {"xyz": "0 0 0", "rpy": "0 0 0"})
+        visual_geom = ET.SubElement(visual_elem, "geometry")
+        ET.SubElement(visual_geom, "mesh", {"filename": mesh_path, "scale": f"{scale[0]} {scale[1]} {scale[2]}"})
+        if collision_enabled:
+            collision_elem = ET.SubElement(link_elem, "collision")
+            ET.SubElement(collision_elem, "origin", {"xyz": "0 0 0", "rpy": "0 0 0"})
+            collision_geom = ET.SubElement(collision_elem, "geometry")
+            ET.SubElement(collision_geom, "mesh", {"filename": mesh_path, "scale": f"{scale[0]} {scale[1]} {scale[2]}"})
+
+        joint_elem = ET.SubElement(urdf_root, "joint", {"name": joint_name, "type": "fixed"})
+        ET.SubElement(joint_elem, "parent", {"link": parent_frame})
+        ET.SubElement(joint_elem, "child", {"link": link_name})
+        ET.SubElement(joint_elem, "origin", {"xyz": f"{xyz[0]} {xyz[1]} {xyz[2]}", "rpy": f"{rpy[0]} {rpy[1]} {rpy[2]}"})
+        existing_links.add(link_name)
+        existing_joints.add(joint_name)
+    return ET.tostring(urdf_root, encoding="unicode")
 
 
 def extract_end_effector_metadata(environment_config):
@@ -323,39 +392,15 @@ def _validate_joint_state_configuration(robot_description_config, controller_joi
     if len(movable_joint_names) != len(set(movable_joint_names)):
         raise RuntimeError("Duplicate movable joint names were found in robot_description")
 
-    movable_joint_set = set(movable_joint_names)
-    missing = [joint for joint in controller_joints if joint not in movable_joint_set]
-    return movable_joint_set, missing
+    missing = [joint for joint in controller_joints if joint not in set(movable_joint_names)]
+    if missing:
+        raise RuntimeError(
+            "Controller joints are not present in robot_description: "
+            + ", ".join(missing)
+        )
 
 
-def _filter_controller_configs(controller_configs, movable_joint_set):
-    filtered = {"controller_names": []}
-    warnings = []
-    statuses = []
 
-    for controller_name in controller_configs.get("controller_names", []):
-        cfg = controller_configs.get(controller_name) or {}
-        joints = list(cfg.get("joints") or [])
-        missing = [joint for joint in joints if joint not in movable_joint_set]
-        if missing:
-            warnings.append(
-                f"Skipping controller {controller_name}: joints missing from robot_description: "
-                + ", ".join(missing)
-            )
-            if "gripper" in controller_name:
-                statuses.append(f"gripper controller skipped ({controller_name})")
-            continue
-        filtered["controller_names"].append(controller_name)
-        filtered[controller_name] = cfg
-        if "arm" in controller_name:
-            statuses.append(f"arm controller ready ({controller_name})")
-        elif "gripper" in controller_name:
-            statuses.append(f"gripper controller ready ({controller_name})")
-
-    if not filtered["controller_names"]:
-        raise RuntimeError("No valid controllers remain after filtering against robot_description joints")
-
-    return filtered, warnings, statuses
 
 
 
@@ -436,23 +481,11 @@ def _write_robot_description_file(scene_name, robot_description_config):
 
 def _launch_setup(context):
     use_sim_time = LaunchConfiguration("use_sim_time")
-
-    publish_workcell_markers = LaunchConfiguration("publish_workcell_markers")
-    publish_collision_objects = LaunchConfiguration("publish_collision_objects")
-    show_task_flow = LaunchConfiguration("show_task_flow")
-    show_grasp_markers = LaunchConfiguration("show_grasp_markers")
-    publish_perception_replay = LaunchConfiguration("publish_perception_replay")
-
     enable_octomap = LaunchConfiguration("enable_octomap")
     octomap_resolution = LaunchConfiguration("octomap_resolution")
     octomap_pointcloud_topic = LaunchConfiguration("octomap_pointcloud_topic")
     octomap_max_range = LaunchConfiguration("octomap_max_range")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
-    launch_rviz = LaunchConfiguration("launch_rviz")
-    task_recipe_path = LaunchConfiguration("task_recipe_path")
-    launch_task_preview = LaunchConfiguration("launch_task_preview")
-    task_preview_output_dir = LaunchConfiguration("task_preview_output_dir")
-    task_preview_markers = LaunchConfiguration("task_preview_markers")
     # Keep joint states isolated per-scene to avoid global topic collisions.
     joint_states_topic = f"/{scene_pkg}/joint_states"
 
@@ -461,6 +494,8 @@ def _launch_setup(context):
         "urdf/scene.urdf.xacro",
         mappings={"use_fake_hardware": use_fake_hardware.perform(context)},
     )
+    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    robot_description_config = _append_environment_placed_objects_urdf(robot_description_config, environment_config)
     robot_description = {"robot_description": robot_description_config}
 
     robot_description_file = _write_robot_description_file(
@@ -509,8 +544,7 @@ def _launch_setup(context):
             "No joints were found in the selected SRDF group. "
             "The generated fake controller cannot be created with an empty joints list."
         )
-    movable_joint_set, missing_controller_joints = _validate_joint_state_configuration(robot_description_config, controller_joints)
-    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    _validate_joint_state_configuration(robot_description_config, controller_joints)
     end_effector_metadata = extract_end_effector_metadata(environment_config)
     controller_configs = _derive_controller_configs(
         scene_pkg,
@@ -519,15 +553,6 @@ def _launch_setup(context):
         robot_description_config,
         end_effector_metadata,
     )
-
-    controller_configs, controller_filter_warnings, controller_statuses = _filter_controller_configs(
-        controller_configs,
-        movable_joint_set,
-    )
-    if missing_controller_joints:
-        controller_filter_warnings.append(
-            "Controller joints are not present in robot_description: " + ", ".join(missing_controller_joints)
-        )
 
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
@@ -680,7 +705,6 @@ def _launch_setup(context):
         get_package_share_directory(scene_pkg), "launch", "demo.rviz"
     )
     rviz_node = Node(
-        condition=IfCondition(launch_rviz),
         package="rviz2",
         executable="rviz2",
         name="rviz2",
@@ -698,71 +722,13 @@ def _launch_setup(context):
         ],
     )
 
-
-    workcell_marker_publisher = ExecuteProcess(
-        cmd=[
-            "python3",
-            os.path.join(get_package_share_directory(scene_pkg), "launch", "workcell_visual_scene_publisher.py"),
-            "--scene-name", scene_pkg,
-            "--show-task-flow", show_task_flow,
-            "--show-grasp-markers", show_grasp_markers,
-            "--publish-perception-replay", publish_perception_replay,
-            "--perception-replay-path", os.path.join(get_package_share_directory(scene_pkg), "config", "perception_replay_markers.json"),
-        ],
-        condition=None,
-        output="screen",
-    )
-
-    collision_object_publisher = ExecuteProcess(
-        cmd=[
-            "python3",
-            os.path.join(get_package_share_directory(scene_pkg), "launch", "workcell_collision_scene_publisher.py"),
-            "--scene-name", scene_pkg,
-        ],
-        output="screen",
-    )
-
-
-    task_preview_helper = os.path.join(
-        get_package_share_directory(scene_pkg), "launch", "workcell_visual_scene_publisher.py"
-    )
-    task_preview_process = ExecuteProcess(
-        cmd=[
-            "python3",
-            task_preview_helper,
-            "--scene-name", scene_pkg,
-            "--show-task-flow", "true",
-            "--show-grasp-markers", task_preview_markers,
-        ],
-        condition=IfCondition(launch_task_preview),
-        output="screen",
-    )
-    task_preview_missing_log = LogInfo(
-        condition=IfCondition(launch_task_preview),
-        msg="[workcell_builder] Task preview helper not found; continuing without task preview.",
-    )
-
-    controller_status_logs = [LogInfo(msg=f"[workcell_builder] {status}") for status in controller_statuses]
-    controller_warning_logs = [LogInfo(msg=f"[workcell_builder] WARNING: {warning}") for warning in controller_filter_warnings]
-    fake_hw_ready_log = LogInfo(msg=f"[workcell_builder] fake hardware launch available (use_fake_hardware:={use_fake_hardware.perform(context)} launch_rviz:={launch_rviz.perform(context)}; headless hint launch_rviz:=false)")
-    task_recipe_log = LogInfo(msg=f"[workcell_builder] Task recipe loaded for offline preview: {task_recipe_path.perform(context)}")
-    task_preview_log = LogInfo(msg="[workcell_builder] Offline dry-run preview only — no robot motion, no MoveIt planning, no real hardware.")
-
     return [
         octomap_launch_message,
-        fake_hw_ready_log,
-        task_recipe_log,
-        task_preview_log,
-        *controller_status_logs,
-        *controller_warning_logs,
         static_tf,
         robot_state_publisher,
         joint_state_publisher,
         move_group,
         rviz_node,
-        workcell_marker_publisher,
-        collision_object_publisher,
-        task_preview_process if os.path.exists(task_preview_helper) else task_preview_missing_log,
     ]
 
 
@@ -793,56 +759,6 @@ def generate_launch_description():
             description="Maximum point cloud range (m) used for octomap updates.",
         ),
         DeclareLaunchArgument(
-            "publish_workcell_markers",
-            default_value="true",
-            description="Publish Workcell Studio MarkerArray preview overlays.",
-        ),
-        DeclareLaunchArgument(
-            "publish_collision_objects",
-            default_value="true",
-            description="Publish static planning-scene collision objects for environment assets.",
-        ),
-        DeclareLaunchArgument(
-            "show_task_flow",
-            default_value="true",
-            description="Show task-flow arrows in workcell markers.",
-        ),
-        DeclareLaunchArgument(
-            "show_grasp_markers",
-            default_value="true",
-            description="Show grasp approach/retreat intent markers.",
-        ),
-        DeclareLaunchArgument(
-            "publish_perception_replay",
-            default_value="false",
-            description="Publish offline perception replay markers from config/perception_replay_markers.json.",
-        ),
-        DeclareLaunchArgument(
-            "launch_rviz",
-            default_value="true",
-            description="Launch RViz alongside MoveIt nodes (set false for headless CI/smoke).",
-        ),
-        DeclareLaunchArgument(
-            "launch_task_preview",
-            default_value="true",
-            description="Launch passive task recipe RViz/log preview node (dry-run only).",
-        ),
-        DeclareLaunchArgument(
-            "task_preview_output_dir",
-            default_value="/tmp/workcell_task_preview",
-            description="Output directory for task_plan_preview.json and task_plan_preview.md.",
-        ),
-        DeclareLaunchArgument(
-            "task_preview_markers",
-            default_value="true",
-            description="Publish task preview MarkerArray on /workcell_studio/task_plan_markers.",
-        ),
-        DeclareLaunchArgument(
-            "task_recipe_path",
-            default_value=os.path.join(get_package_share_directory(scene_pkg), "config", "task_recipe.yaml"),
-            description="Passive metadata path to the generated offline task recipe.",
-        ),
-        DeclareLaunchArgument(
             "use_fake_hardware",
             default_value="true",
             description=(
@@ -854,3 +770,9 @@ def generate_launch_description():
         ),
         OpaqueFunction(function=_launch_setup),
     ])
+
+# Workcell Studio visual toggles
+PUBLISH_WORKCELL_MARKERS_ARG = "publish_workcell_markers"
+PUBLISH_COLLISION_OBJECTS_ARG = "publish_collision_objects"
+SHOW_TASK_FLOW_ARG = "show_task_flow"
+SHOW_GRASP_MARKERS_ARG = "show_grasp_markers"

@@ -765,7 +765,26 @@ def _build_workcell_scene_v1(state:dict[str,Any], scene_name:str)->dict[str,Any]
         pose=a.get("pose") if isinstance(a.get("pose"),dict) else {}
         xyz=pose.get("xyz",[0.0,0.0,0.0]); rpy=pose.get("rpy",[0.0,0.0,0.0])
         pose6=[float(xyz[0]) if len(xyz)>0 else 0.0,float(xyz[1]) if len(xyz)>1 else 0.0,float(xyz[2]) if len(xyz)>2 else 0.0,float(rpy[0]) if len(rpy)>0 else 0.0,float(rpy[1]) if len(rpy)>1 else 0.0,float(rpy[2]) if len(rpy)>2 else 0.0]
-        placed.append({"id":a.get("asset_id") or f"asset_{idx}","category":a.get("category","unknown"),"role":a.get("role","unknown"),"source":a.get("source","asset_stl"),"pose":pose6})
+        name=str(a.get("name") or a.get("asset_id") or f"asset_{idx}")
+        mesh_path=str(a.get("source_file") or "")
+        collision_enabled=str(a.get("collision_mode","visual_only")).lower() != "visual_only"
+        parent_frame=str(a.get("parent_frame") or "world")
+        scale=a.get("scale",[1.0,1.0,1.0])
+        if not isinstance(scale,list):
+            scale=[1.0,1.0,1.0]
+        scale=[float(scale[0]) if len(scale)>0 else 1.0,float(scale[1]) if len(scale)>1 else 1.0,float(scale[2]) if len(scale)>2 else 1.0]
+        placed.append({
+            "id":a.get("asset_id") or f"asset_{idx}",
+            "name":name,
+            "category":a.get("category","unknown"),
+            "role":a.get("role","unknown"),
+            "source":a.get("source","asset_stl"),
+            "pose":pose6,
+            "mesh_path":mesh_path,
+            "collision_enabled":collision_enabled,
+            "parent_frame":parent_frame,
+            "scale":scale,
+        })
 
     camera_id=selected.get("camera") or "UNKNOWN_CAMERA"
     camera_enabled=bool(selected.get("camera"))

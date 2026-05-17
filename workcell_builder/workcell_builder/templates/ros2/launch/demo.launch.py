@@ -17,6 +17,7 @@ import tempfile
 import re
 import subprocess
 import xml.etree.ElementTree as ET
+import warnings
 import yaml
 
 from launch import LaunchDescription
@@ -74,6 +75,74 @@ def load_yaml(package_name, rel_path):
         return {}
     with open(abs_path, "r", encoding="utf-8") as file:
         return yaml.safe_load(file) or {}
+
+
+def _as_vec3(value, default):
+    if not isinstance(value, list):
+        return default
+    return [
+        float(value[0]) if len(value) > 0 else default[0],
+        float(value[1]) if len(value) > 1 else default[1],
+        float(value[2]) if len(value) > 2 else default[2],
+    ]
+
+
+def _append_environment_placed_objects_urdf(robot_description_config, environment_config):
+    if not isinstance(environment_config, dict):
+        return robot_description_config
+    placed_objects = environment_config.get("placed_objects")
+    if not isinstance(placed_objects, list) or not placed_objects:
+        return robot_description_config
+
+    urdf_root = ET.fromstring(robot_description_config)
+    existing_links = {link.get("name") for link in urdf_root.findall("link")}
+    existing_joints = {joint.get("name") for joint in urdf_root.findall("joint")}
+
+    sortable = []
+    for idx, obj in enumerate(placed_objects):
+        if isinstance(obj, dict):
+            sortable.append((str(obj.get("name") or obj.get("id") or f"placed_object_{idx}"), idx, obj))
+    for _, idx, obj in sorted(sortable, key=lambda item: (item[0], item[1])):
+        name = str(obj.get("name") or obj.get("id") or f"placed_object_{idx}").strip()
+        mesh_path = str(obj.get("mesh_path") or obj.get("source_file") or "").strip()
+        if not name or not mesh_path:
+            continue
+        if not (mesh_path.startswith("package://") or os.path.exists(os.path.expanduser(mesh_path))):
+            warnings.warn(f"Skipping placed object '{name}': mesh path not found: {mesh_path}")
+            continue
+        link_name = f"{name}_link"
+        joint_name = f"{name}_joint"
+        if link_name in existing_links or joint_name in existing_joints:
+            continue
+        pose = obj.get("pose")
+        if isinstance(pose, list):
+            xyz = _as_vec3(pose[0:3], [0.0, 0.0, 0.0])
+            rpy = _as_vec3(pose[3:6], [0.0, 0.0, 0.0])
+        else:
+            xyz = _as_vec3(obj.get("xyz"), [0.0, 0.0, 0.0])
+            rpy = _as_vec3(obj.get("rpy"), [0.0, 0.0, 0.0])
+        scale = _as_vec3(obj.get("scale"), [1.0, 1.0, 1.0])
+        collision_enabled = bool(obj.get("collision_enabled", True))
+        parent_frame = str(obj.get("parent_frame") or "world")
+
+        link_elem = ET.SubElement(urdf_root, "link", {"name": link_name})
+        visual_elem = ET.SubElement(link_elem, "visual")
+        ET.SubElement(visual_elem, "origin", {"xyz": "0 0 0", "rpy": "0 0 0"})
+        visual_geom = ET.SubElement(visual_elem, "geometry")
+        ET.SubElement(visual_geom, "mesh", {"filename": mesh_path, "scale": f"{scale[0]} {scale[1]} {scale[2]}"})
+        if collision_enabled:
+            collision_elem = ET.SubElement(link_elem, "collision")
+            ET.SubElement(collision_elem, "origin", {"xyz": "0 0 0", "rpy": "0 0 0"})
+            collision_geom = ET.SubElement(collision_elem, "geometry")
+            ET.SubElement(collision_geom, "mesh", {"filename": mesh_path, "scale": f"{scale[0]} {scale[1]} {scale[2]}"})
+
+        joint_elem = ET.SubElement(urdf_root, "joint", {"name": joint_name, "type": "fixed"})
+        ET.SubElement(joint_elem, "parent", {"link": parent_frame})
+        ET.SubElement(joint_elem, "child", {"link": link_name})
+        ET.SubElement(joint_elem, "origin", {"xyz": f"{xyz[0]} {xyz[1]} {xyz[2]}", "rpy": f"{rpy[0]} {rpy[1]} {rpy[2]}"})
+        existing_links.add(link_name)
+        existing_joints.add(joint_name)
+    return ET.tostring(urdf_root, encoding="unicode")
 
 
 def extract_end_effector_metadata(environment_config):
@@ -424,6 +493,8 @@ def _launch_setup(context):
         "urdf/scene.urdf.xacro",
         mappings={"use_fake_hardware": use_fake_hardware.perform(context)},
     )
+    environment_config = load_yaml(scene_pkg, "environment.yaml")
+    robot_description_config = _append_environment_placed_objects_urdf(robot_description_config, environment_config)
     robot_description = {"robot_description": robot_description_config}
 
     robot_description_file = _write_robot_description_file(
@@ -473,7 +544,6 @@ def _launch_setup(context):
             "The generated fake controller cannot be created with an empty joints list."
         )
     _validate_joint_state_configuration(robot_description_config, controller_joints)
-    environment_config = load_yaml(scene_pkg, "environment.yaml")
     end_effector_metadata = extract_end_effector_metadata(environment_config)
     controller_configs = _derive_controller_configs(
         scene_pkg,
