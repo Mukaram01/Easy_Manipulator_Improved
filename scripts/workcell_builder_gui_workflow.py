@@ -276,6 +276,49 @@ def generate_perception_replay_preview(scene_dir:Path)->dict[str,Any]:
     st = _load_json_safe(selected)
     return {"status":"PERCEPTION_REPLAY_READY" if sp.get("status")=="READY" else "PERCEPTION_REPLAY_WARN","summary":sp,"selected_target":st,"bridge_payload_preview_ready":out.exists()}
 
+
+def normalize_perception_config_from_environment(environment_payload:dict[str,Any]|None)->dict[str,Any]:
+    """Normalize legacy/partial environment.yaml perception payloads safely."""
+    payload = environment_payload if isinstance(environment_payload, dict) else {}
+    raw = payload.get("perception")
+    if raw is None:
+        return {"status": "MISSING_PERCEPTION", "enabled": False, "config": {}}
+    if isinstance(raw, str):
+        token = raw.strip().lower()
+        if token in {"disabled", "none", "false", "off", ""}:
+            return {"status": "PERCEPTION_DISABLED", "enabled": False, "config": {"enabled": False}}
+        return {"status": "PERCEPTION_LEGACY_SCALAR", "enabled": False, "config": {"enabled": False}}
+    if isinstance(raw, bool):
+        return {"status": "PERCEPTION_DISABLED" if raw is False else "PERCEPTION_ENABLED_NO_DETAILS", "enabled": bool(raw), "config": {"enabled": bool(raw)}}
+    if not isinstance(raw, dict):
+        return {"status": "PERCEPTION_LEGACY_SCALAR", "enabled": False, "config": {"enabled": False}}
+    if not raw:
+        return {"status": "PERCEPTION_EMPTY_CONFIG", "enabled": False, "config": {}}
+    enabled = bool(raw.get("enabled", True))
+    return {"status": "PERCEPTION_ENABLED" if enabled else "PERCEPTION_DISABLED", "enabled": enabled, "config": raw}
+
+
+def parse_environment_yaml_safely(environment_yaml_text:str)->dict[str,Any]:
+    try:
+        loaded = yaml.safe_load(environment_yaml_text) or {}
+    except Exception as exc:
+        return {"ok": False, "error": f"malformed_environment_yaml: {exc}", "environment": {}}
+    if not isinstance(loaded, dict):
+        return {"ok": False, "error": "malformed_environment_yaml: root must be mapping", "environment": {}}
+    return {"ok": True, "environment": loaded}
+
+
+def build_epd_snapshot_adapter_command(*, profile:Path|None, input_snapshot:Path|None, output_payload:Path|None)->dict[str,Any]:
+    if not profile or not input_snapshot or not output_payload:
+        return {"ok": False, "error": "missing required args for epd_snapshot_adapter.py", "command": []}
+    return {"ok": True, "command": [sys.executable, str(repo_root()/ "scripts"/"epd_snapshot_adapter.py"), "--profile", str(profile), "--input", str(input_snapshot), "--output", str(output_payload)]}
+
+
+def build_perception_bridge_preview_command(*, perception_profile:Path|None, detected_objects:Path|None, task_intent:Path|None, output_payload:Path|None, output_report:Path|None)->dict[str,Any]:
+    if not perception_profile or not detected_objects or not task_intent or not output_payload or not output_report:
+        return {"ok": False, "error": "missing required args for generate_perception_bridge_preview.py", "command": []}
+    return {"ok": True, "command": [sys.executable, str(repo_root()/ "scripts"/"generate_perception_bridge_preview.py"), "--perception-profile", str(perception_profile), "--detected-objects", str(detected_objects), "--task-intent", str(task_intent), "--output-payload", str(output_payload), "--output-report", str(output_report)]}
+
 def _load_json_safe(path:Path)->dict[str,Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
