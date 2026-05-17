@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include "workcell_yaml_utils.hpp"
+#include "workcell_warning_once.hpp"
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
@@ -25,8 +26,10 @@ PerceptionSnapshot parse_detection_snapshot_yaml(const std::string & path){
     if (const auto n = get_scalar(s, "timestamp_sec")) out.timestamp_sec = n.as<double>();
     if (const auto detections = get_sequence(s, "detections")) for(const auto &d:detections){ if(!d||!d.IsMap()) continue; PerceptionDetection pd; if(const auto n=get_scalar(d,"id")) pd.id=n.as<std::string>(); if(const auto n=get_scalar(d,"class_label")) pd.class_label=n.as<std::string>(); if(const auto n=get_scalar(d,"confidence")) pd.confidence=n.as<double>(); const YAML::Node center=get_sequence(d,"center_px"); if(center&&center.size()>=2&&center[0].IsScalar()&&center[1].IsScalar()){ pd.center_px={{center[0].as<double>(),center[1].as<double>()}}; } const YAML::Node bbox=get_sequence(d,"bbox_px"); if(bbox&&bbox.size()>=4&&bbox[0].IsScalar()&&bbox[1].IsScalar()&&bbox[2].IsScalar()&&bbox[3].IsScalar()){ pd.bbox_px={{bbox[0].as<double>(),bbox[1].as<double>(),bbox[2].as<double>(),bbox[3].as<double>()}}; } pd.estimated_xyz_camera=a3(get_sequence(d,"estimated_xyz_camera")); const YAML::Node world=get_sequence(d,"estimated_xyz_world"); if(world&&world.size()>=3){ pd.estimated_xyz_world=a3(world); pd.has_world_xyz=true; } if(const auto n=get_scalar(d,"zone_hint")) pd.zone_hint=n.as<std::string>(); if(const auto n=get_scalar(d,"tracking_id")) pd.tracking_id=n.as<std::string>(); out.detections.push_back(pd);} 
   } catch (const YAML::Exception &) {
+    log_warning_once_per_context_path_reason("perception_snapshot_reader", path, "scene YAML parse failed");
     return out;
   } catch (const std::exception &) {
+    log_warning_once_per_context_path_reason("perception_snapshot_reader", path, "scene YAML parse failed");
     return out;
   }
   return out;

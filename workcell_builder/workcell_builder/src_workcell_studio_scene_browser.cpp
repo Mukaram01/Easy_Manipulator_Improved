@@ -1,5 +1,6 @@
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_yaml_utils.hpp"
+#include "workcell_warning_once.hpp"
 
 #include <yaml-cpp/yaml.h>
 
@@ -72,9 +73,6 @@ void try_parse_env(WorkcellStudioSceneInfo * s)
 {
   if (s == nullptr) return;
   const fs::path environment_yaml = s->scene_dir / "environment.yaml";
-  std::cerr << "[workcell_builder] context=scene_browser/environment_yaml path="
-            << environment_yaml.string() << std::endl;
-
   try {
     YAML::Node n = YAML::LoadFile(environment_yaml.string());
 
@@ -100,6 +98,7 @@ void try_parse_env(WorkcellStudioSceneInfo * s)
   } catch (const std::exception & e) {
     s->parse_warning = std::string("Could not parse environment.yaml: ") + e.what() +
       " (file: " + environment_yaml.string() + ")";
+    log_warning_once_per_context_path_reason("scene_browser_load", environment_yaml, "scene YAML parse failed");
   }
 }
 }
