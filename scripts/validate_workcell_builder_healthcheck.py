@@ -225,6 +225,13 @@ def main() -> int:
         for forbidden in ["import yaml", "pyyaml", "GetMotionPlan", "execute_trajectory", "/plan_kinematic_path", "streamlit", "epd"]:
             _check(forbidden.lower() not in stxt.lower(), f"smoke script excludes forbidden marker: {forbidden}", errors)
 
+
+    _check((repo_root / "scripts/workcell_builder_camera_frustum_preview_node.py").exists(), "camera frustum preview node exists", errors)
+    docs = (repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md").read_text(encoding="utf-8")
+    _check("Camera placement and frustum preview" in docs, "docs mention Camera placement and frustum preview", errors)
+    tcam = (repo_root / "tests/test_workcell_builder_camera_placement_yaml_io.py").read_text(encoding="utf-8") if (repo_root / "tests/test_workcell_builder_camera_placement_yaml_io.py").exists() else ""
+    _check("camera_placements" in tcam, "tests mention camera_placements", errors)
+
     schema_validator = (repo_root / "scripts/validate_workcell_scene.py").read_text(encoding="utf-8")
     for marker in ["WORKCELL_SCENE_SCHEMA: PASS", "WORKCELL_SCENE_SCHEMA: WARN", "WORKCELL_SCENE_SCHEMA: FAIL", "workcell_scene/v1"]:
         _check(marker in schema_validator, f"scene schema validator marker present: {marker}", errors)
