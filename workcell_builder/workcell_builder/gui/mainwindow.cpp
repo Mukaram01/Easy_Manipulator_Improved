@@ -809,12 +809,14 @@ void MainWindow::setup_studio_shell()
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
   scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"});
-  scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Interactive);
-  scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::Interactive);
-  scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::Interactive);
-  scene_hierarchy_tree_->setColumnWidth(0, 320);
-  scene_hierarchy_tree_->setColumnWidth(1, 130);
-  scene_hierarchy_tree_->setColumnWidth(2, 100);
+  scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  scene_hierarchy_tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  scene_hierarchy_tree_->setColumnWidth(0, 420);
+  scene_hierarchy_tree_->setColumnWidth(1, 160);
+  scene_hierarchy_tree_->setColumnWidth(2, 120);
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
   scene_tab_layout->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(assets_tab); catalog_card->setObjectName("studioCard");
@@ -1015,10 +1017,39 @@ void MainWindow::setup_studio_shell()
   auto * inspector_scroll_contents = new QWidget(inspector_scroll);
   auto * inspector_scroll_layout = new QVBoxLayout(inspector_scroll_contents);
   scene_builder_inspector_tabs_ = new QTabWidget(inspector_scroll_contents);
+  scene_builder_inspector_tabs_->setUsesScrollButtons(false);
   auto * selection_tab = new QWidget(scene_builder_inspector_tabs_); auto * selection_tab_layout = new QVBoxLayout(selection_tab);
   auto * task_tab = new QWidget(scene_builder_inspector_tabs_); auto * task_tab_layout = new QVBoxLayout(task_tab);
   auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
   auto * actions_tab = new QWidget(scene_builder_inspector_tabs_); auto * actions_tab_layout = new QVBoxLayout(actions_tab);
+  auto make_card = [&](QVBoxLayout *parent_layout, const QString &title) {
+    auto *card = new QFrame(right_panel); card->setObjectName("studioCard");
+    auto *layout = new QVBoxLayout(card);
+    layout->addWidget(new QLabel(QString("<b>%1</b>").arg(title)));
+    parent_layout->addWidget(card);
+    return layout;
+  };
+  auto make_row = [&](QVBoxLayout *parent, const QString &label, const QString &value, bool copy_button) {
+    auto *row = new QWidget(scene_builder);
+    auto *row_layout = new QHBoxLayout(row); row_layout->setContentsMargins(0,0,0,0);
+    auto *k = new QLabel(label, row); k->setMinimumWidth(120);
+    auto *v = new QLabel(value, row); v->setWordWrap(true); v->setTextInteractionFlags(Qt::TextSelectableByMouse); v->setToolTip(value);
+    row_layout->addWidget(k); row_layout->addWidget(v, 1);
+    if (copy_button) { auto *copy = new QPushButton("Copy", row); row_layout->addWidget(copy); QObject::connect(copy, &QPushButton::clicked, row, [v]() { QApplication::clipboard()->setText(v->text()); }); }
+    parent->addWidget(row);
+    return v;
+  };
+  auto * scene_card_layout = make_card(selection_tab_layout, "Scene");
+  auto * selected_item_card_layout = make_card(selection_tab_layout, "Selected Item");
+  auto * readiness_card_layout = make_card(readiness_tab_layout, "Readiness");
+  auto * actions_card_layout = make_card(actions_tab_layout, "Actions");
+  make_row(scene_card_layout, "Name", "No scene selected", false);
+  make_row(scene_card_layout, "Status", "unknown", false);
+  make_row(scene_card_layout, "Robot", "unknown", false);
+  make_row(scene_card_layout, "End Effector", "unknown", false);
+  make_row(scene_card_layout, "Path", "(none)", true);
+  make_row(scene_card_layout, "Launch", "(none)", true);
+
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
@@ -1040,7 +1071,7 @@ void MainWindow::setup_studio_shell()
     "pending: Ready for Plan / Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
   new_cell_checklist_label_->setObjectName("studioCard");
   new_cell_checklist_label_->setWordWrap(true);
-  readiness_tab_layout->addWidget(new_cell_checklist_label_);
+  readiness_card_layout->addWidget(new_cell_checklist_label_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   auto * task_binding_actions = new QHBoxLayout();
   pick_source_button_ = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button_);
@@ -1061,7 +1092,7 @@ void MainWindow::setup_studio_shell()
   auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); ar_layout->addWidget(open_perception_metadata_button);
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
-  readiness_tab_layout->addWidget(ar_card);
+  readiness_card_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
   preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
   auto * generate_yaml_button = new QPushButton("Generate YAML", scene_builder);
@@ -1098,8 +1129,8 @@ void MainWindow::setup_studio_shell()
   inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("r "); pose_grid->addWidget(inspector_roll_, 1, 0);
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("yaw "); pose_grid->addWidget(inspector_yaw_, 1, 2);
-  selection_tab_layout->addLayout(pose_grid);
-  inspector_warning_label_ = new QLabel("Warnings: none\nReachability status: unknown\nCollision status: unknown\nSafety zone status: unknown\nPick source reach: unknown\nPlace target reach: unknown\nWarning count: 0\nPreview-only", scene_builder); selection_tab_layout->addWidget(inspector_warning_label_);
+  selected_item_card_layout->addLayout(pose_grid);
+  inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
   scene_builder_inspector_tabs_->addTab(task_tab, "Task");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
@@ -1660,8 +1691,9 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString role = state.role_or_category.isEmpty() ? "unknown" : state.role_or_category;
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
-  inspector_label_->setText(QString("Selected: %1\nID: %2\nRole/Category: %3\nSource: %4\nPose: %5").arg(display, state.id, role, source, pose));
-  live_coordinate_label_->setText(QString("Selected: %1 | %2").arg(display, pose));
+  inspector_label_->setText(QString("Name: %1\nRole: %2\nID: %3\nSource: %4").arg(display, role, state.id, source));
+  inspector_label_->setToolTip(source);
+  live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
 
 bool MainWindow::is_pick_source_candidate(const SelectedSceneItemState & state) const
@@ -2669,7 +2701,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
-  if (inspector_label_) inspector_label_->setText(QString("Scene name: %1\nScene path: %2\nStatus: %3\nRobot: %4\nEnd effector: %5\nGripper Mount RPY: -1.5708 -1.5708 0\nObjects count: %6\nTask recipe: %7\nSmoke report: %8\nLaunch command:\n%9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.scene_dir.string())).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(selected_scene_launch_command()));
+  if (inspector_label_) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
 }
@@ -2976,7 +3008,7 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
   refresh_selected_scene_item_labels(current_selected_scene_item());
   const QString warning_text = item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString();
-  inspector_warning_label_->setText("Warnings: " + warning_text + "\nReachability status: preview-only\nCollision status: preview-only\nSafety zone status: preview-only\nPick source reach: unknown\nPlace target reach: unknown\nWarning count: " + QString::number(warning_text == "none" ? 0 : 1) + "\nPreview-only");
+  inspector_warning_label_->setText("Warnings: " + warning_text + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: " + QString::number(warning_text == "none" ? 0 : 1) + " | Preview-only");
   append_studio_log("selected item reach status: preview-only");
   append_studio_log("selected item collision status: preview-only");
   if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QStringLiteral("\nLinked hierarchy item: %1").arg(item->data(RoleId).toString()));
@@ -3006,11 +3038,13 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
 
   if (scene_hierarchy_tree_) {
     QTreeWidgetItem * matched = nullptr;
-    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
+    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount() && !matched; ++row) {
       auto * tree_item = scene_hierarchy_tree_->topLevelItem(row);
-      if (tree_item && tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id) {
-        matched = tree_item;
-        break;
+      if (!tree_item) continue;
+      if (tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = tree_item;
+      for (int child = 0; child < tree_item->childCount() && !matched; ++child) {
+        auto * node = tree_item->child(child);
+        if (node && node->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = node;
       }
     }
     if (matched) scene_hierarchy_tree_->setCurrentItem(matched);
@@ -3375,8 +3409,28 @@ void MainWindow::populate_scene_hierarchy()
     return QString("ready");
   };
 
+  QMap<QString, QTreeWidgetItem*> hierarchy_groups;
+  auto group_for_role = [&](const QString &role, const QString &category) {
+    const QString lower = (role + " " + category).toLower();
+    if (lower.contains("robot")) return QString("Robot");
+    if (lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Tool");
+    if (lower.contains("safety")) return QString("Safety");
+    if (lower.contains("pick") || lower.contains("place") || lower.contains("zone")) return QString("Task Zones");
+    if (lower.contains("file")) return QString("Files");
+    return QString("Environment");
+  };
+  auto ensure_group = [&](const QString &name) {
+    if (hierarchy_groups.contains(name)) return hierarchy_groups[name];
+    auto *group = new QTreeWidgetItem(scene_hierarchy_tree_, {name, "", ""});
+    group->setFirstColumnSpanned(true);
+    group->setFlags(group->flags() & ~Qt::ItemIsSelectable);
+    hierarchy_groups[name] = group;
+    return group;
+  };
+  for (const QString &gn : {QString("Robot"), QString("Tool"), QString("Environment"), QString("Task Zones"), QString("Safety"), QString("Files")}) ensure_group(gn);
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
-    auto * node = new QTreeWidgetItem(scene_hierarchy_tree_, {p.display_name, p.role, p.status});
+    auto * parent = ensure_group(group_for_role(p.role, p.category));
+    auto * node = new QTreeWidgetItem(parent, {p.display_name, p.role, p.status});
     node->setToolTip(0, p.display_name); node->setToolTip(1, p.role); node->setToolTip(2, p.status);
     node->setToolTip(0, p.display_name);
     node->setToolTip(1, p.role);
@@ -3504,7 +3558,7 @@ void MainWindow::populate_scene_hierarchy()
     if (!fs::exists(path)) continue;
 
     auto * node = new QTreeWidgetItem(
-      scene_hierarchy_tree_,
+      ensure_group("Files"),
       {QString::fromStdString(rel), "file", "present"});
     node->setData(0, TreeRoleId, rel_q);
     node->setData(0, TreeRoleCategory, "file");
@@ -3516,12 +3570,10 @@ void MainWindow::populate_scene_hierarchy()
 
   auto * header = scene_hierarchy_tree_->header();
   if (header) {
-    header->setSectionResizeMode(0, QHeaderView::Interactive);
-    header->setSectionResizeMode(1, QHeaderView::Interactive);
-    header->setSectionResizeMode(2, QHeaderView::Interactive);
-    scene_hierarchy_tree_->setColumnWidth(0, 200);
-    scene_hierarchy_tree_->setColumnWidth(1, 120);
-    scene_hierarchy_tree_->setColumnWidth(2, 80);
+    header->setSectionResizeMode(0, QHeaderView::Stretch);
+    header->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    scene_hierarchy_tree_->setColumnWidth(0, 420);
     header->setStretchLastSection(false);
   }
 
@@ -3553,14 +3605,18 @@ void MainWindow::populate_scene_hierarchy()
   }
 
   for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
-    auto * node = scene_hierarchy_tree_->topLevelItem(i);
-    if (!node) continue;
-    const QString item_id = node->data(0, TreeRoleId).toString().trimmed();
-    const QString tag = role_tag_for_id(item_id);
-    if (!tag.isEmpty() && node->data(0, TreeRoleCategory).toString() != "file") {
-      const QString base_name = node->text(0);
-      node->setText(0, QString("%1 %2").arg(base_name, tag));
-      node->setToolTip(0, node->text(0));
+    auto * group = scene_hierarchy_tree_->topLevelItem(i);
+    if (!group) continue;
+    for (int c = 0; c < group->childCount(); ++c) {
+      auto * node = group->child(c);
+      if (!node) continue;
+      const QString item_id = node->data(0, TreeRoleId).toString().trimmed();
+      const QString tag = role_tag_for_id(item_id);
+      if (!tag.isEmpty() && node->data(0, TreeRoleCategory).toString() != "file") {
+        const QString base_name = node->text(0);
+        node->setText(0, QString("%1 %2").arg(base_name, tag));
+        node->setToolTip(0, node->text(0));
+      }
     }
   }
 
