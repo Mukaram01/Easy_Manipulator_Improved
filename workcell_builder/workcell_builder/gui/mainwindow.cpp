@@ -710,7 +710,7 @@ void MainWindow::setup_studio_shell()
   auto * dashboard_actions = new QVBoxLayout();
   dashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_); dashboard_open_scene_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_open_scene_button_);
   dashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_); dashboard_validate_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_validate_button_);
-  dashboard_plan_button_ = new QPushButton("Plan & Simulate", dashboard_selected_scene_card_); dashboard_plan_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_plan_button_);
+  dashboard_plan_button_ = new QPushButton("Plan / Simulate", dashboard_selected_scene_card_); dashboard_plan_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_plan_button_);
   dashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_); dashboard_export_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_export_button_);
   dashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_); dashboard_delete_button_->setObjectName("studioHomeDangerButton"); dashboard_actions->addWidget(dashboard_delete_button_);
   selected_row->addLayout(dashboard_actions);
@@ -1021,7 +1021,7 @@ void MainWindow::setup_studio_shell()
     "hint: Use terminal command: python3 scripts/smoke_test_scratch_cell_workspace.py --workspace ~/workcell_ws --scene-name scratch_ur5_2f_smoke --timeout-sec 30<br/>"
     "hint: Smoke report: smoke_report.json<br/>"
     "pending: Validation passed → click Run Offline Validation<br/>"
-    "pending: Ready for Plan & Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
+    "pending: Ready for Plan / Simulate → Open RViz2 / MoveIt or Run Fake-Hardware Simulation");
   new_cell_checklist_label_->setObjectName("studioCard");
   new_cell_checklist_label_->setWordWrap(true);
   readiness_tab_layout->addWidget(new_cell_checklist_label_);
@@ -1048,15 +1048,18 @@ void MainWindow::setup_studio_shell()
   readiness_tab_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
   preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
-  auto * generate_yaml_button = new QPushButton("Generate YAML", scene_builder); preview_actions_layout->addWidget(generate_yaml_button);
-  auto * generate_scene_pkg_button = new QPushButton("Generate ROS Scene Package", scene_builder); generate_scene_pkg_button->setProperty("role", "primary"); preview_actions_layout->addWidget(generate_scene_pkg_button);
-  auto * generate_task_button = new QPushButton("Generate Task/Grasp Files", scene_builder); preview_actions_layout->addWidget(generate_task_button);
+  auto * generate_yaml_button = new QPushButton("Generate YAML", scene_builder);
+  auto * generate_scene_pkg_button = new QPushButton("Generate", scene_builder); generate_scene_pkg_button->setProperty("role", "primary"); preview_actions_layout->addWidget(generate_scene_pkg_button);
+  auto * generate_task_button = new QPushButton("Generate Task/Grasp Files", scene_builder);
   auto * validate_task_button = new QPushButton("Validate Generated Scene", scene_builder); preview_actions_layout->addWidget(validate_task_button);
-  auto * copy_cmds_button = new QPushButton("Copy Build & Launch Commands", scene_builder); preview_actions_layout->addWidget(copy_cmds_button);
+  auto * copy_cmds_button = new QPushButton("Copy Build & Launch Commands", scene_builder);
   scene_builder_more_actions_button_ = new QToolButton(scene_builder);
   scene_builder_more_actions_button_->setText("More Actions");
   scene_builder_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
   auto * scene_builder_more_menu = new QMenu(scene_builder_more_actions_button_);
+  auto * generate_yaml_action = scene_builder_more_menu->addAction("Generate YAML");
+  auto * generate_task_action = scene_builder_more_menu->addAction("Generate Task/Grasp Files");
+  auto * copy_cmds_action = scene_builder_more_menu->addAction("Copy Build & Launch Commands");
   auto * open_task_action = scene_builder_more_menu->addAction("Open Task File");
   auto * copy_task_summary_action = scene_builder_more_menu->addAction("Copy Task Summary");
   auto * preview_offline_plan_action = scene_builder_more_menu->addAction("Preview Offline Plan");
@@ -1066,6 +1069,9 @@ void MainWindow::setup_studio_shell()
   scene_builder_more_menu->addAction("Use Selected as Camera");
   scene_builder_more_actions_button_->setMenu(scene_builder_more_menu);
   preview_actions_layout->addWidget(scene_builder_more_actions_button_);
+  QObject::connect(generate_yaml_action, &QAction::triggered, generate_yaml_button, &QPushButton::click);
+  QObject::connect(generate_task_action, &QAction::triggered, generate_task_button, &QPushButton::click);
+  QObject::connect(copy_cmds_action, &QAction::triggered, copy_cmds_button, &QPushButton::click);
   actions_tab_layout->addWidget(preview_actions_card);
   inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selection_tab_layout->addWidget(live_coordinate_label_);
@@ -1094,7 +1100,7 @@ void MainWindow::setup_studio_shell()
   dm->addWidget(new QLabel("<b>Safety banner:</b> Fake Hardware | No Robot Motion | PREVIEW_ONLY"));
   auto * run_demo = new QPushButton("Run Demo Readiness", demo); run_demo->setProperty("role","primary"); dm->addWidget(run_demo);
   auto * go_validation = new QPushButton("Go to Validation", demo); dm->addWidget(go_validation);
-  auto * go_preview = new QPushButton("Go to Plan & Simulate", demo); dm->addWidget(go_preview);
+  auto * go_preview = new QPushButton("Go to Plan / Simulate", demo); dm->addWidget(go_preview);
   auto * go_export = new QPushButton("Go to Export", demo); dm->addWidget(go_export);
   auto * open_dash = new QPushButton("Open Demo Dashboard", demo); dm->addWidget(open_dash);
   auto * go_scene_builder = new QPushButton("Go to Scene Builder", demo); dm->addWidget(go_scene_builder);
@@ -1119,7 +1125,7 @@ void MainWindow::setup_studio_shell()
   auto * open_logs_cmd = new QPushButton("Open Logs Folder", diagnostics); d_actions->addWidget(open_logs_cmd);
   gl->addLayout(d_actions);
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
-  pl->addWidget(new QLabel("<h2>Plan & Simulate</h2><p>Workcell Studio planning and simulation console. Simulation motion is allowed with fake hardware. Real hardware execution remains guarded and is not launched from this mode.</p>"));
+  pl->addWidget(new QLabel("<h2>Plan / Simulate</h2><p>Workcell Studio planning and simulation console. Simulation motion is allowed with fake hardware. Real hardware execution remains guarded and is not launched from this mode.</p>"));
   preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
   preview_status_label_ = new QLabel("<b>Readiness Gate</b><br/>BLOCKED_MISSING_SCENE"); preview_status_label_->setObjectName("studioCard"); preview_status_label_->setWordWrap(true); pl->addWidget(preview_status_label_);
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
@@ -1219,7 +1225,7 @@ void MainWindow::setup_studio_shell()
   top_bar->setMovable(false);
   top_bar->setFloatable(false);
   top_bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-  const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Plan & Simulate", "Generate Scene Package", "Export"};
+  const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Generate", "Plan / Simulate", "Export"};
   for (const QString & label : action_labels) {
     auto * button = new QPushButton(label, this);
     button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
@@ -1242,14 +1248,14 @@ void MainWindow::setup_studio_shell()
         run_offline_validation();
         return;
       }
-      if (label == "Plan & Simulate") {
+      if (label == "Plan / Simulate") {
         append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name()));
         show_studio_page(StudioPage::PlanSimulatePage);
         refresh_preview_launch_ui();
   refresh_new_cell_checklist();
         return;
       }
-      if (label == "Generate Scene Package") {
+      if (label == "Generate") {
         append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name()));
         run_layout_merge_for_selected_scene(true);
         return;
@@ -1281,7 +1287,7 @@ void MainWindow::setup_studio_shell()
   top_bar->addSeparator();
   mode_chip_label_ = new QLabel("Design | Plan | Simulate", this);
   top_bar->addWidget(mode_chip_label_);
-  auto * safety_pill = new QLabel("Safety: Fake hardware default • Real robot locked", this);
+  auto * safety_pill = new QLabel("Safety: Fake hardware default · Real robot locked", this);
   safety_pill->setObjectName("studioHomeSafetyPill");
   top_bar->addWidget(safety_pill);
   diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", this);
