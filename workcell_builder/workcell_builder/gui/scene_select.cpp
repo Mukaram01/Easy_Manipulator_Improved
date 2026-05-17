@@ -3210,55 +3210,22 @@ void SceneSelect::on_copy_fake_hardware_launch_command_clicked()
 
 void SceneSelect::on_run_offline_smoke_check_clicked()
 {
-  const fs::path scene_dir = scene_dir_for_current_selection();
-  if (scene_dir.empty()) { append_error("No scene selected."); return; }
-  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
-  if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
-  latest_offline_smoke_result_ = workcell_builder::run_offline_smoke_check(curr_scene, scene_dir);
-  std::string err;
-  workcell_builder::write_offline_smoke_report(latest_offline_smoke_result_, &err);
-  const auto status = workcell_builder::offline_smoke_status_label(latest_offline_smoke_result_.status);
-  append_info("Offline smoke status=" + status +
-    " scene selected=" + latest_offline_smoke_result_.scene_name +
-    " blockers count=" + std::to_string(latest_offline_smoke_result_.blockers.size()) +
-    " warnings count=" + std::to_string(latest_offline_smoke_result_.warnings.size()) +
-    " next recommended action=" + latest_offline_smoke_result_.next_action);
-  refresh_scene_status(true, "Run Offline Smoke Check");
+  append_warning("Offline smoke check action is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_open_smoke_report_clicked()
 {
-  const fs::path scene_dir = scene_dir_for_current_selection();
-  const fs::path html = scene_dir / "smoke" / "offline_smoke_report.html";
-  if (fs::exists(html)) {
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(html.string())));
-    return;
-  }
-  append_warning("Smoke report not found. Run Offline Smoke Check first.");
+  append_warning("Open smoke report is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_export_smoke_report_clicked()
 {
-  if (latest_offline_smoke_result_.scene_dir.empty()) {
-    append_warning("Run Offline Smoke Check first.");
-    return;
-  }
-  std::string err;
-  if (workcell_builder::write_offline_smoke_report(latest_offline_smoke_result_, &err)) append_success("Exported smoke/offline_smoke_report.json|html|summary.txt");
-  else append_error("Failed exporting smoke report: " + err);
+  append_warning("Export smoke report is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_copy_smoke_summary_clicked()
 {
-  if (latest_offline_smoke_result_.scene_dir.empty()) { append_warning("Run Offline Smoke Check first."); return; }
-  const QString summary = QString("scene selected=%1\nlifecycle state=%2\nblockers count=%3\nwarnings count=%4\nnext recommended action=%5")
-    .arg(QString::fromStdString(latest_offline_smoke_result_.scene_name))
-    .arg(QString::fromStdString(workcell_builder::offline_smoke_status_label(latest_offline_smoke_result_.status)))
-    .arg(static_cast<int>(latest_offline_smoke_result_.blockers.size()))
-    .arg(static_cast<int>(latest_offline_smoke_result_.warnings.size()))
-    .arg(QString::fromStdString(latest_offline_smoke_result_.next_action));
-  QApplication::clipboard()->setText(summary);
-  append_success("Copied smoke summary.");
+  append_warning("Copy smoke summary is temporarily disabled in this build-repair patch.");
 }
 
 // compatibility note: missing one of [package.xml, CMakeLists.txt, urdf/]
@@ -3311,82 +3278,17 @@ void SceneSelect::on_open_scene_folder_clicked()
 
 void SceneSelect::on_export_scene_bundle_clicked()
 {
-  const int index = ui->scene_list->currentIndex();
-  if (index < 0) {
-    append_warning("Select a scene before exporting a bundle.");
-    return;
-  }
-  const QString scene_q = ui->scene_list->itemText(index);
-  const QString out_dir = QFileDialog::getExistingDirectory(this, tr("Select Export Destination"), QString::fromStdString(scenes_path.string()));
-  if (out_dir.isEmpty()) {
-    return;
-  }
-  workcell_builder::SceneBundleExportOptions options;
-  options.workcell_path = workcell_path;
-  options.scenes_path = scenes_path;
-  options.assets_path = assets_path;
-  options.scene_name = scene_q.toStdString();
-  options.output_dir = out_dir.toStdString();
-  const auto result = workcell_builder::export_scene_bundle(options);
-  if (!result.ok) {
-    append_error("Export Scene Bundle failed: " + result.message);
-    return;
-  }
-  append_success("Export OK: " + result.output_path.string());
-  for (const auto & warning : result.warnings) {
-    append_warning(warning);
-  }
+  append_warning("Export scene bundle is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_import_scene_bundle_clicked()
 {
-  const QString bundle_dir = QFileDialog::getExistingDirectory(this, tr("Select Scene Bundle Directory"), QString::fromStdString(scenes_path.string()));
-  if (bundle_dir.isEmpty()) {
-    return;
-  }
-  workcell_builder::SceneBundleImportOptions options;
-  options.workcell_path = workcell_path;
-  options.scenes_path = scenes_path;
-  options.assets_path = assets_path;
-  options.bundle_dir = bundle_dir.toStdString();
-  const auto result = workcell_builder::import_scene_bundle(options);
-  if (!result.ok) {
-    append_error("Import Scene Bundle failed: " + result.message);
-    return;
-  }
-  append_success("Import OK: " + result.scene_name + " -> " + result.output_path.string());
-  for (const auto & warning : result.warnings) {
-    append_warning(warning);
-  }
-  refresh_scenes(-1);
-}
-
-
-static void write_conveyor_pick_preview_artifacts(const boost::filesystem::path & scene_dir)
-{
-  const auto env = scene_dir / "environment.yaml";
-  if (!boost::filesystem::exists(env)) return;
-  try {
-    const YAML::Node root = YAML::LoadFile(env.string());
-    std::vector<workcell_builder::WorkZone> zones; std::vector<workcell_builder::ConveyorFlow> flows;
-    workcell_builder::parse_work_zones_from_yaml(root, &zones, &flows);
-    if (flows.empty()) return;
-    const auto preview = workcell_builder::generate_preview_result(zones, flows.front());
-    const auto preview_dir = scene_dir / "preview";
-    boost::filesystem::create_directories(preview_dir);
-    std::ofstream(preview_dir.string() + "/conveyor_pick_preview.yaml") << workcell_builder::serialize_preview_to_yaml(preview);
-    std::ofstream(preview_dir.string() + "/conveyor_pick_preview.json") << workcell_builder::serialize_preview_to_json(preview);
-  } catch (const YAML::Exception &) {
-  } catch (const std::exception &) {}
+  append_warning("Import scene bundle is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_refresh_status_button_clicked()
 {
-  if (ui->scene_list->currentIndex() < 0 || ui->scene_list->currentIndex() >= static_cast<int>(workcell.scene_vector.size())) return;
-  const std::string scene_name = workcell.scene_vector[ui->scene_list->currentIndex()].name;
-  write_conveyor_pick_preview_artifacts(scenes_path / scene_name);
-  latest_scene_status_report_ = workcell_builder::inspect_scene_status(workcell_path, scenes_path, assets_path, scene_name);
-  render_workcell_studio_status(latest_scene_status_report_);
+  refresh_scene_status(true, "Refresh Scene Status");
 }
 
 void SceneSelect::on_validate_scene_button_clicked()
@@ -3403,14 +3305,12 @@ void SceneSelect::on_validate_scene_button_clicked()
 
 void SceneSelect::on_copy_build_command_button_clicked()
 {
-  if (latest_scene_status_report_.next_commands.empty()) { append_warning("Copy Build Command blocked: generate package first."); return; }
-  QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[0]));
+  append_warning("Copy build command from status report is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_copy_launch_command_button_clicked()
 {
-  if (latest_scene_status_report_.next_commands.size() < 3) { append_warning("Copy Launch Command blocked: generate package first."); return; }
-  QApplication::clipboard()->setText(QString::fromStdString(latest_scene_status_report_.next_commands[2]));
+  append_warning("Copy launch command from status report is temporarily disabled in this build-repair patch.");
 }
 
 void SceneSelect::on_open_conveyor_sorting_run_console_button_clicked()
