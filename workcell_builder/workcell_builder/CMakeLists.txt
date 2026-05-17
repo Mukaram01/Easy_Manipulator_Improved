@@ -425,8 +425,12 @@ if(BUILD_TESTING)
     ament_target_dependencies(workcell_scene_xacro_tool_attachment_test
       ament_index_cpp
     )
+    target_link_libraries(workcell_scene_xacro_tool_attachment_test
+      ${Boost_LIBRARIES}
+    )
     target_include_directories(workcell_scene_xacro_tool_attachment_test
       PRIVATE
+        ${Boost_INCLUDE_DIRS}
         include
     )
   endif()
