@@ -204,7 +204,10 @@ void Scene3DViewportWidget::paintGL()
       case NormalizedRole::Object: draw_object_cube(*it); break;
       case NormalizedRole::SafetyZone: draw_safety_zone(*it); break;
       case NormalizedRole::WarningAnchor: draw_warning_badge_anchor(*it); break;
-      case NormalizedRole::Generic: draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it)); break;
+      case NormalizedRole::Generic:
+        if (!draw_mesh_preview_if_available(*it, item_color(*it), true))
+          draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
+        break;
     }
     if (it->id == selected_id) {
       const ItemBounds bounds = item_bounds_for_role(*it);
@@ -264,6 +267,46 @@ void Scene3DViewportWidget::paintGL()
 }
 
 
+
+
+bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
+{
+  if (!it.has_mesh_metadata) return false;
+
+  glPushMatrix();
+  glTranslated(it.x, it.y, it.z);
+  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
+  if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+
+  draw_unit_cube_triangles(color);
+  glPopMatrix();
+  return true;
+}
+
+void Scene3DViewportWidget::draw_unit_cube_triangles(const QColor & color)
+{
+  glColor4f(color.redF(), color.greenF(), color.blueF(), 1.0f);
+  glBegin(GL_TRIANGLES);
+  const GLfloat v[8][3] = {
+    {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 1.f, 0.f}, {0.f, 1.f, 0.f},
+    {0.f, 0.f, 1.f}, {1.f, 0.f, 1.f}, {1.f, 1.f, 1.f}, {0.f, 1.f, 1.f}
+  };
+  auto tri = [&](int a, int b, int c){ glVertex3fv(v[a]); glVertex3fv(v[b]); glVertex3fv(v[c]); };
+  tri(0,1,2); tri(0,2,3);
+  tri(4,6,5); tri(4,7,6);
+  tri(0,4,5); tri(0,5,1);
+  tri(1,5,6); tri(1,6,2);
+  tri(2,6,7); tri(2,7,3);
+  tri(3,7,4); tri(3,4,0);
+  glEnd();
+}
+
 void Scene3DViewportWidget::draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it)
 {
   const double radius = qMax(0.06, qMin(it.sx, it.sz) * 0.45);
@@ -303,6 +346,7 @@ void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::Prev
 }
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
   const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
 }

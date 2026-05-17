@@ -31,6 +31,11 @@ public:
     bool selectable{ true };
     bool metadata_complete{ true };
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
   struct CameraOverlayModel
   {
@@ -75,6 +80,11 @@ public:
     QString selected_item_status{"unknown"};
     QString metadata_source{"preview"};
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
   struct CollisionOverlayModel
   {
@@ -82,6 +92,11 @@ public:
     QStringList colliding_items;
     QStringList near_miss_items;
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
 
   struct TaskOverlayModel
