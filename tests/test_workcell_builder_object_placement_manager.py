@@ -2,7 +2,11 @@ from pathlib import Path
 
 
 def test_object_placement_manager_ui_strings_exist():
-    txt = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8') + Path('workcell_builder/workcell_builder/gui/addobject.cpp').read_text(encoding='utf-8')
+    txt = (
+        Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
+        + Path('workcell_builder/workcell_builder/gui/addobject.cpp').read_text(encoding='utf-8')
+        + Path('workcell_builder/workcell_builder/gui/object_placement_dialog.cpp').read_text(encoding='utf-8')
+    )
     for needle in [
         'Object Placement Manager',
         'Placed Objects',
@@ -15,6 +19,9 @@ def test_object_placement_manager_ui_strings_exist():
         'Open RViz STL Preview',
         'Open Interactive RViz Preview',
         'Import RViz Pose Feedback',
+        'Apply Valid Updates',
+        'Proposed XYZ/RPY',
+        'safe_for_robot_motion',
         'placed_objects_feedback.yaml',
     ]:
         assert needle in txt
@@ -42,3 +49,8 @@ def test_no_new_symlink_policy_or_motion_api_in_object_placement_path_and_fake_h
     assert 'ensure_workspace_alias "assets"' in fix and 'ensure_workspace_alias "scenes"' in fix
     scene = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
     assert 'use_fake_hardware:=true' in scene
+
+
+def test_object_placement_unknown_feedback_object_marker_exists():
+    txt = Path('workcell_builder/workcell_builder/gui/object_placement_dialog.cpp').read_text(encoding='utf-8').lower()
+    assert 'unknown object in feedback' in txt
