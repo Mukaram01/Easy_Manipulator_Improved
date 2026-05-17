@@ -36,6 +36,7 @@
 #include "workcell_builder_ui_utils.hpp"
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
+#include "object_placement_yaml_io.hpp"
 
 
 #include <QDesktopServices>
@@ -2251,6 +2252,11 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   if (!yaml.IsMap()) {
     append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
     return false;
+  }
+  {
+    std::vector<std::string> task_zone_warnings;
+    (void)workcell_builder::load_task_zones_from_environment_yaml(yaml_path.string(), &task_zone_warnings);
+    for (const auto & warning : task_zone_warnings) append_warning("Task zone parse warning: " + warning);
   }
   const YAML::Node perception = yaml["perception"];
   if (!perception) {

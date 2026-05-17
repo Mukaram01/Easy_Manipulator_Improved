@@ -135,4 +135,57 @@ PlacedObjectYamlWriteResult save_camera_placements_to_environment_yaml(const std
   return r;
 }
 
+std::vector<TaskZone> load_task_zones_from_environment_yaml(const std::string & path, std::vector<std::string> * warnings)
+{
+  std::vector<TaskZone> out;
+  try {
+    YAML::Node root = YAML::LoadFile(path);
+    const auto arr = root["task_zones"];
+    if (!arr || !arr.IsSequence()) return out;
+    for (const auto & n : arr) {
+      if (!n.IsMap() || !n["id"]) { if (warnings) warnings->push_back("malformed task_zones entry skipped"); continue; }
+      TaskZone z;
+      z.id = n["id"].as<std::string>("");
+      z.type = n["type"].as<std::string>("pick");
+      z.frame = n["frame"].as<std::string>("world");
+      z.status = n["status"].as<std::string>("");
+      auto pose = n["pose"]; if (pose && pose.IsMap()) {
+        auto xyz = pose["xyz"]; auto rpy = pose["rpy"];
+        if (xyz && xyz.IsSequence() && xyz.size() == 3) { z.x = xyz[0].as<double>(0.0); z.y = xyz[1].as<double>(0.0); z.z = xyz[2].as<double>(0.0); }
+        if (rpy && rpy.IsSequence() && rpy.size() == 3) { z.roll = rpy[0].as<double>(0.0); z.pitch = rpy[1].as<double>(0.0); z.yaw = rpy[2].as<double>(0.0); }
+      }
+      auto sz = n["size"]; if (sz && sz.IsSequence() && sz.size() == 3) { z.size_x = sz[0].as<double>(0.2); z.size_y = sz[1].as<double>(0.2); z.size_z = sz[2].as<double>(0.2); }
+      out.push_back(z);
+    }
+  } catch (const std::exception & e) {
+    if (warnings) warnings->push_back(std::string("task_zones yaml parse warning: ") + e.what());
+  }
+  return out;
+}
+
+PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::string & path, const std::vector<TaskZone> & task_zones)
+{
+  PlacedObjectYamlWriteResult r; r.path_written = path;
+  try {
+    YAML::Node root; if (std::filesystem::exists(path)) root = YAML::LoadFile(path);
+    YAML::Node arr(YAML::NodeType::Sequence);
+    for (const auto & z : task_zones) {
+      YAML::Node n;
+      n["id"] = z.id;
+      n["type"] = z.type;
+      n["frame"] = z.frame.empty() ? "world" : z.frame;
+      n["pose"]["xyz"].push_back(z.x); n["pose"]["xyz"].push_back(z.y); n["pose"]["xyz"].push_back(z.z);
+      n["pose"]["rpy"].push_back(z.roll); n["pose"]["rpy"].push_back(z.pitch); n["pose"]["rpy"].push_back(z.yaw);
+      n["size"].push_back(z.size_x); n["size"].push_back(z.size_y); n["size"].push_back(z.size_z);
+      if (!z.status.empty()) n["status"] = z.status;
+      arr.push_back(n);
+    }
+    root["task_zones"] = arr;
+    std::ofstream out(path); out << root;
+    r.ok = out.good();
+    r.objects_saved = task_zones.size();
+  } catch (const std::exception & e) { r.warnings.push_back(std::string("failed to save task zones: ") + e.what()); }
+  return r;
+}
+
 }  // namespace workcell_builder

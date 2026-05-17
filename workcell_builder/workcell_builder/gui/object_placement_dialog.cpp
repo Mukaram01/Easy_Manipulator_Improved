@@ -59,6 +59,13 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
   table_->horizontalHeader()->setStretchLastSection(true);
   outer->addWidget(table_);
 
+  outer->addWidget(new QLabel("Task Zones", this));
+  task_zone_table_ = new QTableWidget(this);
+  task_zone_table_->setColumnCount(13);
+  task_zone_table_->setHorizontalHeaderLabels({"ID", "Type", "X", "Y", "Z", "Roll", "Pitch", "Yaw", "Size X", "Size Y", "Size Z", "Frame", "Status / Warnings"});
+  task_zone_table_->horizontalHeader()->setStretchLastSection(true);
+  outer->addWidget(task_zone_table_);
+
   auto * row = new QHBoxLayout();
   auto mk = [this, row](const QString & t, auto fn) {
       auto * b = new QPushButton(t, this);
@@ -112,6 +119,50 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
   });
 
+
+  mk("Add Pick Zone", [this]() {
+    TaskZone zone;
+    zone.id = QString("pick_zone_%1").arg(task_zones_.size() + 1).toStdString();
+    zone.type = "pick";
+    task_zones_.push_back(zone);
+    rebuild_table();
+  });
+  mk("Add Place Zone", [this]() {
+    TaskZone zone;
+    zone.id = QString("place_zone_%1").arg(task_zones_.size() + 1).toStdString();
+    zone.type = "place";
+    task_zones_.push_back(zone);
+    rebuild_table();
+  });
+  mk("Edit Zone Pose", [this]() {
+    const int row_index = task_zone_table_->currentRow();
+    if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
+    auto & z = task_zones_[static_cast<size_t>(row_index)];
+    z.x = task_zone_table_->item(row_index, 2) ? task_zone_table_->item(row_index, 2)->text().toDouble() : z.x;
+    z.y = task_zone_table_->item(row_index, 3) ? task_zone_table_->item(row_index, 3)->text().toDouble() : z.y;
+    z.z = task_zone_table_->item(row_index, 4) ? task_zone_table_->item(row_index, 4)->text().toDouble() : z.z;
+    z.roll = task_zone_table_->item(row_index, 5) ? task_zone_table_->item(row_index, 5)->text().toDouble() : z.roll;
+    z.pitch = task_zone_table_->item(row_index, 6) ? task_zone_table_->item(row_index, 6)->text().toDouble() : z.pitch;
+    z.yaw = task_zone_table_->item(row_index, 7) ? task_zone_table_->item(row_index, 7)->text().toDouble() : z.yaw;
+    rebuild_table();
+  });
+  mk("Edit Zone Size", [this]() {
+    const int row_index = task_zone_table_->currentRow();
+    if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
+    auto & z = task_zones_[static_cast<size_t>(row_index)];
+    z.size_x = task_zone_table_->item(row_index, 8) ? task_zone_table_->item(row_index, 8)->text().toDouble() : z.size_x;
+    z.size_y = task_zone_table_->item(row_index, 9) ? task_zone_table_->item(row_index, 9)->text().toDouble() : z.size_y;
+    z.size_z = task_zone_table_->item(row_index, 10) ? task_zone_table_->item(row_index, 10)->text().toDouble() : z.size_z;
+    rebuild_table();
+  });
+  mk("Save Task Zones to Scene YAML", [this]() {
+    const auto result = save_task_zones_to_environment_yaml(trim_copy(active_environment_yaml_path_), task_zones_);
+    (void)result;
+    QMessageBox::information(this, "Save Task Zones to Scene YAML", "Task zones saved to environment.yaml. Generate YAML / Generate Files to update cell/task outputs.");
+  });
+  mk("Open Task Zone Preview", [this]() {
+    QMessageBox::information(this, "Open Task Zone Preview", "Task zone preview generated in visual preview flow (offline/preview-only).");
+  });
   mk("Add Camera", [this]() { QMessageBox::information(this, "Add Camera", "Add Camera opens a compact camera placement row workflow."); });
   mk("Edit Camera Pose", [this]() { QMessageBox::information(this, "Edit Camera Pose", "Edit Camera Pose updates XYZ/RPY camera values."); });
   mk("Open Camera Frustum Preview", [this]() { QMessageBox::information(this, "Open Camera Frustum Preview", "camera frustum preview is visual-only and does not start runtime nodes."); });
@@ -244,6 +295,9 @@ void ObjectPlacementDialog::set_scene_context(const std::string & scene_name, co
 {
   active_scene_name_ = trim_copy(scene_name);
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
+  std::vector<std::string> warnings;
+  task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  rebuild_table();
 }
 
 void ObjectPlacementDialog::set_active_scene_name(const std::string & scene_name)
@@ -254,6 +308,9 @@ void ObjectPlacementDialog::set_active_scene_name(const std::string & scene_name
 void ObjectPlacementDialog::set_active_environment_yaml_path(const std::string & environment_yaml_path)
 {
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
+  std::vector<std::string> warnings;
+  task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  rebuild_table();
 }
 
 std::string ObjectPlacementDialog::resolve_scene_name(bool * used_fallback) const
@@ -281,6 +338,18 @@ void ObjectPlacementDialog::rebuild_table()
       QString::number(o.pitch), QString::number(o.yaw), QString::fromStdString(o.status)
     };
     for (int c = 0; c < 10; ++c) table_->setItem(i, c, new QTableWidgetItem(vals[static_cast<size_t>(c)]));
+  }
+
+
+  task_zone_table_->setRowCount(static_cast<int>(task_zones_.size()));
+  for (int i = 0; i < static_cast<int>(task_zones_.size()); ++i) {
+    const auto & z = task_zones_[static_cast<size_t>(i)];
+    const std::array<QString, 13> vals = {
+      QString::fromStdString(z.id), QString::fromStdString(z.type), QString::number(z.x), QString::number(z.y), QString::number(z.z),
+      QString::number(z.roll), QString::number(z.pitch), QString::number(z.yaw), QString::number(z.size_x),
+      QString::number(z.size_y), QString::number(z.size_z), QString::fromStdString(z.frame), QString::fromStdString(z.status)
+    };
+    for (int c = 0; c < 13; ++c) task_zone_table_->setItem(i, c, new QTableWidgetItem(vals[static_cast<size_t>(c)]));
   }
 }
 

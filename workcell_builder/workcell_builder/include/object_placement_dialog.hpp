@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "object_placement_model.hpp"
+#include "object_placement_yaml_io.hpp"
 
 namespace workcell_builder
 {
@@ -32,6 +33,8 @@ private:
 
   ObjectPlacementModel model_;
   QTableWidget * table_{nullptr};
+  QTableWidget * task_zone_table_{nullptr};
+  std::vector<TaskZone> task_zones_;
   std::string active_scene_name_;
   std::string active_environment_yaml_path_;
 };
