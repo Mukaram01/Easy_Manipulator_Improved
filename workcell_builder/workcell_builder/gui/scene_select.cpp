@@ -34,6 +34,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include "workcell_builder_ui_utils.hpp"
+#include "workcell_yaml_utils.hpp"
 
 
 #include <QDesktopServices>
@@ -42,6 +43,7 @@
 #include <QClipboard>
 #include <QLineEdit>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QListWidgetItem>
 #include <QInputDialog>
 #include <QDir>
@@ -1158,8 +1160,15 @@ void SceneSelect::discover_scene_packages_on_startup()
   }
 
   std::unordered_set<std::string> known_scenes;
+  std::unordered_set<std::string> known_scene_dirs;
   for (const auto & known_scene : workcell.scene_vector) {
     known_scenes.insert(known_scene.name);
+    const fs::path known_dir = scenes_path / known_scene.name;
+    QString canonical_qt = QFileInfo(QString::fromStdString(known_dir.string())).canonicalFilePath();
+    fs::path canonical_path = canonical_qt.isEmpty() ? fs::canonical(known_dir, path_ec) : fs::path(canonical_qt.toStdString());
+    if (!canonical_path.empty()) {
+      known_scene_dirs.insert(canonical_path.string());
+    }
   }
 
   int discovered_count = 0;
@@ -1167,12 +1176,29 @@ void SceneSelect::discover_scene_packages_on_startup()
     if (!fs::is_directory(entry.path())) {
       continue;
     }
-    const std::string scene_name = entry.path().filename().string();
-    const fs::path package_xml = entry.path() / "package.xml";
-    const fs::path scene_manifest = entry.path() / "scene_manifest.yaml";
-    const fs::path environment_yaml = entry.path() / "environment.yaml";
-    const fs::path urdf_xacro = entry.path() / "urdf" / "scene.urdf.xacro";
-    const fs::path demo_launch = entry.path() / "launch" / "demo.launch.py";
+    const fs::path scene_dir = entry.path();
+    const std::string scene_name = scene_dir.filename().string();
+    QString canonical_qt = QFileInfo(QString::fromStdString(scene_dir.string())).canonicalFilePath();
+    fs::path canonical_scene_dir;
+    if (!canonical_qt.isEmpty()) {
+      canonical_scene_dir = fs::path(canonical_qt.toStdString());
+    } else {
+      boost::system::error_code canonical_ec;
+      canonical_scene_dir = fs::canonical(scene_dir, canonical_ec);
+      if (canonical_ec || canonical_scene_dir.empty()) {
+        canonical_scene_dir = fs::absolute(scene_dir);
+      }
+    }
+    const std::string canonical_scene_key = canonical_scene_dir.string();
+    if (!known_scene_dirs.insert(canonical_scene_key).second) {
+      append_info("Skipped scene directory '" + scene_name + "': canonical path already loaded (" + canonical_scene_key + ").");
+      continue;
+    }
+    const fs::path package_xml = scene_dir / "package.xml";
+    const fs::path scene_manifest = scene_dir / "scene_manifest.yaml";
+    const fs::path environment_yaml = scene_dir / "environment.yaml";
+    const fs::path urdf_xacro = scene_dir / "urdf" / "scene.urdf.xacro";
+    const fs::path demo_launch = scene_dir / "launch" / "demo.launch.py";
 
     const bool has_markers = fs::exists(package_xml) || fs::exists(scene_manifest) ||
       fs::exists(environment_yaml) || fs::exists(urdf_xacro) || fs::exists(demo_launch);
@@ -1200,12 +1226,12 @@ void SceneSelect::discover_scene_packages_on_startup()
       append_warning(
         "Discovered scaffold scene package '" + scene_name +
         "' without environment.yaml; scene can launch but cannot be fully edited until YAML exists.");
-      if (ensure_minimal_environment_yaml(entry.path(), scene_name)) {
+      if (ensure_minimal_environment_yaml(scene_dir, scene_name)) {
         append_warning(
           "Repair Missing environment.yaml applied at: " +
-          (entry.path() / "environment.yaml").string());
+          (scene_dir / "environment.yaml").string());
       }
-      refresh_scene_manifest_if_missing(entry.path(), scene_name);
+      refresh_scene_manifest_if_missing(scene_dir, scene_name);
     }
     workcell.scene_vector.push_back(discovered_scene);
     known_scenes.insert(scene_name);
@@ -1486,7 +1512,10 @@ bool repair_scene_yaml_file(const fs::path & scene_dir, std::string * summary)
     return false;
   }
   YAML::Node root;
-  try { root = YAML::LoadFile(environment_file.string()); } catch (const std::exception & e) {
+  try { root = YAML::LoadFile(environment_file.string()); } catch (const YAML::Exception & e) {
+    if (summary) *summary = std::string("YAML parse failure: ") + e.what();
+    return false;
+  } catch (const std::exception & e) {
     if (summary) *summary = std::string("YAML parse failure: ") + e.what();
     return false;
   }
@@ -2211,6 +2240,10 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
     return false;
+  } catch (const std::exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
   }
   if (!yaml.IsMap()) {
     append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
@@ -2431,6 +2464,10 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
     }
   }
   } catch (const YAML::Exception & error) {
+    append_error(
+      "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    return false;
+  } catch (const std::exception & error) {
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
     return false;
@@ -3327,7 +3364,8 @@ static void write_conveyor_pick_preview_artifacts(const boost::filesystem::path 
     boost::filesystem::create_directories(preview_dir);
     std::ofstream(preview_dir.string() + "/conveyor_pick_preview.yaml") << workcell_builder::serialize_preview_to_yaml(preview);
     std::ofstream(preview_dir.string() + "/conveyor_pick_preview.json") << workcell_builder::serialize_preview_to_json(preview);
-  } catch (...) {}
+  } catch (const YAML::Exception &) {
+  } catch (const std::exception &) {}
 }
 
 void SceneSelect::on_refresh_status_button_clicked()

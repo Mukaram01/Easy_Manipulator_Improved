@@ -166,7 +166,8 @@ add_executable(workcell_builder
     include/environment_layout_editor.hpp
     include/external_asset_import_dialog.hpp
     include/workspace_validation.hpp
-    src_workspace_validation.cpp)
+    src_workspace_validation.cpp
+    src_workcell_builder_command_builders.cpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -275,6 +276,10 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_workspace_validation_test
     test/workspace_validation_test.cpp
     src_workspace_validation.cpp)
+
+  ament_add_gtest(workcell_command_builders_test
+    test/command_builders_test.cpp
+    src_workcell_builder_command_builders.cpp)
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
   endif()

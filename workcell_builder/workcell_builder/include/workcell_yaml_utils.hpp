@@ -2,6 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 #include <string>
+#include <optional>
 
 namespace workcell_builder
 {
@@ -16,4 +17,10 @@ bool yaml_read_bool(const YAML::Node & node, bool * out);
 
 YAML::Node yaml_map_key(const YAML::Node & node, const char * key);
 YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index);
+
+YAML::Node get_map(const YAML::Node & node, const char * key);
+YAML::Node get_scalar(const YAML::Node & node, const char * key);
+YAML::Node get_sequence(const YAML::Node & node, const char * key);
+std::optional<bool> get_bool_like(const YAML::Node & node, const char * key);
+std::optional<bool> bool_like(const YAML::Node & node);
 }
