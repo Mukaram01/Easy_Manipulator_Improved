@@ -119,6 +119,7 @@ add_executable(workcell_builder
     src_asset_discovery_helper.cpp
     src_generated_stl_writer.cpp
     src_generated_environment_asset_writer.cpp
+    src_placed_object_urdf_render.cpp
     src_object_placement_model.cpp
     src_robot_tool_compatibility.cpp
     src_workcell_scene_schema.cpp
@@ -233,6 +234,7 @@ if(BUILD_TESTING)
     test/generated_environment_asset_writer_test.cpp
     src_generated_stl_writer.cpp
     src_generated_environment_asset_writer.cpp
+    src_placed_object_urdf_render.cpp
     src_object_placement_model.cpp
     gui/workcell_builder_ui_utils.cpp
     gui/loadobjects.cpp)

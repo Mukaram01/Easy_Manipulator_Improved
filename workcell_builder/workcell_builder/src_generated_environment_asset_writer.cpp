@@ -1,4 +1,5 @@
 #include "generated_environment_asset_writer.hpp"
+#include "placed_object_urdf_render.hpp"
 
 #include <boost/filesystem.hpp>
 #include <fstream>
@@ -107,12 +108,13 @@ GeneratedEnvironmentAssetResult write_generated_environment_asset(
            << "    child_link: " << spec.object_name << "\n";
 
   std::ofstream urdf_out(result.urdf_xacro_path.string());
+  PlacedObject urdf_object;
+  urdf_object.name = spec.object_name;
+  urdf_object.mesh_path = "package://" + spec.object_name + "_description/meshes/visual/" + spec.object_name + ".stl";
+  urdf_object.collision_mesh = "package://" + spec.object_name + "_description/meshes/collision/" + spec.object_name + ".stl";
   urdf_out << "<?xml version=\"1.0\"?>\n"
            << "<robot xmlns:xacro=\"http://www.ros.org/wiki/xacro\" name=\"" << spec.object_name << "\">\n"
-           << "  <link name=\"" << spec.object_name << "\">\n"
-           << "    <visual><geometry><mesh filename=\"package://" << spec.object_name << "_description/meshes/visual/" << spec.object_name << ".stl\"/></geometry></visual>\n"
-           << "    <collision><geometry><mesh filename=\"package://" << spec.object_name << "_description/meshes/collision/" << spec.object_name << ".stl\"/></geometry></collision>\n"
-           << "  </link>\n"
+           << render_placed_object_urdf_snippet(urdf_object, spec.object_name)
            << "</robot>\n";
 
   std::ofstream cmake_out((asset_root / "CMakeLists.txt").string());
