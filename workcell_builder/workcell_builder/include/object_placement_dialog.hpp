@@ -22,6 +22,7 @@ private:
   void rebuild_table();
   void add_default_object(const std::string & source_type);
   void import_rviz_pose_feedback();
+  void apply_and_generate_preview();
 
   ObjectPlacementModel model_;
   QTableWidget * table_{nullptr};
