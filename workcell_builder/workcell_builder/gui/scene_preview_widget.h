@@ -28,6 +28,12 @@ public:
     QString status{ "unknown" };
     QString source_path;
     QString role;
+    QString mesh_path;
+    QString mesh_type;
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    double mesh_roll{ 0.0 }, mesh_pitch{ 0.0 }, mesh_yaw{ 0.0 };
+    bool mesh_available{ false };
+    QString mesh_load_warning;
     bool selectable{ true };
     bool metadata_complete{ true };
     QStringList warnings;
