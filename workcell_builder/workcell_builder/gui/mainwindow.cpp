@@ -753,11 +753,27 @@ void MainWindow::setup_studio_shell()
   auto * scene_builder = new QWidget(studio_pages_); auto * sl=new QVBoxLayout(scene_builder);
   scene_builder_title_=new QLabel("<h2>Scene Builder</h2>"); scene_builder_title_->setProperty("studioTitle", true); sl->addWidget(scene_builder_title_);
   auto * scene_header_row = new QHBoxLayout();
-  scene_builder_status_chip_ = new QLabel("READY · 3D View", scene_builder); scene_builder_status_chip_->setObjectName("sceneStatusChip");
-  scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(true);
+  scene_builder_preview_chip_ = new QLabel("Preview: Unavailable", scene_builder); scene_builder_preview_chip_->setObjectName("sceneStatusChip");
+  scene_builder_launch_chip_ = new QLabel("Launch: Missing", scene_builder); scene_builder_launch_chip_->setObjectName("sceneStatusChip");
+  scene_builder_safety_chip_ = new QLabel("Safety: Fake hardware", scene_builder); scene_builder_safety_chip_->setObjectName("sceneStatusChip");
+  scene_builder_path_label_ = new QLabel("Path: (none)", scene_builder); scene_builder_path_label_->setWordWrap(false);
+  scene_builder_path_label_->setTextFormat(Qt::PlainText);
+  scene_builder_path_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  scene_builder_generate_launch_button_ = new QPushButton("Generate launch package", scene_builder);
+  scene_builder_generate_launch_button_->setVisible(false);
+  scene_builder_generate_launch_button_->setMaximumHeight(24);
   auto * copy_scene_path_header = new QToolButton(scene_builder); copy_scene_path_header->setText("Copy");
   QObject::connect(copy_scene_path_header, &QToolButton::clicked, this, [this](){ if (!selected_scene_path().isEmpty()) QApplication::clipboard()->setText(selected_scene_path()); });
-  scene_header_row->addWidget(scene_builder_status_chip_); scene_header_row->addWidget(scene_builder_path_label_,1); scene_header_row->addWidget(copy_scene_path_header);
+  QObject::connect(scene_builder_generate_launch_button_, &QPushButton::clicked, this, [this](){
+    generate_scene_package_for_selected_scene();
+    refresh_scene_builder_selected_scene_ui();
+  });
+  scene_header_row->addWidget(scene_builder_preview_chip_);
+  scene_header_row->addWidget(scene_builder_launch_chip_);
+  scene_header_row->addWidget(scene_builder_safety_chip_);
+  scene_header_row->addWidget(scene_builder_generate_launch_button_);
+  scene_header_row->addWidget(scene_builder_path_label_,1);
+  scene_header_row->addWidget(copy_scene_path_header);
   sl->addLayout(scene_header_row);
   auto * scene_shell = new QWidget(scene_builder); scene_shell->setObjectName("sceneBuilderWorkspace");
   auto * scene_shell_layout = new QVBoxLayout(scene_shell);
@@ -2619,8 +2635,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   if (!has_selected_scene()) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
-  scene_builder_status_base_ = "READY";
-  refresh_scene_builder_view_chips();
+    refresh_scene_builder_view_chips();
     if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
     if (canvas_header_label_) canvas_header_label_->setText("No scene selected");
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
@@ -2630,8 +2645,13 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
-  if (scene_builder_path_label_) { const QString sp = selected_scene_path(); scene_builder_path_label_->setText(QString("Path: %1").arg(sp)); scene_builder_path_label_->setToolTip(sp); }
-  scene_builder_status_base_ = QString::fromStdString(s.status);
+  if (scene_builder_path_label_) {
+    const QString sp = selected_scene_path();
+    const QFontMetrics metrics(scene_builder_path_label_->font());
+    const QString short_path = metrics.elidedText(sp, Qt::ElideMiddle, 460);
+    scene_builder_path_label_->setText(QString("Path: %1").arg(short_path));
+    scene_builder_path_label_->setToolTip(sp);
+  }
   refresh_scene_builder_view_chips();
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
@@ -2865,11 +2885,19 @@ void MainWindow::refresh_scene_builder_left_explorer()
 
 void MainWindow::refresh_scene_builder_view_chips()
 {
-  const QString view_label = scene_builder_is_3d_view_ ? "3D View" : "2D Layout";
-  if (scene_builder_status_chip_) {
-    scene_builder_status_chip_->setText(scene_builder_status_base_ + " · " + view_label);
+  bool preview_available = false;
+  bool launch_ready = false;
+  if (has_selected_scene()) {
+    const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+    preview_available = s.has_static_preview_svg || s.has_static_preview_html || s.has_smoke_report_json;
+    launch_ready = s.has_launch_demo && s.has_package_xml;
   }
+  if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_available ? "Available" : "Unavailable"));
+  if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch: %1").arg(launch_ready ? "Ready" : "Missing"));
+  if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
+  if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
+    const QString view_label = scene_builder_is_3d_view_ ? "3D View" : "2D Layout";
     const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
     canvas_mode_label_->setText(base_mode + " · " + view_label);
   }

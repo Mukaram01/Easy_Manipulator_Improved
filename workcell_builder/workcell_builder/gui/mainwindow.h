@@ -257,8 +257,10 @@ private:
   QLabel * dashboard_summary_label_{ nullptr };
   QLabel * scene_builder_title_{ nullptr };
   QLabel * scene_preview_label_{ nullptr };
-  QLabel * scene_builder_status_chip_{ nullptr };
-  QString scene_builder_status_base_{"READY"};
+  QLabel * scene_builder_preview_chip_{ nullptr };
+  QLabel * scene_builder_launch_chip_{ nullptr };
+  QLabel * scene_builder_safety_chip_{ nullptr };
+  QPushButton * scene_builder_generate_launch_button_{ nullptr };
   bool scene_builder_is_3d_view_{ true };
   QLabel * scene_builder_path_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
