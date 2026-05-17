@@ -12,6 +12,7 @@ def test_object_placement_manager_ui_strings_exist():
         'Remove Object',
         'Edit Pose',
         'Refresh Preview',
+        'Open RViz STL Preview',
     ]:
         assert needle in txt
 
