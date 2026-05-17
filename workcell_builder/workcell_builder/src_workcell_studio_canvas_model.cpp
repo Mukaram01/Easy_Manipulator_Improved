@@ -2,12 +2,78 @@
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
 #include <algorithm>
+#include <set>
 #include <yaml-cpp/yaml.h>
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 
 static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out = YAML::LoadFile(p.string()); return true;}catch(...){ workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", p, "scene YAML parse failed"); return false;} }
+
+static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string> * out)
+{
+  if (!node.IsScalar()) return;
+  const std::string text = node.as<std::string>("");
+  if (text.empty()) return;
+  if (text.rfind("package://", 0) == 0 || text.find(".stl") != std::string::npos || text.find("meshes/") != std::string::npos) out->push_back(text);
+}
+
+static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, const YAML::Node & manifest, const YAML::Node & layout_items, const std::string & item_id)
+{
+  std::vector<std::string> out;
+  const auto scan_fields = [&out](const YAML::Node & n) {
+    add_mesh_candidate(yaml_map_key(n, "mesh"), &out);
+    add_mesh_candidate(yaml_map_key(n, "mesh_path"), &out);
+    add_mesh_candidate(yaml_map_key(n, "visual_mesh"), &out);
+    add_mesh_candidate(yaml_map_key(n, "collision_mesh"), &out);
+    YAML::Node v = yaml_map_key(yaml_map_key(n, "visual"), "geometry");
+    add_mesh_candidate(yaml_map_key(v, "filepath"), &out);
+    add_mesh_candidate(yaml_map_key(v, "mesh"), &out);
+  };
+  scan_fields(env);
+  scan_fields(manifest);
+  if (layout_items.IsSequence()) {
+    for (const auto & node : layout_items) {
+      if (!node.IsMap()) continue;
+      if (yaml_map_value_or_empty(node, "id") != item_id) continue;
+      scan_fields(node);
+      YAML::Node metadata = yaml_map_key(node, "metadata");
+      scan_fields(metadata);
+    }
+  }
+  return out;
+}
+
+static fs::path resolve_mesh_candidate(const std::string & c, const fs::path & scene_dir)
+{
+  fs::path path(c);
+  if (c.rfind("package://", 0) == 0) {
+    const std::string rest = c.substr(std::string("package://").size());
+    path = scene_dir / "assets" / rest;
+  } else if (!path.is_absolute()) {
+    path = scene_dir / path;
+  }
+  return path;
+}
+
+static void probe_mesh_candidates(const fs::path & scene_dir, std::vector<fs::path> * visuals, std::vector<fs::path> * collisions)
+{
+  const std::vector<fs::path> roots = {
+    scene_dir / "assets" / "environment_objects",
+    scene_dir / "assets" / "robots",
+    scene_dir / "assets" / "end_effectors"
+  };
+  for (const auto & root : roots) {
+    if (!fs::exists(root)) continue;
+    for (fs::recursive_directory_iterator it(root), end; it != end; ++it) {
+      if (!fs::is_regular_file(it->path()) || it->path().extension() != ".stl") continue;
+      const std::string p = it->path().generic_string();
+      if (p.find("/meshes/visual/") != std::string::npos) visuals->push_back(it->path());
+      else if (p.find("/meshes/collision/") != std::string::npos) collisions->push_back(it->path());
+      else if (p.find("/assets/robots/") != std::string::npos || p.find("/assets/end_effectors/") != std::string::npos) visuals->push_back(it->path());
+    }
+  }
+}
 
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & scene_dir, const std::string & scene_name)
 {
@@ -182,6 +248,48 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     }
     m.warnings.push_back("Using deterministic 3D fallback layout because layout metadata is incomplete.");
     if (!deterministic_fallback_reason.empty() && !warned_incomplete_placement_metadata) m.warnings.push_back("Fallback detail: " + deterministic_fallback_reason + ".");
+  }
+
+  std::vector<fs::path> probed_visuals;
+  std::vector<fs::path> probed_collisions;
+  probe_mesh_candidates(scene_dir, &probed_visuals, &probed_collisions);
+  const auto choose_probed = [](const WorkcellStudioCanvasItem & item, const std::vector<fs::path> & pool)->fs::path {
+    for (const auto & p : pool) {
+      const std::string b = p.stem().string();
+      if (b == item.id || b == item.type || b == item.role) return p;
+    }
+    return fs::path();
+  };
+
+  for (auto & item : m.items) {
+    item.mesh_available = false;
+    item.mesh_load_warning.clear();
+    const auto candidates = gather_mesh_candidates(env, manifest, layout_items, item.id);
+    fs::path visual;
+    fs::path collision;
+    for (const auto & c : candidates) {
+      const fs::path resolved = resolve_mesh_candidate(c, scene_dir);
+      if (!fs::exists(resolved)) continue;
+      const auto text = resolved.generic_string();
+      if (text.find("/visual/") != std::string::npos) visual = resolved;
+      else if (text.find("/collision/") != std::string::npos) collision = resolved;
+      else if (visual.empty()) visual = resolved;
+    }
+    if (visual.empty()) visual = choose_probed(item, probed_visuals);
+    if (collision.empty()) collision = choose_probed(item, probed_collisions);
+
+    if (!visual.empty()) {
+      item.mesh_path = visual.generic_string();
+      item.mesh_available = true;
+    } else if (!collision.empty()) {
+      item.mesh_path = collision.generic_string();
+      item.mesh_available = true;
+      item.mesh_load_warning = "Mesh preview fallback for " + item.id + ": visual mesh unavailable; using collision mesh";
+      m.warnings.push_back(item.mesh_load_warning);
+    } else {
+      item.mesh_load_warning = "Mesh preview fallback for " + item.id + ": no mesh candidates resolved";
+      m.warnings.push_back(item.mesh_load_warning);
+    }
   }
 
   std::stable_sort(m.items.begin(), m.items.end(), [](const WorkcellStudioCanvasItem & a, const WorkcellStudioCanvasItem & b) {

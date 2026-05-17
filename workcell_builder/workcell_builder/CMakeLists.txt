@@ -297,6 +297,10 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
+  ament_add_gtest(workcell_studio_canvas_model_mesh_test
+    test/workcell_studio_canvas_model_mesh_test.cpp
+    src_workcell_studio_canvas_model.cpp
+    src_workcell_yaml_utils.cpp)
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
   endif()
@@ -306,6 +310,11 @@ if(BUILD_TESTING)
       Qt5::Core
       yaml-cpp
     )
+  endif()
+
+  if(TARGET workcell_studio_canvas_model_mesh_test)
+    target_link_libraries(workcell_studio_canvas_model_mesh_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_studio_canvas_model_mesh_test PRIVATE ${Boost_INCLUDE_DIRS} include)
   endif()
 
   if(TARGET workcell_new_cell_wizard_test)
