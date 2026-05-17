@@ -294,11 +294,24 @@ if(BUILD_TESTING)
     src_placed_object_urdf_render.cpp
     src_object_placement_model.cpp)
 
+  ament_add_gtest(workcell_scene3d_stl_parser_test
+    test/scene3d_stl_parser_test.cpp
+    gui/scene3d_viewport_widget.cpp)
+
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_scene3d_stl_parser_test)
+    target_link_libraries(workcell_scene3d_stl_parser_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_stl_parser_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_command_builders_test)
