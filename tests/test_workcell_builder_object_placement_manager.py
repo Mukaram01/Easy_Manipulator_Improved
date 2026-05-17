@@ -13,6 +13,9 @@ def test_object_placement_manager_ui_strings_exist():
         'Edit Pose',
         'Refresh Preview',
         'Open RViz STL Preview',
+        'Open Interactive RViz Preview',
+        'Import RViz Pose Feedback',
+        'placed_objects_feedback.yaml',
     ]:
         assert needle in txt
 

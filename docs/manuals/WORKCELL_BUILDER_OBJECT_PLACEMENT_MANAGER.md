@@ -57,3 +57,13 @@ This is generation-time/offline-only workflow. No MoveIt planning call, no traje
 - Generated files include `placed_objects_preview.yaml`, `placed_objects_preview.urdf.xacro`, `preview_scene.launch.py`, and `README_PREVIEW.md`.
 - This preview is visual-only/offline-only and does not use MoveIt, controllers, trajectories, or robot motion.
 - Full generated scene flow still requires **Generate YAML** and **Generate Files** in Workcell Studio.
+
+
+## Interactive RViz pose editing
+
+- Visual STL preview shows placed meshes only.
+- **Open Interactive RViz Preview** generates interactive marker preview artifacts under `/tmp/workcell_builder_preview/<scene_name>/`.
+- Interactive RViz edits write suggestion feedback to `placed_objects_feedback.yaml`.
+- Feedback is not automatically applied to real scene files (`environment.yaml`, `scene_manifest.yaml`) in this PR.
+- No MoveIt/controllers/robot execution are started.
+- This is offline preview/editing only and fake-hardware-first safe.
