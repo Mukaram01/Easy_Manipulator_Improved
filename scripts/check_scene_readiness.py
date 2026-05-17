@@ -9,6 +9,9 @@ import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
+import xml.etree.ElementTree as ET
+
+import yaml
 
 MESH_EXTS = {".stl", ".dae", ".obj"}
 SCENE_TEXT_EXTS = {".urdf", ".xacro", ".yaml", ".yml", ".json", ".xml", ".txt", ".srdf"}
@@ -36,6 +39,51 @@ def _asset_name_from_mesh(path: Path) -> str:
     return base or "imported_asset"
 
 
+def _extract_placed_objects(scene_pkg: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    env_yaml = scene_pkg / "environment.yaml"
+    if not env_yaml.exists():
+        return [], warnings
+    try:
+        loaded = yaml.safe_load(env_yaml.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        warnings.append(f"Unable to parse environment.yaml for placed_objects: {exc}")
+        return [], warnings
+    if not isinstance(loaded, dict):
+        warnings.append("environment.yaml root is not a mapping; skipping placed_objects checks.")
+        return [], warnings
+
+    raw = loaded.get("placed_objects")
+    if raw is None:
+        return [], warnings
+    if not isinstance(raw, list):
+        warnings.append("environment.yaml placed_objects is not a list; skipping placed_objects checks.")
+        return [], warnings
+    return [obj for obj in raw if isinstance(obj, dict)], warnings
+
+
+def _collect_generated_urdf_text(scene_pkg: Path) -> tuple[str, list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    generated_files = [scene_pkg / "urdf" / "scene.urdf.xacro", scene_pkg / "urdf" / "environment.urdf.xacro"]
+    texts: list[str] = []
+    existing = [p for p in generated_files if p.exists()]
+    for path in existing:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            errors.append(f"Unable to read generated URDF/Xacro file {path.relative_to(scene_pkg)}: {exc}")
+            continue
+        try:
+            ET.fromstring(text)
+        except ET.ParseError as exc:
+            errors.append(f"Generated URDF/Xacro is structurally invalid ({path.relative_to(scene_pkg)}): {exc}")
+        texts.append(text)
+    if not existing:
+        warnings.append("No generated URDF/Xacro file found for placed_objects linkage check.")
+    return "\n".join(texts), errors, warnings
+
+
 def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -56,6 +104,8 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
 
     frame_hits: dict[str, int] = {frame: 0 for frame in FRAME_HINTS}
     candidate_clues = {"robot": set(), "gripper": set(), "sensor": set()}
+    placed_objects, placed_warnings = _extract_placed_objects(scene_pkg)
+    warnings.extend(placed_warnings)
 
     for path in text_files:
         try:
@@ -95,6 +145,68 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
     if duplicate_basenames:
         warnings.append(f"Duplicate mesh basenames in scene package: {', '.join(duplicate_basenames)}")
 
+    placed_summary: dict[str, Any] = {"count": len(placed_objects)}
+    if placed_objects:
+        generated_text, generated_errors, generated_warnings = _collect_generated_urdf_text(scene_pkg)
+        errors.extend(generated_errors)
+        warnings.extend(generated_warnings)
+
+        invalid_mesh_warnings: list[str] = []
+        absolute_external_mesh_warnings: list[str] = []
+        missing_collision_mesh_warnings: list[str] = []
+        found_names: list[str] = []
+
+        for idx, obj in enumerate(placed_objects):
+            obj_name = str(obj.get("name") or obj.get("id") or f"placed_object_{idx}")
+            mesh_path = str(obj.get("mesh") or obj.get("mesh_path") or obj.get("filepath") or "").strip()
+            if not mesh_path:
+                invalid_mesh_warnings.append(f"{obj_name}: missing mesh filepath")
+            else:
+                lower = mesh_path.lower()
+                if not any(lower.endswith(ext) for ext in MESH_EXTS):
+                    invalid_mesh_warnings.append(f"{obj_name}: mesh does not use a supported extension ({mesh_path})")
+                if _looks_absolute(mesh_path):
+                    absolute_external_mesh_warnings.append(f"{obj_name}: absolute mesh path ({mesh_path})")
+                if mesh_path.startswith("http://") or mesh_path.startswith("https://"):
+                    absolute_external_mesh_warnings.append(f"{obj_name}: external URL mesh path ({mesh_path})")
+
+            collision_enabled = bool(obj.get("collision_enabled", obj.get("collision", True)))
+            collision_mesh = str(obj.get("collision_mesh") or obj.get("collision_mesh_path") or "").strip()
+            if collision_enabled and not collision_mesh and not mesh_path:
+                missing_collision_mesh_warnings.append(f"{obj_name}: collision enabled but no mesh/collision mesh provided")
+
+            if generated_text and re.search(rf"\b{re.escape(obj_name)}\b", generated_text):
+                found_names.append(obj_name)
+
+        for msg in invalid_mesh_warnings:
+            warnings.append(f"Placed object warning: {msg}")
+        for msg in absolute_external_mesh_warnings:
+            warnings.append(f"Placed object warning: {msg}")
+        for msg in missing_collision_mesh_warnings:
+            warnings.append(f"Placed object warning: {msg}")
+
+        placed_summary.update(
+            {
+                "invalid_mesh_warnings": invalid_mesh_warnings,
+                "absolute_external_mesh_warnings": absolute_external_mesh_warnings,
+                "missing_collision_mesh_warnings": missing_collision_mesh_warnings,
+                "found_in_generated_urdf_xacro": len(found_names) == len(placed_objects),
+                "found_names": found_names,
+                "missing_names": [str(o.get("name") or o.get("id") or f"placed_object_{i}") for i, o in enumerate(placed_objects) if str(o.get("name") or o.get("id") or f"placed_object_{i}") not in found_names],
+            }
+        )
+    else:
+        placed_summary.update(
+            {
+                "found_in_generated_urdf_xacro": False,
+                "found_names": [],
+                "missing_names": [],
+                "invalid_mesh_warnings": [],
+                "absolute_external_mesh_warnings": [],
+                "missing_collision_mesh_warnings": [],
+            }
+        )
+
     return {
         "scene_package": str(scene_pkg),
         "errors": errors,
@@ -108,6 +220,7 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
         "frames": {k: v for k, v in frame_hits.items() if v > 0},
         "candidates": {k: sorted(v) for k, v in candidate_clues.items() if v},
         "mesh_extensions_detected": sorted({p.suffix.lower() for p in mesh_files}),
+        "placed_objects": placed_summary,
     }
 
 
