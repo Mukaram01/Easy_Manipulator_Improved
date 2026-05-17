@@ -61,17 +61,13 @@ bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, co
     const std::string lname = sanitize_object_name(o.name);
     xacro << render_placed_object_urdf_snippet(o, lname);
   }
-  xacro << "</robot>\n";
-
   std::ofstream(out_dir / "placed_objects_preview.yaml") << yaml.str();
-  xacro << "  <link name="camera_01_link"/>
-";
-  xacro << "  <joint name="camera_01_mount" type="fixed"><parent link="world"/><child link="camera_01_link"/><origin xyz="0.8 -0.6 1.2" rpy="0 0.785 2.35"/></joint>
-";
-  xacro << "  <link name="camera_01_color_optical_frame"/>
-";
-  xacro << "  <joint name="camera_01_optical" type="fixed"><parent link="camera_01_link"/><child link="camera_01_color_optical_frame"/></joint>
-";
+  xacro << R"(  <link name="camera_01_link"/>
+  <joint name="camera_01_mount" type="fixed"><parent link="world"/><child link="camera_01_link"/><origin xyz="0.8 -0.6 1.2" rpy="0 0.785 2.35"/></joint>
+  <link name="camera_01_color_optical_frame"/>
+  <joint name="camera_01_optical" type="fixed"><parent link="camera_01_link"/><child link="camera_01_color_optical_frame"/></joint>
+</robot>
+)";
   std::ofstream(out_dir / "placed_objects_preview.urdf.xacro") << xacro.str();
 
   std::ofstream(out_dir / "preview_scene.launch.py")
@@ -99,14 +95,18 @@ bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, co
     << "  ])\n";
 
   std::ofstream(out_dir / "README_PREVIEW.md") << "# Workcell Builder STL Preview\n\nVisual-only offline preview. No MoveIt, controllers, trajectories, or real robot motion.\n\nRun:\n\nros2 launch " << (out_dir / "preview_scene.launch.py").string() << "\n";
-  std::ofstream(out_dir / "camera_frustum_preview.yaml") << "camera_placements:
+  std::ofstream(out_dir / "camera_frustum_preview.yaml") << R"(camera_placements:
   - name: camera_01
+    frame: camera_01_color_optical_frame
+    xyz: [0.8, -0.6, 1.2]
+    rpy: [0.0, 0.785, 2.35]
+    preview_only: true
     frustum:
       horizontal_fov_deg: 69.0
       vertical_fov_deg: 42.0
       near_m: 0.15
       far_m: 1.5
-";
+)";
   std::ofstream(out_dir / "camera_frustum_preview.launch.py")
     << "from launch import LaunchDescription\nfrom launch_ros.actions import Node\ndef generate_launch_description():\n"
     << "  return LaunchDescription([\n"

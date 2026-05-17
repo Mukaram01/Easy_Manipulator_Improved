@@ -286,6 +286,12 @@ if(BUILD_TESTING)
     test/workspace_validation_test.cpp
     src_workspace_validation.cpp)
 
+  ament_add_gtest(workcell_placed_object_preview_writer_test
+    test/placed_object_preview_writer_test.cpp
+    gui/placed_object_preview_writer.cpp
+    src_placed_object_urdf_render.cpp
+    src_object_placement_model.cpp)
+
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
