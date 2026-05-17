@@ -3229,6 +3229,24 @@ double MainWindow::current_nudge_step_m(Qt::KeyboardModifiers modifiers) const
   return std::max(0.001, step);
 }
 
+void MainWindow::rebuild_canvas_inspector()
+{
+  if (!digital_twin_scene_ || selection_update_guard_) return;
+  if (digital_twin_scene_->selectedItems().isEmpty()) {
+    refresh_selected_scene_item_labels(current_selected_scene_item());
+    return;
+  }
+
+  auto * item = digital_twin_scene_->selectedItems().front();
+  if (!item) {
+    refresh_selected_scene_item_labels(current_selected_scene_item());
+    return;
+  }
+
+  select_canvas_item(item);
+  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(item->data(RoleId).toString().trimmed());
+}
+
 void MainWindow::keyPressEvent(QKeyEvent * event)
 {
   if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) { QMainWindow::keyPressEvent(event); return; }
