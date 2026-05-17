@@ -1,5 +1,6 @@
 #include "workcell_builder_ui_utils.hpp"
 #include "object_placement_dialog.hpp"
+#include "rviz_pose_feedback_importer.hpp"
 
 #include <QDialogButtonBox>
 #include <QHeaderView>
@@ -10,8 +11,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <array>
-#include <fstream>
 #include <sstream>
+#include <set>
 #include "environment_layout_editor.hpp"
 #include "placed_object_preview_writer.hpp"
 #include <QApplication>
@@ -81,20 +82,64 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
   });
   mk("Import RViz Pose Feedback", [this]() {
-    const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") + PlacedObjectPreviewWriter::sanitize_scene_name("workcell_scene") + "/placed_objects_feedback.yaml";
-    std::ifstream feedback(feedback_path);
-    if (!feedback.good()) {
-      QMessageBox::information(this, "Import RViz Pose Feedback", "No placed_objects_feedback.yaml found yet. Generate interactive preview and edit in RViz first.");
-      return;
+    const std::string scene_name = "workcell_scene";
+    const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") + PlacedObjectPreviewWriter::sanitize_scene_name(scene_name) + "/placed_objects_feedback.yaml";
+    const auto parsed = parse_rviz_pose_feedback_file(scene_name, feedback_path);
+
+    std::set<std::string> known_names;
+    for (const auto & obj : model_.objects()) known_names.insert(obj.name);
+
+    std::vector<std::string> unknown_names;
+    for (const auto & entry : parsed.entries) {
+      if (!entry.name.empty() && known_names.find(entry.name) == known_names.end()) {
+        unknown_names.push_back(entry.name);
+      }
     }
-    std::stringstream ss; ss << feedback.rdbuf();
-    QMessageBox::information(
-      this,
-      "Import RViz Pose Feedback",
-      QString::fromStdString(
-        "Found feedback file:\n" + feedback_path +
-        "\n\nPreview-only import placeholder for next PR.\n\n" +
-        ss.str()));
+
+    std::stringstream review;
+    review << "Feedback file: " << feedback_path << "\n";
+    review << "Scene: " << parsed.scene_name << "\n";
+    review << "Source: " << parsed.source << "\n";
+    review << "safe_for_robot_motion: " << (parsed.safe_for_robot_motion ? "true" : "false") << "\n\n";
+    for (const auto & err : parsed.errors) review << "ERROR: " << err << "\n";
+    for (const auto & warn : parsed.warnings) review << "WARNING: " << warn << "\n";
+    for (const auto & name : unknown_names) review << "WARNING: Unknown object in feedback (not auto-added): " << name << "\n";
+    review << "\nEntries: " << parsed.entries.size() << "\n";
+    for (const auto & entry : parsed.entries) {
+      review << " - " << (entry.name.empty() ? "<unnamed>" : entry.name)
+             << " [" << (entry.valid ? "valid" : "invalid") << "]"
+             << " xyz=(" << entry.x << ", " << entry.y << ", " << entry.z << ")"
+             << " rpy=(" << entry.roll << ", " << entry.pitch << ", " << entry.yaw << ")\n";
+      for (const auto & err : entry.errors) review << "    ERROR: " << err << "\n";
+      for (const auto & warn : entry.warnings) review << "    WARNING: " << warn << "\n";
+    }
+
+    QMessageBox review_box(this);
+    review_box.setWindowTitle("Review RViz Pose Feedback");
+    review_box.setIcon(parsed.has_fatal_error() ? QMessageBox::Warning : QMessageBox::Information);
+    review_box.setText(parsed.has_fatal_error() ? "Feedback import rejected. Review errors below." : "Review imported feedback before apply.");
+    review_box.setDetailedText(QString::fromStdString(review.str()));
+    review_box.setStandardButtons(parsed.has_fatal_error() ? QMessageBox::Ok : (QMessageBox::Apply | QMessageBox::Cancel));
+    const auto clicked = review_box.exec();
+    if (parsed.has_fatal_error() || clicked != QMessageBox::Apply) return;
+
+    auto objects = model_.objects();
+    for (auto & obj : objects) {
+      for (const auto & entry : parsed.entries) {
+        if (entry.valid && entry.name == obj.name) {
+          obj.x = entry.x;
+          obj.y = entry.y;
+          obj.z = entry.z;
+          obj.roll = entry.roll;
+          obj.pitch = entry.pitch;
+          obj.yaw = entry.yaw;
+          if (!entry.status.empty()) obj.status = entry.status;
+        }
+      }
+    }
+    model_ = ObjectPlacementModel();
+    for (const auto & obj : objects) model_.add_object(obj);
+    rebuild_table();
   });
   mk("Open Visual Layout Editor", [this]() {
     EnvironmentLayoutEditor editor(this);
