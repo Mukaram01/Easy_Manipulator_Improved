@@ -86,7 +86,9 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     PlacedObjectPreviewWriter writer;
     std::string out_dir;
     std::vector<std::string> warns;
-    writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(
@@ -102,20 +104,30 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     PlacedObjectPreviewWriter writer;
     std::string out_dir;
     std::vector<std::string> warns;
-    writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
   });
   mk("Save Placed Objects to Scene YAML", [this]() {
-    const QString target = QInputDialog::getText(this, "Save Placed Objects to Scene YAML", "Path to environment.yaml");
-    if (target.isEmpty()) {
-      QMessageBox::warning(this, "Save Placed Objects to Scene YAML", "No active scene path is known. Preview artifacts were not persisted to environment.yaml.");
-      return;
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    std::string resolved_environment_yaml_path = trim_copy(active_environment_yaml_path_);
+    if (resolved_environment_yaml_path.empty()) {
+      const QString target = QInputDialog::getText(this, "Save Placed Objects to Scene YAML", "Path to environment.yaml (fallback prompt)");
+      if (target.isEmpty()) {
+        QMessageBox::warning(this, "Save Placed Objects to Scene YAML", "No active scene context is available. Preview artifacts were not persisted to environment.yaml.");
+        return;
+      }
+      resolved_environment_yaml_path = target.toStdString();
+      used_fallback = true;
     }
-    auto result = save_placed_objects_to_environment_yaml(target.toStdString(), model_.objects());
-    QString summary = QString("objects saved: %1\npath written: %2\nnext step: Generate Files")
-      .arg(static_cast<int>(result.objects_saved)).arg(QString::fromStdString(result.path_written));
+    auto result = save_placed_objects_to_environment_yaml(resolved_environment_yaml_path, model_.objects());
+    QString summary = QString("objects saved: %1\npath written: %2\nscene: %3\nfallback mode: %4\nnext step: Generate Files")
+      .arg(static_cast<int>(result.objects_saved)).arg(QString::fromStdString(result.path_written))
+      .arg(QString::fromStdString(scene_name)).arg(used_fallback ? "yes" : "no");
     if (!result.warnings.empty()) {
       summary += "\n\nwarnings:\n";
       for (const auto & w : result.warnings) summary += QString::fromStdString("- " + w + "\n");
@@ -123,7 +135,8 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QMessageBox::information(this, "Save Placed Objects to Scene YAML", summary);
   });
   mk("Import RViz Pose Feedback", [this]() {
-    const std::string scene_name = "workcell_scene";
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
     const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") + PlacedObjectPreviewWriter::sanitize_scene_name(scene_name) + "/placed_objects_feedback.yaml";
     const auto parsed = parse_rviz_pose_feedback_file(scene_name, feedback_path);
 
@@ -210,6 +223,34 @@ void ObjectPlacementDialog::set_objects(const std::vector<PlacedObject> & object
   rebuild_table();
 }
 
+
+void ObjectPlacementDialog::set_scene_context(const std::string & scene_name, const std::string & environment_yaml_path)
+{
+  active_scene_name_ = trim_copy(scene_name);
+  active_environment_yaml_path_ = trim_copy(environment_yaml_path);
+}
+
+void ObjectPlacementDialog::set_active_scene_name(const std::string & scene_name)
+{
+  active_scene_name_ = trim_copy(scene_name);
+}
+
+void ObjectPlacementDialog::set_active_environment_yaml_path(const std::string & environment_yaml_path)
+{
+  active_environment_yaml_path_ = trim_copy(environment_yaml_path);
+}
+
+std::string ObjectPlacementDialog::resolve_scene_name(bool * used_fallback) const
+{
+  const std::string scene_name = trim_copy(active_scene_name_);
+  if (!scene_name.empty()) {
+    if (used_fallback != nullptr) *used_fallback = false;
+    return scene_name;
+  }
+  if (used_fallback != nullptr) *used_fallback = true;
+  return PlacedObjectPreviewWriter::sanitize_scene_name("workcell_scene");
+}
+
 std::vector<PlacedObject> ObjectPlacementDialog::objects() const { return model_.objects(); }
 
 void ObjectPlacementDialog::rebuild_table()
@@ -246,8 +287,10 @@ void ObjectPlacementDialog::add_default_object(const std::string & source_type)
 
 void ObjectPlacementDialog::import_rviz_pose_feedback()
 {
+  bool used_fallback = false;
+  const std::string scene_name = resolve_scene_name(&used_fallback);
   const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") +
-    PlacedObjectPreviewWriter::sanitize_scene_name("workcell_scene") + "/placed_objects_feedback.yaml";
+    PlacedObjectPreviewWriter::sanitize_scene_name(scene_name) + "/placed_objects_feedback.yaml";
   std::ifstream feedback(feedback_path);
   if (!feedback.good()) {
     QMessageBox::information(this, "Import RViz Pose Feedback", "No placed_objects_feedback.yaml found yet. Generate interactive preview and edit in RViz first.");
@@ -413,7 +456,9 @@ void ObjectPlacementDialog::apply_and_generate_preview()
   PlacedObjectPreviewWriter writer;
   std::string out_dir;
   std::vector<std::string> warns;
-  writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+  bool used_fallback = false;
+  const std::string scene_name = resolve_scene_name(&used_fallback);
+  writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
 
   const QString stl_cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
   const QString interactive_cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
@@ -422,7 +467,12 @@ void ObjectPlacementDialog::apply_and_generate_preview()
 
   QApplication::clipboard()->setText(command_bundle);
 
+  const std::string resolved_scene_yaml_path = trim_copy(active_environment_yaml_path_);
   QString message = QString::fromStdString("Preview output directory:\n" + out_dir) +
+    QString::fromStdString(
+    "\nScene: " + scene_name +
+    "\nScene YAML path: " + (resolved_scene_yaml_path.empty() ? std::string("<none>") : resolved_scene_yaml_path) +
+    "\nFallback mode: " + (used_fallback ? std::string("yes") : std::string("no"))) +
     "\n\nBoth launch commands copied to clipboard.\n\n" + command_bundle +
     "\n\nVisual/offline-only preview. This does not launch MoveIt, controllers, or hardware.";
   if (!warns.empty()) {
