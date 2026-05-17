@@ -19,6 +19,7 @@ class PlacedObjectPreviewWriter
 public:
   static std::string default_preview_root();
   static std::string sanitize_scene_name(const std::string & scene_name);
+  static std::string interactive_preview_node_script();
 
   bool write_preview(
     const std::string & scene_name,

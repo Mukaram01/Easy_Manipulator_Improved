@@ -67,6 +67,31 @@ Command copied to clipboard:
 
 Visual-only/offline-only preview.");
   });
+
+  mk("Open Interactive RViz Preview", [this]() {
+    PlacedObjectPreviewWriter writer;
+    std::string out_dir;
+    std::vector<std::string> warns;
+    writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+    const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
+    QApplication::clipboard()->setText(cmd);
+    QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
+  });
+  mk("Import RViz Pose Feedback", [this]() {
+    const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") + PlacedObjectPreviewWriter::sanitize_scene_name("workcell_scene") + "/placed_objects_feedback.yaml";
+    std::ifstream feedback(feedback_path);
+    if (!feedback.good()) {
+      QMessageBox::information(this, "Import RViz Pose Feedback", "No placed_objects_feedback.yaml found yet. Generate interactive preview and edit in RViz first.");
+      return;
+    }
+    std::stringstream ss; ss << feedback.rdbuf();
+    QMessageBox::information(this, "Import RViz Pose Feedback", QString::fromStdString("Found feedback file:
+" + feedback_path + "
+
+Preview-only import placeholder for next PR.
+
+" + ss.str()));
+  });
   mk("Open Visual Layout Editor", [this]() {
     EnvironmentLayoutEditor editor(this);
     editor.setWindowTitle("Open Visual Layout Editor");

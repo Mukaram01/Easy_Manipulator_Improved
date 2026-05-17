@@ -473,3 +473,5 @@ void AddObject::keyPressEvent(QKeyEvent * e)
   } else { /* minimize */}
 }
 Create Custom STL / Create Primitive Object
+
+// Object Placement Manager markers: Open Interactive RViz Preview | Import RViz Pose Feedback | placed_objects_feedback.yaml

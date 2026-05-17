@@ -316,3 +316,14 @@ if __name__ == "__main__":
     docs_obj = (repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md").read_text(encoding="utf-8")
     for marker in ["Preview real STL assets in RViz", "/tmp/workcell_builder_preview", "visual-only", "does not use MoveIt", "controllers", "robot motion"]:
         _check(marker in docs_obj, f"object placement docs marker present: {marker}", errors)
+
+
+    interactive_node = repo_root / 'scripts/workcell_builder_interactive_preview_node.py'
+    _check(interactive_node.exists(), 'interactive preview node exists', errors)
+    opd_cpp = (repo_root / 'workcell_builder/workcell_builder/gui/object_placement_dialog.cpp').read_text(encoding='utf-8')
+    _check('Open Interactive RViz Preview' in opd_cpp, 'interactive preview label exists', errors)
+    _check('Import RViz Pose Feedback' in opd_cpp, 'feedback import label exists', errors)
+    docs = (repo_root / 'docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md').read_text(encoding='utf-8')
+    _check('placed_objects_feedback.yaml' in docs, 'docs mention placed_objects_feedback.yaml', errors)
+    itest = (repo_root / 'tests/test_workcell_builder_interactive_preview.py').read_text(encoding='utf-8') if (repo_root / 'tests/test_workcell_builder_interactive_preview.py').exists() else ''
+    _check('InteractiveMarkers' in itest, 'tests mention InteractiveMarkers', errors)
