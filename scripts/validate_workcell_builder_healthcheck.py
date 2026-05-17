@@ -232,6 +232,19 @@ def main() -> int:
     tcam = (repo_root / "tests/test_workcell_builder_camera_placement_yaml_io.py").read_text(encoding="utf-8") if (repo_root / "tests/test_workcell_builder_camera_placement_yaml_io.py").exists() else ""
     _check("camera_placements" in tcam, "tests mention camera_placements", errors)
 
+
+    for f in [
+        repo_root / "scripts/workcell_builder_task_zone_preview_node.py",
+        repo_root / "workcell_builder/workcell_builder/launch/task_zone_preview.launch.py",
+        repo_root / "tests/test_workcell_builder_task_zone_yaml_io.py",
+    ]:
+        _check(f.exists(), f"task-zone artifact exists: {f.relative_to(repo_root)}", errors)
+    docs_obj = (repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md").read_text(encoding="utf-8")
+    _check("Pick/place zone editing and preview" in docs_obj, "docs contain Pick/place zone editing and preview", errors)
+    tests_blob = (repo_root / "tests/test_workcell_builder_task_intent_from_zones.py").read_text(encoding="utf-8") if (repo_root / "tests/test_workcell_builder_task_intent_from_zones.py").exists() else ""
+    _check("task_zones" in tests_blob and "pick_source" in tests_blob and "place_target" in tests_blob, "tests mention task_zones and pick-source/place-target usage", errors)
+    _check("Use Selected Zone as Pick Zone" in scene_cpp and "Use Selected Zone as Place Zone" in scene_cpp and "task_zones" in scene_cpp, "object placement source has required task-zone UI strings", errors)
+
     schema_validator = (repo_root / "scripts/validate_workcell_scene.py").read_text(encoding="utf-8")
     for marker in ["WORKCELL_SCENE_SCHEMA: PASS", "WORKCELL_SCENE_SCHEMA: WARN", "WORKCELL_SCENE_SCHEMA: FAIL", "workcell_scene/v1"]:
         _check(marker in schema_validator, f"scene schema validator marker present: {marker}", errors)

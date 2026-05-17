@@ -175,6 +175,28 @@ def _build_task_intent_from_scene(scene_path: Path, env_layout: dict[str, Any], 
         "safety": {"metadata_only": True, "runtime_io_applied": False, "motion_started": False, "ros_launch_started": False},
     }
     return intent, missing
+
+
+def _extract_task_zones(environment: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int], list[str]]:
+    zones = environment.get("task_zones") if isinstance(environment.get("task_zones"), list) else []
+    normalized=[]
+    counts={"total":0,"pick":0,"place":0}
+    ids=[]
+    for i,z in enumerate(zones):
+        if not isinstance(z,dict):
+            continue
+        zid=str(z.get("id") or f"task_zone_{i+1:02d}")
+        ztype=str(z.get("type") or "").lower()
+        role="other"
+        if "pick" in ztype or "pick" in zid.lower():
+            role="pick"; counts["pick"] += 1
+        elif "place" in ztype or "target" in ztype or "bin" in ztype or "place" in zid.lower():
+            role="place"; counts["place"] += 1
+        ids.append(zid)
+        normalized.append({"id":zid,"type":z.get("type",""),"frame":z.get("frame","world"),"dimensions":z.get("dimensions") or z.get("size") or [0.3,0.3,0.1],"role":role})
+    counts["total"]=len(normalized)
+    return normalized, counts, ids
+
 def _task_type_from_meta(meta: dict[str, Any]) -> str:
     task = meta.get("task_template") if isinstance(meta.get("task_template"), dict) else {}
     selected = str(task.get("selected") or task.get("id") or "pick_place").strip().lower()
@@ -184,8 +206,11 @@ def _task_type_from_meta(meta: dict[str, Any]) -> str:
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
+    task_zones, task_zone_counts, task_zone_ids = _extract_task_zones(env)
     warnings: list[str] = []
     task_intent_path = _find_task_intent(scene_path)
+    preferred_pick = "pick_zone_01" if "pick_zone_01" in task_zone_ids else (task_zones[0]["id"] if task_zones else "unknown_pick_zone")
+    preferred_place = "place_zone_01" if "place_zone_01" in task_zone_ids else (next((z["id"] for z in task_zones if z.get("role")=="place"), "unknown_place_zone"))
     builder_task_intent: dict[str, Any] = {}
     task_intent_validation: dict[str, Any] = {}
     task_recipe_generation: dict[str, Any] = {}
@@ -282,12 +307,14 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
                    "type": (env.get("camera_placements", [{}])[0].get("type") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("family") if sensors_meta and isinstance(sensors_meta[0], dict) else "depth_camera")),
                    "parent_frame": (env.get("camera_placements", [{}])[0].get("parent_frame") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else "world"),
                    "pose": (env.get("camera_placements", [{}])[0].get("pose") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"xyz": [0.0,0.0,1.0], "rpy": [0.0,0.0,0.0]}),
-                   "frames": {"optical_frame": ((env.get("camera_placements", [{}])[0].get("frames") or {}).get("optical_frame", "camera_01_color_optical_frame")},
+                   "frames": {"optical_frame": ((env.get("camera_placements", [{}])[0].get("frames") or {}).get("optical_frame", "camera_01_color_optical_frame"))},
                    "topics": ((env.get("camera_placements", [{}])[0].get("topics") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else {"pointcloud": "/camera/depth/color/points", "color": "/camera/color/image_raw", "depth": "/camera/depth/image_rect_raw", "camera_info": "/camera/color/camera_info"}))
                    }),
         "environment": {
             "frame": "world",
             "layout": "generated/environment_layout.yaml",
+            "task_zones": task_zones,
+            "task_zones_summary": task_zone_counts,
             "support_surfaces": [{"id": a["id"], "type": "table", "frame": "world", "pose_xyz": a["pose"]["xyz"], "pose_rpy": a["pose"]["rpy"], "dimensions": a["dimensions"]} for a in assets],
         },
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],
@@ -295,6 +322,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "id": "default_task",
             "type": task_type,
             "source_object": object_entries[0]["id"] if object_entries else "unknown_object",
+            "pick": {"source": {"id": preferred_pick, "type": "zone"}},
+            "place": {"target": {"id": preferred_place, "type": "zone"}},
             "destinations": [{"id": "default_drop", "frame": "world", "pose_xyz": [0.4, 0.0, 0.2], "pose_rpy": [0.0, 0.0, 0.0]}],
             "rules": [{"id": "default_rule", "when": {"always": True}, "destination": "default_drop"}],
         },

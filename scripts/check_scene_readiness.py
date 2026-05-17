@@ -17,6 +17,15 @@ MESH_EXTS = {".stl", ".dae", ".obj"}
 SCENE_TEXT_EXTS = {".urdf", ".xacro", ".yaml", ".yml", ".json", ".xml", ".txt", ".srdf"}
 FRAME_HINTS = ("world", "base_link", "tool0", "camera_link")
 
+def _load_optional_yaml(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
 
 def _discover_scene_packages(scenes_dir: Path) -> list[Path]:
     return sorted([p for p in scenes_dir.iterdir() if p.is_dir()]) if scenes_dir.is_dir() else []
@@ -106,6 +115,39 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
     candidate_clues = {"robot": set(), "gripper": set(), "sensor": set()}
     placed_objects, placed_warnings = _extract_placed_objects(scene_pkg)
     warnings.extend(placed_warnings)
+
+    env_data = _load_optional_yaml(scene_pkg / "environment.yaml")
+    has_task_zones_key = isinstance(env_data, dict) and "task_zones" in env_data
+    task_zones = env_data.get("task_zones") if isinstance(env_data.get("task_zones"), list) else []
+    zone_ids: list[str] = []
+    dup_ids: list[str] = []
+    invalid_dims: list[str] = []
+    pick_count = 0
+    place_count = 0
+    for i, zone in enumerate(task_zones):
+        if not isinstance(zone, dict):
+            continue
+        zid = str(zone.get("id") or f"task_zone_{i+1:02d}")
+        ztype = str(zone.get("type") or "").lower()
+        if zid in zone_ids and zid not in dup_ids:
+            dup_ids.append(zid)
+        zone_ids.append(zid)
+        dims = zone.get("dimensions") or zone.get("size") or []
+        if not (isinstance(dims, list) and len(dims) == 3 and all(isinstance(d, (int, float)) and d > 0 for d in dims)):
+            invalid_dims.append(zid)
+        if "pick" in ztype or "pick" in zid.lower():
+            pick_count += 1
+        if any(tok in ztype for tok in ("place", "target", "bin")) or "place" in zid.lower():
+            place_count += 1
+    if has_task_zones_key:
+        if pick_count == 0:
+            warnings.append("Missing pick task zone (no pick_zone-like entry in environment.task_zones).")
+        if place_count == 0:
+            warnings.append("Missing place task zone (no place_zone-like entry in environment.task_zones).")
+    if dup_ids:
+        warnings.append("Duplicate task zone IDs: " + ", ".join(dup_ids))
+    if invalid_dims:
+        warnings.append("Task zones with invalid dimensions: " + ", ".join(invalid_dims))
 
     for path in text_files:
         try:
@@ -207,6 +249,22 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
             }
         )
 
+    task_intent = _load_optional_yaml(scene_pkg / "config" / "workcell_builder_task_intent.yaml")
+    ti_pick = (((task_intent.get("pick") or {}).get("source") or {}).get("id")) if isinstance(task_intent, dict) else None
+    ti_place = (((task_intent.get("place") or {}).get("target") or {}).get("id")) if isinstance(task_intent, dict) else None
+    if ti_pick and ti_pick not in zone_ids:
+        warnings.append(f"Task intent pick.source.id not found in task_zones: {ti_pick}")
+    if ti_place and ti_place not in zone_ids:
+        warnings.append(f"Task intent place.target.id not found in task_zones: {ti_place}")
+
+    cell_def = _load_optional_yaml(scene_pkg / "cell_definition.yaml")
+    c_pick = ((((cell_def.get("task") or {}).get("pick") or {}).get("source") or {}).get("id")) if isinstance(cell_def, dict) else None
+    c_place = ((((cell_def.get("task") or {}).get("place") or {}).get("target") or {}).get("id")) if isinstance(cell_def, dict) else None
+    if c_pick and c_pick not in zone_ids:
+        warnings.append(f"Cell definition task.pick.source.id not found in task_zones: {c_pick}")
+    if c_place and c_place not in zone_ids:
+        warnings.append(f"Cell definition task.place.target.id not found in task_zones: {c_place}")
+
     return {
         "scene_package": str(scene_pkg),
         "errors": errors,
@@ -221,6 +279,7 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
         "candidates": {k: sorted(v) for k, v in candidate_clues.items() if v},
         "mesh_extensions_detected": sorted({p.suffix.lower() for p in mesh_files}),
         "placed_objects": placed_summary,
+        "task_zones": {"total": len(task_zones), "pick": pick_count, "place": place_count, "duplicate_ids": dup_ids, "invalid_dimensions": invalid_dims, "zone_ids": zone_ids},
     }
 
 
@@ -243,7 +302,7 @@ def check_readiness(workcell_root: Path | None, scene_package: Path | None, stri
                 scene_reports.append(_analyze_scene_package(pkg, repo_root))
 
         if not assets_dir.is_dir():
-            warnings.append(
+            notes.append(
                 f"Assets directory missing at {assets_dir}; existing workcell_builder default assets fallback may be used."
             )
 
