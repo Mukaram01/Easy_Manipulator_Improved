@@ -27,6 +27,7 @@ ScriptCommandPlan build_task_intent_command_plan(
 ScriptCommandPlan build_generate_workcell_command_plan(
   const QString & script_path,
   const QString & scene_dir,
+  const QString & output_dir,
   const QString & scene_name);
 
 ScriptCommandPlan build_validate_generated_scene_command_plan(
