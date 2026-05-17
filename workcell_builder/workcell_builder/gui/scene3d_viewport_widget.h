@@ -4,7 +4,10 @@
 
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
+#include <QHash>
 #include <QVector3D>
+
+#include <array>
 
 #include <functional>
 
@@ -13,6 +16,16 @@ class Scene3DViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
   Q_OBJECT
 public:
+  struct InternalTriangleMesh
+  {
+    struct Triangle
+    {
+      std::array<QVector3D, 3> vertices;
+      QVector3D normal;
+    };
+    QVector<Triangle> triangles;
+  };
+
   explicit Scene3DViewportWidget(QWidget * parent = nullptr);
 
   QVector<ScenePreviewWidget::PreviewItem> items;
@@ -39,6 +52,10 @@ public:
   void set_front_view();
   void set_side_view();
   void set_isometric_view();
+
+  static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                       InternalTriangleMesh & out_mesh, QString & out_error,
+                                       int triangle_limit = 100000);
 
 protected:
   void initializeGL() override;
@@ -71,6 +88,17 @@ private:
   void draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it);
   QPoint last_;
   QString hovered_id_;
+  struct MeshCacheEntry
+  {
+    bool loaded{ false };
+    bool valid{ false };
+    bool oversized{ false };
+    QString warning;
+    InternalTriangleMesh mesh;
+  };
+  QHash<QString, MeshCacheEntry> mesh_cache_;
+  bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const;
+  const MeshCacheEntry & ensure_mesh_cached(const QString & path);
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
   double pitch_{ 0.7 };
