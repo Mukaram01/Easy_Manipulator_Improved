@@ -6,6 +6,13 @@
 
 namespace workcell_builder
 {
+struct PerceptionContractSummary
+{
+  bool enabled{false};
+  std::string mode{"legacy_disabled"};
+  std::string warning;
+};
+
 std::string yaml_scalar_or_empty(const YAML::Node & node);
 std::string yaml_map_value_or_empty(const YAML::Node & node, const char * key);
 std::string yaml_name_from_node(const YAML::Node & node);
@@ -23,4 +30,5 @@ YAML::Node get_scalar(const YAML::Node & node, const char * key);
 YAML::Node get_sequence(const YAML::Node & node, const char * key);
 std::optional<bool> get_bool_like(const YAML::Node & node, const char * key);
 std::optional<bool> bool_like(const YAML::Node & node);
+PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & task_or_root);
 }

@@ -250,53 +250,11 @@ static std::string infer_default_grasp_strategy(const YAML::Node & root)
   if (lower.contains("finger") || lower.contains("gripper") || lower.contains("robotiq")) return "finger_top";
   return "tool_profile_default";
 }
-struct PerceptionParseContractResult
-{
-  QString mode{"unknown"};
-  QString warning;
-};
-
 static QString canonical_scene_path_string(const fs::path & scene_dir)
 {
   boost::system::error_code ec;
   const fs::path canonical = fs::weakly_canonical(scene_dir, ec);
   return QString::fromStdString((ec ? scene_dir.lexically_normal() : canonical).string());
-}
-
-static PerceptionParseContractResult parse_perception_contract(const YAML::Node & task)
-{
-  PerceptionParseContractResult out;
-  const YAML::Node perception = task["perception"];
-  if (!perception) {
-    out.mode = "disabled";
-    out.warning = "Perception contract: missing 'perception' key (legacy disabled mode).";
-    return out;
-  }
-  if (perception.IsScalar()) {
-    std::string raw = perception.as<std::string>();
-    std::transform(raw.begin(), raw.end(), raw.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (raw == "disabled" || raw == "none" || raw == "false") {
-      out.mode = "disabled";
-      out.warning = "Perception contract: scalar disabled token detected; perception metadata disabled.";
-      return out;
-    }
-  }
-  if (perception.IsMap()) {
-    if (perception.size() == 0) {
-      out.mode = "disabled";
-      out.warning = "Perception contract: empty perception map {}; metadata is partial/disabled.";
-      return out;
-    }
-    out.mode = scalar_path(task, {"perception", "mode"});
-    if (out.mode == "unknown") {
-      out.mode = "enabled_partial";
-      out.warning = "Perception contract: map present but 'perception.mode' missing.";
-    }
-    return out;
-  }
-  out.mode = "disabled";
-  out.warning = "Perception contract: non-map perception node; disabled for compatibility.";
-  return out;
 }
 
 static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
@@ -333,20 +291,20 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   s.allowed_roll_yaw = scalar_path(task, {"orientation","allowed_roll_yaw"});
   s.tool_id = scalar_path(task, {"tool","id"});
   if (s.tool_id == "unknown") s.tool_id = scalar_path(task, {"end_effector"});
-  const PerceptionParseContractResult perception = parse_perception_contract(task);
-  s.perception_mode = perception.mode;
-  if (!perception.warning.isEmpty()) {
+  const auto perception = workcell_builder::parse_perception_contract_summary(task);
+  s.perception_mode = QString::fromStdString(perception.mode);
+  if (!perception.warning.empty()) {
     static QSet<QString> warned_scene_paths;
     const QString canonical_scene = canonical_scene_path_string(scene_dir);
     if (!warned_scene_paths.contains(canonical_scene)) {
       warned_scene_paths.insert(canonical_scene);
-      qWarning("Perception parse warning [%s]: %s", canonical_scene.toStdString().c_str(), perception.warning.toStdString().c_str());
+      qWarning("Perception parse warning [%s]: %s", canonical_scene.toStdString().c_str(), perception.warning.c_str());
     }
     s.status = "WARN_PERCEPTION";
   }
   s.clearance = scalar_path(task, {"clearance"});
   if (s.pick_source != "unknown" && s.place_target != "unknown" && s.grasp_strategy != "unknown") s.status = "READY";
-  if (!perception.warning.isEmpty() && s.status == "READY") s.status = "READY_WITH_PERCEPTION_WARNING";
+  if (!perception.warning.empty() && s.status == "READY") s.status = "READY_WITH_PERCEPTION_WARNING";
   return s;
 }
 
@@ -613,9 +571,17 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     append_studio_log(source_action + ": no scene selected.");
     return false;
   }
-  refresh_scene_builder_selected_scene_ui();
-  refresh_scene_builder_left_explorer();
-  refresh_task_intent_panel();
+  try {
+    refresh_scene_builder_selected_scene_ui();
+    refresh_scene_builder_left_explorer();
+    refresh_task_intent_panel();
+  } catch (const YAML::Exception & error) {
+    append_studio_log(source_action + ": scene metadata warning: " + QString::fromStdString(error.what()));
+    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
+  } catch (const std::exception & error) {
+    append_studio_log(source_action + ": scene metadata warning: " + QString::fromStdString(error.what()));
+    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
+  }
   show_studio_page(StudioPage::SceneBuilderPage);
   append_studio_log(
     QString("%1: opened Scene Builder for '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
@@ -1567,7 +1533,7 @@ void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_
 void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("create_or_update_builder_task_intent.py", &script); const auto plan = workcell_builder::build_task_intent_command_plan(script, QString::fromStdString(sc.scene_dir.string())); if (!plan.ready()) { append_studio_log("Generate/Update Task Intent: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Generate/Update Task Intent: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate/Update Task Intent failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate/Update Task Intent: " + plan.display_command() + " (Preview Only)"); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
 void MainWindow::generate_yaml_draft_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate YAML: helper script search failed (task intent helper missing)."); } const fs::path scene_dir = sc.scene_dir; const fs::path env = scene_dir / "environment.yaml"; const fs::path cell = scene_dir / "cell_definition.yaml"; const fs::path manifest = scene_dir / "scene_manifest.yaml"; const fs::path layout = scene_dir / "environment_layout.yaml"; if (!fs::exists(env)) { std::ofstream out(env.string()); out << "scene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n"; out << "defaults:\n  robot: ur5\n  end_effector: robotiq_2f\n  object: placeholder_object\n  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n"; } if (!fs::exists(cell)) { std::ofstream out(cell.string()); out << "scene_name: " << sc.scene_name << "\nrobot: ur5\nend_effector: robotiq_2f\n"; } if (!fs::exists(manifest)) { std::ofstream out(manifest.string()); out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n"; } if (!fs::exists(layout)) { std::ofstream out(layout.string()); out << "layout:\n  items: []\n"; } append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name))); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
 void MainWindow::generate_scene_package_for_selected_scene(){ if (selected_scene_index_ < 0) return; generate_yaml_draft_for_selected_scene(); const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("generate_workcell_from_cell_definition.py", &script); const auto plan = workcell_builder::build_generate_workcell_command_plan(script, QString::fromStdString(sc.scene_dir.string()), QString::fromStdString(sc.scene_name)); if (!plan.ready()) { append_studio_log("Generate ROS Scene Package: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(180000)) { append_studio_log("Generate ROS Scene Package: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate ROS Scene Package failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate ROS Scene Package: " + plan.display_command()); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
-void MainWindow::validate_generated_scene_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("validate_builder_generated_scene.py", &script)) { append_studio_log("Validate Generated Scene: script missing. Searched: " + helper_script_search_paths("validate_builder_generated_scene.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2' --scene-name '%3'").arg(script, QString::fromStdString(sc.scene_dir.string()), QString::fromStdString(sc.scene_name)); std::system(cmd.toStdString().c_str()); append_studio_log("Validate Generated Scene: " + cmd); refresh_new_cell_checklist(); }
+void MainWindow::validate_generated_scene_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("validate_builder_generated_scene.py", &script)) { append_studio_log("Validate Generated Scene: script missing. Searched: " + helper_script_search_paths("validate_builder_generated_scene.py").join(" | ")); return; } const auto plan = workcell_builder::build_validate_generated_scene_command_plan(script, QString::fromStdString(sc.scene_dir.string())); if (!plan.ready()) { append_studio_log("Validate Generated Scene: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Validate Generated Scene: timed out while waiting for helper script."); return; } append_studio_log("Validate Generated Scene: " + plan.display_command()); refresh_new_cell_checklist(); }
 void MainWindow::copy_build_launch_commands_for_selected_scene(){ if (!has_selected_scene()) return; const QString block = selected_scene_preview_command_block(); QApplication::clipboard()->setText(block); append_studio_log("Copy Build & Launch Commands"); }
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
