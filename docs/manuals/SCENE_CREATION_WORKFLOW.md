@@ -129,3 +129,24 @@ See `docs/manuals/INDUSTRIAL_SCENARIO_PACKS.md` for generated-cell scenario vali
 10. Launch generated scene in RViz/MoveIt fake hardware mode.
 
 Preview files are temporary. `environment.yaml` is the scene persistence point. Real scene files are updated only by explicit save/generate actions. This workflow introduces no controller execution and no real hardware execution.
+
+## Placed object end-to-end generation
+
+1. Import an STL file in Object Placement Manager (or select an existing managed STL asset).
+2. Confirm the STL is stored in the managed asset path and place it into the scene with initial XYZ/RPY pose values.
+3. Open RViz STL Preview to generate temporary preview artifacts under `/tmp/workcell_builder_preview/<scene_name>/...`.
+4. Optionally refine object pose in interactive RViz preview and export feedback to `placed_objects_feedback.yaml` in the same temporary preview location.
+5. Import RViz pose feedback into Object Placement Manager and review/apply valid pose updates by object name.
+6. Save placed objects to scene YAML so `environment.yaml` is updated as the persistence source of record.
+7. Run Generate YAML / Generate Files to regenerate scene artifacts from persisted data.
+8. Confirm generated placed-object URDF/Xacro outputs are produced; these generated URDF/Xacro files are the runtime source consumed by RViz/MoveIt visualization flows.
+9. Build the generated scene package/workspace so runtime launch files resolve the updated generated artifacts.
+10. Launch the demo/preview runtime (typically fake hardware mode) and verify the placed objects appear correctly in RViz/MoveIt.
+
+**Important runtime boundary**
+
+- Preview files are temporary and live under `/tmp/workcell_builder_preview/...`; they are not persistent scene truth.
+- `environment.yaml` is the persistence source for placed object data.
+- Generated URDF/Xacro is the runtime source used by RViz/MoveIt after generation/build.
+- This feature does not enable robot motion, controller execution, or real hardware execution.
+
