@@ -1,5 +1,6 @@
 #include "workcell_perception_snapshot.hpp"
 #include <boost/filesystem.hpp>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>

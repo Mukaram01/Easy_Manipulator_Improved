@@ -247,6 +247,55 @@ static std::string infer_default_grasp_strategy(const YAML::Node & root)
   if (lower.contains("finger") || lower.contains("gripper") || lower.contains("robotiq")) return "finger_top";
   return "tool_profile_default";
 }
+struct PerceptionParseContractResult
+{
+  QString mode{"unknown"};
+  QString warning;
+};
+
+static QString canonical_scene_path_string(const fs::path & scene_dir)
+{
+  boost::system::error_code ec;
+  const fs::path canonical = fs::weakly_canonical(scene_dir, ec);
+  return QString::fromStdString((ec ? scene_dir.lexically_normal() : canonical).string());
+}
+
+static PerceptionParseContractResult parse_perception_contract(const YAML::Node & task)
+{
+  PerceptionParseContractResult out;
+  const YAML::Node perception = task["perception"];
+  if (!perception) {
+    out.mode = "disabled";
+    out.warning = "Perception contract: missing 'perception' key (legacy disabled mode).";
+    return out;
+  }
+  if (perception.IsScalar()) {
+    std::string raw = perception.as<std::string>();
+    std::transform(raw.begin(), raw.end(), raw.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (raw == "disabled" || raw == "none" || raw == "false") {
+      out.mode = "disabled";
+      out.warning = "Perception contract: scalar disabled token detected; perception metadata disabled.";
+      return out;
+    }
+  }
+  if (perception.IsMap()) {
+    if (perception.size() == 0) {
+      out.mode = "disabled";
+      out.warning = "Perception contract: empty perception map {}; metadata is partial/disabled.";
+      return out;
+    }
+    out.mode = scalar_path(task, {"perception", "mode"});
+    if (out.mode == "unknown") {
+      out.mode = "enabled_partial";
+      out.warning = "Perception contract: map present but 'perception.mode' missing.";
+    }
+    return out;
+  }
+  out.mode = "disabled";
+  out.warning = "Perception contract: non-map perception node; disabled for compatibility.";
+  return out;
+}
+
 static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
 {
   SceneTaskIntentSummary s;
@@ -281,9 +330,20 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   s.allowed_roll_yaw = scalar_path(task, {"orientation","allowed_roll_yaw"});
   s.tool_id = scalar_path(task, {"tool","id"});
   if (s.tool_id == "unknown") s.tool_id = scalar_path(task, {"end_effector"});
-  s.perception_mode = scalar_path(task, {"perception","mode"});
+  const PerceptionParseContractResult perception = parse_perception_contract(task);
+  s.perception_mode = perception.mode;
+  if (!perception.warning.isEmpty()) {
+    static QSet<QString> warned_scene_paths;
+    const QString canonical_scene = canonical_scene_path_string(scene_dir);
+    if (!warned_scene_paths.contains(canonical_scene)) {
+      warned_scene_paths.insert(canonical_scene);
+      qWarning("Perception parse warning [%s]: %s", canonical_scene.toStdString().c_str(), perception.warning.toStdString().c_str());
+    }
+    s.status = "WARN_PERCEPTION";
+  }
   s.clearance = scalar_path(task, {"clearance"});
   if (s.pick_source != "unknown" && s.place_target != "unknown" && s.grasp_strategy != "unknown") s.status = "READY";
+  if (!perception.warning.isEmpty() && s.status == "READY") s.status = "READY_WITH_PERCEPTION_WARNING";
   return s;
 }
 

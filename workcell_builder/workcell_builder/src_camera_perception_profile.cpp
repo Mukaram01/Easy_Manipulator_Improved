@@ -1,6 +1,7 @@
 #include "camera_perception_profile.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 
 namespace workcell_builder
 {
@@ -8,6 +9,15 @@ std::vector<CameraProfile> load_camera_profiles(const std::string &)
 {
   return {default_realsense_d435i_profile()};
 }
+
+namespace {
+[[maybe_unused]] bool is_perception_disabled_scalar(const std::string & value)
+{
+  std::string token = value;
+  std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return token == "disabled" || token == "none" || token == "false";
+}
+}  // namespace
 
 CameraProfile default_realsense_d435i_profile() { return CameraProfile{}; }
 
