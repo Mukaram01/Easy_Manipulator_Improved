@@ -3332,7 +3332,7 @@ void MainWindow::populate_scene_hierarchy()
         QString status = ystr(node["status"]);
         if (status == "unknown") {
           bool enabled = true;
-          if (const auto enabled_like = get_bool_like(node, "enabled")) {
+          if (const auto enabled_like = workcell_builder::get_bool_like(node, "enabled")) {
             enabled = *enabled_like;
           }
           status = enabled ? "ready" : "disabled";

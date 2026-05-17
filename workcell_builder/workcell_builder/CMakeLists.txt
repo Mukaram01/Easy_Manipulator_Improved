@@ -266,7 +266,8 @@ if(BUILD_TESTING)
     src_planning_readiness.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_camera_model.cpp
-    src_workcell_zone_model.cpp)
+    src_workcell_zone_model.cpp
+    src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_robot_tool_compatibility_inference_test
     test/robot_tool_compatibility_inference_test.cpp
     src_robot_tool_compatibility.cpp)
@@ -284,6 +285,10 @@ if(BUILD_TESTING)
     src_workcell_builder_command_builders.cpp)
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_command_builders_test)
+    target_link_libraries(workcell_command_builders_test Qt5::Core)
   endif()
 
   if(TARGET workcell_new_cell_wizard_test)
