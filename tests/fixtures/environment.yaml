@@ -1,0 +1,10 @@
+scene_name: placed_object_test_scene
+placed_objects:
+  - name: table_01
+    mesh_path: package://demo_scene/meshes/table_01.stl
+    collision_mesh: package://demo_scene/meshes/table_01.stl
+    xyz: [0.5, 0.0, 0.2]
+    rpy: [0.0, 0.0, 1.57]
+    scale: [1.0, 1.0, 1.0]
+    parent_frame: world
+    collision_enabled: true
