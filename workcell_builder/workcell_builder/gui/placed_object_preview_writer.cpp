@@ -40,7 +40,7 @@ MeshValidationResult PlacedObjectPreviewWriter::validate_mesh_path(const std::st
   return result;
 }
 
-bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, const std::vector<PlacedObject> & objects, std::string * output_dir, std::vector<std::string> * warnings) const
+bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, const std::vector<PlacedObject> & objects, std::string * output_dir, std::vector<std::string> * warnings, const std::string & environment_yaml_path) const
 {
   const std::string safe_scene = sanitize_scene_name(scene_name);
   fs::path out_dir = fs::path(default_preview_root()) / safe_scene;
@@ -95,6 +95,23 @@ bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, co
     << "  rviz_cfg='" << (out_dir / "workcell_builder_interactive_preview.rviz").string() << "'\n"
     << "  return LaunchDescription([\n"
     << "    Node(package='workcell_builder', executable='workcell_builder_interactive_preview_node.py', arguments=['--preview-dir', preview_dir]),\n"
+    << "    Node(package='rviz2', executable='rviz2', arguments=['-d', rviz_cfg]),\n"
+    << "  ])\n";
+
+  std::ofstream(out_dir / "workcell_builder_task_zone_preview.rviz")
+    << "Panels:\n- Class: rviz_common/Displays\nVisualization Manager:\n  Displays:\n"
+    << "    - Class: rviz_default_plugins/Grid\n      Name: Grid\n"
+    << "    - Class: rviz_default_plugins/TF\n      Name: TF\n"
+    << "    - Class: rviz_default_plugins/MarkerArray\n      Name: TaskZones\n      Marker Topic:\n        Value: /task_zone_markers\n";
+
+  std::ofstream(out_dir / "task_zone_preview.launch.py")
+    << "from launch import LaunchDescription\nfrom launch_ros.actions import Node\n"
+    << "def generate_launch_description():\n"
+    << "  preview_dir='" << out_dir.string() << "'\n"
+    << "  env_yaml='" << environment_yaml_path << "'\n"
+    << "  rviz_cfg='" << (out_dir / "workcell_builder_task_zone_preview.rviz").string() << "'\n"
+    << "  return LaunchDescription([\n"
+    << "    Node(package='workcell_builder', executable='workcell_builder_task_zone_preview_node.py', arguments=['--preview-dir', preview_dir, '--environment-yaml', env_yaml, '--frame-id', 'world', '--show-axes']),\n"
     << "    Node(package='rviz2', executable='rviz2', arguments=['-d', rviz_cfg]),\n"
     << "  ])\n";
 

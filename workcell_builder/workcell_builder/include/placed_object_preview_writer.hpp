@@ -25,7 +25,8 @@ public:
     const std::string & scene_name,
     const std::vector<PlacedObject> & objects,
     std::string * output_dir,
-    std::vector<std::string> * warnings) const;
+    std::vector<std::string> * warnings,
+    const std::string & environment_yaml_path = "") const;
 
 private:
   MeshValidationResult validate_mesh_path(const std::string & mesh_path, const std::string & repo_root) const;

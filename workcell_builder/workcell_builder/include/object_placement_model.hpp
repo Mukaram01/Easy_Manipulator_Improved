@@ -43,6 +43,20 @@ struct CameraPlacement
   std::string status;
 };
 
+struct TaskZone
+{
+  std::string id;
+  std::string type;
+  std::string parent_frame{"world"};
+  double x{0.0}, y{0.0}, z{0.0};
+  double roll{0.0}, pitch{0.0}, yaw{0.0};
+  double dim_x{0.0}, dim_y{0.0}, dim_z{0.0};
+  std::string frame_id;
+  std::vector<std::string> allowed_object_types;
+  bool enabled{true};
+  std::string status;
+};
+
 std::string sanitize_object_name(const std::string & name);
 bool validate_placed_object(const PlacedObject & object, std::string * warning);
 bool validate_camera_placement(const CameraPlacement & camera, std::string * warning);

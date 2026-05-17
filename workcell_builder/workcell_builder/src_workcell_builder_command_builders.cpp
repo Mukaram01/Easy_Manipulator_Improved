@@ -1,7 +1,10 @@
 #include "include/workcell_builder_command_builders.hpp"
+#include <yaml-cpp/yaml.h>
+#include <filesystem>
 
 namespace workcell_builder
 {
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -17,6 +20,30 @@ void append_missing_if_empty(const QString & value, const QString & field_name, 
   if (value.trimmed().isEmpty()) {
     missing->push_back(field_name);
   }
+}
+
+QString first_enabled_zone_id_for_type(const fs::path & environment_yaml, const std::string & zone_type)
+{
+  try {
+    const YAML::Node root = YAML::LoadFile(environment_yaml.string());
+    const YAML::Node zones = root["task_zones"];
+    if (!zones || !zones.IsSequence()) {
+      return QString();
+    }
+    for (const auto & zone : zones) {
+      if (!zone.IsMap()) {
+        continue;
+      }
+      const bool enabled = !zone["enabled"] || zone["enabled"].as<bool>(true);
+      const std::string type = zone["type"] ? zone["type"].as<std::string>() : std::string();
+      const std::string id = zone["id"] ? zone["id"].as<std::string>() : std::string();
+      if (enabled && type == zone_type && !id.empty()) {
+        return QString::fromStdString(id);
+      }
+    }
+  } catch (...) {
+  }
+  return QString();
 }
 
 }  // namespace
@@ -65,9 +92,35 @@ ScriptCommandPlan build_task_intent_command_plan(
                    << "--task-template" << task_template
                    << "--pick-source" << input.pick_source
                    << "--place-target" << input.place_target
-                   << "--grasp-strategy" << input.grasp_strategy;
+                   << "--grasp-strategy" << input.grasp_strategy
+                   << "--auto-resolve-zones";
   }
   return plan;
+}
+
+TaskIntentCommandInput resolve_task_intent_command_input_defaults(const TaskIntentCommandInput & input)
+{
+  TaskIntentCommandInput resolved = input;
+  if (input.scene_package.trimmed().isEmpty()) {
+    return resolved;
+  }
+  const fs::path scene_dir = input.scene_package.toStdString();
+  const fs::path environment_yaml = scene_dir / "environment.yaml";
+
+  QString pick_from_zone;
+  QString place_from_zone;
+  if (fs::exists(environment_yaml)) {
+    pick_from_zone = first_enabled_zone_id_for_type(environment_yaml, "pick");
+    place_from_zone = first_enabled_zone_id_for_type(environment_yaml, "place");
+  }
+
+  if (resolved.pick_source.trimmed().isEmpty()) {
+    resolved.pick_source = pick_from_zone.isEmpty() ? "pick_zone_01" : pick_from_zone;
+  }
+  if (resolved.place_target.trimmed().isEmpty()) {
+    resolved.place_target = place_from_zone.isEmpty() ? "place_zone_01" : place_from_zone;
+  }
+  return resolved;
 }
 
 ScriptCommandPlan build_generate_workcell_command_plan(
