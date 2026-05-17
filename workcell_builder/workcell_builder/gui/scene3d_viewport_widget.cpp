@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <sstream>
 
 namespace {
 constexpr int kMeshTriangleLimit = 100000;
@@ -24,32 +25,40 @@ constexpr int kMeshTriangleLimit = 100000;
 bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                      QString & out_error, int triangle_limit)
 {
-  QTextStream stream(bytes);
-  QString token;
+  std::istringstream stream(QString::fromUtf8(bytes).toStdString());
+  std::string token;
   while (stream >> token) {
-    if (token.compare("facet", Qt::CaseInsensitive) != 0) continue;
-    QString normal_tok;
-    if (!(stream >> normal_tok) || normal_tok.compare("normal", Qt::CaseInsensitive) != 0) {
+    if (QString::fromStdString(token).compare("facet", Qt::CaseInsensitive) != 0) continue;
+    std::string normal_tok;
+    if (!(stream >> normal_tok) || QString::fromStdString(normal_tok).compare("normal", Qt::CaseInsensitive) != 0) {
       out_error = "invalid facet normal token";
       return false;
     }
     float nx, ny, nz;
     if (!(stream >> nx >> ny >> nz)) { out_error = "invalid normal values"; return false; }
-    QString outer, loop;
-    if (!(stream >> outer >> loop) || outer.compare("outer", Qt::CaseInsensitive) != 0 || loop.compare("loop", Qt::CaseInsensitive) != 0) {
+    std::string outer, loop;
+    if (!(stream >> outer >> loop) ||
+        QString::fromStdString(outer).compare("outer", Qt::CaseInsensitive) != 0 ||
+        QString::fromStdString(loop).compare("loop", Qt::CaseInsensitive) != 0) {
       out_error = "invalid outer loop token";
       return false;
     }
     Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
     tri.normal = QVector3D(nx, ny, nz);
     for (int i = 0; i < 3; ++i) {
-      QString vertex;
+      std::string vertex;
       float vx, vy, vz;
-      if (!(stream >> vertex >> vx >> vy >> vz) || vertex.compare("vertex", Qt::CaseInsensitive) != 0) { out_error = "invalid vertex token"; return false; }
+      if (!(stream >> vertex >> vx >> vy >> vz) ||
+          QString::fromStdString(vertex).compare("vertex", Qt::CaseInsensitive) != 0) {
+        out_error = "invalid vertex token";
+        return false;
+      }
       tri.vertices[i] = QVector3D(vx, vy, vz);
     }
-    QString endloop, endfacet;
-    if (!(stream >> endloop >> endfacet) || endloop.compare("endloop", Qt::CaseInsensitive) != 0 || endfacet.compare("endfacet", Qt::CaseInsensitive) != 0) {
+    std::string endloop, endfacet;
+    if (!(stream >> endloop >> endfacet) ||
+        QString::fromStdString(endloop).compare("endloop", Qt::CaseInsensitive) != 0 ||
+        QString::fromStdString(endfacet).compare("endfacet", Qt::CaseInsensitive) != 0) {
       out_error = "invalid endloop/endfacet token";
       return false;
     }

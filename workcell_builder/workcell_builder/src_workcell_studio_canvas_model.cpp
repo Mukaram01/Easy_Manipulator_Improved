@@ -129,16 +129,42 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   m.place_target = task_ok ? read_string_or_warn(yaml_map_key(task, "place_target"), "task_recipe.place_target", "Task intent missing") : "Task intent missing";
   m.release_strategy = task_ok ? read_string_or_warn(yaml_map_key(task, "release_strategy"), "task_recipe.release_strategy", "Generate task recipe to populate this panel") : "Generate task recipe to populate this panel";
 
-  m.items.push_back({"robot_base","robot_base","robot","Robot Base","environment.yaml",0,0,0,0,0,0,0.35,0.35,0.35,0,true,{}});
-  m.items.push_back({"robot_reach","reach","reach","Robot Reach","environment.yaml",0,0,0,0,0,0,0,0,0,1.2,true,{}});
-  m.items.push_back({"table","table","table","Table","environment.yaml",0.7,0.0,0,0,0,0,1.0,0.6,0.2,0,false,{}});
-  m.items.push_back({"conveyor","conveyor","conveyor","Conveyor","environment.yaml",-0.8,-0.3,0,0,0,0,1.2,0.3,0.2,0,false,{}});
-  m.items.push_back({"camera","camera","camera","Camera FOV","environment.yaml",-0.2,1.0,1.2,0,0,-1.57,0.18,0.18,0.2,0,false,{}});
-  m.items.push_back({"pick_zone","zone","pick_zone","Pick Source","config/task_recipe.yaml",0.55,0.0,0,0,0,0,0.35,0.35,0.1,0,false,{}});
-  m.items.push_back({"place_zone","zone","place_zone","Place Target","config/task_recipe.yaml",1.0,0.1,0,0,0,0,0.35,0.35,0.1,0,false,{}});
-  m.items.push_back({"bin_a","bin","bin","Bin A","environment.yaml",1.3,-0.5,0,0,0,0,0.32,0.25,0.2,0,false,{}});
-  m.items.push_back({"object_a","object","object","Object","environment.yaml",0.6,0.1,0,0,0,0,0.08,0.08,0.08,0,false,{}});
-  m.items.push_back({"home_pose","safety","safety/home","config/workcell_builder_task_intent.yaml","config/workcell_builder_task_intent.yaml",-0.4,0.5,0,0,0,0,0.14,0.14,0.14,0,true,{}});
+  const auto push_default_item = [&m](const std::string & id, const std::string & type, const std::string & role,
+                                       const std::string & label, const std::string & source_file,
+                                       double x, double y, double z,
+                                       double roll, double pitch, double yaw,
+                                       double width, double depth, double height,
+                                       double radius, bool locked) {
+    WorkcellStudioCanvasItem item;
+    item.id = id;
+    item.type = type;
+    item.role = role;
+    item.label = label;
+    item.source_file = source_file;
+    item.x = x;
+    item.y = y;
+    item.z = z;
+    item.roll = roll;
+    item.pitch = pitch;
+    item.yaw = yaw;
+    item.width = width;
+    item.depth = depth;
+    item.height = height;
+    item.radius = radius;
+    item.locked = locked;
+    m.items.push_back(item);
+  };
+
+  push_default_item("robot_base", "robot_base", "robot", "Robot Base", "environment.yaml", 0, 0, 0, 0, 0, 0, 0.35, 0.35, 0.35, 0, true);
+  push_default_item("robot_reach", "reach", "reach", "Robot Reach", "environment.yaml", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.2, true);
+  push_default_item("table", "table", "table", "Table", "environment.yaml", 0.7, 0.0, 0, 0, 0, 0, 1.0, 0.6, 0.2, 0, false);
+  push_default_item("conveyor", "conveyor", "conveyor", "Conveyor", "environment.yaml", -0.8, -0.3, 0, 0, 0, 0, 1.2, 0.3, 0.2, 0, false);
+  push_default_item("camera", "camera", "camera", "Camera FOV", "environment.yaml", -0.2, 1.0, 1.2, 0, 0, -1.57, 0.18, 0.18, 0.2, 0, false);
+  push_default_item("pick_zone", "zone", "pick_zone", "Pick Source", "config/task_recipe.yaml", 0.55, 0.0, 0, 0, 0, 0, 0.35, 0.35, 0.1, 0, false);
+  push_default_item("place_zone", "zone", "place_zone", "Place Target", "config/task_recipe.yaml", 1.0, 0.1, 0, 0, 0, 0, 0.35, 0.35, 0.1, 0, false);
+  push_default_item("bin_a", "bin", "bin", "Bin A", "environment.yaml", 1.3, -0.5, 0, 0, 0, 0, 0.32, 0.25, 0.2, 0, false);
+  push_default_item("object_a", "object", "object", "Object", "environment.yaml", 0.6, 0.1, 0, 0, 0, 0, 0.08, 0.08, 0.08, 0, false);
+  push_default_item("home_pose", "safety", "safety/home", "config/workcell_builder_task_intent.yaml", "config/workcell_builder_task_intent.yaml", -0.4, 0.5, 0, 0, 0, 0, 0.14, 0.14, 0.14, 0, true);
 
   const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
   YAML::Node layout_items = yaml_map_key(layout, "items");
