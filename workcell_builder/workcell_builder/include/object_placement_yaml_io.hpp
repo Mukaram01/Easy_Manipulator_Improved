@@ -37,6 +37,14 @@ struct ToolAttachmentConfig
   double roll{0.0};
   double pitch{0.0};
   double yaw{0.0};
+struct RobotToolPoseConfig
+{
+  double robot_base_xyz[3]{0.0, 0.0, 0.0};
+  double robot_base_rpy[3]{0.0, 0.0, 0.0};
+  double tool_attach_xyz[3]{0.0, 0.0, 0.0};
+  double tool_attach_rpy[3]{0.0, 0.0, 0.0};
+  std::string tool_link_id;
+  std::string tool_joint_id;
 };
 
 std::vector<PlacedObject> load_placed_objects_from_environment_yaml(

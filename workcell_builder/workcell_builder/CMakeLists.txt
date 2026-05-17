@@ -240,6 +240,8 @@ if(BUILD_TESTING)
     gui/loadobjects.cpp)
   ament_add_gtest(workcell_generate_yaml_end_effector_metadata_test
     test/generate_yaml_end_effector_metadata_test.cpp)
+  ament_add_gtest(workcell_scene_xacro_tool_attachment_test
+    test/scene_xacro_tool_attachment_test.cpp)
   ament_add_gtest(workcell_scene_status_test
     test/workcell_scene_status_test.cpp
     src_workcell_scene_status.cpp

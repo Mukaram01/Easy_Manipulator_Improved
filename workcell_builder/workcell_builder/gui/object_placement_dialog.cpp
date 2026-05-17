@@ -22,6 +22,8 @@
 #include "object_placement_yaml_io.hpp"
 #include <QApplication>
 #include <QClipboard>
+#include <QFormLayout>
+#include <QDoubleSpinBox>
 
 namespace workcell_builder
 {
@@ -188,6 +190,80 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     auto result = save_camera_placements_to_environment_yaml(resolved_environment_yaml_path, cameras);
     QMessageBox::information(this, "Save Cameras to Scene YAML", "Camera changes saved to environment.yaml. Generate YAML / Generate Files to update generated outputs.");
   });
+  mk("Edit Robot Base Pose", [this]() {
+    QDialog d(this);
+    d.setWindowTitle("Edit Robot Base Pose");
+    auto * layout = new QFormLayout(&d);
+    std::array<QDoubleSpinBox *, 6> spin{};
+    const std::array<const char *, 6> labels = {"X", "Y", "Z", "Roll", "Pitch", "Yaw"};
+    for (int i = 0; i < 6; ++i) {
+      spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d);
+      spin[static_cast<size_t>(i)]->setDecimals(6);
+      spin[static_cast<size_t>(i)]->setRange(-1000.0, 1000.0);
+      const double value = i < 3 ? robot_tool_pose_config_.robot_base_xyz[i] : robot_tool_pose_config_.robot_base_rpy[i - 3];
+      spin[static_cast<size_t>(i)]->setValue(value);
+      layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]);
+    }
+    auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d);
+    layout->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    if (d.exec() == QDialog::Accepted) {
+      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.robot_base_xyz[i] = spin[static_cast<size_t>(i)]->value();
+      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.robot_base_rpy[i] = spin[static_cast<size_t>(i + 3)]->value();
+    }
+  });
+  mk("Edit Tool Attachment Pose", [this]() {
+    QDialog d(this);
+    d.setWindowTitle("Edit Tool Attachment Pose");
+    auto * layout = new QFormLayout(&d);
+    std::array<QDoubleSpinBox *, 6> spin{};
+    const std::array<const char *, 6> labels = {"X", "Y", "Z", "Roll", "Pitch", "Yaw"};
+    for (int i = 0; i < 6; ++i) {
+      spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d);
+      spin[static_cast<size_t>(i)]->setDecimals(6);
+      spin[static_cast<size_t>(i)]->setRange(-1000.0, 1000.0);
+      const double value = i < 3 ? robot_tool_pose_config_.tool_attach_xyz[i] : robot_tool_pose_config_.tool_attach_rpy[i - 3];
+      spin[static_cast<size_t>(i)]->setValue(value);
+      layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]);
+    }
+    auto * tool_link = new QLineEdit(QString::fromStdString(robot_tool_pose_config_.tool_link_id), &d);
+    auto * tool_joint = new QLineEdit(QString::fromStdString(robot_tool_pose_config_.tool_joint_id), &d);
+    layout->addRow("Tool Link ID", tool_link);
+    layout->addRow("Tool Joint ID", tool_joint);
+    auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d);
+    layout->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    if (d.exec() == QDialog::Accepted) {
+      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.tool_attach_xyz[i] = spin[static_cast<size_t>(i)]->value();
+      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.tool_attach_rpy[i] = spin[static_cast<size_t>(i + 3)]->value();
+      robot_tool_pose_config_.tool_link_id = tool_link->text().toStdString();
+      robot_tool_pose_config_.tool_joint_id = tool_joint->text().toStdString();
+    }
+  });
+  mk("Use Recommended Gripper Orientation", [this]() {
+    robot_tool_pose_config_.tool_attach_rpy[0] = -1.5708;
+    robot_tool_pose_config_.tool_attach_rpy[1] = -1.5708;
+    robot_tool_pose_config_.tool_attach_rpy[2] = 0.0;
+    QMessageBox::information(this, "Use Recommended Gripper Orientation", "Tool RPY set to [-1.5708, -1.5708, 0.0]. This is a configurable default, not a universal orientation.");
+  });
+  mk("Save Robot/Tool Pose to Scene YAML", [this]() {
+    const auto result = save_robot_tool_pose_to_environment_yaml(trim_copy(active_environment_yaml_path_), robot_tool_pose_config_);
+    (void)result;
+    QMessageBox::information(this, "Save Robot/Tool Pose to Scene YAML", "Robot/tool pose saved to environment.yaml. Generate YAML / Generate Files to update generated scene files.");
+  });
+  mk("Open Robot/Tool Pose Preview", [this]() {
+    PlacedObjectPreviewWriter writer;
+    std::string out_dir;
+    std::vector<std::string> warns;
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns, trim_copy(active_environment_yaml_path_));
+    const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/robot_tool_pose_preview.launch.py");
+    QApplication::clipboard()->setText(cmd);
+    QMessageBox::information(this, "Open Robot/Tool Pose Preview", QString::fromStdString("Robot/tool pose preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview artifact.");
+  });
 
   mk("Save Placed Objects to Scene YAML", [this]() {
     bool used_fallback = false;
@@ -308,6 +384,7 @@ void ObjectPlacementDialog::set_scene_context(const std::string & scene_name, co
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
   std::vector<std::string> warnings;
   task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  robot_tool_pose_config_ = load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &warnings);
   rebuild_table();
 }
 
@@ -321,6 +398,7 @@ void ObjectPlacementDialog::set_active_environment_yaml_path(const std::string &
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
   std::vector<std::string> warnings;
   task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  robot_tool_pose_config_ = load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &warnings);
   rebuild_table();
 }
 
