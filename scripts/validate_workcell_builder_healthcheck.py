@@ -276,6 +276,24 @@ def main() -> int:
         print(out)
         _check(code in (0, 124), "smoke launch did not fail immediately", errors)
 
+    rviz_importer_files = [
+        repo_root / "workcell_builder/workcell_builder/include/rviz_pose_feedback_importer.hpp",
+        repo_root / "workcell_builder/workcell_builder/gui/rviz_pose_feedback_importer.cpp",
+    ]
+    for f in rviz_importer_files:
+        _check(f.exists(), f"RViz pose feedback importer file exists: {f.relative_to(repo_root)}", errors)
+
+    docs_obj = (repo_root / "docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md").read_text(encoding="utf-8")
+    _check("Apply RViz pose feedback" in docs_obj, "docs include Apply RViz pose feedback section", errors)
+
+    opd_cpp = (repo_root / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp").read_text(encoding="utf-8")
+    for marker in ["Import RViz Pose Feedback", "Apply Valid Updates"]:
+        _check(marker in opd_cpp, f"Object Placement Manager UI includes: {marker}", errors)
+
+    itest_path = repo_root / "tests/test_workcell_builder_interactive_preview.py"
+    itest = itest_path.read_text(encoding="utf-8") if itest_path.exists() else ""
+    _check("safe_for_robot_motion" in itest and "Rejected feedback" in itest, "tests include safe_for_robot_motion rejection coverage", errors)
+
     if errors:
         print("WORKCELL_BUILDER_HEALTHCHECK: FAIL")
         return 1
