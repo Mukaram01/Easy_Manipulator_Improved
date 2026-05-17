@@ -136,12 +136,13 @@ AddObject::AddObject(QWidget * parent)
       writer.write_preview("workcell_scene", dlg.objects(), &out_dir, &warns);
       const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
       QApplication::clipboard()->setText(cmd);
-      QMessageBox::information(this, "Open RViz STL Preview", QString::fromStdString("Preview generated at: " + out_dir + "
-
-Command copied to clipboard:
-") + cmd + "
-
-Visual-only/offline-only preview.");
+      QMessageBox::information(
+        this,
+        "Open RViz STL Preview",
+        QString::fromStdString(
+          "Preview generated at: " + out_dir +
+          "\n\nCommand copied to clipboard:\n" + cmd.toStdString() +
+          "\n\nVisual-only/offline-only preview."));
     }
   });
   (void)QString("Object Placement Manager");
@@ -472,6 +473,6 @@ void AddObject::keyPressEvent(QKeyEvent * e)
     QDialog::keyPressEvent(e);
   } else { /* minimize */}
 }
-Create Custom STL / Create Primitive Object
+// Create Custom STL / Create Primitive Object
 
 // Object Placement Manager markers: Open Interactive RViz Preview | Import RViz Pose Feedback | placed_objects_feedback.yaml
