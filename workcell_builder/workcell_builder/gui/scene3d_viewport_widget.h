@@ -88,6 +88,8 @@ private:
   void draw_object_cube(const ScenePreviewWidget::PreviewItem & it);
   void draw_safety_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it);
+  bool draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path = true);
+  void draw_unit_cube_triangles(const QColor & color);
   QPoint last_;
   QString hovered_id_;
   struct MeshCacheEntry

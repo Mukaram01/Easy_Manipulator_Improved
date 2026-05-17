@@ -260,6 +260,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
+  ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
+    test/scene3d_mesh_preview_regression_test.cpp)
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
