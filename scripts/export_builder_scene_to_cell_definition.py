@@ -218,6 +218,9 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
 
     robot_env = env.get("robot") if isinstance(env.get("robot"), dict) else {}
     ee_env = env.get("end_effector") if isinstance(env.get("end_effector"), dict) else {}
+    env_metadata = env.get("metadata") if isinstance(env.get("metadata"), dict) else {}
+    robot_mount = env_metadata.get("robot_mount") if isinstance(env_metadata.get("robot_mount"), dict) else {}
+    tool_attachment = env_metadata.get("tool_attachment") if isinstance(env_metadata.get("tool_attachment"), dict) else {}
     objects_env = env.get("objects") if isinstance(env.get("objects"), dict) else {}
 
     robot_meta = meta.get("robot") if isinstance(meta.get("robot"), dict) else {}
@@ -230,6 +233,20 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     robot_name = robot_env.get("name") or robot_meta.get("selected_name") or "unknown_robot"
     ee_name = ee_env.get("name") or ee_meta.get("selected_name") or "unknown_end_effector"
     task_type = _task_type_from_meta(meta)
+    robot_id = robot_mount.get("id") or robot_env.get("id") or robot_name
+    robot_base_link = robot_mount.get("base_link") or robot_env.get("base_link") or "base_link"
+    robot_parent_frame = robot_mount.get("parent_frame") or "world"
+    robot_pose = robot_mount.get("pose") if isinstance(robot_mount.get("pose"), dict) else {
+        "xyz": [0.0, 0.0, 0.0],
+        "rpy": [0.0, 0.0, 0.0],
+    }
+    ee_id = tool_attachment.get("id") or ee_env.get("id") or ee_name
+    ee_parent_link = tool_attachment.get("parent_link") or ee_env.get("parent_link") or "tool0"
+    ee_child_link = tool_attachment.get("child_link") or ee_env.get("base_link") or "tool0"
+    ee_attach_pose = tool_attachment.get("attach_pose") if isinstance(tool_attachment.get("attach_pose"), dict) else {
+        "xyz": [0.0, 0.0, 0.0],
+        "rpy": [0.0, 0.0, 0.0],
+    }
 
     assets: list[dict[str, Any]] = []
     object_entries: list[dict[str, Any]] = []
@@ -287,20 +304,27 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "schema_version": "cell_definition/v1",
         "cell": {"id": scene_path.name, "name": scene_path.name, "planning_frame": "world"},
         "robot": {
+            "id": robot_id,
             "name": robot_name,
             "model": robot_name,
             "capability": robot_meta.get("capability_id"),
             "planning_group": robot_env.get("planning_group", "manipulator"),
+            "base_link": robot_base_link,
+            "parent_frame": robot_parent_frame,
+            "pose": robot_pose,
             "base_frame": robot_env.get("base_link", "base_link"),
             "tool_link": ee_env.get("parent_link", "tool0"),
             "home_named_target": "home",
         },
         "end_effector": {
-            "id": ee_name,
+            "id": ee_id,
             "name": ee_name,
             "capability": ee_meta.get("capability_id"),
             "type": ee_meta.get("family"),
             "grasp_frame": ee_env.get("base_link", "tool0"),
+            "parent_link": ee_parent_link,
+            "child_link": ee_child_link,
+            "attach_pose": ee_attach_pose,
             "allowed_touch_links": [],
         },
         "camera": ({"id": (env.get("camera_placements", [{}])[0].get("name") if isinstance(env.get("camera_placements"), list) and env.get("camera_placements") else (sensors_meta[0].get("capability_id") if sensors_meta and isinstance(sensors_meta[0], dict) else "realsense_d435i")),
