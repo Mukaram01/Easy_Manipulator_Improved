@@ -973,6 +973,12 @@ void MainWindow::setup_studio_shell()
   auto * fine_move_action = canvas_more_menu->addAction("Fine Move Mode"); fine_move_action->setCheckable(true);
   auto * unlock_action = canvas_more_menu->addAction("Unlock Robot Base"); unlock_action->setCheckable(true);
   auto * minimap_action = canvas_more_menu->addAction("Show Minimap"); minimap_action->setCheckable(true); minimap_action->setChecked(true);
+  auto * reload_meshes_action = canvas_more_menu->addAction("Reload Meshes");
+  connect(reload_meshes_action, &QAction::triggered, this, [this](){
+    if (!scene_preview_widget_) return;
+    scene_preview_widget_->reload_meshes();
+    append_studio_log("Canvas More: reloaded mesh preview assets (visual-only).");
+  });
   canvas_more_menu->addSeparator();
   canvas_more_menu->addAction("Toggle Labels")->setCheckable(true);
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);

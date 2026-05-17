@@ -132,6 +132,7 @@ void Scene3DViewportWidget::set_isometric_view()
 void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
 void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::invalidate_mesh_cache() { update(); }
 void Scene3DViewportWidget::fit_scene() {
   if (items.isEmpty()) { set_isometric_view(); return; }
   QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());

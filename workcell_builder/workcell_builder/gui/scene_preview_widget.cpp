@@ -29,6 +29,13 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mode_selector_->addItems({"3D Layout Preview", "2D Layout", "Debug Overlays"});
   controls->addWidget(mode_selector_);
   controls->addSpacing(8);
+  controls->addWidget(new QLabel("Mesh Preview:", this));
+  mesh_preview_mode_selector_ = new QComboBox(this);
+  mesh_preview_mode_selector_->addItems({"Auto", "Meshes", "Primitives"});
+  mesh_preview_mode_selector_->setCurrentText("Auto");
+  mesh_preview_mode_selector_->setToolTip("Mesh preview mode is visual-only and does not alter generated runtime files.");
+  controls->addWidget(mesh_preview_mode_selector_);
+  controls->addSpacing(8);
   controls->addWidget(new QLabel("Labels:", this));
   labels_selector_ = new QComboBox(this);
   labels_selector_->addItems({"Off", "Important", "Selected", "All"});
@@ -72,6 +79,15 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Important") v->label_mode = LabelMode::Important;
     else if (choice == "Selected") v->label_mode = LabelMode::Selected;
     else v->label_mode = LabelMode::All;
+    v->update();
+  });
+  connect(mesh_preview_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    const QString choice = mesh_preview_mode_selector_->currentText();
+    if (choice == "Meshes") mesh_preview_mode_ = MeshPreviewMode::Meshes;
+    else if (choice == "Primitives") mesh_preview_mode_ = MeshPreviewMode::Primitives;
+    else mesh_preview_mode_ = MeshPreviewMode::Auto;
+    v->mesh_preview_mode = mesh_preview_mode_;
     v->update();
   });
   connect(fit_scene_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_fit_scene_clicked);
@@ -125,6 +141,17 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
 }
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
+
+ScenePreviewWidget::MeshPreviewMode ScenePreviewWidget::mesh_preview_mode() const { return mesh_preview_mode_; }
+
+void ScenePreviewWidget::reload_meshes()
+{
+  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  v->invalidate_mesh_cache();
+  v->update();
+  update();
+  emit studio_log_requested("Reloaded mesh preview cache (visual-only).");
+}
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
 void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); }
 void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; }

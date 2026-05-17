@@ -23,6 +23,7 @@ public:
   bool show_task_route{ true }, show_approach_retreat{ true };
   bool show_camera_fov{ true }, show_pick_coverage{ true }, show_epd_detections{ true }, show_detection_labels{ true };
   bool debug_overlays_mode{ false };
+  ScenePreviewWidget::MeshPreviewMode mesh_preview_mode{ ScenePreviewWidget::MeshPreviewMode::Auto };
   bool fit_include_overlays{ false };
   ScenePreviewWidget::TaskOverlayModel task_overlay;
   ScenePreviewWidget::ReachabilityOverlayModel reach_overlay;
@@ -39,6 +40,7 @@ public:
   void set_front_view();
   void set_side_view();
   void set_isometric_view();
+  void invalidate_mesh_cache();
 
 protected:
   void initializeGL() override;
