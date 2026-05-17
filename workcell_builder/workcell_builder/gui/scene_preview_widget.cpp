@@ -26,11 +26,18 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   auto * controls = new QHBoxLayout();
   controls->addWidget(new QLabel("View mode", this));
   mode_selector_ = new QComboBox(this);
-  mode_selector_->addItems({"3D View", "2D Layout", "Debug Overlays"});
+  mode_selector_->addItems({"3D Layout Preview", "2D Layout", "Debug Overlays"});
   controls->addWidget(mode_selector_);
+  controls->addSpacing(8);
+  controls->addWidget(new QLabel("Labels:", this));
+  labels_selector_ = new QComboBox(this);
+  labels_selector_->addItems({"Off", "Important", "Selected", "All"});
+  labels_selector_->setCurrentText("Important");
+  labels_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  controls->addWidget(labels_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Selected", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -52,6 +59,15 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   stack_->addWidget(view3d_container_); stack_->addWidget(view2d_container_); root->addWidget(stack_, 1);
   connect(mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, &ScenePreviewWidget::on_mode_changed);
   connect(reset_view_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_reset_view_clicked);
+  connect(labels_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    const QString choice = labels_selector_->currentText();
+    if (choice == "Off") v->label_mode = LabelMode::Off;
+    else if (choice == "Important") v->label_mode = LabelMode::Important;
+    else if (choice == "Selected") v->label_mode = LabelMode::Selected;
+    else v->label_mode = LabelMode::All;
+    v->update();
+  });
   connect(fit_scene_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_fit_scene_clicked);
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
@@ -62,7 +78,8 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Work Envelope") v->show_work_envelope = !v->show_work_envelope;
     else if (choice == "Warning Labels") v->show_warning_labels = !v->show_warning_labels;
     else if (choice == "Focus Selected") on_focus_selected_clicked();
-    else if (choice == "Fit Selected") on_fit_scene_clicked();
+    else if (choice == "Fit Scene") on_fit_scene_clicked();
+    else if (choice == "Fit overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
     v->update();
   });
@@ -76,7 +93,7 @@ void ScenePreviewWidget::set_3d_available(bool available, const QString & reason
   preview3d_available_ = available;
   unavailable_reason_ = reason;
   if (!mode_default_initialized_) {
-    mode_selector_->setCurrentText(preview3d_available_ ? "3D View" : "2D Layout");
+    mode_selector_->setCurrentText(preview3d_available_ ? "3D Layout Preview" : "2D Layout");
     mode_default_initialized_ = true;
   }
   refresh_mode_and_state();
@@ -91,19 +108,20 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   v->show_pick_place = pick_place_zones;
   v->show_approach_retreat = approach_retreat;
   if (labels) v->label_mode = LabelMode::All;
-  else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
+  else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::Important;
   v->update();
 }
 void ScenePreviewWidget::select_preview_item(const QString & id){ selected_preview_item_id_ = id; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = id; simple_3d_view_->update(); }
 QString ScenePreviewWidget::selected_preview_item_id() const { return selected_preview_item_id_; }
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
-void ScenePreviewWidget::on_fit_scene_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->fit_scene(); fit_fallback_scene_to_items(); }
+void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); }
+void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; }
 void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->focus_selected(); }
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_mode_and_state()
 {
   const QString mode = mode_selector_->currentText();
-  const bool requested_3d = (mode == "3D View") || (mode == "Debug Overlays");
+  const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays");
   const bool use3d = requested_3d && preview3d_available_;
   auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
   viewport->debug_overlays_mode = (mode == "Debug Overlays");
@@ -112,7 +130,7 @@ void ScenePreviewWidget::refresh_mode_and_state()
     stack_->setCurrentWidget(view2d_container_);
     fallback_banner_label_->setVisible(scene_selected_);
     const QString reason = unavailable_reason_.isEmpty() ? "initialization failed" : unavailable_reason_;
-    emit studio_log_requested(QString("3D View unavailable, using 2D Layout: %1").arg(reason));
+    emit studio_log_requested(QString("3D Layout Preview unavailable, using 2D Layout: %1").arg(reason));
   } else {
     fallback_banner_label_->setVisible(false);
     stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
@@ -125,28 +143,42 @@ void ScenePreviewWidget::refresh_mode_and_state()
   error_state_label_->setVisible(rendering_failed);
   refresh_info_chip();
 }
-QRectF ScenePreviewWidget::rendered_items_bounds_2d() const
+QRectF ScenePreviewWidget::rendered_items_bounds_2d(bool include_overlays) const
 {
-  if (!fallback_2d_view_ || !fallback_2d_view_->scene()) return QRectF();
   QRectF bounds;
-  const auto items = fallback_2d_view_->scene()->items();
-  for (QGraphicsItem * item : items) {
+  auto include_in_fit_bounds = [include_overlays](const PreviewItem & it) {
+    if (include_overlays) return true;
+    const QString role = it.role.trimmed().toLower();
+    const QString category = it.category.trimmed().toLower();
+    const QString mix = role + "|" + category;
+    return !mix.contains("safety_zone") && !mix.contains("safety") && !mix.contains("warning_anchor") && !mix.contains("warning_badge");
+  };
+  for (const auto & it : preview_items_) {
+    if (!include_in_fit_bounds(it)) continue;
+    const QRectF rect(it.x, it.z, it.sx, it.sz);
+    bounds = bounds.isNull() ? rect : bounds.united(rect);
+  }
+
+  if (bounds.isValid() && !bounds.isEmpty()) return bounds;
+  if (!fallback_2d_view_ || !fallback_2d_view_->scene()) return QRectF();
+  const auto scene_items = fallback_2d_view_->scene()->items();
+  for (QGraphicsItem * item : scene_items) {
     if (!item || !item->isVisible()) continue;
     bounds = bounds.isNull() ? item->sceneBoundingRect() : bounds.united(item->sceneBoundingRect());
   }
   return bounds;
 }
-void ScenePreviewWidget::fit_fallback_scene_to_items()
+void ScenePreviewWidget::fit_fallback_scene_to_items(bool include_overlays)
 {
   if (!fallback_2d_view_) return;
-  const QRectF bounds = rendered_items_bounds_2d();
+  const QRectF bounds = rendered_items_bounds_2d(include_overlays);
   if (bounds.isValid() && !bounds.isEmpty()) fallback_2d_view_->fitInView(bounds.adjusted(-20, -20, 20, 20), Qt::KeepAspectRatio);
 }
 void ScenePreviewWidget::reset_fallback_scene_view()
 {
   if (!fallback_2d_view_) return;
   fallback_2d_view_->resetTransform();
-  fit_fallback_scene_to_items();
+  fit_fallback_scene_to_items(false);
 }
 
 void ScenePreviewWidget::set_camera_overlay_model(const CameraOverlayModel & model){ camera_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->camera_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
@@ -157,8 +189,8 @@ void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool
 void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->reach_overlay = model; emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->collision_overlay = model; emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 
-void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = mode; v->update(); }
+void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = mode; if (labels_selector_) { if (mode == LabelMode::Off) labels_selector_->setCurrentText("Off"); else if (mode == LabelMode::Important) labels_selector_->setCurrentText("Important"); else if (mode == LabelMode::Selected) labels_selector_->setCurrentText("Selected"); else labels_selector_->setCurrentText("All"); } v->update(); }
 
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
-void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D View") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); info_chip_label_->setText(QString("Scene: %1\nMode: %2\nItems: %3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(preview_items_.size()).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); }
+void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); info_chip_label_->setText(QString("Scene: %1\nMode: %2\nItems: %3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(preview_items_.size()).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); }

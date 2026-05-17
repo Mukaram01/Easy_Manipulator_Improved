@@ -64,8 +64,9 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 
 
 
-bool include_in_fit_bounds_physical_only(const ScenePreviewWidget::PreviewItem & it)
+bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
+  if (include_overlays) return true;
   // FIT_PHYSICAL_ONLY_FILTER: keep fit_scene() bounds focused on physical geometry.
   const NormalizedRole role = classify_item_role(it);
   switch (role) {
@@ -83,6 +84,21 @@ bool include_in_fit_bounds_physical_only(const ScenePreviewWidget::PreviewItem &
       return true;
   }
   return true;
+}
+
+
+bool is_high_priority_role(NormalizedRole role)
+{
+  switch (role) {
+    case NormalizedRole::RobotBase:
+    case NormalizedRole::Camera:
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
+    case NormalizedRole::SafetyZone:
+      return true;
+    default:
+      return false;
+  }
 }
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
@@ -120,10 +136,10 @@ void Scene3DViewportWidget::fit_scene() {
   if (items.isEmpty()) { set_isometric_view(); return; }
   QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
   QVector3D bmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-  bool has_physical_item = false;
+  bool has_fittable_item = false;
   for (const auto & it : items) {
-    if (!include_in_fit_bounds_physical_only(it)) continue;
-    has_physical_item = true;
+    if (!include_in_fit_bounds(it, fit_include_overlays)) continue;
+    has_fittable_item = true;
     bmin.setX(std::min(bmin.x(), static_cast<float>(it.x)));
     bmin.setY(std::min(bmin.y(), static_cast<float>(it.y)));
     bmin.setZ(std::min(bmin.z(), static_cast<float>(it.z)));
@@ -131,7 +147,7 @@ void Scene3DViewportWidget::fit_scene() {
     bmax.setY(std::max(bmax.y(), static_cast<float>(it.y + it.sy)));
     bmax.setZ(std::max(bmax.z(), static_cast<float>(it.z + it.sz)));
   }
-  if (!has_physical_item) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
+  if (!has_fittable_item) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
@@ -201,7 +217,22 @@ void Scene3DViewportWidget::paintGL()
   for (const auto & it : items) {
     const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
     const bool selected = (it.id == selected_id);
-    const bool draw_label = label_mode == ScenePreviewWidget::LabelMode::All || selected;
+    const NormalizedRole role = classify_item_role(it);
+    bool draw_label = false;
+    switch (label_mode) {
+      case ScenePreviewWidget::LabelMode::Off:
+        draw_label = false;
+        break;
+      case ScenePreviewWidget::LabelMode::Important:
+        draw_label = selected || is_high_priority_role(role);
+        break;
+      case ScenePreviewWidget::LabelMode::Selected:
+        draw_label = selected;
+        break;
+      case ScenePreviewWidget::LabelMode::All:
+        draw_label = true;
+        break;
+    }
     if (show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
