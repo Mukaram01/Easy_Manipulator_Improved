@@ -78,6 +78,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <set>
 
 #include "gui/ui_scene_select.h"
 #include "gui/scene_select.h"
@@ -103,6 +104,20 @@
 namespace fs = boost::filesystem;
 
 namespace {
+std::set<std::string> g_perception_contract_warned_scene_paths;
+
+bool emit_perception_contract_warning_once(const fs::path & scene_dir, const std::string & warning)
+{
+  boost::system::error_code ec;
+  const fs::path canonical = fs::weakly_canonical(scene_dir, ec);
+  const std::string key = (ec ? scene_dir.lexically_normal() : canonical).string();
+  if (g_perception_contract_warned_scene_paths.insert(key).second) {
+    RCLCPP_WARN(rclcpp::get_logger("workcell_builder"), "Perception contract warning [%s]: %s", key.c_str(), warning.c_str());
+    return true;
+  }
+  return false;
+}
+
 class InteractiveCanvasView : public QGraphicsView
 {
 public:
@@ -2200,6 +2215,30 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   if (!yaml.IsMap()) {
     append_error("Invalid scene YAML: " + yaml_path.string() + " root must be a map.");
     return false;
+  }
+  const YAML::Node perception = yaml["perception"];
+  if (!perception) {
+    if (emit_perception_contract_warning_once(scene_dir, "missing 'perception' key (legacy disabled mode)")) {
+      append_warning("Perception contract warning: missing 'perception' key (legacy disabled mode).");
+    }
+  } else if (perception.IsScalar()) {
+    std::string token = perception.as<std::string>();
+    std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (token == "disabled" || token == "none" || token == "false") {
+      if (emit_perception_contract_warning_once(scene_dir, "scalar disabled perception token detected")) {
+        append_warning("Perception contract warning: scalar disabled perception token detected.");
+      }
+    }
+  } else if (perception.IsMap()) {
+    if (perception.size() == 0) {
+      if (emit_perception_contract_warning_once(scene_dir, "empty perception map {}; metadata is partial/disabled")) {
+        append_warning("Perception contract warning: empty perception map {}; metadata is partial/disabled.");
+      }
+    }
+  } else {
+    if (emit_perception_contract_warning_once(scene_dir, "non-map perception node detected; nested fields ignored")) {
+      append_warning("Perception contract warning: non-map perception node detected; nested fields ignored.");
+    }
   }
   YAML::Node objects;
   YAML::Node ext_joints;
