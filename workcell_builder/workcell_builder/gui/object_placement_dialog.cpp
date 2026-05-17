@@ -180,7 +180,7 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
 
   auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close | QDialogButtonBox::Apply, this);
   QObject::connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-  QObject::connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, this, &ObjectPlacementDialog::apply_and_generate_preview);
   outer->addWidget(buttons);
 
   applyCompactDialogDefaults(this);
@@ -390,6 +390,32 @@ void ObjectPlacementDialog::import_rviz_pose_feedback()
     "Import RViz Pose Feedback",
     QString("Applied: %1\nSkipped: %2\nUnknown: %3\nInvalid: %4")
       .arg(applied).arg(skipped).arg(unknown).arg(invalid));
+}
+
+void ObjectPlacementDialog::apply_and_generate_preview()
+{
+  PlacedObjectPreviewWriter writer;
+  std::string out_dir;
+  std::vector<std::string> warns;
+  writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
+
+  const QString stl_cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
+  const QString interactive_cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
+  const QString command_bundle = "STL preview launch command:\n" + stl_cmd +
+    "\n\nInteractive preview launch command:\n" + interactive_cmd;
+
+  QApplication::clipboard()->setText(command_bundle);
+
+  QString message = QString::fromStdString("Preview output directory:\n" + out_dir) +
+    "\n\nBoth launch commands copied to clipboard.\n\n" + command_bundle +
+    "\n\nVisual/offline-only preview. This does not launch MoveIt, controllers, or hardware.";
+  if (!warns.empty()) {
+    message += "\n\nWarnings:\n";
+    for (const auto & warn : warns) message += QString::fromStdString("- " + warn + "\n");
+  }
+
+  QMessageBox::information(this, "Object Placement Applied", message);
+  accept();
 }
 
 }  // namespace workcell_builder
