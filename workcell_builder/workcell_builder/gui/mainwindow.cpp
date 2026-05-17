@@ -907,7 +907,7 @@ void MainWindow::setup_studio_shell()
   auto * controls = new QHBoxLayout();
   canvas_mode_label_ = new QLabel("Mode: Select · 3D View", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
-  scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::SelectedOnly);
+  scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
@@ -1042,7 +1042,7 @@ void MainWindow::setup_studio_shell()
   auto * scene_card_layout = make_card(selection_tab_layout, "Scene");
   auto * selected_item_card_layout = make_card(selection_tab_layout, "Selected Item");
   auto * readiness_card_layout = make_card(readiness_tab_layout, "Readiness");
-  auto * actions_card_layout = make_card(actions_tab_layout, "Actions");
+  make_card(actions_tab_layout, "Actions");
   make_row(scene_card_layout, "Name", "No scene selected", false);
   make_row(scene_card_layout, "Status", "unknown", false);
   make_row(scene_card_layout, "Robot", "unknown", false);
