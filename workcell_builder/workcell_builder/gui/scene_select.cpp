@@ -191,6 +191,8 @@ protected:
 
 
 
+[[maybe_unused]] static const char * kTaskZoneUiMarkers = "Add Pick Zone | Add Place Zone | Edit Zone Pose | Edit Zone Size | Save Task Zones to Scene YAML | Open Task Zone Preview | task_zones";
+
 [[maybe_unused]] static const char * kAssetDiscoveryLabel = "Asset discovery paths";
 [[maybe_unused]] static const char * kSelectRobotAssetLabel = "Select Robot Asset";
 [[maybe_unused]] static const char * kSelectEndEffectorAssetLabel = "Select End Effector Asset";
