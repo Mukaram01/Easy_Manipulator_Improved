@@ -6,11 +6,15 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QTextEdit>
 #include <QVBoxLayout>
 #include <array>
+#include <cctype>
+#include <fstream>
 #include <sstream>
 #include <set>
 #include "environment_layout_editor.hpp"
@@ -20,6 +24,27 @@
 
 namespace workcell_builder
 {
+namespace
+{
+struct PoseFeedbackUpdate
+{
+  std::string name;
+  bool matched{false};
+  bool valid{false};
+  std::string status;
+  std::string warning;
+  double current[6]{0, 0, 0, 0, 0, 0};
+  double proposed[6]{0, 0, 0, 0, 0, 0};
+};
+
+static std::string trim_copy(const std::string & input)
+{
+  size_t b = 0, e = input.size();
+  while (b < e && std::isspace(static_cast<unsigned char>(input[b]))) ++b;
+  while (e > b && std::isspace(static_cast<unsigned char>(input[e - 1]))) --e;
+  return input.substr(b, e - b);
+}
+}  // namespace
 
 ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
 : QDialog(parent)
@@ -201,6 +226,170 @@ void ObjectPlacementDialog::add_default_object(const std::string & source_type)
   }
   model_.add_object(obj);
   rebuild_table();
+}
+
+void ObjectPlacementDialog::import_rviz_pose_feedback()
+{
+  const std::string feedback_path = PlacedObjectPreviewWriter::default_preview_root() + std::string("/") +
+    PlacedObjectPreviewWriter::sanitize_scene_name("workcell_scene") + "/placed_objects_feedback.yaml";
+  std::ifstream feedback(feedback_path);
+  if (!feedback.good()) {
+    QMessageBox::information(this, "Import RViz Pose Feedback", "No placed_objects_feedback.yaml found yet. Generate interactive preview and edit in RViz first.");
+    return;
+  }
+
+  const auto existing = model_.objects();
+  std::vector<PoseFeedbackUpdate> updates;
+  std::vector<std::string> header_warnings;
+  std::vector<std::string> unknown_warnings;
+  std::string line;
+  PoseFeedbackUpdate * current = nullptr;
+  while (std::getline(feedback, line)) {
+    const std::string trimmed = trim_copy(line);
+    if (trimmed.rfind("safe_for_robot_motion:", 0) == 0 && trimmed.find("true") == std::string::npos) {
+      header_warnings.emplace_back("safe_for_robot_motion is false (visual-only preview feedback).");
+      continue;
+    }
+    if (trimmed.rfind("- name:", 0) == 0) {
+      updates.emplace_back();
+      current = &updates.back();
+      current->name = sanitize_object_name(trim_copy(trimmed.substr(std::string("- name:").size())));
+      continue;
+    }
+    if (current == nullptr) continue;
+    if (trimmed.rfind("pose:", 0) == 0) {
+      const size_t lb = trimmed.find("[");
+      const size_t rb = trimmed.find("]");
+      if (lb == std::string::npos || rb == std::string::npos || rb <= lb + 1) {
+        current->warning = "pose array missing or malformed";
+        continue;
+      }
+      std::istringstream pose_stream(trim_copy(trimmed.substr(lb + 1, rb - lb - 1)));
+      bool parse_ok = true;
+      for (int i = 0; i < 6; ++i) {
+        std::string token;
+        if (!std::getline(pose_stream, token, ',')) {
+          parse_ok = false;
+          break;
+        }
+        std::istringstream value_stream(trim_copy(token));
+        if (!(value_stream >> current->proposed[i])) {
+          parse_ok = false;
+          break;
+        }
+      }
+      if (!parse_ok) current->warning = "pose array must contain 6 numeric values";
+    }
+  }
+
+  for (auto & update : updates) {
+    const auto it = std::find_if(existing.begin(), existing.end(), [&update](const PlacedObject & o) {
+      return o.name == update.name;
+    });
+    if (it == existing.end()) {
+      update.status = "Unknown object";
+      update.warning = update.warning.empty() ? "No matching object in current table." : update.warning;
+      unknown_warnings.push_back("Unknown object in feedback: " + update.name);
+      continue;
+    }
+    update.matched = true;
+    update.current[0] = it->x; update.current[1] = it->y; update.current[2] = it->z;
+    update.current[3] = it->roll; update.current[4] = it->pitch; update.current[5] = it->yaw;
+    std::string validation_warning;
+    PlacedObject test = *it;
+    test.x = update.proposed[0]; test.y = update.proposed[1]; test.z = update.proposed[2];
+    test.roll = update.proposed[3]; test.pitch = update.proposed[4]; test.yaw = update.proposed[5];
+    update.valid = validate_placed_object(test, &validation_warning) && update.warning.empty();
+    if (!update.warning.empty()) {
+      update.status = "Invalid";
+    } else if (update.valid) {
+      update.status = "Valid";
+    } else {
+      update.warning = validation_warning;
+      update.status = "Invalid";
+    }
+  }
+
+  QDialog review(this);
+  review.setWindowTitle("Review RViz Pose Feedback");
+  auto * layout = new QVBoxLayout(&review);
+  auto * review_table = new QTableWidget(&review);
+  review_table->setColumnCount(6);
+  review_table->setHorizontalHeaderLabels(
+    {"Object", "Current XYZ/RPY", "Proposed XYZ/RPY", "Status", "Warning / Error", "Apply"});
+  review_table->setRowCount(static_cast<int>(updates.size()));
+  review_table->horizontalHeader()->setStretchLastSection(true);
+  for (int i = 0; i < static_cast<int>(updates.size()); ++i) {
+    const auto & u = updates[static_cast<size_t>(i)];
+    auto pose_text = [](const double pose[6]) {
+        return QString("xyz=(%1, %2, %3)\nrpy=(%4, %5, %6)")
+               .arg(pose[0], 0, 'f', 3).arg(pose[1], 0, 'f', 3).arg(pose[2], 0, 'f', 3)
+               .arg(pose[3], 0, 'f', 3).arg(pose[4], 0, 'f', 3).arg(pose[5], 0, 'f', 3);
+      };
+    review_table->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(u.name)));
+    review_table->setItem(i, 1, new QTableWidgetItem(pose_text(u.current)));
+    review_table->setItem(i, 2, new QTableWidgetItem(pose_text(u.proposed)));
+    review_table->setItem(i, 3, new QTableWidgetItem(QString::fromStdString(u.status)));
+    review_table->setItem(i, 4, new QTableWidgetItem(QString::fromStdString(u.warning)));
+    auto * apply_item = new QTableWidgetItem();
+    apply_item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+    apply_item->setCheckState((u.matched && u.valid) ? Qt::Checked : Qt::Unchecked);
+    review_table->setItem(i, 5, apply_item);
+  }
+  layout->addWidget(review_table);
+
+  auto * warning_label = new QLabel("Warnings", &review);
+  layout->addWidget(warning_label);
+  auto * warning_text = new QTextEdit(&review);
+  warning_text->setReadOnly(true);
+  QString warning_summary;
+  for (const auto & warn : header_warnings) warning_summary += QString::fromStdString("- " + warn + "\n");
+  for (const auto & warn : unknown_warnings) warning_summary += QString::fromStdString("- " + warn + "\n");
+  if (warning_summary.isEmpty()) warning_summary = "No header-level or unknown-object warnings.";
+  warning_text->setPlainText(warning_summary);
+  layout->addWidget(warning_text);
+
+  auto * button_row = new QHBoxLayout();
+  auto * apply_button = new QPushButton("Apply Valid Updates", &review);
+  auto * cancel_button = new QPushButton("Cancel", &review);
+  button_row->addWidget(apply_button);
+  button_row->addWidget(cancel_button);
+  layout->addLayout(button_row);
+  QObject::connect(cancel_button, &QPushButton::clicked, &review, &QDialog::reject);
+  QObject::connect(apply_button, &QPushButton::clicked, &review, &QDialog::accept);
+
+  if (review.exec() != QDialog::Accepted) {
+    return;
+  }
+
+  int applied = 0, skipped = 0, unknown = 0, invalid = 0;
+  for (int i = 0; i < static_cast<int>(updates.size()); ++i) {
+    const auto & u = updates[static_cast<size_t>(i)];
+    if (!u.matched) {
+      ++unknown;
+      continue;
+    }
+    if (!u.valid) {
+      ++invalid;
+      continue;
+    }
+    if (review_table->item(i, 5)->checkState() != Qt::Checked) {
+      ++skipped;
+      continue;
+    }
+    std::string warning;
+    if (model_.update_object_pose(u.name, u.proposed[0], u.proposed[1], u.proposed[2], u.proposed[3], u.proposed[4], u.proposed[5], &warning)) {
+      ++applied;
+    } else {
+      ++invalid;
+    }
+  }
+  rebuild_table();
+  QMessageBox::information(
+    this,
+    "Import RViz Pose Feedback",
+    QString("Applied: %1\nSkipped: %2\nUnknown: %3\nInvalid: %4")
+      .arg(applied).arg(skipped).arg(unknown).arg(invalid));
 }
 
 }  // namespace workcell_builder

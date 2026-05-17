@@ -104,54 +104,33 @@ bool ObjectPlacementModel::remove_object(const std::string & name)
   return false;
 }
 
-PlacedObject * ObjectPlacementModel::find_object_by_name(const std::string & name)
+bool ObjectPlacementModel::update_object_pose(
+  const std::string & name, double x, double y, double z, double roll, double pitch, double yaw,
+  std::string * warning)
 {
-  for (auto & object : objects_) {
-    if (object.name == name) {
-      return &object;
+  for (auto & obj : objects_) {
+    if (obj.name != name) {
+      continue;
     }
-  }
-  return nullptr;
-}
-
-const PlacedObject * ObjectPlacementModel::find_object_by_name(const std::string & name) const
-{
-  for (const auto & object : objects_) {
-    if (object.name == name) {
-      return &object;
+    PlacedObject updated = obj;
+    updated.x = x;
+    updated.y = y;
+    updated.z = z;
+    updated.roll = roll;
+    updated.pitch = pitch;
+    updated.yaw = yaw;
+    std::string validation_warning;
+    if (!validate_placed_object(updated, &validation_warning)) {
+      if (warning) *warning = validation_warning;
+      return false;
     }
+    obj = updated;
+    obj.status = validation_warning;
+    if (warning) *warning = validation_warning;
+    return true;
   }
-  return nullptr;
-}
-
-bool ObjectPlacementModel::update_object_pose_by_name(
-  const std::string & name, double x, double y, double z, double roll, double pitch, double yaw, std::string * warning)
-{
-  const bool finite_pose = std::isfinite(x) && std::isfinite(y) && std::isfinite(z) &&
-    std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw);
-  if (!finite_pose) {
-    if (warning) {
-      *warning = "pose values must be finite";
-    }
-    return false;
-  }
-
-  PlacedObject * object = find_object_by_name(name);
-  if (object == nullptr) {
-    return false;
-  }
-
-  object->x = x;
-  object->y = y;
-  object->z = z;
-  object->roll = roll;
-  object->pitch = pitch;
-  object->yaw = yaw;
-
-  if (warning && (std::fabs(x) > 100.0 || std::fabs(y) > 100.0 || std::fabs(z) > 100.0)) {
-    *warning = "suspicious object coordinate magnitude";
-  }
-  return true;
+  if (warning) *warning = "object not found";
+  return false;
 }
 
 std::vector<PlacedObject> ObjectPlacementModel::objects() const { return objects_; }
