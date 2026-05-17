@@ -301,6 +301,15 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
+
+  ament_add_gtest(workcell_scene_preview_widget_ui_test
+    test/scene_preview_widget_ui_test.cpp
+    gui/scene_preview_widget.cpp
+    gui/scene3d_viewport_widget.cpp)
+  if(TARGET workcell_scene_preview_widget_ui_test)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
+  endif()
+
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
   endif()

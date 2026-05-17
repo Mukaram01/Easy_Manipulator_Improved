@@ -68,6 +68,7 @@ public:
   };
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
   enum class LabelMode { Off, Important, Selected, All };
+  enum class MeshPreviewMode { Auto, Meshes, Primitives };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -122,6 +123,8 @@ public:
   void set_label_mode(LabelMode mode);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
+  MeshPreviewMode mesh_preview_mode() const;
+  void reload_meshes();
 
 signals:
   void studio_log_requested(const QString & message);
@@ -155,6 +158,7 @@ private:
   QPushButton * clear_selection_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
+  QComboBox * mesh_preview_mode_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
   QWidget * view3d_container_{ nullptr };
   QWidget * view2d_container_{ nullptr };
@@ -177,4 +181,5 @@ private:
   CameraOverlayModel camera_overlay_model_;
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
+  MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
 };
