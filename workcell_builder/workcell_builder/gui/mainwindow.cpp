@@ -1017,8 +1017,11 @@ void MainWindow::setup_studio_shell()
   readiness_tab_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
   preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
-  auto * validate_task_button = new QPushButton("Validate Layout", scene_builder); preview_actions_layout->addWidget(validate_task_button);
-  auto * generate_task_button = new QPushButton("Generate/Update Task Intent", scene_builder); preview_actions_layout->addWidget(generate_task_button);
+  auto * generate_yaml_button = new QPushButton("Generate YAML", scene_builder); preview_actions_layout->addWidget(generate_yaml_button);
+  auto * generate_scene_pkg_button = new QPushButton("Generate ROS Scene Package", scene_builder); generate_scene_pkg_button->setProperty("role", "primary"); preview_actions_layout->addWidget(generate_scene_pkg_button);
+  auto * generate_task_button = new QPushButton("Generate Task/Grasp Files", scene_builder); preview_actions_layout->addWidget(generate_task_button);
+  auto * validate_task_button = new QPushButton("Validate Generated Scene", scene_builder); preview_actions_layout->addWidget(validate_task_button);
+  auto * copy_cmds_button = new QPushButton("Copy Build & Launch Commands", scene_builder); preview_actions_layout->addWidget(copy_cmds_button);
   scene_builder_more_actions_button_ = new QToolButton(scene_builder);
   scene_builder_more_actions_button_->setText("More Actions");
   scene_builder_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
@@ -1283,8 +1286,11 @@ void MainWindow::setup_studio_shell()
   connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
   connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_task_intent_for_selected_scene);
+  connect(generate_yaml_button, &QPushButton::clicked, this, &MainWindow::generate_yaml_draft_for_selected_scene);
+  connect(generate_scene_pkg_button, &QPushButton::clicked, this, &MainWindow::generate_scene_package_for_selected_scene);
   connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
+  connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_generated_scene_for_selected_scene);
+  connect(copy_cmds_button, &QPushButton::clicked, this, &MainWindow::copy_build_launch_commands_for_selected_scene);
   connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
   connect(copy_task_summary_action, &QAction::triggered, this, &MainWindow::copy_selected_task_summary);
   connect(preview_offline_plan_action, &QAction::triggered, this, &MainWindow::preview_offline_plan_for_selected_scene);
@@ -1494,6 +1500,10 @@ void MainWindow::refresh_task_intent_panel()
 
 void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
 void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate/Update Task Intent: script missing. Searched: " + helper_script_search_paths("create_or_update_builder_task_intent.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2'").arg(script, QString::fromStdString(sc.scene_dir.string())); std::system(cmd.toStdString().c_str()); append_studio_log("Generate/Update Task Intent: " + cmd + " (Preview Only)"); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
+void MainWindow::generate_yaml_draft_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate YAML: helper script search failed (task intent helper missing)."); } const fs::path scene_dir = sc.scene_dir; const fs::path env = scene_dir / "environment.yaml"; const fs::path cell = scene_dir / "cell_definition.yaml"; const fs::path manifest = scene_dir / "scene_manifest.yaml"; const fs::path layout = scene_dir / "environment_layout.yaml"; if (!fs::exists(env)) { std::ofstream out(env.string()); out << "scene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n"; out << "defaults:\n  robot: ur5\n  end_effector: robotiq_2f\n  object: placeholder_object\n  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n"; } if (!fs::exists(cell)) { std::ofstream out(cell.string()); out << "scene_name: " << sc.scene_name << "\nrobot: ur5\nend_effector: robotiq_2f\n"; } if (!fs::exists(manifest)) { std::ofstream out(manifest.string()); out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n"; } if (!fs::exists(layout)) { std::ofstream out(layout.string()); out << "layout:\n  items: []\n"; } append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name))); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
+void MainWindow::generate_scene_package_for_selected_scene(){ if (selected_scene_index_ < 0) return; generate_yaml_draft_for_selected_scene(); const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("generate_workcell_from_cell_definition.py", &script)) { append_studio_log("Generate ROS Scene Package: script missing. Searched: " + helper_script_search_paths("generate_workcell_from_cell_definition.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2' --scene-name '%3'").arg(script, QString::fromStdString(sc.scene_dir.string()), QString::fromStdString(sc.scene_name)); std::system(cmd.toStdString().c_str()); append_studio_log("Generate ROS Scene Package: " + cmd); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
+void MainWindow::validate_generated_scene_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("validate_builder_generated_scene.py", &script)) { append_studio_log("Validate Generated Scene: script missing. Searched: " + helper_script_search_paths("validate_builder_generated_scene.py").join(" | ")); return; } const QString cmd = QString("python3 '%1' --scene-dir '%2' --scene-name '%3'").arg(script, QString::fromStdString(sc.scene_dir.string()), QString::fromStdString(sc.scene_name)); std::system(cmd.toStdString().c_str()); append_studio_log("Validate Generated Scene: " + cmd); refresh_new_cell_checklist(); }
+void MainWindow::copy_build_launch_commands_for_selected_scene(){ if (!has_selected_scene()) return; const QString block = selected_scene_preview_command_block(); QApplication::clipboard()->setText(block); append_studio_log("Copy Build & Launch Commands"); }
 void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
 void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
 void MainWindow::preview_offline_plan_for_selected_scene(){ show_studio_page(StudioPage::PlanSimulatePage); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
@@ -3572,13 +3582,13 @@ void MainWindow::refresh_new_cell_checklist()
 {
   if (!new_cell_checklist_label_) return;
   const NewCellStateAudit audit = audit_new_cell_state(selected_workspace_, scene_browser_result_, selected_scene_index_, preview_state_, preview_process_);
+  QString workflow = scene_workflow_checklist_html();
   QString blocker_title = "none"; QString blocker_next = audit.next_recommended_action; QString blocker_page = "New Cell"; QString blocker_cmd;
   if (!audit.blockers.isEmpty()) { const QStringList parts = audit.blockers.first().split("|"); blocker_title = parts.value(0); blocker_next = parts.value(1, blocker_next); blocker_page = parts.value(2, blocker_page); blocker_cmd = parts.value(3); }
   QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>First blocker: <b>%4</b><br/>Next action: <b>%5</b><br/>Related page: %6")
     .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), blocker_title, blocker_next, blocker_page);
   if (!blocker_cmd.trimmed().isEmpty()) text += QString("<br/>Recovery command: <code>%1</code>").arg(blocker_cmd.toHtmlEscaped());
-  text += "<br/><br/><b>Full Workcell Studio acceptance gate available</b>"
-          "<br/><code>python3 scripts/run_workcell_studio_acceptance_gate.py --mode scratch --scene-name scratch_ur5_2f_acceptance --output-root /tmp/workcell_studio_acceptance</code>";
+  text += "<br/><br/>" + workflow;
   new_cell_checklist_label_->setText(text);
 
   if (readiness_label_) {
@@ -3591,4 +3601,36 @@ void MainWindow::refresh_new_cell_checklist()
     }
     readiness_label_->setText(readiness_text);
   }
+}
+
+QString MainWindow::scene_workflow_checklist_html() const
+{
+  if (!has_selected_scene()) return "<b>Scene Builder Workflow</b><br/>Select a scene to view generation steps.";
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const fs::path dir = s.scene_dir;
+  const auto has = [&](const char * rel){ return fs::exists(dir / rel); };
+  const bool yaml = has("environment.yaml");
+  const bool manifest = has("scene_manifest.yaml");
+  const bool pkg = has("package.xml") && has("CMakeLists.txt");
+  const bool launch = has("launch/demo.launch.py");
+  const bool intent = has("config/workcell_builder_task_intent.yaml");
+  const bool recipe = has("config/task_recipe.yaml") || has("task_recipe.yaml");
+  auto state = [](bool present, bool blocked)->QString{ return present ? "PASS" : (blocked ? "BLOCKED" : "MISSING"); };
+  const bool yaml_blocked = false;
+  const bool manifest_blocked = !yaml;
+  const bool pkg_blocked = !manifest;
+  const bool launch_blocked = !pkg;
+  const bool intent_blocked = !pkg;
+  const bool recipe_blocked = !intent;
+  QString next_action = (yaml && !manifest) || (manifest && (!pkg || !launch)) ? "Generate Scene Package" : (!yaml ? "Generate YAML" : (!intent || !recipe ? "Generate Task/Grasp Files" : "Copy Build & Launch Commands"));
+  QString out = "<b>Simple Workflow Checklist</b><br/>";
+  out += QString("1. YAML Draft: <b>%1</b><br/>").arg(state(yaml, yaml_blocked));
+  out += QString("2. Scene Manifest: <b>%1</b><br/>").arg(state(manifest, manifest_blocked));
+  out += QString("3. ROS Package: <b>%1</b><br/>").arg(state(pkg, pkg_blocked));
+  out += QString("4. Launch File: <b>%1</b><br/>").arg(state(launch, launch_blocked));
+  out += QString("5. Task Intent: <b>%1</b><br/>").arg(state(intent, intent_blocked));
+  out += QString("6. Task Recipe: <b>%1</b><br/>").arg(state(recipe, recipe_blocked));
+  out += "7. Build Command: <b>ACTION REQUIRED</b><br/>8. Fake-Hardware Launch: <b>ACTION REQUIRED</b><br/>";
+  out += QString("Next action: <b>%1</b>").arg(next_action);
+  return out;
 }
