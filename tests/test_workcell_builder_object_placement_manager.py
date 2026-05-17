@@ -36,6 +36,13 @@ def test_object_placement_manager_ui_strings_exist():
         "Save Cameras to Scene YAML",
         "camera_placements",
         "camera frustum",
+        "Add Pick Zone",
+        "Add Place Zone",
+        "Edit Zone Pose",
+        "Edit Zone Size",
+        "Save Task Zones to Scene YAML",
+        "Open Task Zone Preview",
+        "task_zones",
     ]:
         assert needle in txt
 
