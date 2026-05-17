@@ -11,6 +11,7 @@ struct WorkcellStudioSceneInfo
 {
   std::string scene_name;
   boost::filesystem::path scene_dir;
+  boost::filesystem::path canonical_scene_dir;
   bool has_environment_yaml{false};
   bool has_package_xml{false};
   bool has_launch_demo{false};

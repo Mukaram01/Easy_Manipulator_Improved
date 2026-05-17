@@ -14,6 +14,21 @@ namespace workcell_builder {
 namespace {
 bool exists_file(const fs::path & p){ boost::system::error_code ec; return fs::exists(p, ec) && !ec; }
 
+fs::path canonical_or_absolute(const fs::path & p)
+{
+  boost::system::error_code ec;
+  const fs::path canonical_path = fs::canonical(p, ec);
+  if (!ec) {
+    return canonical_path;
+  }
+  ec.clear();
+  const fs::path weak = fs::weakly_canonical(p, ec);
+  if (!ec) {
+    return weak;
+  }
+  return fs::absolute(p);
+}
+
 bool is_valid_scene_package(const WorkcellStudioSceneInfo & s)
 {
   return s.has_environment_yaml || s.has_scene_manifest_yaml ||
@@ -35,7 +50,7 @@ std::vector<fs::path> candidate_scene_roots(const fs::path & workspace_root)
   std::set<std::string> seen;
   std::vector<fs::path> uniq;
   for (const auto & r : roots) {
-    std::string k = r.lexically_normal().string();
+    std::string k = canonical_or_absolute(r).string();
     if (seen.insert(k).second) uniq.push_back(r);
   }
   return uniq;
@@ -97,6 +112,7 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
   out.searched_roots = roots;
 
   boost::system::error_code ec;
+  std::set<std::string> discovered_scene_dirs;
   for (const auto & scene_root : roots) {
     const bool exists = fs::exists(scene_root, ec) && !ec && fs::is_directory(scene_root, ec) && !ec;
     if (!exists) {
@@ -110,6 +126,11 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       if (!fs::is_directory(it->path(), ec) || ec) continue;
       WorkcellStudioSceneInfo s;
       s.scene_dir = it->path();
+      s.canonical_scene_dir = canonical_or_absolute(s.scene_dir);
+      const std::string scene_key = s.canonical_scene_dir.string();
+      if (!discovered_scene_dirs.insert(scene_key).second) {
+        continue;
+      }
       s.scene_name = s.scene_dir.filename().string();
       s.has_environment_yaml = exists_file(s.scene_dir / "environment.yaml");
       s.has_package_xml = exists_file(s.scene_dir / "package.xml");
