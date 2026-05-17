@@ -243,6 +243,16 @@ def _validate_dimensions(summary: ValidationSummary, owner: str, dims: Any) -> N
             summary.errors.append(f"{owner}.dimensions[{idx}] must be a positive number.")
 
 
+def _validate_xyz_rpy_pose(summary: ValidationSummary, owner: str, pose: Any) -> None:
+    if not isinstance(pose, dict):
+        summary.errors.append(f"{owner} must be a mapping with xyz/rpy.")
+        return
+    if not _is_numeric_list(pose.get("xyz"), 3):
+        summary.errors.append(f"{owner}.xyz must be numeric list length 3.")
+    if not _is_numeric_list(pose.get("rpy"), 3):
+        summary.errors.append(f"{owner}.rpy must be numeric list length 3.")
+
+
 def _check_duplicate_ids(summary: ValidationSummary, owner: str, entries: Any) -> None:
     if not isinstance(entries, list):
         return
@@ -397,6 +407,17 @@ def validate_cell_definition(
 
     if not isinstance(robot.get("model"), str) or not robot.get("model", "").strip():
         result.errors.append("robot.model must be a non-empty string.")
+    robot_id = robot.get("id")
+    if robot_id is not None and (not isinstance(robot_id, str) or not robot_id.strip()):
+        result.errors.append("robot.id must be a non-empty string when provided.")
+    robot_base_link = robot.get("base_link")
+    if robot_base_link is not None and (not isinstance(robot_base_link, str) or not robot_base_link.strip()):
+        result.errors.append("robot.base_link must be a non-empty string when provided.")
+    robot_parent_frame = robot.get("parent_frame")
+    if robot_parent_frame is not None and (not isinstance(robot_parent_frame, str) or not robot_parent_frame.strip()):
+        result.errors.append("robot.parent_frame must be a non-empty string when provided.")
+    if "pose" in robot:
+        _validate_xyz_rpy_pose(result, "robot.pose", robot.get("pose"))
 
     if "safe_joint_state" not in robot:
         result.errors.append("robot.safe_joint_state key is required (empty list allowed when home_named_target exists).")
@@ -412,6 +433,17 @@ def validate_cell_definition(
     ee_type = end_effector.get("type")
     if isinstance(ee_type, str) and ee_type not in KNOWN_END_EFFECTOR_TYPES:
         result.warnings.append(f"Unknown end_effector.type '{ee_type}'. Continuing because this is metadata-only validation.")
+    ee_id = end_effector.get("id")
+    if ee_id is not None and (not isinstance(ee_id, str) or not ee_id.strip()):
+        result.errors.append("end_effector.id must be a non-empty string when provided.")
+    ee_parent_link = end_effector.get("parent_link")
+    if ee_parent_link is not None and (not isinstance(ee_parent_link, str) or not ee_parent_link.strip()):
+        result.errors.append("end_effector.parent_link must be a non-empty string when provided.")
+    ee_child_link = end_effector.get("child_link")
+    if ee_child_link is not None and (not isinstance(ee_child_link, str) or not ee_child_link.strip()):
+        result.errors.append("end_effector.child_link must be a non-empty string when provided.")
+    if "attach_pose" in end_effector:
+        _validate_xyz_rpy_pose(result, "end_effector.attach_pose", end_effector.get("attach_pose"))
 
     support_surfaces = environment.get("support_surfaces")
     if isinstance(support_surfaces, list):
