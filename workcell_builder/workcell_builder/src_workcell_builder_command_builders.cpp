@@ -61,6 +61,7 @@ ScriptCommandPlan build_task_intent_command_plan(
 ScriptCommandPlan build_generate_workcell_command_plan(
   const QString & script_path,
   const QString & scene_dir,
+  const QString & output_dir,
   const QString & scene_name)
 {
   ScriptCommandPlan plan;
@@ -70,9 +71,13 @@ ScriptCommandPlan build_generate_workcell_command_plan(
   plan.scene_name = scene_name;
   append_missing_if_empty(script_path, "helper script path", &plan.missing_fields);
   append_missing_if_empty(scene_dir, "scene directory", &plan.missing_fields);
+  append_missing_if_empty(output_dir, "output directory", &plan.missing_fields);
   append_missing_if_empty(scene_name, "scene name", &plan.missing_fields);
   if (plan.ready()) {
-    plan.arguments << "--scene-dir" << scene_dir << "--scene-name" << scene_name;
+    plan.arguments << (scene_dir + "/cell_definition.yaml")
+                   << "--output-dir" << output_dir
+                   << "--package-name" << scene_name
+                   << "--force";
   }
   return plan;
 }
@@ -88,7 +93,7 @@ ScriptCommandPlan build_validate_generated_scene_command_plan(
   append_missing_if_empty(script_path, "helper script path", &plan.missing_fields);
   append_missing_if_empty(scene_dir, "scene directory", &plan.missing_fields);
   if (plan.ready()) {
-    plan.arguments << "--json" << scene_dir;
+    plan.arguments << scene_dir << "--json";
   }
   return plan;
 }
