@@ -6,6 +6,7 @@
 namespace workcell_builder {
 struct WorkcellStudioCanvasItem {
   std::string id; std::string type; std::string role; std::string label; std::string source_file;
+  std::string mesh_path;
   double x{0.0}, y{0.0}, z{0.0}, roll{0.0}, pitch{0.0}, yaw{0.0}, width{0.25}, depth{0.25}, height{0.25}, radius{0.0};
   std::string mesh_path;
   std::string mesh_type;
@@ -14,6 +15,8 @@ struct WorkcellStudioCanvasItem {
   bool mesh_available{false};
   std::string mesh_load_warning;
   bool locked{false};
+  bool mesh_available{false};
+  std::string mesh_load_warning;
   std::vector<std::string> warnings;
 };
 struct WorkcellStudioCanvasModel {
