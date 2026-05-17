@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include <fstream>
 #include <sstream>
@@ -9,8 +9,8 @@
 
 TEST(PlacedObjectPreviewWriter, WritesPreviewFilesWithCameraEntries)
 {
-  const auto temp = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("wb_preview_%%%%%%");
-  boost::filesystem::create_directories(temp);
+  const auto temp = std::filesystem::temp_directory_path() / "wb_preview_test";
+  std::filesystem::create_directories(temp);
 
   workcell_builder::PlacedObject object;
   object.name = "camera_target";
@@ -22,11 +22,11 @@ TEST(PlacedObjectPreviewWriter, WritesPreviewFilesWithCameraEntries)
   std::vector<std::string> warnings;
   ASSERT_TRUE(writer.write_preview("test_scene", {object}, &out_dir, &warnings));
 
-  const boost::filesystem::path xacro_path = boost::filesystem::path(out_dir) / "placed_objects_preview.urdf.xacro";
-  const boost::filesystem::path camera_yaml_path = boost::filesystem::path(out_dir) / "camera_frustum_preview.yaml";
+  const std::filesystem::path xacro_path = std::filesystem::path(out_dir) / "placed_objects_preview.urdf.xacro";
+  const std::filesystem::path camera_yaml_path = std::filesystem::path(out_dir) / "camera_frustum_preview.yaml";
 
-  ASSERT_TRUE(boost::filesystem::exists(xacro_path));
-  ASSERT_TRUE(boost::filesystem::exists(camera_yaml_path));
+  ASSERT_TRUE(std::filesystem::exists(xacro_path));
+  ASSERT_TRUE(std::filesystem::exists(camera_yaml_path));
 
   std::ifstream xacro_file(xacro_path.string());
   std::stringstream xacro_buffer;

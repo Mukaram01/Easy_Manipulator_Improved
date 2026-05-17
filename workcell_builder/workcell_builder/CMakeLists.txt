@@ -300,7 +300,10 @@ if(BUILD_TESTING)
   endif()
 
   if(TARGET workcell_command_builders_test)
-    target_link_libraries(workcell_command_builders_test Qt5::Core)
+    target_link_libraries(workcell_command_builders_test
+      Qt5::Core
+      yaml-cpp
+    )
   endif()
 
   if(TARGET workcell_new_cell_wizard_test)

@@ -150,9 +150,9 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     const int row_index = task_zone_table_->currentRow();
     if (row_index < 0 || row_index >= static_cast<int>(task_zones_.size())) return;
     auto & z = task_zones_[static_cast<size_t>(row_index)];
-    z.size_x = task_zone_table_->item(row_index, 8) ? task_zone_table_->item(row_index, 8)->text().toDouble() : z.size_x;
-    z.size_y = task_zone_table_->item(row_index, 9) ? task_zone_table_->item(row_index, 9)->text().toDouble() : z.size_y;
-    z.size_z = task_zone_table_->item(row_index, 10) ? task_zone_table_->item(row_index, 10)->text().toDouble() : z.size_z;
+    z.dim_x = task_zone_table_->item(row_index, 8) ? task_zone_table_->item(row_index, 8)->text().toDouble() : z.dim_x;
+    z.dim_y = task_zone_table_->item(row_index, 9) ? task_zone_table_->item(row_index, 9)->text().toDouble() : z.dim_y;
+    z.dim_z = task_zone_table_->item(row_index, 10) ? task_zone_table_->item(row_index, 10)->text().toDouble() : z.dim_z;
     rebuild_table();
   });
   mk("Save Task Zones to Scene YAML", [this]() {
@@ -357,8 +357,8 @@ void ObjectPlacementDialog::rebuild_table()
     const auto & z = task_zones_[static_cast<size_t>(i)];
     const std::array<QString, 13> vals = {
       QString::fromStdString(z.id), QString::fromStdString(z.type), QString::number(z.x), QString::number(z.y), QString::number(z.z),
-      QString::number(z.roll), QString::number(z.pitch), QString::number(z.yaw), QString::number(z.size_x),
-      QString::number(z.size_y), QString::number(z.size_z), QString::fromStdString(z.frame), QString::fromStdString(z.status)
+      QString::number(z.roll), QString::number(z.pitch), QString::number(z.yaw), QString::number(z.dim_x),
+      QString::number(z.dim_y), QString::number(z.dim_z), QString::fromStdString(z.frame_id), QString::fromStdString(z.status)
     };
     for (int c = 0; c < 13; ++c) task_zone_table_->setItem(i, c, new QTableWidgetItem(vals[static_cast<size_t>(c)]));
   }
