@@ -88,7 +88,7 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     std::vector<std::string> warns;
     bool used_fallback = false;
     const std::string scene_name = resolve_scene_name(&used_fallback);
-    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns, trim_copy(active_environment_yaml_path_));
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(
@@ -106,7 +106,7 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     std::vector<std::string> warns;
     bool used_fallback = false;
     const std::string scene_name = resolve_scene_name(&used_fallback);
-    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns, trim_copy(active_environment_yaml_path_));
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
     QApplication::clipboard()->setText(cmd);
     QMessageBox::information(this, "Open Interactive RViz Preview", QString::fromStdString("Interactive preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview.");
@@ -115,6 +115,17 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
   mk("Add Camera", [this]() { QMessageBox::information(this, "Add Camera", "Add Camera opens a compact camera placement row workflow."); });
   mk("Edit Camera Pose", [this]() { QMessageBox::information(this, "Edit Camera Pose", "Edit Camera Pose updates XYZ/RPY camera values."); });
   mk("Open Camera Frustum Preview", [this]() { QMessageBox::information(this, "Open Camera Frustum Preview", "camera frustum preview is visual-only and does not start runtime nodes."); });
+  mk("Open Task Zone Preview", [this]() {
+    PlacedObjectPreviewWriter writer;
+    std::string out_dir;
+    std::vector<std::string> warns;
+    bool used_fallback = false;
+    const std::string scene_name = resolve_scene_name(&used_fallback);
+    writer.write_preview(scene_name, model_.objects(), &out_dir, &warns, trim_copy(active_environment_yaml_path_));
+    const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/task_zone_preview.launch.py");
+    QApplication::clipboard()->setText(cmd);
+    QMessageBox::information(this, "Open Task Zone Preview", QString::fromStdString("Task zone preview generated at: " + out_dir + "\n\nCommand copied to clipboard:\n") + cmd + "\n\nVisual-only/offline-only preview (MarkerArray + rviz2 only).");
+  });
   mk("Save Cameras to Scene YAML", [this]() {
     bool used_fallback = false;
     const std::string scene_name = resolve_scene_name(&used_fallback);
@@ -474,7 +485,7 @@ void ObjectPlacementDialog::apply_and_generate_preview()
   std::vector<std::string> warns;
   bool used_fallback = false;
   const std::string scene_name = resolve_scene_name(&used_fallback);
-  writer.write_preview(scene_name, model_.objects(), &out_dir, &warns);
+  writer.write_preview(scene_name, model_.objects(), &out_dir, &warns, trim_copy(active_environment_yaml_path_));
 
   const QString stl_cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
   const QString interactive_cmd = QString::fromStdString("ros2 launch " + out_dir + "/interactive_preview.launch.py");
