@@ -421,6 +421,16 @@ if(BUILD_TESTING)
     )
   endif()
 
+  if(TARGET workcell_scene_xacro_tool_attachment_test)
+    ament_target_dependencies(workcell_scene_xacro_tool_attachment_test
+      ament_index_cpp
+    )
+    target_include_directories(workcell_scene_xacro_tool_attachment_test
+      PRIVATE
+        include
+    )
+  endif()
+
   if(TARGET workcell_scene_select_paths_test)
     ament_target_dependencies(workcell_scene_select_paths_test
       ament_index_cpp

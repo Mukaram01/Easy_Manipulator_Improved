@@ -200,7 +200,7 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
       spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d);
       spin[static_cast<size_t>(i)]->setDecimals(6);
       spin[static_cast<size_t>(i)]->setRange(-1000.0, 1000.0);
-      const double value = i < 3 ? robot_tool_pose_config_.robot_base_xyz[i] : robot_tool_pose_config_.robot_base_rpy[i - 3];
+      const double value = i < 3 ? (i == 0 ? robot_mount_config_.x : (i == 1 ? robot_mount_config_.y : robot_mount_config_.z)) : (i == 3 ? robot_mount_config_.roll : (i == 4 ? robot_mount_config_.pitch : robot_mount_config_.yaw));
       spin[static_cast<size_t>(i)]->setValue(value);
       layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]);
     }
@@ -209,8 +209,12 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QObject::connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     if (d.exec() == QDialog::Accepted) {
-      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.robot_base_xyz[i] = spin[static_cast<size_t>(i)]->value();
-      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.robot_base_rpy[i] = spin[static_cast<size_t>(i + 3)]->value();
+      robot_mount_config_.x = spin[0]->value();
+      robot_mount_config_.y = spin[1]->value();
+      robot_mount_config_.z = spin[2]->value();
+      robot_mount_config_.roll = spin[3]->value();
+      robot_mount_config_.pitch = spin[4]->value();
+      robot_mount_config_.yaw = spin[5]->value();
     }
   });
   mk("Edit Tool Attachment Pose", [this]() {
@@ -223,12 +227,12 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
       spin[static_cast<size_t>(i)] = new QDoubleSpinBox(&d);
       spin[static_cast<size_t>(i)]->setDecimals(6);
       spin[static_cast<size_t>(i)]->setRange(-1000.0, 1000.0);
-      const double value = i < 3 ? robot_tool_pose_config_.tool_attach_xyz[i] : robot_tool_pose_config_.tool_attach_rpy[i - 3];
+      const double value = i < 3 ? (i == 0 ? tool_attachment_config_.x : (i == 1 ? tool_attachment_config_.y : tool_attachment_config_.z)) : (i == 3 ? tool_attachment_config_.roll : (i == 4 ? tool_attachment_config_.pitch : tool_attachment_config_.yaw));
       spin[static_cast<size_t>(i)]->setValue(value);
       layout->addRow(labels[static_cast<size_t>(i)], spin[static_cast<size_t>(i)]);
     }
-    auto * tool_link = new QLineEdit(QString::fromStdString(robot_tool_pose_config_.tool_link_id), &d);
-    auto * tool_joint = new QLineEdit(QString::fromStdString(robot_tool_pose_config_.tool_joint_id), &d);
+    auto * tool_link = new QLineEdit(QString::fromStdString(tool_attachment_config_.parent_link), &d);
+    auto * tool_joint = new QLineEdit(QString::fromStdString(tool_attachment_config_.child_link), &d);
     layout->addRow("Tool Link ID", tool_link);
     layout->addRow("Tool Joint ID", tool_joint);
     auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d);
@@ -236,20 +240,24 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     QObject::connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     if (d.exec() == QDialog::Accepted) {
-      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.tool_attach_xyz[i] = spin[static_cast<size_t>(i)]->value();
-      for (int i = 0; i < 3; ++i) robot_tool_pose_config_.tool_attach_rpy[i] = spin[static_cast<size_t>(i + 3)]->value();
-      robot_tool_pose_config_.tool_link_id = tool_link->text().toStdString();
-      robot_tool_pose_config_.tool_joint_id = tool_joint->text().toStdString();
+      tool_attachment_config_.x = spin[0]->value();
+      tool_attachment_config_.y = spin[1]->value();
+      tool_attachment_config_.z = spin[2]->value();
+      tool_attachment_config_.roll = spin[3]->value();
+      tool_attachment_config_.pitch = spin[4]->value();
+      tool_attachment_config_.yaw = spin[5]->value();
+      tool_attachment_config_.parent_link = tool_link->text().toStdString();
+      tool_attachment_config_.child_link = tool_joint->text().toStdString();
     }
   });
   mk("Use Recommended Gripper Orientation", [this]() {
-    robot_tool_pose_config_.tool_attach_rpy[0] = -1.5708;
-    robot_tool_pose_config_.tool_attach_rpy[1] = -1.5708;
-    robot_tool_pose_config_.tool_attach_rpy[2] = 0.0;
+    tool_attachment_config_.roll = -1.5708;
+    tool_attachment_config_.pitch = -1.5708;
+    tool_attachment_config_.yaw = 0.0;
     QMessageBox::information(this, "Use Recommended Gripper Orientation", "Tool RPY set to [-1.5708, -1.5708, 0.0]. This is a configurable default, not a universal orientation.");
   });
   mk("Save Robot/Tool Pose to Scene YAML", [this]() {
-    const auto result = save_robot_tool_pose_to_environment_yaml(trim_copy(active_environment_yaml_path_), robot_tool_pose_config_);
+    const auto result = save_robot_tool_pose_to_environment_yaml(trim_copy(active_environment_yaml_path_), robot_mount_config_, tool_attachment_config_);
     (void)result;
     QMessageBox::information(this, "Save Robot/Tool Pose to Scene YAML", "Robot/tool pose saved to environment.yaml. Generate YAML / Generate Files to update generated scene files.");
   });
@@ -384,7 +392,7 @@ void ObjectPlacementDialog::set_scene_context(const std::string & scene_name, co
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
   std::vector<std::string> warnings;
   task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
-  robot_tool_pose_config_ = load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &robot_mount_config_, &tool_attachment_config_, &warnings);
   rebuild_table();
 }
 
@@ -398,7 +406,7 @@ void ObjectPlacementDialog::set_active_environment_yaml_path(const std::string &
   active_environment_yaml_path_ = trim_copy(environment_yaml_path);
   std::vector<std::string> warnings;
   task_zones_ = load_task_zones_from_environment_yaml(active_environment_yaml_path_, &warnings);
-  robot_tool_pose_config_ = load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &warnings);
+  load_robot_tool_pose_from_environment_yaml(active_environment_yaml_path_, &robot_mount_config_, &tool_attachment_config_, &warnings);
   rebuild_table();
 }
 

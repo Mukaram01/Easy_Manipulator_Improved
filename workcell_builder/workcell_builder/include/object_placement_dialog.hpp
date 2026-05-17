@@ -35,7 +35,8 @@ private:
   QTableWidget * table_{nullptr};
   QTableWidget * task_zone_table_{nullptr};
   std::vector<TaskZone> task_zones_;
-  RobotToolPoseConfig robot_tool_pose_config_;
+  RobotMountConfig robot_mount_config_;
+  ToolAttachmentConfig tool_attachment_config_;
   std::string active_scene_name_;
   std::string active_environment_yaml_path_;
 };
