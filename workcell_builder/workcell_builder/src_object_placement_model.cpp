@@ -152,6 +152,10 @@ std::string serialize_placed_objects_to_environment_yaml(const std::vector<Place
     out << "  - name: " << o.name << "\n";
     out << "    source: " << o.source_type << "\n";
     out << "    mesh: " << o.mesh_path << "\n";
+    out << "    collision_mesh: " << (o.collision_mesh.empty() ? o.mesh_path : o.collision_mesh) << "\n";
+    out << "    collision_enabled: " << (o.collision_enabled ? "true" : "false") << "\n";
+    out << "    parent_frame: " << (o.parent_frame.empty() ? "world" : o.parent_frame) << "\n";
+    out << "    scale: [" << o.scale_x << ", " << o.scale_y << ", " << o.scale_z << "]\n";
     out << "    pose:\n";
     out << "      xyz: [" << o.x << ", " << o.y << ", " << o.z << "]\n";
     out << "      rpy: [" << o.roll << ", " << o.pitch << ", " << o.yaw << "]\n";
@@ -173,6 +177,23 @@ std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::
       current.name = sanitize_object_name(line.substr(line.find(":") + 1));
     } else if (line.find("source:") != std::string::npos) current.source_type = trim_copy_local(line.substr(line.find(":") + 1));
     else if (line.find("mesh:") != std::string::npos) current.mesh_path = trim_copy_local(line.substr(line.find(":") + 1));
+    else if (line.find("collision_mesh:") != std::string::npos) current.collision_mesh = trim_copy_local(line.substr(line.find(":") + 1));
+    else if (line.find("collision_enabled:") != std::string::npos) current.collision_enabled = trim_copy_local(line.substr(line.find(":") + 1)) != "false";
+    else if (line.find("parent_frame:") != std::string::npos) current.parent_frame = trim_copy_local(line.substr(line.find(":") + 1));
+    else if (line.find("scale:") != std::string::npos) {
+      const size_t lb = line.find("[");
+      const size_t rb = line.find("]");
+      if (lb != std::string::npos && rb != std::string::npos && rb > lb + 1) {
+        std::istringstream ss(line.substr(lb + 1, rb - lb - 1));
+        std::string token;
+        double v[3]{1.0, 1.0, 1.0};
+        int i = 0;
+        while (i < 3 && std::getline(ss, token, ',')) { std::istringstream value(trim_copy_local(token)); value >> v[i++]; }
+        current.scale_x = v[0];
+        current.scale_y = v[1];
+        current.scale_z = v[2];
+      }
+    }
     else if (line.find("xyz:") != std::string::npos || line.find("rpy:") != std::string::npos) {
       const size_t lb = line.find("[");
       const size_t rb = line.find("]");

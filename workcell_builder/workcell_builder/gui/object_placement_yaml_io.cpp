@@ -31,6 +31,15 @@ std::vector<PlacedObject> load_placed_objects_from_environment_yaml(const std::s
       o.source_type = n["source"].as<std::string>("asset_stl");
       o.mesh_path = n["mesh"].as<std::string>("");
       if (o.mesh_path.rfind("/",0)==0 && o.mesh_path.rfind("package://",0)!=0 && warnings) warnings->push_back("external absolute mesh path: " + o.mesh_path);
+      o.collision_enabled = n["collision_enabled"].as<bool>(true);
+      o.parent_frame = n["parent_frame"].as<std::string>("world");
+      o.collision_mesh = n["collision_mesh"].as<std::string>(o.mesh_path);
+      auto scale = n["scale"];
+      if (scale && scale.IsSequence() && scale.size() == 3) {
+        o.scale_x = scale[0].as<double>(1.0);
+        o.scale_y = scale[1].as<double>(1.0);
+        o.scale_z = scale[2].as<double>(1.0);
+      }
       auto pose = n["pose"];
       if (pose && pose.IsMap()) {
         auto xyz = pose["xyz"]; auto rpy = pose["rpy"];
@@ -57,11 +66,11 @@ PlacedObjectYamlWriteResult save_placed_objects_to_environment_yaml(const std::s
       n["name"] = o.name;
       n["source"] = o.source_type.empty() ? "asset_stl" : o.source_type;
       n["mesh"] = o.mesh_path;
-      n["collision_mesh"] = o.mesh_path;
+      n["collision_mesh"] = o.collision_mesh.empty() ? o.mesh_path : o.collision_mesh;
       n["pose"] = to_yaml_pose(o);
-      n["scale"].push_back(1.0); n["scale"].push_back(1.0); n["scale"].push_back(1.0);
-      n["parent_frame"] = "world";
-      n["collision_enabled"] = true;
+      n["scale"].push_back(o.scale_x); n["scale"].push_back(o.scale_y); n["scale"].push_back(o.scale_z);
+      n["parent_frame"] = o.parent_frame.empty() ? "world" : o.parent_frame;
+      n["collision_enabled"] = o.collision_enabled;
       arr.push_back(n);
     }
     root["placed_objects"] = arr;

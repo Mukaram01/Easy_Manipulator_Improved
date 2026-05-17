@@ -5,6 +5,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "placed_object_urdf_render.hpp"
+
 namespace workcell_builder
 {
 namespace fs = std::filesystem;
@@ -57,10 +59,7 @@ bool PlacedObjectPreviewWriter::write_preview(const std::string & scene_name, co
     for (const auto & w : mesh_check.warnings) { yaml << "    warning: \"" << w << "\"\n"; if (warnings) warnings->push_back(o.name + ": " + w); }
     if (!mesh_check.valid_for_urdf) continue;
     const std::string lname = sanitize_object_name(o.name);
-    xacro << "  <joint name=\"" << lname << "_joint\" type=\"fixed\">\n    <parent link=\"world\"/>\n    <child link=\"" << lname << "_link\"/>\n";
-    xacro << "    <origin xyz=\"" << o.x << " " << o.y << " " << o.z << "\" rpy=\"" << o.roll << " " << o.pitch << " " << o.yaw << "\"/>\n  </joint>\n";
-    xacro << "  <link name=\"" << lname << "_link\">\n    <visual><geometry><mesh filename=\"" << o.mesh_path << "\" scale=\"1 1 1\"/></geometry></visual>\n";
-    xacro << "    <collision><geometry><mesh filename=\"" << o.mesh_path << "\" scale=\"1 1 1\"/></geometry></collision>\n  </link>\n";
+    xacro << render_placed_object_urdf_snippet(o, lname);
   }
   xacro << "</robot>\n";
 

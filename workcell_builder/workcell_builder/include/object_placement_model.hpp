@@ -13,7 +13,10 @@ struct PlacedObject
   std::string mesh_path;
   double x{0.0}, y{0.0}, z{0.0};
   double roll{0.0}, pitch{0.0}, yaw{0.0};
-  double scale{1.0};
+  double scale_x{1.0}, scale_y{1.0}, scale_z{1.0};
+  std::string parent_frame{"world"};
+  std::string collision_mesh;
+  bool collision_enabled{true};
   std::string status;
 };
 
