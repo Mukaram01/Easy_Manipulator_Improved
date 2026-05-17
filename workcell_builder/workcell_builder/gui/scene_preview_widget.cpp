@@ -36,7 +36,13 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   labels_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   controls->addWidget(labels_selector_);
   reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
+  isometric_view_button_ = new QPushButton("Isometric", this); controls->addWidget(isometric_view_button_);
+  top_view_button_ = new QPushButton("Top", this); controls->addWidget(top_view_button_);
+  front_view_button_ = new QPushButton("Front", this); controls->addWidget(front_view_button_);
+  side_view_button_ = new QPushButton("Side", this); controls->addWidget(side_view_button_);
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
+  focus_selected_button_ = new QPushButton("Focus Selected", this); controls->addWidget(focus_selected_button_);
+  clear_selection_button_ = new QPushButton("Clear Selection", this); controls->addWidget(clear_selection_button_);
   overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
@@ -69,6 +75,12 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     v->update();
   });
   connect(fit_scene_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_fit_scene_clicked);
+  connect(isometric_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_isometric_view(); });
+  connect(top_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_top_view(); });
+  connect(front_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_front_view(); });
+  connect(side_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_side_view(); });
+  connect(focus_selected_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_focus_selected_clicked);
+  connect(clear_selection_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_clear_selection_clicked);
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();

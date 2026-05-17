@@ -930,8 +930,8 @@ void MainWindow::setup_studio_shell()
   camera_view->setMenu(camera_view_menu);
   controls->addWidget(camera_view);
   toggle_grid_box_ = new QCheckBox("Toggle Grid", scene_builder); toggle_grid_box_->setChecked(true);
-  snap_to_grid_box_ = new QCheckBox("Snap Grid", scene_builder); snap_to_grid_box_->setChecked(true);
-  snap_step_label_ = new QLabel("Grid 0.05 m", scene_builder);
+  snap_to_grid_box_ = new QCheckBox("Snap: 5 cm", scene_builder); snap_to_grid_box_->setToolTip("Snap applies to drag, keyboard nudge, and transform edits."); snap_to_grid_box_->setChecked(true);
+  snap_step_label_ = new QLabel("Nudge step: 0.05 m", scene_builder);
   fine_move_mode_box_ = new QCheckBox("Fine Move Mode", scene_builder);
   unlock_robot_base_box_ = new QCheckBox("Unlock Robot Base", scene_builder);
   toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
@@ -1456,6 +1456,8 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ apply_inspector_pose_to_item(); });
+  inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
+  inspector_roll_->setToolTip("Roll in radians"); inspector_pitch_->setToolTip("Pitch in radians"); inspector_yaw_->setToolTip("Yaw in radians");
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
   connect(select_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect(place_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
@@ -3218,6 +3220,42 @@ void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_sce
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
 void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); refresh_scene_builder_left_explorer(); }
 void MainWindow::delete_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); const QString id=s->data(RoleId).toString(); const QString t=s->data(RoleType).toString(); if(t=="robot_base"||t=="reach"||t=="safety/home"){ QMessageBox::warning(this,"Remove Selected Layout Item","Delete robot is blocked/guarded unless Unlock Robot Base is enabled."); return;} if(QMessageBox::question(this,"Remove Selected Layout Item","Remove selected layout instance from environment_layout.yaml?")!=QMessageBox::Yes) return; undo_stack_.push_back({"delete", id, s->pos(), s->pos(), false, true}); delete s; refresh_scene_builder_left_explorer(); mark_layout_dirty("Remove Selected Layout Item"); append_studio_log(QString("Removed layout item %1 from canvas; save layout to persist.").arg(id)); }
+
+double MainWindow::current_nudge_step_m(Qt::KeyboardModifiers modifiers) const
+{
+  double step = (snap_to_grid_box_ && snap_to_grid_box_->isChecked()) ? snap_step_m_ : 0.01;
+  if (modifiers & Qt::ShiftModifier) step *= 5.0;
+  if (modifiers & Qt::ControlModifier) step *= 0.2;
+  return std::max(0.001, step);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent * event)
+{
+  if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) { QMainWindow::keyPressEvent(event); return; }
+  auto * item = digital_twin_scene_->selectedItems().front();
+  if (!item || item->data(RoleLocked).toBool()) { QMainWindow::keyPressEvent(event); return; }
+  const double step_m = current_nudge_step_m(event->modifiers());
+  const double step_px = step_m * 100.0;
+  QPointF delta; double dz = 0.0;
+  switch (event->key()) {
+    case Qt::Key_Left: delta.rx() -= step_px; break;
+    case Qt::Key_Right: delta.rx() += step_px; break;
+    case Qt::Key_Up: delta.ry() -= step_px; break;
+    case Qt::Key_Down: delta.ry() += step_px; break;
+    case Qt::Key_PageUp: dz += step_m; break;
+    case Qt::Key_PageDown: dz -= step_m; break;
+    default: QMainWindow::keyPressEvent(event); return;
+  }
+  const QPointF old_pos = item->pos();
+  item->setPos(snap_canvas_position(old_pos + delta));
+  item->setData(RolePoseZ, item->data(RolePoseZ).toDouble() + dz);
+  if (snap_step_label_) snap_step_label_->setText(QString("Nudge step: %1 m").arg(step_m, 0, 'f', 3));
+  undo_stack_.push_back({"nudge", item->data(RoleId).toString(), old_pos, item->pos(), false, false});
+  redo_stack_.clear();
+  mark_layout_dirty("Nudge Move");
+  rebuild_canvas_inspector();
+  event->accept();
+}
 
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)

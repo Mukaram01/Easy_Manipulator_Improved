@@ -157,7 +157,18 @@ void Scene3DViewportWidget::fit_scene() {
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   update();
 }
-void Scene3DViewportWidget::focus_selected() { fit_scene(); }
+void Scene3DViewportWidget::focus_selected() {
+  for (const auto & it : items) {
+    if (it.id != selected_id) continue;
+    const ItemBounds b = item_bounds_for_role(it);
+    orbit_offset_ = QVector3D(static_cast<float>(b.x + b.sx * 0.5), static_cast<float>(b.y + b.sy * 0.5), static_cast<float>(b.z + b.sz * 0.5));
+    scene_radius_ = qMax(0.2, 0.5 * qSqrt(b.sx * b.sx + b.sy * b.sy + b.sz * b.sz));
+    distance_ = qBound(min_distance_, scene_radius_ * 4.0, max_distance_);
+    update();
+    return;
+  }
+  fit_scene();
+}
 void Scene3DViewportWidget::initializeGL() { initializeOpenGLFunctions(); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE); glClearColor(0.04f, 0.06f, 0.12f, 1.0f); }
 void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
 

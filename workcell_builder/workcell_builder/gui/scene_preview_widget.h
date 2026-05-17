@@ -141,6 +141,12 @@ private:
   QComboBox * mode_selector_{ nullptr };
   QPushButton * reset_view_button_{ nullptr };
   QPushButton * fit_scene_button_{ nullptr };
+  QPushButton * isometric_view_button_{ nullptr };
+  QPushButton * top_view_button_{ nullptr };
+  QPushButton * front_view_button_{ nullptr };
+  QPushButton * side_view_button_{ nullptr };
+  QPushButton * focus_selected_button_{ nullptr };
+  QPushButton * clear_selection_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
