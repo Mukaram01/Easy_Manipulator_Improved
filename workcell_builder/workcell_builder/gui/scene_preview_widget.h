@@ -61,7 +61,7 @@ public:
     bool selectable{true};
   };
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
-  enum class LabelMode { Off, SelectedOnly, All };
+  enum class LabelMode { Off, Important, Selected, All };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -141,6 +141,7 @@ private:
   QPushButton * reset_view_button_{ nullptr };
   QPushButton * fit_scene_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
+  QComboBox * labels_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
   QWidget * view3d_container_{ nullptr };
   QWidget * view2d_container_{ nullptr };

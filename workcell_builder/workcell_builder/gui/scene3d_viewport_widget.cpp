@@ -84,6 +84,21 @@ bool include_in_fit_bounds_physical_only(const ScenePreviewWidget::PreviewItem &
   }
   return true;
 }
+
+
+bool is_high_priority_role(NormalizedRole role)
+{
+  switch (role) {
+    case NormalizedRole::RobotBase:
+    case NormalizedRole::Camera:
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
+    case NormalizedRole::SafetyZone:
+      return true;
+    default:
+      return false;
+  }
+}
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
   switch (classify_item_role(it)) {
@@ -201,7 +216,22 @@ void Scene3DViewportWidget::paintGL()
   for (const auto & it : items) {
     const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
     const bool selected = (it.id == selected_id);
-    const bool draw_label = label_mode == ScenePreviewWidget::LabelMode::All || selected;
+    const NormalizedRole role = classify_item_role(it);
+    bool draw_label = false;
+    switch (label_mode) {
+      case ScenePreviewWidget::LabelMode::Off:
+        draw_label = false;
+        break;
+      case ScenePreviewWidget::LabelMode::Important:
+        draw_label = selected || is_high_priority_role(role);
+        break;
+      case ScenePreviewWidget::LabelMode::Selected:
+        draw_label = selected;
+        break;
+      case ScenePreviewWidget::LabelMode::All:
+        draw_label = true;
+        break;
+    }
     if (show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
