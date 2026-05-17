@@ -20,3 +20,9 @@ def test_interactive_preview_safety_constraints():
     ).lower()
     for forbidden in ['controller_manager', 'move_group', 'execute_trajectory', 'followjointtrajectory', 'real hardware nodes']:
         assert forbidden not in txt
+
+
+def test_safe_for_robot_motion_rejection_marker_present():
+    importer = Path('workcell_builder/workcell_builder/gui/rviz_pose_feedback_importer.cpp').read_text(encoding='utf-8')
+    assert 'safe_for_robot_motion' in importer
+    assert 'Rejected feedback' in importer

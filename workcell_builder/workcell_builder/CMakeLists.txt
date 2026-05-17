@@ -147,6 +147,7 @@ add_executable(workcell_builder
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
+    gui/object_placement_yaml_io.cpp
     gui/rviz_pose_feedback_importer.cpp
     gui/environment_layout_editor.cpp
     gui/placed_object_preview_writer.cpp
@@ -165,6 +166,7 @@ add_executable(workcell_builder
 
     include/asset_picker_dialog.hpp
     include/object_placement_dialog.hpp
+    include/object_placement_yaml_io.hpp
     include/rviz_pose_feedback_importer.hpp
     include/environment_layout_editor.hpp
     include/placed_object_preview_writer.hpp

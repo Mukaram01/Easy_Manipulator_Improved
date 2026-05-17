@@ -8,6 +8,15 @@
 
 namespace workcell_builder
 {
+namespace {
+std::string trim_copy_local(const std::string & input)
+{
+  size_t b = 0, e = input.size();
+  while (b < e && std::isspace(static_cast<unsigned char>(input[b]))) ++b;
+  while (e > b && std::isspace(static_cast<unsigned char>(input[e - 1]))) --e;
+  return input.substr(b, e - b);
+}
+}  // namespace
 
 std::string sanitize_object_name(const std::string & name)
 {
@@ -143,7 +152,9 @@ std::string serialize_placed_objects_to_environment_yaml(const std::vector<Place
     out << "  - name: " << o.name << "\n";
     out << "    source: " << o.source_type << "\n";
     out << "    mesh: " << o.mesh_path << "\n";
-    out << "    pose: [" << o.x << ", " << o.y << ", " << o.z << ", " << o.roll << ", " << o.pitch << ", " << o.yaw << "]\n";
+    out << "    pose:\n";
+    out << "      xyz: [" << o.x << ", " << o.y << ", " << o.z << "]\n";
+    out << "      rpy: [" << o.roll << ", " << o.pitch << ", " << o.yaw << "]\n";
     if (!o.status.empty()) out << "    status: " << o.status << "\n";
   }
   return out.str();
@@ -160,8 +171,30 @@ std::vector<PlacedObject> parse_placed_objects_from_environment_yaml(const std::
       if (!current.name.empty()) objs.push_back(current);
       current = PlacedObject{};
       current.name = sanitize_object_name(line.substr(line.find(":") + 1));
-    } else if (line.find("source:") != std::string::npos) current.source_type = line.substr(line.find(":") + 1);
-    else if (line.find("mesh:") != std::string::npos) current.mesh_path = line.substr(line.find(":") + 1);
+    } else if (line.find("source:") != std::string::npos) current.source_type = trim_copy_local(line.substr(line.find(":") + 1));
+    else if (line.find("mesh:") != std::string::npos) current.mesh_path = trim_copy_local(line.substr(line.find(":") + 1));
+    else if (line.find("xyz:") != std::string::npos || line.find("rpy:") != std::string::npos) {
+      const size_t lb = line.find("[");
+      const size_t rb = line.find("]");
+      if (lb == std::string::npos || rb == std::string::npos || rb <= lb + 1) continue;
+      std::istringstream ss(line.substr(lb + 1, rb - lb - 1));
+      std::string token;
+      double v[3]{0.0, 0.0, 0.0};
+      int i = 0;
+      while (i < 3 && std::getline(ss, token, ',')) {
+        std::istringstream value(trim_copy_local(token));
+        value >> v[i++];
+      }
+      if (line.find("xyz:") != std::string::npos) {
+        current.x = v[0];
+        current.y = v[1];
+        current.z = v[2];
+      } else {
+        current.roll = v[0];
+        current.pitch = v[1];
+        current.yaw = v[2];
+      }
+    }
   }
   if (!current.name.empty()) objs.push_back(current);
   return objs;

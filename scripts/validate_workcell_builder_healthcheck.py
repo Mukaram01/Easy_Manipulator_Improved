@@ -341,7 +341,17 @@ if __name__ == "__main__":
     opd_cpp = (repo_root / 'workcell_builder/workcell_builder/gui/object_placement_dialog.cpp').read_text(encoding='utf-8')
     _check('Open Interactive RViz Preview' in opd_cpp, 'interactive preview label exists', errors)
     _check('Import RViz Pose Feedback' in opd_cpp, 'feedback import label exists', errors)
+    _check('Save Placed Objects to Scene YAML' in opd_cpp, 'save-to-environment button exists', errors)
+    _check('Placed object changes are pending' in opd_cpp, 'pending changes message exists', errors)
+    _check((repo_root / 'workcell_builder/workcell_builder/include/object_placement_yaml_io.hpp').exists(), 'object_placement_yaml_io header exists', errors)
+    _check((repo_root / 'workcell_builder/workcell_builder/gui/object_placement_yaml_io.cpp').exists(), 'object_placement_yaml_io source exists', errors)
     docs = (repo_root / 'docs/manuals/WORKCELL_BUILDER_OBJECT_PLACEMENT_MANAGER.md').read_text(encoding='utf-8')
     _check('placed_objects_feedback.yaml' in docs, 'docs mention placed_objects_feedback.yaml', errors)
+    _check('Save Placed Objects to Scene YAML' in docs, 'docs mention Save Placed Objects to Scene YAML', errors)
+    po_test = (repo_root / 'tests/test_workcell_builder_placed_object_yaml_io.py').read_text(encoding='utf-8') if (repo_root / 'tests/test_workcell_builder_placed_object_yaml_io.py').exists() else ''
+    _check('round' in po_test.lower() and 'placed_objects' in po_test, 'tests mention placed_objects YAML round-trip', errors)
+    gen_test = (repo_root / 'tests/test_workcell_builder_generated_scene_placed_objects.py').read_text(encoding='utf-8') if (repo_root / 'tests/test_workcell_builder_generated_scene_placed_objects.py').exists() else ''
+    _check('fixed joint' in gen_test.lower() or 'fixed' in gen_test.lower(), 'generated scene tests mention fixed joint', errors)
+    _check('mesh filename' in gen_test.lower() or 'mesh' in gen_test.lower(), 'generated scene tests mention mesh filename', errors)
     itest = (repo_root / 'tests/test_workcell_builder_interactive_preview.py').read_text(encoding='utf-8') if (repo_root / 'tests/test_workcell_builder_interactive_preview.py').exists() else ''
     _check('InteractiveMarkers' in itest, 'tests mention InteractiveMarkers', errors)
