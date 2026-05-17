@@ -100,6 +100,26 @@ def _default_grasp_strategy(payload: dict[str, Any]) -> str:
         return "finger_top"
     return "tool_profile_default"
 
+def _first_enabled_task_zone(scene_package: Path, zone_type: str) -> str | None:
+    env_path = scene_package / "environment.yaml"
+    if not env_path.is_file():
+        return None
+    payload = _load(env_path)
+    zones = payload.get("task_zones")
+    if not isinstance(zones, list):
+        return None
+    for zone in zones:
+        if not isinstance(zone, dict):
+            continue
+        if str(zone.get("type") or "") != zone_type:
+            continue
+        if bool(zone.get("enabled", True)) is False:
+            continue
+        zone_id = zone.get("id")
+        if isinstance(zone_id, str) and zone_id.strip():
+            return zone_id.strip()
+    return None
+
 def _seed(scene_package: Path, output: Path | None) -> tuple[dict[str, Any], Path | None]:
     cands = [output] if output else []
     cands += [scene_package/"workcell_builder_task_intent.yaml", scene_package/"generated"/"workcell_builder_task_intent.yaml", REPO_ROOT/"workcell_builder/workcell_builder/templates/workcell_builder_task_intent_template.yaml"]
@@ -126,6 +146,7 @@ def main() -> int:
     ap.add_argument('--object-class', default='any')
     ap.add_argument('--object-color', default='any')
     ap.add_argument('--output', type=Path)
+    ap.add_argument('--auto-resolve-zones', action='store_true', help='Resolve pick/place ids from scene_package/environment.yaml task_zones when available.')
     ap.add_argument('--validate', action='store_true')
     ap.add_argument('--json', action='store_true')
     a=ap.parse_args()
@@ -133,6 +154,13 @@ def main() -> int:
         print(json.dumps({'result':'FAIL','error':f'invalid scene package: {a.scene_package}'}, indent=2))
         return 2
     payload, _ = _seed(a.scene_package, a.output)
+    if a.auto_resolve_zones:
+        resolved_pick = _first_enabled_task_zone(a.scene_package, "pick")
+        resolved_place = _first_enabled_task_zone(a.scene_package, "place")
+        if resolved_pick:
+            a.pick_source = resolved_pick
+        if resolved_place:
+            a.place_target = resolved_place
     out = a.output or (a.scene_package/'generated'/'workcell_builder_task_intent.yaml')
     payload['schema']='workcell_builder_task_intent/v1'; payload['scene_package']=a.scene_package.as_posix()
     task = _ensure_map(payload, 'task')

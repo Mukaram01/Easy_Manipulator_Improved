@@ -35,6 +35,9 @@ ScriptCommandPlan build_task_intent_command_plan(
   const QString & script_path,
   const TaskIntentCommandInput & input);
 
+TaskIntentCommandInput resolve_task_intent_command_input_defaults(
+  const TaskIntentCommandInput & input);
+
 ScriptCommandPlan build_generate_workcell_command_plan(
   const QString & script_path,
   const QString & scene_dir,
