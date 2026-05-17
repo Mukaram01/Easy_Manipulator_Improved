@@ -32,4 +32,12 @@ PlacedObjectYamlWriteResult save_camera_placements_to_environment_yaml(
   const std::string & environment_yaml_path,
   const std::vector<CameraPlacement> & cameras);
 
+std::vector<TaskZone> load_task_zones_from_environment_yaml(
+  const std::string & environment_yaml_path,
+  std::vector<std::string> * warnings = nullptr);
+
+PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(
+  const std::string & environment_yaml_path,
+  const std::vector<TaskZone> & zones);
+
 }  // namespace workcell_builder
