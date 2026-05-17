@@ -104,6 +104,56 @@ bool ObjectPlacementModel::remove_object(const std::string & name)
   return false;
 }
 
+PlacedObject * ObjectPlacementModel::find_object_by_name(const std::string & name)
+{
+  for (auto & object : objects_) {
+    if (object.name == name) {
+      return &object;
+    }
+  }
+  return nullptr;
+}
+
+const PlacedObject * ObjectPlacementModel::find_object_by_name(const std::string & name) const
+{
+  for (const auto & object : objects_) {
+    if (object.name == name) {
+      return &object;
+    }
+  }
+  return nullptr;
+}
+
+bool ObjectPlacementModel::update_object_pose_by_name(
+  const std::string & name, double x, double y, double z, double roll, double pitch, double yaw, std::string * warning)
+{
+  const bool finite_pose = std::isfinite(x) && std::isfinite(y) && std::isfinite(z) &&
+    std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw);
+  if (!finite_pose) {
+    if (warning) {
+      *warning = "pose values must be finite";
+    }
+    return false;
+  }
+
+  PlacedObject * object = find_object_by_name(name);
+  if (object == nullptr) {
+    return false;
+  }
+
+  object->x = x;
+  object->y = y;
+  object->z = z;
+  object->roll = roll;
+  object->pitch = pitch;
+  object->yaw = yaw;
+
+  if (warning && (std::fabs(x) > 100.0 || std::fabs(y) > 100.0 || std::fabs(z) > 100.0)) {
+    *warning = "suspicious object coordinate magnitude";
+  }
+  return true;
+}
+
 std::vector<PlacedObject> ObjectPlacementModel::objects() const { return objects_; }
 
 std::string serialize_placed_objects_to_environment_yaml(const std::vector<PlacedObject> & objects)
