@@ -270,4 +270,66 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
   return r;
 }
 
+RobotToolPoseConfig load_robot_tool_pose_from_environment_yaml(const std::string & path, std::vector<std::string> * warnings)
+{
+  RobotToolPoseConfig out;
+  try {
+    YAML::Node root = YAML::LoadFile(path);
+    const auto cfg = root["robot_tool_pose"];
+    if (!cfg || !cfg.IsMap()) return out;
+    const auto robot = cfg["robot_base_pose"];
+    const auto tool = cfg["tool_attach_pose"];
+    const auto read_pose = [](const YAML::Node & n, double xyz[3], double rpy[3]) {
+      if (!n || !n.IsMap()) return;
+      const auto xyz_node = n["xyz"];
+      const auto rpy_node = n["rpy"];
+      if (xyz_node && xyz_node.IsSequence() && xyz_node.size() == 3) {
+        xyz[0] = xyz_node[0].as<double>(0.0); xyz[1] = xyz_node[1].as<double>(0.0); xyz[2] = xyz_node[2].as<double>(0.0);
+      }
+      if (rpy_node && rpy_node.IsSequence() && rpy_node.size() == 3) {
+        rpy[0] = rpy_node[0].as<double>(0.0); rpy[1] = rpy_node[1].as<double>(0.0); rpy[2] = rpy_node[2].as<double>(0.0);
+      }
+    };
+    read_pose(robot, out.robot_base_xyz, out.robot_base_rpy);
+    read_pose(tool, out.tool_attach_xyz, out.tool_attach_rpy);
+    out.tool_link_id = cfg["tool_link_id"].as<std::string>("");
+    out.tool_joint_id = cfg["tool_joint_id"].as<std::string>("");
+  } catch (const std::exception & e) {
+    if (warnings) warnings->push_back(std::string("robot_tool_pose yaml parse warning: ") + e.what());
+  }
+  return out;
+}
+
+PlacedObjectYamlWriteResult save_robot_tool_pose_to_environment_yaml(const std::string & path, const RobotToolPoseConfig & config)
+{
+  PlacedObjectYamlWriteResult r; r.path_written = path;
+  try {
+    YAML::Node root;
+    if (std::filesystem::exists(path)) root = YAML::LoadFile(path);
+    YAML::Node cfg;
+    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[0]);
+    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[1]);
+    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[2]);
+    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[0]);
+    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[1]);
+    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[2]);
+    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[0]);
+    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[1]);
+    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[2]);
+    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[0]);
+    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[1]);
+    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[2]);
+    cfg["tool_link_id"] = config.tool_link_id;
+    cfg["tool_joint_id"] = config.tool_joint_id;
+    root["robot_tool_pose"] = cfg;
+    std::ofstream out(path);
+    out << root;
+    r.ok = out.good();
+    r.objects_saved = 1;
+  } catch (const std::exception & e) {
+    r.warnings.push_back(std::string("failed to save robot/tool pose: ") + e.what());
+  }
+  return r;
+}
+
 }  // namespace workcell_builder
