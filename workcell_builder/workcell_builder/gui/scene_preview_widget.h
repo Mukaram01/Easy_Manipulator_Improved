@@ -28,9 +28,20 @@ public:
     QString status{ "unknown" };
     QString source_path;
     QString role;
+    QString mesh_path;
+    QString mesh_type;
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    double mesh_roll{ 0.0 }, mesh_pitch{ 0.0 }, mesh_yaw{ 0.0 };
+    bool mesh_available{ false };
+    QString mesh_load_warning;
     bool selectable{ true };
     bool metadata_complete{ true };
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
   struct CameraOverlayModel
   {
@@ -62,6 +73,7 @@ public:
   };
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
   enum class LabelMode { Off, Important, Selected, All };
+  enum class MeshPreviewMode { Auto, Meshes, Primitives };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -75,6 +87,11 @@ public:
     QString selected_item_status{"unknown"};
     QString metadata_source{"preview"};
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
   struct CollisionOverlayModel
   {
@@ -82,6 +99,11 @@ public:
     QStringList colliding_items;
     QStringList near_miss_items;
     QStringList warnings;
+    bool has_mesh_metadata{ false };
+    double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
+    double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
+    bool has_origin_offset{ false };
+    double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
   };
 
   struct TaskOverlayModel
@@ -116,6 +138,8 @@ public:
   void set_label_mode(LabelMode mode);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
+  MeshPreviewMode mesh_preview_mode() const;
+  void reload_meshes();
 
 signals:
   void studio_log_requested(const QString & message);
@@ -149,6 +173,7 @@ private:
   QPushButton * clear_selection_button_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
+  QComboBox * mesh_preview_mode_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
   QWidget * view3d_container_{ nullptr };
   QWidget * view2d_container_{ nullptr };
@@ -171,4 +196,5 @@ private:
   CameraOverlayModel camera_overlay_model_;
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
+  MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
 };

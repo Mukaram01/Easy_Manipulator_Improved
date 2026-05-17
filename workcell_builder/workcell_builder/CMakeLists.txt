@@ -260,6 +260,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
+  ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
+    test/scene3d_mesh_preview_regression_test.cpp)
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
@@ -294,15 +296,33 @@ if(BUILD_TESTING)
     src_placed_object_urdf_render.cpp
     src_object_placement_model.cpp)
 
+  ament_add_gtest(workcell_scene3d_stl_parser_test
+    test/scene3d_stl_parser_test.cpp
+    gui/scene3d_viewport_widget.cpp)
+
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
-  ament_add_gtest(workcell_studio_canvas_model_mesh_test
-    test/workcell_studio_canvas_model_mesh_test.cpp
-    src_workcell_studio_canvas_model.cpp
-    src_workcell_yaml_utils.cpp)
+
+  ament_add_gtest(workcell_scene_preview_widget_ui_test
+    test/scene_preview_widget_ui_test.cpp
+    gui/scene_preview_widget.cpp
+    gui/scene3d_viewport_widget.cpp)
+  if(TARGET workcell_scene_preview_widget_ui_test)
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
+  endif()
+
   if(TARGET workcell_workspace_validation_test)
     target_link_libraries(workcell_workspace_validation_test Qt5::Widgets)
+  endif()
+
+  if(TARGET workcell_scene3d_stl_parser_test)
+    target_link_libraries(workcell_scene3d_stl_parser_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_stl_parser_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_command_builders_test)

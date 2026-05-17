@@ -973,6 +973,12 @@ void MainWindow::setup_studio_shell()
   auto * fine_move_action = canvas_more_menu->addAction("Fine Move Mode"); fine_move_action->setCheckable(true);
   auto * unlock_action = canvas_more_menu->addAction("Unlock Robot Base"); unlock_action->setCheckable(true);
   auto * minimap_action = canvas_more_menu->addAction("Show Minimap"); minimap_action->setCheckable(true); minimap_action->setChecked(true);
+  auto * reload_meshes_action = canvas_more_menu->addAction("Reload Meshes");
+  connect(reload_meshes_action, &QAction::triggered, this, [this](){
+    if (!scene_preview_widget_) return;
+    scene_preview_widget_->reload_meshes();
+    append_studio_log("Canvas More: reloaded mesh preview assets (visual-only).");
+  });
   canvas_more_menu->addSeparator();
   canvas_more_menu->addAction("Toggle Labels")->setCheckable(true);
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
@@ -3563,6 +3569,16 @@ void MainWindow::populate_scene_hierarchy()
     p.sx = item.width;
     p.sy = item.depth;
     p.sz = item.height;
+    p.mesh_path = QString::fromStdString(item.mesh_path);
+    p.mesh_type = QString::fromStdString(item.mesh_type);
+    p.mesh_scale_x = item.mesh_scale_x;
+    p.mesh_scale_y = item.mesh_scale_y;
+    p.mesh_scale_z = item.mesh_scale_z;
+    p.mesh_roll = item.mesh_r;
+    p.mesh_pitch = item.mesh_p;
+    p.mesh_yaw = item.mesh_y;
+    p.mesh_available = item.mesh_available;
+    p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     preview_items.push_back(p);
     if (allowed_scene_roles.contains(p.role)) {
       add_tree_node(p);

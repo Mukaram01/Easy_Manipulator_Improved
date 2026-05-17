@@ -6,12 +6,94 @@
 #include <QVector3D>
 #include <QVector4D>
 #include <QToolTip>
+#include <QFile>
+#include <QFileInfo>
+#include <QDataStream>
+#include <QDebug>
+#include <QTextStream>
+#include <QtEndian>
+#include <cstring>
 #include <QtMath>
 
 #include <algorithm>
 #include <limits>
 
 namespace {
+constexpr int kMeshTriangleLimit = 100000;
+
+bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                     QString & out_error, int triangle_limit)
+{
+  QTextStream stream(bytes);
+  QString token;
+  while (stream >> token) {
+    if (token.compare("facet", Qt::CaseInsensitive) != 0) continue;
+    QString normal_tok;
+    if (!(stream >> normal_tok) || normal_tok.compare("normal", Qt::CaseInsensitive) != 0) {
+      out_error = "invalid facet normal token";
+      return false;
+    }
+    float nx, ny, nz;
+    if (!(stream >> nx >> ny >> nz)) { out_error = "invalid normal values"; return false; }
+    QString outer, loop;
+    if (!(stream >> outer >> loop) || outer.compare("outer", Qt::CaseInsensitive) != 0 || loop.compare("loop", Qt::CaseInsensitive) != 0) {
+      out_error = "invalid outer loop token";
+      return false;
+    }
+    Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
+    tri.normal = QVector3D(nx, ny, nz);
+    for (int i = 0; i < 3; ++i) {
+      QString vertex;
+      float vx, vy, vz;
+      if (!(stream >> vertex >> vx >> vy >> vz) || vertex.compare("vertex", Qt::CaseInsensitive) != 0) { out_error = "invalid vertex token"; return false; }
+      tri.vertices[i] = QVector3D(vx, vy, vz);
+    }
+    QString endloop, endfacet;
+    if (!(stream >> endloop >> endfacet) || endloop.compare("endloop", Qt::CaseInsensitive) != 0 || endfacet.compare("endfacet", Qt::CaseInsensitive) != 0) {
+      out_error = "invalid endloop/endfacet token";
+      return false;
+    }
+    out_mesh.triangles.push_back(tri);
+    if (out_mesh.triangles.size() > triangle_limit) { out_error = "mesh triangle count exceeds limit"; return false; }
+  }
+  if (out_mesh.triangles.isEmpty()) { out_error = "ascii STL contains no triangles"; return false; }
+  return true;
+}
+
+bool parse_binary_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                      QString & out_error, int triangle_limit)
+{
+  if (bytes.size() < 84) { out_error = "binary STL too small"; return false; }
+  const uchar * data = reinterpret_cast<const uchar *>(bytes.constData());
+  const quint32 tri_count = qFromLittleEndian<quint32>(data + 80);
+  if (tri_count > static_cast<quint32>(triangle_limit)) { out_error = "mesh triangle count exceeds limit"; return false; }
+  const qint64 expected_size = 84LL + static_cast<qint64>(tri_count) * 50LL;
+  if (bytes.size() < expected_size) { out_error = "binary STL truncated"; return false; }
+  out_mesh.triangles.reserve(static_cast<int>(tri_count));
+  const uchar * tri_ptr = data + 84;
+  auto read_float = [](const uchar * p) {
+    quint32 raw = qFromLittleEndian<quint32>(p);
+    float value;
+    std::memcpy(&value, &raw, sizeof(float));
+    return value;
+  };
+  for (quint32 i = 0; i < tri_count; ++i, tri_ptr += 50) {
+    Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
+    tri.normal = QVector3D(read_float(tri_ptr), read_float(tri_ptr + 4), read_float(tri_ptr + 8));
+    for (int vi = 0; vi < 3; ++vi) {
+      const uchar * vp = tri_ptr + 12 + vi * 12;
+      tri.vertices[vi] = QVector3D(read_float(vp), read_float(vp + 4), read_float(vp + 8));
+    }
+    out_mesh.triangles.push_back(tri);
+  }
+  return !out_mesh.triangles.isEmpty();
+}
+
+bool looks_like_ascii_stl(const QByteArray & bytes)
+{
+  const QByteArray prefix = bytes.left(256).trimmed().toLower();
+  return prefix.startsWith("solid") && prefix.contains("facet");
+}
 enum class NormalizedRole
 {
   RobotBase,
@@ -132,6 +214,7 @@ void Scene3DViewportWidget::set_isometric_view()
 void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
 void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::invalidate_mesh_cache() { update(); }
 void Scene3DViewportWidget::fit_scene() {
   if (items.isEmpty()) { set_isometric_view(); return; }
   QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
@@ -191,6 +274,9 @@ void Scene3DViewportWidget::paintGL()
   std::sort(draw_items.begin(), draw_items.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
 
   for (const auto * it : draw_items) {
+    if (classify_item_role(*it) == NormalizedRole::Object && !it->source_path.trimmed().isEmpty()) {
+      (void)ensure_mesh_cached(it->source_path);
+    }
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) continue;
 
@@ -204,7 +290,10 @@ void Scene3DViewportWidget::paintGL()
       case NormalizedRole::Object: draw_object_cube(*it); break;
       case NormalizedRole::SafetyZone: draw_safety_zone(*it); break;
       case NormalizedRole::WarningAnchor: draw_warning_badge_anchor(*it); break;
-      case NormalizedRole::Generic: draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it)); break;
+      case NormalizedRole::Generic:
+        if (!draw_mesh_preview_if_available(*it, item_color(*it), true))
+          draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
+        break;
     }
     if (it->id == selected_id) {
       const ItemBounds bounds = item_bounds_for_role(*it);
@@ -263,6 +352,101 @@ void Scene3DViewportWidget::paintGL()
   }
 }
 
+bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                                     InternalTriangleMesh & out_mesh, QString & out_error,
+                                                     int triangle_limit)
+{
+  out_mesh.triangles.clear();
+  const bool ext_ascii_hint = source_hint.endsWith(".stla", Qt::CaseInsensitive);
+  const bool ext_binary_hint = source_hint.endsWith(".stlb", Qt::CaseInsensitive);
+  const bool ascii = ext_ascii_hint || (!ext_binary_hint && looks_like_ascii_stl(bytes));
+  if (ascii) return parse_ascii_stl(bytes, out_mesh, out_error, triangle_limit);
+  return parse_binary_stl(bytes, out_mesh, out_error, triangle_limit);
+}
+
+bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const
+{
+  QFileInfo info(path);
+  if (!info.exists() || !info.isFile()) return false;
+  out_canonical = info.canonicalFilePath();
+  if (out_canonical.isEmpty()) out_canonical = info.absoluteFilePath();
+  return !out_canonical.isEmpty();
+}
+
+const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const QString & path)
+{
+  QString canonical;
+  if (!try_resolve_canonical_mesh_path(path, canonical)) {
+    static MeshCacheEntry missing;
+    missing.loaded = true;
+    missing.valid = false;
+    missing.warning = QStringLiteral("mesh missing on disk");
+    qWarning() << "Scene3DViewportWidget mesh fallback: missing mesh" << path;
+    return missing;
+  }
+  auto it = mesh_cache_.find(canonical);
+  if (it != mesh_cache_.end()) return it.value();
+  MeshCacheEntry entry;
+  entry.loaded = true;
+  QFile file(canonical);
+  if (!file.open(QIODevice::ReadOnly)) {
+    entry.warning = QStringLiteral("mesh unreadable");
+    qWarning() << "Scene3DViewportWidget mesh fallback: unreadable mesh" << canonical;
+    return mesh_cache_.insert(canonical, entry).value();
+  }
+  const QByteArray bytes = file.readAll();
+  QString parse_error;
+  entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+  if (!entry.valid) {
+    entry.oversized = parse_error.contains("exceeds limit");
+    entry.warning = entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid");
+    qWarning() << "Scene3DViewportWidget mesh fallback:"
+               << (entry.oversized ? "oversized mesh" : "invalid mesh")
+               << canonical << "reason:" << parse_error;
+  }
+  return mesh_cache_.insert(canonical, entry).value();
+}
+
+
+
+
+bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
+{
+  if (!it.has_mesh_metadata) return false;
+
+  glPushMatrix();
+  glTranslated(it.x, it.y, it.z);
+  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
+  if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
+  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+
+  draw_unit_cube_triangles(color);
+  glPopMatrix();
+  return true;
+}
+
+void Scene3DViewportWidget::draw_unit_cube_triangles(const QColor & color)
+{
+  glColor4f(color.redF(), color.greenF(), color.blueF(), 1.0f);
+  glBegin(GL_TRIANGLES);
+  const GLfloat v[8][3] = {
+    {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {1.f, 1.f, 0.f}, {0.f, 1.f, 0.f},
+    {0.f, 0.f, 1.f}, {1.f, 0.f, 1.f}, {1.f, 1.f, 1.f}, {0.f, 1.f, 1.f}
+  };
+  auto tri = [&](int a, int b, int c){ glVertex3fv(v[a]); glVertex3fv(v[b]); glVertex3fv(v[c]); };
+  tri(0,1,2); tri(0,2,3);
+  tri(4,6,5); tri(4,7,6);
+  tri(0,4,5); tri(0,5,1);
+  tri(1,5,6); tri(1,6,2);
+  tri(2,6,7); tri(2,7,3);
+  tri(3,7,4); tri(3,4,0);
+  glEnd();
+}
 
 void Scene3DViewportWidget::draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it)
 {
@@ -303,6 +487,7 @@ void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::Prev
 }
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
   const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
 }
