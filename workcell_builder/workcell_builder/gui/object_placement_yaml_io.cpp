@@ -10,12 +10,48 @@ namespace workcell_builder
 {
 namespace
 {
+constexpr double kSuspiciousPositionMagnitudeMeters = 100.0;
+
 YAML::Node to_yaml_pose(const PlacedObject & o)
 {
   YAML::Node pose;
   pose["xyz"].push_back(o.x); pose["xyz"].push_back(o.y); pose["xyz"].push_back(o.z);
   pose["rpy"].push_back(o.roll); pose["rpy"].push_back(o.pitch); pose["rpy"].push_back(o.yaw);
   return pose;
+}
+
+void append_pose_to_yaml(
+  YAML::Node * node, double x, double y, double z, double roll, double pitch, double yaw)
+{
+  (*node)["pose"]["xyz"].push_back(x);
+  (*node)["pose"]["xyz"].push_back(y);
+  (*node)["pose"]["xyz"].push_back(z);
+  (*node)["pose"]["rpy"].push_back(roll);
+  (*node)["pose"]["rpy"].push_back(pitch);
+  (*node)["pose"]["rpy"].push_back(yaw);
+}
+
+void warn_if_suspicious_pose(
+  const std::string & block_name, double x, double y, double z, std::vector<std::string> * warnings)
+{
+  if (!warnings) {
+    return;
+  }
+  if (std::fabs(x) > kSuspiciousPositionMagnitudeMeters ||
+    std::fabs(y) > kSuspiciousPositionMagnitudeMeters ||
+    std::fabs(z) > kSuspiciousPositionMagnitudeMeters)
+  {
+    warnings->push_back(block_name + " warning: suspiciously large xyz magnitude");
+  }
+}
+
+bool check_finite(const std::string & context, double value, std::vector<std::string> * warnings)
+{
+  if (std::isfinite(value)) {
+    return true;
+  }
+  if (warnings) warnings->push_back(context + " has non-finite numeric value");
+  return false;
 }
 }
 
@@ -270,62 +306,115 @@ PlacedObjectYamlWriteResult save_task_zones_to_environment_yaml(const std::strin
   return r;
 }
 
-RobotToolPoseConfig load_robot_tool_pose_from_environment_yaml(const std::string & path, std::vector<std::string> * warnings)
+bool load_robot_tool_pose_from_environment_yaml(
+  const std::string & path, RobotMountConfig * robot_mount, ToolAttachmentConfig * tool_attachment,
+  std::vector<std::string> * warnings)
 {
-  RobotToolPoseConfig out;
+  if (!robot_mount || !tool_attachment) {
+    if (warnings) warnings->push_back("robot/tool pose load failed: null output pointer");
+    return false;
+  }
+
+  *robot_mount = RobotMountConfig{};
+  *tool_attachment = ToolAttachmentConfig{};
+  bool ok = true;
+
   try {
     YAML::Node root = YAML::LoadFile(path);
-    const auto cfg = root["robot_tool_pose"];
-    if (!cfg || !cfg.IsMap()) return out;
-    const auto robot = cfg["robot_base_pose"];
-    const auto tool = cfg["tool_attach_pose"];
-    const auto read_pose = [](const YAML::Node & n, double xyz[3], double rpy[3]) {
-      if (!n || !n.IsMap()) return;
-      const auto xyz_node = n["xyz"];
-      const auto rpy_node = n["rpy"];
-      if (xyz_node && xyz_node.IsSequence() && xyz_node.size() == 3) {
-        xyz[0] = xyz_node[0].as<double>(0.0); xyz[1] = xyz_node[1].as<double>(0.0); xyz[2] = xyz_node[2].as<double>(0.0);
+
+    auto load_pose = [&](const YAML::Node & block, double * x, double * y, double * z, double * roll, double * pitch, double * yaw) {
+      auto pose = block["pose"];
+      if (!pose || !pose.IsMap()) return;
+      auto xyz = pose["xyz"];
+      if (xyz && xyz.IsSequence() && xyz.size() == 3) {
+        *x = xyz[0].as<double>(*x);
+        *y = xyz[1].as<double>(*y);
+        *z = xyz[2].as<double>(*z);
       }
-      if (rpy_node && rpy_node.IsSequence() && rpy_node.size() == 3) {
-        rpy[0] = rpy_node[0].as<double>(0.0); rpy[1] = rpy_node[1].as<double>(0.0); rpy[2] = rpy_node[2].as<double>(0.0);
+      auto rpy = pose["rpy"];
+      if (rpy && rpy.IsSequence() && rpy.size() == 3) {
+        *roll = rpy[0].as<double>(*roll);
+        *pitch = rpy[1].as<double>(*pitch);
+        *yaw = rpy[2].as<double>(*yaw);
       }
     };
-    read_pose(robot, out.robot_base_xyz, out.robot_base_rpy);
-    read_pose(tool, out.tool_attach_xyz, out.tool_attach_rpy);
-    out.tool_link_id = cfg["tool_link_id"].as<std::string>("");
-    out.tool_joint_id = cfg["tool_joint_id"].as<std::string>("");
+
+    const auto rm = root["robot_mount"];
+    if (rm && rm.IsMap()) {
+      robot_mount->parent_link = rm["parent_link"].as<std::string>(robot_mount->parent_link);
+      load_pose(
+        rm, &robot_mount->x, &robot_mount->y, &robot_mount->z, &robot_mount->roll,
+        &robot_mount->pitch, &robot_mount->yaw);
+    }
+
+    const auto ta = root["tool_attachment"];
+    if (ta && ta.IsMap()) {
+      tool_attachment->parent_link = ta["parent_link"].as<std::string>(tool_attachment->parent_link);
+      tool_attachment->child_link = ta["child_link"].as<std::string>(tool_attachment->child_link);
+      load_pose(
+        ta, &tool_attachment->x, &tool_attachment->y, &tool_attachment->z, &tool_attachment->roll,
+        &tool_attachment->pitch, &tool_attachment->yaw);
+    }
   } catch (const std::exception & e) {
-    if (warnings) warnings->push_back(std::string("robot_tool_pose yaml parse warning: ") + e.what());
+    if (warnings) warnings->push_back(std::string("robot/tool yaml parse warning: ") + e.what());
+    return false;
   }
-  return out;
+
+  ok = check_finite("robot_mount.x", robot_mount->x, warnings) &&
+    check_finite("robot_mount.y", robot_mount->y, warnings) &&
+    check_finite("robot_mount.z", robot_mount->z, warnings) &&
+    check_finite("robot_mount.roll", robot_mount->roll, warnings) &&
+    check_finite("robot_mount.pitch", robot_mount->pitch, warnings) &&
+    check_finite("robot_mount.yaw", robot_mount->yaw, warnings) &&
+    check_finite("tool_attachment.x", tool_attachment->x, warnings) &&
+    check_finite("tool_attachment.y", tool_attachment->y, warnings) &&
+    check_finite("tool_attachment.z", tool_attachment->z, warnings) &&
+    check_finite("tool_attachment.roll", tool_attachment->roll, warnings) &&
+    check_finite("tool_attachment.pitch", tool_attachment->pitch, warnings) &&
+    check_finite("tool_attachment.yaw", tool_attachment->yaw, warnings) && ok;
+
+  warn_if_suspicious_pose("robot_mount", robot_mount->x, robot_mount->y, robot_mount->z, warnings);
+  warn_if_suspicious_pose("tool_attachment", tool_attachment->x, tool_attachment->y, tool_attachment->z, warnings);
+  if (warnings && robot_mount->parent_link.empty()) warnings->push_back("robot_mount warning: empty parent_link");
+  if (warnings && tool_attachment->parent_link.empty()) warnings->push_back("tool_attachment warning: empty parent_link");
+  if (warnings && tool_attachment->child_link.empty()) warnings->push_back("tool_attachment warning: empty child_link");
+
+  return ok;
 }
 
-PlacedObjectYamlWriteResult save_robot_tool_pose_to_environment_yaml(const std::string & path, const RobotToolPoseConfig & config)
+PlacedObjectYamlWriteResult save_robot_tool_pose_to_environment_yaml(
+  const std::string & path, const RobotMountConfig & robot_mount, const ToolAttachmentConfig & tool_attachment)
 {
-  PlacedObjectYamlWriteResult r; r.path_written = path;
+  PlacedObjectYamlWriteResult r;
+  r.path_written = path;
   try {
     YAML::Node root;
-    if (std::filesystem::exists(path)) root = YAML::LoadFile(path);
-    YAML::Node cfg;
-    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[0]);
-    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[1]);
-    cfg["robot_base_pose"]["xyz"].push_back(config.robot_base_xyz[2]);
-    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[0]);
-    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[1]);
-    cfg["robot_base_pose"]["rpy"].push_back(config.robot_base_rpy[2]);
-    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[0]);
-    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[1]);
-    cfg["tool_attach_pose"]["xyz"].push_back(config.tool_attach_xyz[2]);
-    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[0]);
-    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[1]);
-    cfg["tool_attach_pose"]["rpy"].push_back(config.tool_attach_rpy[2]);
-    cfg["tool_link_id"] = config.tool_link_id;
-    cfg["tool_joint_id"] = config.tool_joint_id;
-    root["robot_tool_pose"] = cfg;
+    if (std::filesystem::exists(path)) {
+      try {
+        root = YAML::LoadFile(path);
+      } catch (const std::exception & e) {
+        r.warnings.push_back(std::string("existing environment yaml malformed; rewriting minimal root: ") + e.what());
+        root = YAML::Node(YAML::NodeType::Map);
+      }
+    } else {
+      root = YAML::Node(YAML::NodeType::Map);
+    }
+
+    YAML::Node rm;
+    rm["parent_link"] = robot_mount.parent_link;
+    append_pose_to_yaml(&rm, robot_mount.x, robot_mount.y, robot_mount.z, robot_mount.roll, robot_mount.pitch, robot_mount.yaw);
+    root["robot_mount"] = rm;
+
+    YAML::Node ta;
+    ta["parent_link"] = tool_attachment.parent_link;
+    ta["child_link"] = tool_attachment.child_link;
+    append_pose_to_yaml(&ta, tool_attachment.x, tool_attachment.y, tool_attachment.z, tool_attachment.roll, tool_attachment.pitch, tool_attachment.yaw);
+    root["tool_attachment"] = ta;
+
     std::ofstream out(path);
     out << root;
     r.ok = out.good();
-    r.objects_saved = 1;
+    r.objects_saved = 2;
   } catch (const std::exception & e) {
     r.warnings.push_back(std::string("failed to save robot/tool pose: ") + e.what());
   }
