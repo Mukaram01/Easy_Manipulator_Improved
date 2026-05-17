@@ -265,6 +265,76 @@ def _analyze_scene_package(scene_pkg: Path, repo_root: Path) -> dict[str, Any]:
     if c_place and c_place not in zone_ids:
         warnings.append(f"Cell definition task.place.target.id not found in task_zones: {c_place}")
 
+    robot_cfg = env_data.get("robot") if isinstance(env_data.get("robot"), dict) else {}
+    ee_cfg = env_data.get("end_effector") if isinstance(env_data.get("end_effector"), dict) else {}
+    robot_mount = robot_cfg.get("robot_mount") if isinstance(robot_cfg, dict) else None
+    tool_attachment = ee_cfg.get("tool_attachment") if isinstance(ee_cfg, dict) else None
+
+    warnings.append(
+        "Legacy compatibility: robot_mount "
+        + ("present." if isinstance(robot_mount, dict) else "missing.")
+    )
+    warnings.append(
+        "Legacy compatibility: tool_attachment "
+        + ("present." if isinstance(tool_attachment, dict) else "missing.")
+    )
+
+    if isinstance(tool_attachment, dict):
+        parent_link = str(tool_attachment.get("parent_link") or "").strip()
+        child_link = str(tool_attachment.get("child_link") or "").strip()
+        warnings.append(
+            "Legacy compatibility: tool_attachment parent/child link completeness "
+            + ("complete." if parent_link and child_link else "incomplete.")
+        )
+
+    rec_used = False
+    for key in ("use_recommended_gripper_orientation", "use_recommended_orientation"):
+        if key in ee_cfg:
+            rec_used = bool(ee_cfg.get(key))
+            break
+    warnings.append(
+        "Legacy compatibility: recommended gripper orientation "
+        + ("used." if rec_used else "not used.")
+    )
+
+    known_gripper = str(ee_cfg.get("name") or ee_cfg.get("id") or "").lower()
+    if known_gripper and any(tok in known_gripper for tok in ("robotiq", "onrobot", "airpick", "gripper", "suction")):
+        src = tool_attachment if isinstance(tool_attachment, dict) else ee_cfg.get("origin")
+        origin = (src.get("origin") if isinstance(src, dict) and isinstance(src.get("origin"), dict) else src) if isinstance(src, dict) else {}
+        rpy = origin.get("rpy") if isinstance(origin, dict) else None
+        if isinstance(rpy, list) and len(rpy) == 3:
+            vals = [float(v) for v in rpy]
+            if all(abs(v) < 1e-9 for v in vals):
+                warnings.append("Legacy compatibility: known gripper has zero RPY (0,0,0).")
+
+    generated_text = ""
+    if placed_objects:
+        # Re-use earlier generated URDF linkage checks path to avoid duplicate WARN lines.
+        generated_text, _, _ = _collect_generated_urdf_text(scene_pkg)
+    else:
+        generated_text, generated_errors, generated_warnings = _collect_generated_urdf_text(scene_pkg)
+        errors.extend(generated_errors)
+        warnings.extend(generated_warnings)
+    if generated_text:
+        if isinstance(robot_mount, dict):
+            mount_pose = robot_mount.get("pose") if isinstance(robot_mount.get("pose"), dict) else {}
+            xyz = mount_pose.get("xyz")
+            if isinstance(xyz, list) and len(xyz) == 3:
+                xyz_str = " ".join(str(v) for v in xyz)
+                warnings.append(
+                    "Legacy compatibility: generated URDF robot base origin "
+                    + ("contains expected pose." if xyz_str in generated_text else "missing expected pose.")
+                )
+        if isinstance(tool_attachment, dict):
+            attach_origin = tool_attachment.get("origin") if isinstance(tool_attachment.get("origin"), dict) else {}
+            xyz = attach_origin.get("xyz")
+            if isinstance(xyz, list) and len(xyz) == 3:
+                xyz_str = " ".join(str(v) for v in xyz)
+                warnings.append(
+                    "Legacy compatibility: generated URDF tool attach origin "
+                    + ("contains expected pose." if xyz_str in generated_text else "missing expected pose.")
+                )
+
     return {
         "scene_package": str(scene_pkg),
         "errors": errors,

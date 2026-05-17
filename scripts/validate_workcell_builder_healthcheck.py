@@ -369,6 +369,43 @@ def main() -> int:
         f"UI marker exists in {opd_path.relative_to(repo_root)}: 'Save Placed Objects to Scene YAML'",
         errors,
     )
+    _check(
+        "Use Recommended Gripper Orientation" in scene_cpp or "Use Recommended Gripper Orientation" in opd_text,
+        "UI contains 'Use Recommended Gripper Orientation'",
+        errors,
+    )
+
+    yaml_io_text = (
+        (repo_root / "workcell_builder/workcell_builder/include/object_placement_yaml_io.hpp").read_text(encoding="utf-8")
+        + "\n"
+        + (repo_root / "workcell_builder/workcell_builder/gui/object_placement_yaml_io.cpp").read_text(encoding="utf-8")
+    )
+    for marker in ["robot_mount", "tool_attachment"]:
+        _check(marker in yaml_io_text, f"robot/tool YAML IO marker exists: {marker}", errors)
+
+    _check(
+        "Robot base and tool attachment pose" in docs_text,
+        "docs mention 'Robot base and tool attachment pose'",
+        errors,
+    )
+
+    tests_union = "\n".join(
+        [
+            (repo_root / "tests/test_workcell_builder_gripper_mount_orientation.py").read_text(encoding="utf-8")
+            if (repo_root / "tests/test_workcell_builder_gripper_mount_orientation.py").exists() else "",
+            (repo_root / "workcell_builder/workcell_builder/test/generate_yaml_end_effector_metadata_test.cpp").read_text(encoding="utf-8")
+            if (repo_root / "workcell_builder/workcell_builder/test/generate_yaml_end_effector_metadata_test.cpp").exists() else "",
+        ]
+    )
+    for marker in ["robot_mount", "tool_attachment", "-1.5708 -1.5708 0.0"]:
+        _check(marker in tests_union, f"tests mention {marker}", errors)
+
+    urdf_tool_test = (repo_root / "workcell_builder/workcell_builder/test/scene_xacro_tool_attachment_test.cpp").read_text(encoding="utf-8") if (repo_root / "workcell_builder/workcell_builder/test/scene_xacro_tool_attachment_test.cpp").exists() else ""
+    _check(
+        "rpy=\"-1.5708 -1.5708 0.0\"" in urdf_tool_test or ("fixed" in urdf_tool_test.lower() and "origin" in urdf_tool_test.lower()),
+        "URDF tests assert tool fixed-joint origin behavior",
+        errors,
+    )
 
     if errors:
         print("WORKCELL_BUILDER_HEALTHCHECK: FAIL")
