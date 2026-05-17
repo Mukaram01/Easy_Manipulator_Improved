@@ -10,6 +10,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <array>
+#include <fstream>
+#include <sstream>
 #include "environment_layout_editor.hpp"
 #include "placed_object_preview_writer.hpp"
 #include <QApplication>
@@ -60,12 +62,13 @@ ObjectPlacementDialog::ObjectPlacementDialog(QWidget * parent)
     writer.write_preview("workcell_scene", model_.objects(), &out_dir, &warns);
     const QString cmd = QString::fromStdString("ros2 launch " + out_dir + "/preview_scene.launch.py");
     QApplication::clipboard()->setText(cmd);
-    QMessageBox::information(this, "Open RViz STL Preview", QString::fromStdString("Preview generated at: " + out_dir + "
-
-Command copied to clipboard:
-") + cmd + "
-
-Visual-only/offline-only preview.");
+    QMessageBox::information(
+      this,
+      "Open RViz STL Preview",
+      QString::fromStdString(
+        "Preview generated at: " + out_dir +
+        "\n\nCommand copied to clipboard:\n" + cmd.toStdString() +
+        "\n\nVisual-only/offline-only preview."));
   });
 
   mk("Open Interactive RViz Preview", [this]() {
@@ -85,12 +88,13 @@ Visual-only/offline-only preview.");
       return;
     }
     std::stringstream ss; ss << feedback.rdbuf();
-    QMessageBox::information(this, "Import RViz Pose Feedback", QString::fromStdString("Found feedback file:
-" + feedback_path + "
-
-Preview-only import placeholder for next PR.
-
-" + ss.str()));
+    QMessageBox::information(
+      this,
+      "Import RViz Pose Feedback",
+      QString::fromStdString(
+        "Found feedback file:\n" + feedback_path +
+        "\n\nPreview-only import placeholder for next PR.\n\n" +
+        ss.str()));
   });
   mk("Open Visual Layout Editor", [this]() {
     EnvironmentLayoutEditor editor(this);
