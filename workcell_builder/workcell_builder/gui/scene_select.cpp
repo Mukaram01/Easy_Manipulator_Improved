@@ -35,6 +35,7 @@
 #include <QDateTime>
 #include "workcell_builder_ui_utils.hpp"
 #include "workcell_yaml_utils.hpp"
+#include "workcell_warning_once.hpp"
 
 
 #include <QDesktopServices>
@@ -2239,10 +2240,12 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   } catch (const YAML::Exception & error) {
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    workcell_builder::log_warning_once_per_context_path_reason("scene_select_details_panel", yaml_path, "scene YAML parse failed");
     return false;
   } catch (const std::exception & error) {
     append_error(
       "Invalid scene YAML: " + yaml_path.string() + " " + std::string(error.what()));
+    workcell_builder::log_warning_once_per_context_path_reason("scene_select_details_panel", yaml_path, "scene YAML parse failed");
     return false;
   }
   if (!yaml.IsMap()) {
@@ -2251,6 +2254,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
   }
   const YAML::Node perception = yaml["perception"];
   if (!perception) {
+    workcell_builder::log_warning_once_per_context_path_reason("scene_select_details_panel", yaml_path, "downgraded to legacy mode");
     if (emit_perception_contract_warning_once(scene_dir, "missing 'perception' key (legacy disabled mode)")) {
       append_warning("Perception contract warning: missing 'perception' key (legacy disabled mode).");
     }

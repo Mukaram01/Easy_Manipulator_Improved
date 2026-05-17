@@ -1,12 +1,13 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "workcell_yaml_utils.hpp"
+#include "workcell_warning_once.hpp"
 #include <algorithm>
 #include <yaml-cpp/yaml.h>
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 
-static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out = YAML::LoadFile(p.string()); return true;}catch(...){return false;} }
+static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out = YAML::LoadFile(p.string()); return true;}catch(...){ workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", p, "scene YAML parse failed"); return false;} }
 
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & scene_dir, const std::string & scene_name)
 {
@@ -18,6 +19,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (deterministic_fallback_layout) return;
     deterministic_fallback_layout = true;
     deterministic_fallback_reason = reason;
+    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "downgraded to legacy mode");
   };
   const auto add_warning = [&m](const std::string & context, const std::string & detail) {
     m.warnings.push_back("layout/workcell_studio_layout.yaml [" + context + "]: " + detail);
