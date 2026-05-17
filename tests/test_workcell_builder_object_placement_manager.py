@@ -9,6 +9,7 @@ def test_object_placement_manager_ui_strings_exist():
         (ROOT / "workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
         + (ROOT / "workcell_builder/workcell_builder/gui/addobject.cpp").read_text(encoding="utf-8")
         + (ROOT / "workcell_builder/workcell_builder/gui/object_placement_dialog.cpp").read_text(encoding="utf-8")
+        + (ROOT / "workcell_builder/workcell_builder/include/yaml_parser/generate_yaml.h").read_text(encoding="utf-8")
     )
     for needle in [
         "Object Placement Manager",
@@ -43,6 +44,8 @@ def test_object_placement_manager_ui_strings_exist():
         "Save Task Zones to Scene YAML",
         "Open Task Zone Preview",
         "task_zones",
+        "robot_mount",
+        "tool_attachment",
     ]:
         assert needle in txt
 
