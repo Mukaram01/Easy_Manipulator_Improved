@@ -77,6 +77,18 @@ TEST(GenerateYAMLMetadataTest, FingerGripperIncludesNormalizedAndLegacyKeys)
   EXPECT_EQ(end_effector["gripper_type"].as<std::string>(), "finger");
   EXPECT_TRUE(end_effector["spawn_gripper_controller"].as<bool>());
   EXPECT_EQ(end_effector["finger_count"].as<int>(), 2);
+
+  const YAML::Node tool_attachment = end_effector["tool_attachment"];
+  ASSERT_TRUE(tool_attachment);
+  EXPECT_EQ(tool_attachment["parent_link"].as<std::string>(), "tool0");
+  EXPECT_EQ(tool_attachment["child_link"].as<std::string>(), "robotiq_85_base_link");
+  EXPECT_EQ(tool_attachment["joint_name"].as<std::string>(), "robotiq_85_fixed_joint");
+  ASSERT_TRUE(tool_attachment["origin"]);
+  ASSERT_TRUE(tool_attachment["origin"]["rpy"]);
+  ASSERT_EQ(tool_attachment["origin"]["rpy"].size(), 3U);
+  EXPECT_FLOAT_EQ(tool_attachment["origin"]["rpy"][0].as<float>(), -1.5708F);
+  EXPECT_FLOAT_EQ(tool_attachment["origin"]["rpy"][1].as<float>(), -1.5708F);
+  EXPECT_FLOAT_EQ(tool_attachment["origin"]["rpy"][2].as<float>(), 0.0F);
 }
 
 TEST(GenerateYAMLMetadataTest, SuctionGripperIncludesNormalizedKeysWithoutFingerCount)
@@ -108,4 +120,19 @@ TEST(GenerateYAMLMetadataTest, SuctionGripperIncludesNormalizedKeysWithoutFinger
   EXPECT_EQ(end_effector["gripper_type"].as<std::string>(), "airpick");
   EXPECT_FALSE(end_effector["spawn_gripper_controller"].as<bool>());
   EXPECT_FALSE(end_effector["finger_count"]);
+}
+
+TEST(GenerateYAMLMetadataTest, RobotMountPoseFallsBackToIdentityWhenAbsent)
+{
+  Scene scene = make_base_scene();
+  const YAML::Node root = generate_environment_yaml(scene);
+  const YAML::Node robot = root["robot"];
+  ASSERT_TRUE(robot);
+  ASSERT_TRUE(robot["robot_mount"]);
+  ASSERT_TRUE(robot["robot_mount"]["pose"]);
+  ASSERT_TRUE(robot["robot_mount"]["pose"]["rpy"]);
+  ASSERT_EQ(robot["robot_mount"]["pose"]["rpy"].size(), 3U);
+  EXPECT_FLOAT_EQ(robot["robot_mount"]["pose"]["rpy"][0].as<float>(), 0.0F);
+  EXPECT_FLOAT_EQ(robot["robot_mount"]["pose"]["rpy"][1].as<float>(), 0.0F);
+  EXPECT_FLOAT_EQ(robot["robot_mount"]["pose"]["rpy"][2].as<float>(), 0.0F);
 }
