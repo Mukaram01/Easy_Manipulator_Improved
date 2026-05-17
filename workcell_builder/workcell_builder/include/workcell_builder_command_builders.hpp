@@ -20,9 +20,20 @@ struct ScriptCommandPlan
   QString display_command() const;
 };
 
+struct TaskIntentCommandInput
+{
+  QString scene_package;
+  QString task_id;
+  QString task_type;
+  QString task_template;
+  QString pick_source;
+  QString place_target;
+  QString grasp_strategy;
+};
+
 ScriptCommandPlan build_task_intent_command_plan(
   const QString & script_path,
-  const QString & scene_dir);
+  const TaskIntentCommandInput & input);
 
 ScriptCommandPlan build_generate_workcell_command_plan(
   const QString & script_path,

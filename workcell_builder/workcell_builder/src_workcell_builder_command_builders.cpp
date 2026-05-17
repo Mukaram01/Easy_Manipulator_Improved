@@ -44,16 +44,28 @@ QString ScriptCommandPlan::display_command() const
 
 ScriptCommandPlan build_task_intent_command_plan(
   const QString & script_path,
-  const QString & scene_dir)
+  const TaskIntentCommandInput & input)
 {
   ScriptCommandPlan plan;
   plan.script_name = "create_or_update_builder_task_intent.py";
   plan.script_path = script_path;
-  plan.scene_dir = scene_dir;
+  plan.scene_name = input.scene_package;
   append_missing_if_empty(script_path, "helper script path", &plan.missing_fields);
-  append_missing_if_empty(scene_dir, "scene directory", &plan.missing_fields);
+  append_missing_if_empty(input.scene_package, "scene package", &plan.missing_fields);
+  append_missing_if_empty(input.task_id, "task id", &plan.missing_fields);
+  append_missing_if_empty(input.task_type, "task type", &plan.missing_fields);
+  append_missing_if_empty(input.pick_source, "pick source", &plan.missing_fields);
+  append_missing_if_empty(input.place_target, "place target", &plan.missing_fields);
+  append_missing_if_empty(input.grasp_strategy, "grasp strategy", &plan.missing_fields);
   if (plan.ready()) {
-    plan.arguments << "--scene-dir" << scene_dir;
+    const QString task_template = input.task_template.trimmed().isEmpty() ? "pick_place" : input.task_template;
+    plan.arguments << "--scene-package" << input.scene_package
+                   << "--task-id" << input.task_id
+                   << "--task-type" << input.task_type
+                   << "--task-template" << task_template
+                   << "--pick-source" << input.pick_source
+                   << "--place-target" << input.place_target
+                   << "--grasp-strategy" << input.grasp_strategy;
   }
   return plan;
 }
