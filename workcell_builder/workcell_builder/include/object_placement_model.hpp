@@ -41,6 +41,7 @@ public:
   std::vector<PlacedObject> objects() const;
 
 private:
+  PlacedObject * find_object_by_name(const std::string & name);
   std::vector<PlacedObject> objects_;
 };
 

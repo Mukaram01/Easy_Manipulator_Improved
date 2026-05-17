@@ -222,14 +222,17 @@ struct SceneTaskIntentSummary
 };
 
 static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
-static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n||!n[k]) return "unknown"; n=n[k]; } return ystr(n); }
+static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n || !n.IsMap() || !n[k]) return "unknown"; n=n[k]; } return ystr(n); }
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
 
-static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out=YAML::LoadFile(p.string()); return true; }catch(const YAML::Exception&){ return false; } catch(const std::exception&){ return false; } }
+static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; qInfo("[workcell_builder] context=task_metadata_summary_loader path=%s", p.string().c_str()); *out=YAML::LoadFile(p.string()); return true; }catch(const YAML::Exception&){ return false; } catch(const std::exception&){ return false; } }
 static YAML::Node ensure_map_path(YAML::Node root, std::initializer_list<const char *> keys)
 {
   YAML::Node cursor = root;
   for (const auto * key : keys) {
+    if (!cursor.IsMap()) {
+      cursor = YAML::Node(YAML::NodeType::Map);
+    }
     if (!cursor[key] || !cursor[key].IsMap()) {
       cursor[key] = YAML::Node(YAML::NodeType::Map);
     }
