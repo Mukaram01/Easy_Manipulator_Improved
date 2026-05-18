@@ -11,7 +11,14 @@ struct ReachEnvelope { double base_x{0.0}, base_y{0.0}, inner_radius_m{0.15}, ou
 struct SafetyZone { std::string name; std::string type; std::string shape; double center_x{0.0}, center_y{0.0}, radius{0.0}; double origin_x{0.0}, origin_y{0.0}, size_x{0.0}, size_y{0.0}; };
 struct ObjectFootprint { std::string name; double x{0.0}, y{0.0}, width{0.6}, height{0.4}, z{0.0}; };
 struct CameraFootprint { std::string camera_id; double x{0.0}, y{0.0}, z{0.0}; bool enabled{false}; };
-struct ReadinessOverlayIssue { std::string status; std::string message; std::string object_name; };
+struct ReadinessOverlayIssue {
+  std::string status;
+  std::string message;
+  std::string object_name;
+  std::string code;
+  std::string severity{"warning"};
+  std::vector<std::string> asset_ids;
+};
 struct ReadinessOverlayResult { std::string readiness_overlay_status{"UNKNOWN"}; std::vector<ReadinessOverlayIssue> issues; int blocker_count{0}; int warning_count{0}; };
 ReadinessOverlayResult evaluate_offline_readiness_overlay(
   const std::vector<ObjectFootprint> & objects,

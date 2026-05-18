@@ -104,6 +104,7 @@
 #include "robot_tool_compatibility.hpp"
 #include "workcell_scene_bundle.hpp"
 #include "conveyor_pick_preview.hpp"
+#include "offline_readiness_overlay.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -2746,6 +2747,37 @@ std::string SceneSelect::build_workcell_readiness_report(
     warnings.emplace_back("perception_detection selected but EPD adapter not configured yet");
   }
   warnings.emplace_back("real hardware mode requires explicit validation");
+  std::vector<ObjectFootprint> layout_objects;
+  for (const auto & obj : scene.object_vector) {
+    ObjectFootprint fp;
+    fp.name = obj.name;
+    fp.x = obj.object_center.cartesian.at(0);
+    fp.y = obj.object_center.cartesian.at(1);
+    fp.z = obj.object_center.cartesian.at(2);
+    layout_objects.push_back(fp);
+  }
+  const auto overlay = evaluate_offline_readiness_overlay(
+    layout_objects,
+    estimate_robot_reach_envelope(scene.robot_vector.empty() ? "" : scene.robot_vector[0].name),
+    WorkspaceBounds{},
+    {},
+    {},
+    task_cfg.pick_source,
+    task_cfg.place_target,
+    task_cfg.compatibility_status,
+    task_cfg.tcp_frame,
+    task_cfg.tool_mount_link,
+    task_cfg.camera_topic);
+  for (const auto & issue : overlay.issues) {
+    std::ostringstream detail;
+    detail << issue.code << " [" << issue.severity << "] " << issue.message;
+    if (!issue.asset_ids.empty()) {
+      detail << " assets=";
+      for (size_t i = 0; i < issue.asset_ids.size(); ++i) { detail << (i == 0 ? "" : ",") << issue.asset_ids[i]; }
+    }
+    if (issue.severity == "severe" || issue.status == "BLOCKER") blockers.emplace_back(detail.str());
+    else warnings.emplace_back(detail.str());
+  }
   const bool is_blocked = !blockers.empty();
   const std::string status = is_blocked ? "BLOCKED" : (warnings.empty() ? (strict ? "READY_TO_GENERATE" : "SCAFFOLD_ONLY") : "WARNINGS");
   if (blocked) { *blocked = is_blocked; }
