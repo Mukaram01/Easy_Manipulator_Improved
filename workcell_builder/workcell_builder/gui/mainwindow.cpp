@@ -234,6 +234,24 @@ struct ActionGate
   QString tooltip;
 };
 
+QString format_scene_builder_status_text(QString text)
+{
+  text.replace("Missing launch/demo.launch.py. Generate Scene Package first.",
+    "Launch files missing — generate scene package next.");
+  text.replace("Launch readiness flag is not set yet. Generate Scene Package again.",
+    "Launch files missing — generate scene package next.");
+  text.replace("Layout has unsaved edits. Save Layout first.",
+    "Layout has unsaved edits — save layout before validation.");
+  text.replace("Scene changed since last validation. Run Offline Validation first.",
+    "Validation stale — run Validate again.");
+  text.replace("Offline Validation", "Validate");
+  text.replace("Plan / Simulate ready", "Ready for fake-hardware simulation");
+  text.replace("pending: Ready for Plan / Simulate", "pending: Ready for fake-hardware simulation");
+  text.replace("Run Fake-Hardware Simulation", "Run fake-hardware simulation");
+  text.replace("fake-hardware launch command", "fake-hardware simulation command");
+  return text;
+}
+
 ActionGate build_generate_scene_gate(
   const workcell_builder::WorkcellStudioSceneInfo & s, bool validation_stale)
 {
@@ -244,10 +262,10 @@ ActionGate build_generate_scene_gate(
     return {false, "Blocked: Generate scene_manifest.yaml before generating scene package."};
   }
   if (validation_stale) {
-    return {false, "Blocked: Scene changed since last validation. Run Offline Validation first."};
+    return {false, "Blocked: Validation stale — run Validate again."};
   }
   if (!s.has_smoke_report_json) {
-    return {false, "Blocked: Missing smoke/offline_smoke_report.json. Run Offline Validation first."};
+    return {false, "Blocked: Missing smoke/offline_smoke_report.json. Run Validate first."};
   }
   return {true, "Ready: Generate Scene Package prerequisites are satisfied."};
 }
@@ -259,10 +277,10 @@ ActionGate build_plan_simulate_gate(
     return {false, "Blocked: Missing package.xml/CMakeLists.txt. Generate Scene Package first."};
   }
   if (!s.has_launch_demo) {
-    return {false, "Blocked: Missing launch/demo.launch.py. Generate Scene Package first."};
+    return {false, "Blocked: Launch files missing — generate scene package next."};
   }
   if (!launch_artifacts_ready) {
-    return {false, "Blocked: Launch readiness flag is not set yet. Generate Scene Package again."};
+    return {false, "Blocked: Launch files missing — generate scene package next."};
   }
   return {true, "Ready: launch/demo.launch.py and launch readiness flags are present."};
 }
@@ -2848,7 +2866,13 @@ void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
   if (!fs::exists(layout_file)) { QMessageBox::information(this, "Layout Merge", "No saved layout found (layout/workcell_studio_layout.yaml)."); return; }
-  if (layout_dirty_) { QMessageBox::warning(this, "Layout Merge", "Layout has unsaved edits. Save Layout first."); append_studio_log("Layout has unsaved edits. Save Layout first."); return; }
+  if (layout_dirty_) {
+    const QString message = format_scene_builder_status_text(
+      "Layout has unsaved edits. Save Layout first.");
+    QMessageBox::warning(this, "Layout Merge", message);
+    append_studio_log(message);
+    return;
+  }
   append_studio_log(from_generate_scene ? "Generate Scene: running layout merge" : "Run Layout Merge");
   auto result = workcell_builder::merge_workcell_studio_layout(s.scene_dir);
   append_studio_log(QString::fromStdString(result.status ? "Layout merge completed" : "Layout merge blocked"));
@@ -4232,8 +4256,12 @@ void MainWindow::refresh_new_cell_checklist()
   QString blocker_title = "none"; QString blocker_next = audit.next_recommended_action; QString blocker_page = "New Cell"; QString blocker_cmd;
   if (!audit.blockers.isEmpty()) { const QStringList parts = audit.blockers.first().split("|"); blocker_title = parts.value(0); blocker_next = parts.value(1, blocker_next); blocker_page = parts.value(2, blocker_page); blocker_cmd = parts.value(3); }
   QString text = QString("<b>New Cell Checklist</b><br/>Current state: <b>%1</b><br/>Done: %2<br/>Pending: %3<br/>First blocker: <b>%4</b><br/>Next action: <b>%5</b><br/>Related page: %6")
-    .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "), blocker_title, blocker_next, blocker_page);
-  if (!blocker_cmd.trimmed().isEmpty()) text += QString("<br/>Recovery command: <code>%1</code>").arg(blocker_cmd.toHtmlEscaped());
+    .arg(audit.current_state, audit.completed_states.join(", "), audit.pending_states.join(", "),
+      format_scene_builder_status_text(blocker_title), format_scene_builder_status_text(blocker_next), blocker_page);
+  if (!blocker_cmd.trimmed().isEmpty()) {
+    text += QString("<br/>Recovery command: <code>%1</code>").arg(
+      format_scene_builder_status_text(blocker_cmd).toHtmlEscaped());
+  }
   text += "<br/><br/>" + workflow;
   new_cell_checklist_label_->setText(text);
   if (scene_builder_command_preview_card_ && scene_builder_build_command_label_ && scene_builder_launch_command_label_) {
@@ -4241,7 +4269,8 @@ void MainWindow::refresh_new_cell_checklist()
     scene_builder_command_preview_card_->setVisible(show_preview);
     if (show_preview) {
       scene_builder_build_command_label_->setText(selected_scene_build_command());
-      scene_builder_launch_command_label_->setText(selected_scene_launch_command());
+      scene_builder_launch_command_label_->setText(
+        format_scene_builder_status_text(selected_scene_launch_command()));
     }
   }
 
@@ -4257,7 +4286,7 @@ void MainWindow::refresh_new_cell_checklist()
     } else {
       readiness_text += "\n\nWarnings: none";
     }
-    readiness_label_->setText(readiness_text);
+    readiness_label_->setText(format_scene_builder_status_text(readiness_text));
   }
 }
 
@@ -4269,7 +4298,9 @@ QString MainWindow::scene_workflow_checklist_html() const
   for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
     const auto & step = steps[static_cast<size_t>(i)];
     out += QString("%1. %2: <b>%3</b>").arg(i + 1).arg(step.label, scene_workflow_status_text(step.status));
-    if (!step.detail.trimmed().isEmpty()) out += " — " + step.detail.toHtmlEscaped();
+    if (!step.detail.trimmed().isEmpty()) {
+      out += " — " + format_scene_builder_status_text(step.detail).toHtmlEscaped();
+    }
     out += "<br/>";
   }
   return out;
@@ -4289,7 +4320,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   std::vector<SceneWorkflowStep> steps = {
     {"Scene selected"}, {"Assets placed"}, {"Layout saved"}, {"YAML generated"},
-    {"Validation passed"}, {"Scene package generated"}, {"Plan / Simulate ready"}, {"Export ready"}
+    {"Validation passed"}, {"Scene package generated"}, {"Ready for fake-hardware simulation"}, {"Export ready"}
   };
   steps[0].status = scene_selected ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction;
   steps[1].status = assets_placed ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction;
