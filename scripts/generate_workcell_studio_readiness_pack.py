@@ -54,15 +54,49 @@ def _generate_perception_readiness(profile_path: Path, snapshot_path: Path, outp
     prof = yaml.safe_load(profile_path.read_text(encoding='utf-8')) if profile_path.exists() else {}
     snap = yaml.safe_load(snapshot_path.read_text(encoding='utf-8')) if snapshot_path.exists() else {}
     warnings, blockers = [], []
-    obj = ((snap.get('objects') or [{}])[0]) if isinstance(snap, dict) else {}
-    frame_ok = isinstance(obj, dict) and obj.get('frame_id') == ((prof.get('frames') or {}).get('scene_frame') if isinstance(prof, dict) else None)
-    if not frame_ok:
-        warnings.append('Detected object frame does not match scene frame')
-    label = obj.get('label') if isinstance(obj, dict) else None
-    routeable = isinstance(label, str) and bool(label.strip())
-    pose = obj.get('pose', {}) if isinstance(obj, dict) else {}
-    xyz = pose.get('xyz', []) if isinstance(pose, dict) else []
-    in_pick_zone_hint = isinstance(xyz, list) and len(xyz) == 3 and 0.0 <= float(xyz[0]) <= 1.5 and -1.0 <= float(xyz[1]) <= 1.0
+
+    objects = snap.get('objects') if isinstance(snap, dict) and isinstance(snap.get('objects'), list) else []
+    scene_frame = (prof.get('frames') or {}).get('scene_frame') if isinstance(prof, dict) else None
+    frame_ok = False
+    routeable = False
+    in_pick_zone_hint = False
+    selected_obj = None
+
+    for idx, obj in enumerate(objects):
+        if not isinstance(obj, dict):
+            warnings.append(f"Skipping detected object index {idx}: object payload is not a mapping.")
+            continue
+
+        pose = obj.get('pose', {}) if isinstance(obj.get('pose'), dict) else {}
+        xyz = pose.get('xyz', []) if isinstance(pose, dict) else []
+        if not (isinstance(xyz, list) and len(xyz) >= 3):
+            warnings.append(
+                f"Skipping detected object '{obj.get('id', f'index_{idx}')}' due to incomplete pose.xyz vector (size={len(xyz) if isinstance(xyz, list) else 'n/a'})."
+            )
+            continue
+
+        try:
+            x = float(xyz[0])
+            y = float(xyz[1])
+        except (TypeError, ValueError):
+            warnings.append(
+                f"Skipping detected object '{obj.get('id', f'index_{idx}')}' due to non-numeric pose.xyz values."
+            )
+            continue
+
+        selected_obj = obj
+        frame_ok = obj.get('frame_id') == scene_frame
+        if not frame_ok:
+            warnings.append('Detected object frame does not match scene frame')
+
+        label = obj.get('label')
+        routeable = isinstance(label, str) and bool(label.strip())
+        in_pick_zone_hint = 0.0 <= x <= 1.5 and -1.0 <= y <= 1.0
+        break
+
+    if selected_obj is None:
+        blockers.append('No valid detected object with complete pose.xyz[0..2] available for readiness checks.')
+
     status = 'perception_replay_ready'
     if not routeable:
         blockers.append('Object label/class missing for routing check')
