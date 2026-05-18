@@ -265,9 +265,15 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
+  # Source-text-only regression test: intentionally does not compile
+  # Scene3DViewportWidget. Real widget compilation coverage remains in
+  # workcell_scene3d_stl_parser_test and the main workcell_builder target.
   ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
-    test/scene3d_mesh_preview_regression_test.cpp
-    gui/scene3d_viewport_widget.cpp)
+    test/scene3d_mesh_preview_regression_test.cpp)
+  if(TARGET workcell_scene3d_mesh_preview_regression_test)
+    target_compile_definitions(workcell_scene3d_mesh_preview_regression_test PRIVATE
+      WORKCELL_BUILDER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  endif()
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)

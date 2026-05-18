@@ -16,7 +16,7 @@ std::string load_file(const std::string & path)
 
 TEST(Scene3DMeshPreviewRegression, KeepsTransformStackAndFallback)
 {
-  const std::string src = load_file("gui/scene3d_viewport_widget.cpp");
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
 
   const auto t = src.find("glTranslated(it.x, it.y, it.z)");
@@ -37,7 +37,7 @@ TEST(Scene3DMeshPreviewRegression, KeepsTransformStackAndFallback)
 
 TEST(Scene3DMeshPreviewRegression, KeepsSelectionAndOverlayRendering)
 {
-  const std::string src = load_file("gui/scene3d_viewport_widget.cpp");
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
   EXPECT_NE(src.find("if (it->id == selected_id)"), std::string::npos);
   EXPECT_NE(src.find("draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz"), std::string::npos);
@@ -46,7 +46,7 @@ TEST(Scene3DMeshPreviewRegression, KeepsSelectionAndOverlayRendering)
 
 TEST(Scene3DMeshPreviewRegression, KeepsMeshCacheBoundsAndModeHooks)
 {
-  const std::string src = load_file("gui/scene3d_viewport_widget.cpp");
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
   ASSERT_FALSE(src.empty());
   EXPECT_NE(src.find("entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);"), std::string::npos);
   EXPECT_NE(src.find("if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;"), std::string::npos);
