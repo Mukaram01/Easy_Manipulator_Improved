@@ -47,6 +47,7 @@ def test_cli_scene_dir_json_output_file_and_stdout_json(tmp_path: Path) -> None:
     (scene_dir / "urdf").mkdir(parents=True)
     (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text("assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}, mesh: m1.stl}]\n", encoding="utf-8")
     (scene_dir / "generated" / "generated_workcell_summary.json").write_text('{"assets": [{"id": "a1", "pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "mesh": "m1.stl"}]}', encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text("generated_assets: {supported: [{asset_id: a1}]}\n", encoding="utf-8")
 
     out_path = tmp_path / "reports" / "parity.json"
     result = subprocess.run([sys.executable, str(SCRIPT), str(scene_dir), "--json", "--output", str(out_path)], cwd=REPO_ROOT, check=False, capture_output=True, text=True)
@@ -64,6 +65,7 @@ def test_prefers_primary_layout_path_when_both_present(tmp_path: Path) -> None:
     (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text("assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}}]\n", encoding="utf-8")
     (scene_dir / "environment_layout.yaml").write_text("assets: [{id: legacy, pose: {xyz: [1,1,1], rpy: [0,0,0]}}]\n", encoding="utf-8")
     (scene_dir / "generated" / "generated_workcell_summary.json").write_text('{"assets":[{"id":"a1","pose":{"xyz":[0,0,0],"rpy":[0,0,0]}}]}', encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text("generated_assets: {supported: [{asset_id: a1}]}\n", encoding="utf-8")
     report, _ = _run_parity_script([str(scene_dir), "--json"])
     assert report["source_layout_path"].endswith("layout/workcell_studio_layout.yaml")
     assert any("both layout sources exist" in warning for warning in report["warnings"])
@@ -73,9 +75,46 @@ def test_missing_optional_files_warn_not_crash(tmp_path: Path) -> None:
     scene_dir = tmp_path / "scene"
     scene_dir.mkdir()
     report, result = _run_parity_script([str(scene_dir), "--json"])
-    assert result.returncode in {0, 1}
+    assert result.returncode == 1
     assert isinstance(report["warnings"], list)
     assert any("optional scene artifact missing" in w for w in report["warnings"])
+    assert any("required generated artifact missing" in e for e in report["errors"])
+
+
+def test_reports_missing_generated_assets_from_layout(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scene"
+    (scene_dir / "layout").mkdir(parents=True)
+    (scene_dir / "generated").mkdir(parents=True)
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+        "assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}}, {id: a2, pose: {xyz: [1,0,0], rpy: [0,0,0]}}]\n",
+        encoding="utf-8",
+    )
+    (scene_dir / "generated" / "generated_workcell_summary.json").write_text('{"tracked_assets":[{"id":"a1"}]}', encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text("generated_assets: {supported: [{asset_id: a1}]}\n", encoding="utf-8")
+    report, _ = _run_parity_script([str(scene_dir), "--json"])
+    assert "a2" in report["assets_missing_from_generated_output"]
+
+
+def test_reports_transform_mismatches(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scene"
+    (scene_dir / "layout").mkdir(parents=True)
+    (scene_dir / "generated").mkdir(parents=True)
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text("assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}}]\n", encoding="utf-8")
+    (scene_dir / "generated" / "generated_workcell_summary.json").write_text('{"tracked_assets":[{"asset_id":"a1","transform":{"xyz":[1,0,0],"rpy":[0,0,0]}}]}', encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text("generated_assets: {supported: [{asset_id: a1}]}\n", encoding="utf-8")
+    report, _ = _run_parity_script([str(scene_dir), "--json"])
+    assert any(m["asset_id"] == "a1" for m in report["transform_mismatches"])
+
+
+def test_reports_mesh_reference_mismatches(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scene"
+    (scene_dir / "layout").mkdir(parents=True)
+    (scene_dir / "generated").mkdir(parents=True)
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text("assets: [{id: a1, mesh: layout_mesh.stl}]\n", encoding="utf-8")
+    (scene_dir / "generated" / "generated_workcell_summary.json").write_text('{"tracked_assets":[{"id":"a1","mesh":"gen_mesh.stl"}]}', encoding="utf-8")
+    (scene_dir / "scene_manifest.yaml").write_text("generated_assets: {supported: [{asset_id: a1}]}\n", encoding="utf-8")
+    report, _ = _run_parity_script([str(scene_dir), "--json"])
+    assert any(m["asset_id"] == "a1" for m in report["mesh_reference_mismatches"])
 
 
 def test_malformed_scene_file_reports_clear_error(tmp_path: Path) -> None:

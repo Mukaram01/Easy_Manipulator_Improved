@@ -29,13 +29,27 @@ def _load_optional(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _load_environment_layout(scene_path: Path) -> dict[str, Any]:
-    for rel in ["generated/environment_layout.yaml", "environment_layout.yaml"]:
-        cand = scene_path / rel
-        loaded = _load_optional(cand)
-        if loaded:
-            return loaded
-    return {}
+def _load_environment_layout(scene_path: Path) -> tuple[dict[str, Any], str | None, list[str]]:
+    warnings: list[str] = []
+    preferred = scene_path / "layout" / "workcell_studio_layout.yaml"
+    legacy = scene_path / "environment_layout.yaml"
+    generated_legacy = scene_path / "generated" / "environment_layout.yaml"
+    selected: Path | None = None
+    if preferred.is_file() and legacy.is_file():
+        warnings.append("Both layout/workcell_studio_layout.yaml and environment_layout.yaml exist; preferring layout/workcell_studio_layout.yaml.")
+        selected = preferred
+    elif preferred.is_file():
+        selected = preferred
+    elif legacy.is_file():
+        warnings.append("Using legacy environment_layout.yaml; prefer layout/workcell_studio_layout.yaml.")
+        selected = legacy
+    elif generated_legacy.is_file():
+        warnings.append("Using generated/environment_layout.yaml fallback; prefer layout/workcell_studio_layout.yaml.")
+        selected = generated_legacy
+    if selected is None:
+        return {}, None, warnings
+    loaded = _load_optional(selected)
+    return (loaded if loaded else {}), str(selected.resolve()), warnings
 
 
 def _to_yaml(value: Any, indent: int = 0) -> str:
@@ -271,7 +285,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         })
         object_entries.append({"id": str(obj_name), "name": str(obj_name), "mesh": filepath, "dimensions": dims, "index": idx})
 
-    authored_layout = _load_environment_layout(scene_path)
+    authored_layout, authored_layout_ref, layout_warnings = _load_environment_layout(scene_path)
+    warnings.extend(layout_warnings)
     if not task_intent_path:
         generated_intent, missing_msgs = _build_task_intent_from_scene(scene_path, authored_layout, meta)
         if missing_msgs:
@@ -336,7 +351,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
                    }),
         "environment": {
             "frame": "world",
-            "layout": "generated/environment_layout.yaml",
+            "layout": authored_layout_ref or "layout/workcell_studio_layout.yaml",
             "task_zones": task_zones,
             "task_zones_summary": task_zone_counts,
             "support_surfaces": [{"id": a["id"], "type": "table", "frame": "world", "pose_xyz": a["pose"]["xyz"], "pose_rpy": a["pose"]["rpy"], "dimensions": a["dimensions"]} for a in assets],

@@ -353,7 +353,17 @@ def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
     return {"schema_version": "environment_objects/v1", "objects": objects}
 
 
-def _extract_asset_tracking(cell_def: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+def _resolve_layout_path(layout_path: str, cell_definition_path: Path) -> Path | None:
+    raw = Path(layout_path).expanduser()
+    candidates = [raw, Path.cwd() / raw, cell_definition_path.parent / raw, REPO_ROOT / raw]
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved and resolved.is_file():
+            return resolved
+    return None
+
+
+def _extract_asset_tracking(cell_def: dict[str, Any], warnings: list[str], cell_definition_path: Path) -> dict[str, Any]:
     tracked: list[dict[str, Any]] = []
     supported: list[dict[str, Any]] = []
     unsupported: list[dict[str, Any]] = []
@@ -394,8 +404,8 @@ def _extract_asset_tracking(cell_def: dict[str, Any], warnings: list[str]) -> di
     environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
     layout_path = environment.get("layout")
     if isinstance(layout_path, str) and layout_path.strip():
-        resolved = (REPO_ROOT / layout_path).resolve()
-        if resolved.is_file():
+        resolved = _resolve_layout_path(layout_path, cell_definition_path)
+        if resolved and resolved.is_file():
             try:
                 validator = _load_module("generated_environment_layout_validator", SCRIPTS_DIR / "validate_environment_layout.py")
                 layout_data, _, _ = validator.load_layout(resolved)
@@ -475,7 +485,7 @@ def generate_package(
         return 1
 
     scene_manifest = _augment_scene_manifest(loaded, scene_generator.build_scene_manifest(loaded), warnings)
-    asset_tracking = _extract_asset_tracking(loaded, warnings)
+    asset_tracking = _extract_asset_tracking(loaded, warnings, cell_definition_path)
     task_recipe = _normalize_task_recipe(scene_generator.build_task_recipe(loaded), warnings)
     scene_manifest["task_recipe"] = task_recipe
     scene_manifest["generated_assets"] = {
@@ -504,8 +514,16 @@ def generate_package(
 
     (package_dir / "config").mkdir(parents=True, exist_ok=True)
     (package_dir / "launch").mkdir(parents=True, exist_ok=True)
+    (package_dir / "layout").mkdir(parents=True, exist_ok=True)
     (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
     (package_dir / "generated").mkdir(parents=True, exist_ok=True)
+
+    environment = loaded.get("environment", {}) if isinstance(loaded.get("environment"), dict) else {}
+    layout_ref = environment.get("layout")
+    if isinstance(layout_ref, str) and layout_ref.strip():
+        resolved_layout = _resolve_layout_path(layout_ref, cell_definition_path)
+        if resolved_layout and resolved_layout.is_file():
+            shutil.copyfile(resolved_layout, package_dir / "layout" / "workcell_studio_layout.yaml")
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
     workcell_yaml_path = package_dir / "workcell.yaml"
