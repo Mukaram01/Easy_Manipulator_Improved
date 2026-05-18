@@ -102,6 +102,7 @@
 #include "workcell_studio_layout_editor.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
+#include "gui/asset_catalog_discovery.h"
 
 namespace fs = boost::filesystem;
 
@@ -3727,71 +3728,34 @@ void MainWindow::populate_asset_catalog()
 
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
   const fs::path repo_root = fs::current_path();
-  QStringList searched_paths;
-  std::vector<fs::path> discovery_paths = {
-    repo_root / "assets" / "robots",
-    repo_root / "assets" / "end_effectors",
-    repo_root / "assets" / "environment",
-    repo_root / "assets" / "environment_objects",
-    workspace_root / "src" / "easy_manipulation_deployment" / "assets",
-    workspace_root / "src" / "assets",
-    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "easy_manipulation_deployment" / "assets",
-    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "assets"
-  };
 
-  const fs::path sensors_path = repo_root / "assets" / "sensors";
-  if (fs::exists(sensors_path)) discovery_paths.push_back(sensors_path);
-  const fs::path capabilities_path = repo_root / "catalog" / "capabilities";
-  if (fs::exists(capabilities_path)) discovery_paths.push_back(capabilities_path);
-
-  auto infer_category = [](const QString & path, const fs::path & root, const QString & ext) {
-    QString category = "Custom";
-    const QString root_name = QString::fromStdString(root.filename().string()).toLower();
-    if (root_name == "robots" || path.contains("robot", Qt::CaseInsensitive) || ext == ".urdf" || ext == ".xacro") category = "Robots";
-    if (root_name == "end_effectors" || path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) category = "End Effectors";
-    if (root_name == "sensors" || path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) category = "Sensors";
-    if (path.contains("table", Qt::CaseInsensitive)) category = "Tables";
-    if (path.contains("conveyor", Qt::CaseInsensitive)) category = "Conveyors";
-    if (path.contains("bin", Qt::CaseInsensitive)) category = "Bins";
-    if (path.contains("fixture", Qt::CaseInsensitive)) category = "Fixtures";
-    return category;
-  };
-
-  int discovered_assets = 0;
-  for (const auto & root : discovery_paths) {
-    searched_paths << QString::fromStdString(root.string());
-    boost::system::error_code ec;
-    if (!fs::exists(root, ec) || ec || !fs::is_directory(root, ec) || ec) continue;
-    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-      if (!fs::is_regular_file(it->path(), ec) || ec) continue;
-      const QString path = QString::fromStdString(it->path().string());
-      const QString ext = QString::fromStdString(it->path().extension().string()).toLower();
-      QString type = "File";
-      if (ext == ".urdf") type = "URDF";
-      else if (ext == ".xacro") type = "Xacro";
-      else if (ext == ".stl") type = "STL";
-      else if (ext == ".dae") type = "DAE";
-      else if (ext == ".yaml" || ext == ".yml") type = "YAML";
-      const QString category = infer_category(path, root, ext);
-      const QString status = (ext == ".urdf" || ext == ".xacro" || ext == ".stl" || ext == ".dae") ? "Ready" : "Preview-only";
-      const QString source = QString("%1 (%2)").arg(type, QString::fromStdString(root.filename().string()));
-      auto * item = new QTreeWidgetItem(asset_catalog_tree_, {QString::fromStdString(it->path().filename().string()), category, source, status});
-      item->setData(0, Qt::UserRole, path);
-      ++discovered_assets;
+  const auto discovered = workcell_builder::discover_asset_catalog_entries(repo_root, workspace_root);
+  for (const auto & entry : discovered) {
+    auto * item = new QTreeWidgetItem(
+      asset_catalog_tree_,
+      {
+        QString::fromStdString(entry.display_name),
+        QString::fromStdString(entry.category),
+        QString::fromStdString(entry.source_kind),
+        QString::fromStdString(entry.availability)
+      });
+    item->setData(0, Qt::UserRole, QString::fromStdString(entry.source_path));
+    if (entry.availability == "incomplete") {
+      item->setDisabled(true);
+      item->setToolTip(3, QString::fromStdString(entry.reason));
+      item->setToolTip(0, QString("Unavailable: %1").arg(QString::fromStdString(entry.reason)));
     }
   }
 
-  if (discovered_assets == 0) {
-    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Searched paths", "Unavailable"});
+  if (discovered.empty()) {
+    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Discovery", "incomplete"});
     info->setDisabled(true);
-    info->setToolTip(0, QString("No assets found. Searched paths:\n%1").arg(searched_paths.join("\n")));
-    info->setToolTip(2, searched_paths.join("\n"));
+    info->setToolTip(0, "No assets discovered from manifest, inferred folders, or scene template references.");
   }
 
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
   validate_asset_catalog_selection();
 }
-
 void MainWindow::refresh_new_cell_checklist()
 {
   if (!new_cell_checklist_label_) return;
