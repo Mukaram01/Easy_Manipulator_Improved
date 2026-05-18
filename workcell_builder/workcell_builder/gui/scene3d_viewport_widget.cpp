@@ -373,6 +373,32 @@ bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, c
   return parse_binary_stl(bytes, out_mesh, out_error, triangle_limit);
 }
 
+bool Scene3DViewportWidget::compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max)
+{
+  if (mesh.triangles.isEmpty()) return false;
+  out_min = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  out_max = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (const auto & tri : mesh.triangles) {
+    for (const auto & v : tri.vertices) {
+      out_min.setX(qMin(out_min.x(), v.x()));
+      out_min.setY(qMin(out_min.y(), v.y()));
+      out_min.setZ(qMin(out_min.z(), v.z()));
+      out_max.setX(qMax(out_max.x(), v.x()));
+      out_max.setY(qMax(out_max.y(), v.y()));
+      out_max.setZ(qMax(out_max.z(), v.z()));
+    }
+  }
+  return true;
+}
+
+bool Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(ScenePreviewWidget::MeshPreviewMode mode,
+                                                                        bool cache_loaded, bool cache_valid)
+{
+  if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
+  if (mode == ScenePreviewWidget::MeshPreviewMode::Meshes) return cache_loaded && cache_valid;
+  return cache_loaded && cache_valid;
+}
+
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const
 {
   QFileInfo info(path);
@@ -413,6 +439,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
                << (entry.oversized ? "oversized mesh" : "invalid mesh")
                << canonical << "reason:" << parse_error;
   }
+  entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);
   return mesh_cache_.insert(canonical, entry).value();
 }
 
@@ -421,7 +448,28 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
-  if (!it.has_mesh_metadata) return false;
+  if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
+  if (!it.has_mesh_metadata) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback: mesh metadata missing for" << it.id;
+    }
+    return false;
+  }
+
+  const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+  if (mesh_source.trimmed().isEmpty()) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback: mesh source missing for" << it.id;
+    }
+    return false;
+  }
+  const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
+  if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback:" << (entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning) << "for" << it.id;
+    }
+    return false;
+  }
 
   glPushMatrix();
   glTranslated(it.x, it.y, it.z);

@@ -43,3 +43,11 @@ TEST(Scene3DMeshPreviewRegression, KeepsSelectionAndOverlayRendering)
   EXPECT_NE(src.find("draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz"), std::string::npos);
   EXPECT_NE(src.find("if (show_warning_labels && !it.warnings.isEmpty())"), std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, KeepsMeshCacheBoundsAndModeHooks)
+{
+  const std::string src = load_file("gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);"), std::string::npos);
+  EXPECT_NE(src.find("if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;"), std::string::npos);
+}
