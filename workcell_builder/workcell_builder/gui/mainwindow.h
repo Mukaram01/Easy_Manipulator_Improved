@@ -61,6 +61,7 @@ class QMenu;
 class QSplitter;
 class QFrame;
 class QDialog;
+class QGridLayout;
 
 class MainWindow: public QMainWindow
 {
@@ -233,6 +234,11 @@ private:
   QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
   void arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path);
   void commit_armed_asset_placement(const QPointF & canvas_pos_px);
+  bool configure_asset_placement_transform(const QString & category, const QString & display_name);
+  bool validate_armed_asset_transform(QString * error_message = nullptr);
+  void reset_armed_asset_transform_to_defaults();
+  void update_arm_transform_validation_ui();
+  double default_asset_pose_z(const QString & category, const QString & display_name) const;
 
   struct AssetCatalogEntry
   {
@@ -396,6 +402,16 @@ private:
   QString armed_asset_category_;
   QString armed_asset_display_name_;
   QString armed_asset_source_path_;
+  bool armed_asset_use_clicked_xy_{ true };
+  QPointF armed_asset_default_xy_px_{ 0.0, 0.0 };
+  bool armed_asset_transform_valid_{ true };
+  QString armed_asset_transform_error_;
+  double armed_asset_x_m_{ 0.0 };
+  double armed_asset_y_m_{ 0.0 };
+  double armed_asset_z_m_{ 0.0 };
+  double armed_asset_roll_rad_{ 0.0 };
+  double armed_asset_pitch_rad_{ 0.0 };
+  double armed_asset_yaw_rad_{ 0.0 };
   double snap_step_m_{ 0.05 };
   bool layout_dirty_{ false };
   bool layout_saved_{ false };
