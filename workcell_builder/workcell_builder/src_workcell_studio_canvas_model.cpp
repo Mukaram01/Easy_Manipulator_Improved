@@ -340,11 +340,34 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           item.mesh_path.clear();
           item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
         } else if (mesh.IsMap()) {
+          item.has_mesh_metadata = true;
           const std::string path = get_optional_string(mesh, "path", "");
           if (path.empty()) {
             item.mesh_available = false;
             item.mesh_path.clear();
             item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
+          } else {
+            const fs::path resolved_path = resolve_mesh_candidate(path, scene_dir);
+            item.mesh_path = resolved_path.generic_string();
+          }
+          const YAML::Node scale = yaml_map_key(mesh, "scale");
+          if (scale.IsSequence()) {
+            item.mesh_scale_x = read_double_or_warn(yaml_seq_index(scale, 0), "items[].mesh.scale[0]", item.mesh_scale_x);
+            item.mesh_scale_y = read_double_or_warn(yaml_seq_index(scale, 1), "items[].mesh.scale[1]", item.mesh_scale_y);
+            item.mesh_scale_z = read_double_or_warn(yaml_seq_index(scale, 2), "items[].mesh.scale[2]", item.mesh_scale_z);
+          }
+          const YAML::Node rpy = yaml_map_key(mesh, "rpy");
+          if (rpy.IsSequence()) {
+            item.mesh_r = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].mesh.rpy[0]", item.mesh_r);
+            item.mesh_p = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].mesh.rpy[1]", item.mesh_p);
+            item.mesh_y = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].mesh.rpy[2]", item.mesh_y);
+          }
+          const YAML::Node origin = yaml_map_key(mesh, "origin_offset");
+          if (origin.IsSequence()) {
+            item.has_origin_offset = true;
+            item.origin_offset_x = read_double_or_warn(yaml_seq_index(origin, 0), "items[].mesh.origin_offset[0]", item.origin_offset_x);
+            item.origin_offset_y = read_double_or_warn(yaml_seq_index(origin, 1), "items[].mesh.origin_offset[1]", item.origin_offset_y);
+            item.origin_offset_z = read_double_or_warn(yaml_seq_index(origin, 2), "items[].mesh.origin_offset[2]", item.origin_offset_z);
           }
         }
       }

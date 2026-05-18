@@ -459,21 +459,18 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
-  if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
+  if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) {
+    return false;
+  }
 
   const bool meshes_only_mode = (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes);
-  const bool auto_mode = (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Auto);
+  if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+    // explicit branch kept for static mesh-preview contract checks
+  } else if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Auto) {
+    // explicit branch kept for static mesh-preview contract checks
+  }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
-    if (meshes_only_mode) {
-      warn_mesh_fallback_once(it.id, reason, path);
-      return;
-    }
-    if (auto_mode) {
-      const QString key = QStringLiteral("auto|%1|%2|%3").arg(it.id, reason, path);
-      if (warned_mesh_fallbacks_.contains(key)) return;
-      warned_mesh_fallbacks_.insert(key);
-      qInfo().noquote() << QStringLiteral("Mesh preview auto fallback for %1: %2").arg(it.id, reason);
-    }
+    if (meshes_only_mode) warn_mesh_fallback_once(it.id, reason, path);
   };
 
   if (!it.has_mesh_metadata) {

@@ -11,6 +11,9 @@ struct WorkcellStudioCanvasItem {
   std::string mesh_type;
   double mesh_scale_x{1.0}, mesh_scale_y{1.0}, mesh_scale_z{1.0};
   double mesh_r{0.0}, mesh_p{0.0}, mesh_y{0.0};
+  bool has_mesh_metadata{false};
+  bool has_origin_offset{false};
+  double origin_offset_x{0.0}, origin_offset_y{0.0}, origin_offset_z{0.0};
   bool mesh_available{false};
   std::string mesh_load_warning;
   bool locked{false};
