@@ -1115,11 +1115,8 @@ void MainWindow::setup_studio_shell()
   readiness_card_layout->addWidget(ar_card);
   auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
   preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
-  auto * generate_yaml_button = new QPushButton("Generate YAML", scene_builder);
   auto * generate_scene_pkg_button = new QPushButton("Generate", scene_builder); generate_scene_pkg_button->setProperty("role", "primary"); preview_actions_layout->addWidget(generate_scene_pkg_button);
-  auto * generate_task_button = new QPushButton("Generate Task/Grasp Files", scene_builder);
   auto * validate_task_button = new QPushButton("Validate Generated Scene", scene_builder); preview_actions_layout->addWidget(validate_task_button);
-  auto * copy_cmds_button = new QPushButton("Copy Build & Launch Commands", scene_builder);
   scene_builder_more_actions_button_ = new QToolButton(scene_builder);
   scene_builder_more_actions_button_->setText("More Actions");
   scene_builder_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
@@ -1136,9 +1133,9 @@ void MainWindow::setup_studio_shell()
   auto * camera_action = scene_builder_more_menu->addAction("Use Selected as Camera");
   scene_builder_more_actions_button_->setMenu(scene_builder_more_menu);
   preview_actions_layout->addWidget(scene_builder_more_actions_button_);
-  QObject::connect(generate_yaml_action, &QAction::triggered, generate_yaml_button, &QPushButton::click);
-  QObject::connect(generate_task_action, &QAction::triggered, generate_task_button, &QPushButton::click);
-  QObject::connect(copy_cmds_action, &QAction::triggered, copy_cmds_button, &QPushButton::click);
+  QObject::connect(generate_yaml_action, &QAction::triggered, this, &MainWindow::generate_yaml_draft_for_selected_scene);
+  QObject::connect(generate_task_action, &QAction::triggered, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
+  QObject::connect(copy_cmds_action, &QAction::triggered, this, &MainWindow::copy_build_launch_commands_for_selected_scene);
   QObject::connect(remove_selected_layout_item_action, &QAction::triggered, this, &MainWindow::delete_selected_item);
   QObject::connect(pick_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_pick_zone);
   QObject::connect(place_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_place_zone);
@@ -1401,11 +1398,8 @@ void MainWindow::setup_studio_shell()
   connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
   connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  connect(generate_yaml_button, &QPushButton::clicked, this, &MainWindow::generate_yaml_draft_for_selected_scene);
   connect(generate_scene_pkg_button, &QPushButton::clicked, this, &MainWindow::generate_scene_package_for_selected_scene);
-  connect(generate_task_button, &QPushButton::clicked, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
   connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_generated_scene_for_selected_scene);
-  connect(copy_cmds_button, &QPushButton::clicked, this, &MainWindow::copy_build_launch_commands_for_selected_scene);
   connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
   connect(copy_task_summary_action, &QAction::triggered, this, &MainWindow::copy_selected_task_summary);
   connect(preview_offline_plan_action, &QAction::triggered, this, &MainWindow::preview_offline_plan_for_selected_scene);
