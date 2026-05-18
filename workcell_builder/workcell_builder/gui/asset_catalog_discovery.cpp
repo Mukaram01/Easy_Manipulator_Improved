@@ -3,6 +3,7 @@
 #include "workcell_warning_once.hpp"
 
 #include <yaml-cpp/yaml.h>
+#include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <set>
 
@@ -10,6 +11,17 @@ namespace fs = boost::filesystem;
 
 namespace workcell_builder {
 namespace {
+std::string infer_role_hint(const std::string & category, const std::string & source_kind)
+{
+  const std::string key = boost::algorithm::to_lower_copy(category + " " + source_kind);
+  if (key.find("robot") != std::string::npos) return "robot";
+  if (key.find("end_effector") != std::string::npos || key.find("end effector") != std::string::npos) return "end_effector";
+  if (key.find("table") != std::string::npos) return "table";
+  if (key.find("conveyor") != std::string::npos) return "conveyor";
+  if (key.find("camera") != std::string::npos || key.find("sensor") != std::string::npos) return "camera";
+  if (key.find("bin") != std::string::npos || key.find("place") != std::string::npos) return "place_target";
+  return "object";
+}
 
 bool has_supported_geometry(const fs::path & dir)
 {
@@ -68,6 +80,7 @@ void parse_manifest_file(
     const fs::path canonical_path = fs::exists(resolved_path, source_ec) ? fs::canonical(resolved_path, source_ec) : resolved_path;
     entry.source_path = canonical_path.string();
     entry.source_kind = "manifest";
+    entry.role_hint = infer_role_hint(entry.category, entry.source_kind);
     const bool ready = fs::exists(resolved_path) && (fs::is_regular_file(resolved_path) || has_supported_geometry(resolved_path));
     entry.availability = ready ? "ready" : "incomplete";
     entry.reason = ready ? std::string() : "manifest path missing or lacks supported geometry";
@@ -94,6 +107,7 @@ void discover_from_root(const fs::path & root, std::vector<DiscoveredAssetCatalo
     inferred.display_name = inferred.asset_id;
     inferred.category = category;
     inferred.source_kind = "inferred";
+    inferred.role_hint = infer_role_hint(inferred.category, inferred.source_kind);
     boost::system::error_code source_ec;
     inferred.source_path = fs::canonical(candidate, source_ec).string();
     if (source_ec) inferred.source_path = candidate.string();
@@ -131,6 +145,7 @@ void add_template_asset_refs(const fs::path & repo_root, std::vector<DiscoveredA
       entry.display_name = entry.asset_id;
       entry.category = "Template References";
       entry.source_kind = "scene_template";
+      entry.role_hint = infer_role_hint(entry.category, entry.source_kind);
       entry.source_path = path.empty() ? key : path;
       const fs::path resolved = path.empty() ? fs::path() : (repo_root / path);
       const bool ready = !path.empty() && fs::exists(resolved);

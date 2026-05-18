@@ -1612,7 +1612,88 @@ void MainWindow::refresh_task_intent_panel()
 
 void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
 void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("create_or_update_builder_task_intent.py", &script); workcell_builder::TaskIntentCommandInput input; input.scene_package = QString::fromStdString(sc.scene_dir.string()); input.task_id = QString::fromStdString(sc.scene_name) + "_pick_place"; input.task_type = "pick_place"; input.task_template = "pick_place"; input.grasp_strategy = "finger_top"; const auto resolved_input = workcell_builder::resolve_task_intent_command_input_defaults(input); const auto plan = workcell_builder::build_task_intent_command_plan(script, resolved_input); if (!plan.ready()) { append_studio_log("Generate/Update Task Intent: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Generate/Update Task Intent: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate/Update Task Intent failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate/Update Task Intent: " + plan.display_command() + " (Preview Only)"); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
-void MainWindow::generate_yaml_draft_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) { append_studio_log("Generate YAML: helper script search failed (task intent helper missing)."); } const fs::path scene_dir = sc.scene_dir; const fs::path env = scene_dir / "environment.yaml"; const fs::path cell = scene_dir / "cell_definition.yaml"; const fs::path manifest = scene_dir / "scene_manifest.yaml"; const fs::path layout = scene_dir / "environment_layout.yaml"; if (!fs::exists(env)) { std::ofstream out(env.string()); out << "scene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n"; out << "defaults:\n  robot: ur5\n  end_effector: robotiq_2f\n  object: placeholder_object\n  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n"; } if (!fs::exists(cell)) { const std::string scene_name = sc.scene_name; const std::string cell_id = scene_name + "_cell"; const std::string task_id = scene_name + "_pick_place"; std::ofstream out(cell.string()); out << "schema_version: cell_definition/v1\n"; out << "cell:\n  id: " << cell_id << "\n  name: " << scene_name << "\n  description: Auto-generated preview-safe draft for selected scene metadata\n"; out << "robot:\n  id: ur5_preview\n  model: ur5\n  planning_group: manipulator\n  base_frame: world\n  tool_link: tool0\n  home_named_target: home\n  safe_joint_state: []\n"; out << "end_effector:\n  id: robotiq_2f_preview\n  type: finger\n  brand: robotiq\n  grasp_frame: tool0\n  allowed_touch_links: [robotiq_2f_85_left_finger_tip_link, robotiq_2f_85_right_finger_tip_link]\n"; out << "camera:\n  id: camera_main\n  type: depth_camera\n  frame: camera_depth_optical_frame\n"; out << "environment:\n  frame: world\n  layout: environment_layout.yaml\n  support_surfaces:\n    - {id: table_main, type: table, frame: world, pose_xyz: [0.0, 0.0, 0.0], pose_rpy: [0.0, 0.0, 0.0], dimensions: [1.2, 0.8, 0.05]}\n"; out << "objects:\n  - {id: preview_object, class: unknown, shape: box, color: unknown, material: unknown, frame: world, dimensions: [0.05, 0.05, 0.05], pose_xyz: [0.55, 0.0, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n"; out << "task:\n  id: " << task_id << "\n  type: pick_place\n  source_object: preview_object\n  destinations:\n    - {id: place_bin, frame: world, pose_xyz: [0.35, -0.25, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n  rules:\n    - {id: default_place, when: {always: true}, destination: place_bin}\n"; out << "commissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n"; } if (!fs::exists(manifest)) { std::ofstream out(manifest.string()); out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n"; out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n"; } if (!fs::exists(layout)) { std::ofstream out(layout.string()); out << "layout:\n  items: []\n"; } append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name))); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
+void MainWindow::generate_yaml_draft_for_selected_scene()
+{
+  if (selected_scene_index_ < 0) return;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  QString script;
+  if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) {
+    append_studio_log("Generate YAML: helper script search failed (task intent helper missing).");
+  }
+  const fs::path scene_dir = sc.scene_dir;
+  const fs::path env = scene_dir / "environment.yaml";
+  const fs::path cell = scene_dir / "cell_definition.yaml";
+  const fs::path manifest = scene_dir / "scene_manifest.yaml";
+  const fs::path layout = scene_dir / "environment_layout.yaml";
+
+  if (!fs::exists(env)) {
+    std::ofstream out(env.string());
+    out << "scene_name: " << sc.scene_name << "\n";
+    out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
+    out << "defaults:\n  robot: ur5\n  end_effector: robotiq_2f\n  object: placeholder_object\n  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n";
+  }
+
+  const auto write_cell_draft = [&]() {
+    const std::string scene_name = sc.scene_name;
+    const std::string cell_id = scene_name + "_cell";
+    const std::string task_id = scene_name + "_pick_place";
+    std::ofstream out(cell.string());
+    out << "schema_version: cell_definition/v1\n";
+    out << "cell:\n  id: " << cell_id << "\n  name: " << scene_name << "\n  description: Auto-generated preview-safe draft for selected scene metadata\n";
+    out << "robot:\n  id: ur5_preview\n  model: ur5\n  planning_group: manipulator\n  base_frame: world\n  tool_link: tool0\n  home_named_target: home\n  safe_joint_state: []\n";
+    out << "end_effector:\n  id: robotiq_2f_preview\n  type: finger\n  brand: robotiq\n  grasp_frame: tool0\n  allowed_touch_links: [robotiq_2f_85_left_finger_tip_link, robotiq_2f_85_right_finger_tip_link]\n";
+    out << "camera:\n  id: camera_main\n  type: depth_camera\n  frame: camera_depth_optical_frame\n";
+    out << "environment:\n  frame: world\n  layout: environment_layout.yaml\n  support_surfaces:\n    - {id: table_main, type: table, frame: world, pose_xyz: [0.0, 0.0, 0.0], pose_rpy: [0.0, 0.0, 0.0], dimensions: [1.2, 0.8, 0.05]}\n";
+    out << "objects:\n  - {id: preview_object, class: unknown, shape: box, color: unknown, material: unknown, frame: world, dimensions: [0.05, 0.05, 0.05], pose_xyz: [0.55, 0.0, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n";
+    out << "task:\n  id: " << task_id << "\n  type: pick_place\n  source_object: preview_object\n  destinations:\n    - {id: place_bin, frame: world, pose_xyz: [0.35, -0.25, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n  rules:\n    - {id: default_place, when: {always: true}, destination: place_bin}\n";
+    out << "commissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
+  };
+
+  if (!fs::exists(cell)) {
+    write_cell_draft();
+    append_studio_log("Generate YAML: new cell_definition.yaml generated.");
+  } else {
+    QString validate_cell_script;
+    bool valid_existing_cell = false;
+    if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) {
+      QProcess validate_process;
+      validate_process.start("python3", QStringList() << validate_cell_script << QString::fromStdString(cell.string()));
+      if (validate_process.waitForFinished(120000) && validate_process.exitCode() == 0) {
+        valid_existing_cell = true;
+      }
+    }
+    if (valid_existing_cell) {
+      append_studio_log("Generate YAML: existing valid cell_definition.yaml preserved.");
+    } else {
+      const fs::path backup = cell.string() + ".invalid." + std::to_string(std::time(nullptr)) + ".bak";
+      boost::system::error_code ec;
+      fs::copy_file(cell, backup, fs::copy_option::overwrite_if_exists, ec);
+      if (ec) {
+        append_studio_log(QString("Generate YAML: invalid cell_definition.yaml detected but backup failed (%1); not rewriting.")
+          .arg(QString::fromStdString(ec.message())));
+      } else {
+        write_cell_draft();
+        append_studio_log(QString("Generate YAML: invalid cell_definition.yaml backed up and regenerated (%1).")
+          .arg(QString::fromStdString(backup.string())));
+      }
+    }
+  }
+
+  if (!fs::exists(manifest)) {
+    std::ofstream out(manifest.string());
+    out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n";
+    out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
+  }
+  if (!fs::exists(layout)) {
+    std::ofstream out(layout.string());
+    out << "layout:\n  items: []\n";
+  }
+  append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, environment_layout.yaml for '%1'.").arg(QString::fromStdString(sc.scene_name)));
+  refresh_scene_browser_ui();
+  refresh_scene_builder_selected_scene_ui();
+  refresh_new_cell_checklist();
+}
+
 void MainWindow::generate_scene_package_for_selected_scene(){ if (selected_scene_index_ < 0) return; generate_yaml_draft_for_selected_scene(); const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const QString scene_dir = QString::fromStdString(sc.scene_dir.string()); const QString scene_name = QString::fromStdString(sc.scene_name); const QString cell_definition_path = QString::fromStdString((sc.scene_dir / "cell_definition.yaml").string()); const QString output_dir = QString::fromStdString(sc.scene_dir.parent_path().string()); if (!QFileInfo::exists(cell_definition_path)) { append_studio_log("Generate ROS Scene Package: Generate YAML first."); return; } bool severe_preflight_failure = false; const QStringList preflight_warnings = generation_asset_support_preflight(sc.scene_dir / "environment_layout.yaml", &severe_preflight_failure); for (const QString & warning : preflight_warnings) { append_studio_log(warning); readiness_warning_details_.append(warning); } if (severe_preflight_failure) { append_studio_log("Generate ROS Scene Package blocked by severe schema/safety preflight failure."); refresh_new_cell_checklist(); return; } QString validate_cell_script; if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) { QProcess validate_process; validate_process.start("python3", QStringList() << validate_cell_script << cell_definition_path); if (!validate_process.waitForFinished(120000)) { append_studio_log("Generate ROS Scene Package: timed out while validating cell definition."); return; } const QString stderr_text = QString::fromUtf8(validate_process.readAllStandardError()).trimmed(); const QString stdout_text = QString::fromUtf8(validate_process.readAllStandardOutput()).trimmed(); if (validate_process.exitCode() != 0) { append_studio_log("Generate ROS Scene Package blocked: cell_definition.yaml validation failed."); const QStringList validator_lines = (stderr_text + "\n" + stdout_text).split('\n', Qt::SkipEmptyParts); bool found_missing_key_error = false; for (const QString & line : validator_lines) { const QString trimmed = line.trimmed(); if (trimmed.contains("Missing required top-level key:")) { append_studio_log("validator: " + trimmed); found_missing_key_error = true; } } if (!found_missing_key_error) { if (!stderr_text.isEmpty()) append_studio_log("validator stderr: " + stderr_text.left(600)); if (!stdout_text.isEmpty()) append_studio_log("validator stdout: " + stdout_text.left(600)); } return; } } if (output_dir.trimmed().isEmpty() || scene_name.trimmed().isEmpty()) { append_studio_log("Generate ROS Scene Package: output directory and package name are required."); return; } QString script; helper_script_exists("generate_workcell_from_cell_definition.py", &script); const auto plan = workcell_builder::build_generate_workcell_command_plan(script, scene_dir, output_dir, scene_name); if (!plan.ready()) { append_studio_log("Generate ROS Scene Package: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(180000)) { append_studio_log("Generate ROS Scene Package: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate ROS Scene Package failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); launch_artifacts_ready_ = false; return; } launch_artifacts_ready_ = true; append_studio_log("Generate ROS Scene Package: " + plan.display_command()); append_studio_log(QString("Generated package location: %1/%2").arg(output_dir, scene_name)); append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name)); append_studio_log("Next: source install/setup.bash"); append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
 void MainWindow::validate_generated_scene_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("validate_builder_generated_scene.py", &script)) { append_studio_log("Validate Generated Scene: script missing. Searched: " + helper_script_search_paths("validate_builder_generated_scene.py").join(" | ")); return; } const auto plan = workcell_builder::build_validate_generated_scene_command_plan(script, QString::fromStdString(sc.scene_dir.string())); if (!plan.ready()) { append_studio_log("Validate Generated Scene: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Validate Generated Scene: timed out while waiting for helper script."); return; } validation_stale_ = false; append_studio_log("Validate Generated Scene: " + plan.display_command()); refresh_new_cell_checklist(); }
 void MainWindow::copy_build_launch_commands_for_selected_scene(){ if (!has_selected_scene()) return; const QString block = selected_scene_preview_command_block(); QApplication::clipboard()->setText(block); append_studio_log("Copy Build & Launch Commands"); }
@@ -1754,6 +1835,14 @@ QString MainWindow::selected_scene_binding_id() const
 bool MainWindow::update_selected_scene_task_intent_binding(
   const QString & binding_label, const std::vector<std::string> & key_path, const QString & selected_id)
 {
+  return update_selected_scene_task_intent_bindings(binding_label, {key_path}, selected_id);
+}
+
+bool MainWindow::update_selected_scene_task_intent_bindings(
+  const QString & binding_label,
+  const std::vector<std::vector<std::string>> & key_paths,
+  const QString & selected_id)
+{
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return false;
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path task_intent_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml";
@@ -1826,12 +1915,15 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   safety["allow_rviz_motion"] = true;
   safety["allow_real_hardware_motion"] = false;
   safety["real_robot_locked"] = true;
-  YAML::Node cursor = task;
-  for (size_t i = 0; i + 1 < key_path.size(); ++i) {
-    if (!cursor[key_path[i]] || !cursor[key_path[i]].IsMap()) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
-    cursor = cursor[key_path[i]];
+  for (const auto & key_path : key_paths) {
+    if (key_path.empty()) continue;
+    YAML::Node cursor = task;
+    for (size_t i = 0; i + 1 < key_path.size(); ++i) {
+      if (!cursor[key_path[i]] || !cursor[key_path[i]].IsMap()) cursor[key_path[i]] = YAML::Node(YAML::NodeType::Map);
+      cursor = cursor[key_path[i]];
+    }
+    cursor[key_path.back()] = selected_id.toStdString();
   }
-  cursor[key_path.back()] = selected_id.toStdString();
   std::ofstream out(task_intent_path.string());
   out << root;
   out.close();
@@ -1870,11 +1962,9 @@ void MainWindow::bind_selected_item_as_pick_zone()
   const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
   append_studio_log("Task intent zone prompt (pick) shown: Use this zone for task intent?");
   if (choice == QMessageBox::Yes) {
-    const bool pick_zone_written = update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
-    if (!pick_zone_written) return;
-    const bool pick_source_written = update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
-    if (pick_source_written) {
-      append_studio_log("Task intent binding applied: zone metadata saved and pick source bound.");
+    const bool pick_written = update_selected_scene_task_intent_bindings("Pick Zone + Pick Source", {{"pick", "zone", "id"}, {"pick", "source", "id"}}, state.id.trimmed());
+    if (pick_written) {
+      append_studio_log("Task intent binding applied: pick zone metadata and pick source bound.");
     }
   } else {
     append_studio_log("Task intent zone prompt declined for pick source binding.");
@@ -1896,11 +1986,9 @@ void MainWindow::bind_selected_item_as_place_zone()
   const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
   append_studio_log("Task intent zone prompt (place) shown: Use this zone for task intent?");
   if (choice == QMessageBox::Yes) {
-    const bool place_zone_written = update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
-    if (!place_zone_written) return;
-    const bool place_target_written = update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
-    if (place_target_written) {
-      append_studio_log("Task intent binding applied: zone metadata saved and place target bound.");
+    const bool place_written = update_selected_scene_task_intent_bindings("Place Zone + Place Target", {{"place", "zone", "id"}, {"place", "target", "id"}}, state.id.trimmed());
+    if (place_written) {
+      append_studio_log("Task intent binding applied: place zone metadata and place target bound.");
     }
   } else {
     append_studio_log("Task intent zone prompt declined for place target binding.");

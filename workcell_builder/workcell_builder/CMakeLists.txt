@@ -146,6 +146,7 @@ add_executable(workcell_builder
     src_workcell_studio_layout_editor.cpp
     src_workcell_studio_layout_merge.cpp
     src_workcell_studio_id_utils.cpp
+    src_workcell_warning_once.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
@@ -317,6 +318,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_asset_catalog_discovery_test
     test/asset_catalog_discovery_test.cpp
     gui/asset_catalog_discovery.cpp
+    src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)

@@ -167,6 +167,10 @@ private:
     const QString & binding_label,
     const std::vector<std::string> & key_path,
     const QString & selected_id);
+  bool update_selected_scene_task_intent_bindings(
+    const QString & binding_label,
+    const std::vector<std::vector<std::string>> & key_paths,
+    const QString & selected_id);
   void refresh_after_task_binding_change(const QString & binding_label, const QString & selected_id);
   QString selected_scene_launch_command() const;
   QString selected_scene_build_command() const;
