@@ -138,7 +138,7 @@ def _asset_id(asset: dict[str, Any]) -> str | None:
             return value.strip()
     return None
 
-def build_report(scene_dir: Path | None = None) -> dict[str, object]:
+def build_report(scene_dir: Path | None = None, mode: str = "post_generation") -> dict[str, object]:
     warnings: list[str] = []
     errors: list[str] = []
 
@@ -197,9 +197,14 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
             scene_dir / "generated" / "generated_environment_objects.yaml",
             scene_dir / "urdf" / "generated_asset_metadata.yaml",
         ]
+        strict_generated = mode == "post_generation"
         for req_file in required_generated_files:
             if not req_file.is_file():
-                errors.append(f"required generated artifact missing after generation: {req_file}")
+                msg = f"required generated artifact missing after generation: {req_file}"
+                if strict_generated:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
         for optional_file in optional_generated_files:
             if not optional_file.is_file():
                 warnings.append(f"optional scene artifact missing: {optional_file}")
@@ -273,6 +278,7 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
     status = "PASS" if blocker_count == 0 and mismatch_count == 0 else ("WARN" if blocker_count == 0 else "FAIL")
 
     return {
+        "mode": mode,
         "status": status,
         "summary": {"warning_count": warning_count, "mismatch_count": mismatch_count, "blocker_count": blocker_count},
         "source_layout_path": source_layout_path,
@@ -308,10 +314,16 @@ def main() -> int:
     parser.add_argument("scene_dir", nargs="?", help="Optional scene directory to perform scene-aware parity checks.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON report.")
     parser.add_argument("--output", help="Optional JSON report output path.")
+    parser.add_argument(
+        "--mode",
+        choices=["pre_generation", "post_generation"],
+        default="post_generation",
+        help="Validation mode. pre_generation allows missing generated artifacts as warnings.",
+    )
     args = parser.parse_args()
 
     scene_dir = Path(args.scene_dir).expanduser() if args.scene_dir else None
-    report = build_report(scene_dir)
+    report = build_report(scene_dir, mode=args.mode)
 
     if args.output:
         out = Path(args.output).expanduser()

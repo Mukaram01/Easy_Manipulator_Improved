@@ -301,10 +301,19 @@ private:
   QStringList helper_script_search_paths(const QString & script_name) const;
   QString diagnostics_output_root() const;
   QString diagnostics_status_from_counts(int blocked, int warn) const;
-  enum class CanvasGeneratedParityState { NotChecked, Passed, Warnings, Blocked };
+  enum class CanvasGeneratedParityState {
+    NotChecked,
+    PreGenerationOk,
+    PreGenerationWarnings,
+    PostGenerationPassed,
+    PostGenerationWarnings,
+    PostGenerationBlocked
+  };
+  enum class CanvasGeneratedParityMode { PreGeneration, PostGeneration };
   QString canvas_generated_parity_state_text(CanvasGeneratedParityState state) const;
   void refresh_canvas_generated_parity_ui();
-  bool run_canvas_generated_parity_check(QString * user_warning = nullptr, bool * severe_mismatch = nullptr);
+  bool run_canvas_generated_parity_check(
+    CanvasGeneratedParityMode mode, QString * user_warning = nullptr, bool * severe_mismatch = nullptr);
   bool parse_canvas_generated_parity_report(
     const QString & report_path, int * mismatches, int * warnings, int * blockers) const;
   void append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path);
