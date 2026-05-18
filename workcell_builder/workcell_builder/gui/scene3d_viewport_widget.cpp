@@ -220,6 +220,25 @@ QColor item_color(const ScenePreviewWidget::PreviewItem & it)
   }
   return QColor("#94a3b8");
 }
+
+double distance_to_segment_2d(const QPointF & p, const QPointF & a, const QPointF & b)
+{
+  const QPointF ab = b - a;
+  const double ab_len2 = (ab.x() * ab.x()) + (ab.y() * ab.y());
+  if (ab_len2 <= 1e-9) return QLineF(p, a).length();
+  const QPointF ap = p - a;
+  const double t = qBound(0.0, ((ap.x() * ab.x()) + (ap.y() * ab.y())) / ab_len2, 1.0);
+  const QPointF c = a + (ab * t);
+  return QLineF(p, c).length();
+}
+
+double distance_to_polyline_2d(const QPointF & p, const QVector<QPointF> & polyline)
+{
+  if (polyline.size() < 2) return std::numeric_limits<double>::max();
+  double best = std::numeric_limits<double>::max();
+  for (int i = 1; i < polyline.size(); ++i) best = qMin(best, distance_to_segment_2d(p, polyline[i - 1], polyline[i]));
+  return best;
+}
 }
 
 
@@ -813,6 +832,90 @@ bool Scene3DViewportWidget::pick_item_at_screen(
   }
   return true;
 }
+
+bool Scene3DViewportWidget::pick_gizmo_axis_at_screen(const QPoint & pos, QString & out_axis, double * out_score) const
+{
+  out_axis.clear();
+  if (selected_id.isEmpty()) return false;
+  const ScenePreviewWidget::PreviewItem * selected = nullptr;
+  for (const auto & it : items) if (it.id == selected_id) { selected = &it; break; }
+  if (selected == nullptr) return false;
+
+  const QVector3D origin(selected->x + (selected->sx * 0.5), selected->y + (selected->sy * 0.5), selected->z + (selected->sz * 0.5));
+  const double axis_len = qMax(0.25, 0.75 * qMax({ selected->sx, selected->sy, selected->sz }));
+  const QPointF screen_p = QPointF(pos);
+  const QPointF origin_s = project_to_screen(origin.x(), origin.y(), origin.z());
+  if (!qIsFinite(origin_s.x()) || !qIsFinite(origin_s.y())) return false;
+
+  const struct AxisCandidate { const char * axis; QVector3D dir; } candidates[] = {
+    {"x", QVector3D(1.0f, 0.0f, 0.0f)},
+    {"y", QVector3D(0.0f, 1.0f, 0.0f)},
+    {"z", QVector3D(0.0f, 0.0f, 1.0f)}
+  };
+  constexpr double kAxisThresholdPx = 12.0;
+  double best = std::numeric_limits<double>::max();
+  QString best_axis;
+  for (const auto & candidate : candidates) {
+    const QVector3D endpoint = origin + (candidate.dir * axis_len);
+    const QPointF endpoint_s = project_to_screen(endpoint.x(), endpoint.y(), endpoint.z());
+    if (!qIsFinite(endpoint_s.x()) || !qIsFinite(endpoint_s.y())) continue;
+    const double score = distance_to_segment_2d(screen_p, origin_s, endpoint_s);
+    if (score < best) {
+      best = score;
+      best_axis = QString::fromLatin1(candidate.axis);
+    }
+  }
+  if (out_score != nullptr) *out_score = best;
+  if (best <= kAxisThresholdPx && !best_axis.isEmpty()) { out_axis = best_axis; return true; }
+  // Deterministic fallback when no segment is precisely hit: choose the axis with the lowest score.
+  out_axis = best_axis;
+  return !out_axis.isEmpty();
+}
+
+bool Scene3DViewportWidget::pick_gizmo_rotation_ring_at_screen(const QPoint & pos, QString & out_axis, double * out_score) const
+{
+  out_axis.clear();
+  if (selected_id.isEmpty()) return false;
+  const ScenePreviewWidget::PreviewItem * selected = nullptr;
+  for (const auto & it : items) if (it.id == selected_id) { selected = &it; break; }
+  if (selected == nullptr) return false;
+
+  const QVector3D origin(selected->x + (selected->sx * 0.5), selected->y + (selected->sy * 0.5), selected->z + (selected->sz * 0.5));
+  const double radius = qMax(0.2, 0.65 * qMax({ selected->sx, selected->sy, selected->sz }));
+  const QPointF screen_p = QPointF(pos);
+  constexpr int kRingSamples = 48;
+  constexpr double kRingThresholdPx = 11.0;
+  double best = std::numeric_limits<double>::max();
+  QString best_axis;
+
+  const struct RingCandidate { const char * axis; QVector3D u; QVector3D v; } rings[] = {
+    {"x", QVector3D(0.0f, 1.0f, 0.0f), QVector3D(0.0f, 0.0f, 1.0f)},
+    {"y", QVector3D(1.0f, 0.0f, 0.0f), QVector3D(0.0f, 0.0f, 1.0f)},
+    {"z", QVector3D(1.0f, 0.0f, 0.0f), QVector3D(0.0f, 1.0f, 0.0f)}
+  };
+  for (const auto & ring : rings) {
+    QVector<QPointF> polyline;
+    polyline.reserve(kRingSamples + 1);
+    for (int i = 0; i <= kRingSamples; ++i) {
+      const double t = (2.0 * M_PI * i) / static_cast<double>(kRingSamples);
+      const QVector3D sample = origin + (ring.u * static_cast<float>(radius * qCos(t))) + (ring.v * static_cast<float>(radius * qSin(t)));
+      const QPointF sample_s = project_to_screen(sample.x(), sample.y(), sample.z());
+      if (!qIsFinite(sample_s.x()) || !qIsFinite(sample_s.y())) continue;
+      polyline.push_back(sample_s);
+    }
+    const double score = distance_to_polyline_2d(screen_p, polyline);
+    if (score < best) {
+      best = score;
+      best_axis = QString::fromLatin1(ring.axis);
+    }
+  }
+  if (out_score != nullptr) *out_score = best;
+  if (best <= kRingThresholdPx && !best_axis.isEmpty()) { out_axis = best_axis; return true; }
+  // Deterministic fallback when no ring polyline is within threshold: pick the minimum-score ring.
+  out_axis = best_axis;
+  return !out_axis.isEmpty();
+}
+
 void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   last_ = e->pos();
   if (e->button() != Qt::LeftButton) return;
@@ -820,10 +923,20 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
   drag_start_ = e->pos();
   dragging_gizmo_ = (gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty();
+  active_gizmo_handle_ = GizmoHandle::None;
   if (dragging_gizmo_) {
-    const int dx = qAbs(e->x() - width() / 2);
-    const int dy = qAbs(e->y() - height() / 2);
-    active_axis_ = (dx > dy) ? QStringLiteral("x") : QStringLiteral("y");
+    double score = std::numeric_limits<double>::max();
+    QString axis;
+    bool picked = false;
+    if (gizmo_mode == GizmoMode::Move) {
+      picked = pick_gizmo_axis_at_screen(e->pos(), axis, &score);
+      if (picked) active_gizmo_handle_ = (axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ);
+    } else if (gizmo_mode == GizmoMode::Rotate) {
+      picked = pick_gizmo_rotation_ring_at_screen(e->pos(), axis, &score);
+      if (picked) active_gizmo_handle_ = (axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw);
+    }
+    active_axis_ = axis;
+    dragging_gizmo_ = picked && !axis.isEmpty();
   }
 }
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
@@ -878,10 +991,30 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
     return;
   }
   QString hovered, hovered_role, hover_tooltip;
-  if (pick_item_at_screen(e->pos(), hovered, hovered_role, &hover_tooltip) && !hovered.isEmpty()) {
-    QToolTip::showText(e->globalPos(), hover_tooltip, this);
+  hovered_gizmo_handle_ = GizmoHandle::None;
+  if (!selected_id.isEmpty() && (gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate)) {
+    QString axis;
+    bool picked = (gizmo_mode == GizmoMode::Move) ? pick_gizmo_axis_at_screen(e->pos(), axis)
+                                                  : pick_gizmo_rotation_ring_at_screen(e->pos(), axis);
+    if (picked) {
+      hovered_gizmo_handle_ = (gizmo_mode == GizmoMode::Move)
+        ? ((axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ))
+        : ((axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw));
+      hovered = selected_id;
+      hovered_role = QStringLiteral("gizmo_%1").arg(axis);
+      hover_tooltip = (gizmo_mode == GizmoMode::Move)
+        ? QStringLiteral("Move %1 axis").arg(axis.toUpper())
+        : QStringLiteral("Rotate %1 axis").arg(axis.toUpper());
+    }
+  }
+  if (hovered_gizmo_handle_ == GizmoHandle::None) {
+    if (pick_item_at_screen(e->pos(), hovered, hovered_role, &hover_tooltip) && !hovered.isEmpty()) {
+      QToolTip::showText(e->globalPos(), hover_tooltip, this);
+    } else {
+      QToolTip::hideText();
+    }
   } else {
-    QToolTip::hideText();
+    QToolTip::showText(e->globalPos(), hover_tooltip, this);
   }
   hovered_id_ = hovered;
 }
