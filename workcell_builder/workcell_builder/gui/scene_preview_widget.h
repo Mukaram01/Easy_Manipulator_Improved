@@ -8,6 +8,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QComboBox;
 class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
@@ -173,6 +174,8 @@ private:
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
   QComboBox * mesh_preview_mode_selector_{ nullptr };
+  QComboBox * gizmo_mode_selector_{ nullptr };
+  QComboBox * snap_mode_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
   QWidget * view3d_container_{ nullptr };
   QWidget * view2d_container_{ nullptr };

@@ -22,6 +22,19 @@
 namespace {
 constexpr int kMeshTriangleLimit = 100000;
 
+QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
+{
+  switch (mode) {
+    case Scene3DViewportWidget::SnapMode::Off: return "Off";
+    case Scene3DViewportWidget::SnapMode::Cm1: return "1 cm";
+    case Scene3DViewportWidget::SnapMode::Cm5: return "5 cm";
+    case Scene3DViewportWidget::SnapMode::Cm10: return "10 cm";
+    case Scene3DViewportWidget::SnapMode::Deg5: return "5 deg";
+    case Scene3DViewportWidget::SnapMode::Deg15: return "15 deg";
+  }
+  return "Off";
+}
+
 bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                      QString & out_error, int triangle_limit)
 {
@@ -805,9 +818,42 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   if (e->button() != Qt::LeftButton) return;
   QString best_id, best_role;
   if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
+  drag_start_ = e->pos();
+  dragging_gizmo_ = (gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty();
+  if (dragging_gizmo_) {
+    const int dx = qAbs(e->x() - width() / 2);
+    const int dy = qAbs(e->y() - height() / 2);
+    active_axis_ = (dx > dy) ? QStringLiteral("x") : QStringLiteral("y");
+  }
 }
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
 {
+  if (dragging_gizmo_ && (e->buttons() & Qt::LeftButton) && !selected_id.isEmpty()) {
+    for (auto & it : items) {
+      if (it.id != selected_id) continue;
+      const QPoint delta = e->pos() - drag_start_;
+      if (gizmo_mode == GizmoMode::Move) {
+        double step = 0.0;
+        if (snap_mode == SnapMode::Cm1) step = 0.01;
+        if (snap_mode == SnapMode::Cm5) step = 0.05;
+        if (snap_mode == SnapMode::Cm10) step = 0.10;
+        const double raw = (active_axis_ == "x" ? delta.x() : -delta.y()) * 0.002;
+        const double snapped = step > 0.0 ? std::round(raw / step) * step : raw;
+        if (active_axis_ == "x") it.x += snapped; else if (active_axis_ == "y") it.y += snapped; else it.z += snapped;
+      } else if (gizmo_mode == GizmoMode::Rotate) {
+        double step = 0.0;
+        if (snap_mode == SnapMode::Deg5) step = qDegreesToRadians(5.0);
+        if (snap_mode == SnapMode::Deg15) step = qDegreesToRadians(15.0);
+        const double raw = (delta.x() - delta.y()) * 0.01;
+        const double snapped = step > 0.0 ? std::round(raw / step) * step : raw;
+        if (active_axis_ == "x") it.roll += snapped; else if (active_axis_ == "y") it.pitch += snapped; else it.yaw += snapped;
+      }
+      drag_start_ = e->pos();
+      if (transform_changed_cb) transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+      update();
+      return;
+    }
+  }
   auto d = e->pos() - last_;
   last_ = e->pos();
   const bool pan_mode = (e->buttons() & Qt::MiddleButton) || ((e->buttons() & Qt::LeftButton) && (e->modifiers() & Qt::ShiftModifier));

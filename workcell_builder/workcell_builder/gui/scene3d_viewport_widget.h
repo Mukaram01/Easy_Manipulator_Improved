@@ -46,6 +46,11 @@ public:
   ScenePreviewWidget::CameraOverlayModel camera_overlay;
   QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
   std::function<void(const QString &, const QString &)> select_cb;
+  std::function<void(const QString &, double, double, double, double, double, double)> transform_changed_cb;
+  enum class GizmoMode { Select, Move, Rotate, ScaleDisabled };
+  enum class SnapMode { Off, Cm1, Cm5, Cm10, Deg5, Deg15 };
+  GizmoMode gizmo_mode{ GizmoMode::Select };
+  SnapMode snap_mode{ SnapMode::Cm5 };
 
   void reset_view();
   void fit_scene();
@@ -96,6 +101,9 @@ private:
   bool draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path = true);
   void draw_unit_cube_triangles(const QColor & color);
   QPoint last_;
+  QPoint drag_start_;
+  bool dragging_gizmo_{ false };
+  QString active_axis_;
   QString hovered_id_;
   struct MeshCacheEntry
   {

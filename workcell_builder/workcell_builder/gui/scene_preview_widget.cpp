@@ -52,6 +52,16 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mesh_preview_mode_selector_->setToolTip("Mesh preview mode is visual-only and does not alter generated runtime files.");
   controls->addWidget(mesh_preview_mode_selector_);
   controls->addSpacing(8);
+  controls->addWidget(new QLabel("Gizmo:", this));
+  gizmo_mode_selector_ = new QComboBox(this);
+  gizmo_mode_selector_->addItems({"Select", "Move", "Rotate", "Scale (disabled)"});
+  controls->addWidget(gizmo_mode_selector_);
+  controls->addWidget(new QLabel("Snap:", this));
+  snap_mode_selector_ = new QComboBox(this);
+  snap_mode_selector_->addItems({"Off", "1 cm", "5 cm", "10 cm", "5 deg", "15 deg"});
+  snap_mode_selector_->setCurrentText("5 cm");
+  controls->addWidget(snap_mode_selector_);
+  controls->addSpacing(8);
   controls->addWidget(new QLabel("Labels:", this));
   labels_selector_ = new QComboBox(this);
   labels_selector_->addItems({"Off", "Important", "Selected", "All"});
@@ -100,6 +110,26 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Important") v->label_mode = LabelMode::Important;
     else if (choice == "Selected") v->label_mode = LabelMode::Selected;
     else v->label_mode = LabelMode::All;
+    v->update();
+  });
+  connect(snap_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    const QString choice = snap_mode_selector_->currentText();
+    if (choice == "1 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm1;
+    else if (choice == "5 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm5;
+    else if (choice == "10 cm") v->snap_mode = Scene3DViewportWidget::SnapMode::Cm10;
+    else if (choice == "5 deg") v->snap_mode = Scene3DViewportWidget::SnapMode::Deg5;
+    else if (choice == "15 deg") v->snap_mode = Scene3DViewportWidget::SnapMode::Deg15;
+    else v->snap_mode = Scene3DViewportWidget::SnapMode::Off;
+    v->update();
+  });
+  connect(gizmo_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    const QString choice = gizmo_mode_selector_->currentText();
+    if (choice == "Move") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move;
+    else if (choice == "Rotate") v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate;
+    else if (choice.startsWith("Scale")) v->gizmo_mode = Scene3DViewportWidget::GizmoMode::ScaleDisabled;
+    else v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select;
     v->update();
   });
   connect(mesh_preview_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
