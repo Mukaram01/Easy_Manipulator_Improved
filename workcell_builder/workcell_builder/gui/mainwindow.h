@@ -178,6 +178,9 @@ private:
     QString display_name;
     QString role_or_category;
     QString source_path;
+    bool editable{ true };
+    bool locked{ false };
+    QString lock_reason;
     bool pose_available{ false };
     double pose_x{ 0.0 };
     double pose_y{ 0.0 };

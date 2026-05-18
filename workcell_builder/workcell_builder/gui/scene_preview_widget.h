@@ -36,6 +36,9 @@ public:
     bool mesh_available{ false };
     QString mesh_load_warning;
     bool selectable{ true };
+    bool editable{ true };
+    bool locked{ false };
+    QString lock_reason;
     bool metadata_complete{ true };
     QStringList warnings;
     bool has_mesh_metadata{ false };

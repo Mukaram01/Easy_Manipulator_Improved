@@ -46,6 +46,7 @@ public:
   ScenePreviewWidget::CameraOverlayModel camera_overlay;
   QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
   std::function<void(const QString &, const QString &)> select_cb;
+  std::function<void(const QString &)> status_message_cb;
   std::function<void(const QString &, double, double, double, double, double, double)> transform_changed_cb;
   enum class GizmoMode { Select, Move, Rotate, ScaleDisabled };
   enum class SnapMode { Off, Cm1, Cm5, Cm10, Deg5, Deg15 };

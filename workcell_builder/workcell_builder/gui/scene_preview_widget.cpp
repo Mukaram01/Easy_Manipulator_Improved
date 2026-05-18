@@ -163,6 +163,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     v->update();
   });
   static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
+  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->status_message_cb = [this](const QString & message) {
+    emit studio_log_requested(message);
+  };
   refresh_info_chip();
   refresh_mode_and_state();
 }

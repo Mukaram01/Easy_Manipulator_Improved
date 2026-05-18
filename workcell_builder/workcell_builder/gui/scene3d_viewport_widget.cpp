@@ -150,6 +150,18 @@ QString warning_debug_text(const QStringList & warnings)
   return QStringLiteral("%1 (+%2 more)").arg(warnings.front()).arg(warnings.size() - 1);
 }
 
+bool item_is_editable_for_gizmo(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (it.locked) return false;
+  return it.editable;
+}
+
+QString item_locked_reason(const ScenePreviewWidget::PreviewItem & it)
+{
+  const QString reason = it.lock_reason.trimmed();
+  return reason.isEmpty() ? QStringLiteral("item is locked") : reason;
+}
+
 NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 {
   const QString role = normalized_token(it.role);
@@ -347,7 +359,8 @@ void Scene3DViewportWidget::paintGL()
     }
     if (it->id == selected_id) {
       const ItemBounds bounds = item_bounds_for_role(*it);
-      draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
+      const bool editable = item_is_editable_for_gizmo(*it);
+      draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
     }
   }
 
@@ -924,8 +937,18 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   QString best_id, best_role;
   if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
   drag_start_ = e->pos();
-  dragging_gizmo_ = (gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty();
-  active_gizmo_handle_ = GizmoHandle::None;
+  dragging_gizmo_ = false;
+  if ((gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty()) {
+    for (const auto & it : items) {
+      if (it.id != selected_id) continue;
+      if (!item_is_editable_for_gizmo(it)) {
+        if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(it)));
+        return;
+      }
+      dragging_gizmo_ = true;
+      break;
+    }
+  }
   if (dragging_gizmo_) {
     const int dx = qAbs(e->x() - width() / 2);
     const int dy = qAbs(e->y() - height() / 2);
@@ -961,6 +984,11 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
   if (dragging_gizmo_ && (e->buttons() & Qt::LeftButton) && !selected_id.isEmpty()) {
     for (auto & it : items) {
       if (it.id != selected_id) continue;
+      if (!item_is_editable_for_gizmo(it)) {
+        dragging_gizmo_ = false;
+        if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(it)));
+        return;
+      }
       const QPoint delta = e->pos() - drag_start_;
       if (gizmo_mode == GizmoMode::Move) {
         double step = 0.0;
