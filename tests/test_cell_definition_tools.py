@@ -339,6 +339,51 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             warning_blob = "\n".join(summary_payload.get("warnings", []))
             self.assertNotIn("Execution plan generation status: FAIL", warning_blob)
 
+    def test_unsupported_layout_assets_emit_warning_and_are_not_silently_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            layout_path = tmp_path / "environment_layout.yaml"
+            layout_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: environment_layout/v1",
+                        "layout_id: unsupported_layout",
+                        "assets:",
+                        "  - id: table_ok",
+                        "    type: table",
+                        "    pose: {frame: world, xyz: [0.0, 0.0, 0.0], rpy: [0.0, 0.0, 0.0]}",
+                        "  - id: lidar_unsupported",
+                        "    type: lidar",
+                        "    pose: {frame: world, xyz: [1.0, 0.0, 0.5], rpy: [0.0, 0.0, 0.0]}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cell_path = tmp_path / "cell.yaml"
+            cell_path.write_text(
+                (
+                    (FIXTURES / "cell_definition_sort_by_colour.yaml").read_text(encoding="utf-8")
+                    + f"\nenvironment:\n  frame: world\n  layout: {layout_path}\n  support_surfaces: []\n"
+                ),
+                encoding="utf-8",
+            )
+            rc = workcell_generator.generate_package(
+                cell_definition_path=cell_path,
+                output_dir=tmp_path,
+                package_name="generated_with_unsupported_layout",
+                force=False,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            gen = tmp_path / "generated_with_unsupported_layout" / "generated"
+            summary = json.loads((gen / "generated_workcell_summary.json").read_text(encoding="utf-8"))
+            self.assertTrue(any("Generated preview metadata only: lidar_unsupported" in w for w in summary.get("warnings", [])))
+            self.assertTrue(any(a.get("asset_id") == "lidar_unsupported" for a in summary.get("unsupported_assets", [])))
+            env_payload, _, _ = scene_contract_validator._read_manifest(str(gen / "generated_environment_objects.yaml"))
+            self.assertTrue(any(a.get("asset_id") == "lidar_unsupported" for a in env_payload.get("unsupported_assets", [])))
+            self.assertGreater(len(env_payload.get("tracked_assets", [])), 0)
+
 
 class CellDefinitionWizardTests(unittest.TestCase):
     def setUp(self) -> None:

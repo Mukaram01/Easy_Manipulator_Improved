@@ -32,6 +32,7 @@ SUPPORTED_TASK_TYPES = {
     "inspection_then_place",
     "custom",
 }
+SUPPORTED_LAYOUT_ASSET_TYPES = {"table", "support_surface", "robot_base", "sensor", "camera", "conveyor", "bin", "fixture"}
 
 
 def _load_module(module_name: str, module_path: Path):
@@ -352,6 +353,62 @@ def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
     return {"schema_version": "environment_objects/v1", "objects": objects}
 
 
+def _extract_asset_tracking(cell_def: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    tracked: list[dict[str, Any]] = []
+    supported: list[dict[str, Any]] = []
+    unsupported: list[dict[str, Any]] = []
+    seen_unsupported: set[str] = set()
+
+    def _append(entry: dict[str, Any], source: str) -> None:
+        asset_id = str(entry.get("id", entry.get("name", "unknown_asset")))
+        mesh_ref = entry.get("mesh") or entry.get("mesh_path")
+        pose = entry.get("pose") if isinstance(entry.get("pose"), dict) else {}
+        pose_xyz = pose.get("xyz", entry.get("pose_xyz"))
+        pose_rpy = pose.get("rpy", entry.get("pose_rpy"))
+        asset_type = str(entry.get("type", "unknown")).strip().lower()
+        item = {
+            "asset_id": asset_id,
+            "asset_type": asset_type or "unknown",
+            "source": source,
+            "mesh_ref": mesh_ref,
+            "transform": {"frame": pose.get("frame", entry.get("frame", "world")), "xyz": pose_xyz, "rpy": pose_rpy},
+        }
+        tracked.append(item)
+        if source == "environment.layout":
+            if asset_type in SUPPORTED_LAYOUT_ASSET_TYPES:
+                supported.append(item)
+            else:
+                unsupported.append(item)
+                if asset_id not in seen_unsupported:
+                    warnings.append(f"Generated preview metadata only: {asset_id}")
+                    seen_unsupported.add(asset_id)
+        else:
+            supported.append(item)
+
+    for key in ("support_surfaces", "environment", "assets", "objects"):
+        entries = cell_def.get(key, []) if isinstance(cell_def.get(key), list) else []
+        for entry in entries:
+            if isinstance(entry, dict):
+                _append(entry, f"cell_def.{key}")
+
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    layout_path = environment.get("layout")
+    if isinstance(layout_path, str) and layout_path.strip():
+        resolved = (REPO_ROOT / layout_path).resolve()
+        if resolved.is_file():
+            try:
+                validator = _load_module("generated_environment_layout_validator", SCRIPTS_DIR / "validate_environment_layout.py")
+                layout_data, _, _ = validator.load_layout(resolved)
+                for asset in layout_data.get("assets", []) if isinstance(layout_data.get("assets"), list) else []:
+                    if isinstance(asset, dict):
+                        _append(asset, "environment.layout")
+            except Exception as exc:
+                warnings.append(f"Layout asset tracking skipped for '{layout_path}': {exc}")
+        else:
+            warnings.append(f"Layout asset tracking skipped; file not found: {layout_path}")
+    return {"tracked": tracked, "supported": supported, "unsupported": unsupported}
+
+
 def _run_optional_bundle_export(
     bundle_exporter: Any,
     package_name: str,
@@ -418,8 +475,16 @@ def generate_package(
         return 1
 
     scene_manifest = _augment_scene_manifest(loaded, scene_generator.build_scene_manifest(loaded), warnings)
+    asset_tracking = _extract_asset_tracking(loaded, warnings)
     task_recipe = _normalize_task_recipe(scene_generator.build_task_recipe(loaded), warnings)
     scene_manifest["task_recipe"] = task_recipe
+    scene_manifest["generated_assets"] = {
+        "tracked_count": len(asset_tracking["tracked"]),
+        "supported_count": len(asset_tracking["supported"]),
+        "unsupported_count": len(asset_tracking["unsupported"]),
+        "supported": asset_tracking["supported"],
+        "unsupported": asset_tracking["unsupported"],
+    }
 
     package_dir = output_dir / package_name
     if package_dir.exists() and not force:
@@ -479,6 +544,18 @@ def generate_package(
         + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
         encoding="utf-8",
     )
+    (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
+        _header_yaml(cell_definition_path)
+        + _yaml_text_from(
+            scene_generator,
+            {
+                "schema_version": "generated_asset_metadata/v1",
+                "supported_assets": asset_tracking["supported"],
+                "unsupported_assets": asset_tracking["unsupported"],
+            },
+        ),
+        encoding="utf-8",
+    )
 
     dry_result = dry_runner.evaluate_scene(package_name, scene_manifest_path)
 
@@ -505,6 +582,8 @@ def generate_package(
     command_script_path = generated_dir / "generated_gated_dry_run_command.sh"
     detected_example = _build_detected_objects_example(loaded, task_recipe)
     env_objects = _build_environment_objects(loaded)
+    env_objects["tracked_assets"] = asset_tracking["tracked"]
+    env_objects["unsupported_assets"] = asset_tracking["unsupported"]
     destinations = _build_destinations_export(task_recipe)
     detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
     env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
@@ -535,6 +614,8 @@ def generate_package(
         "environment_objects_path": str(env_objects_path),
         "destinations_path": str(destinations_path),
         "warnings": warnings,
+        "tracked_assets": asset_tracking["tracked"],
+        "unsupported_assets": asset_tracking["unsupported"],
         "blockers": [],
         "recommended_commands": {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
         "approval": {"status": "unapproved", "approved_by": None, "approved_at": None, "notes": ""},
