@@ -327,6 +327,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_transform_clipboard_utils_test
     test/transform_clipboard_utils_test.cpp
     gui/transform_clipboard_utils.cpp)
+  ament_add_gtest(workcell_layout_serialization_contract_test
+    test/layout_serialization_contract_test.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()

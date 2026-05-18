@@ -3526,6 +3526,20 @@ static YAML::Node minimal_environment_layout(const std::string & scene_name)
   return root;
 }
 
+static YAML::Node ensure_sequence_of_maps(YAML::Node root, const char * key)
+{
+  if (!root[key] || !root[key].IsSequence()) {
+    root[key] = YAML::Node(YAML::NodeType::Sequence);
+  }
+  return root[key];
+}
+
+static YAML::Node ensure_map_node(YAML::Node parent, const char * key)
+{
+  if (!parent[key] || !parent[key].IsMap()) parent[key] = YAML::Node(YAML::NodeType::Map);
+  return parent[key];
+}
+
 void MainWindow::save_layout_changes()
 {
   QString selected_preview_id;
@@ -3588,31 +3602,58 @@ void MainWindow::save_layout_changes()
         .arg(QString::fromStdString(ec.message())));
     }
   }
-  YAML::Node placed(YAML::NodeType::Sequence);
+  YAML::Node placed = ensure_sequence_of_maps(root, "placed_assets");
+  YAML::Node existing_by_id(YAML::NodeType::Map);
+  for (std::size_t i = 0; i < placed.size(); ++i) {
+    const YAML::Node existing = placed[i];
+    if (!existing || !existing.IsMap()) continue;
+    const std::string existing_id = workcell_builder::yaml_map_value_or_empty(existing, "id");
+    if (!existing_id.empty()) existing_by_id[existing_id] = existing;
+  }
+  YAML::Node updated_placed(YAML::NodeType::Sequence);
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
-    YAML::Node item(YAML::NodeType::Map);
     const std::string item_id = gi->data(RoleId).toString().toStdString();
     if (!workcell_builder::workcell_studio_is_valid_id(item_id)) {
       QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(QString::fromStdString(item_id)));
       append_studio_log(QString("Save blocked: invalid id '%1'").arg(QString::fromStdString(item_id)));
       return;
     }
+    YAML::Node item = existing_by_id[item_id] ? YAML::Clone(existing_by_id[item_id]) : YAML::Node(YAML::NodeType::Map);
     item["id"] = item_id;
     item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
     item["category"] = gi->data(RoleCategory).toString().toStdString();
     item["type"] = gi->data(RoleType).toString().toStdString();
     item["source_path"] = gi->data(RoleSource).toString().toStdString();
     item["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
-    YAML::Node pose(YAML::NodeType::Map);
+    item["editable"] = !gi->data(RoleLocked).toBool();
+    item["locked"] = gi->data(RoleLocked).toBool();
+
+    YAML::Node pose = ensure_map_node(item, "pose");
     pose["x"] = gi->pos().x() / 100.0; pose["y"] = gi->pos().y() / 100.0; pose["z"] = gi->data(RolePoseZ).toDouble();
     pose["roll"] = gi->data(RoleRoll).toDouble(); pose["pitch"] = gi->data(RolePitch).toDouble(); pose["yaw"] = gi->data(RoleYaw).toDouble();
-    item["pose"] = pose;
-    YAML::Node meta(YAML::NodeType::Map); meta["preview_only"] = true; item["metadata"] = meta;
-    placed.push_back(item);
+    pose["xyz"] = YAML::Load("[]");
+    pose["xyz"].push_back(pose["x"]); pose["xyz"].push_back(pose["y"]); pose["xyz"].push_back(pose["z"]);
+    pose["rpy"] = YAML::Load("[]");
+    pose["rpy"].push_back(pose["roll"]); pose["rpy"].push_back(pose["pitch"]); pose["rpy"].push_back(pose["yaw"]);
+
+    item["dimensions"] = YAML::Load("[]");
+    item["dimensions"].push_back(gi->data(RoleWidth).toDouble());
+    item["dimensions"].push_back(gi->data(RoleDepth).toDouble());
+    item["dimensions"].push_back(gi->data(RoleHeight).toDouble());
+
+    YAML::Node mesh = ensure_map_node(item, "mesh");
+    mesh["path"] = gi->data(RoleSource).toString().toStdString();
+    mesh["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
+
+    YAML::Node meta = ensure_map_node(item, "metadata");
+    meta["preview_only"] = true;
+    meta["serialization_contract"] =
+      "id, display_name, type/category, pose.xyz, pose.rpy, dimensions, mesh metadata, editable/locked";
+    updated_placed.push_back(item);
     append_studio_log(QString("Saved layout item %1 to environment_layout.yaml").arg(gi->data(RoleId).toString()));
   }
-  root["placed_assets"] = placed;
+  root["placed_assets"] = updated_placed;
   std::ofstream out(layout_path.string());
   out << root;
   out.close();
