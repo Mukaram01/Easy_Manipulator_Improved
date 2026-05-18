@@ -993,6 +993,26 @@ void MainWindow::setup_studio_shell()
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
+  auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
+  if (scene3d_viewport) {
+    scene3d_viewport->transform_changed_cb = [this](const QString &id, double x, double y, double z, double r, double p, double yaw){
+      if (!digital_twin_scene_) return;
+      for (auto * item : digital_twin_scene_->items()) {
+        if (item->data(RoleId).toString() != id) continue;
+        const QPointF old_pos = item->pos();
+        item->setPos(x * 100.0, y * 100.0);
+        item->setData(RolePoseZ, z);
+        item->setData(RoleRoll, r);
+        item->setData(RolePitch, p);
+        item->setData(RoleYaw, yaw);
+        undo_stack_.push_back({"gizmo_transform", id, old_pos, item->pos(), false, false});
+        redo_stack_.clear();
+        refresh_selection_transform_editor_from_item(item);
+        mark_layout_dirty("Scene3D Gizmo Transform");
+        break;
+      }
+    };
+  }
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
   place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
