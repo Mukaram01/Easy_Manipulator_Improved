@@ -49,6 +49,16 @@ public:
   std::function<void(const QString &, double, double, double, double, double, double)> transform_changed_cb;
   enum class GizmoMode { Select, Move, Rotate, ScaleDisabled };
   enum class SnapMode { Off, Cm1, Cm5, Cm10, Deg5, Deg15 };
+  enum class GizmoHandle
+  {
+    None,
+    MoveX,
+    MoveY,
+    MoveZ,
+    Roll,
+    Pitch,
+    Yaw
+  };
   GizmoMode gizmo_mode{ GizmoMode::Select };
   SnapMode snap_mode{ SnapMode::Cm5 };
 
@@ -82,6 +92,8 @@ private:
   struct ItemBounds { double x, y, z, sx, sy, sz; };
   QPointF project_to_screen(double x, double y, double z) const;
   bool pick_item_at_screen(const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip = nullptr) const;
+  bool pick_gizmo_axis_at_screen(const QPoint & pos, QString & out_axis, double * out_score = nullptr) const;
+  bool pick_gizmo_rotation_ring_at_screen(const QPoint & pos, QString & out_axis, double * out_score = nullptr) const;
   ItemBounds item_bounds_for_role(const ScenePreviewWidget::PreviewItem & item) const;
   bool mesh_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, ItemBounds & out_bounds) const;
   bool ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
@@ -114,6 +126,8 @@ private:
   };
   DragPose drag_start_pose_;
   bool drag_in_progress_{ false };
+  GizmoHandle active_gizmo_handle_{ GizmoHandle::None };
+  GizmoHandle hovered_gizmo_handle_{ GizmoHandle::None };
   QString hovered_id_;
   struct MeshCacheEntry
   {
