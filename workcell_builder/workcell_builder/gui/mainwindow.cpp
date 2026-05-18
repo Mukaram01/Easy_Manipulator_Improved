@@ -999,14 +999,11 @@ void MainWindow::setup_studio_shell()
       if (!digital_twin_scene_) return;
       for (auto * item : digital_twin_scene_->items()) {
         if (item->data(RoleId).toString() != id) continue;
-        const QPointF old_pos = item->pos();
         item->setPos(x * 100.0, y * 100.0);
         item->setData(RolePoseZ, z);
         item->setData(RoleRoll, r);
         item->setData(RolePitch, p);
         item->setData(RoleYaw, yaw);
-        undo_stack_.push_back({"gizmo_transform", id, old_pos, item->pos(), false, false});
-        redo_stack_.clear();
         refresh_selection_transform_editor_from_item(item);
         mark_layout_dirty("Scene3D Gizmo Transform");
         break;

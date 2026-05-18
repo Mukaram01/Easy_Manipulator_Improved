@@ -74,7 +74,9 @@ protected:
   void paintGL() override;
   void mousePressEvent(QMouseEvent * e) override;
   void mouseMoveEvent(QMouseEvent * e) override;
+  void mouseReleaseEvent(QMouseEvent * e) override;
   void wheelEvent(QWheelEvent * e) override;
+  void keyPressEvent(QKeyEvent * e) override;
 
 private:
   struct ItemBounds { double x, y, z, sx, sy, sz; };
@@ -104,6 +106,14 @@ private:
   QPoint drag_start_;
   bool dragging_gizmo_{ false };
   QString active_axis_;
+  struct DragPose
+  {
+    QString item_id;
+    double x{ 0.0 }, y{ 0.0 }, z{ 0.0 };
+    double roll{ 0.0 }, pitch{ 0.0 }, yaw{ 0.0 };
+  };
+  DragPose drag_start_pose_;
+  bool drag_in_progress_{ false };
   QString hovered_id_;
   struct MeshCacheEntry
   {
