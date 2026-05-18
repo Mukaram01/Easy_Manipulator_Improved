@@ -15,6 +15,22 @@ def test_mainline_validation_script_exists_and_has_expected_contract_tokens():
         "cell_definition_v1_draft_generate_repair_validate",
         "readiness_and_preflight_warnings",
         "action_wiring_tokens",
+        "workflow_semantic_contract",
+        "recommended_action_handler_wiring_contract",
         "cmake_includes_helper_sources",
+    ]:
+        assert token in text
+
+
+def test_mainline_validation_script_tracks_current_scene_builder_wording_contract():
+    text = SCRIPT.read_text(encoding="utf-8")
+    for token in [
+        "Scene Manifest",
+        "ROS Package File",
+        "Demo Launch",
+        "Task Recipe (fallback)",
+        "Generate Scene Package",
+        "Generate/Update Task Intent",
+        "use_fake_hardware:=true",
     ]:
         assert token in text
