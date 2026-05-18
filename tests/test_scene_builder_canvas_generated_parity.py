@@ -38,6 +38,7 @@ def test_report_contains_required_fields_and_fake_hardware_token() -> None:
     assert required.issubset(report.keys())
     assert report["fake_hardware_token_preserved"] is True
     assert set(report["parity_report_required_fields"]) == required
+    assert report["mode"] == "post_generation"
 
 
 def test_cli_scene_dir_json_output_file_and_stdout_json(tmp_path: Path) -> None:
@@ -79,6 +80,32 @@ def test_missing_optional_files_warn_not_crash(tmp_path: Path) -> None:
     assert isinstance(report["warnings"], list)
     assert any("optional scene artifact missing" in w for w in report["warnings"])
     assert any("required generated artifact missing" in e for e in report["errors"])
+
+
+def test_pre_generation_mode_allows_missing_generated_as_warnings(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scene"
+    (scene_dir / "layout").mkdir(parents=True)
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+        "assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}}]\n", encoding="utf-8"
+    )
+    report, result = _run_parity_script([str(scene_dir), "--json", "--mode", "pre_generation"])
+    assert result.returncode == 0
+    assert report["mode"] == "pre_generation"
+    assert report["blocker_count"] == 0
+    assert any("required generated artifact missing" in warning for warning in report["warnings"])
+
+
+def test_post_generation_mode_blocks_missing_required_generated_artifacts(tmp_path: Path) -> None:
+    scene_dir = tmp_path / "scene"
+    (scene_dir / "layout").mkdir(parents=True)
+    (scene_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+        "assets: [{id: a1, pose: {xyz: [0,0,0], rpy: [0,0,0]}}]\n", encoding="utf-8"
+    )
+    report, result = _run_parity_script([str(scene_dir), "--json", "--mode", "post_generation"])
+    assert result.returncode == 1
+    assert report["mode"] == "post_generation"
+    assert report["blocker_count"] > 0
+    assert any("required generated artifact missing" in error for error in report["errors"])
 
 
 def test_reports_missing_generated_assets_from_layout(tmp_path: Path) -> None:

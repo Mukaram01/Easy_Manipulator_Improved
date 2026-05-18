@@ -34,3 +34,14 @@ def test_mainline_validation_script_tracks_current_scene_builder_wording_contrac
         "use_fake_hardware:=true",
     ]:
         assert token in text
+
+
+def test_mainwindow_parity_mode_and_generation_ordering_contract():
+    text = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    assert "CanvasGeneratedParityMode::PreGeneration" in text
+    assert "CanvasGeneratedParityMode::PostGeneration" in text
+    assert "--mode %4" in text
+    assert "Generated package created but Canvas/Generated parity has blockers." in text
+    assert "Generated artifacts are not present yet. Run Generate Scene Package for strict parity." in text
+    assert text.index("run_canvas_generated_parity_check(CanvasGeneratedParityMode::PreGeneration") < text.index("generate_workcell_from_cell_definition.py")
+    assert text.index("generate_workcell_from_cell_definition.py") < text.index("run_canvas_generated_parity_check(CanvasGeneratedParityMode::PostGeneration")
