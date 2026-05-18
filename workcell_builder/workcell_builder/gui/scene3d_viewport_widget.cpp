@@ -421,7 +421,28 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
-  if (!it.has_mesh_metadata) return false;
+  if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
+  if (!it.has_mesh_metadata) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback: mesh metadata missing for" << it.id;
+    }
+    return false;
+  }
+
+  const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
+  if (mesh_source.trimmed().isEmpty()) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback: mesh source missing for" << it.id;
+    }
+    return false;
+  }
+  const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
+  if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      qWarning() << "Scene3DViewportWidget mesh fallback:" << (entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning) << "for" << it.id;
+    }
+    return false;
+  }
 
   glPushMatrix();
   glTranslated(it.x, it.y, it.z);
@@ -434,7 +455,16 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
-  draw_unit_cube_triangles(color);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), 1.0f);
+  glBegin(GL_TRIANGLES);
+  for (const auto & tri : entry.mesh.triangles) {
+    glNormal3f(tri.normal.x(), tri.normal.y(), tri.normal.z());
+    glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
+    glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
+    glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
+  }
+  glEnd();
+
   glPopMatrix();
   return true;
 }
