@@ -22,6 +22,21 @@ def _base_fixture() -> dict[str, str]:
                 'QString rpy = "RPY";',
                 'QString x_units = "X position in metres";',
                 'QString yaw_units = "Yaw in radians";',
+                'QLabel *g = new QLabel("Gizmo:");',
+                'QLabel *s = new QLabel("Snap:");',
+                'QString mode_move = "Move";',
+                'QString mode_rotate = "Rotate";',
+                'QString title = "Scene3D Gizmo Transform";',
+                'QString pick_axis = "pick_gizmo_axis_at_screen";',
+                'QString pick_ring = "pick_gizmo_rotation_ring_at_screen";',
+                'QString active_handle = "active_gizmo_handle";',
+                'QString snap_t = "snap_translation_value";',
+                'QString snap_r = "snap_rotation_value";',
+                'if (e->key() == Qt::Key_Escape) { restore(); }',
+                'void mouseReleaseEvent(QMouseEvent*) { /* single-commit */ commit(); }',
+                'if (item->locked()) { status->setText("Locked:"); }',
+                'inspector->sync();',
+                'mark layout dirty;',
             ]
         ),
         "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview",
@@ -45,6 +60,22 @@ def test_validator_fails_with_clear_diagnostics_when_tokens_or_patterns_missing(
     assert "Focus Canvas action wording" in failed
     assert any("Focus Canvas" in d for d in failed["Focus Canvas action wording"])
     assert "fixed-width button anti-pattern checks" in failed
+
+
+def test_validator_reports_new_scene3d_acceptance_failures_when_markers_absent():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] = "\n".join(
+        line
+        for line in broken["mainwindow_cpp"].splitlines()
+        if "pick_gizmo_axis_at_screen" not in line and "Qt::Key_Escape" not in line and "Locked:" not in line
+    )
+
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+
+    assert "scene3d pick handle API markers" in failed
+    assert "escape cancel restore path markers" in failed
+    assert "locked item gating/status markers" in failed
 
 
 def test_repository_ui_acceptance_validator_runs_on_current_sources():

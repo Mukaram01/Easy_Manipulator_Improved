@@ -283,6 +283,14 @@ double distance_to_polyline_2d(const QPointF & p, const QVector<QPointF> & polyl
   for (int i = 1; i < polyline.size(); ++i) best = qMin(best, distance_to_segment_2d(p, polyline[i - 1], polyline[i]));
   return best;
 }
+
+double wrap_angle_pi(double angle)
+{
+  constexpr double kTwoPi = 2.0 * M_PI;
+  double wrapped = std::fmod(angle + M_PI, kTwoPi);
+  if (wrapped < 0.0) wrapped += kTwoPi;
+  return wrapped - M_PI;
+}
 }
 
 
@@ -966,8 +974,11 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   if (e->button() != Qt::LeftButton) return;
   QString best_id, best_role;
   if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);
-  drag_start_ = e->pos();
+  drag_start_screen_ = e->pos();
   dragging_gizmo_ = false;
+  drag_active_handle_ = GizmoHandle::None;
+  drag_in_progress_ = false;
+  drag_cancelled_ = false;
   if ((gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty()) {
     for (const auto & it : items) {
       if (it.id != selected_id) continue;
@@ -992,7 +1003,6 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
       drag_start_pose_.roll = it.roll;
       drag_start_pose_.pitch = it.pitch;
       drag_start_pose_.yaw = it.yaw;
-      drag_in_progress_ = true;
       break;
     }
     double score = std::numeric_limits<double>::max();
@@ -1000,13 +1010,14 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
     bool picked = false;
     if (gizmo_mode == GizmoMode::Move) {
       picked = pick_gizmo_axis_at_screen(e->pos(), axis, &score);
-      if (picked) active_gizmo_handle_ = (axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ);
+      if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::MoveX : (axis == "y" ? GizmoHandle::MoveY : GizmoHandle::MoveZ);
     } else if (gizmo_mode == GizmoMode::Rotate) {
       picked = pick_gizmo_rotation_ring_at_screen(e->pos(), axis, &score);
-      if (picked) active_gizmo_handle_ = (axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw);
+      if (picked) drag_active_handle_ = (axis == "x") ? GizmoHandle::Roll : (axis == "y" ? GizmoHandle::Pitch : GizmoHandle::Yaw);
     }
     active_axis_ = axis;
     dragging_gizmo_ = picked && !axis.isEmpty();
+    drag_in_progress_ = dragging_gizmo_;
   }
 }
 void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
@@ -1029,8 +1040,6 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
         const double snapped = snap_rotation_value(raw, snap_mode);
         if (active_axis_ == "x") it.roll += snapped; else if (active_axis_ == "y") it.pitch += snapped; else it.yaw += snapped;
       }
-      drag_start_ = e->pos();
-      if (transform_changed_cb) transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
       update();
       return;
     }
@@ -1089,8 +1098,17 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
 void Scene3DViewportWidget::mouseReleaseEvent(QMouseEvent * e)
 {
   if (e->button() == Qt::LeftButton) {
+    if (drag_in_progress_ && !drag_cancelled_ && transform_changed_cb) {
+      for (const auto & it : items) {
+        if (it.id != drag_start_pose_.item_id) continue;
+        transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+        break;
+      }
+    }
     dragging_gizmo_ = false;
     drag_in_progress_ = false;
+    drag_cancelled_ = false;
+    drag_active_handle_ = GizmoHandle::None;
     active_axis_.clear();
   }
   QOpenGLWidget::mouseReleaseEvent(e);
@@ -1124,6 +1142,8 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
     }
     dragging_gizmo_ = false;
     drag_in_progress_ = false;
+    drag_cancelled_ = true;
+    drag_active_handle_ = GizmoHandle::None;
     active_axis_.clear();
     QToolTip::showText(QCursor::pos(), QStringLiteral("Gizmo drag cancelled."), this);
     update();
