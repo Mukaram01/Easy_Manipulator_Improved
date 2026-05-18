@@ -1032,6 +1032,14 @@ void MainWindow::setup_studio_shell()
   center_panel_layout->addLayout(bottom_cards);
 
   auto * right_layout = new QVBoxLayout(right_panel);
+  auto * workflow_card = new QFrame(right_panel);
+  workflow_card->setObjectName("studioCard");
+  auto * workflow_card_layout = new QVBoxLayout(workflow_card);
+  workflow_card_layout->addWidget(new QLabel("<b>Scene Builder Workflow</b>", workflow_card));
+  scene_workflow_rail_label_ = new QLabel("Select a scene to view workflow steps.", workflow_card);
+  scene_workflow_rail_label_->setWordWrap(true);
+  workflow_card_layout->addWidget(scene_workflow_rail_label_);
+  right_layout->addWidget(workflow_card);
   auto * inspector_scroll = new QScrollArea(right_panel);
   inspector_scroll->setWidgetResizable(true);
   auto * inspector_scroll_contents = new QWidget(inspector_scroll);
@@ -4128,6 +4136,7 @@ void MainWindow::place_selected_asset_from_dialog()
 void MainWindow::refresh_new_cell_checklist()
 {
   if (!new_cell_checklist_label_) return;
+  refresh_scene_workflow_rail();
   const NewCellStateAudit audit = audit_new_cell_state(selected_workspace_, scene_browser_result_, selected_scene_index_, preview_state_, preview_process_);
   QString workflow = scene_workflow_checklist_html();
   QString blocker_title = "none"; QString blocker_next = audit.next_recommended_action; QString blocker_page = "New Cell"; QString blocker_cmd;
@@ -4156,32 +4165,84 @@ void MainWindow::refresh_new_cell_checklist()
 
 QString MainWindow::scene_workflow_checklist_html() const
 {
-  if (!has_selected_scene()) return "<b>Scene Builder Workflow</b><br/>Select a scene to view generation steps.";
+  QString out = "<b>Scene Builder Workflow</b><br/>";
+  const auto steps = scene_workflow_steps();
+  if (steps.empty()) return out + "Select a scene to view generation steps.";
+  for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
+    const auto & step = steps[static_cast<size_t>(i)];
+    out += QString("%1. %2: <b>%3</b>").arg(i + 1).arg(step.label, scene_workflow_status_text(step.status));
+    if (!step.detail.trimmed().isEmpty()) out += " — " + step.detail.toHtmlEscaped();
+    out += "<br/>";
+  }
+  return out;
+}
+
+std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() const
+{
+  if (!has_selected_scene()) return {};
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const fs::path dir = s.scene_dir;
   const auto has = [&](const char * rel){ return fs::exists(dir / rel); };
-  const bool yaml = has("environment.yaml");
-  const bool manifest = has("scene_manifest.yaml");
-  const bool pkg = has("package.xml") && has("CMakeLists.txt");
-  const bool launch = has("launch/demo.launch.py");
-  const bool intent = has("config/workcell_builder_task_intent.yaml");
-  const bool recipe = has("config/task_recipe.yaml") || has("task_recipe.yaml");
-  auto state = [](bool present, bool blocked)->QString{ return present ? "PASS" : (blocked ? "BLOCKED" : "MISSING"); };
-  const bool yaml_blocked = false;
-  const bool manifest_blocked = !yaml;
-  const bool pkg_blocked = !manifest;
-  const bool launch_blocked = !pkg;
-  const bool intent_blocked = !pkg;
-  const bool recipe_blocked = !intent;
-  QString next_action = (yaml && !manifest) || (manifest && (!pkg || !launch)) ? "Generate Scene Package" : (!yaml ? "Generate YAML" : (!intent || !recipe ? "Generate Task/Grasp Files" : "Copy Build & Launch Commands"));
-  QString out = "<b>Simple Workflow Checklist</b><br/>";
-  out += QString("1. YAML Draft: <b>%1</b><br/>").arg(state(yaml, yaml_blocked));
-  out += QString("2. Scene Manifest: <b>%1</b><br/>").arg(state(manifest, manifest_blocked));
-  out += QString("3. ROS Package: <b>%1</b><br/>").arg(state(pkg, pkg_blocked));
-  out += QString("4. Launch File: <b>%1</b><br/>").arg(state(launch, launch_blocked));
-  out += QString("5. Task Intent: <b>%1</b><br/>").arg(state(intent, intent_blocked));
-  out += QString("6. Task Recipe: <b>%1</b><br/>").arg(state(recipe, recipe_blocked));
-  out += "7. Build Command: <b>ACTION REQUIRED</b><br/>8. Fake-Hardware Launch: <b>ACTION REQUIRED</b><br/>";
-  out += QString("Next action: <b>%1</b>").arg(next_action);
-  return out;
+  const bool yaml_ready = has("cell_definition.yaml");
+  const bool launch_ready = has("launch/demo.launch.py");
+  const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
+  const bool scene_selected = has_selected_scene();
+  const bool assets_placed = !workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name).items.empty();
+  const bool has_warnings = !readiness_warning_details_.isEmpty();
+  std::vector<SceneWorkflowStep> steps = {
+    {"Scene selected"}, {"Assets placed"}, {"Layout saved"}, {"YAML generated"},
+    {"Validation passed"}, {"Scene package generated"}, {"Plan / Simulate ready"}, {"Export ready"}
+  };
+  steps[0].status = scene_selected ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction;
+  steps[1].status = assets_placed ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction;
+  steps[2].status = layout_saved_ ? SceneWorkflowStepStatus::Done : (assets_placed ? SceneWorkflowStepStatus::Current : SceneWorkflowStepStatus::Blocked);
+  steps[3].status = yaml_ready ? SceneWorkflowStepStatus::Done : (layout_saved_ ? SceneWorkflowStepStatus::Current : SceneWorkflowStepStatus::Blocked);
+  steps[4].status = validation_report_ready ? (validation_stale_ ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) :
+    (yaml_ready ? SceneWorkflowStepStatus::Current : SceneWorkflowStepStatus::Blocked);
+  steps[5].status = launch_artifacts_ready_ ? SceneWorkflowStepStatus::Done : (validation_stale_ ? SceneWorkflowStepStatus::Blocked : SceneWorkflowStepStatus::Current);
+  steps[6].status = launch_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) :
+    (launch_artifacts_ready_ ? SceneWorkflowStepStatus::Current : SceneWorkflowStepStatus::Blocked);
+  steps[7].status = (yaml_ready && launch_ready) ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) :
+    SceneWorkflowStepStatus::Blocked;
+  return steps;
+}
+
+QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) const
+{
+  switch (status) {
+    case SceneWorkflowStepStatus::Done: return "Done";
+    case SceneWorkflowStepStatus::Current: return "Current";
+    case SceneWorkflowStepStatus::NeedsAction: return "Needs action";
+    case SceneWorkflowStepStatus::Blocked: return "Blocked";
+    case SceneWorkflowStepStatus::Warning: return "Warning";
+  }
+  return "Needs action";
+}
+
+QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) const
+{
+  QString bg = "#6b7280";
+  if (status == SceneWorkflowStepStatus::Done) bg = "#15803d";
+  else if (status == SceneWorkflowStepStatus::Current) bg = "#2563eb";
+  else if (status == SceneWorkflowStepStatus::NeedsAction) bg = "#b45309";
+  else if (status == SceneWorkflowStepStatus::Blocked) bg = "#991b1b";
+  else if (status == SceneWorkflowStepStatus::Warning) bg = "#c2410c";
+  return QString("<span style='color:#fff;background:%1;border-radius:10px;padding:2px 8px;font-size:11px;'>%2</span>")
+    .arg(bg, scene_workflow_status_text(status));
+}
+
+void MainWindow::refresh_scene_workflow_rail()
+{
+  if (!scene_workflow_rail_label_) return;
+  const auto steps = scene_workflow_steps();
+  if (steps.empty()) {
+    scene_workflow_rail_label_->setText("Select a scene to view workflow steps.");
+    return;
+  }
+  QString html;
+  for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
+    const auto & step = steps[static_cast<size_t>(i)];
+    html += QString("%1. %2 %3<br/>").arg(i + 1).arg(step.label, scene_workflow_status_chip(step.status));
+  }
+  scene_workflow_rail_label_->setText(html);
 }

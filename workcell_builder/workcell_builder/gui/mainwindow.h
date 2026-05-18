@@ -128,6 +128,12 @@ private:
   void refresh_task_intent_panel();
   void refresh_new_cell_checklist();
   QString scene_workflow_checklist_html() const;
+  enum class SceneWorkflowStepStatus { Done, Current, NeedsAction, Blocked, Warning };
+  struct SceneWorkflowStep { QString label; SceneWorkflowStepStatus status{ SceneWorkflowStepStatus::NeedsAction }; QString detail; };
+  std::vector<SceneWorkflowStep> scene_workflow_steps() const;
+  QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
+  QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
+  void refresh_scene_workflow_rail();
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
   void generate_yaml_draft_for_selected_scene();
@@ -314,6 +320,7 @@ private:
   QLabel * mode_chip_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };
   QLabel * scene_files_summary_label_{ nullptr };
+  QLabel * scene_workflow_rail_label_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QLabel * scene_files_selected_path_label_{ nullptr };
