@@ -52,6 +52,7 @@ include_directories(gui)
 add_executable(workcell_builder
     gui/main.cpp
     gui/mainwindow.cpp
+    gui/transform_clipboard_utils.cpp
     gui/mainwindow.h
     gui/mainwindow.ui
     gui/scene_preview_widget.cpp
@@ -323,6 +324,9 @@ if(BUILD_TESTING)
     gui/asset_catalog_discovery.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_transform_clipboard_utils_test
+    test/transform_clipboard_utils_test.cpp
+    gui/transform_clipboard_utils.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()
@@ -349,6 +353,10 @@ if(BUILD_TESTING)
   if(TARGET workcell_asset_catalog_discovery_test)
     target_link_libraries(workcell_asset_catalog_discovery_test yaml-cpp ${Boost_LIBRARIES})
     target_include_directories(workcell_asset_catalog_discovery_test PRIVATE gui)
+  endif()
+  if(TARGET workcell_transform_clipboard_utils_test)
+    target_link_libraries(workcell_transform_clipboard_utils_test Qt5::Core)
+    target_include_directories(workcell_transform_clipboard_utils_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_studio_canvas_model_mesh_test)
