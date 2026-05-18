@@ -314,6 +314,10 @@ if(BUILD_TESTING)
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
     src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_asset_catalog_discovery_test
+    test/asset_catalog_discovery_test.cpp
+    gui/asset_catalog_discovery.cpp
+    src_workcell_yaml_utils.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()
@@ -336,6 +340,10 @@ if(BUILD_TESTING)
       Qt5::Core
       yaml-cpp
     )
+  endif()
+  if(TARGET workcell_asset_catalog_discovery_test)
+    target_link_libraries(workcell_asset_catalog_discovery_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_asset_catalog_discovery_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_studio_canvas_model_mesh_test)

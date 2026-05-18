@@ -3172,20 +3172,24 @@ static QStringList generation_asset_support_preflight(const fs::path & layout_pa
   YAML::Node root;
   try { root = YAML::LoadFile(layout_path.string()); }
   catch (const std::exception & exc) {
-    if (severe_failure) *severe_failure = true;
-    warnings << QString("Asset support preflight severe failure: malformed environment_layout.yaml (%1).").arg(exc.what());
+    warnings << QString("Asset support preflight warning: malformed environment_layout.yaml at '%1' (%2); generation proceeds with defaults.")
+      .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(exc.what()));
     return warnings;
   }
-  const YAML::Node placed = root["placed_assets"];
+  const YAML::Node placed = workcell_builder::yaml_map_key(root, "placed_assets");
   if (!placed || !placed.IsSequence()) return warnings;
   const QSet<QString> supported_types = {"asset","object","fixture","support_surface","table","conveyor","camera","sensor","safety_zone","bin","pick_zone","place_zone"};
   for (const auto & item : placed) {
-    if (!item || !item.IsMap()) continue;
-    const QString id = QString::fromStdString(item["id"] ? item["id"].as<std::string>() : "unknown");
-    const QString raw_type = QString::fromStdString(item["type"] ? item["type"].as<std::string>() : "");
+    if (!item || !item.IsMap()) {
+      warnings << "Asset support preflight warning: placed_assets item is not a map; skipping malformed entry.";
+      continue;
+    }
+    const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(item, "id"));
+    const QString raw_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(item, "type"));
     const QString type = raw_type.trimmed().toLower();
     if (!type.isEmpty() && !supported_types.contains(type)) {
-      warnings << QString("Asset support preflight: unsupported placed asset id='%1' type='%2'. Expected behavior: generator keeps metadata and may skip geometry/runtime wiring for this item.").arg(id, raw_type);
+      warnings << QString("Asset support preflight: unsupported placed asset id='%1' type='%2'. Expected behavior: generator keeps metadata and may skip geometry/runtime wiring for this item.")
+        .arg(id.isEmpty() ? "unknown" : id, raw_type);
     }
   }
   return warnings;
