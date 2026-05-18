@@ -5,6 +5,7 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
 #include <QHash>
+#include <QSet>
 #include <QVector3D>
 
 #include <array>
@@ -101,7 +102,9 @@ private:
     InternalTriangleMesh mesh;
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
+  QSet<QString> warned_mesh_fallbacks_;
   bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const;
+  bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
   const MeshCacheEntry & ensure_mesh_cached(const QString & path);
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
