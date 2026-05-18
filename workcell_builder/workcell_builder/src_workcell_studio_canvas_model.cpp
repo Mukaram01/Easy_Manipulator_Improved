@@ -18,12 +18,23 @@ static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string>
   if (text.rfind("package://", 0) == 0 || text.find(".stl") != std::string::npos || text.find("meshes/") != std::string::npos) out->push_back(text);
 }
 
+static bool mesh_node_disabled(const YAML::Node & node)
+{
+  if (!node || !node.IsScalar()) return false;
+  std::string value;
+  if (!yaml_read_string(node, &value)) return false;
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+  return value == "none" || value == "disabled" || value == "false";
+}
+
 static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, const YAML::Node & manifest, const YAML::Node & layout_items, const std::string & item_id)
 {
   std::vector<std::string> out;
   const auto scan_fields = [&out](const YAML::Node & n) {
-    add_mesh_candidate(yaml_map_key(n, "mesh"), &out);
-    add_mesh_candidate(yaml_map_key(n, "mesh_path"), &out);
+    const YAML::Node mesh = yaml_map_key(n, "mesh");
+    if (mesh && mesh.IsMap()) add_mesh_candidate(optional_scalar(mesh, "path"), &out);
+    else add_mesh_candidate(mesh, &out);
+    add_mesh_candidate(optional_scalar(n, "mesh_path"), &out);
     add_mesh_candidate(yaml_map_key(n, "visual_mesh"), &out);
     add_mesh_candidate(yaml_map_key(n, "collision_mesh"), &out);
     YAML::Node v = yaml_map_key(yaml_map_key(n, "visual"), "geometry");
@@ -77,6 +88,7 @@ static void probe_mesh_candidates(const fs::path & scene_dir, std::vector<fs::pa
 
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & scene_dir, const std::string & scene_name)
 {
+  try {
   WorkcellStudioCanvasModel m; m.scene_name = scene_name; m.status = "WARNINGS";
   std::string deterministic_fallback_reason;
   bool deterministic_fallback_layout = false;
@@ -289,7 +301,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
 
   for (auto & item : m.items) {
     item.mesh_available = false;
-    item.mesh_load_warning.clear();
+    item.mesh_path.clear();
+    item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
     const auto candidates = gather_mesh_candidates(env, manifest, layout_items, item.id);
     fs::path visual;
     fs::path collision;
@@ -307,14 +320,34 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (!visual.empty()) {
       item.mesh_path = visual.generic_string();
       item.mesh_available = true;
+      item.mesh_load_warning.clear();
     } else if (!collision.empty()) {
       item.mesh_path = collision.generic_string();
       item.mesh_available = true;
       item.mesh_load_warning = "Mesh preview fallback for " + item.id + ": visual mesh unavailable; using collision mesh";
       m.warnings.push_back(item.mesh_load_warning);
     } else {
-      item.mesh_load_warning = "Mesh preview fallback for " + item.id + ": no mesh candidates resolved";
+      item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
       m.warnings.push_back(item.mesh_load_warning);
+    }
+
+    if (layout_items.IsSequence()) {
+      for (const auto & node : layout_items) {
+        if (!node.IsMap() || yaml_map_value_or_empty(node, "id") != item.id) continue;
+        const YAML::Node mesh = yaml_map_key(node, "mesh");
+        if (!mesh || mesh.IsNull() || mesh_node_disabled(mesh)) {
+          item.mesh_available = false;
+          item.mesh_path.clear();
+          item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
+        } else if (mesh.IsMap()) {
+          const std::string path = get_optional_string(mesh, "path", "");
+          if (path.empty()) {
+            item.mesh_available = false;
+            item.mesh_path.clear();
+            item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
+          }
+        }
+      }
     }
   }
 
@@ -324,5 +357,16 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; { WorkcellStudioCanvasItem w; w.id="warning"; w.type="warning"; w.role="warning"; w.label="warning"; w.source_file="environment.yaml"; w.x=-1.2; w.y=1.2; w.width=0.1; w.depth=0.1; w.height=0.0; w.warnings=m.warnings; m.items.push_back(w); } }
   else { m.status = "READY"; }
   return m;
+  } catch (const YAML::Exception &) {
+    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "YAML parse exception in preview loader");
+  } catch (const std::exception &) {
+    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "std exception in preview loader");
+  }
+  WorkcellStudioCanvasModel fallback;
+  fallback.scene_name = scene_name;
+  fallback.status = "WARNINGS";
+  fallback.has_warnings = true;
+  fallback.warnings.push_back("mesh metadata missing or legacy; using primitive preview");
+  return fallback;
 }
 }
