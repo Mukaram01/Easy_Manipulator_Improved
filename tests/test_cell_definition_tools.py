@@ -339,6 +339,131 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             warning_blob = "\n".join(summary_payload.get("warnings", []))
             self.assertNotIn("Execution plan generation status: FAIL", warning_blob)
 
+
+    def test_deterministic_layout_asset_parity_and_metadata_propagation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            layout_path = tmp_path / "environment_layout_asset_parity.yaml"
+            layout_path.write_text(
+                "\n".join(
+                    [
+                        "schema_version: environment_layout/v1",
+                        "layout_id: deterministic_asset_parity",
+                        "assets:",
+                        "  - id: table_fixture",
+                        "    type: table",
+                        "    pose: {frame: world, xyz: [0.10, 0.20, 0.30], rpy: [0.00, 0.00, 0.00]}",
+                        "  - id: place_bin_fixture",
+                        "    type: bin",
+                        "    pose: {frame: world, xyz: [0.40, 0.50, 0.60], rpy: [0.10, 0.00, 0.20]}",
+                        "  - id: conveyor_fixture",
+                        "    type: conveyor",
+                        "    pose: {frame: world, xyz: [0.70, 0.80, 0.90], rpy: [0.00, 0.10, 0.30]}",
+                        "  - id: camera_fixture",
+                        "    type: camera",
+                        "    pose: {frame: world, xyz: [1.10, 1.20, 1.30], rpy: [0.40, 0.50, 0.60]}",
+                        "  - id: pick_zone_fixture",
+                        "    type: pick_zone",
+                        "    pose: {frame: world, xyz: [1.40, 1.50, 1.60], rpy: [0.20, 0.30, 0.40]}",
+                        "  - id: tiny_mesh_object_fixture",
+                        "    type: object",
+                        "    mesh: workcell_builder/examples/resources/table.stl",
+                        "    pose: {frame: world, xyz: [1.70, 1.80, 1.90], rpy: [0.70, 0.80, 0.90]}",
+                        "  - id: lidar_unsupported_fixture",
+                        "    type: lidar",
+                        "    pose: {frame: world, xyz: [2.10, 2.20, 2.30], rpy: [0.11, 0.22, 0.33]}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            cell_path = tmp_path / "cell_definition_asset_parity.yaml"
+            cell_path.write_text(
+                (
+                    (FIXTURES / "cell_definition_sort_by_colour.yaml").read_text(encoding="utf-8")
+                    + f"\nenvironment:\n  frame: world\n  layout: {layout_path}\n  support_surfaces: []\n"
+                ),
+                encoding="utf-8",
+            )
+
+            package_name = "generated_asset_parity_fixture"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "generate_workcell_from_cell_definition.py"),
+                    str(cell_path),
+                    "--output-dir",
+                    str(tmp_path),
+                    "--package-name",
+                    package_name,
+                    "--force",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+            package_dir = tmp_path / package_name
+            generated_dir = package_dir / "generated"
+
+            manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
+            env_objects, _, _ = scene_contract_validator._read_manifest(str(generated_dir / "generated_environment_objects.yaml"))
+            summary = json.loads((generated_dir / "generated_workcell_summary.json").read_text(encoding="utf-8"))
+            urdf_metadata, _, _ = scene_contract_validator._read_manifest(str(package_dir / "urdf" / "generated_asset_metadata.yaml"))
+
+            expected_xyz_rpy = {
+                "table_fixture": ([0.1, 0.2, 0.3], [0.0, 0.0, 0.0]),
+                "place_bin_fixture": ([0.4, 0.5, 0.6], [0.1, 0.0, 0.2]),
+                "conveyor_fixture": ([0.7, 0.8, 0.9], [0.0, 0.1, 0.3]),
+                "camera_fixture": ([1.1, 1.2, 1.3], [0.4, 0.5, 0.6]),
+                "pick_zone_fixture": ([1.4, 1.5, 1.6], [0.2, 0.3, 0.4]),
+                "tiny_mesh_object_fixture": ([1.7, 1.8, 1.9], [0.7, 0.8, 0.9]),
+                "lidar_unsupported_fixture": ([2.1, 2.2, 2.3], [0.11, 0.22, 0.33]),
+            }
+
+            def _collect(entries):
+                return {
+                    e["asset_id"]: (e.get("transform", {}).get("xyz"), e.get("transform", {}).get("rpy"), e.get("mesh_ref"))
+                    for e in entries
+                    if isinstance(e, dict) and e.get("source") == "environment.layout"
+                }
+
+            manifest_assets = manifest.get("generated_assets", {})
+            supported = _collect(manifest_assets.get("supported", []))
+            unsupported = _collect(manifest_assets.get("unsupported", []))
+            tracked = _collect(env_objects.get("tracked_assets", []))
+            summary_tracked = _collect(summary.get("tracked_assets", []))
+            urdf_supported = _collect(urdf_metadata.get("supported_assets", []))
+            urdf_unsupported = _collect(urdf_metadata.get("unsupported_assets", []))
+
+            for asset_id, (exp_xyz, exp_rpy) in expected_xyz_rpy.items():
+                self.assertIn(asset_id, tracked)
+                self.assertEqual(tracked[asset_id][0], exp_xyz)
+                self.assertEqual(tracked[asset_id][1], exp_rpy)
+                self.assertEqual(summary_tracked[asset_id][0], exp_xyz)
+                self.assertEqual(summary_tracked[asset_id][1], exp_rpy)
+
+            self.assertEqual(tracked["tiny_mesh_object_fixture"][2], "workcell_builder/examples/resources/table.stl")
+            self.assertEqual(summary_tracked["tiny_mesh_object_fixture"][2], "workcell_builder/examples/resources/table.stl")
+
+            for unsupported_id in ["pick_zone_fixture", "tiny_mesh_object_fixture", "lidar_unsupported_fixture"]:
+                self.assertIn(unsupported_id, unsupported)
+                self.assertIn(unsupported_id, urdf_unsupported)
+                self.assertTrue(
+                    any(f"Generated preview metadata only: {unsupported_id}" in w for w in summary.get("warnings", []))
+                )
+
+            for supported_id in [
+                "table_fixture",
+                "place_bin_fixture",
+                "conveyor_fixture",
+                "camera_fixture",
+            ]:
+                self.assertIn(supported_id, supported)
+                self.assertIn(supported_id, urdf_supported)
+
     def test_unsupported_layout_assets_emit_warning_and_are_not_silently_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
