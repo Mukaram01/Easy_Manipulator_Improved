@@ -2,6 +2,8 @@
 
 #include <QMatrix4x4>
 #include <QMouseEvent>
+#include <QKeyEvent>
+#include <QCursor>
 #include <QPainter>
 #include <QVector3D>
 #include <QVector4D>
@@ -925,6 +927,21 @@ void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {
   dragging_gizmo_ = (gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty();
   active_gizmo_handle_ = GizmoHandle::None;
   if (dragging_gizmo_) {
+    const int dx = qAbs(e->x() - width() / 2);
+    const int dy = qAbs(e->y() - height() / 2);
+    active_axis_ = (dx > dy) ? QStringLiteral("x") : QStringLiteral("y");
+    for (const auto & it : items) {
+      if (it.id != selected_id) continue;
+      drag_start_pose_.item_id = it.id;
+      drag_start_pose_.x = it.x;
+      drag_start_pose_.y = it.y;
+      drag_start_pose_.z = it.z;
+      drag_start_pose_.roll = it.roll;
+      drag_start_pose_.pitch = it.pitch;
+      drag_start_pose_.yaw = it.yaw;
+      drag_in_progress_ = true;
+      break;
+    }
     double score = std::numeric_limits<double>::max();
     QString axis;
     bool picked = false;
@@ -1018,10 +1035,49 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
   }
   hovered_id_ = hovered;
 }
+void Scene3DViewportWidget::mouseReleaseEvent(QMouseEvent * e)
+{
+  if (e->button() == Qt::LeftButton) {
+    dragging_gizmo_ = false;
+    drag_in_progress_ = false;
+    active_axis_.clear();
+  }
+  QOpenGLWidget::mouseReleaseEvent(e);
+}
+
 void Scene3DViewportWidget::wheelEvent(QWheelEvent * e)
 {
   const double delta_steps = static_cast<double>(e->angleDelta().y()) / 120.0;
   const double zoom_factor = std::pow(0.9, delta_steps);
   distance_ = qBound(min_distance_, distance_ * zoom_factor, max_distance_);
   update();
+}
+
+void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
+{
+  if (e->key() == Qt::Key_Escape) {
+    if (!drag_in_progress_) {
+      e->ignore();
+      return;
+    }
+    for (auto & it : items) {
+      if (it.id != drag_start_pose_.item_id) continue;
+      it.x = drag_start_pose_.x;
+      it.y = drag_start_pose_.y;
+      it.z = drag_start_pose_.z;
+      it.roll = drag_start_pose_.roll;
+      it.pitch = drag_start_pose_.pitch;
+      it.yaw = drag_start_pose_.yaw;
+      if (transform_changed_cb) transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+      break;
+    }
+    dragging_gizmo_ = false;
+    drag_in_progress_ = false;
+    active_axis_.clear();
+    QToolTip::showText(QCursor::pos(), QStringLiteral("Gizmo drag cancelled."), this);
+    update();
+    e->accept();
+    return;
+  }
+  QOpenGLWidget::keyPressEvent(e);
 }
