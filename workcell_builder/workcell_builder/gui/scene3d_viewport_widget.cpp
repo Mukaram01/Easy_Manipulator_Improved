@@ -903,7 +903,8 @@ bool Scene3DViewportWidget::pick_gizmo_axis_at_screen(const QPoint & pos, QStrin
   if (selected == nullptr) return false;
 
   const QVector3D origin(selected->x + (selected->sx * 0.5), selected->y + (selected->sy * 0.5), selected->z + (selected->sz * 0.5));
-  const double axis_len = qMax(0.25, 0.75 * qMax({ selected->sx, selected->sy, selected->sz }));
+  const double item_extent = std::max({selected->sx, selected->sy, selected->sz});
+  const double axis_len = qMax(0.25, 0.75 * item_extent);
   const QPointF screen_p = QPointF(pos);
   const QPointF origin_s = project_to_screen(origin.x(), origin.y(), origin.z());
   if (!qIsFinite(origin_s.x()) || !qIsFinite(origin_s.y())) return false;
@@ -942,7 +943,8 @@ bool Scene3DViewportWidget::pick_gizmo_rotation_ring_at_screen(const QPoint & po
   if (selected == nullptr) return false;
 
   const QVector3D origin(selected->x + (selected->sx * 0.5), selected->y + (selected->sy * 0.5), selected->z + (selected->sz * 0.5));
-  const double radius = qMax(0.2, 0.65 * qMax({ selected->sx, selected->sy, selected->sz }));
+  const double item_extent = std::max({selected->sx, selected->sy, selected->sz});
+  const double radius = qMax(0.2, 0.65 * item_extent);
   const QPointF screen_p = QPointF(pos);
   constexpr int kRingSamples = 48;
   constexpr double kRingThresholdPx = 11.0;
@@ -1180,7 +1182,7 @@ void Scene3DViewportWidget::dragMoveEvent(QDragMoveEvent * event)
   const QByteArray payload = event->mimeData()->data("application/x-workcell-asset-catalog-item");
   drag_asset_payload_ = QJsonDocument::fromJson(payload).object();
   drag_asset_label_ = drag_asset_payload_.value("display_name").toString("asset");
-  drag_asset_screen_pos_ = event->position().toPoint();
+  drag_asset_screen_pos_ = event->pos();
   drag_asset_preview_visible_ = true;
   drag_asset_drop_status_ = QStringLiteral("Drop to place %1").arg(drag_asset_label_);
   event->acceptProposedAction();
@@ -1197,11 +1199,11 @@ void Scene3DViewportWidget::dropEvent(QDropEvent * event)
 {
   if (!event->mimeData() || !event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) return;
   const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data("application/x-workcell-asset-catalog-item")).object();
-  const QPoint p = event->position().toPoint();
+  const QPoint p = event->pos();
   const double x = snap_translation_value((p.x() - width() * 0.5) / 50.0, snap_mode);
   const double y = snap_translation_value((height() * 0.6 - p.y()) / 50.0, snap_mode);
   const double z = 0.0;
-  const bool shift_drop = (event->modifiers() & Qt::ShiftModifier);
+  const bool shift_drop = (event->keyboardModifiers() & Qt::ShiftModifier);
   if (asset_drop_cb) asset_drop_cb(payload, x, y, z, shift_drop);
   drag_asset_preview_visible_ = false;
   event->acceptProposedAction();
