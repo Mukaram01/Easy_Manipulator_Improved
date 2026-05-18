@@ -983,7 +983,7 @@ void MainWindow::setup_studio_shell()
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_panel_layout->addWidget(scene_preview_label_);
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_panel_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
-  canvas_mode_label_ = new QLabel("Mode: Select · 3D View", scene_builder); controls->addWidget(canvas_mode_label_);
+  canvas_mode_label_ = new QLabel("Mode: Select · 3D Layout Preview", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
@@ -3216,7 +3216,7 @@ void MainWindow::refresh_scene_builder_view_chips()
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
-    const QString view_label = scene_builder_is_3d_view_ ? "3D View" : "2D Layout";
+    const QString view_label = scene_builder_is_3d_view_ ? "3D Layout Preview" : "2D Layout (Fallback)";
     const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
     canvas_mode_label_->setText(base_mode + " · " + view_label);
   }
