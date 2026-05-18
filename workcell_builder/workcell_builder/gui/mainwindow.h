@@ -312,6 +312,9 @@ private:
   QLabel * canvas_header_label_{ nullptr };
   QLabel * task_flow_label_{ nullptr };
   QLabel * new_cell_checklist_label_{ nullptr };
+  QFrame * scene_builder_command_preview_card_{ nullptr };
+  QLabel * scene_builder_build_command_label_{ nullptr };
+  QLabel * scene_builder_launch_command_label_{ nullptr };
   QLabel * task_intent_details_label_{ nullptr };
   QLabel * pick_place_details_label_{ nullptr };
   QLabel * grasp_details_label_{ nullptr };
