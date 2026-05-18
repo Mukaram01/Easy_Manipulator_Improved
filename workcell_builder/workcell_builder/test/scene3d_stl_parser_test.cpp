@@ -44,18 +44,54 @@ TEST(Scene3DStlParserTest, ParsesBinaryStl)
   EXPECT_FLOAT_EQ(mesh.triangles[0].normal.z(), 1.0f);
 }
 
-TEST(Scene3DStlParserTest, FailsOnInvalidAndOversized)
+TEST(Scene3DStlParserTest, RejectsTriangleLimit)
 {
   Scene3DViewportWidget::InternalTriangleMesh mesh;
   QString err;
-  EXPECT_FALSE(Scene3DViewportWidget::parse_stl_bytes_for_test("solid broken", "broken.stl", mesh, err));
-
   const QByteArray ascii =
     "solid t\n"
     "facet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\n"
     "facet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\n"
     "endsolid\n";
-  err.clear();
   EXPECT_FALSE(Scene3DViewportWidget::parse_stl_bytes_for_test(ascii, "many.stl", mesh, err, 1));
   EXPECT_TRUE(err.contains("exceeds limit"));
+}
+
+TEST(Scene3DStlParserTest, ReportsInvalidParseReason)
+{
+  Scene3DViewportWidget::InternalTriangleMesh mesh;
+  QString err;
+  EXPECT_FALSE(Scene3DViewportWidget::parse_stl_bytes_for_test("solid broken", "broken.stl", mesh, err));
+  EXPECT_FALSE(err.isEmpty());
+}
+
+TEST(Scene3DStlParserTest, ComputesMeshBoundsFromKnownTriangleSet)
+{
+  const QByteArray ascii =
+    "solid t\n"
+    "facet normal 0 0 1\nouter loop\nvertex -1 -2 -3\nvertex 4 5 6\nvertex 0 1 2\nendloop\nendfacet\n"
+    "facet normal 0 0 1\nouter loop\nvertex 2 1 0\nvertex -3 2 1\nvertex 0 -4 3\nendloop\nendfacet\n"
+    "endsolid\n";
+  Scene3DViewportWidget::InternalTriangleMesh mesh;
+  QString err;
+  ASSERT_TRUE(Scene3DViewportWidget::parse_stl_bytes_for_test(ascii, "bounds.stl", mesh, err));
+  QVector3D min_bounds;
+  QVector3D max_bounds;
+  ASSERT_TRUE(Scene3DViewportWidget::compute_mesh_bounds_for_test(mesh, min_bounds, max_bounds));
+  EXPECT_FLOAT_EQ(min_bounds.x(), -3.0f);
+  EXPECT_FLOAT_EQ(min_bounds.y(), -4.0f);
+  EXPECT_FLOAT_EQ(min_bounds.z(), -3.0f);
+  EXPECT_FLOAT_EQ(max_bounds.x(), 4.0f);
+  EXPECT_FLOAT_EQ(max_bounds.y(), 5.0f);
+  EXPECT_FLOAT_EQ(max_bounds.z(), 6.0f);
+}
+
+TEST(Scene3DStlParserTest, MeshModeFallbackBehaviorAtMethodLevel)
+{
+  using Mode = ScenePreviewWidget::MeshPreviewMode;
+  EXPECT_FALSE(Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(Mode::Primitives, true, true));
+  EXPECT_TRUE(Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(Mode::Meshes, true, true));
+  EXPECT_FALSE(Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(Mode::Meshes, true, false));
+  EXPECT_TRUE(Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(Mode::Auto, true, true));
+  EXPECT_FALSE(Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(Mode::Auto, false, false));
 }
