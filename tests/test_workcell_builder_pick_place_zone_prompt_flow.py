@@ -24,14 +24,14 @@ def test_pick_zone_no_decline_does_not_mutate_source_or_zone_fields():
     body = _body("bind_selected_item_as_pick_zone", text)
 
     prompt_idx = body.index("QMessageBox::question")
-    src_update_idx = body.index('update_selected_scene_task_intent_binding("Pick Source"')
-    zone_update_idx = body.index('update_selected_scene_task_intent_binding("Pick Zone"')
+    src_update_idx = body.index('update_selected_scene_task_intent_bindings("Pick Zone + Pick Source"')
+    zone_update_idx = body.index('update_selected_scene_task_intent_bindings("Pick Zone + Pick Source"')
     assert prompt_idx < src_update_idx
     assert prompt_idx < zone_update_idx
 
     else_block = body.split("else", 1)[1]
-    assert 'update_selected_scene_task_intent_binding("Pick Source"' not in else_block
-    assert 'update_selected_scene_task_intent_binding("Pick Zone"' not in else_block
+    assert 'update_selected_scene_task_intent_bindings("Pick Zone + Pick Source"' not in else_block
+    assert 'update_selected_scene_task_intent_bindings("Pick Zone + Pick Source"' not in else_block
 
 
 def test_place_zone_no_decline_does_not_mutate_target_or_zone_fields():
@@ -39,11 +39,11 @@ def test_place_zone_no_decline_does_not_mutate_target_or_zone_fields():
     body = _body("bind_selected_item_as_place_zone", text)
 
     prompt_idx = body.index("QMessageBox::question")
-    target_update_idx = body.index('update_selected_scene_task_intent_binding("Place Target"')
-    zone_update_idx = body.index('update_selected_scene_task_intent_binding("Place Zone"')
+    target_update_idx = body.index('update_selected_scene_task_intent_bindings("Place Zone + Place Target"')
+    zone_update_idx = body.index('update_selected_scene_task_intent_bindings("Place Zone + Place Target"')
     assert prompt_idx < target_update_idx
     assert prompt_idx < zone_update_idx
 
     else_block = body.split("else", 1)[1]
-    assert 'update_selected_scene_task_intent_binding("Place Target"' not in else_block
-    assert 'update_selected_scene_task_intent_binding("Place Zone"' not in else_block
+    assert 'update_selected_scene_task_intent_bindings("Place Zone + Place Target"' not in else_block
+    assert 'update_selected_scene_task_intent_bindings("Place Zone + Place Target"' not in else_block
