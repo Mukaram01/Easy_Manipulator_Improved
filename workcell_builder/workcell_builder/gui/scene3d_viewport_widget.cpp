@@ -14,6 +14,8 @@
 #include <QDebug>
 #include <QTextStream>
 #include <QtEndian>
+#include <QMimeData>
+#include <QJsonDocument>
 #include <cstring>
 #include <QtMath>
 
@@ -294,7 +296,7 @@ double wrap_angle_pi(double angle)
 }
 
 
-Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); }
+Scene3DViewportWidget::Scene3DViewportWidget(QWidget * parent) : QOpenGLWidget(parent) { setMinimumHeight(420); setAcceptDrops(true); }
 void Scene3DViewportWidget::reset_view() { set_isometric_view(); }
 void Scene3DViewportWidget::set_isometric_view()
 {
@@ -450,6 +452,12 @@ void Scene3DViewportWidget::paintGL()
       painter.setPen(QColor("#fca5a5"));
       painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), warning_debug_text(it.warnings));
     }
+  }
+  if (drag_asset_preview_visible_) {
+    const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
+    const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
+    draw_box(x, y, 0.0, 0.35, 0.35, 0.35, QColor(56, 189, 248, 120), true);
+    QToolTip::showText(mapToGlobal(drag_asset_screen_pos_), drag_asset_drop_status_, this);
   }
 }
 
@@ -1125,6 +1133,14 @@ void Scene3DViewportWidget::wheelEvent(QWheelEvent * e)
 void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
 {
   if (e->key() == Qt::Key_Escape) {
+    if (drag_asset_preview_visible_) {
+      drag_asset_preview_visible_ = false;
+      drag_asset_drop_status_ = QStringLiteral("Drag/drop cancelled.");
+      QToolTip::showText(QCursor::pos(), drag_asset_drop_status_, this);
+      update();
+      e->accept();
+      return;
+    }
     if (!drag_in_progress_) {
       e->ignore();
       return;
@@ -1151,4 +1167,43 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
     return;
   }
   QOpenGLWidget::keyPressEvent(e);
+}
+
+void Scene3DViewportWidget::dragEnterEvent(QDragEnterEvent * event)
+{
+  if (event->mimeData() && event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) event->acceptProposedAction();
+}
+
+void Scene3DViewportWidget::dragMoveEvent(QDragMoveEvent * event)
+{
+  if (!event->mimeData() || !event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) return;
+  const QByteArray payload = event->mimeData()->data("application/x-workcell-asset-catalog-item");
+  drag_asset_payload_ = QJsonDocument::fromJson(payload).object();
+  drag_asset_label_ = drag_asset_payload_.value("display_name").toString("asset");
+  drag_asset_screen_pos_ = event->position().toPoint();
+  drag_asset_preview_visible_ = true;
+  drag_asset_drop_status_ = QStringLiteral("Drop to place %1").arg(drag_asset_label_);
+  event->acceptProposedAction();
+  update();
+}
+
+void Scene3DViewportWidget::dragLeaveEvent(QDragLeaveEvent *)
+{
+  drag_asset_preview_visible_ = false;
+  update();
+}
+
+void Scene3DViewportWidget::dropEvent(QDropEvent * event)
+{
+  if (!event->mimeData() || !event->mimeData()->hasFormat("application/x-workcell-asset-catalog-item")) return;
+  const QJsonObject payload = QJsonDocument::fromJson(event->mimeData()->data("application/x-workcell-asset-catalog-item")).object();
+  const QPoint p = event->position().toPoint();
+  const double x = snap_translation_value((p.x() - width() * 0.5) / 50.0, snap_mode);
+  const double y = snap_translation_value((height() * 0.6 - p.y()) / 50.0, snap_mode);
+  const double z = 0.0;
+  const bool shift_drop = (event->modifiers() & Qt::ShiftModifier);
+  if (asset_drop_cb) asset_drop_cb(payload, x, y, z, shift_drop);
+  drag_asset_preview_visible_ = false;
+  event->acceptProposedAction();
+  update();
 }

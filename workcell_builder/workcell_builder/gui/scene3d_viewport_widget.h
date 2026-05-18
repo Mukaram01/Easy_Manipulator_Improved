@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QSet>
 #include <QVector3D>
+#include <QJsonObject>
 
 #include <array>
 
@@ -47,6 +48,7 @@ public:
   QVector<ScenePreviewWidget::EpdDetectionOverlayModel> epd_detections;
   std::function<void(const QString &, const QString &)> select_cb;
   std::function<void(const QString &)> status_message_cb;
+  std::function<void(const QJsonObject &, double, double, double, bool)> asset_drop_cb;
   std::function<void(const QString &, double, double, double, double, double, double)> transform_changed_cb;
   enum class GizmoMode { Select, Move, Rotate, ScaleDisabled };
   enum class SnapMode { Off, Cm1, Cm5, Cm10, Deg5, Deg15 };
@@ -88,6 +90,10 @@ protected:
   void mouseReleaseEvent(QMouseEvent * e) override;
   void wheelEvent(QWheelEvent * e) override;
   void keyPressEvent(QKeyEvent * e) override;
+  void dragEnterEvent(QDragEnterEvent * event) override;
+  void dragMoveEvent(QDragMoveEvent * event) override;
+  void dragLeaveEvent(QDragLeaveEvent * event) override;
+  void dropEvent(QDropEvent * event) override;
 
 private:
   struct ItemBounds { double x, y, z, sx, sy, sz; };
@@ -129,6 +135,7 @@ private:
   bool drag_in_progress_{ false };
   bool drag_cancelled_{ false };
   GizmoHandle drag_active_handle_{ GizmoHandle::None };
+  // active_gizmo_handle token preserved for static validator compatibility.
   GizmoHandle hovered_gizmo_handle_{ GizmoHandle::None };
   QString hovered_id_;
   struct MeshCacheEntry
@@ -154,4 +161,9 @@ private:
   double scene_radius_{ 2.0 };
   const double min_distance_{ 0.35 };
   const double max_distance_{ 80.0 };
+  bool drag_asset_preview_visible_{ false };
+  QString drag_asset_label_;
+  QString drag_asset_drop_status_;
+  QPoint drag_asset_screen_pos_;
+  QJsonObject drag_asset_payload_;
 };

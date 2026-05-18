@@ -51,6 +51,7 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("scene3d gizmo tokens",all_text,["Gizmo:","Scene3D Gizmo Transform","Snap:","Move","Rotate"]))
     checks.append(_token_check("scene3d pick handle API markers",all_text,["pick_gizmo_axis_at_screen","pick_gizmo_rotation_ring_at_screen","active_gizmo_handle"]))
     checks.append(_token_check("scene3d snap value markers",all_text,["snap_translation_value","snap_rotation_value"]))
+    checks.append(_token_check("scene3d asset drag/drop markers",all_text,["application/x-workcell-asset-catalog-item","dragEnterEvent","dropEvent","Drop to place","asset_drop_cb"]))
     checks.append(_token_check("escape cancel restore path markers",all_text,["Qt::Key_Escape","restore"]))
     checks.append(_token_check("mouse release single-commit path markers",all_text,["mouseReleaseEvent","commit","single-commit"]))
     checks.append(_token_check("locked item gating/status markers",all_text,["Locked:","locked"]))

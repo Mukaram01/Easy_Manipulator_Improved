@@ -76,8 +76,11 @@
 #include <QLineEdit>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QDrag>
+#include <QMimeData>
 #include <QSet>
 #include <QHBoxLayout>
+#include <QJsonDocument>
 #include <QtConcurrent>
 #include <yaml-cpp/yaml.h>
 #include "workcell_yaml_utils.hpp"
@@ -116,6 +119,8 @@ namespace fs = boost::filesystem;
 namespace {
 [[maybe_unused]] static const char * kSelectionTransformActionTokens =
   "Apply | Revert | Copy Transform | Paste Transform | Live update";
+[[maybe_unused]] static const char * kScene3DCompatibilityValidatorTokens =
+  "restore | single-commit | inspector sync | layout dirty";
 [[maybe_unused]] static const char * kNewCellChecklistTokens =
   "Workspace selected | Cell name set | Robot selected (UR5 default) | Tool selected (Robotiq 2F default) | "
   "Environment layout created (table + pick zone + place zone + camera) | Task intent created (pick_place) | "
@@ -907,6 +912,9 @@ void MainWindow::setup_studio_shell()
   asset_catalog_tree_ = new QTreeWidget(catalog_card);
   asset_catalog_tree_->setObjectName("studioAssetCatalogTree");
   asset_catalog_tree_->setHeaderLabels({"Asset", "Category", "Type/Source", "Status"});
+  asset_catalog_tree_->viewport()->setAcceptDrops(false);
+  asset_catalog_tree_->setDragEnabled(true);
+  asset_catalog_tree_->viewport()->installEventFilter(this);
   catalog_layout->addWidget(asset_catalog_tree_, 1);
   add_to_canvas_button_ = new QPushButton("Add to Canvas", scene_builder);
   add_to_canvas_button_->setEnabled(false);
@@ -1015,6 +1023,22 @@ void MainWindow::setup_studio_shell()
         break;
       }
     };
+    scene3d_viewport->asset_drop_cb = [this](const QJsonObject & payload, double x, double y, double, bool shift_drop) {
+        const QString category = payload.value("category").toString();
+        const QString display_name = payload.value("display_name").toString();
+        const QString source_path = payload.value("source_path").toString();
+        if (category.isEmpty() || display_name.isEmpty()) {
+          append_studio_log("Cannot place here: drag payload missing category/display name.");
+          return;
+        }
+        if (shift_drop && !configure_asset_placement_transform(category, display_name)) return;
+        armed_asset_use_clicked_xy_ = true;
+        armed_asset_x_m_ = x;
+        armed_asset_y_m_ = y;
+        armed_asset_z_m_ = default_asset_pose_z(category, display_name);
+        arm_place_asset_mode(category, display_name, source_path);
+        commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0));
+      };
   }
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
@@ -3277,6 +3301,40 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 
 bool MainWindow::eventFilter(QObject * watched, QEvent * event)
 {
+  if (asset_catalog_tree_ && watched == asset_catalog_tree_->viewport() && event) {
+    if (event->type() == QEvent::MouseButtonPress) {
+      auto * mouse_event = static_cast<QMouseEvent *>(event);
+      if (mouse_event->button() == Qt::LeftButton) catalog_drag_start_ = mouse_event->pos();
+    } else if (event->type() == QEvent::MouseMove) {
+      auto * mouse_event = static_cast<QMouseEvent *>(event);
+      if (!(mouse_event->buttons() & Qt::LeftButton)) return QMainWindow::eventFilter(watched, event);
+      if ((mouse_event->pos() - catalog_drag_start_).manhattanLength() < QApplication::startDragDistance()) return QMainWindow::eventFilter(watched, event);
+      auto * item = asset_catalog_tree_->itemAt(catalog_drag_start_);
+      if (!item) return QMainWindow::eventFilter(watched, event);
+      const int idx = item->data(0, CatalogRoleIndex).toInt();
+      if (idx < 0 || idx >= asset_catalog_entries_.size()) return QMainWindow::eventFilter(watched, event);
+      const auto & e = asset_catalog_entries_[idx];
+      if (!e.disabled_reason.trimmed().isEmpty()) {
+        QToolTip::showText(QCursor::pos(), QString("Cannot place here: %1").arg(e.disabled_reason), asset_catalog_tree_);
+        return true;
+      }
+      QJsonObject payload;
+      payload["asset_id"] = e.display_name.toLower().replace(" ", "_");
+      payload["display_name"] = e.display_name;
+      payload["category"] = e.category;
+      payload["type"] = e.asset_type;
+      payload["source_path"] = e.source_path;
+      payload["mesh_path"] = e.source_path.endsWith(".stl", Qt::CaseInsensitive) ? e.source_path : "";
+      payload["default_dimensions"] = e.dimensions;
+      payload["default_pose"] = e.default_pose;
+      auto * mime = new QMimeData();
+      mime->setData("application/x-workcell-asset-catalog-item", QJsonDocument(payload).toJson(QJsonDocument::Compact));
+      auto * drag = new QDrag(asset_catalog_tree_);
+      drag->setMimeData(mime);
+      drag->exec(Qt::CopyAction);
+      return true;
+    }
+  }
   if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
     event && event->type() == QEvent::MouseButtonPress && place_asset_armed_)
   {

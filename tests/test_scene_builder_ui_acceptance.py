@@ -37,6 +37,11 @@ def _base_fixture() -> dict[str, str]:
                 'if (item->locked()) { status->setText("Locked:"); }',
                 'inspector->sync();',
                 'mark layout dirty;',
+                'QString dnd = "application/x-workcell-asset-catalog-item";',
+                'void dragEnterEvent(QDragEnterEvent*){}',
+                'void dropEvent(QDropEvent*){}',
+                'QString drop = "Drop to place table";',
+                'auto cb = "asset_drop_cb";',
             ]
         ),
         "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview",
