@@ -50,3 +50,12 @@ def test_scene3d_snap_math_helpers_cover_positive_negative_zero_and_boundary_exa
     # Drag path now routes through helpers for both move and rotate gizmos.
     assert "const double snapped = snap_translation_value(raw, snap_mode);" in viewport_cpp
     assert "const double snapped = snap_rotation_value(raw, snap_mode);" in viewport_cpp
+
+
+def test_scene3d_drag_uses_drag_start_screen_and_drag_start_pose_without_undefined_token():
+    viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+    assert "e->pos() - drag_start_screen_" in viewport_cpp
+    assert "drag_start_pose_.x + snapped" in viewport_cpp
+    assert "drag_start_pose_.roll + snapped" in viewport_cpp
+    assert "drag_start_ =" not in viewport_cpp
+    assert "drag_start_)" not in viewport_cpp

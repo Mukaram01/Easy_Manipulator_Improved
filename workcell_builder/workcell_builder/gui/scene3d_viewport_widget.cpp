@@ -1038,15 +1038,15 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
         if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(it)));
         return;
       }
-      const QPoint delta = e->pos() - drag_start_;
+      const QPoint delta = e->pos() - drag_start_screen_;
       if (gizmo_mode == GizmoMode::Move) {
         const double raw = (active_axis_ == "x" ? delta.x() : -delta.y()) * 0.002;
         const double snapped = snap_translation_value(raw, snap_mode);
-        if (active_axis_ == "x") it.x += snapped; else if (active_axis_ == "y") it.y += snapped; else it.z += snapped;
+        if (active_axis_ == "x") it.x = drag_start_pose_.x + snapped; else if (active_axis_ == "y") it.y = drag_start_pose_.y + snapped; else it.z = drag_start_pose_.z + snapped;
       } else if (gizmo_mode == GizmoMode::Rotate) {
         const double raw = (delta.x() - delta.y()) * 0.01;
         const double snapped = snap_rotation_value(raw, snap_mode);
-        if (active_axis_ == "x") it.roll += snapped; else if (active_axis_ == "y") it.pitch += snapped; else it.yaw += snapped;
+        if (active_axis_ == "x") it.roll = drag_start_pose_.roll + snapped; else if (active_axis_ == "y") it.pitch = drag_start_pose_.pitch + snapped; else it.yaw = drag_start_pose_.yaw + snapped;
       }
       update();
       return;
