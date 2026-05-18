@@ -104,6 +104,7 @@
 #include "workcell_studio_layout_editor.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
+#include "gui/asset_catalog_discovery.h"
 
 namespace fs = boost::filesystem;
 
@@ -3730,77 +3731,29 @@ void MainWindow::populate_asset_catalog()
 
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
   const fs::path repo_root = fs::current_path();
-  std::vector<fs::path> discovery_paths = {
-    repo_root / "assets" / "robots",
-    repo_root / "assets" / "end_effectors",
-    repo_root / "assets" / "environment",
-    repo_root / "assets" / "environment_objects",
-    workspace_root / "src" / "easy_manipulation_deployment" / "assets",
-    workspace_root / "src" / "assets"
-  };
 
-  auto infer_category = [](const QString & path, const QString & ext) {
-    if (path.contains("table", Qt::CaseInsensitive)) return QString("Tables");
-    if (path.contains("conveyor", Qt::CaseInsensitive)) return QString("Conveyors");
-    if (path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) return QString("Sensors");
-    if (path.contains("bin", Qt::CaseInsensitive) || path.contains("place", Qt::CaseInsensitive)) return QString("Bins");
-    if (path.contains("fixture", Qt::CaseInsensitive)) return QString("Fixtures");
-    if (path.contains("robot", Qt::CaseInsensitive) || ext == ".urdf" || ext == ".xacro") return QString("Robots");
-    if (path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) return QString("End Effectors");
-    return QString("Custom");
-  };
-
-  auto infer_asset_type = [](const QString & path) {
-    const QString lower = path.toLower();
-    if (lower.contains("table")) return QString("Table");
-    if (lower.contains("bin") || lower.contains("place")) return QString("Bin/Place Target");
-    if (lower.contains("conveyor")) return QString("Conveyor");
-    if (lower.contains("camera") || lower.contains("sensor")) return QString("Camera");
-    if (lower.contains("pick")) return QString("Pick Zone");
-    if (lower.contains("safety")) return QString("Safety Zone");
-    if (lower.contains("fixture")) return QString("Fixture");
-    if (lower.contains("object")) return QString("Object");
-    return QString("Place Zone");
-  };
-
-  for (const auto & root : discovery_paths) {
-    boost::system::error_code ec;
-    if (!fs::exists(root, ec) || ec || !fs::is_directory(root, ec) || ec) continue;
-    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-      if (!fs::is_regular_file(it->path(), ec) || ec) continue;
-      const QString source_path = QString::fromStdString(it->path().string());
-      const QString ext = QString::fromStdString(it->path().extension().string()).toLower();
-      if (!(ext == ".urdf" || ext == ".xacro" || ext == ".stl" || ext == ".dae")) continue;
-      AssetCatalogEntry entry;
-      entry.display_name = QString::fromStdString(it->path().stem().string());
-      entry.source_path = source_path;
-      entry.category = infer_category(source_path, ext);
-      entry.asset_type = infer_asset_type(source_path);
-      entry.role = entry.asset_type.toLower();
-      entry.dimensions = "unknown";
-      entry.default_pose = "x=0 y=0 z=0 rpy=0,0,0";
-      entry.editable = !(entry.category == "Robots" || entry.category == "End Effectors");
-      entry.availability_status = QFileInfo::exists(source_path) ? "Ready" : "Unavailable";
-      if (entry.display_name.trimmed().isEmpty()) entry.disabled_reason = "Missing display name";
-      if (entry.source_path.trimmed().isEmpty()) entry.disabled_reason = "Missing mesh/URDF path";
-      if (!QFileInfo::exists(entry.source_path)) entry.disabled_reason = "Source file not found";
-      asset_catalog_entries_.push_back(entry);
+  const auto discovered = workcell_builder::discover_asset_catalog_entries(repo_root, workspace_root);
+  for (const auto & entry : discovered) {
+    auto * item = new QTreeWidgetItem(
+      asset_catalog_tree_,
+      {
+        QString::fromStdString(entry.display_name),
+        QString::fromStdString(entry.category),
+        QString::fromStdString(entry.source_kind),
+        QString::fromStdString(entry.availability)
+      });
+    item->setData(0, Qt::UserRole, QString::fromStdString(entry.source_path));
+    if (entry.availability == "incomplete") {
+      item->setDisabled(true);
+      item->setToolTip(3, QString::fromStdString(entry.reason));
+      item->setToolTip(0, QString("Unavailable: %1").arg(QString::fromStdString(entry.reason)));
     }
   }
 
-  if (asset_catalog_entries_.isEmpty()) {
-    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "none", "Unavailable"});
+  if (discovered.empty()) {
+    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Discovery", "incomplete"});
     info->setDisabled(true);
-  }
-
-  for (int i = 0; i < asset_catalog_entries_.size(); ++i) {
-    const auto & e = asset_catalog_entries_[i];
-    const bool placeable = e.disabled_reason.trimmed().isEmpty();
-    auto * item = new QTreeWidgetItem(asset_catalog_tree_, {e.display_name, e.category, e.asset_type, e.availability_status});
-    item->setData(0, Qt::UserRole, i);
-    item->setData(0, Qt::UserRole + 10, placeable);
-    item->setData(0, Qt::UserRole + 11, e.source_path);
-    if (!placeable) item->setToolTip(0, e.disabled_reason);
+    info->setToolTip(0, "No assets discovered from manifest, inferred folders, or scene template references.");
   }
 
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
