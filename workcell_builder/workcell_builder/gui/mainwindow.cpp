@@ -1745,6 +1745,12 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path task_intent_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml";
   fs::create_directories(task_intent_path.parent_path());
+  const auto append_readiness_note = [&](const QString & message) {
+    const fs::path readiness_path = sc.scene_dir / "readiness" / "readiness_summary.txt";
+    fs::create_directories(readiness_path.parent_path());
+    std::ofstream readiness_out(readiness_path.string(), std::ios::app);
+    if (readiness_out.is_open()) readiness_out << message.toStdString() << "\n";
+  };
   YAML::Node root;
   bool has_existing = fs::exists(task_intent_path);
   if (has_existing) {
@@ -1774,6 +1780,18 @@ bool MainWindow::update_selected_scene_task_intent_binding(
       append_studio_log(QString("Malformed task intent YAML detected; backup created at %1 before rewrite.")
         .arg(QString::fromStdString(backup.string())));
       root = YAML::Node(YAML::NodeType::Map);
+    }
+  }
+  if (has_existing) {
+    const fs::path backup = task_intent_path.string() + ".backup." + std::to_string(std::time(nullptr)) + ".bak";
+    boost::system::error_code ec;
+    fs::copy_file(task_intent_path, backup, fs::copy_option::overwrite_if_exists, ec);
+    if (!ec) {
+      append_studio_log(QString("Task intent backup created: %1").arg(QString::fromStdString(backup.string())));
+      append_readiness_note(QString("Task intent backup created: %1").arg(QString::fromStdString(backup.string())));
+    } else {
+      append_studio_log(QString("Warning: task intent backup failed before write (%1)").arg(QString::fromStdString(ec.message())));
+      append_readiness_note(QString("Warning: task intent backup failed before write (%1)").arg(QString::fromStdString(ec.message())));
     }
   }
   if (!root || !root.IsMap()) root = YAML::Node(YAML::NodeType::Map);
@@ -1807,6 +1825,8 @@ bool MainWindow::update_selected_scene_task_intent_binding(
   append_studio_log(QString("%1 updated to '%2'").arg(binding_label, selected_id));
   append_studio_log(QString("Task intent updated at %1 (Fake Hardware | Simulated Motion Enabled | Real Robot Locked)")
     .arg(QString::fromStdString(task_intent_path.string())));
+  append_readiness_note(QString("%1 updated to '%2'").arg(binding_label, selected_id));
+  append_readiness_note(QString("Task intent updated at %1").arg(QString::fromStdString(task_intent_path.string())));
   refresh_after_task_binding_change(binding_label, selected_id);
   return true;
 }
@@ -1834,8 +1854,15 @@ void MainWindow::bind_selected_item_as_pick_zone()
     append_studio_log(QString("Use Selected as Pick Source/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
   }
-  update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
-  update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
+  const bool pick_zone_written = update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
+  if (!pick_zone_written) return;
+  const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+  append_studio_log("Task intent zone prompt (pick) shown: Use this zone for task intent?");
+  if (choice == QMessageBox::Yes) {
+    update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
+  } else {
+    append_studio_log("Task intent zone prompt declined for pick source binding.");
+  }
 }
 
 void MainWindow::bind_selected_item_as_place_zone()
@@ -1849,8 +1876,15 @@ void MainWindow::bind_selected_item_as_place_zone()
     append_studio_log(QString("Use Selected as Place Target/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
   }
-  update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
-  update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
+  const bool place_zone_written = update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
+  if (!place_zone_written) return;
+  const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+  append_studio_log("Task intent zone prompt (place) shown: Use this zone for task intent?");
+  if (choice == QMessageBox::Yes) {
+    update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
+  } else {
+    append_studio_log("Task intent zone prompt declined for place target binding.");
+  }
 }
 
 void MainWindow::bind_selected_item_as_camera()
