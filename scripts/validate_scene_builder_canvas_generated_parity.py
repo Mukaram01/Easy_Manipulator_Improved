@@ -24,6 +24,8 @@ CANONICAL_REQUIRED_REPORT_FIELDS = [
     "generated_asset_ids",
     "layout_asset_id_set",
     "generated_asset_id_set",
+    "assets_missing_from_generated_output",
+    "generated_assets_not_in_layout",
     "transform_mismatches",
     "mesh_reference_mismatches",
     "unsupported_assets",
@@ -69,6 +71,21 @@ def _walk_assets(node: Any) -> list[dict[str, Any]]:
         for v in node:
             out.extend(_walk_assets(v))
     return out
+
+
+def _find_layout_path(scene_dir: Path, warnings: list[str]) -> Path:
+    preferred = scene_dir / "layout" / "workcell_studio_layout.yaml"
+    legacy = scene_dir / "environment_layout.yaml"
+    if preferred.exists() and legacy.exists():
+        warnings.append(
+            f"both layout sources exist; using preferred layout file {preferred} and treating legacy {legacy} as secondary"
+        )
+    if preferred.exists():
+        return preferred
+    if legacy.exists():
+        warnings.append(f"preferred layout source missing; falling back to legacy layout file {legacy}")
+        return legacy
+    return preferred
 
 def _as_float_list(value: Any) -> list[float] | None:
     if not isinstance(value, list):
@@ -155,69 +172,87 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
     transform_mismatches: list[dict[str, object]] = []
     mesh_reference_mismatches: list[dict[str, object]] = []
     unsupported_assets: list[str] = []
+    assets_missing_from_generated_output: list[str] = []
+    generated_assets_not_in_layout: list[str] = []
 
     if scene_dir is not None:
         scene_dir = scene_dir.resolve()
-        source_layout_path = str(scene_dir / "layout" / "workcell_studio_layout.yaml")
+        source_layout = _find_layout_path(scene_dir, warnings)
+        source_layout_path = str(source_layout)
         generated_package_path = str(scene_dir / "generated")
-        candidates = [
-            scene_dir / "layout" / "workcell_studio_layout.yaml",
-            scene_dir / "environment_layout.yaml",
+        layout_assets: dict[str, dict[str, Any]] = {}
+        generated_assets: dict[str, dict[str, Any]] = {}
+        layout_candidates = [source_layout]
+        generated_candidates = [
             scene_dir / "generated" / "generated_workcell_summary.json",
+            scene_dir / "generated" / "generated_environment_objects.yaml",
             scene_dir / "scene_manifest.yaml",
             scene_dir / "urdf" / "generated_asset_metadata.yaml",
         ]
-        loaded_assets: dict[str, dict[str, Any]] = {}
-        for path in candidates:
-            if not path.exists():
-                warnings.append(f"optional scene artifact missing: {path}")
-                continue
-            try:
-                data = _safe_load_json(path) if path.suffix.lower() == ".json" else _safe_load_yaml(path)
-            except Exception as exc:
-                errors.append(f"failed to parse {path}: {exc}")
-                continue
-            if data is None:
-                warnings.append(f"empty scene artifact: {path}")
-                continue
-            for asset in _walk_assets(data):
-                aid = _asset_id(asset)
-                if not aid:
+
+        def _load_assets_for(paths: list[Path], target: dict[str, dict[str, Any]]) -> None:
+            for path in paths:
+                if not path.exists():
+                    warnings.append(f"optional scene artifact missing: {path}")
                     continue
-                pose = _extract_pose(asset)
-                mesh = _extract_mesh(asset)
-                rec = loaded_assets.setdefault(aid, {"poses": [], "meshes": [], "preview_only": False, "unsupported": False})
-                if pose:
-                    rec["poses"].append(pose)
-                if mesh:
-                    rec["meshes"].append(mesh)
-                flags = " ".join(str(asset.get(k, "")) for k in ("status", "type", "mode", "tags", "notes")).lower()
-                if "preview" in flags:
-                    rec["preview_only"] = True
-                if "unsupported" in flags:
-                    rec["unsupported"] = True
+                try:
+                    data = _safe_load_json(path) if path.suffix.lower() == ".json" else _safe_load_yaml(path)
+                except Exception as exc:
+                    errors.append(f"failed to parse {path}: {exc}")
+                    continue
+                if data is None:
+                    warnings.append(f"empty scene artifact: {path}")
+                    continue
+                for asset in _walk_assets(data):
+                    aid = _asset_id(asset)
+                    if not aid:
+                        continue
+                    pose = _extract_pose(asset)
+                    mesh = _extract_mesh(asset)
+                    rec = target.setdefault(aid, {"poses": [], "meshes": [], "preview_only": False, "unsupported": False})
+                    if pose:
+                        rec["poses"].append(pose)
+                    if mesh:
+                        rec["meshes"].append(mesh)
+                    flags = " ".join(str(asset.get(k, "")) for k in ("status", "type", "mode", "tags", "notes")).lower()
+                    if "preview" in flags:
+                        rec["preview_only"] = True
+                    if "unsupported" in flags:
+                        rec["unsupported"] = True
 
-        scene_asset_ids = sorted(loaded_assets.keys())
-        layout_asset_ids = scene_asset_ids
-        generated_asset_ids = scene_asset_ids
+        _load_assets_for(layout_candidates, layout_assets)
+        _load_assets_for(generated_candidates, generated_assets)
 
-        for aid, rec in loaded_assets.items():
-            unique_poses = []
-            seen = set()
-            for pose in rec["poses"]:
-                key = json.dumps(pose, sort_keys=True)
-                if key not in seen:
-                    seen.add(key)
-                    unique_poses.append(pose)
-            if len(unique_poses) > 1:
-                transform_mismatches.append({"asset_id": aid, "poses": unique_poses})
+        layout_asset_ids = sorted(layout_assets.keys())
+        generated_asset_ids = sorted(generated_assets.keys())
+        assets_missing_from_generated_output = sorted(set(layout_asset_ids) - set(generated_asset_ids))
+        generated_assets_not_in_layout = sorted(set(generated_asset_ids) - set(layout_asset_ids))
 
-            unique_meshes = sorted({m for m in rec["meshes"] if m})
-            if len(unique_meshes) > 1:
-                mesh_reference_mismatches.append({"asset_id": aid, "mesh_references": unique_meshes})
+        tracked_asset_ids = sorted(set(layout_asset_ids) | set(generated_asset_ids))
+        for aid in tracked_asset_ids:
+            layout_rec = layout_assets.get(aid, {"poses": [], "meshes": [], "preview_only": False, "unsupported": False})
+            generated_rec = generated_assets.get(aid, {"poses": [], "meshes": [], "preview_only": False, "unsupported": False})
 
-            if rec["preview_only"] or rec["unsupported"]:
+            if layout_rec["preview_only"] or layout_rec["unsupported"] or generated_rec["preview_only"] or generated_rec["unsupported"]:
                 unsupported_assets.append(aid)
+
+            layout_poses = sorted({json.dumps(p, sort_keys=True) for p in layout_rec["poses"] if p})
+            generated_poses = sorted({json.dumps(p, sort_keys=True) for p in generated_rec["poses"] if p})
+            if layout_poses and generated_poses and layout_poses != generated_poses:
+                transform_mismatches.append(
+                    {
+                        "asset_id": aid,
+                        "layout_poses": [json.loads(p) for p in layout_poses],
+                        "generated_poses": [json.loads(p) for p in generated_poses],
+                    }
+                )
+
+            layout_meshes = sorted({m for m in layout_rec["meshes"] if m})
+            generated_meshes = sorted({m for m in generated_rec["meshes"] if m})
+            if layout_meshes and generated_meshes and layout_meshes != generated_meshes:
+                mesh_reference_mismatches.append(
+                    {"asset_id": aid, "layout_mesh_references": layout_meshes, "generated_mesh_references": generated_meshes}
+                )
 
     mismatch_count = len(transform_mismatches) + len(mesh_reference_mismatches)
     warning_count = len(warnings) + len(unsupported_assets)
@@ -237,6 +272,8 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
         "generated_asset_ids": generated_asset_ids,
         "layout_asset_id_set": sorted(set(layout_asset_ids)),
         "generated_asset_id_set": sorted(set(generated_asset_ids)),
+        "assets_missing_from_generated_output": assets_missing_from_generated_output,
+        "generated_assets_not_in_layout": generated_assets_not_in_layout,
         "transform_mismatches": transform_mismatches,
         "mesh_reference_mismatches": mesh_reference_mismatches,
         "unsupported_assets": sorted(set(unsupported_assets)),
