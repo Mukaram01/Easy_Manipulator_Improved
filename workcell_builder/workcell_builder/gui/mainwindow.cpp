@@ -31,6 +31,7 @@
 #include <QTextEdit>
 #include <QPlainTextEdit>
 #include <QToolBar>
+#include <QToolTip>
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
@@ -108,6 +109,7 @@
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
+#include "scene3d_viewport_widget.h"
 #include "workcell_studio_layout_editor.hpp"
 #include "workcell_studio_id_utils.hpp"
 #include "gui/new_cell_wizard.h"
@@ -116,6 +118,8 @@
 #include "gui/transform_clipboard_utils.h"
 
 namespace fs = boost::filesystem;
+
+static QStringList generation_asset_support_preflight(const fs::path & layout_path, bool * severe_failure);
 
 namespace {
 [[maybe_unused]] static const char * kSelectionTransformActionTokens =
@@ -4863,7 +4867,18 @@ MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_a
       RecommendedWorkflowActionHandler::OpenOrCreateScene);
     return action;
   }
-  if (scene_items_.empty()) {
+  bool has_asset_items = false;
+  if (digital_twin_scene_ != nullptr) {
+    const auto canvas_items = digital_twin_scene_->items();
+    for (QGraphicsItem * item : canvas_items) {
+      if (item != nullptr && item->data(RoleRole).toString() == "asset") {
+        has_asset_items = true;
+        break;
+      }
+    }
+  }
+
+  if (!has_asset_items) {
     set_action("add_asset", "Add asset", true, QString(),
       "Populate the layout with at least one asset so there is content to save and generate.",
       RecommendedWorkflowActionHandler::AddAsset);

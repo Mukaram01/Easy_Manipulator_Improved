@@ -655,6 +655,7 @@ struct TaskGraspConfig
   std::string allowed_yaw_angles_deg = "0";
   int suction_cups = 1;
   std::string release_strategy = "open_gripper";
+  std::string camera_topic = "";
 };
 
 TaskGraspConfig infer_task_grasp_defaults(const Scene & scene)
@@ -2747,19 +2748,19 @@ std::string SceneSelect::build_workcell_readiness_report(
     warnings.emplace_back("perception_detection selected but EPD adapter not configured yet");
   }
   warnings.emplace_back("real hardware mode requires explicit validation");
-  std::vector<ObjectFootprint> layout_objects;
+  std::vector<workcell_builder::ObjectFootprint> layout_objects;
   for (const auto & obj : scene.object_vector) {
-    ObjectFootprint fp;
+    workcell_builder::ObjectFootprint fp;
     fp.name = obj.name;
-    fp.x = obj.object_center.cartesian.at(0);
-    fp.y = obj.object_center.cartesian.at(1);
-    fp.z = obj.object_center.cartesian.at(2);
+    fp.x = obj.ext_joint.origin.is_origin ? obj.ext_joint.origin.x : 0.0;
+    fp.y = obj.ext_joint.origin.is_origin ? obj.ext_joint.origin.y : 0.0;
+    fp.z = obj.ext_joint.origin.is_origin ? obj.ext_joint.origin.z : 0.0;
     layout_objects.push_back(fp);
   }
-  const auto overlay = evaluate_offline_readiness_overlay(
+  const auto overlay = workcell_builder::evaluate_offline_readiness_overlay(
     layout_objects,
-    estimate_robot_reach_envelope(scene.robot_vector.empty() ? "" : scene.robot_vector[0].name),
-    WorkspaceBounds{},
+    workcell_builder::estimate_robot_reach_envelope(scene.robot_vector.empty() ? "" : scene.robot_vector[0].name),
+    workcell_builder::WorkspaceBounds{},
     {},
     {},
     task_cfg.pick_source,
