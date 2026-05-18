@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "validate_scene_builder_canvas_generated_parity.py"
+LEGACY_SCRIPT = REPO_ROOT / "scripts" / "validate_scene_builder_canvas_to_generated_parity.py"
 FIXTURE_STL = REPO_ROOT / "tests" / "fixtures" / "meshes" / "tiny_ascii_cube.stl"
 
 
@@ -58,3 +59,25 @@ def test_small_fixture_ascii_stl_is_available_for_deterministic_runs() -> None:
     text = FIXTURE_STL.read_text(encoding="utf-8")
     assert text.startswith("solid tiny_ascii_cube")
     assert "facet normal" in text
+
+
+def test_canonical_validator_is_the_only_contract_target() -> None:
+    script_files = sorted(path.name for path in (REPO_ROOT / "scripts").glob("validate_scene_builder_canvas*generated_parity.py"))
+    assert script_files == [
+        "validate_scene_builder_canvas_generated_parity.py",
+        "validate_scene_builder_canvas_to_generated_parity.py",
+    ]
+
+
+def test_legacy_wrapper_prints_deprecation_and_delegates_to_canonical() -> None:
+    result = subprocess.run(
+        [sys.executable, str(LEGACY_SCRIPT), "--json"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode in {0, 1}
+    assert "DEPRECATED:" in result.stderr
+    report = json.loads(result.stdout)
+    assert report["status"] in {"PASS", "FAIL"}
