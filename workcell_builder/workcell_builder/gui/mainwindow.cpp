@@ -100,6 +100,7 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "workcell_studio_layout_editor.hpp"
+#include "workcell_studio_id_utils.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
 
@@ -3166,8 +3167,14 @@ void MainWindow::save_layout_changes()
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
     YAML::Node item(YAML::NodeType::Map);
-    item["id"] = gi->data(RoleId).toString().toStdString();
-    item["name"] = gi->data(RoleDisplayName).toString().toStdString();
+    const std::string item_id = gi->data(RoleId).toString().toStdString();
+    if (!workcell_builder::workcell_studio_is_valid_id(item_id)) {
+      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(QString::fromStdString(item_id)));
+      append_studio_log(QString("Save blocked: invalid id '%1'").arg(QString::fromStdString(item_id)));
+      return;
+    }
+    item["id"] = item_id;
+    item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
     item["category"] = gi->data(RoleCategory).toString().toStdString();
     item["type"] = gi->data(RoleType).toString().toStdString();
     item["source_path"] = gi->data(RoleSource).toString().toStdString();
@@ -3286,11 +3293,16 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return;
-  const QString prefix = id_prefix_from_category(category);
-  int suffix = 1;
-  QString new_id;
-  auto exists = [&](const QString & candidate){ for (auto * gi : digital_twin_scene_->items()) if (gi->data(RoleId).toString() == candidate) return true; return false; };
-  do { new_id = QString("%1_%2").arg(prefix).arg(suffix++, 2, 10, QLatin1Char('0')); } while (exists(new_id));
+  std::set<std::string> reserved_ids;
+  for (auto * gi : digital_twin_scene_->items()) {
+    const QString existing_id = gi->data(RoleId).toString().trimmed();
+    if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
+  }
+  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  const auto existing_layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
+  reserved_ids.insert(existing_layout_ids.begin(), existing_layout_ids.end());
+  const std::string id_prefix = workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString());
+  const QString new_id = QString::fromStdString(workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
   QPointF placement = default_xy_for_category(category);
@@ -3301,7 +3313,7 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   item->setPos(placement);
   item->setData(RoleId, new_id);
   item->setData(RoleDisplayName, display_name);
-  item->setData(RoleType, prefix);
+  item->setData(RoleType, QString::fromStdString(id_prefix));
   item->setData(RoleCategory, category);
   item->setData(RoleRole, "asset");
   item->setData(RoleSource, source_path);
