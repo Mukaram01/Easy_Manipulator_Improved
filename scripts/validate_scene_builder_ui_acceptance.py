@@ -31,6 +31,8 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
             'preview_cpp':_load_text([REPO_ROOT/'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp']),
             'layout_editor_cpp':_load_text([REPO_ROOT/'workcell_builder/workcell_builder/gui/environment_layout_editor.cpp']),
             'object_placement_cpp':_load_text([REPO_ROOT/'workcell_builder/workcell_builder/gui/object_placement_dialog.cpp']),
+            'viewport_h':_load_text([REPO_ROOT/'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h']),
+            'viewport_cpp':_load_text([REPO_ROOT/'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp']),
         }
     main=file_text_map.get('mainwindow_cpp','')
     all_text="\n".join(file_text_map.values())
@@ -47,6 +49,12 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("3D/2D layout wording",all_text,["3D Layout Preview","2D Layout"]))
     checks.append(_token_check("fake hardware launch token",all_text,["use_fake_hardware:=true"]))
     checks.append(_token_check("scene3d gizmo tokens",all_text,["Gizmo:","Scene3D Gizmo Transform","Snap:","Move","Rotate"]))
+    checks.append(_token_check("scene3d pick handle API markers",all_text,["pick_gizmo_axis_at_screen","pick_gizmo_rotation_ring_at_screen","active_gizmo_handle"]))
+    checks.append(_token_check("scene3d snap value markers",all_text,["snap_translation_value","snap_rotation_value"]))
+    checks.append(_token_check("escape cancel restore path markers",all_text,["Qt::Key_Escape","restore"]))
+    checks.append(_token_check("mouse release single-commit path markers",all_text,["mouseReleaseEvent","commit","single-commit"]))
+    checks.append(_token_check("locked item gating/status markers",all_text,["Locked:","locked"]))
+    checks.append(_token_check("inspector sync/layout dirty markers",all_text,["inspector","sync","layout dirty"]))
     checks.append(_regex_absent_check("no hidden QPushButton indirection anti-pattern",main,{"menu_action_new_cell":r'addAction\("Create New Cell"\s*,',"menu_action_plan_simulate":r'addAction\("Open Plan & Simulate"\s*,'}))
     checks.append(_regex_absent_check("fixed-width button anti-pattern checks",main,{"qpushbutton_fixed_width_literal":r"\b[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*->\s*setFixedWidth\s*\(\s*\d+\s*\)"}))
     return checks
