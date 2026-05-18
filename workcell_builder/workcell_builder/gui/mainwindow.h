@@ -24,6 +24,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QPointF>
 #include <atomic>
 #include <QProcess>
 #include <boost/filesystem.hpp>
@@ -91,6 +92,7 @@ private slots:
   void handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status);
 
 private:
+  bool eventFilter(QObject * watched, QEvent * event) override;
   enum class StudioPage : int {
     DashboardPage = 0,
     SceneBuilderPage,
@@ -197,6 +199,9 @@ private:
   void duplicate_selected_item();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
+  QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
+  void arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path);
+  void commit_armed_asset_placement(const QPointF & canvas_pos_px);
 
   struct AssetCatalogEntry
   {
@@ -333,6 +338,7 @@ private:
   QCheckBox * show_pick_place_overlay_box_{ nullptr };
   QCheckBox * show_trajectory_overlay_box_{ nullptr };
   QCheckBox * show_minimap_box_{ nullptr };
+  QCheckBox * place_mode_persistent_box_{ nullptr };
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };
@@ -349,6 +355,10 @@ private:
   QPushButton * add_asset_dialog_place_button_{ nullptr };
   QGraphicsRectItem * ghost_preview_item_{ nullptr };
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
+  bool place_asset_armed_{ false };
+  QString armed_asset_category_;
+  QString armed_asset_display_name_;
+  QString armed_asset_source_path_;
   double snap_step_m_{ 0.05 };
   bool layout_dirty_{ false };
   bool inspector_update_guard_{ false };
