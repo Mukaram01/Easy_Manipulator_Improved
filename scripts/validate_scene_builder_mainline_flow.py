@@ -16,6 +16,42 @@ CHECKS = {
     "cell_definition_v1_draft_generate_repair_validate": (CPP, ["new cell_definition.yaml generated", "existing valid cell_definition.yaml preserved", "invalid cell_definition.yaml backed up and regenerated", "validate_cell_definition.py"]),
     "readiness_and_preflight_warnings": (CPP, ["generation_asset_support_preflight", "severe_preflight_failure", "blocked by severe schema/safety preflight failure"]),
     "action_wiring_tokens": (CPP, ["&MainWindow::open_add_asset_dialog", "&MainWindow::place_selected_asset_from_dialog", "&MainWindow::save_layout_changes", "&MainWindow::generate_yaml_draft_for_selected_scene", "&MainWindow::generate_scene_package_for_selected_scene", "&MainWindow::validate_generated_scene_for_selected_scene", "&MainWindow::preview_offline_plan_for_selected_scene", "&MainWindow::copy_build_launch_commands_for_selected_scene", "&MainWindow::delete_selected_item", "&MainWindow::bind_selected_item_as_pick_zone", "&MainWindow::bind_selected_item_as_place_zone", "&MainWindow::bind_selected_item_as_camera"]),
+    "workflow_labels_contract_all_8": (
+        CPP,
+        [
+            "1. YAML Draft:",
+            "2. Scene Manifest:",
+            "3. ROS Package:",
+            "4. Launch File:",
+            "5. Task Intent:",
+            "6. Task Recipe:",
+            "7. Build Command:",
+            "8. Fake-Hardware Launch:",
+        ],
+    ),
+    "recommended_action_handler_wiring_contract": (
+        CPP,
+        [
+            "Next action: <b>%1</b>",
+            "blocker_next = audit.next_recommended_action",
+        ],
+    ),
+    "guarded_action_tooltip_tokens_contract": (
+        CPP,
+        [
+            "Placement disabled:",
+            "Unavailable:",
+            "Delete robot is blocked/guarded unless Unlock Robot Base is enabled.",
+        ],
+    ),
+    "fake_hardware_launch_token_contract": (
+        CPP,
+        [
+            "# fake-hardware launch command",
+            "use_fake_hardware:=true",
+            "Plan & Simulate: prepared fake-hardware launch commands",
+        ],
+    ),
     "cmake_includes_helper_sources": (CMAKE, ["src_workcell_warning_once.cpp", "gui/asset_catalog_discovery.cpp", "src_workcell_studio_id_utils.cpp"]),
 }
 
