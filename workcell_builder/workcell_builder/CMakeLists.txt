@@ -308,6 +308,10 @@ if(BUILD_TESTING)
     test/scene_preview_widget_ui_test.cpp
     gui/scene_preview_widget.cpp
     gui/scene3d_viewport_widget.cpp)
+  ament_add_gtest(workcell_studio_canvas_model_mesh_test
+    test/workcell_studio_canvas_model_mesh_test.cpp
+    src_workcell_studio_canvas_model.cpp
+    src_workcell_yaml_utils.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()

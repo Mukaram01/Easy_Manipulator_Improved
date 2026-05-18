@@ -26,8 +26,11 @@ YAML::Node yaml_map_key(const YAML::Node & node, const char * key);
 YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index);
 
 YAML::Node get_map(const YAML::Node & node, const char * key);
+YAML::Node optional_map(const YAML::Node & node, const char * key);
 YAML::Node get_scalar(const YAML::Node & node, const char * key);
+YAML::Node optional_scalar(const YAML::Node & node, const char * key);
 YAML::Node get_sequence(const YAML::Node & node, const char * key);
+std::string get_optional_string(const YAML::Node & node, const char * key, const std::string & fallback = "");
 std::optional<bool> get_bool_like(const YAML::Node & node, const char * key);
 std::optional<bool> bool_like(const YAML::Node & node);
 PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & task_or_root);
