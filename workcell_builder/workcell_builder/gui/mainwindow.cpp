@@ -104,6 +104,7 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "workcell_studio_layout_editor.hpp"
+#include "workcell_studio_id_utils.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
 #include "gui/asset_catalog_discovery.h"
@@ -3194,8 +3195,14 @@ void MainWindow::save_layout_changes()
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
     YAML::Node item(YAML::NodeType::Map);
-    item["id"] = gi->data(RoleId).toString().toStdString();
-    item["name"] = gi->data(RoleDisplayName).toString().toStdString();
+    const std::string item_id = gi->data(RoleId).toString().toStdString();
+    if (!workcell_builder::workcell_studio_is_valid_id(item_id)) {
+      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(QString::fromStdString(item_id)));
+      append_studio_log(QString("Save blocked: invalid id '%1'").arg(QString::fromStdString(item_id)));
+      return;
+    }
+    item["id"] = item_id;
+    item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
     item["category"] = gi->data(RoleCategory).toString().toStdString();
     item["type"] = gi->data(RoleType).toString().toStdString();
     item["source_path"] = gi->data(RoleSource).toString().toStdString();
@@ -3344,6 +3351,16 @@ void MainWindow::arm_place_asset_mode(const QString & category, const QString & 
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return;
+  std::set<std::string> reserved_ids;
+  for (auto * gi : digital_twin_scene_->items()) {
+    const QString existing_id = gi->data(RoleId).toString().trimmed();
+    if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
+  }
+  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  const auto existing_layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
+  reserved_ids.insert(existing_layout_ids.begin(), existing_layout_ids.end());
+  const std::string id_prefix = workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString());
+  const QString new_id = QString::fromStdString(workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
   place_asset_armed_ = true;
   armed_asset_category_ = category;
   armed_asset_display_name_ = display_name;
@@ -3376,7 +3393,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   item->setPos(placement);
   item->setData(RoleId, new_id);
   item->setData(RoleDisplayName, display_name);
-  item->setData(RoleType, prefix);
+  item->setData(RoleType, QString::fromStdString(id_prefix));
   item->setData(RoleCategory, category);
   item->setData(RoleRole, "asset");
   item->setData(RoleSource, source_path);

@@ -145,6 +145,7 @@ add_executable(workcell_builder
     src_workcell_studio_canvas_model.cpp
     src_workcell_studio_layout_editor.cpp
     src_workcell_studio_layout_merge.cpp
+    src_workcell_studio_id_utils.cpp
     src_external_asset_importer.cpp
     gui/asset_picker_dialog.cpp
     gui/object_placement_dialog.cpp
