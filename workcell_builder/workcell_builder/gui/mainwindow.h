@@ -62,6 +62,7 @@ class QSplitter;
 class QFrame;
 class QDialog;
 class QGridLayout;
+class QMessageBox;
 
 class MainWindow: public QMainWindow
 {
@@ -78,6 +79,8 @@ public:
 
   explicit MainWindow(const QString & startup_workspace = QString(), const QString & startup_ros_distro = QString(), QWidget * parent = nullptr);
   ~MainWindow();
+  static bool parse_transform_clipboard_text(
+    const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error = nullptr);
 
 private slots:
   void on_load_workcell_clicked();
@@ -226,6 +229,11 @@ private:
   void on_canvas_selection_changed();
   void on_canvas_item_moved(QGraphicsItem * item, const QPointF & old_pos, const QPointF & new_pos, const QString & reason);
   void apply_inspector_pose_to_item();
+  void apply_selection_transform_from_editor();
+  void revert_selection_transform_editor();
+  void copy_selection_transform_to_clipboard();
+  void paste_selection_transform_from_clipboard();
+  void refresh_selection_transform_editor_from_item(QGraphicsItem * item);
   void undo_layout_edit();
   void redo_layout_edit();
   void duplicate_selected_item();
@@ -333,6 +341,11 @@ private:
   QDoubleSpinBox * inspector_roll_{ nullptr };
   QDoubleSpinBox * inspector_pitch_{ nullptr };
   QDoubleSpinBox * inspector_yaw_{ nullptr };
+  QCheckBox * inspector_live_update_box_{ nullptr };
+  QPushButton * inspector_apply_button_{ nullptr };
+  QPushButton * inspector_revert_button_{ nullptr };
+  QPushButton * inspector_copy_transform_button_{ nullptr };
+  QPushButton * inspector_paste_transform_button_{ nullptr };
   QLabel * inspector_warning_label_{ nullptr };
   QLabel * live_coordinate_label_{ nullptr };
   QLabel * readiness_label_{ nullptr };

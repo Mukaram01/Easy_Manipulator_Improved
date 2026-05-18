@@ -109,10 +109,13 @@
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
 #include "gui/asset_catalog_discovery.h"
+#include "gui/transform_clipboard_utils.h"
 
 namespace fs = boost::filesystem;
 
 namespace {
+[[maybe_unused]] static const char * kSelectionTransformActionTokens =
+  "Apply | Revert | Copy Transform | Paste Transform | Live update";
 [[maybe_unused]] static const char * kNewCellChecklistTokens =
   "Workspace selected | Cell name set | Robot selected (UR5 default) | Tool selected (Robotiq 2F default) | "
   "Environment layout created (table + pick zone + place zone + camera) | Task intent created (pick_place) | "
@@ -1256,6 +1259,13 @@ void MainWindow::setup_studio_shell()
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("p "); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("yaw "); pose_grid->addWidget(inspector_yaw_, 1, 2);
   selected_item_card_layout->addLayout(pose_grid);
+  inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selection_tab_layout->addWidget(inspector_live_update_box_);
+  auto * transform_actions = new QHBoxLayout();
+  inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_);
+  inspector_revert_button_ = new QPushButton("Revert", scene_builder); transform_actions->addWidget(inspector_revert_button_);
+  inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_);
+  inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_);
+  selection_tab_layout->addLayout(transform_actions);
   inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
   scene_builder_inspector_tabs_->addTab(task_tab, "Task");
@@ -1578,7 +1588,11 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(redo_layout_button_, &QPushButton::clicked, this, &MainWindow::redo_layout_edit);
   connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
-  for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ apply_inspector_pose_to_item(); });
+  for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
+  connect(inspector_apply_button_, &QPushButton::clicked, this, &MainWindow::apply_selection_transform_from_editor);
+  connect(inspector_revert_button_, &QPushButton::clicked, this, &MainWindow::revert_selection_transform_editor);
+  connect(inspector_copy_transform_button_, &QPushButton::clicked, this, &MainWindow::copy_selection_transform_to_clipboard);
+  connect(inspector_paste_transform_button_, &QPushButton::clicked, this, &MainWindow::paste_selection_transform_from_clipboard);
   inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
   inspector_roll_->setToolTip("Roll in radians"); inspector_pitch_->setToolTip("Pitch in radians"); inspector_yaw_->setToolTip("Yaw in radians");
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
@@ -3292,9 +3306,8 @@ void MainWindow::refresh_minimap_card()
 void MainWindow::select_canvas_item(QGraphicsItem * item)
 {
   if (!item || !inspector_label_) return;
+  refresh_selection_transform_editor_from_item(item);
   inspector_update_guard_ = true;
-  inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
-  inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
   refresh_selected_scene_item_labels(current_selected_scene_item());
   const QString warning_text = item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString();
   inspector_warning_label_->setText("Warnings: " + warning_text + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: " + QString::number(warning_text == "none" ? 0 : 1) + " | Preview-only");
@@ -3560,7 +3573,53 @@ void MainWindow::on_canvas_selection_changed()
   apply_scene_selection(selected_id, selected_role, false, false);
 }
 void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, const QPointF &, const QString & reason){ if(item) select_canvas_item(item); mark_layout_dirty(reason); }
-void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); }
+bool MainWindow::parse_transform_clipboard_text(
+  const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error)
+{
+  return workcell_builder::parse_transform_clipboard_text(text, x, y, z, r, p, yaw, error);
+}
+
+void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * item)
+{
+  if (!item) return;
+  inspector_update_guard_ = true;
+  inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
+  inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
+  inspector_update_guard_ = false;
+}
+
+void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
+
+void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); refresh_selection_transform_editor_from_item(i); }
+
+void MainWindow::revert_selection_transform_editor()
+{
+  if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;
+  refresh_selection_transform_editor_from_item(digital_twin_scene_->selectedItems().front());
+}
+
+void MainWindow::copy_selection_transform_to_clipboard()
+{
+  const QString text = QString("x=%1 y=%2 z=%3 r=%4 p=%5 yaw=%6")
+    .arg(inspector_x_->value(), 0, 'g', 17).arg(inspector_y_->value(), 0, 'g', 17).arg(inspector_z_->value(), 0, 'g', 17)
+    .arg(inspector_roll_->value(), 0, 'g', 17).arg(inspector_pitch_->value(), 0, 'g', 17).arg(inspector_yaw_->value(), 0, 'g', 17);
+  QApplication::clipboard()->setText(text);
+}
+
+void MainWindow::paste_selection_transform_from_clipboard()
+{
+  double x = 0.0, y = 0.0, z = 0.0, r = 0.0, p = 0.0, yaw = 0.0;
+  QString error;
+  if (!parse_transform_clipboard_text(QApplication::clipboard()->text(), &x, &y, &z, &r, &p, &yaw, &error)) {
+    QMessageBox::warning(this, "Paste Transform", "Invalid transform text.\n" + error);
+    return;
+  }
+  inspector_update_guard_ = true;
+  inspector_x_->setValue(x); inspector_y_->setValue(y); inspector_z_->setValue(z);
+  inspector_roll_->setValue(r); inspector_pitch_->setValue(p); inspector_yaw_->setValue(yaw);
+  inspector_update_guard_ = false;
+  apply_selection_transform_from_editor();
+}
 void MainWindow::undo_layout_edit(){ if(undo_stack_.empty() || !digital_twin_scene_) return; auto c=undo_stack_.back(); undo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.old_pos); break;} redo_stack_.push_back(c); mark_layout_dirty("Undo"); }
 void MainWindow::redo_layout_edit(){ if(redo_stack_.empty() || !digital_twin_scene_) return; auto c=redo_stack_.back(); redo_stack_.pop_back(); for(auto *i:digital_twin_scene_->items()) if(i->data(RoleId).toString()==c.item_id){ i->setPos(c.new_pos); break;} undo_stack_.push_back(c); mark_layout_dirty("Redo"); }
 void MainWindow::duplicate_selected_item(){ if(!digital_twin_scene_||digital_twin_scene_->selectedItems().isEmpty()) return; auto *s=digital_twin_scene_->selectedItems().front(); if(s->data(RoleLocked).toBool()){ append_studio_log("Duplicate blocked: locked item"); return; } auto *c=new DraggableCanvasItem(static_cast<QGraphicsRectItem*>(s)->rect()); c->setPos(s->pos()+QPointF(18,18)); c->setBrush(static_cast<QGraphicsRectItem*>(s)->brush()); for(int r=RoleId;r<=RoleSource;++r) c->setData(r,s->data(r)); c->setData(RoleId, s->data(RoleId).toString()+"_copy"); c->setFlags(s->flags()); digital_twin_scene_->addItem(c); c->setSelected(true); undo_stack_.push_back({"duplicate", c->data(RoleId).toString(), s->pos(), c->pos(), true, false}); mark_layout_dirty("Duplicate Selected"); append_studio_log(QString("Duplicate selected item: %1").arg(c->data(RoleId).toString())); refresh_scene_builder_left_explorer(); }
