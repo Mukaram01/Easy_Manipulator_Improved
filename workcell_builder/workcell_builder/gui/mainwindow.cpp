@@ -142,6 +142,7 @@ bool is_good_scene_path(const fs::path & scene_path)
 
 enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
 enum SceneTreeRoles { TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole };
+enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
 
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
@@ -1510,9 +1511,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
-  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, Qt::UserRole).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
+  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(add_asset_button_, &QPushButton::clicked, this, &MainWindow::open_add_asset_dialog);
-  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, Qt::UserRole).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
+  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
@@ -3546,7 +3547,7 @@ void MainWindow::validate_asset_catalog_selection()
   if (asset_catalog_tree_) {
     auto * item = asset_catalog_tree_->currentItem();
     if (item && !item->isHidden()) {
-      can_add = item->data(0, Qt::UserRole + 10).toBool();
+      can_add = item->data(0, CatalogRolePlaceable).toBool();
     }
   }
   add_to_canvas_button_->setEnabled(can_add);
@@ -3558,7 +3559,7 @@ QString MainWindow::selected_catalog_item_path() const
   if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) {
     return "";
   }
-  return asset_catalog_tree_->currentItem()->data(0, Qt::UserRole + 11).toString();
+  return asset_catalog_tree_->currentItem()->data(0, CatalogRoleSourcePath).toString();
 }
 
 void MainWindow::on_asset_filter_changed(int)
@@ -3567,7 +3568,10 @@ void MainWindow::on_asset_filter_changed(int)
   if (!asset_catalog_tree_) return;
   for (int i = 0; i < asset_catalog_tree_->topLevelItemCount(); ++i) {
     auto * item = asset_catalog_tree_->topLevelItem(i);
-    const bool visible = (selected == "All" || item->text(1) == selected);
+    const int idx = item->data(0, CatalogRoleIndex).toInt();
+    const bool has_valid_index = idx >= 0 && idx < asset_catalog_entries_.size();
+    const QString category = has_valid_index ? asset_catalog_entries_[idx].category : item->text(1);
+    const bool visible = (selected == "All" || category == selected);
     item->setHidden(!visible);
   }
   validate_asset_catalog_selection();
@@ -3923,24 +3927,36 @@ void MainWindow::populate_asset_catalog()
   const fs::path repo_root = fs::current_path();
 
   const auto discovered = workcell_builder::discover_asset_catalog_entries(repo_root, workspace_root);
+  asset_catalog_entries_.reserve(static_cast<int>(discovered.size()));
   for (const auto & entry : discovered) {
-    auto * item = new QTreeWidgetItem(
-      asset_catalog_tree_,
-      {
-        QString::fromStdString(entry.display_name),
-        QString::fromStdString(entry.category),
-        QString::fromStdString(entry.source_kind),
-        QString::fromStdString(entry.availability)
-      });
-    item->setData(0, Qt::UserRole, QString::fromStdString(entry.source_path));
-    if (entry.availability == "incomplete") {
+    AssetCatalogEntry ui_entry;
+    ui_entry.asset_type = QString::fromStdString(entry.source_kind);
+    ui_entry.display_name = QString::fromStdString(entry.display_name);
+    ui_entry.role = QString::fromStdString(entry.role_hint);
+    ui_entry.dimensions = "n/a";
+    ui_entry.default_pose = "auto";
+    ui_entry.source_path = QString::fromStdString(entry.source_path);
+    ui_entry.editable = true;
+    ui_entry.availability_status = QString::fromStdString(entry.availability);
+    ui_entry.disabled_reason = QString::fromStdString(entry.reason);
+    ui_entry.category = QString::fromStdString(entry.category);
+    asset_catalog_entries_.push_back(ui_entry);
+  }
+
+  for (int idx = 0; idx < asset_catalog_entries_.size(); ++idx) {
+    const auto & e = asset_catalog_entries_[idx];
+    auto * item = new QTreeWidgetItem(asset_catalog_tree_, {e.display_name, e.category, e.asset_type, e.availability_status});
+    item->setData(0, CatalogRoleIndex, idx);
+    item->setData(0, CatalogRolePlaceable, e.disabled_reason.trimmed().isEmpty());
+    item->setData(0, CatalogRoleSourcePath, e.source_path);
+    if (!e.disabled_reason.trimmed().isEmpty()) {
       item->setDisabled(true);
-      item->setToolTip(3, QString::fromStdString(entry.reason));
-      item->setToolTip(0, QString("Unavailable: %1").arg(QString::fromStdString(entry.reason)));
+      item->setToolTip(3, e.disabled_reason);
+      item->setToolTip(0, QString("Unavailable: %1").arg(e.disabled_reason));
     }
   }
 
-  if (discovered.empty()) {
+  if (asset_catalog_entries_.isEmpty()) {
     auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Discovery", "incomplete"});
     info->setDisabled(true);
     info->setToolTip(0, "No assets discovered from manifest, inferred folders, or scene template references.");
@@ -3984,7 +4000,7 @@ void MainWindow::open_add_asset_dialog()
     const QStringList cols = {e.asset_type, e.display_name, e.role, e.dimensions, e.default_pose, e.source_path, e.editable ? "Yes" : "No", status};
     for (int col = 0; col < cols.size(); ++col) {
       auto * cell = new QTableWidgetItem(cols[col]);
-      cell->setData(Qt::UserRole, row);
+      cell->setData(CatalogRoleIndex, row);
       add_asset_dialog_table_->setItem(row, col, cell);
     }
   }
@@ -3998,13 +4014,16 @@ void MainWindow::open_add_asset_dialog()
 void MainWindow::refresh_add_asset_dialog_details()
 {
   if (!add_asset_dialog_table_ || !add_asset_dialog_details_label_ || !add_asset_dialog_place_button_) return;
-  int row = add_asset_dialog_table_->currentRow();
-  if (row < 0 || row >= asset_catalog_entries_.size()) {
+  int entry_index = -1;
+  if (auto * current_item = add_asset_dialog_table_->currentItem()) {
+    entry_index = current_item->data(CatalogRoleIndex).toInt();
+  }
+  if (entry_index < 0 || entry_index >= asset_catalog_entries_.size()) {
     add_asset_dialog_place_button_->setEnabled(false);
     add_asset_dialog_details_label_->setText("Select an asset row to inspect metadata.");
     return;
   }
-  const auto & e = asset_catalog_entries_[row];
+  const auto & e = asset_catalog_entries_[entry_index];
   const bool placeable = e.disabled_reason.trimmed().isEmpty();
   add_asset_dialog_place_button_->setEnabled(placeable);
   const QString reason = placeable ? "Ready to place." : QString("Placement disabled: %1").arg(e.disabled_reason);
@@ -4014,9 +4033,11 @@ void MainWindow::refresh_add_asset_dialog_details()
 void MainWindow::place_selected_asset_from_dialog()
 {
   if (!add_asset_dialog_table_) return;
-  const int row = add_asset_dialog_table_->currentRow();
-  if (row < 0 || row >= asset_catalog_entries_.size()) return;
-  const auto & e = asset_catalog_entries_[row];
+  auto * current_item = add_asset_dialog_table_->currentItem();
+  if (!current_item) return;
+  const int entry_index = current_item->data(CatalogRoleIndex).toInt();
+  if (entry_index < 0 || entry_index >= asset_catalog_entries_.size()) return;
+  const auto & e = asset_catalog_entries_[entry_index];
   if (!e.disabled_reason.trimmed().isEmpty()) return;
   add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path);
 }
