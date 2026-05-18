@@ -20,6 +20,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QMessageBox>
@@ -3622,6 +3623,11 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
+  if (!configure_asset_placement_transform(category, display_name)) {
+    append_studio_log(QString("Add Asset validation failed: %1 (%2) placement canceled.")
+      .arg(display_name, category));
+    return;
+  }
   arm_place_asset_mode(category, display_name, source_path);
 }
 
@@ -3650,6 +3656,103 @@ QPointF MainWindow::compute_default_canvas_pose(const QString & category, const 
   return default_xy_for_category(category);
 }
 
+double MainWindow::default_asset_pose_z(const QString & category, const QString & display_name) const
+{
+  const QString lower = (category + " " + display_name).toLower();
+  return lower.contains("camera") ? 1.2 : 0.0;
+}
+
+void MainWindow::reset_armed_asset_transform_to_defaults()
+{
+  armed_asset_default_xy_px_ = compute_default_canvas_pose(armed_asset_category_, armed_asset_display_name_);
+  armed_asset_x_m_ = armed_asset_default_xy_px_.x() / 100.0;
+  armed_asset_y_m_ = armed_asset_default_xy_px_.y() / 100.0;
+  armed_asset_z_m_ = default_asset_pose_z(armed_asset_category_, armed_asset_display_name_);
+  armed_asset_roll_rad_ = 0.0;
+  armed_asset_pitch_rad_ = 0.0;
+  armed_asset_yaw_rad_ = 0.0;
+}
+
+bool MainWindow::validate_armed_asset_transform(QString * error_message)
+{
+  if (!std::isfinite(armed_asset_x_m_) || !std::isfinite(armed_asset_y_m_) || !std::isfinite(armed_asset_z_m_) ||
+    !std::isfinite(armed_asset_roll_rad_) || !std::isfinite(armed_asset_pitch_rad_) || !std::isfinite(armed_asset_yaw_rad_))
+  {
+    if (error_message) *error_message = "All transform values must be numeric (x,y,z,roll,pitch,yaw).";
+    return false;
+  }
+  if (error_message) error_message->clear();
+  return true;
+}
+
+void MainWindow::update_arm_transform_validation_ui() {}
+
+bool MainWindow::configure_asset_placement_transform(const QString & category, const QString & display_name)
+{
+  armed_asset_category_ = category;
+  armed_asset_display_name_ = display_name;
+  reset_armed_asset_transform_to_defaults();
+  QDialog dialog(this);
+  dialog.setWindowTitle("Place Asset Transform");
+  auto * layout = new QVBoxLayout(&dialog);
+  auto * help = new QLabel("Enter placement transform before placing. XYZ in metres, RPY in radians.", &dialog);
+  help->setWordWrap(true);
+  layout->addWidget(help);
+  auto * grid = new QGridLayout();
+  auto mk = [&](const QString & label, double value, const QString & units, int row) {
+      auto * l = new QLabel(label, &dialog);
+      auto * e = new QLineEdit(QString::number(value, 'f', 3), &dialog);
+      auto * u = new QLabel(units, &dialog);
+      grid->addWidget(l, row, 0);
+      grid->addWidget(e, row, 1);
+      grid->addWidget(u, row, 2);
+      return e;
+    };
+  QLineEdit * x_edit = mk("X", armed_asset_x_m_, "m", 0);
+  QLineEdit * y_edit = mk("Y", armed_asset_y_m_, "m", 1);
+  QLineEdit * z_edit = mk("Z", armed_asset_z_m_, "m", 2);
+  QLineEdit * r_edit = mk("Roll", armed_asset_roll_rad_, "rad", 3);
+  QLineEdit * p_edit = mk("Pitch", armed_asset_pitch_rad_, "rad", 4);
+  QLineEdit * yaw_edit = mk("Yaw", armed_asset_yaw_rad_, "rad", 5);
+  layout->addLayout(grid);
+  auto * use_clicked = new QCheckBox("Use clicked position for XY", &dialog);
+  use_clicked->setChecked(true);
+  layout->addWidget(use_clicked);
+  auto * error_label = new QLabel(&dialog);
+  error_label->setStyleSheet("color:#b00020;");
+  layout->addWidget(error_label);
+  auto * buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+  auto * defaults_btn = buttons->addButton("Use defaults", QDialogButtonBox::ResetRole);
+  layout->addWidget(buttons);
+  QObject::connect(defaults_btn, &QPushButton::clicked, &dialog, [&]() {
+    reset_armed_asset_transform_to_defaults();
+    x_edit->setText(QString::number(armed_asset_x_m_, 'f', 3));
+    y_edit->setText(QString::number(armed_asset_y_m_, 'f', 3));
+    z_edit->setText(QString::number(armed_asset_z_m_, 'f', 3));
+    r_edit->setText(QString::number(armed_asset_roll_rad_, 'f', 3));
+    p_edit->setText(QString::number(armed_asset_pitch_rad_, 'f', 3));
+    yaw_edit->setText(QString::number(armed_asset_yaw_rad_, 'f', 3));
+    error_label->clear();
+  });
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
+    bool okx, oky, okz, okr, okp, okyaw;
+    const double x = x_edit->text().trimmed().toDouble(&okx);
+    const double y = y_edit->text().trimmed().toDouble(&oky);
+    const double z = z_edit->text().trimmed().toDouble(&okz);
+    const double r = r_edit->text().trimmed().toDouble(&okr);
+    const double p = p_edit->text().trimmed().toDouble(&okp);
+    const double yw = yaw_edit->text().trimmed().toDouble(&okyaw);
+    const bool ok = okx && oky && okz && okr && okp && okyaw;
+    for (auto * edit : {x_edit, y_edit, z_edit, r_edit, p_edit, yaw_edit}) edit->setStyleSheet(ok ? "" : "border:1px solid #b00020;");
+    if (!ok) { error_label->setText("Invalid transform: enter numeric x,y,z,roll,pitch,yaw values."); return; }
+    armed_asset_x_m_ = x; armed_asset_y_m_ = y; armed_asset_z_m_ = z; armed_asset_roll_rad_ = r; armed_asset_pitch_rad_ = p; armed_asset_yaw_rad_ = yw;
+    armed_asset_use_clicked_xy_ = use_clicked->isChecked();
+    dialog.accept();
+  });
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  return dialog.exec() == QDialog::Accepted;
+}
+
 void MainWindow::arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path)
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
@@ -3658,8 +3761,13 @@ void MainWindow::arm_place_asset_mode(const QString & category, const QString & 
   armed_asset_category_ = category;
   armed_asset_display_name_ = display_name;
   armed_asset_source_path_ = source_path;
+  armed_asset_default_xy_px_ = compute_default_canvas_pose(category, display_name);
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
-  append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit.").arg(display_name, category));
+  append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit. Use clicked XY: %3 | xyzrpy=[%4, %5, %6, %7, %8, %9].")
+    .arg(display_name, category)
+    .arg(armed_asset_use_clicked_xy_ ? "on" : "off")
+    .arg(armed_asset_x_m_, 0, 'f', 3).arg(armed_asset_y_m_, 0, 'f', 3).arg(armed_asset_z_m_, 0, 'f', 3)
+    .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3));
 }
 
 void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
@@ -3682,9 +3790,19 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
     workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString()));
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
-  QPointF placement = snap_canvas_position(canvas_pos_px);
-  if (qAbs(placement.x()) < 0.1 && qAbs(placement.y()) < 0.1) {
-    placement = compute_default_canvas_pose(category, display_name);
+  QString validation_error;
+  if (!validate_armed_asset_transform(&validation_error)) {
+    append_studio_log(QString("Add Asset validation failed: %1 (%2) %3")
+      .arg(display_name, category, validation_error));
+    statusBar()->showMessage("Add Asset blocked: invalid transform input.", 4000);
+    return;
+  }
+  QPointF placement(armed_asset_x_m_ * 100.0, armed_asset_y_m_ * 100.0);
+  if (armed_asset_use_clicked_xy_) {
+    placement = snap_canvas_position(canvas_pos_px);
+    if (qAbs(placement.x()) < 0.1 && qAbs(placement.y()) < 0.1) {
+      placement = armed_asset_default_xy_px_;
+    }
   }
   if (digital_twin_scene_->items().isEmpty()) {
     placement = QPointF(0.0, 0.0);
@@ -3698,8 +3816,8 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   item->setData(RoleRole, "asset");
   item->setData(RoleSource, source_path);
   item->setData(RoleSourcePackage, "asset_catalog");
-  item->setData(RolePoseZ, category.contains("camera", Qt::CaseInsensitive) ? 1.2 : 0.0);
-  item->setData(RoleRoll, 0.0); item->setData(RolePitch, 0.0); item->setData(RoleYaw, 0.0);
+  item->setData(RolePoseZ, armed_asset_z_m_);
+  item->setData(RoleRoll, armed_asset_roll_rad_); item->setData(RolePitch, armed_asset_pitch_rad_); item->setData(RoleYaw, armed_asset_yaw_rad_);
   item->setData(RoleWidth, 0.35); item->setData(RoleDepth, 0.35); item->setData(RoleHeight, 0.35);
   item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
@@ -3728,7 +3846,11 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   redo_stack_.clear();
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   mark_layout_dirty("Place Asset Mode: Add to 3D Canvas");
-  append_studio_log(QString("Add to Canvas: %1 (%2) id=%3 from %4").arg(display_name, category, new_id, source_path));
+  append_studio_log(QString("Add to Canvas success: %1 (%2) id=%3 from %4 | xyzrpy=[%5, %6, %7, %8, %9, %10] use_clicked_xy=%11")
+    .arg(display_name, category, new_id, source_path)
+    .arg(item->pos().x() / 100.0, 0, 'f', 3).arg(item->pos().y() / 100.0, 0, 'f', 3).arg(armed_asset_z_m_, 0, 'f', 3)
+    .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3)
+    .arg(armed_asset_use_clicked_xy_ ? "true" : "false"));
   append_studio_log("ghost placement preview committed");
   refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
