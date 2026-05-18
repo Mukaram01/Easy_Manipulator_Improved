@@ -284,7 +284,8 @@ void Scene3DViewportWidget::paintGL()
 
   for (const auto * it : draw_items) {
     if (classify_item_role(*it) == NormalizedRole::Object && !it->source_path.trimmed().isEmpty()) {
-      (void)ensure_mesh_cached(it->source_path);
+      const MeshCacheEntry & mesh_entry = ensure_mesh_cached(it->source_path);
+      if (!mesh_entry.valid) warn_mesh_fallback_once(it->id, mesh_entry.warning, it->source_path);
     }
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) continue;
@@ -408,25 +409,32 @@ bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path
   return !out_canonical.isEmpty();
 }
 
+bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path)
+{
+  const QString key = QStringLiteral("%1|%2|%3").arg(item_id, reason, path);
+  if (warned_mesh_fallbacks_.contains(key)) return false;
+  warned_mesh_fallbacks_.insert(key);
+  qWarning().noquote() << QStringLiteral("Mesh preview fallback for %1: %2").arg(item_id, reason);
+  return true;
+}
+
 const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const QString & path)
 {
+  const QFileInfo input_info(path);
   QString canonical;
-  if (!try_resolve_canonical_mesh_path(path, canonical)) {
-    static MeshCacheEntry missing;
-    missing.loaded = true;
-    missing.valid = false;
-    missing.warning = QStringLiteral("mesh missing on disk");
-    qWarning() << "Scene3DViewportWidget mesh fallback: missing mesh" << path;
-    return missing;
-  }
+  if (!try_resolve_canonical_mesh_path(path, canonical)) canonical = input_info.absoluteFilePath();
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
   entry.loaded = true;
+  if (!input_info.exists() || !input_info.isFile()) {
+    entry.valid = false;
+    entry.warning = QStringLiteral("mesh missing on disk");
+    return mesh_cache_.insert(canonical, entry).value();
+  }
   QFile file(canonical);
   if (!file.open(QIODevice::ReadOnly)) {
     entry.warning = QStringLiteral("mesh unreadable");
-    qWarning() << "Scene3DViewportWidget mesh fallback: unreadable mesh" << canonical;
     return mesh_cache_.insert(canonical, entry).value();
   }
   const QByteArray bytes = file.readAll();
@@ -435,9 +443,6 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
     entry.warning = entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid");
-    qWarning() << "Scene3DViewportWidget mesh fallback:"
-               << (entry.oversized ? "oversized mesh" : "invalid mesh")
-               << canonical << "reason:" << parse_error;
   }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);
   return mesh_cache_.insert(canonical, entry).value();
