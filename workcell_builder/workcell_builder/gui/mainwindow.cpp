@@ -1092,6 +1092,28 @@ void MainWindow::setup_studio_shell()
   new_cell_checklist_label_->setObjectName("studioCard");
   new_cell_checklist_label_->setWordWrap(true);
   readiness_card_layout->addWidget(new_cell_checklist_label_);
+  scene_builder_command_preview_card_ = new QFrame(right_panel);
+  scene_builder_command_preview_card_->setObjectName("studioCard");
+  auto * command_preview_layout = new QVBoxLayout(scene_builder_command_preview_card_);
+  command_preview_layout->addWidget(new QLabel("<b>Command Preview</b><br/>Available after Generate Scene Package succeeds."));
+  auto * build_row = new QWidget(scene_builder_command_preview_card_);
+  auto * build_row_layout = new QHBoxLayout(build_row); build_row_layout->setContentsMargins(0,0,0,0);
+  auto * build_key = new QLabel("Build", build_row); build_key->setMinimumWidth(72);
+  scene_builder_build_command_label_ = new QLabel("(not available)", build_row); scene_builder_build_command_label_->setWordWrap(true); scene_builder_build_command_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  auto * copy_build_preview = new QPushButton("Copy", build_row);
+  QObject::connect(copy_build_preview, &QPushButton::clicked, this, [this](){ if (scene_builder_build_command_label_) QApplication::clipboard()->setText(scene_builder_build_command_label_->text()); });
+  build_row_layout->addWidget(build_key); build_row_layout->addWidget(scene_builder_build_command_label_, 1); build_row_layout->addWidget(copy_build_preview);
+  command_preview_layout->addWidget(build_row);
+  auto * launch_row = new QWidget(scene_builder_command_preview_card_);
+  auto * launch_row_layout = new QHBoxLayout(launch_row); launch_row_layout->setContentsMargins(0,0,0,0);
+  auto * launch_key = new QLabel("Launch", launch_row); launch_key->setMinimumWidth(72);
+  scene_builder_launch_command_label_ = new QLabel("(not available)", launch_row); scene_builder_launch_command_label_->setWordWrap(true); scene_builder_launch_command_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  auto * copy_launch_preview = new QPushButton("Copy", launch_row);
+  QObject::connect(copy_launch_preview, &QPushButton::clicked, this, [this](){ if (scene_builder_launch_command_label_) QApplication::clipboard()->setText(scene_builder_launch_command_label_->text()); });
+  launch_row_layout->addWidget(launch_key); launch_row_layout->addWidget(scene_builder_launch_command_label_, 1); launch_row_layout->addWidget(copy_launch_preview);
+  command_preview_layout->addWidget(launch_row);
+  scene_builder_command_preview_card_->setVisible(false);
+  readiness_card_layout->addWidget(scene_builder_command_preview_card_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   auto * task_binding_actions = new QHBoxLayout();
   pick_source_button_ = new QPushButton("Use Selected as Pick Source", scene_builder); task_binding_actions->addWidget(pick_source_button_);
@@ -4137,6 +4159,14 @@ void MainWindow::refresh_new_cell_checklist()
   if (!blocker_cmd.trimmed().isEmpty()) text += QString("<br/>Recovery command: <code>%1</code>").arg(blocker_cmd.toHtmlEscaped());
   text += "<br/><br/>" + workflow;
   new_cell_checklist_label_->setText(text);
+  if (scene_builder_command_preview_card_ && scene_builder_build_command_label_ && scene_builder_launch_command_label_) {
+    const bool show_preview = launch_artifacts_ready_ && has_selected_scene();
+    scene_builder_command_preview_card_->setVisible(show_preview);
+    if (show_preview) {
+      scene_builder_build_command_label_->setText(selected_scene_build_command());
+      scene_builder_launch_command_label_->setText(selected_scene_launch_command());
+    }
+  }
 
   if (readiness_label_) {
     QString readiness_text =
