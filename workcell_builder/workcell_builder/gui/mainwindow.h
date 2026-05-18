@@ -290,6 +290,7 @@ private:
   void run_diagnostics_golden_flow_dry_run();
   void run_offline_validation();
   void run_layout_validation_only();
+  void check_canvas_generated_parity();
   void open_validation_report();
   void copy_validation_summary();
   void generate_readiness_pack();
@@ -300,6 +301,12 @@ private:
   QStringList helper_script_search_paths(const QString & script_name) const;
   QString diagnostics_output_root() const;
   QString diagnostics_status_from_counts(int blocked, int warn) const;
+  enum class CanvasGeneratedParityState { NotChecked, Passed, Warnings, Blocked };
+  QString canvas_generated_parity_state_text(CanvasGeneratedParityState state) const;
+  void refresh_canvas_generated_parity_ui();
+  bool run_canvas_generated_parity_check(QString * user_warning = nullptr, bool * severe_mismatch = nullptr);
+  bool parse_canvas_generated_parity_report(
+    const QString & report_path, int * mismatches, int * warnings, int * blockers) const;
   void append_diagnostics_row(const QString & name, const QString & status, const QString & details, const QString & fix, const QString & related_path);
   void write_diagnostics_report(const QJsonObject & report, const QString & summary, const QString & dashboard_html);
   Ui::MainWindow * ui;
@@ -434,6 +441,11 @@ private:
   bool layout_saved_{ false };
   bool validation_stale_{ true };
   bool launch_artifacts_ready_{ false };
+  CanvasGeneratedParityState canvas_generated_parity_state_{ CanvasGeneratedParityState::NotChecked };
+  QString canvas_generated_parity_report_path_;
+  int canvas_generated_parity_mismatches_{ 0 };
+  int canvas_generated_parity_warnings_{ 0 };
+  int canvas_generated_parity_blockers_{ 0 };
   bool inspector_update_guard_{ false };
   bool selection_update_guard_{ false };
   QString current_selected_scene_item_id_;
