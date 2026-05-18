@@ -3446,16 +3446,6 @@ void MainWindow::arm_place_asset_mode(const QString & category, const QString & 
 {
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return;
-  std::set<std::string> reserved_ids;
-  for (auto * gi : digital_twin_scene_->items()) {
-    const QString existing_id = gi->data(RoleId).toString().trimmed();
-    if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
-  }
-  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
-  const auto existing_layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
-  reserved_ids.insert(existing_layout_ids.begin(), existing_layout_ids.end());
-  const std::string id_prefix = workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString());
-  const QString new_id = QString::fromStdString(workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
   place_asset_armed_ = true;
   armed_asset_category_ = category;
   armed_asset_display_name_ = display_name;
@@ -3470,11 +3460,18 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   const QString category = armed_asset_category_;
   const QString display_name = armed_asset_display_name_;
   const QString source_path = armed_asset_source_path_;
-  const QString prefix = id_prefix_from_category(category);
-  int suffix = 1;
-  QString new_id;
-  auto exists = [&](const QString & candidate){ for (auto * gi : digital_twin_scene_->items()) if (gi->data(RoleId).toString() == candidate) return true; return false; };
-  do { new_id = QString("%1_%2").arg(prefix).arg(suffix++, 2, 10, QLatin1Char('0')); } while (exists(new_id));
+  std::set<std::string> reserved_ids;
+  for (auto * gi : digital_twin_scene_->items()) {
+    const QString existing_id = gi->data(RoleId).toString().trimmed();
+    if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
+  }
+  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
+  reserved_ids.insert(layout_ids.begin(), layout_ids.end());
+  const QString new_id = QString::fromStdString(
+    workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
+  const QString role_type = QString::fromStdString(
+    workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString()));
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
   QPointF placement = snap_canvas_position(canvas_pos_px);
@@ -3488,7 +3485,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   item->setPos(placement);
   item->setData(RoleId, new_id);
   item->setData(RoleDisplayName, display_name);
-  item->setData(RoleType, QString::fromStdString(id_prefix));
+  item->setData(RoleType, role_type);
   item->setData(RoleCategory, category);
   item->setData(RoleRole, "asset");
   item->setData(RoleSource, source_path);
