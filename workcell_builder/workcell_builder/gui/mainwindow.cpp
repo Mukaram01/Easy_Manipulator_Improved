@@ -1868,14 +1868,18 @@ void MainWindow::bind_selected_item_as_pick_zone()
     append_studio_log(QString("Use Selected as Pick Source/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
   }
-  const bool pick_zone_written = update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
-  if (!pick_zone_written) return;
   const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
   append_studio_log("Task intent zone prompt (pick) shown: Use this zone for task intent?");
   if (choice == QMessageBox::Yes) {
-    update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
+    const bool pick_zone_written = update_selected_scene_task_intent_binding("Pick Zone", {"pick", "zone", "id"}, state.id.trimmed());
+    if (!pick_zone_written) return;
+    const bool pick_source_written = update_selected_scene_task_intent_binding("Pick Source", {"pick", "source", "id"}, state.id.trimmed());
+    if (pick_source_written) {
+      append_studio_log("Task intent binding applied: zone metadata saved and pick source bound.");
+    }
   } else {
     append_studio_log("Task intent zone prompt declined for pick source binding.");
+    append_studio_log("Task intent binding skipped: pick zone metadata and pick source left unchanged.");
   }
 }
 
@@ -1890,14 +1894,18 @@ void MainWindow::bind_selected_item_as_place_zone()
     append_studio_log(QString("Use Selected as Place Target/Zone warning: selected item '%1' may be incompatible (role/category: %2). Applying override.")
       .arg(state.id, state.role_or_category.isEmpty() ? "unknown" : state.role_or_category));
   }
-  const bool place_zone_written = update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
-  if (!place_zone_written) return;
   const auto choice = QMessageBox::question(this, "Workcell Studio", "Use this zone for task intent?", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
   append_studio_log("Task intent zone prompt (place) shown: Use this zone for task intent?");
   if (choice == QMessageBox::Yes) {
-    update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
+    const bool place_zone_written = update_selected_scene_task_intent_binding("Place Zone", {"place", "zone", "id"}, state.id.trimmed());
+    if (!place_zone_written) return;
+    const bool place_target_written = update_selected_scene_task_intent_binding("Place Target", {"place", "target", "id"}, state.id.trimmed());
+    if (place_target_written) {
+      append_studio_log("Task intent binding applied: zone metadata saved and place target bound.");
+    }
   } else {
     append_studio_log("Task intent zone prompt declined for place target binding.");
+    append_studio_log("Task intent binding skipped: place zone metadata and place target left unchanged.");
   }
 }
 
