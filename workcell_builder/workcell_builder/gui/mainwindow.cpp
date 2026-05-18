@@ -4160,6 +4160,14 @@ void MainWindow::populate_scene_hierarchy()
     p.mesh_roll = item.mesh_r;
     p.mesh_pitch = item.mesh_p;
     p.mesh_yaw = item.mesh_y;
+    p.has_mesh_metadata = item.has_mesh_metadata;
+    p.mesh_r = item.mesh_r;
+    p.mesh_p = item.mesh_p;
+    p.mesh_y = item.mesh_y;
+    p.has_origin_offset = item.has_origin_offset;
+    p.origin_offset_x = item.origin_offset_x;
+    p.origin_offset_y = item.origin_offset_y;
+    p.origin_offset_z = item.origin_offset_z;
     p.mesh_available = item.mesh_available;
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     preview_items.push_back(p);
