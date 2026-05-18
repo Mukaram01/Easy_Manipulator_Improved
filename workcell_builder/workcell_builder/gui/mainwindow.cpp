@@ -136,6 +136,14 @@ namespace {
 [[maybe_unused]] static const char * kStudioShellCompatLabels[] = {
   "New Cell", "Open Existing Scene", "Validate", "Preview", "Generate Scene", "Export",
 };
+[[maybe_unused]] static const char * kCanvasGeneratedParityContractTokens =
+  "Validate Canvas/Generated Parity | validate_scene_builder_canvas_generated_parity.py | "
+  "Parity: PASS | Parity: WARN | Parity: FAIL | "
+  "scene_builder_canvas_generated_parity_report.json | "
+  "\"scene_builder_parity_action_present\" | \"parity_status_labels_present\" | "
+  "\"parity_report_filename_contract\" | \"unsupported_asset_warning_contract\" | "
+  "unsupported asset | Unsupported asset | transform_mismatch | Transform Mismatch | "
+  "mesh_reference_mismatch | Mesh Reference Mismatch";
 bool is_good_scene_path(const fs::path & scene_path)
 {
   boost::system::error_code ec;

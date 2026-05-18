@@ -52,6 +52,38 @@ CHECKS = {
             "Plan & Simulate: prepared fake-hardware launch commands",
         ],
     ),
+    "canvas_generated_parity_action_presence": (
+        CPP,
+        [
+            "Validate Canvas/Generated Parity",
+            "validate_scene_builder_canvas_generated_parity.py",
+        ],
+    ),
+    "canvas_generated_parity_status_labels": (
+        CPP,
+        [
+            "Parity: PASS",
+            "Parity: WARN",
+            "Parity: FAIL",
+        ],
+    ),
+    "canvas_generated_parity_report_filename_and_fields": (
+        CPP,
+        [
+            "scene_builder_canvas_generated_parity_report.json",
+            "scene_builder_parity_action_present",
+            "parity_status_labels_present",
+            "parity_report_filename_contract",
+            "unsupported_asset_warning_contract",
+        ],
+    ),
+    "unsupported_asset_warning_string_contract": (
+        CPP,
+        [
+            "unsupported asset",
+            "Unsupported asset",
+        ],
+    ),
     "cmake_includes_helper_sources": (CMAKE, ["src_workcell_warning_once.cpp", "gui/asset_catalog_discovery.cpp", "src_workcell_studio_id_utils.cpp"]),
 }
 
