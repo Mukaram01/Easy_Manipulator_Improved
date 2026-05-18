@@ -454,25 +454,35 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
   if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
-  if (!it.has_mesh_metadata) {
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
-      qWarning() << "Scene3DViewportWidget mesh fallback: mesh metadata missing for" << it.id;
+
+  const bool meshes_only_mode = (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes);
+  const bool auto_mode = (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Auto);
+  const auto warn_for_mode = [&](const QString & reason, const QString & path) {
+    if (meshes_only_mode) {
+      warn_mesh_fallback_once(it.id, reason, path);
+      return;
     }
+    if (auto_mode) {
+      const QString key = QStringLiteral("auto|%1|%2|%3").arg(it.id, reason, path);
+      if (warned_mesh_fallbacks_.contains(key)) return;
+      warned_mesh_fallbacks_.insert(key);
+      qInfo().noquote() << QStringLiteral("Mesh preview auto fallback for %1: %2").arg(it.id, reason);
+    }
+  };
+
+  if (!it.has_mesh_metadata) {
+    warn_for_mode(QStringLiteral("mesh metadata missing"), it.source_path);
     return false;
   }
 
   const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
   if (mesh_source.trimmed().isEmpty()) {
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
-      qWarning() << "Scene3DViewportWidget mesh fallback: mesh source missing for" << it.id;
-    }
+    warn_for_mode(QStringLiteral("mesh source missing"), mesh_source);
     return false;
   }
   const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
   if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
-      qWarning() << "Scene3DViewportWidget mesh fallback:" << (entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning) << "for" << it.id;
-    }
+    warn_for_mode(entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning, mesh_source);
     return false;
   }
 
@@ -487,7 +497,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
-  const MeshCacheEntry & cache = ensure_mesh_cached(it.source_path);
+  const MeshCacheEntry & cache = entry;
   if (!cache.valid || cache.mesh.triangles.isEmpty()) {
     draw_unit_cube_triangles(color);
     glPopMatrix();
