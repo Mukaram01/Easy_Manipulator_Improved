@@ -71,6 +71,8 @@
 #include <QProgressDialog>
 #include <QSettings>
 #include <QLineEdit>
+#include <QEvent>
+#include <QMouseEvent>
 #include <QSet>
 #include <QHBoxLayout>
 #include <QtConcurrent>
@@ -914,6 +916,10 @@ void MainWindow::setup_studio_shell()
   });
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
+  place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
+  place_mode_persistent_box_->setChecked(false);
+  place_mode_persistent_box_->setToolTip("When enabled, Place Asset mode stays armed after each placement.");
+  controls->addWidget(place_mode_persistent_box_);
   auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
   auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
   auto * camera_view = new QToolButton(scene_builder); camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
@@ -986,6 +992,7 @@ void MainWindow::setup_studio_shell()
   controls->addWidget(canvas_more_actions);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
+  digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
   minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
@@ -2968,6 +2975,21 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
   refresh_scene_builder_view_chips();
 }
 
+bool MainWindow::eventFilter(QObject * watched, QEvent * event)
+{
+  if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
+    event && event->type() == QEvent::MouseButtonPress && place_asset_armed_)
+  {
+    auto * mouse_event = static_cast<QMouseEvent *>(event);
+    if (mouse_event->button() == Qt::LeftButton && digital_twin_canvas_->scene()) {
+      const QPointF scene_pos = digital_twin_canvas_->mapToScene(mouse_event->pos());
+      commit_armed_asset_placement(scene_pos);
+      return true;
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
+}
+
 QPointF MainWindow::snap_canvas_position(const QPointF & pos) const
 {
   if (!snap_to_grid_box_ || !snap_to_grid_box_->isChecked()) return pos;
@@ -3284,8 +3306,52 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
+  arm_place_asset_mode(category, display_name, source_path);
+}
+
+QPointF MainWindow::compute_default_canvas_pose(const QString & category, const QString & display_name) const
+{
+  auto anchor_pos = [this](const QString & needle)->QPointF {
+      if (!digital_twin_scene_) return QPointF(0.0, 0.0);
+      for (auto * gi : digital_twin_scene_->items()) {
+        const QString tag = gi->data(RoleCategory).toString().toLower() + "|" + gi->data(RoleRole).toString().toLower() + "|" + gi->data(RoleId).toString().toLower();
+        if (tag.contains(needle)) return gi->pos();
+      }
+      return QPointF(0.0, 0.0);
+    };
+  const QString lower = (category + " " + display_name).toLower();
+  const QPointF table = anchor_pos("table");
+  const QPointF conveyor = anchor_pos("conveyor");
+  const QPointF pick = anchor_pos("pick");
+  const QPointF place = anchor_pos("place");
+  if (lower.contains("table")) return table;
+  if (lower.contains("conveyor")) return table + QPointF(-120.0, 25.0);
+  if (lower.contains("bin") || lower.contains("place target") || lower.contains("place_target")) return table + QPointF(95.0, -20.0);
+  if (lower.contains("pick zone") || lower.contains("pick_zone")) return (conveyor != QPointF(0.0, 0.0)) ? conveyor + QPointF(65.0, -10.0) : table + QPointF(-40.0, 10.0);
+  if (lower.contains("place zone") || lower.contains("place_zone")) return (place != QPointF(0.0, 0.0)) ? place + QPointF(30.0, 0.0) : table + QPointF(115.0, 15.0);
+  if (lower.contains("camera")) return table + QPointF(-20.0, -135.0);
+  if (lower.contains("object")) return (pick != QPointF(0.0, 0.0)) ? pick + QPointF(10.0, 10.0) : table + QPointF(-20.0, 10.0);
+  return default_xy_for_category(category);
+}
+
+void MainWindow::arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path)
+{
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return;
+  place_asset_armed_ = true;
+  armed_asset_category_ = category;
+  armed_asset_display_name_ = display_name;
+  armed_asset_source_path_ = source_path;
+  set_canvas_interaction_mode(CanvasInteractionMode::Place);
+  append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit.").arg(display_name, category));
+}
+
+void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
+{
+  if (!digital_twin_scene_ || !place_asset_armed_) return;
+  const QString category = armed_asset_category_;
+  const QString display_name = armed_asset_display_name_;
+  const QString source_path = armed_asset_source_path_;
   const QString prefix = id_prefix_from_category(category);
   int suffix = 1;
   QString new_id;
@@ -3293,7 +3359,10 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   do { new_id = QString("%1_%2").arg(prefix).arg(suffix++, 2, 10, QLatin1Char('0')); } while (exists(new_id));
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
-  QPointF placement = default_xy_for_category(category);
+  QPointF placement = snap_canvas_position(canvas_pos_px);
+  if (qAbs(placement.x()) < 0.1 && qAbs(placement.y()) < 0.1) {
+    placement = compute_default_canvas_pose(category, display_name);
+  }
   if (digital_twin_scene_->items().isEmpty()) {
     placement = QPointF(0.0, 0.0);
     QMessageBox::warning(this, "Default placement", "No robot/table found; placing asset at canvas center.");
@@ -3340,6 +3409,16 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   append_studio_log("ghost placement preview committed");
   refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  refresh_diagnostics_quick_status();
+  const bool persist = place_mode_persistent_box_ && place_mode_persistent_box_->isChecked();
+  place_asset_armed_ = persist;
+  if (!persist) {
+    armed_asset_category_.clear();
+    armed_asset_display_name_.clear();
+    armed_asset_source_path_.clear();
+    set_canvas_interaction_mode(CanvasInteractionMode::Select);
+  }
 }
 
 
