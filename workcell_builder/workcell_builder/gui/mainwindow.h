@@ -326,6 +326,9 @@ private:
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
   double snap_step_m_{ 0.05 };
   bool layout_dirty_{ false };
+  bool layout_saved_{ false };
+  bool validation_stale_{ true };
+  bool launch_artifacts_ready_{ false };
   bool inspector_update_guard_{ false };
   bool selection_update_guard_{ false };
   QString current_selected_scene_item_id_;
@@ -401,5 +404,6 @@ private:
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
   QStringList preview_warning_details_;
+  QStringList readiness_warning_details_;
 };
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
