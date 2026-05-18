@@ -76,6 +76,7 @@ private:
   QPointF project_to_screen(double x, double y, double z) const;
   bool pick_item_at_screen(const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip = nullptr) const;
   ItemBounds item_bounds_for_role(const ScenePreviewWidget::PreviewItem & item) const;
+  bool mesh_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, ItemBounds & out_bounds) const;
   bool ray_intersects_aabb(const QVector3D & ray_origin, const QVector3D & ray_dir,
                            const ScenePreviewWidget::PreviewItem & item, float & out_t) const;
   void camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const;
@@ -104,8 +105,8 @@ private:
     QString warning;
     InternalTriangleMesh mesh;
     bool has_bounds{ false };
-    QVector3D min_bounds;
-    QVector3D max_bounds;
+    QVector3D local_min;
+    QVector3D local_max;
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;

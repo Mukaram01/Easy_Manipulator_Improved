@@ -232,12 +232,13 @@ void Scene3DViewportWidget::fit_scene() {
   for (const auto & it : items) {
     if (!include_in_fit_bounds(it, fit_include_overlays)) continue;
     has_fittable_item = true;
-    bmin.setX(std::min(bmin.x(), static_cast<float>(it.x)));
-    bmin.setY(std::min(bmin.y(), static_cast<float>(it.y)));
-    bmin.setZ(std::min(bmin.z(), static_cast<float>(it.z)));
-    bmax.setX(std::max(bmax.x(), static_cast<float>(it.x + it.sx)));
-    bmax.setY(std::max(bmax.y(), static_cast<float>(it.y + it.sy)));
-    bmax.setZ(std::max(bmax.z(), static_cast<float>(it.z + it.sz)));
+    const ItemBounds bounds = item_bounds_for_role(it);
+    bmin.setX(std::min(bmin.x(), static_cast<float>(bounds.x)));
+    bmin.setY(std::min(bmin.y(), static_cast<float>(bounds.y)));
+    bmin.setZ(std::min(bmin.z(), static_cast<float>(bounds.z)));
+    bmax.setX(std::max(bmax.x(), static_cast<float>(bounds.x + bounds.sx)));
+    bmax.setY(std::max(bmax.y(), static_cast<float>(bounds.y + bounds.sy)));
+    bmax.setZ(std::max(bmax.z(), static_cast<float>(bounds.z + bounds.sz)));
   }
   if (!has_fittable_item) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
   orbit_offset_ = (bmin + bmax) * 0.5f;
@@ -444,7 +445,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     entry.oversized = parse_error.contains("exceeds limit");
     entry.warning = entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid");
   }
-  entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);
+  entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
   return mesh_cache_.insert(canonical, entry).value();
 }
 
@@ -693,6 +694,9 @@ bool Scene3DViewportWidget::ray_intersects_aabb(const QVector3D & ray_origin, co
 }
 Scene3DViewportWidget::ItemBounds Scene3DViewportWidget::item_bounds_for_role(const ScenePreviewWidget::PreviewItem & item) const
 {
+  ItemBounds mesh_bounds{};
+  if (mesh_world_bounds_for_item(item, mesh_bounds)) return mesh_bounds;
+
   const NormalizedRole role = classify_item_role(item);
   if (role == NormalizedRole::Object || role == NormalizedRole::WarningAnchor) {
     const double cube = (role == NormalizedRole::Object)
@@ -701,6 +705,52 @@ Scene3DViewportWidget::ItemBounds Scene3DViewportWidget::item_bounds_for_role(co
     return { item.x, item.y, item.z, cube, cube, cube };
   }
   return { item.x, item.y, item.z, item.sx, item.sy, item.sz };
+}
+
+bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget::PreviewItem & item, ItemBounds & out_bounds) const
+{
+  const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+  if (mesh_source.trimmed().isEmpty()) return false;
+  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(mesh_source);
+  if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
+
+  QMatrix4x4 transform;
+  transform.translate(item.x, item.y, item.z);
+  transform.rotate(qRadiansToDegrees(item.roll), 1.0f, 0.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.pitch), 0.0f, 1.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.yaw), 0.0f, 0.0f, 1.0f);
+  transform.rotate(qRadiansToDegrees(item.mesh_r), 1.0f, 0.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.mesh_p), 0.0f, 1.0f, 0.0f);
+  transform.rotate(qRadiansToDegrees(item.mesh_y), 0.0f, 0.0f, 1.0f);
+  if (item.has_origin_offset) transform.translate(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
+  transform.scale(item.mesh_scale_x, item.mesh_scale_y, item.mesh_scale_z);
+
+  const QVector3D lmin = cache.local_min;
+  const QVector3D lmax = cache.local_max;
+  QVector3D wmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D wmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (int xi = 0; xi < 2; ++xi) {
+    for (int yi = 0; yi < 2; ++yi) {
+      for (int zi = 0; zi < 2; ++zi) {
+        const QVector3D local_corner(
+          xi == 0 ? lmin.x() : lmax.x(),
+          yi == 0 ? lmin.y() : lmax.y(),
+          zi == 0 ? lmin.z() : lmax.z());
+        const QVector3D world_corner = transform * local_corner;
+        wmin.setX(qMin(wmin.x(), world_corner.x()));
+        wmin.setY(qMin(wmin.y(), world_corner.y()));
+        wmin.setZ(qMin(wmin.z(), world_corner.z()));
+        wmax.setX(qMax(wmax.x(), world_corner.x()));
+        wmax.setY(qMax(wmax.y(), world_corner.y()));
+        wmax.setZ(qMax(wmax.z(), world_corner.z()));
+      }
+    }
+  }
+  out_bounds = { wmin.x(), wmin.y(), wmin.z(),
+                 qMax(0.0f, wmax.x() - wmin.x()),
+                 qMax(0.0f, wmax.y() - wmin.y()),
+                 qMax(0.0f, wmax.z() - wmin.z()) };
+  return true;
 }
 bool Scene3DViewportWidget::pick_item_at_screen(
   const QPoint & pos, QString & out_id, QString & out_role, QString * out_tooltip) const
