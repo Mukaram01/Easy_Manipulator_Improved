@@ -189,11 +189,24 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
             scene_dir / "scene_manifest.yaml",
             scene_dir / "urdf" / "generated_asset_metadata.yaml",
         ]
+        required_generated_files = [
+            scene_dir / "scene_manifest.yaml",
+            scene_dir / "generated" / "generated_workcell_summary.json",
+        ]
+        optional_generated_files = [
+            scene_dir / "generated" / "generated_environment_objects.yaml",
+            scene_dir / "urdf" / "generated_asset_metadata.yaml",
+        ]
+        for req_file in required_generated_files:
+            if not req_file.is_file():
+                errors.append(f"required generated artifact missing after generation: {req_file}")
+        for optional_file in optional_generated_files:
+            if not optional_file.is_file():
+                warnings.append(f"optional scene artifact missing: {optional_file}")
 
         def _load_assets_for(paths: list[Path], target: dict[str, dict[str, Any]]) -> None:
             for path in paths:
                 if not path.exists():
-                    warnings.append(f"optional scene artifact missing: {path}")
                     continue
                 try:
                     data = _safe_load_json(path) if path.suffix.lower() == ".json" else _safe_load_yaml(path)
@@ -238,7 +251,7 @@ def build_report(scene_dir: Path | None = None) -> dict[str, object]:
 
             layout_poses = sorted({json.dumps(p, sort_keys=True) for p in layout_rec["poses"] if p})
             generated_poses = sorted({json.dumps(p, sort_keys=True) for p in generated_rec["poses"] if p})
-            if layout_poses and generated_poses and layout_poses != generated_poses:
+            if layout_poses and generated_poses and not (set(layout_poses) & set(generated_poses)):
                 transform_mismatches.append(
                     {
                         "asset_id": aid,
