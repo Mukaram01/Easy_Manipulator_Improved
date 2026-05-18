@@ -134,6 +134,27 @@ private:
   QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
   QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
   void refresh_scene_workflow_rail();
+  enum class RecommendedWorkflowActionHandler {
+    OpenOrCreateScene,
+    AddAsset,
+    SaveLayout,
+    GenerateYaml,
+    ValidateScene,
+    GenerateScenePackage,
+    PlanSimulate,
+    ExportBundle
+  };
+  struct RecommendedWorkflowAction
+  {
+    QString token;
+    QString label;
+    bool enabled{ false };
+    QString blocker_reason_tooltip;
+    QString explanatory_text;
+    RecommendedWorkflowActionHandler handler{ RecommendedWorkflowActionHandler::OpenOrCreateScene };
+  };
+  RecommendedWorkflowAction resolve_recommended_workflow_action() const;
+  void trigger_recommended_workflow_action(RecommendedWorkflowActionHandler handler);
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
   void generate_yaml_draft_for_selected_scene();
@@ -324,6 +345,8 @@ private:
   QLabel * asset_catalog_panel_label_{ nullptr };
   QLabel * scene_files_summary_label_{ nullptr };
   QLabel * scene_workflow_rail_label_{ nullptr };
+  QLabel * scene_workflow_recommendation_label_{ nullptr };
+  QPushButton * scene_workflow_recommendation_button_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QLabel * scene_files_selected_path_label_{ nullptr };
