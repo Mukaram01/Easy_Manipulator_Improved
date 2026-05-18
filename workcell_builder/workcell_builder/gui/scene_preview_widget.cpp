@@ -78,7 +78,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   clear_selection_button_ = new QPushButton("Clear Selection", this); controls->addWidget(clear_selection_button_);
   auto * mouse_help_label = new QLabel(QStringLiteral("ⓘ"), this);
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
-  mouse_help_label->setStatusTip(QStringLiteral(kScenePreviewMouseHelpText));
+  mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
   controls->addWidget(mouse_help_label);
   overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
