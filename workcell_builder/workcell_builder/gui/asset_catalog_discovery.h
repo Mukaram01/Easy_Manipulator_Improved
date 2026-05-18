@@ -13,6 +13,7 @@ struct DiscoveredAssetCatalogEntry
   std::string category;
   std::string source_path;
   std::string source_kind;
+  std::string role_hint;
   std::string availability;
   std::string reason;
 };
