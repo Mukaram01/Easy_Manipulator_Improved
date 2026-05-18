@@ -58,7 +58,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   simple_3d_view_ = new Scene3DViewportWidget(view3d_container_); v3->addWidget(simple_3d_view_);
   empty_state_label_ = new QLabel("No scene selected\nOpen a scene or create a new cell to preview it.", view3d_container_);
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
-  error_state_label_ = new QLabel("3D View unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
+  error_state_label_ = new QLabel("3D Layout Preview unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
   view2d_container_ = new QWidget(this); view2d_container_->setLayout(new QVBoxLayout());
   fallback_banner_label_ = new QLabel("2D fallback preview active", view2d_container_);
   fallback_banner_label_->setAlignment(Qt::AlignCenter);

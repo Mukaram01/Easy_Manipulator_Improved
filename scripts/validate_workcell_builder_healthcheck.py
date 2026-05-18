@@ -99,6 +99,13 @@ def main() -> int:
         _check(marker in launch_template, f"launch template contains {marker}", errors)
 
     scene_cpp = (repo_root / "workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(encoding="utf-8")
+    scene_builder_mainwindow_cpp = (repo_root / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    scene_builder_preview_cpp = (repo_root / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
+    for required in ["3D Layout Preview", "2D Layout (Fallback)"]:
+        _check(required in scene_builder_mainwindow_cpp or required in scene_builder_preview_cpp, f"scene builder uses updated layout preview wording: {required}", errors)
+    for forbidden in ["Mode: Select · 3D View", "\"3D View\"", "3D View unavailable"]:
+        _check(forbidden not in scene_builder_mainwindow_cpp and forbidden not in scene_builder_preview_cpp, f"scene builder excludes legacy 3D view wording: {forbidden}", errors)
+
     _check("demo.launch.py use_fake_hardware:=true" in scene_cpp, "guidance uses fake hardware default", errors)
     _check("demo.launch.py use_fake_hardware:=false" not in scene_cpp, "default guidance does not suggest real hardware", errors)
     _check("launch_task_preview:=true" in scene_cpp, "guidance includes dry-run task preview launch", errors)
