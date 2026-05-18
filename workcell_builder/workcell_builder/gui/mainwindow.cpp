@@ -989,7 +989,13 @@ void MainWindow::setup_studio_shell()
   canvas_mode_label_ = new QLabel("Mode: Select · 3D Layout Preview", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
-  connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){ append_studio_log(m); });
+  connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){
+    append_studio_log(m);
+    if (m.startsWith("Locked:", Qt::CaseInsensitive) && inspector_warning_label_) {
+      inspector_warning_label_->setText(
+        "Warnings: " + m + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: 1 | Preview-only");
+    }
+  });
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
@@ -1873,6 +1879,9 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleCategory).toString().trimmed();
     if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleType).toString().trimmed();
     state.source_path = item->data(RoleSource).toString().trimmed();
+    state.locked = item->data(RoleLocked).toBool();
+    state.editable = !state.locked;
+    state.lock_reason = state.locked ? item->data(RoleWarning).toString().trimmed() : QString();
     state.pose_available = true;
     state.pose_x = item->pos().x() / 100.0;
     state.pose_y = item->pos().y() / 100.0;
@@ -1935,7 +1944,8 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString role = state.role_or_category.isEmpty() ? "unknown" : state.role_or_category;
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
-  inspector_label_->setText(QString("Name: %1\nRole: %2\nID: %3\nSource: %4").arg(display, role, state.id, source));
+  const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
+  inspector_label_->setText(QString("Name: %1\nRole: %2\nID: %3\nSource: %4\n%5").arg(display, role, state.id, source, locked_line));
   inspector_label_->setToolTip(source);
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
@@ -4190,6 +4200,13 @@ void MainWindow::populate_scene_hierarchy()
     p.origin_offset_z = item.origin_offset_z;
     p.mesh_available = item.mesh_available;
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
+    p.locked = item.locked;
+    p.editable = !item.locked;
+    if (item.locked) {
+      const QString base_reason = p.warnings.isEmpty() ? QStringLiteral("item is locked") : p.warnings.front();
+      p.lock_reason = base_reason;
+      p.warnings << QStringLiteral("Locked: %1").arg(base_reason);
+    }
     preview_items.push_back(p);
     if (allowed_scene_roles.contains(p.role)) {
       add_tree_node(p);
