@@ -434,7 +434,45 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   if (preview_path && it.has_origin_offset) glTranslated(it.origin_offset_x, it.origin_offset_y, it.origin_offset_z);
   glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
 
-  draw_unit_cube_triangles(color);
+  const MeshCacheEntry & cache = ensure_mesh_cached(it.source_path);
+  if (!cache.valid || cache.mesh.triangles.isEmpty()) {
+    draw_unit_cube_triangles(color);
+    glPopMatrix();
+    return true;
+  }
+
+  const QVector3D default_up_normal(0.0f, 1.0f, 0.0f);
+  QVector3D light_dir(0.35f, 0.8f, 0.45f);
+  if (light_dir.lengthSquared() > 1e-12f) light_dir.normalize();
+  else light_dir = default_up_normal;
+  const float ambient = 0.18f;
+  const float diffuse_scale = 0.82f;
+
+  glBegin(GL_TRIANGLES);
+  for (const auto & tri : cache.mesh.triangles) {
+    QVector3D normal = tri.normal;
+    const bool normal_invalid = !qIsFinite(normal.x()) || !qIsFinite(normal.y()) || !qIsFinite(normal.z()) ||
+                                normal.lengthSquared() <= 1e-12f;
+    if (normal_invalid) {
+      const QVector3D edge0 = tri.vertices[1] - tri.vertices[0];
+      const QVector3D edge1 = tri.vertices[2] - tri.vertices[0];
+      normal = QVector3D::crossProduct(edge0, edge1);
+    }
+    if (qIsFinite(normal.x()) && qIsFinite(normal.y()) && qIsFinite(normal.z()) && normal.lengthSquared() > 1e-12f) {
+      normal.normalize();
+    } else {
+      normal = default_up_normal;
+    }
+
+    const float diffuse = qMax(0.0f, QVector3D::dotProduct(normal, light_dir));
+    const float shade = ambient + diffuse * diffuse_scale;
+    glColor4f(color.redF() * shade, color.greenF() * shade, color.blueF() * shade, 1.0f);
+    glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
+    glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
+    glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
+  }
+  glEnd();
+
   glPopMatrix();
   return true;
 }
