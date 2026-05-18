@@ -408,6 +408,7 @@ private:
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
   QVector<AssetCatalogEntry> asset_catalog_entries_;
+  QPoint catalog_drag_start_;
   QDialog * add_asset_dialog_{ nullptr };
   QTableWidget * add_asset_dialog_table_{ nullptr };
   QLabel * add_asset_dialog_details_label_{ nullptr };
