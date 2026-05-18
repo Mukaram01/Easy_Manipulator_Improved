@@ -1,4 +1,6 @@
 #include "gui/asset_catalog_discovery.h"
+#include "workcell_yaml_utils.hpp"
+#include "workcell_warning_once.hpp"
 
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
@@ -44,15 +46,19 @@ void parse_manifest_file(
   std::set<std::string> & dedupe)
 {
   YAML::Node root;
-  try { root = YAML::LoadFile(manifest.string()); } catch (...) { return; }
+  try { root = YAML::LoadFile(manifest.string()); } catch (const std::exception & e) {
+    workcell_builder::log_warning_once_per_context_path_reason(
+      "asset_catalog_manifest_parse", manifest, std::string("YAML parse failed: ") + e.what());
+    return;
+  }
 
-  const YAML::Node assets = root["assets"];
+  const YAML::Node assets = workcell_builder::yaml_map_key(root, "assets");
   if (!assets || !assets.IsSequence()) return;
   for (const auto & asset : assets) {
     if (!asset.IsMap()) continue;
-    const std::string id = asset["id"] ? asset["id"].as<std::string>() : std::string();
-    const std::string name = asset["display_name"] ? asset["display_name"].as<std::string>() : id;
-    const std::string rel_path = asset["path"] ? asset["path"].as<std::string>() : std::string();
+    const std::string id = workcell_builder::yaml_map_value_or_empty(asset, "id");
+    const std::string name = workcell_builder::yaml_map_value_or_empty(asset, "display_name");
+    const std::string rel_path = workcell_builder::yaml_map_value_or_empty(asset, "path");
     const fs::path resolved_path = rel_path.empty() ? manifest.parent_path() : (manifest.parent_path() / rel_path);
     DiscoveredAssetCatalogEntry entry;
     entry.asset_id = id.empty() ? resolved_path.filename().string() : id;
@@ -103,16 +109,22 @@ void add_template_asset_refs(const fs::path & repo_root, std::vector<DiscoveredA
   const fs::path template_index = repo_root / "catalog" / "workcell_studio_demos.yaml";
   if (!fs::exists(template_index)) return;
   YAML::Node root;
-  try { root = YAML::LoadFile(template_index.string()); } catch (...) { return; }
-  const YAML::Node templates = root["templates"];
+  try { root = YAML::LoadFile(template_index.string()); } catch (const std::exception & e) {
+    workcell_builder::log_warning_once_per_context_path_reason(
+      "asset_catalog_template_parse", template_index, std::string("YAML parse failed: ") + e.what());
+    return;
+  }
+  const YAML::Node templates = workcell_builder::yaml_map_key(root, "templates");
   if (!templates || !templates.IsSequence()) return;
 
   for (const auto & t : templates) {
-    const YAML::Node refs = t["asset_references"];
+    if (!t || !t.IsMap()) continue;
+    const YAML::Node refs = workcell_builder::yaml_map_key(t, "asset_references");
     if (!refs || !refs.IsSequence()) continue;
     for (const auto & ref : refs) {
-      const std::string key = ref["id"] ? ref["id"].as<std::string>() : std::string();
-      const std::string path = ref["path"] ? ref["path"].as<std::string>() : std::string();
+      if (!ref || !ref.IsMap()) continue;
+      const std::string key = workcell_builder::yaml_map_value_or_empty(ref, "id");
+      const std::string path = workcell_builder::yaml_map_value_or_empty(ref, "path");
       if (key.empty() && path.empty()) continue;
       DiscoveredAssetCatalogEntry entry;
       entry.asset_id = key.empty() ? fs::path(path).stem().string() : key;
