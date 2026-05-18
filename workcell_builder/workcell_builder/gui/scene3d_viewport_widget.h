@@ -116,7 +116,7 @@ private:
   bool draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path = true);
   void draw_unit_cube_triangles(const QColor & color);
   QPoint last_;
-  QPoint drag_start_;
+  QPoint drag_start_screen_;
   bool dragging_gizmo_{ false };
   QString active_axis_;
   struct DragPose
@@ -127,7 +127,8 @@ private:
   };
   DragPose drag_start_pose_;
   bool drag_in_progress_{ false };
-  GizmoHandle active_gizmo_handle_{ GizmoHandle::None };
+  bool drag_cancelled_{ false };
+  GizmoHandle drag_active_handle_{ GizmoHandle::None };
   GizmoHandle hovered_gizmo_handle_{ GizmoHandle::None };
   QString hovered_id_;
   struct MeshCacheEntry
