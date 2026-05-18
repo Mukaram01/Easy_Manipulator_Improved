@@ -228,6 +228,56 @@ struct SceneTaskIntentSummary
   QStringList searched_paths;
 };
 
+struct ActionGate
+{
+  bool enabled{false};
+  QString tooltip;
+};
+
+ActionGate build_generate_scene_gate(
+  const workcell_builder::WorkcellStudioSceneInfo & s, bool validation_stale)
+{
+  if (!s.has_environment_yaml) {
+    return {false, "Blocked: Generate environment.yaml first from Scene Builder."};
+  }
+  if (!s.has_scene_manifest_yaml) {
+    return {false, "Blocked: Generate scene_manifest.yaml before generating scene package."};
+  }
+  if (validation_stale) {
+    return {false, "Blocked: Scene changed since last validation. Run Offline Validation first."};
+  }
+  if (!s.has_smoke_report_json) {
+    return {false, "Blocked: Missing smoke/offline_smoke_report.json. Run Offline Validation first."};
+  }
+  return {true, "Ready: Generate Scene Package prerequisites are satisfied."};
+}
+
+ActionGate build_plan_simulate_gate(
+  const workcell_builder::WorkcellStudioSceneInfo & s, bool launch_artifacts_ready)
+{
+  if (!s.has_package_xml) {
+    return {false, "Blocked: Missing package.xml/CMakeLists.txt. Generate Scene Package first."};
+  }
+  if (!s.has_launch_demo) {
+    return {false, "Blocked: Missing launch/demo.launch.py. Generate Scene Package first."};
+  }
+  if (!launch_artifacts_ready) {
+    return {false, "Blocked: Launch readiness flag is not set yet. Generate Scene Package again."};
+  }
+  return {true, "Ready: launch/demo.launch.py and launch readiness flags are present."};
+}
+
+ActionGate build_export_gate(const workcell_builder::WorkcellStudioSceneInfo & s)
+{
+  if (!s.has_package_xml) {
+    return {false, "Blocked: Scene package is missing. Generate Scene Package first."};
+  }
+  if (!s.has_task_recipe) {
+    return {false, "Blocked: Missing task recipe. Generate/Update Task Intent and task recipe first."};
+  }
+  return {true, "Ready: Scene package and export prerequisites are present."};
+}
+
 static QString ystr(const YAML::Node & n){ return (n && n.IsScalar()) ? QString::fromStdString(n.as<std::string>()) : "unknown"; }
 static QString scalar_path(const YAML::Node & root, std::initializer_list<const char *> keys){ YAML::Node n=root; for(auto *k:keys){ if(!n || !n.IsMap() || !n[k]) return "unknown"; n=n[k]; } return ystr(n); }
 static QString normalize_bound_id(QString value){ value=value.trimmed(); if(value.isEmpty()||value=="unknown") return "unknown"; return value; }
@@ -2191,6 +2241,9 @@ void MainWindow::refresh_selected_scene_details_card()
     if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(false);
     if (dashboard_export_button_) dashboard_export_button_->setEnabled(false);
     if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(false);
+    if (dashboard_validate_button_) dashboard_validate_button_->setToolTip("Select a scene to validate.");
+    if (dashboard_plan_button_) dashboard_plan_button_->setToolTip("Select a scene to open Plan / Simulate.");
+    if (dashboard_export_button_) dashboard_export_button_->setToolTip("Select a scene to export.");
     return;
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
@@ -2200,10 +2253,16 @@ void MainWindow::refresh_selected_scene_details_card()
   dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><b>Gripper:</b> %4<br/><b>Task Recipe:</b> %5<br/><b>Launch:</b> %6<br/><b>Source:</b> %7")
     .arg(QString::fromStdString(s.scene_name)).arg(status_chip).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.has_task_recipe ? "present" : "missing").arg(s.has_launch_demo ? "ready" : "blocked").arg(QString::fromStdString(s.scene_dir.string())));
   if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Source Path\n%1").arg(QString::fromStdString(scene_browser_result_.scene_root.string())));
+  const ActionGate generate_gate = build_generate_scene_gate(s, validation_stale_);
+  const ActionGate plan_gate = build_plan_simulate_gate(s, launch_artifacts_ready_);
+  const ActionGate export_gate = build_export_gate(s);
   if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(true);
   if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(true);
-  if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(s.has_launch_demo);
-  if (dashboard_export_button_) dashboard_export_button_->setEnabled(s.has_task_recipe);
+  if (dashboard_validate_button_) dashboard_validate_button_->setToolTip(generate_gate.tooltip);
+  if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(plan_gate.enabled);
+  if (dashboard_plan_button_) dashboard_plan_button_->setToolTip(plan_gate.tooltip);
+  if (dashboard_export_button_) dashboard_export_button_->setEnabled(export_gate.enabled);
+  if (dashboard_export_button_) dashboard_export_button_->setToolTip(export_gate.tooltip);
   if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(true);
 }
 
