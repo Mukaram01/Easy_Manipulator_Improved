@@ -24,6 +24,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QPointF>
 #include <atomic>
 #include <QProcess>
 #include <boost/filesystem.hpp>
@@ -59,6 +60,7 @@ class QToolButton;
 class QMenu;
 class QSplitter;
 class QFrame;
+class QDialog;
 
 class MainWindow: public QMainWindow
 {
@@ -90,6 +92,7 @@ private slots:
   void handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status);
 
 private:
+  bool eventFilter(QObject * watched, QEvent * event) override;
   enum class StudioPage : int {
     DashboardPage = 0,
     SceneBuilderPage,
@@ -196,6 +199,24 @@ private:
   void duplicate_selected_item();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
+  QPointF compute_default_canvas_pose(const QString & category, const QString & display_name) const;
+  void arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path);
+  void commit_armed_asset_placement(const QPointF & canvas_pos_px);
+
+  struct AssetCatalogEntry
+  {
+    QString asset_type;
+    QString display_name;
+    QString role;
+    QString dimensions;
+    QString default_pose;
+    QString source_path;
+    bool editable{ true };
+    QString availability_status;
+    QString disabled_reason;
+    QString category;
+  };
+
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
   void open_layout_merge_report();
   void copy_layout_merge_summary();
@@ -212,6 +233,9 @@ private:
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
+  void open_add_asset_dialog();
+  void refresh_add_asset_dialog_details();
+  void place_selected_asset_from_dialog();
   void validate_asset_catalog_selection();
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
@@ -292,6 +316,7 @@ private:
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
+  QPushButton * add_asset_button_{ nullptr };
   QPushButton * pick_source_button_{ nullptr };
   QPushButton * place_target_button_{ nullptr };
   QPushButton * camera_button_{ nullptr };
@@ -313,6 +338,7 @@ private:
   QCheckBox * show_pick_place_overlay_box_{ nullptr };
   QCheckBox * show_trajectory_overlay_box_{ nullptr };
   QCheckBox * show_minimap_box_{ nullptr };
+  QCheckBox * place_mode_persistent_box_{ nullptr };
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };
@@ -322,8 +348,17 @@ private:
   QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
+  QVector<AssetCatalogEntry> asset_catalog_entries_;
+  QDialog * add_asset_dialog_{ nullptr };
+  QTableWidget * add_asset_dialog_table_{ nullptr };
+  QLabel * add_asset_dialog_details_label_{ nullptr };
+  QPushButton * add_asset_dialog_place_button_{ nullptr };
   QGraphicsRectItem * ghost_preview_item_{ nullptr };
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
+  bool place_asset_armed_{ false };
+  QString armed_asset_category_;
+  QString armed_asset_display_name_;
+  QString armed_asset_source_path_;
   double snap_step_m_{ 0.05 };
   bool layout_dirty_{ false };
   bool inspector_update_guard_{ false };

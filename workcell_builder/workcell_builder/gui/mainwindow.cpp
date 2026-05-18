@@ -62,6 +62,8 @@
 #include <QStatusBar>
 #include <QToolButton>
 #include <QMenu>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QMap>
 #include <QSplitter>
 #include <QScrollArea>
@@ -71,6 +73,8 @@
 #include <QProgressDialog>
 #include <QSettings>
 #include <QLineEdit>
+#include <QEvent>
+#include <QMouseEvent>
 #include <QSet>
 #include <QHBoxLayout>
 #include <QtConcurrent>
@@ -103,6 +107,7 @@
 #include "workcell_studio_id_utils.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
+#include "gui/asset_catalog_discovery.h"
 
 namespace fs = boost::filesystem;
 
@@ -833,6 +838,8 @@ void MainWindow::setup_studio_shell()
   add_to_canvas_button_ = new QPushButton("Add to Canvas", scene_builder);
   add_to_canvas_button_->setEnabled(false);
   catalog_layout->addWidget(add_to_canvas_button_);
+  add_asset_button_ = new QPushButton("Add Asset", scene_builder);
+  catalog_layout->addWidget(add_asset_button_);
   auto * asset_more_actions = new QToolButton(scene_builder);
   asset_more_actions->setText("More Actions");
   asset_more_actions->setPopupMode(QToolButton::InstantPopup);
@@ -915,6 +922,10 @@ void MainWindow::setup_studio_shell()
   });
   auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
   auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
+  place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
+  place_mode_persistent_box_->setChecked(false);
+  place_mode_persistent_box_->setToolTip("When enabled, Place Asset mode stays armed after each placement.");
+  controls->addWidget(place_mode_persistent_box_);
   auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
   auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
   auto * camera_view = new QToolButton(scene_builder); camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
@@ -987,6 +998,7 @@ void MainWindow::setup_studio_shell()
   controls->addWidget(canvas_more_actions);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
+  digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
   center_panel_layout->addWidget(scene_preview_widget_, 1);
   minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
@@ -1498,8 +1510,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
-  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
-  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; add_asset_to_canvas_from_catalog(it->text(1), it->text(0), it->data(0, Qt::UserRole).toString()); });
+  connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, Qt::UserRole).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
+  connect(add_asset_button_, &QPushButton::clicked, this, &MainWindow::open_add_asset_dialog);
+  connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, Qt::UserRole).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
@@ -2969,6 +2982,21 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
   refresh_scene_builder_view_chips();
 }
 
+bool MainWindow::eventFilter(QObject * watched, QEvent * event)
+{
+  if (digital_twin_canvas_ && watched == digital_twin_canvas_->viewport() &&
+    event && event->type() == QEvent::MouseButtonPress && place_asset_armed_)
+  {
+    auto * mouse_event = static_cast<QMouseEvent *>(event);
+    if (mouse_event->button() == Qt::LeftButton && digital_twin_canvas_->scene()) {
+      const QPointF scene_pos = digital_twin_canvas_->mapToScene(mouse_event->pos());
+      commit_armed_asset_placement(scene_pos);
+      return true;
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
+}
+
 QPointF MainWindow::snap_canvas_position(const QPointF & pos) const
 {
   if (!snap_to_grid_box_ || !snap_to_grid_box_->isChecked()) return pos;
@@ -3291,6 +3319,36 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
 
 void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path)
 {
+  arm_place_asset_mode(category, display_name, source_path);
+}
+
+QPointF MainWindow::compute_default_canvas_pose(const QString & category, const QString & display_name) const
+{
+  auto anchor_pos = [this](const QString & needle)->QPointF {
+      if (!digital_twin_scene_) return QPointF(0.0, 0.0);
+      for (auto * gi : digital_twin_scene_->items()) {
+        const QString tag = gi->data(RoleCategory).toString().toLower() + "|" + gi->data(RoleRole).toString().toLower() + "|" + gi->data(RoleId).toString().toLower();
+        if (tag.contains(needle)) return gi->pos();
+      }
+      return QPointF(0.0, 0.0);
+    };
+  const QString lower = (category + " " + display_name).toLower();
+  const QPointF table = anchor_pos("table");
+  const QPointF conveyor = anchor_pos("conveyor");
+  const QPointF pick = anchor_pos("pick");
+  const QPointF place = anchor_pos("place");
+  if (lower.contains("table")) return table;
+  if (lower.contains("conveyor")) return table + QPointF(-120.0, 25.0);
+  if (lower.contains("bin") || lower.contains("place target") || lower.contains("place_target")) return table + QPointF(95.0, -20.0);
+  if (lower.contains("pick zone") || lower.contains("pick_zone")) return (conveyor != QPointF(0.0, 0.0)) ? conveyor + QPointF(65.0, -10.0) : table + QPointF(-40.0, 10.0);
+  if (lower.contains("place zone") || lower.contains("place_zone")) return (place != QPointF(0.0, 0.0)) ? place + QPointF(30.0, 0.0) : table + QPointF(115.0, 15.0);
+  if (lower.contains("camera")) return table + QPointF(-20.0, -135.0);
+  if (lower.contains("object")) return (pick != QPointF(0.0, 0.0)) ? pick + QPointF(10.0, 10.0) : table + QPointF(-20.0, 10.0);
+  return default_xy_for_category(category);
+}
+
+void MainWindow::arm_place_asset_mode(const QString & category, const QString & display_name, const QString & source_path)
+{
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return;
   std::set<std::string> reserved_ids;
@@ -3303,9 +3361,31 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   reserved_ids.insert(existing_layout_ids.begin(), existing_layout_ids.end());
   const std::string id_prefix = workcell_builder::workcell_studio_id_prefix_for_type(category.toStdString());
   const QString new_id = QString::fromStdString(workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
+  place_asset_armed_ = true;
+  armed_asset_category_ = category;
+  armed_asset_display_name_ = display_name;
+  armed_asset_source_path_ = source_path;
+  set_canvas_interaction_mode(CanvasInteractionMode::Place);
+  append_studio_log(QString("Place Asset Mode armed: %1 (%2). Click canvas to commit.").arg(display_name, category));
+}
+
+void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
+{
+  if (!digital_twin_scene_ || !place_asset_armed_) return;
+  const QString category = armed_asset_category_;
+  const QString display_name = armed_asset_display_name_;
+  const QString source_path = armed_asset_source_path_;
+  const QString prefix = id_prefix_from_category(category);
+  int suffix = 1;
+  QString new_id;
+  auto exists = [&](const QString & candidate){ for (auto * gi : digital_twin_scene_->items()) if (gi->data(RoleId).toString() == candidate) return true; return false; };
+  do { new_id = QString("%1_%2").arg(prefix).arg(suffix++, 2, 10, QLatin1Char('0')); } while (exists(new_id));
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, 35.0, 35.0));
-  QPointF placement = default_xy_for_category(category);
+  QPointF placement = snap_canvas_position(canvas_pos_px);
+  if (qAbs(placement.x()) < 0.1 && qAbs(placement.y()) < 0.1) {
+    placement = compute_default_canvas_pose(category, display_name);
+  }
   if (digital_twin_scene_->items().isEmpty()) {
     placement = QPointF(0.0, 0.0);
     QMessageBox::warning(this, "Default placement", "No robot/table found; placing asset at canvas center.");
@@ -3352,6 +3432,16 @@ void MainWindow::add_asset_to_canvas_from_catalog(const QString & category, cons
   append_studio_log("ghost placement preview committed");
   refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  refresh_diagnostics_quick_status();
+  const bool persist = place_mode_persistent_box_ && place_mode_persistent_box_->isChecked();
+  place_asset_armed_ = persist;
+  if (!persist) {
+    armed_asset_category_.clear();
+    armed_asset_display_name_.clear();
+    armed_asset_source_path_.clear();
+    set_canvas_interaction_mode(CanvasInteractionMode::Select);
+  }
 }
 
 
@@ -3362,10 +3452,7 @@ void MainWindow::validate_asset_catalog_selection()
   if (asset_catalog_tree_) {
     auto * item = asset_catalog_tree_->currentItem();
     if (item && !item->isHidden()) {
-      const QString source = item->data(0, Qt::UserRole).toString().trimmed();
-      const bool has_valid_path = !source.isEmpty() && (QFileInfo::exists(source) || QFileInfo(source).isAbsolute());
-      const bool has_placeholder_token = source.startsWith("placeholder://");
-      can_add = has_valid_path || has_placeholder_token;
+      can_add = item->data(0, Qt::UserRole + 10).toBool();
     }
   }
   add_to_canvas_button_->setEnabled(can_add);
@@ -3377,7 +3464,7 @@ QString MainWindow::selected_catalog_item_path() const
   if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) {
     return "";
   }
-  return asset_catalog_tree_->currentItem()->data(0, Qt::UserRole).toString();
+  return asset_catalog_tree_->currentItem()->data(0, Qt::UserRole + 11).toString();
 }
 
 void MainWindow::on_asset_filter_changed(int)
@@ -3736,72 +3823,108 @@ void MainWindow::populate_asset_catalog()
 {
   if (!asset_catalog_tree_) return;
   asset_catalog_tree_->clear();
+  asset_catalog_entries_.clear();
 
   const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
   const fs::path repo_root = fs::current_path();
-  QStringList searched_paths;
-  std::vector<fs::path> discovery_paths = {
-    repo_root / "assets" / "robots",
-    repo_root / "assets" / "end_effectors",
-    repo_root / "assets" / "environment",
-    repo_root / "assets" / "environment_objects",
-    workspace_root / "src" / "easy_manipulation_deployment" / "assets",
-    workspace_root / "src" / "assets",
-    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "easy_manipulation_deployment" / "assets",
-    fs::path(QDir::homePath().toStdString()) / "workcell_ws" / "src" / "assets"
-  };
 
-  const fs::path sensors_path = repo_root / "assets" / "sensors";
-  if (fs::exists(sensors_path)) discovery_paths.push_back(sensors_path);
-  const fs::path capabilities_path = repo_root / "catalog" / "capabilities";
-  if (fs::exists(capabilities_path)) discovery_paths.push_back(capabilities_path);
-
-  auto infer_category = [](const QString & path, const fs::path & root, const QString & ext) {
-    QString category = "Custom";
-    const QString root_name = QString::fromStdString(root.filename().string()).toLower();
-    if (root_name == "robots" || path.contains("robot", Qt::CaseInsensitive) || ext == ".urdf" || ext == ".xacro") category = "Robots";
-    if (root_name == "end_effectors" || path.contains("gripper", Qt::CaseInsensitive) || path.contains("effector", Qt::CaseInsensitive)) category = "End Effectors";
-    if (root_name == "sensors" || path.contains("camera", Qt::CaseInsensitive) || path.contains("sensor", Qt::CaseInsensitive)) category = "Sensors";
-    if (path.contains("table", Qt::CaseInsensitive)) category = "Tables";
-    if (path.contains("conveyor", Qt::CaseInsensitive)) category = "Conveyors";
-    if (path.contains("bin", Qt::CaseInsensitive)) category = "Bins";
-    if (path.contains("fixture", Qt::CaseInsensitive)) category = "Fixtures";
-    return category;
-  };
-
-  int discovered_assets = 0;
-  for (const auto & root : discovery_paths) {
-    searched_paths << QString::fromStdString(root.string());
-    boost::system::error_code ec;
-    if (!fs::exists(root, ec) || ec || !fs::is_directory(root, ec) || ec) continue;
-    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-      if (!fs::is_regular_file(it->path(), ec) || ec) continue;
-      const QString path = QString::fromStdString(it->path().string());
-      const QString ext = QString::fromStdString(it->path().extension().string()).toLower();
-      QString type = "File";
-      if (ext == ".urdf") type = "URDF";
-      else if (ext == ".xacro") type = "Xacro";
-      else if (ext == ".stl") type = "STL";
-      else if (ext == ".dae") type = "DAE";
-      else if (ext == ".yaml" || ext == ".yml") type = "YAML";
-      const QString category = infer_category(path, root, ext);
-      const QString status = (ext == ".urdf" || ext == ".xacro" || ext == ".stl" || ext == ".dae") ? "Ready" : "Preview-only";
-      const QString source = QString("%1 (%2)").arg(type, QString::fromStdString(root.filename().string()));
-      auto * item = new QTreeWidgetItem(asset_catalog_tree_, {QString::fromStdString(it->path().filename().string()), category, source, status});
-      item->setData(0, Qt::UserRole, path);
-      ++discovered_assets;
+  const auto discovered = workcell_builder::discover_asset_catalog_entries(repo_root, workspace_root);
+  for (const auto & entry : discovered) {
+    auto * item = new QTreeWidgetItem(
+      asset_catalog_tree_,
+      {
+        QString::fromStdString(entry.display_name),
+        QString::fromStdString(entry.category),
+        QString::fromStdString(entry.source_kind),
+        QString::fromStdString(entry.availability)
+      });
+    item->setData(0, Qt::UserRole, QString::fromStdString(entry.source_path));
+    if (entry.availability == "incomplete") {
+      item->setDisabled(true);
+      item->setToolTip(3, QString::fromStdString(entry.reason));
+      item->setToolTip(0, QString("Unavailable: %1").arg(QString::fromStdString(entry.reason)));
     }
   }
 
-  if (discovered_assets == 0) {
-    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Searched paths", "Unavailable"});
+  if (discovered.empty()) {
+    auto * info = new QTreeWidgetItem(asset_catalog_tree_, {"No assets found", "Info", "Discovery", "incomplete"});
     info->setDisabled(true);
-    info->setToolTip(0, QString("No assets found. Searched paths:\n%1").arg(searched_paths.join("\n")));
-    info->setToolTip(2, searched_paths.join("\n"));
+    info->setToolTip(0, "No assets discovered from manifest, inferred folders, or scene template references.");
   }
 
   on_asset_filter_changed(asset_filter_combo_ ? asset_filter_combo_->currentIndex() : 0);
   validate_asset_catalog_selection();
+}
+
+void MainWindow::open_add_asset_dialog()
+{
+  if (!add_asset_dialog_) {
+    add_asset_dialog_ = new QDialog(this);
+    add_asset_dialog_->setWindowTitle("Add Asset");
+    auto * layout = new QVBoxLayout(add_asset_dialog_);
+    add_asset_dialog_table_ = new QTableWidget(add_asset_dialog_);
+    add_asset_dialog_table_->setColumnCount(8);
+    add_asset_dialog_table_->setHorizontalHeaderLabels({"Asset Type", "Display Name", "Role", "Dimensions", "Default Pose", "Mesh/URDF Path", "Editable", "Status"});
+    add_asset_dialog_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    add_asset_dialog_table_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+    add_asset_dialog_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    add_asset_dialog_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    layout->addWidget(add_asset_dialog_table_);
+    add_asset_dialog_details_label_ = new QLabel(add_asset_dialog_);
+    add_asset_dialog_details_label_->setWordWrap(true);
+    layout->addWidget(add_asset_dialog_details_label_);
+    auto * buttons = new QDialogButtonBox(QDialogButtonBox::Close, add_asset_dialog_);
+    add_asset_dialog_place_button_ = new QPushButton("Place Asset", add_asset_dialog_);
+    buttons->addButton(add_asset_dialog_place_button_, QDialogButtonBox::ActionRole);
+    connect(buttons, &QDialogButtonBox::rejected, add_asset_dialog_, &QDialog::reject);
+    connect(add_asset_dialog_place_button_, &QPushButton::clicked, this, &MainWindow::place_selected_asset_from_dialog);
+    connect(add_asset_dialog_table_, &QTableWidget::itemSelectionChanged, this, &MainWindow::refresh_add_asset_dialog_details);
+    layout->addWidget(buttons);
+    add_asset_dialog_->resize(1200, 520);
+  }
+
+  add_asset_dialog_table_->setRowCount(asset_catalog_entries_.size());
+  for (int row = 0; row < asset_catalog_entries_.size(); ++row) {
+    const auto & e = asset_catalog_entries_[row];
+    const QString status = e.disabled_reason.trimmed().isEmpty() ? e.availability_status : (e.availability_status + " (Unavailable for placement)");
+    const QStringList cols = {e.asset_type, e.display_name, e.role, e.dimensions, e.default_pose, e.source_path, e.editable ? "Yes" : "No", status};
+    for (int col = 0; col < cols.size(); ++col) {
+      auto * cell = new QTableWidgetItem(cols[col]);
+      cell->setData(Qt::UserRole, row);
+      add_asset_dialog_table_->setItem(row, col, cell);
+    }
+  }
+  if (add_asset_dialog_table_->rowCount() > 0) add_asset_dialog_table_->selectRow(0);
+  refresh_add_asset_dialog_details();
+  add_asset_dialog_->show();
+  add_asset_dialog_->raise();
+  add_asset_dialog_->activateWindow();
+}
+
+void MainWindow::refresh_add_asset_dialog_details()
+{
+  if (!add_asset_dialog_table_ || !add_asset_dialog_details_label_ || !add_asset_dialog_place_button_) return;
+  int row = add_asset_dialog_table_->currentRow();
+  if (row < 0 || row >= asset_catalog_entries_.size()) {
+    add_asset_dialog_place_button_->setEnabled(false);
+    add_asset_dialog_details_label_->setText("Select an asset row to inspect metadata.");
+    return;
+  }
+  const auto & e = asset_catalog_entries_[row];
+  const bool placeable = e.disabled_reason.trimmed().isEmpty();
+  add_asset_dialog_place_button_->setEnabled(placeable);
+  const QString reason = placeable ? "Ready to place." : QString("Placement disabled: %1").arg(e.disabled_reason);
+  add_asset_dialog_details_label_->setText(QString("<b>%1</b><br/>Availability: %2<br/>%3").arg(e.display_name, e.availability_status, reason));
+}
+
+void MainWindow::place_selected_asset_from_dialog()
+{
+  if (!add_asset_dialog_table_) return;
+  const int row = add_asset_dialog_table_->currentRow();
+  if (row < 0 || row >= asset_catalog_entries_.size()) return;
+  const auto & e = asset_catalog_entries_[row];
+  if (!e.disabled_reason.trimmed().isEmpty()) return;
+  add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path);
 }
 
 void MainWindow::refresh_new_cell_checklist()

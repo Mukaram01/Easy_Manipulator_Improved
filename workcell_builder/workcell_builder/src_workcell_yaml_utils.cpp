@@ -57,7 +57,7 @@ bool yaml_read_bool(const YAML::Node & node, bool * out)
 YAML::Node yaml_map_key(const YAML::Node & node, const char * key)
 {
   if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
-  return node[key];
+  try { return node[key]; } catch (...) { return YAML::Node(); }
 }
 
 YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index)
@@ -69,22 +69,40 @@ YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index)
 YAML::Node get_map(const YAML::Node & node, const char * key)
 {
   if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
-  const YAML::Node child = node[key];
+  YAML::Node child;
+  try { child = node[key]; } catch (...) { return YAML::Node(); }
   return (child && child.IsMap()) ? child : YAML::Node();
 }
+YAML::Node optional_map(const YAML::Node & node, const char * key) { return get_map(node, key); }
 
 YAML::Node get_scalar(const YAML::Node & node, const char * key)
 {
   if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
-  const YAML::Node child = node[key];
+  YAML::Node child;
+  try { child = node[key]; } catch (...) { return YAML::Node(); }
   return (child && child.IsScalar()) ? child : YAML::Node();
 }
+YAML::Node optional_scalar(const YAML::Node & node, const char * key) { return get_scalar(node, key); }
 
 YAML::Node get_sequence(const YAML::Node & node, const char * key)
 {
   if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
-  const YAML::Node child = node[key];
+  YAML::Node child;
+  try { child = node[key]; } catch (...) { return YAML::Node(); }
   return (child && child.IsSequence()) ? child : YAML::Node();
+}
+
+std::string get_optional_string(const YAML::Node & node, const char * key, const std::string & fallback)
+{
+  try {
+    const YAML::Node scalar = get_scalar(node, key);
+    if (!scalar) return fallback;
+    std::string out;
+    if (!yaml_read_string(scalar, &out)) return fallback;
+    return out;
+  } catch (...) {
+    return fallback;
+  }
 }
 
 std::optional<bool> bool_like(const YAML::Node & node)
