@@ -1,5 +1,11 @@
 #include "workcell_warning_once.hpp"
 
+#include <boost/system/error_code.hpp>
+
+#include <iostream>
+#include <mutex>
+#include <set>
+
 namespace workcell_builder {
 
 bool log_warning_once_per_context_path_reason(

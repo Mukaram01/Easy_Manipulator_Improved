@@ -249,6 +249,7 @@ if(BUILD_TESTING)
     test/workcell_scene_status_test.cpp
     src_workcell_scene_status.cpp
     src_workcell_studio_scene_browser.cpp
+    src_workcell_warning_once.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
     src_task_intent_readiness.cpp
@@ -274,6 +275,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_perception_snapshot_test
     test/workcell_perception_snapshot_test.cpp
     src_workcell_perception_snapshot.cpp
+    src_workcell_warning_once.cpp
     src_task_intent_readiness.cpp
     src_class_routing_model.cpp
     src_planning_readiness.cpp
@@ -314,6 +316,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_studio_canvas_model_mesh_test
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
+    src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_asset_catalog_discovery_test
     test/asset_catalog_discovery_test.cpp
