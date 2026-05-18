@@ -37,6 +37,36 @@ QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
   return "Off";
 }
 
+double snap_translation_value(double raw_m, Scene3DViewportWidget::SnapMode mode)
+{
+  double step_m = 0.0;
+  switch (mode) {
+    case Scene3DViewportWidget::SnapMode::Cm1: step_m = 0.01; break;
+    case Scene3DViewportWidget::SnapMode::Cm5: step_m = 0.05; break;
+    case Scene3DViewportWidget::SnapMode::Cm10: step_m = 0.10; break;
+    case Scene3DViewportWidget::SnapMode::Off:
+    case Scene3DViewportWidget::SnapMode::Deg5:
+    case Scene3DViewportWidget::SnapMode::Deg15:
+      break;
+  }
+  return step_m > 0.0 ? std::round(raw_m / step_m) * step_m : raw_m;
+}
+
+double snap_rotation_value(double raw_rad, Scene3DViewportWidget::SnapMode mode)
+{
+  double step_rad = 0.0;
+  switch (mode) {
+    case Scene3DViewportWidget::SnapMode::Deg5: step_rad = qDegreesToRadians(5.0); break;
+    case Scene3DViewportWidget::SnapMode::Deg15: step_rad = qDegreesToRadians(15.0); break;
+    case Scene3DViewportWidget::SnapMode::Off:
+    case Scene3DViewportWidget::SnapMode::Cm1:
+    case Scene3DViewportWidget::SnapMode::Cm5:
+    case Scene3DViewportWidget::SnapMode::Cm10:
+      break;
+  }
+  return step_rad > 0.0 ? std::round(raw_rad / step_rad) * step_rad : raw_rad;
+}
+
 bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                      QString & out_error, int triangle_limit)
 {
@@ -1000,33 +1030,15 @@ void Scene3DViewportWidget::mouseMoveEvent(QMouseEvent * e)
         if (status_message_cb) status_message_cb(QStringLiteral("Locked: %1").arg(item_locked_reason(it)));
         return;
       }
-      const QPoint delta = e->pos() - drag_start_screen_;
-      if (gizmo_mode == GizmoMode::Move && drag_active_handle_ != GizmoHandle::None) {
-        double step = 0.0;
-        if (snap_mode == SnapMode::Cm1) step = 0.01;
-        if (snap_mode == SnapMode::Cm5) step = 0.05;
-        if (snap_mode == SnapMode::Cm10) step = 0.10;
-        const bool axis_x = (drag_active_handle_ == GizmoHandle::MoveX);
-        const double raw = (axis_x ? delta.x() : -delta.y()) * 0.002;
-        const double snapped = step > 0.0 ? std::round(raw / step) * step : raw;
-        it.x = drag_start_pose_.x;
-        it.y = drag_start_pose_.y;
-        it.z = drag_start_pose_.z;
-        if (drag_active_handle_ == GizmoHandle::MoveX) it.x = drag_start_pose_.x + snapped;
-        else if (drag_active_handle_ == GizmoHandle::MoveY) it.y = drag_start_pose_.y + snapped;
-        else if (drag_active_handle_ == GizmoHandle::MoveZ) it.z = drag_start_pose_.z + snapped;
-      } else if (gizmo_mode == GizmoMode::Rotate && drag_active_handle_ != GizmoHandle::None) {
-        double step = 0.0;
-        if (snap_mode == SnapMode::Deg5) step = qDegreesToRadians(5.0);
-        if (snap_mode == SnapMode::Deg15) step = qDegreesToRadians(15.0);
+      const QPoint delta = e->pos() - drag_start_;
+      if (gizmo_mode == GizmoMode::Move) {
+        const double raw = (active_axis_ == "x" ? delta.x() : -delta.y()) * 0.002;
+        const double snapped = snap_translation_value(raw, snap_mode);
+        if (active_axis_ == "x") it.x += snapped; else if (active_axis_ == "y") it.y += snapped; else it.z += snapped;
+      } else if (gizmo_mode == GizmoMode::Rotate) {
         const double raw = (delta.x() - delta.y()) * 0.01;
-        const double snapped = step > 0.0 ? std::round(raw / step) * step : raw;
-        it.roll = drag_start_pose_.roll;
-        it.pitch = drag_start_pose_.pitch;
-        it.yaw = drag_start_pose_.yaw;
-        if (drag_active_handle_ == GizmoHandle::Roll) it.roll = wrap_angle_pi(drag_start_pose_.roll + snapped);
-        else if (drag_active_handle_ == GizmoHandle::Pitch) it.pitch = wrap_angle_pi(drag_start_pose_.pitch + snapped);
-        else if (drag_active_handle_ == GizmoHandle::Yaw) it.yaw = wrap_angle_pi(drag_start_pose_.yaw + snapped);
+        const double snapped = snap_rotation_value(raw, snap_mode);
+        if (active_axis_ == "x") it.roll += snapped; else if (active_axis_ == "y") it.pitch += snapped; else it.yaw += snapped;
       }
       update();
       return;

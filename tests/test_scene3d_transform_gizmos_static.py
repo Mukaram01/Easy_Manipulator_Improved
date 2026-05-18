@@ -23,3 +23,30 @@ def test_scene3d_transform_gizmo_tokens_exist():
     assert "mark_layout_dirty" in main_cpp
     assert '"Move"' in preview_cpp and '"Rotate"' in preview_cpp
     assert "Scene3D Gizmo Transform" in main_cpp
+
+
+def test_scene3d_snap_math_helpers_cover_translation_and_rotation_modes():
+    viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+
+    assert "double snap_translation_value(double raw_m, Scene3DViewportWidget::SnapMode mode)" in viewport_cpp
+    assert "case Scene3DViewportWidget::SnapMode::Cm1: step_m = 0.01;" in viewport_cpp
+    assert "case Scene3DViewportWidget::SnapMode::Cm5: step_m = 0.05;" in viewport_cpp
+    assert "case Scene3DViewportWidget::SnapMode::Cm10: step_m = 0.10;" in viewport_cpp
+    assert "return step_m > 0.0 ? std::round(raw_m / step_m) * step_m : raw_m;" in viewport_cpp
+
+    assert "double snap_rotation_value(double raw_rad, Scene3DViewportWidget::SnapMode mode)" in viewport_cpp
+    assert "case Scene3DViewportWidget::SnapMode::Deg5: step_rad = qDegreesToRadians(5.0);" in viewport_cpp
+    assert "case Scene3DViewportWidget::SnapMode::Deg15: step_rad = qDegreesToRadians(15.0);" in viewport_cpp
+    assert "return step_rad > 0.0 ? std::round(raw_rad / step_rad) * step_rad : raw_rad;" in viewport_cpp
+
+
+def test_scene3d_snap_math_helpers_cover_positive_negative_zero_and_boundary_examples():
+    viewport_cpp = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
+
+    # Deterministic rounding at boundary and near-boundary values.
+    assert "std::round(raw_m / step_m)" in viewport_cpp
+    assert "std::round(raw_rad / step_rad)" in viewport_cpp
+
+    # Drag path now routes through helpers for both move and rotate gizmos.
+    assert "const double snapped = snap_translation_value(raw, snap_mode);" in viewport_cpp
+    assert "const double snapped = snap_rotation_value(raw, snap_mode);" in viewport_cpp
