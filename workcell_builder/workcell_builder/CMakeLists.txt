@@ -266,7 +266,8 @@ if(BUILD_TESTING)
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
   ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
-    test/scene3d_mesh_preview_regression_test.cpp)
+    test/scene3d_mesh_preview_regression_test.cpp
+    gui/scene3d_viewport_widget.cpp)
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
@@ -329,6 +330,9 @@ if(BUILD_TESTING)
     gui/transform_clipboard_utils.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
     test/layout_serialization_contract_test.cpp)
+  ament_add_gtest(workcell_studio_layout_editor_test
+    test/workcell_studio_layout_editor_test.cpp
+    src_workcell_studio_layout_editor.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()
@@ -508,6 +512,49 @@ if(BUILD_TESTING)
         include
         include/attributes
     )
+  endif()
+
+
+  if(TARGET workcell_studio_layout_editor_test)
+    target_link_libraries(workcell_studio_layout_editor_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_studio_layout_editor_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+  endif()
+
+  set(workcell_builder_registered_cpp_tests
+    link_deletion_test.cpp
+    workcell_directory_inspection_test.cpp
+    scene_select_paths_test.cpp
+    generated_environment_asset_writer_test.cpp
+    generate_yaml_end_effector_metadata_test.cpp
+    scene_xacro_tool_attachment_test.cpp
+    workcell_scene_status_test.cpp
+    workcell_yaml_utils_test.cpp
+    conveyor_pick_preview_test.cpp
+    scene3d_mesh_preview_regression_test.cpp
+    task_intent_readiness_test.cpp
+    planning_readiness_test.cpp
+    workcell_perception_snapshot_test.cpp
+    robot_tool_compatibility_inference_test.cpp
+    new_cell_wizard_test.cpp
+    workspace_validation_test.cpp
+    placed_object_preview_writer_test.cpp
+    scene3d_stl_parser_test.cpp
+    command_builders_test.cpp
+    scene_preview_widget_ui_test.cpp
+    workcell_studio_canvas_model_mesh_test.cpp
+    asset_catalog_discovery_test.cpp
+    transform_clipboard_utils_test.cpp
+    layout_serialization_contract_test.cpp
+    workcell_studio_layout_editor_test.cpp
+  )
+
+  file(GLOB workcell_builder_discovered_cpp_tests RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp)
+  list(SORT workcell_builder_registered_cpp_tests)
+  list(SORT workcell_builder_discovered_cpp_tests)
+
+  if(NOT workcell_builder_registered_cpp_tests STREQUAL workcell_builder_discovered_cpp_tests)
+    message(FATAL_ERROR
+      "Orphan or unregistered test sources detected. Registered: ${workcell_builder_registered_cpp_tests}; Discovered: ${workcell_builder_discovered_cpp_tests}")
   endif()
 
   find_package(launch_testing_ament_cmake REQUIRED)
