@@ -18,7 +18,23 @@
 #include <QVector3D>
 #include <QVBoxLayout>
 #include <QtMath>
+#include <string_view>
 
+
+namespace {
+constexpr const char kScenePreviewMouseHelpText[] = "Mouse: orbit / wheel zoom / shift-drag pan";
+static_assert(std::string_view(kScenePreviewMouseHelpText) == "Mouse: orbit / wheel zoom / shift-drag pan",
+              "Acceptance token mismatch for scene preview mouse help text");
+
+QString scene_preview_mouse_help_tooltip(const QString & unavailable_reason)
+{
+  QString tooltip = QString::fromUtf8(kScenePreviewMouseHelpText);
+  if (!unavailable_reason.trimmed().isEmpty()) {
+    tooltip += QString("\n3D unavailable: %1").arg(unavailable_reason.trimmed());
+  }
+  return tooltip;
+}
+}  // namespace
 
 ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
 {
@@ -50,6 +66,10 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
   focus_selected_button_ = new QPushButton("Focus Selected", this); controls->addWidget(focus_selected_button_);
   clear_selection_button_ = new QPushButton("Clear Selection", this); controls->addWidget(clear_selection_button_);
+  auto * mouse_help_label = new QLabel(QStringLiteral("ⓘ"), this);
+  mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
+  mouse_help_label->setStatusTip(QStringLiteral(kScenePreviewMouseHelpText));
+  controls->addWidget(mouse_help_label);
   overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
@@ -63,6 +83,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   fallback_banner_label_ = new QLabel("2D fallback preview active", view2d_container_);
   fallback_banner_label_->setAlignment(Qt::AlignCenter);
   fallback_banner_label_->setVisible(false);
+  fallback_banner_label_->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   view2d_container_->layout()->addWidget(fallback_banner_label_);
   info_chip_label_ = new QLabel(view2d_container_);
   info_chip_label_->setObjectName("previewInfoChip");
@@ -120,6 +141,10 @@ void ScenePreviewWidget::set_scene_selected(bool selected){ scene_selected_ = se
 void ScenePreviewWidget::set_3d_available(bool available, const QString & reason){
   preview3d_available_ = available;
   unavailable_reason_ = reason;
+  const QString help_tooltip = scene_preview_mouse_help_tooltip(preview3d_available_ ? QString() : unavailable_reason_);
+  if (fallback_banner_label_) fallback_banner_label_->setToolTip(help_tooltip);
+  if (view3d_container_) view3d_container_->setToolTip(help_tooltip);
+  if (view2d_container_) view2d_container_->setToolTip(help_tooltip);
   if (!mode_default_initialized_) {
     mode_selector_->setCurrentText(preview3d_available_ ? "3D Layout Preview" : "2D Layout");
     mode_default_initialized_ = true;
@@ -172,6 +197,7 @@ void ScenePreviewWidget::refresh_mode_and_state()
     emit studio_log_requested(QString("3D Layout Preview unavailable, using 2D Layout: %1").arg(reason));
   } else {
     fallback_banner_label_->setVisible(false);
+    fallback_banner_label_->setToolTip(scene_preview_mouse_help_tooltip(QString()));
     stack_->setCurrentWidget(use3d ? view3d_container_ : view2d_container_);
   }
   const bool has_preview_items = !preview_items_.isEmpty();
