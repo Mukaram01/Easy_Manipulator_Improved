@@ -59,6 +59,7 @@ class QToolButton;
 class QMenu;
 class QSplitter;
 class QFrame;
+class QDialog;
 
 class MainWindow: public QMainWindow
 {
@@ -196,6 +197,21 @@ private:
   void duplicate_selected_item();
   void delete_selected_item();
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
+
+  struct AssetCatalogEntry
+  {
+    QString asset_type;
+    QString display_name;
+    QString role;
+    QString dimensions;
+    QString default_pose;
+    QString source_path;
+    bool editable{ true };
+    QString availability_status;
+    QString disabled_reason;
+    QString category;
+  };
+
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
   void open_layout_merge_report();
   void copy_layout_merge_summary();
@@ -212,6 +228,9 @@ private:
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
   void on_asset_filter_changed(int index);
+  void open_add_asset_dialog();
+  void refresh_add_asset_dialog_details();
+  void place_selected_asset_from_dialog();
   void validate_asset_catalog_selection();
   QString selected_catalog_item_path() const;
   void run_diagnostics_self_test();
@@ -292,6 +311,7 @@ private:
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
   QPushButton * add_to_canvas_button_{ nullptr };
+  QPushButton * add_asset_button_{ nullptr };
   QPushButton * pick_source_button_{ nullptr };
   QPushButton * place_target_button_{ nullptr };
   QPushButton * camera_button_{ nullptr };
@@ -322,6 +342,11 @@ private:
   QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
+  QVector<AssetCatalogEntry> asset_catalog_entries_;
+  QDialog * add_asset_dialog_{ nullptr };
+  QTableWidget * add_asset_dialog_table_{ nullptr };
+  QLabel * add_asset_dialog_details_label_{ nullptr };
+  QPushButton * add_asset_dialog_place_button_{ nullptr };
   QGraphicsRectItem * ghost_preview_item_{ nullptr };
   CanvasInteractionMode canvas_mode_{ CanvasInteractionMode::Select };
   double snap_step_m_{ 0.05 };
