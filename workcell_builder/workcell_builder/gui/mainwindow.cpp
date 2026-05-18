@@ -1089,6 +1089,12 @@ void MainWindow::setup_studio_shell()
   scene_workflow_rail_label_ = new QLabel("Select a scene to view workflow steps.", workflow_card);
   scene_workflow_rail_label_->setWordWrap(true);
   workflow_card_layout->addWidget(scene_workflow_rail_label_);
+  scene_workflow_recommendation_label_ = new QLabel("Recommended next action updates as you progress.", workflow_card);
+  scene_workflow_recommendation_label_->setWordWrap(true);
+  workflow_card_layout->addWidget(scene_workflow_recommendation_label_);
+  scene_workflow_recommendation_button_ = new QPushButton("Open or create a scene", workflow_card);
+  scene_workflow_recommendation_button_->setProperty("role", "primary");
+  workflow_card_layout->addWidget(scene_workflow_recommendation_button_);
   right_layout->addWidget(workflow_card);
   auto * inspector_scroll = new QScrollArea(right_panel);
   inspector_scroll->setWidgetResizable(true);
@@ -1591,6 +1597,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(add_asset_button_, &QPushButton::clicked, this, &MainWindow::open_add_asset_dialog);
+  connect(scene_workflow_recommendation_button_, &QPushButton::clicked, this, [this]() {
+    trigger_recommended_workflow_action(resolve_recommended_workflow_action().handler);
+  });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(asset_catalog_tree_, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *, QTreeWidgetItem *){ validate_asset_catalog_selection(); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
@@ -4320,12 +4329,120 @@ QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) c
     .arg(bg, scene_workflow_status_text(status));
 }
 
+MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_action() const
+{
+  RecommendedWorkflowAction action;
+  auto set_action = [&](const QString & token, const QString & label, bool enabled, const QString & blocker, const QString & explainer, RecommendedWorkflowActionHandler handler) {
+    action.token = token;
+    action.label = label;
+    action.enabled = enabled;
+    action.blocker_reason_tooltip = blocker;
+    action.explanatory_text = explainer;
+    action.handler = handler;
+  };
+
+  if (!has_selected_scene()) {
+    set_action(
+      "open_or_create_scene", "Open or create a scene", true, QString(),
+      "Start by selecting an existing scene or creating a new one before workflow actions can run.",
+      RecommendedWorkflowActionHandler::OpenOrCreateScene);
+    return action;
+  }
+  if (scene_items_.empty()) {
+    set_action("add_asset", "Add asset", true, QString(),
+      "Populate the layout with at least one asset so there is content to save and generate.",
+      RecommendedWorkflowActionHandler::AddAsset);
+    return action;
+  }
+  if (layout_dirty_ || !layout_saved_) {
+    set_action("save_layout", "Save layout", true, QString(),
+      "Commit current layout edits so downstream YAML and package outputs use the latest scene state.",
+      RecommendedWorkflowActionHandler::SaveLayout);
+    return action;
+  }
+
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const QString yaml_path = QString::fromStdString((s.scene_dir / "cell_definition.yaml").string());
+  const bool yaml_ready = QFileInfo::exists(yaml_path);
+  if (!yaml_ready) {
+    set_action("generate_yaml", "Generate YAML", true, QString(),
+      "Create the YAML draft from the saved layout to unlock validation and scene package generation.",
+      RecommendedWorkflowActionHandler::GenerateYaml);
+    return action;
+  }
+  if (validation_stale_) {
+    set_action("validate_scene", "Validate scene", true, QString(),
+      "Re-run generated scene validation to clear stale checks after recent edits or YAML updates.",
+      RecommendedWorkflowActionHandler::ValidateScene);
+    return action;
+  }
+  if (!launch_artifacts_ready_) {
+    set_action("generate_scene_package", "Generate scene package", true, QString(),
+      "Build launch artifacts and package scaffolding so planning/simulation can run reliably.",
+      RecommendedWorkflowActionHandler::GenerateScenePackage);
+    return action;
+  }
+  QStringList preview_blockers;
+  const bool preview_ready = selected_scene_preview_ready(&preview_blockers);
+  if (!preview_ready) {
+    set_action("plan_simulate", "Plan / Simulate", false, preview_blockers.join(" "),
+      "Resolve preview prerequisites before opening Plan & Simulate with prepared launch commands.",
+      RecommendedWorkflowActionHandler::PlanSimulate);
+    return action;
+  }
+  set_action("export_bundle", "Export bundle", true, QString(),
+    "Package and export the validated scene bundle for handoff and reproducible deployment.",
+    RecommendedWorkflowActionHandler::ExportBundle);
+  return action;
+}
+
+void MainWindow::trigger_recommended_workflow_action(RecommendedWorkflowActionHandler handler)
+{
+  switch (handler) {
+    case RecommendedWorkflowActionHandler::OpenOrCreateScene:
+      open_new_scene_creation_flow();
+      return;
+    case RecommendedWorkflowActionHandler::AddAsset:
+      open_add_asset_dialog();
+      return;
+    case RecommendedWorkflowActionHandler::SaveLayout:
+      save_layout_changes();
+      return;
+    case RecommendedWorkflowActionHandler::GenerateYaml:
+      generate_yaml_draft_for_selected_scene();
+      return;
+    case RecommendedWorkflowActionHandler::ValidateScene:
+      validate_generated_scene_for_selected_scene();
+      return;
+    case RecommendedWorkflowActionHandler::GenerateScenePackage:
+      generate_scene_package_for_selected_scene();
+      return;
+    case RecommendedWorkflowActionHandler::PlanSimulate:
+      show_studio_page(StudioPage::PlanSimulatePage);
+      refresh_preview_launch_ui();
+      append_studio_log("Recommended action: switched to Plan & Simulate and prepared preview commands.");
+      return;
+    case RecommendedWorkflowActionHandler::ExportBundle:
+      show_studio_page(StudioPage::ExportPage);
+      append_studio_log("Recommended action: switched to Export page.");
+      return;
+  }
+}
+
 void MainWindow::refresh_scene_workflow_rail()
 {
   if (!scene_workflow_rail_label_) return;
   const auto steps = scene_workflow_steps();
   if (steps.empty()) {
     scene_workflow_rail_label_->setText("Select a scene to view workflow steps.");
+    if (scene_workflow_recommendation_label_) {
+      scene_workflow_recommendation_label_->setText("Recommended next action appears after scene context is available.");
+    }
+    if (scene_workflow_recommendation_button_) {
+      scene_workflow_recommendation_button_->setText("Open or create a scene");
+      scene_workflow_recommendation_button_->setEnabled(true);
+      scene_workflow_recommendation_button_->setToolTip(QString());
+    }
     return;
   }
   QString html;
@@ -4334,4 +4451,13 @@ void MainWindow::refresh_scene_workflow_rail()
     html += QString("%1. %2 %3<br/>").arg(i + 1).arg(step.label, scene_workflow_status_chip(step.status));
   }
   scene_workflow_rail_label_->setText(html);
+  const auto recommendation = resolve_recommended_workflow_action();
+  if (scene_workflow_recommendation_label_) {
+    scene_workflow_recommendation_label_->setText("Recommended next action: " + recommendation.explanatory_text);
+  }
+  if (scene_workflow_recommendation_button_) {
+    scene_workflow_recommendation_button_->setText(recommendation.label);
+    scene_workflow_recommendation_button_->setEnabled(recommendation.enabled);
+    scene_workflow_recommendation_button_->setToolTip(recommendation.blocker_reason_tooltip);
+  }
 }
