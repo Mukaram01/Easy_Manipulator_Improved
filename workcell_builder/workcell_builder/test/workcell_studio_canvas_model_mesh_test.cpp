@@ -84,8 +84,40 @@ TEST(WorkcellStudioCanvasMesh, MissingFileProducesDeterministicWarning)
     if (item.id == "table") {
       found = true;
       EXPECT_FALSE(item.mesh_available);
-      EXPECT_EQ(item.mesh_load_warning, "Mesh preview fallback for table: no mesh candidates resolved");
+      EXPECT_EQ(item.mesh_load_warning, "mesh metadata missing or legacy; using primitive preview");
     }
   }
   EXPECT_TRUE(found);
+}
+
+TEST(WorkcellStudioCanvasMesh, LegacyMeshShapesNeverThrowAndFallbackSafely)
+{
+  const std::vector<std::string> mesh_variants = {
+    "", "mesh: none\n", "mesh: false\n", "mesh: package://x/y.stl\n",
+    "mesh: {}\n", "mesh:\n", "mesh:\n  path: package://x/y.stl\n  scale: [1, 1, 1]\n"
+  };
+
+  for (std::size_t i = 0; i < mesh_variants.size(); ++i) {
+    const fs::path root = fs::temp_directory_path() / ("wc_canvas_mesh_legacy_" + std::to_string(i));
+    fs::remove_all(root);
+    fs::create_directories(root);
+    write_file(root / "environment.yaml", "robot: ur5\n");
+    write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+    write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+    write_file(root / "layout" / "workcell_studio_layout.yaml",
+      "schema_version: workcell_studio_layout/v1\nitems:\n- id: table\n  type: table\n  role: table\n  pose:\n    xyz: [0,0,0]\n    rpy: [0,0,0]\n  " + mesh_variants[i]);
+
+    EXPECT_NO_THROW({
+      const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+      bool found = false;
+      for (const auto & item : model.items) {
+        if (item.id != "table") continue;
+        found = true;
+        EXPECT_FALSE(item.mesh_available);
+        EXPECT_TRUE(item.mesh_path.empty());
+        EXPECT_EQ(item.mesh_load_warning, "mesh metadata missing or legacy; using primitive preview");
+      }
+      EXPECT_TRUE(found);
+    });
+  }
 }
