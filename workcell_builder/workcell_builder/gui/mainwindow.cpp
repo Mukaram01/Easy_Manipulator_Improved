@@ -3150,9 +3150,13 @@ void MainWindow::save_layout_changes()
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
+  const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ?
+    scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
   YAML::Node root;
+  bool existing_layout_file = false;
   bool malformed_existing = false;
   if (fs::exists(layout_path)) {
+    existing_layout_file = true;
     try {
       root = YAML::LoadFile(layout_path.string());
     } catch (const YAML::Exception &) {
@@ -3175,13 +3179,19 @@ void MainWindow::save_layout_changes()
     root = YAML::Node();
   }
   if (!root || !root.IsMap()) {
-    const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ? scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
     root = minimal_environment_layout(scene_name);
   }
+  // Ownership boundary: the canvas placement serializer only owns and mutates:
+  // - schema_version (required environment_layout/v1 metadata)
+  // - placed_assets (asset placement list)
+  // All other top-level and nested fields are preserved exactly as loaded.
   root["schema_version"] = "environment_layout/v1";
+  if (!root["scene_name"] || !root["scene_name"].IsScalar()) {
+    root["scene_name"] = scene_name;
+  }
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
   const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
-  if (fs::exists(layout_path)) {
+  if (existing_layout_file) {
     boost::system::error_code ec;
     fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
     if (!ec) {
