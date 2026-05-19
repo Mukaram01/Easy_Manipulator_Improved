@@ -141,6 +141,17 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
     checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Layout","Generate","Validate","Simulate","Export","Diagnostics"]))
+    checks.append(_token_check("layout undo/redo exposed via action surfaces",all_text,["Undo Layout Edit","Redo Layout Edit"]))
+    checks.append(_regex_absent_check(
+        "no always-visible direct undo/redo canvas-footer buttons",
+        main,
+        {
+            "undo_direct_canvas_button": r'undo_layout_button_\s*=\s*new\s+QPushButton\s*\(\s*"Undo"\s*,\s*scene_builder\s*\)',
+            "redo_direct_canvas_button": r'redo_layout_button_\s*=\s*new\s+QPushButton\s*\(\s*"Redo"\s*,\s*scene_builder\s*\)',
+            "undo_footer_addwidget": r'layout_controls->addWidget\s*\(\s*undo_layout_button_\s*\)',
+            "redo_footer_addwidget": r'layout_controls->addWidget\s*\(\s*redo_layout_button_\s*\)',
+        },
+    ))
     checks.append(_token_check("canonical duplicate visible-label targets",all_text,["Create editable layout from preview","Canvas/Generated Parity"]))
 
     return checks

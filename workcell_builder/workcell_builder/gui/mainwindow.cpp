@@ -1079,6 +1079,8 @@ void MainWindow::setup_studio_shell()
     return button;
   };
   register_scene_action("layout.save", "Save Layout", [this]() { if (save_layout_button_) save_layout_button_->click(); });
+  register_scene_action("layout.undo", "Undo Layout Edit", [this]() { undo_layout_edit(); });
+  register_scene_action("layout.redo", "Redo Layout Edit", [this]() { redo_layout_edit(); });
   register_scene_action("layout.duplicate", "Duplicate Selected", [this]() { duplicate_selected_item(); });
   register_scene_action("layout.remove", "Remove Selected Layout Item", [this]() { delete_selected_item(); });
   register_scene_action("generate.scene_package", "Generate", [this]() { generate_scene_package_for_selected_scene(); });
@@ -1206,6 +1208,12 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setText("More");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
+  auto * secondary_layout_menu = scene_builder_secondary_overflow_menu_->addMenu("Layout");
+  secondary_layout_menu->addAction(scene_builder_action("layout.undo"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.redo"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.save"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.duplicate"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.remove"));
   scene_builder_secondary_overflow_button_->setMenu(scene_builder_secondary_overflow_menu_);
   controls->addWidget(scene_builder_secondary_overflow_button_);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
@@ -1215,8 +1223,8 @@ void MainWindow::setup_studio_shell()
   center_panel_layout->addWidget(scene_preview_widget_, 1);
   minimap_view_ = new QGraphicsView(scene_builder); minimap_view_->setObjectName("digital_twin_minimap"); minimap_view_->setFixedSize(210, 140); center_panel_layout->addWidget(minimap_view_, 0, Qt::AlignRight);
   auto * layout_controls = new QHBoxLayout();
-  undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
-  redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
+  undo_layout_button_ = nullptr;
+  redo_layout_button_ = nullptr;
   create_starter_layout_button_ = new QPushButton("Create editable layout from preview", scene_builder);
   create_starter_layout_button_->setVisible(false);
   layout_controls->addWidget(create_starter_layout_button_);
@@ -1399,6 +1407,8 @@ void MainWindow::setup_studio_shell()
   auto * diagnostics_actions = make_action_section("Diagnostics");
 
   create_action_button(layout_actions, "layout.save");
+  create_action_button(layout_actions, "layout.undo");
+  create_action_button(layout_actions, "layout.redo");
   create_action_button(layout_actions, "layout.duplicate");
   create_action_button(layout_actions, "layout.remove");
   create_action_button(generate_actions, "generate.scene_package");
@@ -1676,8 +1686,6 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
     rebuild_digital_twin_canvas();
   });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
-  connect(undo_layout_button_, &QPushButton::clicked, this, &MainWindow::undo_layout_edit);
-  connect(redo_layout_button_, &QPushButton::clicked, this, &MainWindow::redo_layout_edit);
   connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
@@ -1711,6 +1719,8 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
+  auto * undo_sc = new QShortcut(QKeySequence::Undo, scene_builder); connect(undo_sc, &QShortcut::activated, this, &MainWindow::undo_layout_edit);
+  auto * redo_sc = new QShortcut(QKeySequence::Redo, scene_builder); connect(redo_sc, &QShortcut::activated, this, &MainWindow::redo_layout_edit);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
@@ -3745,6 +3755,12 @@ void MainWindow::update_scene_builder_top_controls_overflow()
     scene_builder_top_controls_host_->parentWidget()->width() : width();
   const bool constrained = available_width < 1280;
   scene_builder_secondary_overflow_menu_->clear();
+  auto * secondary_layout_menu = scene_builder_secondary_overflow_menu_->addMenu("Layout");
+  secondary_layout_menu->addAction(scene_builder_action("layout.undo"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.redo"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.save"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.duplicate"));
+  secondary_layout_menu->addAction(scene_builder_action("layout.remove"));
   const auto remap_menu = [this](QToolButton * button) {
       if (!button || !button->menu()) return;
       scene_builder_secondary_overflow_menu_->addMenu(button->menu());

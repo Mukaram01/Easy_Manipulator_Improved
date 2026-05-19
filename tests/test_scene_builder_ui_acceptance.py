@@ -67,11 +67,14 @@ def _base_fixture() -> dict[str, str]:
                 'QComboBox *mode = new QComboBox(this); mode->setObjectName("Mode");',
                 'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
                 'QString side_tab = "Actions";',
+                'QString section_layout = "Layout";',
                 'QString grouped = "Grouped sections";',
                 'QString parity = "Canvas/Generated Parity";',
+                'QString undo_layout = "Undo Layout Edit";',
+                'QString redo_layout = "Redo Layout Edit";',
             ]
         ),
-        "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview with Validate Simulate Export Diagnostics sections",
+        "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview. Actions Layout Generate Validate Simulate Export Diagnostics",
         "layout_editor_cpp": "metres radians",
     }
 
@@ -92,6 +95,14 @@ def test_validator_fails_with_clear_diagnostics_when_tokens_or_patterns_missing(
     assert "Focus Canvas action wording" in failed
     assert any("Focus Canvas" in d for d in failed["Focus Canvas action wording"])
     assert "fixed-width button anti-pattern checks" in failed
+
+
+def test_validator_fails_when_undo_redo_are_direct_canvas_buttons():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\nundo_layout_button_ = new QPushButton("Undo", scene_builder);\nlayout_controls->addWidget(undo_layout_button_);\nredo_layout_button_ = new QPushButton("Redo", scene_builder);\nlayout_controls->addWidget(redo_layout_button_);\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "no always-visible direct undo/redo canvas-footer buttons" in failed
 
 
 def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
