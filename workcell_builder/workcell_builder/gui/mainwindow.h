@@ -121,6 +121,18 @@ private:
   QString selected_scene_name() const;
   QString selected_scene_path() const;
   bool has_selected_scene() const;
+  struct SelectedSceneState
+  {
+    bool valid{ false };
+    int index{ -1 };
+    QString name;
+    QString path;
+    QString status;
+    bool launchable{ false };
+  };
+  void sync_selected_scene_state();
+  void sync_selected_item_state();
+  void refresh_scene_builder_selection_state_ui();
   void refresh_scene_builder_selected_scene_ui();
   void refresh_scene_browser_ui();
   void populate_scene_files_tab();
@@ -469,6 +481,8 @@ private:
   int canvas_generated_parity_blockers_{ 0 };
   bool inspector_update_guard_{ false };
   bool selection_update_guard_{ false };
+  SelectedSceneState selected_scene_state_;
+  SelectedSceneItemState selected_item_state_;
   QString current_selected_scene_item_id_;
   struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; };
   std::vector<CanvasEditCommand> undo_stack_;

@@ -669,9 +669,7 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     return false;
   }
   try {
-    refresh_scene_builder_selected_scene_ui();
-    refresh_scene_builder_left_explorer();
-    refresh_task_intent_panel();
+    refresh_scene_builder_selection_state_ui();
   } catch (const YAML::Exception & error) {
     append_studio_log(source_action + ": scene metadata warning: " + QString::fromStdString(error.what()));
     QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
@@ -1961,9 +1959,7 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (fill_from_tree(tree_item)) return state;
     auto * canvas_item = find_canvas_item_by_id(selected_id);
     if (fill_from_canvas(canvas_item, selected_id)) return state;
-    state.valid = true;
-    state.id = selected_id;
-    return state;
+    return {};
   }
   if (scene_hierarchy_tree_ && fill_from_tree(scene_hierarchy_tree_->currentItem())) return state;
   if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty() &&
@@ -2223,6 +2219,11 @@ void MainWindow::refresh_scene_browser_ui()
   if (dashboard_total_scenes_card_) dashboard_total_scenes_card_->setText(QString("Total Scenes\n%1").arg(scene_browser_result_.scenes.size()));
   if (dashboard_ready_scenes_card_) dashboard_ready_scenes_card_->setText(QString("Ready / Validated\n%1").arg(ready));
   if (dashboard_warning_scenes_card_) dashboard_warning_scenes_card_->setText(QString("Warnings / Blocked\n%1").arg(warn + blocked));
+  if (selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    selected_scene_index_ = -1;
+  }
+  sync_selected_scene_state();
+  sync_selected_item_state();
   refresh_studio_home_scene_table();
   auto fill_existing=[&](QTableWidget* t){ t->setRowCount((int)scene_browser_result_.scenes.size()); for(int i=0;i<t->rowCount();++i){const auto &sc=scene_browser_result_.scenes[(size_t)i]; auto scene_name = QString::fromStdString(sc.scene_name); t->setItem(i,0,new QTableWidgetItem(scene_name)); t->setItem(i,1,new QTableWidgetItem(QString::fromStdString(sc.status))); t->setItem(i,2,new QTableWidgetItem(QString::fromStdString(sc.robot_summary))); t->setItem(i,3,new QTableWidgetItem(QString::fromStdString(sc.gripper_summary))); t->setItem(i,4,new QTableWidgetItem(sc.has_task_recipe?"present":"missing")); t->setItem(i,5,new QTableWidgetItem(sc.has_launch_demo?"ready":"blocked")); }};
   fill_existing(existing_scene_table_);
@@ -2363,7 +2364,10 @@ void MainWindow::select_scene_by_row(int row)
 {
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
-  selected_scene_index_ = row; const auto & s = scene_browser_result_.scenes[(size_t)row];
+  selected_scene_index_ = row;
+  sync_selected_scene_state();
+  sync_selected_item_state();
+  const auto & s = scene_browser_result_.scenes[(size_t)row];
   refresh_scene_builder_selected_scene_ui();
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
@@ -2376,7 +2380,7 @@ void MainWindow::select_scene_by_row(int row)
 void MainWindow::refresh_selected_scene_details_card()
 {
   if (!dashboard_selected_scene_details_) return;
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) {
+  if (!selected_scene_state_.valid) {
     dashboard_selected_scene_details_->setText("Select a scene to view details.");
     if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(false);
     if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(false);
@@ -2388,7 +2392,7 @@ void MainWindow::refresh_selected_scene_details_card()
     if (dashboard_export_button_) dashboard_export_button_->setToolTip("Select a scene to export.");
     return;
   }
-  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_state_.index];
   const QString status_chip = (s.status == "READY") ? "<span style='background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:2px 8px;border-radius:8px;'>READY</span>"
     : (s.status == "WARNINGS") ? "<span style='background:#FEF3C7;color:#B45309;border:1px solid #FCD34D;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
     : "<span style='background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
@@ -3167,26 +3171,62 @@ QStringList MainWindow::helper_script_search_paths(const QString & script_name) 
 
 QString MainWindow::selected_scene_name() const
 {
-  if (!has_selected_scene()) {
+  if (!selected_scene_state_.valid) {
     return "none";
   }
-  return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name);
+  return selected_scene_state_.name;
 }
 
 QString MainWindow::selected_scene_path() const
 {
-  if (!has_selected_scene()) return "";
-  return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir.string());
+  if (!selected_scene_state_.valid) return "";
+  return selected_scene_state_.path;
 }
 
 bool MainWindow::has_selected_scene() const
 {
-  return selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size());
+  return selected_scene_state_.valid;
+}
+
+void MainWindow::sync_selected_scene_state()
+{
+  selected_scene_state_ = {};
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  selected_scene_state_.valid = true;
+  selected_scene_state_.index = selected_scene_index_;
+  selected_scene_state_.name = QString::fromStdString(s.scene_name);
+  selected_scene_state_.path = QString::fromStdString(s.scene_dir.string());
+  selected_scene_state_.status = QString::fromStdString(s.status);
+  selected_scene_state_.launchable = s.has_launch_demo;
+}
+
+void MainWindow::sync_selected_item_state()
+{
+  selected_item_state_ = current_selected_scene_item();
+  if (!selected_scene_state_.valid) {
+    selected_item_state_ = {};
+    current_selected_scene_item_id_.clear();
+  } else if (selected_item_state_.valid) {
+    current_selected_scene_item_id_ = selected_item_state_.id.trimmed();
+  } else if (!current_selected_scene_item_id_.trimmed().isEmpty()) {
+    current_selected_scene_item_id_.clear();
+  }
+}
+
+void MainWindow::refresh_scene_builder_selection_state_ui()
+{
+  sync_selected_scene_state();
+  sync_selected_item_state();
+  refresh_scene_builder_selected_scene_ui();
+  refresh_scene_builder_left_explorer();
+  refresh_selected_scene_details_card();
+  refresh_task_intent_panel();
 }
 
 void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
-  if (!has_selected_scene()) {
+  if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
     if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
@@ -3197,8 +3237,8 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     refresh_create_starter_layout_action();
     return;
   }
-  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(QString::fromStdString(s.scene_name)));
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];
+  if (scene_builder_title_) scene_builder_title_->setText(QString("<h2>Scene Builder: %1</h2>").arg(selected_scene_state_.name));
   if (scene_builder_path_label_) {
     const QString sp = selected_scene_path();
     const QFontMetrics metrics(scene_builder_path_label_->font());
@@ -3207,10 +3247,10 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     scene_builder_path_label_->setToolTip(sp);
   }
   refresh_scene_builder_view_chips();
-  if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(QString::fromStdString(s.status)));
+  if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(selected_scene_state_.status));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
-    .arg(QString::fromStdString(s.scene_name), QString::fromStdString(s.status), QString::fromStdString(s.scene_dir.string())));
-  if (inspector_label_) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
+    .arg(selected_scene_state_.name, selected_scene_state_.status, selected_scene_state_.path));
+  if (inspector_label_ && !selected_item_state_.valid) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
   refresh_create_starter_layout_action();
@@ -3594,6 +3634,7 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
 
 void MainWindow::apply_scene_selection(const QString & id, const QString & role, bool intentional_clear, bool center_canvas)
 {
+  sync_selected_scene_state();
   const QString selected_id = id.trimmed();
   const QString selected_role = role.trimmed().isEmpty() ? QStringLiteral("unknown") : role.trimmed();
 
@@ -3605,7 +3646,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     if (digital_twin_scene_) digital_twin_scene_->clearSelection();
     if (scene_preview_widget_) scene_preview_widget_->select_preview_item(QString());
     selection_update_guard_ = false;
-    refresh_selected_scene_item_labels(current_selected_scene_item());
+    sync_selected_item_state();
+    refresh_selected_scene_item_labels(selected_item_state_);
     append_studio_log("Selected item: <none> (unknown)");
     return;
   }
@@ -3651,7 +3693,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   if (matched_canvas_item) {
     select_canvas_item(matched_canvas_item);
   } else {
-    refresh_selected_scene_item_labels(current_selected_scene_item());
+    sync_selected_item_state();
+    refresh_selected_scene_item_labels(selected_item_state_);
   }
   append_studio_log(QString("Selected item: %1 (%2)").arg(selected_id, selected_role));
 }
@@ -3934,7 +3977,8 @@ void MainWindow::on_canvas_selection_changed()
   if (!digital_twin_scene_ || selection_update_guard_) return;
   if (digital_twin_scene_->selectedItems().isEmpty()) {
     if (current_selected_scene_item_id_.isEmpty()) {
-      refresh_selected_scene_item_labels(current_selected_scene_item());
+      sync_selected_item_state();
+      refresh_selected_scene_item_labels(selected_item_state_);
     }
     return;
   }
