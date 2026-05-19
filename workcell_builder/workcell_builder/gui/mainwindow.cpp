@@ -1825,7 +1825,7 @@ void MainWindow::build_studio_header_actions()
     top_bar->addWidget(button);
   }
   auto * scenes_open_button = new QToolButton(this);
-  scenes_open_button->setText("Scenes/Open");
+  scenes_open_button->setText("Scenes");
   scenes_open_button->setPopupMode(QToolButton::InstantPopup);
   auto * scenes_open_menu = new QMenu(scenes_open_button);
   scenes_open_menu->addAction(action_workspace_open_scene_builder_);
@@ -2118,9 +2118,15 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
 {
   if (!inspector_label_ || !live_coordinate_label_) return;
   refresh_selection_binding_actions(state);
+  QStringList inspector_lines;
+  inspector_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
+  inspector_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
+  inspector_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
   if (!state.valid) {
-    inspector_label_->setText("Inspector selection: none");
-    live_coordinate_label_->setText("No item selected — showing scene summary");
+    inspector_lines << "Selected item: (none)";
+    inspector_label_->setText(inspector_lines.join("\n"));
+    inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
+    live_coordinate_label_->setText("No item selected");
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -2128,8 +2134,14 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
   const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
-  inspector_label_->setText(QString("Name: %1\nRole: %2\nID: %3\nSource: %4\n%5").arg(display, role, state.id, source, locked_line));
-  inspector_label_->setToolTip(source);
+  inspector_lines << "";
+  inspector_lines << QString("Selected item name: %1").arg(display);
+  inspector_lines << QString("Selected item role: %1").arg(role);
+  inspector_lines << QString("Selected item ID: %1").arg(state.id);
+  inspector_lines << QString("Selected item source: %1").arg(source);
+  inspector_lines << locked_line;
+  inspector_label_->setText(inspector_lines.join("\n"));
+  inspector_label_->setToolTip(QString("%1\n%2").arg(selected_scene_state_.valid ? selected_scene_state_.path : QString(), source));
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
 
@@ -2407,7 +2419,7 @@ void MainWindow::refresh_studio_home_scene_table()
       const bool lmatch_q = lq.isEmpty() || scene_name.toLower().contains(lq);
       const bool lmatch_status = (lstatus == "All") || (lstatus == "Ready" && status == "READY") || (lstatus == "Warning" && status == "WARNINGS") || (lstatus == "Blocked" && (status != "READY" && status != "WARNINGS"));
       if (lmatch_q && lmatch_status) {
-        auto * item = new QListWidgetItem(QString("%1\n%2 | %3 | %4").arg(scene_name, QString::fromStdString(sc.robot_summary), QString::fromStdString(sc.gripper_summary), status));
+        auto * item = new QListWidgetItem(scene_name);
         item->setData(Qt::UserRole, static_cast<int>(i));
         dashboard_library_list_->addItem(item);
       }
@@ -3373,6 +3385,8 @@ void MainWindow::refresh_scene_builder_selection_state_ui()
 
 void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
+  sync_selected_scene_state();
+  sync_selected_item_state();
   if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
@@ -3397,7 +3411,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(selected_scene_state_.status));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(selected_scene_state_.name, selected_scene_state_.status, selected_scene_state_.path));
-  if (inspector_label_ && !selected_item_state_.valid) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
+  refresh_selected_scene_item_labels(selected_item_state_);
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
   refresh_create_starter_layout_action();
@@ -5143,48 +5157,39 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
 
   std::vector<SceneWorkflowStep> steps;
   steps.push_back(compute_scene_workflow_step(
-    "Scene selected: " + QString(scene_selected ? "Ready" : "Missing"),
+    "Scene",
     scene_selected, "A scene is selected.", "Select or create a scene first.", {}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Editable layout: " + QString(editable_layout_ready ? "Ready" : "Missing"),
-    editable_layout_ready, "Editable canvas assets are available.",
+    "Layout",
+    editable_layout_ready && layout_saved_, "Editable layout exists and is saved.",
     preview_only_scene ?
     "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
-    "No editable assets found in the scene canvas.",
-    {"scene_selected"}, gates, editable_layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction));
+    "Create/edit and save layout to persist edits before YAML generation.",
+    {"editable_layout"}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Current));
   steps.push_back(compute_scene_workflow_step(
-    "Layout saved: " + QString(layout_saved_ ? "Done" : "Not yet"),
-    layout_saved_, "Layout is saved and up to date.",
-    "Save layout to persist edits before YAML generation.",
-    {"editable_layout"}, gates, layout_saved_ ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Current));
-  steps.push_back(compute_scene_workflow_step(
-    "YAML definition: " + QString(yaml_ready ? "Ready" : "Missing"),
+    "YAML",
     yaml_ready, "cell_definition.yaml exists.",
     "Generate YAML definition from current layout.",
     {"layout_saved"}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Scene package: " + QString(launch_artifacts_ready_ ? "Ready" : "Missing"),
+    "Package",
     launch_artifacts_ready_, "Launch/package artifacts are present.",
     "Generate scene package to create launch and package metadata.",
     {"yaml_definition", "validation"}, gates));
-  QString validation_label = "Not run";
-  if (validation_report_ready && validation_stale_) validation_label = "Blocked";
-  else if (validation_gate_ready && has_warnings) validation_label = "Warnings";
-  else if (validation_gate_ready) validation_label = "Passed";
   steps.push_back(compute_scene_workflow_step(
-    "Validation: " + validation_label,
+    "Validation",
     validation_gate_ready, has_warnings ? "Validation completed with warnings." : "Validation checks passed.",
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   steps.push_back(compute_scene_workflow_step(
-    "Fake hardware preview: " + QString(fake_hardware_ready ? "Ready" : "Blocked"),
+    "Preview",
     fake_hardware_ready,
     "Ready (Safety: fake hardware only, no robot motion).",
     "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.",
     {"scene_package", "validation"}, gates, fake_hardware_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
-    "Export: " + QString(export_ready ? "Ready" : "Blocked"),
+    "Export",
     export_ready, "Export prerequisites are satisfied.",
     "Complete YAML and scene package generation before export.",
     {"yaml_definition", "scene_package"}, gates, export_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
@@ -5225,12 +5230,12 @@ QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) c
 {
   switch (status) {
     case SceneWorkflowStepStatus::Done: return "Done";
-    case SceneWorkflowStepStatus::Current: return "Current";
-    case SceneWorkflowStepStatus::NeedsAction: return "Needs action";
+    case SceneWorkflowStepStatus::Current: return "Ready";
+    case SceneWorkflowStepStatus::NeedsAction: return "Needed";
     case SceneWorkflowStepStatus::Blocked: return "Blocked";
-    case SceneWorkflowStepStatus::Warning: return "Warning";
+    case SceneWorkflowStepStatus::Warning: return "Missing";
   }
-  return "Needs action";
+  return "Needed";
 }
 
 QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) const
@@ -5283,7 +5288,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
   }
   if (editable_layout_item_count_ == 0 && preview_fallback_item_count_ > 0) {
     add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
-      "No editable layout items are available yet; seed an editable layout from loaded preview metadata.",
+      "Create editable layout from preview",
       RecommendedWorkflowActionHandler::SaveLayout);
     add_action("generate_yaml", "Generate YAML", false, "Create an editable layout first.", "YAML generation requires editable layout content.", RecommendedWorkflowActionHandler::GenerateYaml);
     return actions;
@@ -5306,7 +5311,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
       (fs::exists(s.scene_dir / "launch/demo.launch.py") || fs::exists(s.scene_dir / "cell_definition.yaml"));
     if (legacy_preview_only_scene) {
       add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
-        "Legacy preview-only scene detected. Convert preview artifacts into an editable layout before other edits.",
+        "Create editable layout from preview",
         RecommendedWorkflowActionHandler::AddAsset);
       add_action("add_asset", "Add asset", false, "Convert preview-only scene first.", "After conversion, add assets to finalize layout.", RecommendedWorkflowActionHandler::AddAsset);
       return actions;
@@ -5421,7 +5426,7 @@ void MainWindow::refresh_scene_workflow_rail()
   for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
     const auto & step = steps[static_cast<size_t>(i)];
     const QString detail = format_scene_builder_status_text(step.detail).toHtmlEscaped();
-    html += QString("%1. %2 %3<br/><span style='color:#9ca3af;font-size:11px;'>%4</span><br/>")
+    html += QString("%1. <span title='%4'>%2 %3</span><br/>")
       .arg(i + 1)
       .arg(step.label, scene_workflow_status_chip(step.status), detail);
   }
@@ -5429,7 +5434,7 @@ void MainWindow::refresh_scene_workflow_rail()
   const auto recommendations = resolve_recommended_workflow_actions();
   const auto recommendation = recommendations.empty() ? RecommendedWorkflowAction{} : recommendations.front();
   if (scene_workflow_recommendation_label_) {
-    scene_workflow_recommendation_label_->setText("Recommended next action: " + recommendation.explanatory_text);
+    scene_workflow_recommendation_label_->setText("<b>Next:</b> " + recommendation.explanatory_text);
   }
   if (scene_workflow_recommendation_button_) {
     scene_workflow_recommendation_button_->setText(QString("Run Next: %1").arg(recommendation.label));

@@ -237,7 +237,7 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
 }
 
 
-bool is_high_priority_role(NormalizedRole role)
+bool is_critical_label_role(NormalizedRole role)
 {
   switch (role) {
     case NormalizedRole::RobotBase:
@@ -292,6 +292,37 @@ double wrap_angle_pi(double angle)
   double wrapped = std::fmod(angle + M_PI, kTwoPi);
   if (wrapped < 0.0) wrapped += kTwoPi;
   return wrapped - M_PI;
+}
+
+QPointF apply_label_overlap_offset(const QPointF & anchor, const QVector<QPointF> & placed_points,
+                                  const QVector<QPointF> & robot_base_points, bool critical)
+{
+  const double min_spacing = critical ? 14.0 : 20.0;
+  const double robot_cluster_radius = 82.0;
+  const bool near_robot_cluster = std::any_of(robot_base_points.cbegin(), robot_base_points.cend(), [&](const QPointF & base) {
+    return QLineF(anchor, base).length() <= robot_cluster_radius;
+  });
+  QVector<QPointF> candidates{anchor, anchor + QPointF(0.0, -12.0), anchor + QPointF(16.0, -8.0),
+                              anchor + QPointF(-16.0, -8.0), anchor + QPointF(0.0, 14.0)};
+  if (near_robot_cluster) {
+    candidates.push_back(anchor + QPointF(20.0, -18.0));
+    candidates.push_back(anchor + QPointF(-20.0, -18.0));
+    candidates.push_back(anchor + QPointF(24.0, 4.0));
+    candidates.push_back(anchor + QPointF(-24.0, 4.0));
+  }
+
+  auto far_enough = [&](const QPointF & candidate) {
+    for (const QPointF & placed : placed_points) {
+      if (QLineF(candidate, placed).length() < min_spacing) return false;
+    }
+    return true;
+  };
+
+  for (const QPointF & candidate : candidates) {
+    if (far_enough(candidate)) return candidate;
+  }
+
+  return candidates.back();
 }
 }
 
@@ -408,9 +439,16 @@ void Scene3DViewportWidget::paintGL()
     return role.left(10);
   };
   const double zoom_factor = distance_ / qMax(0.25, scene_radius_);
-  const bool crowded = items.size() > 36;
-  const bool zoomed_far = zoom_factor > 6.0;
-  const bool suppress_non_critical_labels = crowded || zoomed_far;
+  const bool crowded = items.size() > 30;
+  const bool zoomed_far = zoom_factor > 5.2;
+  const bool suppress_dense_non_critical_labels = crowded || zoomed_far;
+  QVector<QPointF> robot_base_points;
+  for (const auto & it : items) {
+    if (classify_item_role(it) != NormalizedRole::RobotBase) continue;
+    const ItemBounds bounds = item_bounds_for_role(it);
+    robot_base_points.push_back(project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5)));
+  }
+  QVector<QPointF> placed_label_points;
   for (const auto & it : items) {
     const ItemBounds bounds = item_bounds_for_role(it);
     const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
@@ -419,10 +457,10 @@ void Scene3DViewportWidget::paintGL()
     bool draw_label = false;
     switch (label_mode) {
       case ScenePreviewWidget::LabelMode::Off:
-        draw_label = false;
+        draw_label = selected;
         break;
       case ScenePreviewWidget::LabelMode::Important:
-        draw_label = selected || is_high_priority_role(role);
+        draw_label = selected || is_critical_label_role(role);
         break;
       case ScenePreviewWidget::LabelMode::Selected:
         draw_label = selected;
@@ -431,7 +469,7 @@ void Scene3DViewportWidget::paintGL()
         draw_label = true;
         break;
     }
-    if (suppress_non_critical_labels && !selected) draw_label = (label_mode == ScenePreviewWidget::LabelMode::All) ? false : draw_label;
+    if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
     if (show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
@@ -441,8 +479,11 @@ void Scene3DViewportWidget::paintGL()
     }
     if (draw_label) {
       const QString text = selected ? it.id : compact_role(it.role);
+      const QPointF label_anchor(p.x() + 12.0, p.y() - 10.0);
+      const QPointF label_pos = apply_label_overlap_offset(label_anchor, placed_label_points, robot_base_points, is_critical_label_role(role));
+      placed_label_points.push_back(label_pos);
       painter.setPen(QColor("#e2e8f0"));
-      painter.drawText(QPointF(p.x() + 12.0, p.y() - 10.0), text);
+      painter.drawText(label_pos, text);
     }
   }
   const int editable_count = std::count_if(items.cbegin(), items.cend(), [](const auto & it) { return it.editable; });
@@ -746,7 +787,7 @@ void Scene3DViewportWidget::draw_conveyor(const ScenePreviewWidget::PreviewItem 
 void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidget::PreviewItem & it)
 {
   draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
-  if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 96), true);
+  if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 58), true);
 }
 void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 96), true); }
 void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
@@ -813,7 +854,7 @@ void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
   const double f = qMax(n + 0.05, camera_overlay.range_max_m);
   auto ray = [&](double r, double ah, double av) { return QVector3D(camera_overlay.x + r, camera_overlay.y + qTan(av) * r, camera_overlay.z + qTan(ah) * r); };
   QVector3D ffl = ray(f, -h, -v), ffr = ray(f, h, -v), fbl = ray(f, -h, v), fbr = ray(f, h, v);
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.2f : 1.0f);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.12f : 0.7f);
   glBegin(GL_TRIANGLE_FAN); glVertex3f(camera_overlay.x, camera_overlay.y, camera_overlay.z); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glVertex3f(ffr.x(), ffr.y(), ffr.z()); glVertex3f(fbr.x(), fbr.y(), fbr.z()); glVertex3f(fbl.x(), fbl.y(), fbl.z()); glVertex3f(ffl.x(), ffl.y(), ffl.z()); glEnd();
 }
 QPointF Scene3DViewportWidget::project_to_screen(double x, double y, double z) const { return QPointF(width() * 0.5 + x * 50.0, height() * 0.6 - y * 50.0 + z * 5.0); }

@@ -54,6 +54,28 @@ def _regex_absent_check(name,haystack,forbidden):
     hits=[f"forbidden pattern matched ({label}): {pat}" for label,pat in forbidden.items() if re.search(pat,haystack,re.MULTILINE)]
     return CheckResult(name,not hits,hits)
 
+def _top_header_label_hygiene_check(name:str,haystack:str)->CheckResult:
+    details=[]
+    required={
+        "scenes_open_button":"Scenes",
+        "run_next_button":"Run Next",
+        "more_button":"More",
+    }
+    for button,label in required.items():
+        pattern=rf'{button}\s*->\s*setText\("([^"]+)"\);'
+        m=re.search(pattern,haystack)
+        if not m:
+            details.append(f'missing top-header label assignment for {button}')
+            continue
+        value=m.group(1)
+        if value!=label:
+            details.append(f'{button} must be exactly "{label}" (found "{value}")')
+        if "/" in value:
+            details.append(f'forbidden top-header label hack (slash-composed): "{value}"')
+        if value.endswith("_"):
+            details.append(f'forbidden top-header label hack (trailing underscore): "{value}"')
+    return CheckResult(name,not details,details)
+
 def _visible_label_set_check(name:str,haystack:str,allowed:set[str],forbidden_hint:list[str])->CheckResult:
     present=[label for label in allowed if label in haystack]
     missing=[label for label in sorted(allowed) if label not in present]
@@ -101,9 +123,10 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_visible_label_set_check(
         "allowed visible top-level set only",
         main,
-        {"Studio Home","New Cell","Scenes/Open","Run Next","More"},
+        {"Studio Home","New Cell","Scenes","Run Next","More"},
         ["Validate","Generate","Plan","Simulate","Export","Readiness"],
     ))
+    checks.append(_top_header_label_hygiene_check("top-header labels are exact and menu-hint free",main))
     checks.append(_regex_absent_check(
         "forbidden direct top-bar primary actions",
         main,
