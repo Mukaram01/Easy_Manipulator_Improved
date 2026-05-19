@@ -179,7 +179,9 @@ private:
     RecommendedWorkflowActionHandler handler{ RecommendedWorkflowActionHandler::OpenOrCreateScene };
   };
   RecommendedWorkflowAction resolve_recommended_workflow_action() const;
+  std::vector<RecommendedWorkflowAction> resolve_recommended_workflow_actions() const;
   void trigger_recommended_workflow_action(RecommendedWorkflowActionHandler handler);
+  void refresh_run_next_menu(const std::vector<RecommendedWorkflowAction> & actions);
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
   void generate_yaml_draft_for_selected_scene();
@@ -409,6 +411,7 @@ private:
   QLabel * scene_workflow_rail_label_{ nullptr };
   QLabel * scene_workflow_recommendation_label_{ nullptr };
   QPushButton * scene_workflow_recommendation_button_{ nullptr };
+  QMenu * scene_workflow_recommendation_menu_{ nullptr };
   QTreeWidget * scene_hierarchy_tree_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QLabel * scene_files_selected_path_label_{ nullptr };

@@ -1249,6 +1249,8 @@ void MainWindow::setup_studio_shell()
   workflow_card_layout->addWidget(scene_workflow_recommendation_label_);
   scene_workflow_recommendation_button_ = new QPushButton("Open or create a scene", workflow_card);
   scene_workflow_recommendation_button_->setProperty("role", "primary");
+  scene_workflow_recommendation_menu_ = new QMenu(scene_workflow_recommendation_button_);
+  scene_workflow_recommendation_button_->setMenu(scene_workflow_recommendation_menu_);
   workflow_card_layout->addWidget(scene_workflow_recommendation_button_);
   right_layout->addWidget(workflow_card);
   auto * inspector_scroll = new QScrollArea(right_panel);
@@ -5166,28 +5168,46 @@ QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) c
 
 MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_action() const
 {
-  RecommendedWorkflowAction action;
-  auto set_action = [&](const QString & token, const QString & label, bool enabled, const QString & blocker, const QString & explainer, RecommendedWorkflowActionHandler handler) {
+  const auto actions = resolve_recommended_workflow_actions();
+  if (!actions.empty()) return actions.front();
+  RecommendedWorkflowAction fallback;
+  fallback.token = "open_or_create_scene";
+  fallback.label = "Open or create a scene";
+  fallback.enabled = true;
+  fallback.explanatory_text = "Select a scene to start workflow actions.";
+  fallback.handler = RecommendedWorkflowActionHandler::OpenOrCreateScene;
+  return fallback;
+}
+
+std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommended_workflow_actions() const
+{
+  std::vector<RecommendedWorkflowAction> actions;
+  auto add_action = [&](const QString & token, const QString & label, bool enabled, const QString & blocker, const QString & explainer, RecommendedWorkflowActionHandler handler) {
+    RecommendedWorkflowAction action;
     action.token = token;
     action.label = label;
     action.enabled = enabled;
     action.blocker_reason_tooltip = blocker;
     action.explanatory_text = explainer;
     action.handler = handler;
+    actions.push_back(action);
   };
 
   if (!has_selected_scene()) {
-    set_action(
+    add_action(
       "open_or_create_scene", "Open or create a scene", true, QString(),
       "Start by selecting an existing scene or creating a new one before workflow actions can run.",
       RecommendedWorkflowActionHandler::OpenOrCreateScene);
-    return action;
+    add_action("add_asset", "Add asset", false, "No scene selected.", "Add assets after selecting a scene.", RecommendedWorkflowActionHandler::AddAsset);
+    add_action("save_layout", "Save layout", false, "No scene selected.", "Save layout after selecting a scene.", RecommendedWorkflowActionHandler::SaveLayout);
+    return actions;
   }
   if (editable_layout_item_count_ == 0 && preview_fallback_item_count_ > 0) {
-    set_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
+    add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
       "No editable layout items are available yet; seed an editable layout from loaded preview metadata.",
       RecommendedWorkflowActionHandler::SaveLayout);
-    return action;
+    add_action("generate_yaml", "Generate YAML", false, "Create an editable layout first.", "YAML generation requires editable layout content.", RecommendedWorkflowActionHandler::GenerateYaml);
+    return actions;
   }
   bool has_asset_items = false;
   if (digital_twin_scene_ != nullptr) {
@@ -5206,56 +5226,66 @@ MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_a
       workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name).items.empty() &&
       (fs::exists(s.scene_dir / "launch/demo.launch.py") || fs::exists(s.scene_dir / "cell_definition.yaml"));
     if (legacy_preview_only_scene) {
-      set_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
+      add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
         "Legacy preview-only scene detected. Convert preview artifacts into an editable layout before other edits.",
         RecommendedWorkflowActionHandler::AddAsset);
-      return action;
+      add_action("add_asset", "Add asset", false, "Convert preview-only scene first.", "After conversion, add assets to finalize layout.", RecommendedWorkflowActionHandler::AddAsset);
+      return actions;
     }
-    set_action("add_asset", "Add asset", true, QString(),
+    add_action("add_asset", "Add asset", true, QString(),
       "Populate the layout with at least one asset so there is content to save and generate.",
       RecommendedWorkflowActionHandler::AddAsset);
-    return action;
+    add_action("save_layout", "Save layout", false, "No asset items exist.", "Add at least one asset before saving.", RecommendedWorkflowActionHandler::SaveLayout);
+    return actions;
   }
   if (layout_dirty_ || !layout_saved_) {
-    set_action("save_layout", "Save layout", true, QString(),
+    add_action("save_layout", "Save layout", true, QString(),
       "Commit current layout edits so downstream YAML and package outputs use the latest scene state.",
       RecommendedWorkflowActionHandler::SaveLayout);
-    return action;
+    add_action("generate_yaml", "Generate YAML", false, "Layout has unsaved edits.", "Save layout before YAML generation.", RecommendedWorkflowActionHandler::GenerateYaml);
+    return actions;
   }
 
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const QString yaml_path = QString::fromStdString((s.scene_dir / "cell_definition.yaml").string());
   const bool yaml_ready = QFileInfo::exists(yaml_path);
   if (!yaml_ready) {
-    set_action("generate_yaml", "Generate YAML", true, QString(),
+    add_action("generate_yaml", "Generate YAML", true, QString(),
       "Create the YAML draft from the saved layout to unlock validation and scene package generation.",
       RecommendedWorkflowActionHandler::GenerateYaml);
-    return action;
+    add_action("generate_scene_package", "Generate scene package", false, "Missing YAML file.", "Scene package generation needs cell_definition.yaml.", RecommendedWorkflowActionHandler::GenerateScenePackage);
+    return actions;
   }
   if (validation_stale_) {
-    set_action("validate_scene", "Validate scene", true, QString(),
+    add_action("validate_scene", "Validate scene", true, QString(),
       "Re-run generated scene validation to clear stale checks after recent edits or YAML updates.",
       RecommendedWorkflowActionHandler::ValidateScene);
-    return action;
+    add_action("generate_scene_package", "Generate scene package", false, "Validation is stale.", "Revalidate before packaging or previewing.", RecommendedWorkflowActionHandler::GenerateScenePackage);
+    return actions;
   }
   if (!launch_artifacts_ready_) {
-    set_action("generate_scene_package", "Generate scene package", true, QString(),
+    add_action("generate_scene_package", "Generate scene package", true, QString(),
       "Build launch artifacts and package scaffolding so planning/simulation can run reliably.",
       RecommendedWorkflowActionHandler::GenerateScenePackage);
-    return action;
+    add_action("plan_simulate", "Plan / Simulate", false, "Scene package artifacts are missing.", "Generate package before preview.", RecommendedWorkflowActionHandler::PlanSimulate);
+    return actions;
   }
   QStringList preview_blockers;
   const bool preview_ready = selected_scene_preview_ready(&preview_blockers);
   if (!preview_ready) {
-    set_action("plan_simulate", "Plan / Simulate", false, preview_blockers.join(" "),
+    add_action("plan_simulate", "Plan / Simulate", false, preview_blockers.join(" "),
       "Resolve preview prerequisites before opening Plan & Simulate with prepared launch commands.",
       RecommendedWorkflowActionHandler::PlanSimulate);
-    return action;
+    add_action("generate_scene_package", "Generate scene package", true, QString(), "Regenerate artifacts to resolve preview blockers.", RecommendedWorkflowActionHandler::GenerateScenePackage);
+    return actions;
   }
-  set_action("export_bundle", "Export bundle", true, QString(),
+  add_action("plan_simulate", "Plan / Simulate", true, QString(),
+    "Ready for fake-hardware preview with validated launch artifacts and safety-gated commands.",
+    RecommendedWorkflowActionHandler::PlanSimulate);
+  add_action("export_bundle", "Export bundle", true, QString(),
     "Package and export the validated scene bundle for handoff and reproducible deployment.",
     RecommendedWorkflowActionHandler::ExportBundle);
-  return action;
+  return actions;
 }
 
 void MainWindow::trigger_recommended_workflow_action(RecommendedWorkflowActionHandler handler)
@@ -5301,10 +5331,11 @@ void MainWindow::refresh_scene_workflow_rail()
       scene_workflow_recommendation_label_->setText("Recommended next action appears after scene context is available.");
     }
     if (scene_workflow_recommendation_button_) {
-      scene_workflow_recommendation_button_->setText("Open or create a scene");
+      scene_workflow_recommendation_button_->setText("Run Next: Open or create a scene");
       scene_workflow_recommendation_button_->setEnabled(true);
       scene_workflow_recommendation_button_->setToolTip(QString());
     }
+    refresh_run_next_menu(resolve_recommended_workflow_actions());
     return;
   }
   QString html;
@@ -5316,13 +5347,35 @@ void MainWindow::refresh_scene_workflow_rail()
       .arg(step.label, scene_workflow_status_chip(step.status), detail);
   }
   scene_workflow_rail_label_->setText(html);
-  const auto recommendation = resolve_recommended_workflow_action();
+  const auto recommendations = resolve_recommended_workflow_actions();
+  const auto recommendation = recommendations.empty() ? RecommendedWorkflowAction{} : recommendations.front();
   if (scene_workflow_recommendation_label_) {
     scene_workflow_recommendation_label_->setText("Recommended next action: " + recommendation.explanatory_text);
   }
   if (scene_workflow_recommendation_button_) {
-    scene_workflow_recommendation_button_->setText(recommendation.label);
+    scene_workflow_recommendation_button_->setText(QString("Run Next: %1").arg(recommendation.label));
     scene_workflow_recommendation_button_->setEnabled(recommendation.enabled);
-    scene_workflow_recommendation_button_->setToolTip(recommendation.blocker_reason_tooltip);
+    scene_workflow_recommendation_button_->setToolTip(
+      recommendation.blocker_reason_tooltip.isEmpty() ? recommendation.explanatory_text : recommendation.blocker_reason_tooltip);
+  }
+  refresh_run_next_menu(recommendations);
+}
+
+void MainWindow::refresh_run_next_menu(const std::vector<RecommendedWorkflowAction> & actions)
+{
+  if (!scene_workflow_recommendation_menu_) return;
+  scene_workflow_recommendation_menu_->clear();
+  for (size_t i = 0; i < actions.size(); ++i) {
+    const auto & action = actions[i];
+    const QString details = action.blocker_reason_tooltip.isEmpty() ? action.explanatory_text : action.blocker_reason_tooltip;
+    QString label = action.label;
+    if (i == 0) label += " (Recommended)";
+    auto * menu_action = scene_workflow_recommendation_menu_->addAction(label);
+    menu_action->setEnabled(action.enabled);
+    menu_action->setToolTip(details);
+    menu_action->setStatusTip(details);
+    connect(menu_action, &QAction::triggered, this, [this, handler = action.handler]() {
+      trigger_recommended_workflow_action(handler);
+    });
   }
 }
