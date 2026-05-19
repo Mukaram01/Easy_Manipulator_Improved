@@ -2,6 +2,7 @@
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
+#include <yaml-cpp/yaml.h>
 
 namespace workcell_builder {
 struct WorkcellStudioCanvasItem {
@@ -26,4 +27,6 @@ struct WorkcellStudioCanvasModel {
   std::vector<std::string> warnings; std::vector<WorkcellStudioCanvasItem> items;
 };
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
+std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
+YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
 }

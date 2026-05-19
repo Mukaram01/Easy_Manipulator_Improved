@@ -228,6 +228,8 @@ private:
   void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
   void mark_layout_dirty(const QString & reason);
   void save_layout_changes();
+  void create_starter_layout_from_preview();
+  void refresh_create_starter_layout_action();
   void revert_layout_changes();
   void on_canvas_selection_changed();
   void on_canvas_item_moved(QGraphicsItem * item, const QPointF & old_pos, const QPointF & new_pos, const QString & reason);
@@ -420,6 +422,7 @@ private:
   QPushButton * duplicate_layout_button_{ nullptr };
   QPushButton * delete_layout_button_{ nullptr };
   QPushButton * save_layout_button_{ nullptr };
+  QPushButton * create_starter_layout_button_{ nullptr };
   QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };

@@ -1141,6 +1141,9 @@ void MainWindow::setup_studio_shell()
   duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder);
   delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder);
   save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
+  create_starter_layout_button_ = new QPushButton("Create Starter Layout from Preview", scene_builder);
+  create_starter_layout_button_->setVisible(false);
+  layout_controls->addWidget(create_starter_layout_button_);
   revert_layout_button_ = new QPushButton("Revert Layout", scene_builder);
   auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder);
   auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder);
@@ -1658,6 +1661,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
   inspector_roll_->setToolTip("Roll in radians"); inspector_pitch_->setToolTip("Pitch in radians"); inspector_yaw_->setToolTip("Yaw in radians");
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
+  connect(create_starter_layout_button_, &QPushButton::clicked, this, &MainWindow::create_starter_layout_from_preview);
   connect(select_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
   connect(place_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
   connect(move_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
@@ -3190,6 +3194,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
     if (scene_preview_label_) scene_preview_label_->setText("<b>Digital Twin Canvas</b>");
     if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(false);
     populate_scene_files_tab();
+    refresh_create_starter_layout_action();
     return;
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
@@ -3208,6 +3213,26 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (inspector_label_) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
+  refresh_create_starter_layout_action();
+}
+
+void MainWindow::refresh_create_starter_layout_action()
+{
+  if (!create_starter_layout_button_) return;
+  if (!has_selected_scene()) {
+    create_starter_layout_button_->setVisible(false);
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const std::size_t preview_count = model.items.size();
+  const std::size_t editable_layout_count = workcell_builder::count_editable_layout_entries(s.scene_dir);
+  const bool show_action = (editable_layout_count == 0U) && (preview_count > 0U);
+  create_starter_layout_button_->setVisible(show_action);
+  create_starter_layout_button_->setToolTip(show_action ?
+    QString("Create layout/workcell_studio_layout.yaml from %1 preview items").arg(preview_count) :
+    QString("Hidden unless editable layout count is 0 and preview items count is > 0 (current: editable=%1 preview=%2)")
+      .arg(editable_layout_count).arg(preview_count));
 }
 
 void MainWindow::populate_scene_files_tab()
@@ -3837,6 +3862,61 @@ void MainWindow::save_layout_changes()
     }
   }
   refresh_scene_browser_ui();
+}
+
+void MainWindow::create_starter_layout_from_preview()
+{
+  if (!has_selected_scene()) return;
+  const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  if (model.items.empty()) {
+    append_studio_log("Create Starter Layout failed: preview items count is 0.");
+    QMessageBox::warning(this, "Create Starter Layout", "No preview items found; cannot generate starter layout.");
+    return;
+  }
+  const fs::path layout_dir = s.scene_dir / "layout";
+  const fs::path layout_file = layout_dir / "workcell_studio_layout.yaml";
+  boost::system::error_code ec;
+  fs::create_directories(layout_dir, ec);
+  if (ec) {
+    append_studio_log(QString("Create Starter Layout failed: cannot create layout directory (%1).").arg(QString::fromStdString(ec.message())));
+    return;
+  }
+  if (fs::exists(layout_file)) {
+    const auto response = QMessageBox::question(this, "Overwrite Existing Layout",
+      "layout/workcell_studio_layout.yaml already exists. Overwrite with starter layout from preview metadata?");
+    if (response != QMessageBox::Yes) {
+      append_studio_log("Create Starter Layout cancelled by user.");
+      return;
+    }
+    const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    const fs::path backup = layout_dir / ("workcell_studio_layout." + stamp.toStdString() + ".bak.yaml");
+    fs::copy_file(layout_file, backup, fs::copy_option::overwrite_if_exists, ec);
+    if (ec) {
+      append_studio_log(QString("Create Starter Layout failed: backup before overwrite failed (%1).").arg(QString::fromStdString(ec.message())));
+      QMessageBox::warning(this, "Create Starter Layout", "Backup before overwrite failed; aborting.");
+      return;
+    }
+    append_studio_log(QString("Create Starter Layout: backup created at %1").arg(QString::fromStdString(backup.string())));
+  }
+  const YAML::Node layout = workcell_builder::build_starter_layout_entries_from_preview(model);
+  std::ofstream out(layout_file.string());
+  if (!out.good()) {
+    append_studio_log("Create Starter Layout failed: unable to open output file for write.");
+    return;
+  }
+  out << layout;
+  out.close();
+  if (!out.good()) {
+    append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
+    return;
+  }
+  append_studio_log(QString("Create Starter Layout success: wrote %1 item(s) to %2").arg(model.items.size()).arg(QString::fromStdString(layout_file.string())));
+  rebuild_digital_twin_canvas();
+  refresh_scene_builder_left_explorer();
+  refresh_scene_builder_selected_scene_ui();
+  refresh_canvas_generated_parity_ui();
+  refresh_scene_workflow_rail();
 }
 
 void MainWindow::revert_layout_changes()
