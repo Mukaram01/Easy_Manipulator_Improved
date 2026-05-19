@@ -803,11 +803,19 @@ void MainWindow::setup_studio_shell()
   dashboard_selected_scene_details_->setWordWrap(true);
   selected_row->addWidget(dashboard_selected_scene_details_);
   auto * dashboard_actions = new QVBoxLayout();
-  dashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_); dashboard_open_scene_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_open_scene_button_);
-  dashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_); dashboard_validate_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_validate_button_);
-  dashboard_plan_button_ = new QPushButton("Plan / Simulate", dashboard_selected_scene_card_); dashboard_plan_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_plan_button_);
-  dashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_); dashboard_export_button_->setObjectName("studioHomeSecondaryButton"); dashboard_actions->addWidget(dashboard_export_button_);
-  dashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_); dashboard_delete_button_->setObjectName("studioHomeDangerButton"); dashboard_actions->addWidget(dashboard_delete_button_);
+  dashboard_scene_actions_button_ = new QToolButton(dashboard_selected_scene_card_);
+  dashboard_scene_actions_button_->setObjectName("studioHomeSecondaryButton");
+  dashboard_scene_actions_button_->setText("Scene Actions");
+  dashboard_scene_actions_button_->setPopupMode(QToolButton::InstantPopup);
+  dashboard_scene_actions_menu_ = new QMenu(dashboard_scene_actions_button_);
+  dashboard_open_scene_action_ = dashboard_scene_actions_menu_->addAction("Open in Scene Builder");
+  dashboard_validate_action_ = dashboard_scene_actions_menu_->addAction("Validate");
+  dashboard_plan_action_ = dashboard_scene_actions_menu_->addAction("Plan / Simulate");
+  dashboard_export_action_ = dashboard_scene_actions_menu_->addAction("Export");
+  dashboard_scene_actions_menu_->addSeparator();
+  dashboard_delete_action_ = dashboard_scene_actions_menu_->addAction("Delete Scene");
+  dashboard_scene_actions_button_->setMenu(dashboard_scene_actions_menu_);
+  dashboard_actions->addWidget(dashboard_scene_actions_button_);
   selected_row->addLayout(dashboard_actions);
   auto * dashboard_middle_split = new QSplitter(Qt::Horizontal, dashboard);
   auto * left_library_card = new QFrame(dashboard);
@@ -1603,11 +1611,11 @@ void MainWindow::setup_studio_shell()
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
-  connect(dashboard_open_scene_button_, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect(dashboard_validate_button_, &QPushButton::clicked, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
-  connect(dashboard_plan_button_, &QPushButton::clicked, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
-  connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
-  connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
+  connect(dashboard_open_scene_action_, &QAction::triggered, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
+  connect(dashboard_validate_action_, &QAction::triggered, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
+  connect(dashboard_plan_action_, &QAction::triggered, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
+  connect(dashboard_export_action_, &QAction::triggered, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
+  connect(dashboard_delete_action_, &QAction::triggered, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
@@ -2519,14 +2527,15 @@ void MainWindow::refresh_selected_scene_details_card()
   if (!dashboard_selected_scene_details_) return;
   if (!selected_scene_state_.valid) {
     dashboard_selected_scene_details_->setText("Select a scene to view details.");
-    if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(false);
-    if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(false);
-    if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(false);
-    if (dashboard_export_button_) dashboard_export_button_->setEnabled(false);
-    if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(false);
-    if (dashboard_validate_button_) dashboard_validate_button_->setToolTip("Select a scene to validate.");
-    if (dashboard_plan_button_) dashboard_plan_button_->setToolTip("Select a scene to open Plan / Simulate.");
-    if (dashboard_export_button_) dashboard_export_button_->setToolTip("Select a scene to export.");
+    if (dashboard_scene_actions_button_) dashboard_scene_actions_button_->setEnabled(false);
+    if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(false);
+    if (dashboard_validate_action_) dashboard_validate_action_->setEnabled(false);
+    if (dashboard_plan_action_) dashboard_plan_action_->setEnabled(false);
+    if (dashboard_export_action_) dashboard_export_action_->setEnabled(false);
+    if (dashboard_delete_action_) dashboard_delete_action_->setEnabled(false);
+    if (dashboard_validate_action_) dashboard_validate_action_->setToolTip("Select a scene to validate.");
+    if (dashboard_plan_action_) dashboard_plan_action_->setToolTip("Select a scene to open Plan / Simulate.");
+    if (dashboard_export_action_) dashboard_export_action_->setToolTip("Select a scene to export.");
     return;
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_state_.index];
@@ -2539,14 +2548,15 @@ void MainWindow::refresh_selected_scene_details_card()
   const ActionGate generate_gate = build_generate_scene_gate(s, validation_stale_);
   const ActionGate plan_gate = build_plan_simulate_gate(s, launch_artifacts_ready_);
   const ActionGate export_gate = build_export_gate(s);
-  if (dashboard_open_scene_button_) dashboard_open_scene_button_->setEnabled(true);
-  if (dashboard_validate_button_) dashboard_validate_button_->setEnabled(true);
-  if (dashboard_validate_button_) dashboard_validate_button_->setToolTip(generate_gate.tooltip);
-  if (dashboard_plan_button_) dashboard_plan_button_->setEnabled(plan_gate.enabled);
-  if (dashboard_plan_button_) dashboard_plan_button_->setToolTip(plan_gate.tooltip);
-  if (dashboard_export_button_) dashboard_export_button_->setEnabled(export_gate.enabled);
-  if (dashboard_export_button_) dashboard_export_button_->setToolTip(export_gate.tooltip);
-  if (dashboard_delete_button_) dashboard_delete_button_->setEnabled(true);
+  if (dashboard_scene_actions_button_) dashboard_scene_actions_button_->setEnabled(true);
+  if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(true);
+  if (dashboard_validate_action_) dashboard_validate_action_->setEnabled(true);
+  if (dashboard_validate_action_) dashboard_validate_action_->setToolTip(generate_gate.tooltip);
+  if (dashboard_plan_action_) dashboard_plan_action_->setEnabled(plan_gate.enabled);
+  if (dashboard_plan_action_) dashboard_plan_action_->setToolTip(plan_gate.tooltip);
+  if (dashboard_export_action_) dashboard_export_action_->setEnabled(export_gate.enabled);
+  if (dashboard_export_action_) dashboard_export_action_->setToolTip(export_gate.tooltip);
+  if (dashboard_delete_action_) dashboard_delete_action_->setEnabled(true);
 }
 
 

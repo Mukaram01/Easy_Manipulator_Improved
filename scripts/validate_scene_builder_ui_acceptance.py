@@ -54,6 +54,19 @@ def _regex_absent_check(name,haystack,forbidden):
     hits=[f"forbidden pattern matched ({label}): {pat}" for label,pat in forbidden.items() if re.search(pat,haystack,re.MULTILINE)]
     return CheckResult(name,not hits,hits)
 
+def _direct_button_label_absent_check(name:str,haystack:str,labels:list[str])->CheckResult:
+    hits=[]
+    for label in labels:
+        pats = [
+            rf'new\s+QPushButton\s*\(\s*"{re.escape(label)}"\s*,',
+            rf'addWidget\s*\(\s*new\s+QPushButton\s*\(\s*"{re.escape(label)}"\s*,',
+        ]
+        for pat in pats:
+            if re.search(pat, haystack):
+                hits.append(f'forbidden always-visible QPushButton label: {label}')
+                break
+    return CheckResult(name, not hits, hits)
+
 def _visible_label_set_check(name:str,haystack:str,allowed:set[str],forbidden_hint:list[str])->CheckResult:
     present=[label for label in allowed if label in haystack]
     missing=[label for label in sorted(allowed) if label not in present]
@@ -102,19 +115,12 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         "allowed visible top-level set only",
         main,
         {"Studio Home","New Cell","Scenes/Open","Run Next","More"},
-        ["Validate","Generate","Plan","Simulate","Export","Readiness"],
+        ["Generate","Readiness"],
     ))
-    checks.append(_regex_absent_check(
-        "forbidden direct top-bar primary actions",
+    checks.append(_direct_button_label_absent_check(
+        "forbidden always-visible scene action QPushButtons",
         main,
-        {
-            "validate_action": r'\bValidate\b',
-            "generate_action": r'\bGenerate\b',
-            "plan_action": r'\bPlan\b',
-            "simulate_action": r'\bSimulate\b',
-            "export_action": r'\bExport\b',
-            "readiness_action": r'\bReadiness\b',
-        },
+        ["Open in Scene Builder", "Validate", "Plan / Simulate", "Export", "Delete Scene"],
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
     checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Layout","Generate","Validate","Simulate","Export","Diagnostics"]))

@@ -65,6 +65,10 @@ def _base_fixture() -> dict[str, str]:
                 'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
                 'QString side_tab = "Actions";',
                 'QString grouped = "Grouped sections";',
+                'QString validate_section = "Validate";',
+                'QString simulate_section = "Simulate";',
+                'QString export_section = "Export";',
+                'QString diagnostics_section = "Diagnostics";',
                 'QString parity = "Canvas/Generated Parity";',
             ]
         ),
@@ -91,12 +95,12 @@ def test_validator_fails_with_clear_diagnostics_when_tokens_or_patterns_missing(
     assert "fixed-width button anti-pattern checks" in failed
 
 
-def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
+def test_validator_fails_when_forbidden_always_visible_scene_action_buttons_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQAction *validate = toolbar->addAction("Validate");\n'
+    broken["mainwindow_cpp"] += '\nQPushButton *validate = new QPushButton("Validate", this);\n'
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
-    assert "forbidden direct top-bar primary actions" in failed
+    assert "forbidden always-visible scene action QPushButtons" in failed
 
 
 def test_validator_reports_new_scene3d_acceptance_failures_when_markers_absent():

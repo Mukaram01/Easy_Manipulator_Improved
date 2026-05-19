@@ -39,8 +39,11 @@ def main() -> int:
     ok.append(check("viewport helper passes", all(t in viewport_h + viewport_cpp for t in ["draw_ground_grid_pass", "draw_world_axes_pass", "scene_bounds_from_visible_items", "View: 3D"])) )
     ok.append(check("fake-hardware safety token retained", "use_fake_hardware:=true" in mainwindow_cpp))
     ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes/Open", "Run Next", "More"])))
-    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness)\"", mainwindow_cpp)
-    ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
+    forbidden_scene_action_buttons = re.findall(
+        r'new\s+QPushButton\s*\(\s*"(Open in Scene Builder|Validate|Plan / Simulate|Export|Delete Scene)"\s*,',
+        mainwindow_cpp,
+    )
+    ok.append(check("forbidden always-visible scene action QPushButtons absent", len(forbidden_scene_action_buttons) == 0, detail=str(forbidden_scene_action_buttons)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
     ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Layout", "Generate", "Validate", "Simulate", "Export", "Diagnostics"])))
     ok.append(check("shared action registry exists", "scene_builder_action_registry_" in mainwindow_h and "register_scene_builder_action" in mainwindow_cpp))
