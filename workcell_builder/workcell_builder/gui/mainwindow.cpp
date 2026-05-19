@@ -2108,9 +2108,15 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
 {
   if (!inspector_label_ || !live_coordinate_label_) return;
   refresh_selection_binding_actions(state);
+  QStringList inspector_lines;
+  inspector_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
+  inspector_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
+  inspector_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
   if (!state.valid) {
-    inspector_label_->setText("Inspector selection: none");
-    live_coordinate_label_->setText("No item selected — showing scene summary");
+    inspector_lines << "Selected item: (none)";
+    inspector_label_->setText(inspector_lines.join("\n"));
+    inspector_label_->setToolTip(selected_scene_state_.valid ? selected_scene_state_.path : QString());
+    live_coordinate_label_->setText("No item selected");
     return;
   }
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
@@ -2118,8 +2124,14 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
   const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
-  inspector_label_->setText(QString("Name: %1\nRole: %2\nID: %3\nSource: %4\n%5").arg(display, role, state.id, source, locked_line));
-  inspector_label_->setToolTip(source);
+  inspector_lines << "";
+  inspector_lines << QString("Selected item name: %1").arg(display);
+  inspector_lines << QString("Selected item role: %1").arg(role);
+  inspector_lines << QString("Selected item ID: %1").arg(state.id);
+  inspector_lines << QString("Selected item source: %1").arg(source);
+  inspector_lines << locked_line;
+  inspector_label_->setText(inspector_lines.join("\n"));
+  inspector_label_->setToolTip(QString("%1\n%2").arg(selected_scene_state_.valid ? selected_scene_state_.path : QString(), source));
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
 }
 
@@ -3363,6 +3375,8 @@ void MainWindow::refresh_scene_builder_selection_state_ui()
 
 void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
+  sync_selected_scene_state();
+  sync_selected_item_state();
   if (!selected_scene_state_.valid) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
@@ -3387,7 +3401,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
   if (scene_preview_label_) scene_preview_label_->setText((s.has_static_preview_svg?"Preview SVG available":"Generate preview/readiness pack to populate this panel") + QString("\nStatus: %1").arg(selected_scene_state_.status));
   if (canvas_header_label_) canvas_header_label_->setText(QString("%1 | status: %2 | source: %3")
     .arg(selected_scene_state_.name, selected_scene_state_.status, selected_scene_state_.path));
-  if (inspector_label_ && !selected_item_state_.valid) { const QString scene_path = QString::fromStdString(s.scene_dir.string()); const QString launch_cmd = selected_scene_launch_command(); inspector_label_->setText(QString("Scene: %1\nStatus: %2\nRobot: %3\nEnd effector: %4\nObjects: %5\nTask recipe: %6\nSmoke report: %7\nPath: %8\nLaunch: %9").arg(QString::fromStdString(s.scene_name)).arg(QString::fromStdString(s.status)).arg(QString::fromStdString(s.robot_summary)).arg(QString::fromStdString(s.gripper_summary)).arg(s.object_count).arg(s.has_task_recipe?"present":"missing").arg(s.has_smoke_report_json?"present":"missing").arg(scene_path).arg(launch_cmd)); inspector_label_->setToolTip(QString("%1\n%2").arg(scene_path, launch_cmd)); }
+  refresh_selected_scene_item_labels(selected_item_state_);
   if (scene_preview_widget_) scene_preview_widget_->set_scene_selected(true);
   populate_scene_files_tab();
   refresh_create_starter_layout_action();
