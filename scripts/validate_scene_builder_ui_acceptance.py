@@ -82,7 +82,7 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("scene3d pick handle API markers",all_text,["pick_gizmo_axis_at_screen","pick_gizmo_rotation_ring_at_screen","active_gizmo_handle"]))
     checks.append(_token_check("scene3d snap value markers",all_text,["snap_translation_value","snap_rotation_value"]))
     checks.append(_token_check("viewport grid/floor/axes markers",all_text,["grid","floor","axes"]))
-    checks.append(_token_check("viewport label mode defaults",all_text,["important-only","dense-hide"]))
+    checks.append(_token_check("viewport label mode defaults",all_text,["Label mode","LabelMode::Important"]))
     checks.append(_token_check("preview-to-editable action token/path",all_text,["Create editable layout from preview"]))
     checks.append(_token_check("scene3d asset drag/drop markers",all_text,["application/x-workcell-asset-catalog-item","dragEnterEvent","dropEvent","Drop to place","asset_drop_cb"]))
     checks.append(_token_check("escape cancel restore path markers",all_text,["Qt::Key_Escape","restore"]))

@@ -12,6 +12,7 @@ DEFAULT_VALIDATORS = [
     "scripts/validate_scene_builder_ui_acceptance.py",
     "scripts/validate_scene3d_mesh_preview_contract.py",
     "scripts/validate_scene_builder_canvas_generated_parity.py",
+    "scripts/validate_scene_builder_ux_integration.py",
 ]
 SNIPPET_LINES = 6
 
