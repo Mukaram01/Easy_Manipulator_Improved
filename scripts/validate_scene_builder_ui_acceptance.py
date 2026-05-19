@@ -13,6 +13,36 @@ class CheckResult:
     ok:bool
     details:list[str]
 
+
+def compose_layout_status_text(editable_count:int, preview_fallback_count:int)->str:
+    parts=[f"Editable assets: {editable_count}"]
+    if preview_fallback_count:
+        parts.append(f"Preview-only fallback assets: {preview_fallback_count}")
+    return " | ".join(parts)
+
+
+def selected_state_summary(selected_scene:str|None, selected_item:str|None)->str:
+    if selected_item:
+        return f"Selected item: {selected_item}"
+    if selected_scene:
+        return f"Selected scene: {selected_scene}"
+    return "No selection"
+
+
+def workflow_rail_state_map(editable_layout_ready:bool, preview_only_scene:bool)->dict[str,str]:
+    state={
+        "Scene": "active",
+        "Editable layout": "done" if editable_layout_ready else "pending",
+        "Review": "blocked" if preview_only_scene else "ready",
+    }
+    if preview_only_scene and not editable_layout_ready:
+        state["Editable layout"]="recommended"
+    return state
+
+
+def recommendation_action_for_preview_only(preview_only_scene:bool)->str:
+    return "Create editable layout from preview" if preview_only_scene else "Continue editing layout"
+
 def _load_text(paths:Iterable[Path])->str:
     return "\n".join(p.read_text(encoding='utf-8') for p in paths if p.exists())
 
@@ -51,6 +81,9 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("scene3d gizmo tokens",all_text,["Gizmo:","Scene3D Gizmo Transform","Snap:","Move","Rotate"]))
     checks.append(_token_check("scene3d pick handle API markers",all_text,["pick_gizmo_axis_at_screen","pick_gizmo_rotation_ring_at_screen","active_gizmo_handle"]))
     checks.append(_token_check("scene3d snap value markers",all_text,["snap_translation_value","snap_rotation_value"]))
+    checks.append(_token_check("viewport grid/floor/axes markers",all_text,["grid","floor","axes"]))
+    checks.append(_token_check("viewport label mode defaults",all_text,["important-only","dense-hide"]))
+    checks.append(_token_check("preview-to-editable action token/path",all_text,["Create editable layout from preview"]))
     checks.append(_token_check("scene3d asset drag/drop markers",all_text,["application/x-workcell-asset-catalog-item","dragEnterEvent","dropEvent","Drop to place","asset_drop_cb"]))
     checks.append(_token_check("escape cancel restore path markers",all_text,["Qt::Key_Escape","restore"]))
     checks.append(_token_check("mouse release single-commit path markers",all_text,["mouseReleaseEvent","commit","single-commit"]))

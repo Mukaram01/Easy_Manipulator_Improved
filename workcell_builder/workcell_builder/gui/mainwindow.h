@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
+#include <QMap>
 #include <QLineEdit>
 #include <QPointF>
 #include <atomic>
@@ -120,6 +121,18 @@ private:
   QString selected_scene_name() const;
   QString selected_scene_path() const;
   bool has_selected_scene() const;
+  struct SelectedSceneState
+  {
+    bool valid{ false };
+    int index{ -1 };
+    QString name;
+    QString path;
+    QString status;
+    bool launchable{ false };
+  };
+  void sync_selected_scene_state();
+  void sync_selected_item_state();
+  void refresh_scene_builder_selection_state_ui();
   void refresh_scene_builder_selected_scene_ui();
   void refresh_scene_browser_ui();
   void populate_scene_files_tab();
@@ -135,6 +148,14 @@ private:
   enum class SceneWorkflowStepStatus { Done, Current, NeedsAction, Blocked, Warning };
   struct SceneWorkflowStep { QString label; SceneWorkflowStepStatus status{ SceneWorkflowStepStatus::NeedsAction }; QString detail; };
   std::vector<SceneWorkflowStep> scene_workflow_steps() const;
+  SceneWorkflowStep compute_scene_workflow_step(
+    const QString & label,
+    bool ready,
+    const QString & ready_detail,
+    const QString & missing_detail,
+    const QStringList & prerequisites,
+    const QMap<QString, bool> & prerequisite_states,
+    SceneWorkflowStepStatus ready_status = SceneWorkflowStepStatus::Done) const;
   QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
   QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
   void refresh_scene_workflow_rail();
@@ -228,6 +249,8 @@ private:
   void apply_scene_selection(const QString & id, const QString & role, bool intentional_clear = false, bool center_canvas = true);
   void mark_layout_dirty(const QString & reason);
   void save_layout_changes();
+  void create_starter_layout_from_preview();
+  void refresh_create_starter_layout_action();
   void revert_layout_changes();
   void on_canvas_selection_changed();
   void on_canvas_item_moved(QGraphicsItem * item, const QPointF & old_pos, const QPointF & new_pos, const QString & reason);
@@ -429,6 +452,7 @@ private:
   QPushButton * duplicate_layout_button_{ nullptr };
   QPushButton * delete_layout_button_{ nullptr };
   QPushButton * save_layout_button_{ nullptr };
+  QPushButton * create_starter_layout_button_{ nullptr };
   QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
@@ -466,6 +490,8 @@ private:
   int canvas_generated_parity_blockers_{ 0 };
   bool inspector_update_guard_{ false };
   bool selection_update_guard_{ false };
+  SelectedSceneState selected_scene_state_;
+  SelectedSceneItemState selected_item_state_;
   QString current_selected_scene_item_id_;
   struct CanvasEditCommand { QString kind; QString item_id; QPointF old_pos; QPointF new_pos; bool created{false}; bool deleted{false}; };
   std::vector<CanvasEditCommand> undo_stack_;
@@ -538,6 +564,9 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  int editable_layout_item_count_{ 0 };
+  int preview_fallback_item_count_{ 0 };
+  QString preview_provenance_summary_;
   QStringList preview_warning_details_;
   QStringList readiness_warning_details_;
 };

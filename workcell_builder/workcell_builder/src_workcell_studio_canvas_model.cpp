@@ -27,6 +27,13 @@ static bool mesh_node_disabled(const YAML::Node & node)
   return value == "none" || value == "disabled" || value == "false";
 }
 
+static std::string provenance_summary_text(const WorkcellStudioProvenanceStatus & status)
+{
+  return "Editable layout: " + std::to_string(status.editable_layout_count) + " items. Preview fallback: " +
+    std::to_string(status.generated_or_legacy_preview_count + status.static_fallback_preview_count) +
+    " items loaded from scene metadata.";
+}
+
 static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, const YAML::Node & manifest, const YAML::Node & layout_items, const std::string & item_id)
 {
   std::vector<std::string> out;
@@ -164,6 +171,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     item.height = height;
     item.radius = radius;
     item.locked = locked;
+    item.provenance = WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
     m.items.push_back(item);
   };
 
@@ -193,6 +201,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       for (auto & item : m.items) {
         if (item.id == id) {
           matched_existing = true;
+          item.provenance = WorkcellStudioItemProvenance::EditableLayout;
           YAML::Node pose = yaml_map_key(node, "pose");
           if (pose.IsDefined() && pose.IsMap()) {
             YAML::Node xyz = yaml_map_key(pose, "xyz");
@@ -228,6 +237,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         if (category == "Pick/Place Zones") extra.type = "zone";
         extra.label = read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", id);
         extra.source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "layout/workcell_studio_layout.yaml");
+        extra.provenance = WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
         YAML::Node pose = yaml_map_key(node, "pose");
         if (pose.IsDefined() && pose.IsMap()) {
           YAML::Node xyz = yaml_map_key(pose, "xyz");
@@ -274,6 +284,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
 
   if (deterministic_fallback_layout) {
     for (auto & item : m.items) {
+      item.provenance = WorkcellStudioItemProvenance::StaticFallbackPreview;
       if (item.id == "robot_base" || item.role == "robot") { item.x = -0.90; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
       else if (item.id == "table" || item.role == "table") { item.x = 0.0; item.y = 0.0; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
       else if (item.id == "conveyor" || item.role == "conveyor") { item.x = -1.30; item.y = -0.60; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
@@ -377,6 +388,12 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   std::stable_sort(m.items.begin(), m.items.end(), [](const WorkcellStudioCanvasItem & a, const WorkcellStudioCanvasItem & b) {
     return a.id < b.id;
   });
+  for (const auto & item : m.items) {
+    if (item.provenance == WorkcellStudioItemProvenance::EditableLayout) ++m.provenance_status.editable_layout_count;
+    else if (item.provenance == WorkcellStudioItemProvenance::GeneratedOrLegacyPreview) ++m.provenance_status.generated_or_legacy_preview_count;
+    else ++m.provenance_status.static_fallback_preview_count;
+  }
+  m.provenance_status.summary = provenance_summary_text(m.provenance_status);
   if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; { WorkcellStudioCanvasItem w; w.id="warning"; w.type="warning"; w.role="warning"; w.label="warning"; w.source_file="environment.yaml"; w.x=-1.2; w.y=1.2; w.width=0.1; w.depth=0.1; w.height=0.0; w.warnings=m.warnings; m.items.push_back(w); } }
   else { m.status = "READY"; }
   return m;
@@ -390,6 +407,67 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   fallback.status = "WARNINGS";
   fallback.has_warnings = true;
   fallback.warnings.push_back("mesh metadata missing or legacy; using primitive preview");
+  fallback.provenance_status.summary = provenance_summary_text(fallback.provenance_status);
   return fallback;
+}
+
+std::size_t count_editable_layout_entries(const fs::path & scene_dir)
+{
+  YAML::Node layout;
+  if (!read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout)) return 0;
+  const std::string schema_version = yaml_map_value_or_empty(layout, "schema_version");
+  if (schema_version != "workcell_studio_layout/v1") return 0;
+  const YAML::Node items = yaml_map_key(layout, "items");
+  if (!items || !items.IsSequence()) return 0;
+  std::size_t count = 0;
+  for (const auto & node : items) {
+    if (!node || !node.IsMap()) continue;
+    bool editable = true;
+    if (yaml_read_bool(yaml_map_key(node, "editable"), &editable)) {
+      if (editable) ++count;
+      continue;
+    }
+    bool locked = false;
+    if (yaml_read_bool(yaml_map_key(node, "locked"), &locked)) {
+      if (!locked) ++count;
+      continue;
+    }
+    ++count;
+  }
+  return count;
+}
+
+YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model)
+{
+  YAML::Node root(YAML::NodeType::Map);
+  root["schema_version"] = "workcell_studio_layout/v1";
+  root["scene_name"] = model.scene_name;
+  YAML::Node items(YAML::NodeType::Sequence);
+  for (const auto & preview_item : model.items) {
+    YAML::Node item(YAML::NodeType::Map);
+    item["id"] = preview_item.id;
+    item["type"] = preview_item.type;
+    item["category"] = preview_item.type;
+    YAML::Node pose(YAML::NodeType::Map);
+    pose["xyz"].push_back(preview_item.x);
+    pose["xyz"].push_back(preview_item.y);
+    pose["xyz"].push_back(preview_item.z);
+    pose["rpy"].push_back(preview_item.roll);
+    pose["rpy"].push_back(preview_item.pitch);
+    pose["rpy"].push_back(preview_item.yaw);
+    item["pose"] = pose;
+    item["dimensions"].push_back(preview_item.width);
+    item["dimensions"].push_back(preview_item.depth);
+    item["dimensions"].push_back(preview_item.height);
+    YAML::Node mesh(YAML::NodeType::Map);
+    mesh["path"] = preview_item.mesh_path.empty() ? preview_item.source_file : preview_item.mesh_path;
+    mesh["source"] = preview_item.source_file;
+    item["mesh"] = mesh;
+    item["source"] = preview_item.source_file;
+    item["editable"] = !preview_item.locked;
+    items.push_back(item);
+  }
+  root["items"] = items;
+  return root;
 }
 }
