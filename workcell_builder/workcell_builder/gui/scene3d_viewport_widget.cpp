@@ -316,29 +316,17 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
   update();
 }
 void Scene3DViewportWidget::fit_scene() {
-  if (items.isEmpty()) { set_isometric_view(); return; }
-  QVector3D bmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-  QVector3D bmax(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-  bool has_fittable_item = false;
-  for (const auto & it : items) {
-    if (!include_in_fit_bounds(it, fit_include_overlays)) continue;
-    has_fittable_item = true;
-    const ItemBounds bounds = item_bounds_for_role(it);
-    bmin.setX(std::min(bmin.x(), static_cast<float>(bounds.x)));
-    bmin.setY(std::min(bmin.y(), static_cast<float>(bounds.y)));
-    bmin.setZ(std::min(bmin.z(), static_cast<float>(bounds.z)));
-    bmax.setX(std::max(bmax.x(), static_cast<float>(bounds.x + bounds.sx)));
-    bmax.setY(std::max(bmax.y(), static_cast<float>(bounds.y + bounds.sy)));
-    bmax.setZ(std::max(bmax.z(), static_cast<float>(bounds.z + bounds.sz)));
-  }
-  if (!has_fittable_item) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
+  QVector3D bmin, bmax;
+  if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
   scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.25;
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.45;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  pitch_ = qBound(0.28, pitch_, 0.9);
+  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.15, radius * 0.1)));
   update();
 }
 void Scene3DViewportWidget::focus_selected() {
@@ -366,6 +354,8 @@ void Scene3DViewportWidget::paintGL()
   glMatrixMode(GL_MODELVIEW);
   glLoadMatrixf(view.constData());
 
+  draw_ground_grid_pass();
+  draw_world_axes_pass();
   draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.01, QColor(34, 197, 94, 70), true);
 
   glEnable(GL_BLEND);
@@ -417,8 +407,13 @@ void Scene3DViewportWidget::paintGL()
     if (r.isEmpty()) return QStringLiteral("Item");
     return role.left(10);
   };
+  const double zoom_factor = distance_ / qMax(0.25, scene_radius_);
+  const bool crowded = items.size() > 36;
+  const bool zoomed_far = zoom_factor > 6.0;
+  const bool suppress_non_critical_labels = crowded || zoomed_far;
   for (const auto & it : items) {
-    const QPointF p = project_to_screen(it.x + (it.sx * 0.5), it.y + (it.sy * 0.5), it.z + it.sz + 0.08);
+    const ItemBounds bounds = item_bounds_for_role(it);
+    const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
     const bool selected = (it.id == selected_id);
     const NormalizedRole role = classify_item_role(it);
     bool draw_label = false;
@@ -436,6 +431,7 @@ void Scene3DViewportWidget::paintGL()
         draw_label = true;
         break;
     }
+    if (suppress_non_critical_labels && !selected) draw_label = (label_mode == ScenePreviewWidget::LabelMode::All) ? false : draw_label;
     if (show_warning_labels && !it.warnings.isEmpty()) {
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
@@ -446,19 +442,57 @@ void Scene3DViewportWidget::paintGL()
     if (draw_label) {
       const QString text = selected ? it.id : compact_role(it.role);
       painter.setPen(QColor("#e2e8f0"));
-      painter.drawText(QPointF(p.x() + 10.0, p.y() - 8.0), text);
-    }
-    if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
-      painter.setPen(QColor("#fca5a5"));
-      painter.drawText(QPointF(p.x() + 10.0, p.y() + 10.0), warning_debug_text(it.warnings));
+      painter.drawText(QPointF(p.x() + 12.0, p.y() - 10.0), text);
     }
   }
+  const int editable_count = std::count_if(items.cbegin(), items.cend(), [](const auto & it) { return it.editable; });
+  const int preview_count = items.size() - editable_count;
+  painter.setPen(Qt::NoPen);
+  painter.setBrush(QColor(15, 23, 42, 190));
+  painter.drawRoundedRect(QRectF(12.0, 12.0, 220.0, 58.0), 6.0, 6.0);
+  painter.setPen(QColor("#e2e8f0"));
+  painter.drawText(QRectF(20.0, 18.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
+  painter.drawText(QRectF(20.0, 34.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Items: editable %1 / preview %2").arg(editable_count).arg(preview_count));
+  painter.drawText(QRectF(20.0, 50.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Mode: %1").arg(gizmo_mode_label()));
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
     draw_box(x, y, 0.0, 0.35, 0.35, 0.35, QColor(56, 189, 248, 120), true);
     QToolTip::showText(mapToGlobal(drag_asset_screen_pos_), drag_asset_drop_status_, this);
   }
+}
+
+bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const
+{
+  if (items.isEmpty()) return false;
+  out_min = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  out_max = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  bool has_fittable_item = false;
+  for (const auto & it : items) {
+    if (!include_in_fit_bounds(it, include_overlays)) continue;
+    has_fittable_item = true;
+    const ItemBounds bounds = item_bounds_for_role(it);
+    out_min.setX(std::min(out_min.x(), static_cast<float>(bounds.x)));
+    out_min.setY(std::min(out_min.y(), static_cast<float>(bounds.y)));
+    out_min.setZ(std::min(out_min.z(), static_cast<float>(bounds.z)));
+    out_max.setX(std::max(out_max.x(), static_cast<float>(bounds.x + bounds.sx)));
+    out_max.setY(std::max(out_max.y(), static_cast<float>(bounds.y + bounds.sy)));
+    out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
+  }
+  return has_fittable_item;
+}
+
+QString Scene3DViewportWidget::gizmo_mode_label() const
+{
+  switch (gizmo_mode) {
+    case GizmoMode::Select: return "Select";
+    case GizmoMode::Move: return "Move";
+    case GizmoMode::Rotate: return "Rotate";
+    case GizmoMode::ScaleDisabled: return "Scale";
+  }
+  return "Select";
 }
 
 bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
@@ -604,8 +638,8 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   QVector3D light_dir(0.35f, 0.8f, 0.45f);
   if (light_dir.lengthSquared() > 1e-12f) light_dir.normalize();
   else light_dir = default_up_normal;
-  const float ambient = 0.18f;
-  const float diffuse_scale = 0.82f;
+  const float ambient = 0.28f;
+  const float diffuse_scale = 0.9f;
 
   glBegin(GL_TRIANGLES);
   for (const auto & tri : cache.mesh.triangles) {
@@ -625,7 +659,10 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
 
     const float diffuse = qMax(0.0f, QVector3D::dotProduct(normal, light_dir));
     const float shade = ambient + diffuse * diffuse_scale;
-    glColor4f(color.redF() * shade, color.greenF() * shade, color.blueF() * shade, 1.0f);
+    const float edge_boost = 0.08f * (1.0f - diffuse);
+    glColor4f(qMin(1.0f, color.redF() * shade + edge_boost),
+              qMin(1.0f, color.greenF() * shade + edge_boost),
+              qMin(1.0f, color.blueF() * shade + edge_boost), 1.0f);
     glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
     glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
     glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
@@ -634,6 +671,32 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
 
   glPopMatrix();
   return true;
+}
+
+void Scene3DViewportWidget::draw_ground_grid_pass()
+{
+  glDisable(GL_CULL_FACE);
+  glLineWidth(1.0f);
+  glBegin(GL_LINES);
+  for (int i = -20; i <= 20; ++i) {
+    const bool major = (i % 5 == 0);
+    const QColor c = major ? QColor(100, 116, 139, 140) : QColor(71, 85, 105, 80);
+    glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
+    glVertex3f(static_cast<float>(i), 0.0f, -20.0f); glVertex3f(static_cast<float>(i), 0.0f, 20.0f);
+    glVertex3f(-20.0f, 0.0f, static_cast<float>(i)); glVertex3f(20.0f, 0.0f, static_cast<float>(i));
+  }
+  glEnd();
+  glEnable(GL_CULL_FACE);
+}
+
+void Scene3DViewportWidget::draw_world_axes_pass()
+{
+  glLineWidth(2.4f);
+  glBegin(GL_LINES);
+  glColor4f(0.95f, 0.35f, 0.35f, 1.0f); glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.45f, 0.0f, 0.0f);
+  glColor4f(0.35f, 0.95f, 0.35f, 1.0f); glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 0.45f, 0.0f);
+  glColor4f(0.35f, 0.65f, 0.98f, 1.0f); glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 0.45f);
+  glEnd();
 }
 
 void Scene3DViewportWidget::draw_unit_cube_triangles(const QColor & color)
