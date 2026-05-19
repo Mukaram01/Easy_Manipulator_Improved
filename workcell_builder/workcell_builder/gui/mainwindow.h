@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
+#include <QMap>
 #include <QLineEdit>
 #include <QPointF>
 #include <atomic>
@@ -135,6 +136,14 @@ private:
   enum class SceneWorkflowStepStatus { Done, Current, NeedsAction, Blocked, Warning };
   struct SceneWorkflowStep { QString label; SceneWorkflowStepStatus status{ SceneWorkflowStepStatus::NeedsAction }; QString detail; };
   std::vector<SceneWorkflowStep> scene_workflow_steps() const;
+  SceneWorkflowStep compute_scene_workflow_step(
+    const QString & label,
+    bool ready,
+    const QString & ready_detail,
+    const QString & missing_detail,
+    const QStringList & prerequisites,
+    const QMap<QString, bool> & prerequisite_states,
+    SceneWorkflowStepStatus ready_status = SceneWorkflowStepStatus::Done) const;
   QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
   QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
   void refresh_scene_workflow_rail();
