@@ -1063,15 +1063,15 @@ void MainWindow::setup_studio_shell()
   scene_builder_primary_controls_layout_ = primary_controls;
   controls->addWidget(scene_builder_top_controls_host_, 1);
 
-  QMap<QString, QAction *> scene_builder_action_registry;
+  scene_builder_action_registry_.clear();
   auto register_scene_action = [&](const QString & key, const QString & text, std::function<void()> handler) {
     auto * action = new QAction(text, scene_builder);
     QObject::connect(action, &QAction::triggered, this, [handler]() { handler(); });
-    scene_builder_action_registry.insert(key, action);
+    register_scene_builder_action(key, action);
     return action;
   };
   auto create_action_button = [&](QVBoxLayout * layout, const QString & key) {
-    auto * action = scene_builder_action_registry.value(key, nullptr);
+    auto * action = scene_builder_action(key);
     if (!action) return static_cast<QPushButton *>(nullptr);
     auto * button = new QPushButton(action->text(), scene_builder);
     QObject::connect(button, &QPushButton::clicked, action, &QAction::trigger);
@@ -1217,7 +1217,7 @@ void MainWindow::setup_studio_shell()
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
-  create_starter_layout_button_ = new QPushButton("Create Starter Layout from Preview", scene_builder);
+  create_starter_layout_button_ = new QPushButton("Create editable layout from preview", scene_builder);
   create_starter_layout_button_->setVisible(false);
   layout_controls->addWidget(create_starter_layout_button_);
   revert_layout_button_ = new QPushButton("Revert Layout", scene_builder);
@@ -1777,6 +1777,17 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   refresh_scene_bundle_export_panel();
 }
 
+QAction * MainWindow::scene_builder_action(const QString & key) const
+{
+  return scene_builder_action_registry_.value(key, nullptr);
+}
+
+void MainWindow::register_scene_builder_action(const QString & key, QAction * action)
+{
+  if (!action) return;
+  scene_builder_action_registry_.insert(key, action);
+}
+
 void MainWindow::build_studio_header_actions()
 {
   action_workspace_studio_home_ = new QAction("Studio Home", this);
@@ -1836,7 +1847,7 @@ void MainWindow::build_studio_header_actions()
     top_bar->addWidget(button);
   }
   auto * scenes_open_button = new QToolButton(this);
-  scenes_open_button->setText("Scenes / Open");
+  scenes_open_button->setText("Scenes/Open");
   scenes_open_button->setPopupMode(QToolButton::InstantPopup);
   auto * scenes_open_menu = new QMenu(scenes_open_button);
   scenes_open_menu->addAction(action_workspace_open_scene_builder_);

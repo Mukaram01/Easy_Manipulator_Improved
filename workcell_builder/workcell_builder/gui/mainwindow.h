@@ -161,6 +161,8 @@ private:
   QString scene_workflow_status_text(SceneWorkflowStepStatus status) const;
   QString scene_workflow_status_chip(SceneWorkflowStepStatus status) const;
   void refresh_scene_workflow_rail();
+  QAction * scene_builder_action(const QString & key) const;
+  void register_scene_builder_action(const QString & key, QAction * action);
   enum class RecommendedWorkflowActionHandler {
     OpenOrCreateScene,
     AddAsset,
@@ -434,6 +436,7 @@ private:
   QToolButton * scene_builder_visual_modes_button_{ nullptr };
   QToolButton * scene_builder_secondary_overflow_button_{ nullptr };
   QMenu * scene_builder_secondary_overflow_menu_{ nullptr };
+  QMap<QString, QAction *> scene_builder_action_registry_;
   // Unified action registry (header menus + side-panel buttons share these actions).
   // Workspace
   QAction * action_workspace_studio_home_{ nullptr };
