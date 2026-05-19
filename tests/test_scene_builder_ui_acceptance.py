@@ -43,6 +43,8 @@ def _base_fixture() -> dict[str, str]:
                 'viewport->show_axes(true);',
                 'QString labels = "important-only";',
                 'QString dense = "dense-hide";',
+                'QString lm = "Label mode";',
+                'QString lmd = "LabelMode::Important";',
                 'QString promote = "Create editable layout from preview";',
                 'if (e->key() == Qt::Key_Escape) { restore(); }',
                 'void mouseReleaseEvent(QMouseEvent*) { /* single-commit */ commit(); }',
