@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from scripts.validate_scene_builder_ui_acceptance import run_checks
+from scripts.validate_scene_builder_ui_acceptance import (
+    compose_layout_status_text,
+    recommendation_action_for_preview_only,
+    run_checks,
+    selected_state_summary,
+    workflow_rail_state_map,
+)
 
 
 def _base_fixture() -> dict[str, str]:
@@ -32,6 +38,12 @@ def _base_fixture() -> dict[str, str]:
                 'QString active_handle = "active_gizmo_handle";',
                 'QString snap_t = "snap_translation_value";',
                 'QString snap_r = "snap_rotation_value";',
+                'viewport->enable_grid(true);',
+                'viewport->set_floor_visible(true);',
+                'viewport->show_axes(true);',
+                'QString labels = "important-only";',
+                'QString dense = "dense-hide";',
+                'QString promote = "Create editable layout from preview";',
                 'if (e->key() == Qt::Key_Escape) { restore(); }',
                 'void mouseReleaseEvent(QMouseEvent*) { /* single-commit */ commit(); }',
                 'if (item->locked()) { status->setText("Locked:"); }',
@@ -87,3 +99,29 @@ def test_repository_ui_acceptance_validator_runs_on_current_sources():
     checks = run_checks()
     assert checks
     assert any(c.name == "fake hardware launch token" for c in checks)
+
+
+def test_compose_layout_status_text_distinguishes_editable_and_preview_fallback_counts():
+    assert compose_layout_status_text(4, 0) == "Editable assets: 4"
+    assert compose_layout_status_text(4, 2) == "Editable assets: 4 | Preview-only fallback assets: 2"
+
+
+def test_selected_scene_and_selected_item_have_separate_state_behavior():
+    assert selected_state_summary("factory_scene", None) == "Selected scene: factory_scene"
+    assert selected_state_summary("factory_scene", "table_asset") == "Selected item: table_asset"
+    assert selected_state_summary(None, None) == "No selection"
+
+
+def test_workflow_rail_state_map_includes_editable_layout_row_and_preview_mapping():
+    editable = workflow_rail_state_map(editable_layout_ready=True, preview_only_scene=False)
+    preview = workflow_rail_state_map(editable_layout_ready=False, preview_only_scene=True)
+
+    assert editable["Editable layout"] == "done"
+    assert editable["Review"] == "ready"
+    assert preview["Editable layout"] == "recommended"
+    assert preview["Review"] == "blocked"
+
+
+def test_recommendation_action_for_preview_only_scene_is_explicit():
+    assert recommendation_action_for_preview_only(True) == "Create editable layout from preview"
+    assert recommendation_action_for_preview_only(False) == "Continue editing layout"
