@@ -1007,6 +1007,9 @@ void MainWindow::setup_studio_shell()
   scene_preview_label_=new QLabel("<b>Digital Twin Canvas</b>"); scene_preview_label_->setWordWrap(true); center_panel_layout->addWidget(scene_preview_label_);
   canvas_header_label_ = new QLabel("UR5 + Robotiq 2F | Pick and Place | READY"); canvas_header_label_->setWordWrap(true); center_panel_layout->addWidget(canvas_header_label_);
   auto * controls = new QHBoxLayout();
+  controls->setObjectName("scene_builder_top_controls_row");
+  controls->setContentsMargins(0, 0, 0, 0);
+  controls->setSpacing(8);
   canvas_mode_label_ = new QLabel("Mode: Select · 3D Layout Preview", scene_builder); controls->addWidget(canvas_mode_label_);
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
@@ -1053,15 +1056,37 @@ void MainWindow::setup_studio_shell()
         commit_armed_asset_placement(QPointF(x * 100.0, y * 100.0));
       };
   }
-  auto * select_mode_button = new QPushButton("Select", scene_builder); controls->addWidget(select_mode_button);
-  auto * place_mode_button = new QPushButton("Place Asset", scene_builder); controls->addWidget(place_mode_button);
+  scene_builder_top_controls_host_ = new QWidget(scene_builder);
+  scene_builder_top_controls_host_->setObjectName("scene_builder_top_controls_host");
+  auto * primary_controls = new QHBoxLayout(scene_builder_top_controls_host_);
+  primary_controls->setObjectName("scene_builder_primary_controls_layout");  // acceptance: primary always-visible actions
+  primary_controls->setContentsMargins(0, 0, 0, 0);
+  primary_controls->setSpacing(6);
+  scene_builder_primary_controls_layout_ = primary_controls;
+  controls->addWidget(scene_builder_top_controls_host_, 1);
+
+  auto make_primary_button = [scene_builder](const QString & text) {
+      auto * button = new QPushButton(text, scene_builder);
+      button->setMinimumHeight(30);
+      button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+      return button;
+    };
+  auto * select_mode_button = make_primary_button("Select"); primary_controls->addWidget(select_mode_button);
+  auto * place_mode_button = make_primary_button("Place Asset"); primary_controls->addWidget(place_mode_button);
   place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
   place_mode_persistent_box_->setChecked(false);
   place_mode_persistent_box_->setToolTip("When enabled, Place Asset mode stays armed after each placement.");
-  controls->addWidget(place_mode_persistent_box_);
-  auto * move_mode_button = new QPushButton("Move", scene_builder); controls->addWidget(move_mode_button);
-  auto * inspect_mode_button = new QPushButton("Inspect", scene_builder); controls->addWidget(inspect_mode_button);
-  auto * camera_view = new QToolButton(scene_builder); camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
+  place_mode_persistent_box_->setMinimumHeight(30);
+  place_mode_persistent_box_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+  primary_controls->addWidget(place_mode_persistent_box_);
+  auto * move_mode_button = make_primary_button("Move"); primary_controls->addWidget(move_mode_button);
+  auto * inspect_mode_button = make_primary_button("Inspect"); primary_controls->addWidget(inspect_mode_button);
+  save_layout_button_ = make_primary_button("Save Layout");
+  primary_controls->addWidget(save_layout_button_);
+  primary_controls->addStretch(1);
+
+  scene_builder_camera_view_button_ = new QToolButton(scene_builder);
+  auto * camera_view = scene_builder_camera_view_button_; camera_view->setText("Camera / View"); camera_view->setPopupMode(QToolButton::InstantPopup);
   auto * camera_view_menu = new QMenu(camera_view);
   auto * perspective_action = camera_view_menu->addAction("Perspective");
   auto * top_action = camera_view_menu->addAction("Top");
@@ -1082,7 +1107,8 @@ void MainWindow::setup_studio_shell()
   toggle_labels_box_ = new QCheckBox("Toggle Labels", scene_builder); toggle_labels_box_->setChecked(true);
   toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(true);
   show_minimap_box_ = new QCheckBox("Show Minimap", scene_builder); show_minimap_box_->setChecked(true);
-  auto * overlays_button = new QToolButton(scene_builder); overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
+  scene_builder_overlays_button_ = new QToolButton(scene_builder);
+  auto * overlays_button = scene_builder_overlays_button_; overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(true);
   show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(true);
@@ -1110,7 +1136,8 @@ void MainWindow::setup_studio_shell()
       toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
     append_studio_log("overlay toggled");
   });
-  auto * canvas_more_actions = new QToolButton(scene_builder);
+  scene_builder_canvas_more_button_ = new QToolButton(scene_builder);
+  auto * canvas_more_actions = scene_builder_canvas_more_button_;
   canvas_more_actions->setText("Canvas More");
   canvas_more_actions->setPopupMode(QToolButton::InstantPopup);
   auto * canvas_more_menu = new QMenu(canvas_more_actions);
@@ -1129,6 +1156,31 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
   canvas_more_actions->setMenu(canvas_more_menu);
   controls->addWidget(canvas_more_actions);
+  scene_builder_visual_modes_button_ = new QToolButton(scene_builder);
+  scene_builder_visual_modes_button_->setObjectName("scene_builder_secondary_visual_modes_button");  // acceptance: secondary grouped actions
+  scene_builder_visual_modes_button_->setText("Visual Modes");
+  scene_builder_visual_modes_button_->setPopupMode(QToolButton::InstantPopup);
+  auto * visual_modes_menu = new QMenu(scene_builder_visual_modes_button_);
+  auto * label_mode_menu = visual_modes_menu->addMenu("Label mode");
+  auto * label_selected = label_mode_menu->addAction("Selected");
+  auto * label_all = label_mode_menu->addAction("All");
+  auto * label_off = label_mode_menu->addAction("Off");
+  auto * mesh_preview_menu = visual_modes_menu->addMenu("Mesh preview mode");
+  auto * mesh_visual = mesh_preview_menu->addAction("Visual Mesh");
+  auto * mesh_collision = mesh_preview_menu->addAction("Collision Mesh");
+  auto * snap_mode_menu = visual_modes_menu->addMenu("Snap mode");
+  auto * snap_5cm = snap_mode_menu->addAction("Snap: 5 cm");
+  auto * snap_1cm = snap_mode_menu->addAction("Snap: 1 cm");
+  auto * snap_off = snap_mode_menu->addAction("Snap Off");
+  scene_builder_visual_modes_button_->setMenu(visual_modes_menu);
+  controls->addWidget(scene_builder_visual_modes_button_);
+  scene_builder_secondary_overflow_button_ = new QToolButton(scene_builder);
+  scene_builder_secondary_overflow_button_->setObjectName("scene_builder_secondary_overflow_button");
+  scene_builder_secondary_overflow_button_->setText("More");
+  scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
+  scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
+  scene_builder_secondary_overflow_button_->setMenu(scene_builder_secondary_overflow_menu_);
+  controls->addWidget(scene_builder_secondary_overflow_button_);
   auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
   digital_twin_canvas_->viewport()->installEventFilter(this);
@@ -1140,7 +1192,6 @@ void MainWindow::setup_studio_shell()
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
   duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder);
   delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder);
-  save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
   revert_layout_button_ = new QPushButton("Revert Layout", scene_builder);
   auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder);
   auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder);
@@ -1153,6 +1204,26 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Open Merge Report", open_layout_merge_report_button, &QPushButton::click);
   canvas_more_menu->addAction("Copy Merge Summary", copy_layout_merge_summary_button, &QPushButton::click);
   canvas_more_menu->addAction("Export Canvas Snapshot", export_snapshot, &QPushButton::click);
+  connect(label_selected, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected); });
+  connect(label_all, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Important); });
+  connect(label_off, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Off); });
+  connect(mesh_visual, &QAction::triggered, this, [this]() {
+    auto * v = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
+    if (!v) return;
+    v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Meshes;
+    v->update();
+  });
+  connect(mesh_collision, &QAction::triggered, this, [this]() {
+    auto * v = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
+    if (!v) return;
+    v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Primitives;
+    v->update();
+  });
+  connect(snap_5cm, &QAction::triggered, this, [this]() { snap_step_m_ = 0.05; if (snap_step_label_) snap_step_label_->setText("Nudge step: 0.05 m"); if (snap_to_grid_box_) snap_to_grid_box_->setChecked(true); });
+  connect(snap_1cm, &QAction::triggered, this, [this]() { snap_step_m_ = 0.01; if (snap_step_label_) snap_step_label_->setText("Nudge step: 0.01 m"); if (snap_to_grid_box_) snap_to_grid_box_->setChecked(true); });
+  connect(snap_off, &QAction::triggered, this, [this]() { if (snap_to_grid_box_) snap_to_grid_box_->setChecked(false); });
+  scene_builder->installEventFilter(this);
+  update_scene_builder_top_controls_overflow();
   center_panel_layout->addLayout(layout_controls);
   layout_state_label_ = new QLabel("Unsaved Layout Edits: none", scene_builder); center_panel_layout->addWidget(layout_state_label_);
   canvas_legend_label_ = new QLabel("Legend: robot | Robot Reach | camera | Camera FOV | pick zone | place zone | conveyor | bin | warning"); center_panel_layout->addWidget(canvas_legend_label_);
@@ -3466,6 +3537,11 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 
 bool MainWindow::eventFilter(QObject * watched, QEvent * event)
 {
+  if (scene_builder_top_controls_host_ && watched == scene_builder_top_controls_host_->parent() && event &&
+    event->type() == QEvent::Resize)
+  {
+    update_scene_builder_top_controls_overflow();
+  }
   if (asset_catalog_tree_ && watched == asset_catalog_tree_->viewport() && event) {
     if (event->type() == QEvent::MouseButtonPress) {
       auto * mouse_event = static_cast<QMouseEvent *>(event);
@@ -3511,6 +3587,34 @@ bool MainWindow::eventFilter(QObject * watched, QEvent * event)
     }
   }
   return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::update_scene_builder_top_controls_overflow()
+{
+  if (!scene_builder_top_controls_host_ || !scene_builder_secondary_overflow_button_ ||
+    !scene_builder_secondary_overflow_menu_)
+  {
+    return;
+  }
+  const int available_width = scene_builder_top_controls_host_->parentWidget() ?
+    scene_builder_top_controls_host_->parentWidget()->width() : width();
+  const bool constrained = available_width < 1280;
+  scene_builder_secondary_overflow_menu_->clear();
+  const auto remap_menu = [this](QToolButton * button) {
+      if (!button || !button->menu()) return;
+      scene_builder_secondary_overflow_menu_->addMenu(button->menu());
+    };
+  if (constrained) {
+    remap_menu(scene_builder_camera_view_button_);
+    remap_menu(scene_builder_overlays_button_);
+    remap_menu(scene_builder_canvas_more_button_);
+    remap_menu(scene_builder_visual_modes_button_);
+  }
+  if (scene_builder_camera_view_button_) scene_builder_camera_view_button_->setVisible(!constrained);
+  if (scene_builder_overlays_button_) scene_builder_overlays_button_->setVisible(!constrained);
+  if (scene_builder_canvas_more_button_) scene_builder_canvas_more_button_->setVisible(!constrained);
+  if (scene_builder_visual_modes_button_) scene_builder_visual_modes_button_->setVisible(!constrained);
+  scene_builder_secondary_overflow_button_->setVisible(constrained);
 }
 
 QPointF MainWindow::snap_canvas_position(const QPointF & pos) const

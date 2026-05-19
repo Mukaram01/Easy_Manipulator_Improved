@@ -249,6 +249,7 @@ private:
   bool validate_armed_asset_transform(QString * error_message = nullptr);
   void reset_armed_asset_transform_to_defaults();
   void update_arm_transform_validation_ui();
+  void update_scene_builder_top_controls_overflow();
   double default_asset_pose_z(const QString & category, const QString & display_name) const;
 
   struct AssetCatalogEntry
@@ -397,6 +398,14 @@ private:
   QPushButton * camera_button_{ nullptr };
   QLabel * canvas_legend_label_{ nullptr };
   QLabel * canvas_mode_label_{ nullptr };
+  QWidget * scene_builder_top_controls_host_{ nullptr };
+  QHBoxLayout * scene_builder_primary_controls_layout_{ nullptr };
+  QToolButton * scene_builder_camera_view_button_{ nullptr };
+  QToolButton * scene_builder_overlays_button_{ nullptr };
+  QToolButton * scene_builder_canvas_more_button_{ nullptr };
+  QToolButton * scene_builder_visual_modes_button_{ nullptr };
+  QToolButton * scene_builder_secondary_overflow_button_{ nullptr };
+  QMenu * scene_builder_secondary_overflow_menu_{ nullptr };
   QLabel * snap_step_label_{ nullptr };
   QGraphicsView * digital_twin_canvas_{ nullptr };
   ScenePreviewWidget * scene_preview_widget_{ nullptr };
