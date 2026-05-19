@@ -91,6 +91,8 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("inspector sync/layout dirty markers",all_text,["inspector","sync","layout dirty"]))
     checks.append(_regex_absent_check("no hidden QPushButton indirection anti-pattern",main,{"menu_action_new_cell":r'addAction\("Create New Cell"\s*,',"menu_action_plan_simulate":r'addAction\("Open Plan & Simulate"\s*,'}))
     checks.append(_regex_absent_check("fixed-width button anti-pattern checks",main,{"qpushbutton_fixed_width_literal":r"\b[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*->\s*setFixedWidth\s*\(\s*\d+\s*\)"}))
+    # Top-level clutter guard
+
     return checks
 
 def main()->int:
