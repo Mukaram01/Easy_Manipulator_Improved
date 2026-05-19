@@ -1383,34 +1383,7 @@ void MainWindow::setup_studio_shell()
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
   readiness_card_layout->addWidget(ar_card);
-  auto * preview_actions_card = new QFrame(right_panel); preview_actions_card->setObjectName("studioCard"); auto * preview_actions_layout = new QVBoxLayout(preview_actions_card);
-  preview_actions_label_=new QLabel("<b>Scene Actions</b>"); preview_actions_label_->setWordWrap(true); preview_actions_layout->addWidget(preview_actions_label_);
-  auto * generate_scene_pkg_button = new QPushButton("Generate", scene_builder); generate_scene_pkg_button->setProperty("role", "primary"); preview_actions_layout->addWidget(generate_scene_pkg_button);
-  auto * validate_task_button = new QPushButton("Validate Generated Scene", scene_builder); preview_actions_layout->addWidget(validate_task_button);
-  scene_builder_more_actions_button_ = new QToolButton(scene_builder);
-  scene_builder_more_actions_button_->setText("More Actions");
-  scene_builder_more_actions_button_->setPopupMode(QToolButton::InstantPopup);
-  auto * scene_builder_more_menu = new QMenu(scene_builder_more_actions_button_);
-  auto * generate_yaml_action = scene_builder_more_menu->addAction("Generate YAML");
-  auto * generate_task_action = scene_builder_more_menu->addAction("Generate Task/Grasp Files");
-  auto * copy_cmds_action = scene_builder_more_menu->addAction("Copy Build & Launch Commands");
-  auto * open_task_action = scene_builder_more_menu->addAction("Open Task File");
-  auto * copy_task_summary_action = scene_builder_more_menu->addAction("Copy Task Summary");
-  auto * preview_offline_plan_action = scene_builder_more_menu->addAction("Preview Offline Plan");
-  auto * remove_selected_layout_item_action = scene_builder_more_menu->addAction("Remove Selected Layout Item");
-  auto * pick_zone_action = scene_builder_more_menu->addAction("Use Selected as Pick Zone");
-  auto * place_zone_action = scene_builder_more_menu->addAction("Use Selected as Place Zone");
-  auto * camera_action = scene_builder_more_menu->addAction("Use Selected as Camera");
-  scene_builder_more_actions_button_->setMenu(scene_builder_more_menu);
-  preview_actions_layout->addWidget(scene_builder_more_actions_button_);
-  QObject::connect(generate_yaml_action, &QAction::triggered, this, &MainWindow::generate_yaml_draft_for_selected_scene);
-  QObject::connect(generate_task_action, &QAction::triggered, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
-  QObject::connect(copy_cmds_action, &QAction::triggered, this, &MainWindow::copy_build_launch_commands_for_selected_scene);
-  QObject::connect(remove_selected_layout_item_action, &QAction::triggered, this, &MainWindow::delete_selected_item);
-  QObject::connect(pick_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_pick_zone);
-  QObject::connect(place_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_place_zone);
-  QObject::connect(camera_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_camera);
-  auto * make_action_section = [&](const QString & section_title) {
+  auto make_action_section = [&](const QString & section_title) {
     auto * section = new QGroupBox(section_title, actions_tab);
     section->setObjectName("studioCard");
     auto * section_layout = new QVBoxLayout(section);
@@ -1636,11 +1609,6 @@ void MainWindow::setup_studio_shell()
   connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
   connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  connect(generate_scene_pkg_button, &QPushButton::clicked, this, [this](){ if (action_generate_package_) action_generate_package_->trigger(); });
-  connect(validate_task_button, &QPushButton::clicked, this, [this](){ if (action_validate_generated_scene_) action_validate_generated_scene_->trigger(); });
-  connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
-  connect(copy_task_summary_action, &QAction::triggered, this, &MainWindow::copy_selected_task_summary);
-  connect(preview_offline_plan_action, &QAction::triggered, this, &MainWindow::preview_offline_plan_for_selected_scene);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ append_studio_log("Import STL / URDF: choose asset import flow from Asset Browser."); });
