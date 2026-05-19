@@ -59,6 +59,7 @@ class QTreeWidgetItem;
 class QComboBox;
 class QToolButton;
 class QMenu;
+class QAction;
 class QSplitter;
 class QFrame;
 class QDialog;
@@ -115,6 +116,7 @@ private:
   void update_next_button_state();
   void toggle_full_screen();
   void setup_studio_shell();
+  void build_studio_header_actions();
   void apply_studio_theme();
   void append_studio_log(const QString & message);
   void show_not_wired_message(const QString & action_label);
@@ -429,6 +431,36 @@ private:
   QToolButton * scene_builder_visual_modes_button_{ nullptr };
   QToolButton * scene_builder_secondary_overflow_button_{ nullptr };
   QMenu * scene_builder_secondary_overflow_menu_{ nullptr };
+  // Unified action registry (header menus + side-panel buttons share these actions).
+  // Workspace
+  QAction * action_workspace_studio_home_{ nullptr };
+  QAction * action_workspace_new_cell_{ nullptr };
+  QAction * action_workspace_open_scene_builder_{ nullptr };
+  // Layout
+  QAction * action_layout_save_{ nullptr };
+  QAction * action_layout_revert_{ nullptr };
+  // Generate
+  QAction * action_generate_package_{ nullptr };
+  QAction * action_generate_yaml_{ nullptr };
+  QAction * action_generate_task_intent_{ nullptr };
+  // Validate
+  QAction * action_validate_offline_{ nullptr };
+  QAction * action_validate_generated_scene_{ nullptr };
+  QAction * action_validate_open_report_{ nullptr };
+  QAction * action_validate_open_readiness_{ nullptr };
+  // Simulate
+  QAction * action_simulate_plan_preview_{ nullptr };
+  // Export
+  QAction * action_export_open_page_{ nullptr };
+  // View
+  QAction * action_view_demo_mode_{ nullptr };
+  QAction * action_view_diagnostics_page_{ nullptr };
+  // Diagnostics
+  QAction * action_diagnostics_run_self_test_{ nullptr };
+  QAction * action_diagnostics_run_golden_flow_{ nullptr };
+  QAction * action_diagnostics_copy_report_{ nullptr };
+  QAction * action_diagnostics_open_folder_{ nullptr };
+  QAction * action_diagnostics_copy_build_launch_commands_{ nullptr };
   QLabel * snap_step_label_{ nullptr };
   QGraphicsView * digital_twin_canvas_{ nullptr };
   ScenePreviewWidget * scene_preview_widget_{ nullptr };
