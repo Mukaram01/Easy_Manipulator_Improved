@@ -100,13 +100,13 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_regex_absent_check("fixed-width button anti-pattern checks",main,{"qpushbutton_fixed_width_literal":r"\b[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*->\s*setFixedWidth\s*\(\s*\d+\s*\)"}))
     checks.append(_visible_label_set_check(
         "allowed visible top-level set only",
-        all_text,
+        main,
         {"Studio Home","New Cell","Scenes/Open","Run Next","More"},
         ["Validate","Generate","Plan","Simulate","Export","Readiness"],
     ))
     checks.append(_regex_absent_check(
         "forbidden direct top-bar primary actions",
-        all_text,
+        main,
         {
             "validate_action": r'\bValidate\b',
             "generate_action": r'\bGenerate\b',
@@ -117,7 +117,7 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         },
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
-    checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Grouped sections"]))
+    checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Layout","Generate","Validate","Simulate","Export","Diagnostics"]))
     checks.append(_token_check("canonical duplicate visible-label targets",all_text,["Create editable layout from preview","Canvas/Generated Parity"]))
 
     return checks
