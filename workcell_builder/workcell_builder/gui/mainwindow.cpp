@@ -1063,6 +1063,35 @@ void MainWindow::setup_studio_shell()
   scene_builder_primary_controls_layout_ = primary_controls;
   controls->addWidget(scene_builder_top_controls_host_, 1);
 
+  QMap<QString, QAction *> scene_builder_action_registry;
+  auto register_scene_action = [&](const QString & key, const QString & text, std::function<void()> handler) {
+    auto * action = new QAction(text, scene_builder);
+    QObject::connect(action, &QAction::triggered, this, [handler]() { handler(); });
+    scene_builder_action_registry.insert(key, action);
+    return action;
+  };
+  auto create_action_button = [&](QVBoxLayout * layout, const QString & key) {
+    auto * action = scene_builder_action_registry.value(key, nullptr);
+    if (!action) return static_cast<QPushButton *>(nullptr);
+    auto * button = new QPushButton(action->text(), scene_builder);
+    QObject::connect(button, &QPushButton::clicked, action, &QAction::trigger);
+    layout->addWidget(button);
+    return button;
+  };
+  register_scene_action("layout.save", "Save Layout", [this]() { if (save_layout_button_) save_layout_button_->click(); });
+  register_scene_action("layout.duplicate", "Duplicate Selected", [this]() { duplicate_selected_item(); });
+  register_scene_action("layout.remove", "Remove Selected Layout Item", [this]() { delete_selected_item(); });
+  register_scene_action("generate.scene_package", "Generate", [this]() { generate_scene_package_for_selected_scene(); });
+  register_scene_action("generate.yaml", "Generate YAML", [this]() { generate_yaml_draft_for_selected_scene(); });
+  register_scene_action("generate.task", "Generate Task/Grasp Files", [this]() { generate_or_update_task_intent_for_selected_scene(); });
+  register_scene_action("validate.generated_scene", "Validate Generated Scene", [this]() { validate_generated_scene_for_selected_scene(); });
+  register_scene_action("validate.offline", "Run Offline Validation", [this]() { run_offline_validation(); });
+  register_scene_action("simulate.open_rviz", "Open RViz2 / MoveIt", [this]() { if (run_build_button_) run_build_button_->click(); });
+  register_scene_action("simulate.run_fake", "Run Fake-Hardware Simulation", [this]() { if (run_preview_button_) run_preview_button_->click(); });
+  register_scene_action("simulate.stop", "Stop Simulation", [this]() { if (stop_preview_button_) stop_preview_button_->click(); });
+  register_scene_action("diagnostics.self_test", "Run Self-Test", [this]() { if (run_self_test_button_) run_self_test_button_->click(); });
+  register_scene_action("diagnostics.golden_flow", "Run Golden Flow Dry Run", [this]() { if (run_golden_flow_button_) run_golden_flow_button_->click(); });
+
   auto make_primary_button = [scene_builder](const QString & text) {
       auto * button = new QPushButton(text, scene_builder);
       button->setMinimumHeight(30);
@@ -1188,9 +1217,6 @@ void MainWindow::setup_studio_shell()
   auto * layout_controls = new QHBoxLayout();
   undo_layout_button_ = new QPushButton("Undo", scene_builder); layout_controls->addWidget(undo_layout_button_);
   redo_layout_button_ = new QPushButton("Redo", scene_builder); layout_controls->addWidget(redo_layout_button_);
-  duplicate_layout_button_ = new QPushButton("Duplicate Selected", scene_builder);
-  delete_layout_button_ = new QPushButton("Remove Selected Layout Item", scene_builder);
-  save_layout_button_ = new QPushButton("Save Layout", scene_builder); layout_controls->addWidget(save_layout_button_);
   create_starter_layout_button_ = new QPushButton("Create Starter Layout from Preview", scene_builder);
   create_starter_layout_button_->setVisible(false);
   layout_controls->addWidget(create_starter_layout_button_);
@@ -1258,9 +1284,10 @@ void MainWindow::setup_studio_shell()
   scene_builder_inspector_tabs_ = new QTabWidget(inspector_scroll_contents);
   scene_builder_inspector_tabs_->setUsesScrollButtons(false);
   auto * selection_tab = new QWidget(scene_builder_inspector_tabs_); auto * selection_tab_layout = new QVBoxLayout(selection_tab);
-  auto * task_tab = new QWidget(scene_builder_inspector_tabs_); auto * task_tab_layout = new QVBoxLayout(task_tab);
-  auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
+  auto * workflow_tab = new QWidget(scene_builder_inspector_tabs_); auto * workflow_tab_layout = new QVBoxLayout(workflow_tab);
   auto * actions_tab = new QWidget(scene_builder_inspector_tabs_); auto * actions_tab_layout = new QVBoxLayout(actions_tab);
+  auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
+  auto * logs_tab = new QWidget(scene_builder_inspector_tabs_); auto * logs_tab_layout = new QVBoxLayout(logs_tab);
   auto make_card = [&](QVBoxLayout *parent_layout, const QString &title) {
     auto *card = new QFrame(right_panel); card->setObjectName("studioCard");
     auto *layout = new QVBoxLayout(card);
@@ -1293,7 +1320,7 @@ void MainWindow::setup_studio_shell()
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
-  task_tab_layout->addWidget(task_intent);
+  workflow_tab_layout->addWidget(task_intent);
   new_cell_checklist_label_ = new QLabel(
     "<b>New Cell Checklist</b><br/>"
     "pending: Workspace selected → choose workspace<br/>"
@@ -1341,12 +1368,12 @@ void MainWindow::setup_studio_shell()
   task_binding_actions->addWidget(camera_button_);
   pick_place_layout->addLayout(task_binding_actions);
   pick_place_details_label_ = new QLabel("Pick source: unknown\nPlace target: unknown\nReject target: unknown\nLinked hierarchy item: unknown"); pick_place_details_label_->setWordWrap(true); pick_place_layout->addWidget(pick_place_details_label_);
-  task_tab_layout->addWidget(pick_place);
+  workflow_tab_layout->addWidget(pick_place);
   auto * grasp_card = new QFrame(right_panel); grasp_card->setObjectName("studioCard"); auto * grasp_layout = new QVBoxLayout(grasp_card);
   grasp_layout->addWidget(new QLabel("<b>Grasp Strategy</b>"));
   grasp_details_label_ = new QLabel("Strategy/ref: unknown\nTool/End Effector: unknown\nApproach axis: unknown\nOrientation mode: unknown\nAllowed roll/yaw: unknown"); grasp_details_label_->setWordWrap(true); grasp_layout->addWidget(grasp_details_label_);
   readiness_label_=new QLabel("Safety posture: guarded (fake hardware default, no uncontrolled robot motion)."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
-  task_tab_layout->addWidget(grasp_card);
+  workflow_tab_layout->addWidget(grasp_card);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
   approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection mode: Not Configured\nDetection status: Waiting for live nodes\nDetails: Perception preview unavailable until mode/config is selected.\nModes: Live EPD / RealSense | Saved EPD Snapshot | Simulated / Manual | Not Configured\nStatuses: Configured | Missing metadata | Preview only | Waiting for live nodes\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
@@ -1381,7 +1408,34 @@ void MainWindow::setup_studio_shell()
   QObject::connect(pick_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_pick_zone);
   QObject::connect(place_zone_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_place_zone);
   QObject::connect(camera_action, &QAction::triggered, this, &MainWindow::bind_selected_item_as_camera);
-  actions_tab_layout->addWidget(preview_actions_card);
+  auto * make_action_section = [&](const QString & section_title) {
+    auto * section = new QGroupBox(section_title, actions_tab);
+    section->setObjectName("studioCard");
+    auto * section_layout = new QVBoxLayout(section);
+    actions_tab_layout->addWidget(section);
+    return section_layout;
+  };
+
+  auto * layout_actions = make_action_section("Layout");
+  auto * generate_actions = make_action_section("Generate");
+  auto * validate_actions = make_action_section("Validate");
+  auto * simulate_actions = make_action_section("Simulate");
+  auto * export_actions = make_action_section("Export");
+  auto * diagnostics_actions = make_action_section("Diagnostics");
+
+  create_action_button(layout_actions, "layout.save");
+  create_action_button(layout_actions, "layout.duplicate");
+  create_action_button(layout_actions, "layout.remove");
+  create_action_button(generate_actions, "generate.scene_package");
+  create_action_button(generate_actions, "generate.yaml");
+  create_action_button(generate_actions, "generate.task");
+  create_action_button(validate_actions, "validate.generated_scene");
+  create_action_button(validate_actions, "validate.offline");
+  create_action_button(simulate_actions, "simulate.open_rviz");
+  create_action_button(simulate_actions, "simulate.run_fake");
+  create_action_button(simulate_actions, "simulate.stop");
+  create_action_button(diagnostics_actions, "diagnostics.self_test");
+  create_action_button(diagnostics_actions, "diagnostics.golden_flow");
   inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selection_tab_layout->addWidget(live_coordinate_label_);
   auto * pose_grid = new QGridLayout();
@@ -1400,10 +1454,15 @@ void MainWindow::setup_studio_shell()
   inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_);
   selection_tab_layout->addLayout(transform_actions);
   inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
+  scene_builder_studio_log_ = new QPlainTextEdit(logs_tab);
+  scene_builder_studio_log_->setReadOnly(true);
+  scene_builder_studio_log_->setPlaceholderText("Scene Builder logs and command traces appear here.");
+  logs_tab_layout->addWidget(scene_builder_studio_log_);
   scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
-  scene_builder_inspector_tabs_->addTab(task_tab, "Task");
-  scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
+  scene_builder_inspector_tabs_->addTab(workflow_tab, "Workflow");
   scene_builder_inspector_tabs_->addTab(actions_tab, "Actions");
+  scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
+  scene_builder_inspector_tabs_->addTab(logs_tab, "Logs");
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
   inspector_scroll->setWidget(inspector_scroll_contents);
   right_layout->addWidget(inspector_scroll, 1);
