@@ -54,6 +54,13 @@ def _regex_absent_check(name,haystack,forbidden):
     hits=[f"forbidden pattern matched ({label}): {pat}" for label,pat in forbidden.items() if re.search(pat,haystack,re.MULTILINE)]
     return CheckResult(name,not hits,hits)
 
+def _visible_label_set_check(name:str,haystack:str,allowed:set[str],forbidden_hint:list[str])->CheckResult:
+    present=[label for label in allowed if label in haystack]
+    missing=[label for label in sorted(allowed) if label not in present]
+    forbidden=[label for label in forbidden_hint if re.search(rf"\b{re.escape(label)}\b",haystack)]
+    details=[*(f"missing visible top-level label: {m}" for m in missing),*(f"forbidden visible top-level label: {f}" for f in forbidden)]
+    return CheckResult(name,not details,details)
+
 def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     if file_text_map is None:
         file_text_map={
@@ -91,7 +98,27 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("inspector sync/layout dirty markers",all_text,["inspector","sync","layout dirty"]))
     checks.append(_regex_absent_check("no hidden QPushButton indirection anti-pattern",main,{"menu_action_new_cell":r'addAction\("Create New Cell"\s*,',"menu_action_plan_simulate":r'addAction\("Open Plan & Simulate"\s*,'}))
     checks.append(_regex_absent_check("fixed-width button anti-pattern checks",main,{"qpushbutton_fixed_width_literal":r"\b[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*->\s*setFixedWidth\s*\(\s*\d+\s*\)"}))
-    # Top-level clutter guard
+    checks.append(_visible_label_set_check(
+        "allowed visible top-level set only",
+        all_text,
+        {"Studio Home","New Cell","Scenes/Open","Run Next","More"},
+        ["Validate","Generate","Plan","Simulate","Export","Readiness"],
+    ))
+    checks.append(_regex_absent_check(
+        "forbidden direct top-bar primary actions",
+        all_text,
+        {
+            "validate_action": r'\bValidate\b',
+            "generate_action": r'\bGenerate\b',
+            "plan_action": r'\bPlan\b',
+            "simulate_action": r'\bSimulate\b',
+            "export_action": r'\bExport\b',
+            "readiness_action": r'\bReadiness\b',
+        },
+    ))
+    checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
+    checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Grouped sections"]))
+    checks.append(_token_check("canonical duplicate visible-label targets",all_text,["Create editable layout from preview","Canvas/Generated Parity"]))
 
     return checks
 

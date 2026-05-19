@@ -38,6 +38,11 @@ def main() -> int:
     ok.append(check("workflow rail editable layout stage", "Editable layout" in mainwindow_cpp))
     ok.append(check("viewport helper passes", all(t in viewport_h + viewport_cpp for t in ["draw_ground_grid_pass", "draw_world_axes_pass", "scene_bounds_from_visible_items", "View: 3D"])) )
     ok.append(check("fake-hardware safety token retained", "use_fake_hardware:=true" in mainwindow_cpp))
+    ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes/Open", "Run Next", "More"])))
+    ok.append(check("forbidden direct top-bar primary actions absent", not any(t in mainwindow_cpp for t in ["Validate", "Generate", "Plan", "Simulate", "Export", "Readiness"])))
+    ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
+    ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Grouped sections"])))
+    ok.append(check("canonical duplicate visible labels present", all(t in mainwindow_cpp for t in ["Create editable layout from preview", "Canvas/Generated Parity"])))
     # Ensure scene set before item state update in refresh flow.
     flow = re.search(r"selected_scene_state_\s*=\s*\{\};.*selected_scene_state_\.valid\s*=\s*true;.*selected_item_state_\s*=\s*current_selected_scene_item\(\);", mainwindow_cpp, flags=re.S)
     ok.append(check("scene state updated before item state", flow is not None))

@@ -56,6 +56,16 @@ def _base_fixture() -> dict[str, str]:
                 'void dropEvent(QDropEvent*){}',
                 'QString drop = "Drop to place table";',
                 'auto cb = "asset_drop_cb";',
+                'QString top_home = "Studio Home";',
+                'QString top_new = "New Cell";',
+                'QString top_scenes = "Scenes/Open";',
+                'QString top_run = "Run Next";',
+                'QString top_more = "More";',
+                'QComboBox *mode = new QComboBox(this); mode->setObjectName("Mode");',
+                'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
+                'QString side_tab = "Actions";',
+                'QString grouped = "Grouped sections";',
+                'QString parity = "Canvas/Generated Parity";',
             ]
         ),
         "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview",
@@ -79,6 +89,14 @@ def test_validator_fails_with_clear_diagnostics_when_tokens_or_patterns_missing(
     assert "Focus Canvas action wording" in failed
     assert any("Focus Canvas" in d for d in failed["Focus Canvas action wording"])
     assert "fixed-width button anti-pattern checks" in failed
+
+
+def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\nQAction *validate = toolbar->addAction("Validate");\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "forbidden direct top-bar primary actions" in failed
 
 
 def test_validator_reports_new_scene3d_acceptance_failures_when_markers_absent():
