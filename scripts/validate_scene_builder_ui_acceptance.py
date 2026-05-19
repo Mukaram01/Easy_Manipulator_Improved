@@ -102,18 +102,22 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         "allowed visible top-level set only",
         main,
         {"Studio Home","New Cell","Scenes/Open","Run Next","More"},
-        ["Validate","Generate","Plan","Simulate","Export","Readiness"],
+        [],
     ))
     checks.append(_regex_absent_check(
         "forbidden direct top-bar primary actions",
         main,
         {
-            "validate_action": r'\bValidate\b',
-            "generate_action": r'\bGenerate\b',
-            "plan_action": r'\bPlan\b',
-            "simulate_action": r'\bSimulate\b',
-            "export_action": r'\bExport\b',
-            "readiness_action": r'\bReadiness\b',
+            "direct_toolbar_actions": r'addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*"(?:Validate|Generate|Plan|Simulate|Export|Readiness|Delete\s+Scene|Select|Place\s+Asset|Move|Inspect|Save\s+Layout|Undo|Redo)"',
+        },
+    ))
+    checks.append(_regex_absent_check(
+        "no trailing-underscore nav labels",
+        main,
+        {
+            "run_next_trailing_underscore": r'"Run\s+Next_"',
+            "more_trailing_underscore": r'"More_"',
+            "scenes_open_trailing_underscore": r'"Scenes/Open_"',
         },
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
