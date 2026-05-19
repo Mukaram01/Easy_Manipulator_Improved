@@ -4661,7 +4661,15 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
-  if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(true); scene_preview_widget_->set_preview_scene_name(QString::fromStdString(s.scene_name)); scene_preview_widget_->set_preview_items(preview_items); }
+  editable_layout_item_count_ = model.provenance_status.editable_layout_count;
+  preview_fallback_item_count_ = model.provenance_status.generated_or_legacy_preview_count + model.provenance_status.static_fallback_preview_count;
+  preview_provenance_summary_ = QString::fromStdString(model.provenance_status.summary);
+  if (scene_preview_widget_) {
+    scene_preview_widget_->set_scene_selected(true);
+    scene_preview_widget_->set_preview_scene_name(QString::fromStdString(s.scene_name));
+    scene_preview_widget_->set_preview_status_summary(preview_provenance_summary_);
+    scene_preview_widget_->set_preview_items(preview_items);
+  }
   preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
@@ -4682,7 +4690,9 @@ void MainWindow::populate_scene_hierarchy()
   else perception_line = "Perception: not configured.";
 
   const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
-  const QString preview_line = QString("Preview: %1 items loaded, %2 metadata warnings.").arg(preview_items.size()).arg(preview_warning_count);
+  const QString preview_line = QString("%1 Metadata warnings: %2.")
+    .arg(preview_provenance_summary_.isEmpty() ? QString("Editable layout: 0 items. Preview fallback: 0 items loaded from scene metadata.") : preview_provenance_summary_)
+    .arg(preview_warning_count);
 
   if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
   if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
@@ -5022,6 +5032,12 @@ MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_a
       "open_or_create_scene", "Open or create a scene", true, QString(),
       "Start by selecting an existing scene or creating a new one before workflow actions can run.",
       RecommendedWorkflowActionHandler::OpenOrCreateScene);
+    return action;
+  }
+  if (editable_layout_item_count_ == 0 && preview_fallback_item_count_ > 0) {
+    set_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
+      "No editable layout items are available yet; seed an editable layout from loaded preview metadata.",
+      RecommendedWorkflowActionHandler::SaveLayout);
     return action;
   }
   bool has_asset_items = false;
