@@ -660,9 +660,10 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     const float diffuse = qMax(0.0f, QVector3D::dotProduct(normal, light_dir));
     const float shade = ambient + diffuse * diffuse_scale;
     const float edge_boost = 0.08f * (1.0f - diffuse);
-    glColor4f(qMin(1.0f, color.redF() * shade + edge_boost),
-              qMin(1.0f, color.greenF() * shade + edge_boost),
-              qMin(1.0f, color.blueF() * shade + edge_boost), 1.0f);
+    const float red = qMin(1.0f, static_cast<float>(color.redF()) * shade + edge_boost);
+    const float green = qMin(1.0f, static_cast<float>(color.greenF()) * shade + edge_boost);
+    const float blue = qMin(1.0f, static_cast<float>(color.blueF()) * shade + edge_boost);
+    glColor4f(red, green, blue, 1.0f);
     glVertex3f(tri.vertices[0].x(), tri.vertices[0].y(), tri.vertices[0].z());
     glVertex3f(tri.vertices[1].x(), tri.vertices[1].y(), tri.vertices[1].z());
     glVertex3f(tri.vertices[2].x(), tri.vertices[2].y(), tri.vertices[2].z());
