@@ -2397,7 +2397,7 @@ void MainWindow::refresh_studio_home_scene_table()
       const bool lmatch_q = lq.isEmpty() || scene_name.toLower().contains(lq);
       const bool lmatch_status = (lstatus == "All") || (lstatus == "Ready" && status == "READY") || (lstatus == "Warning" && status == "WARNINGS") || (lstatus == "Blocked" && (status != "READY" && status != "WARNINGS"));
       if (lmatch_q && lmatch_status) {
-        auto * item = new QListWidgetItem(QString("%1\n%2 | %3 | %4").arg(scene_name, QString::fromStdString(sc.robot_summary), QString::fromStdString(sc.gripper_summary), status));
+        auto * item = new QListWidgetItem(scene_name);
         item->setData(Qt::UserRole, static_cast<int>(i));
         dashboard_library_list_->addItem(item);
       }
