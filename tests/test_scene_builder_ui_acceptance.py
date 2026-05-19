@@ -58,9 +58,12 @@ def _base_fixture() -> dict[str, str]:
                 'auto cb = "asset_drop_cb";',
                 'QString top_home = "Studio Home";',
                 'QString top_new = "New Cell";',
-                'QString top_scenes = "Scenes/Open";',
+                'QString top_scenes = "Scenes";',
                 'QString top_run = "Run Next";',
                 'QString top_more = "More";',
+                'scenes_open_button->setText("Scenes");',
+                'run_next_button->setText("Run Next");',
+                'more_button->setText("More");',
                 'QComboBox *mode = new QComboBox(this); mode->setObjectName("Mode");',
                 'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
                 'QString side_tab = "Actions";',
@@ -68,7 +71,7 @@ def _base_fixture() -> dict[str, str]:
                 'QString parity = "Canvas/Generated Parity";',
             ]
         ),
-        "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview",
+        "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview with Validate Simulate Export Diagnostics sections",
         "layout_editor_cpp": "metres radians",
     }
 
@@ -113,6 +116,17 @@ def test_validator_reports_new_scene3d_acceptance_failures_when_markers_absent()
     assert "scene3d pick handle API markers" in failed
     assert "escape cancel restore path markers" in failed
     assert "locked item gating/status markers" in failed
+
+
+def test_validator_fails_for_top_header_label_hacks():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] = broken["mainwindow_cpp"].replace('scenes_open_button->setText("Scenes");','scenes_open_button->setText("Scenes/Open");')
+    broken["mainwindow_cpp"] = broken["mainwindow_cpp"].replace('run_next_button->setText("Run Next");','run_next_button->setText("Run Next_");')
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+
+    assert "top-header labels are exact and menu-hint free" in failed
+    assert any("forbidden top-header label hack" in d for d in failed["top-header labels are exact and menu-hint free"])
 
 
 def test_repository_ui_acceptance_validator_runs_on_current_sources():

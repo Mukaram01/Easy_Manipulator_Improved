@@ -1815,7 +1815,7 @@ void MainWindow::build_studio_header_actions()
     top_bar->addWidget(button);
   }
   auto * scenes_open_button = new QToolButton(this);
-  scenes_open_button->setText("Scenes/Open");
+  scenes_open_button->setText("Scenes");
   scenes_open_button->setPopupMode(QToolButton::InstantPopup);
   auto * scenes_open_menu = new QMenu(scenes_open_button);
   scenes_open_menu->addAction(action_workspace_open_scene_builder_);

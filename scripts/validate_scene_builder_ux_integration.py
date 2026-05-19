@@ -38,7 +38,19 @@ def main() -> int:
     ok.append(check("workflow rail editable layout stage", "Editable layout" in mainwindow_cpp))
     ok.append(check("viewport helper passes", all(t in viewport_h + viewport_cpp for t in ["draw_ground_grid_pass", "draw_world_axes_pass", "scene_bounds_from_visible_items", "View: 3D"])) )
     ok.append(check("fake-hardware safety token retained", "use_fake_hardware:=true" in mainwindow_cpp))
-    ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes/Open", "Run Next", "More"])))
+    ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes", "Run Next", "More"])))
+    top_header_exact = all(t in mainwindow_cpp for t in [
+        'scenes_open_button->setText("Scenes");',
+        'run_next_button->setText("Run Next");',
+        'more_button->setText("More");',
+    ])
+    ok.append(check("top header exact labels", top_header_exact))
+    top_labels = {}
+    for button in ["scenes_open_button", "run_next_button", "more_button"]:
+        m = re.search(rf'{button}\s*->\s*setText\("([^"]+)"\);', mainwindow_cpp)
+        top_labels[button] = m.group(1) if m else ""
+    no_label_hacks = all("/" not in text and not text.endswith("_") for text in top_labels.values())
+    ok.append(check("top header labels avoid slash/underscore hacks", no_label_hacks))
     forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness)\"", mainwindow_cpp)
     ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
