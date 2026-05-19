@@ -1540,79 +1540,7 @@ void MainWindow::setup_studio_shell()
   root_layout->setStretch(1, 0);
   preview_process_ = new QProcess(this);
 
-  QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
-  addToolBar(Qt::TopToolBarArea, top_bar);
-  top_bar->setObjectName("studioTopBar");
-  top_bar->setMovable(false);
-  top_bar->setFloatable(false);
-  top_bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-  const QStringList action_labels = {"Studio Home", "New Cell", "Validate", "Generate", "Plan / Simulate", "Export"};
-  for (const QString & label : action_labels) {
-    auto * button = new QPushButton(label, this);
-    button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
-    if (label == "Generate Scene") button->setProperty("role", "primary");
-    if (label == "Export") button->setProperty("role", "secondary");
-    connect(button, &QPushButton::clicked, this, [this, label]() {
-      if (label == "Studio Home") {
-        show_studio_page(StudioPage::DashboardPage);
-        append_studio_log("Studio Home: switched to scene manager page.");
-        return;
-      }
-      if (label == "New Cell") {
-        append_studio_log("New Cell: opening scene creation flow.");
-        open_new_scene_creation_flow();
-        return;
-      }
-      if (label == "Validate") {
-        append_studio_log(QString("Validate: offline validation for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
-        show_studio_page(StudioPage::ValidationPage);
-        run_offline_validation();
-        return;
-      }
-      if (label == "Plan / Simulate") {
-        append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name()));
-        show_studio_page(StudioPage::PlanSimulatePage);
-        refresh_preview_launch_ui();
-  refresh_new_cell_checklist();
-        return;
-      }
-      if (label == "Generate") {
-        append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name()));
-        run_layout_merge_for_selected_scene(true);
-        return;
-      }
-      if (label == "Export") {
-        append_studio_log(QString("Export: opening export actions for scene '%1'.").arg(selected_scene_name()));
-        show_studio_page(StudioPage::ExportPage);
-        return;
-      }
-    });
-    top_bar->addWidget(button);
-  }
-  full_screen_button_ = new QPushButton("Full Screen", this);
-  full_screen_button_->setToolTip("Press Esc to exit full screen");
-  top_bar->addWidget(full_screen_button_);
-  connect(full_screen_button_, &QPushButton::clicked, this, &MainWindow::toggle_full_screen);
-  auto * top_more_actions = new QToolButton(this);
-  top_more_actions->setText("More Actions");
-  top_more_actions->setPopupMode(QToolButton::InstantPopup);
-  auto * top_more_menu = new QMenu(top_more_actions);
-  top_more_menu->addAction("Demo Mode", this, [this](){
-    append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name()));
-    show_studio_page(StudioPage::DemoModePage);
-  });
-  top_more_menu->addAction("Open Diagnostics", this, [this](){ show_studio_page(StudioPage::DiagnosticsPage); });
-  top_more_menu->addAction("Open Validation Report", this, [this](){ open_validation_report(); });
-  top_more_actions->setMenu(top_more_menu);
-  top_bar->addWidget(top_more_actions);
-  top_bar->addSeparator();
-  mode_chip_label_ = new QLabel("Design | Plan | Simulate", this);
-  top_bar->addWidget(mode_chip_label_);
-  auto * safety_pill = new QLabel("Safety: Fake hardware default · Real robot locked", this);
-  safety_pill->setObjectName("studioHomeSafetyPill");
-  top_bar->addWidget(safety_pill);
-  diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", this);
-  top_bar->addWidget(diagnostics_indicator_label_);
+  build_studio_header_actions();
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   show_studio_page(StudioPage::DashboardPage);
@@ -1642,13 +1570,13 @@ void MainWindow::setup_studio_shell()
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
   connect(dashboard_open_scene_button_, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect(dashboard_validate_button_, &QPushButton::clicked, this, [this](){ append_studio_log("Validate: offline validation"); run_offline_validation(); });
-  connect(dashboard_plan_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Plan & Simulate: prepared fake-hardware launch commands"); refresh_preview_launch_ui(); });
-  connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Export: switched to export page"); });
+  connect(dashboard_validate_button_, &QPushButton::clicked, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
+  connect(dashboard_plan_button_, &QPushButton::clicked, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
+  connect(dashboard_export_button_, &QPushButton::clicked, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
   connect(dashboard_delete_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
-  connect(generate_scene_pkg_button, &QPushButton::clicked, this, &MainWindow::generate_scene_package_for_selected_scene);
-  connect(validate_task_button, &QPushButton::clicked, this, &MainWindow::validate_generated_scene_for_selected_scene);
+  connect(generate_scene_pkg_button, &QPushButton::clicked, this, [this](){ if (action_generate_package_) action_generate_package_->trigger(); });
+  connect(validate_task_button, &QPushButton::clicked, this, [this](){ if (action_validate_generated_scene_) action_validate_generated_scene_->trigger(); });
   connect(open_task_action, &QAction::triggered, this, &MainWindow::open_selected_task_file);
   connect(copy_task_summary_action, &QAction::triggered, this, &MainWindow::copy_selected_task_summary);
   connect(preview_offline_plan_action, &QAction::triggered, this, &MainWindow::preview_offline_plan_for_selected_scene);
@@ -1786,6 +1714,103 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   refresh_scene_builder_left_explorer();
   refresh_task_intent_panel();
   refresh_scene_bundle_export_panel();
+}
+
+void MainWindow::build_studio_header_actions()
+{
+  action_workspace_studio_home_ = new QAction("Studio Home", this);
+  connect(action_workspace_studio_home_, &QAction::triggered, this, [this]() {
+    show_studio_page(StudioPage::DashboardPage);
+    append_studio_log("Studio Home: switched to scene manager page.");
+  });
+  action_workspace_new_cell_ = new QAction("New Cell", this);
+  connect(action_workspace_new_cell_, &QAction::triggered, this, [this]() {
+    append_studio_log("New Cell: opening scene creation flow.");
+    open_new_scene_creation_flow();
+  });
+  action_workspace_open_scene_builder_ = new QAction("Open Scene Builder", this);
+  connect(action_workspace_open_scene_builder_, &QAction::triggered, this, [this]() { open_scene_builder_for_selected_scene("Header Scenes/Open"); });
+  action_generate_package_ = new QAction("Generate Scene Package", this);
+  connect(action_generate_package_, &QAction::triggered, this, [this]() { append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name())); run_layout_merge_for_selected_scene(true); });
+  action_generate_yaml_ = new QAction("Generate YAML", this);
+  connect(action_generate_yaml_, &QAction::triggered, this, &MainWindow::generate_yaml_draft_for_selected_scene);
+  action_generate_task_intent_ = new QAction("Generate/Update Task Intent", this);
+  connect(action_generate_task_intent_, &QAction::triggered, this, &MainWindow::generate_or_update_task_intent_for_selected_scene);
+  action_validate_offline_ = new QAction("Validate", this);
+  connect(action_validate_offline_, &QAction::triggered, this, [this]() { append_studio_log(QString("Validate: offline validation for scene '%1'. No robot motion commanded.").arg(selected_scene_name())); show_studio_page(StudioPage::ValidationPage); run_offline_validation(); });
+  action_validate_generated_scene_ = new QAction("Validate Generated Scene", this);
+  connect(action_validate_generated_scene_, &QAction::triggered, this, &MainWindow::validate_generated_scene_for_selected_scene);
+  action_validate_open_report_ = new QAction("Open Validation Report", this);
+  connect(action_validate_open_report_, &QAction::triggered, this, &MainWindow::open_validation_report);
+  action_validate_open_readiness_ = new QAction("Open Readiness Dashboard", this);
+  connect(action_validate_open_readiness_, &QAction::triggered, this, [this]() { open_selected_scene_artifact("readiness_dashboard"); });
+  action_simulate_plan_preview_ = new QAction("Plan/Simulate Preview", this);
+  connect(action_simulate_plan_preview_, &QAction::triggered, this, [this]() { append_studio_log(QString("Plan & Simulate: prepared fake-hardware commands for scene '%1'. Real robot motion locked.").arg(selected_scene_name())); show_studio_page(StudioPage::PlanSimulatePage); refresh_preview_launch_ui(); refresh_new_cell_checklist(); });
+  action_export_open_page_ = new QAction("Export", this);
+  connect(action_export_open_page_, &QAction::triggered, this, [this]() { append_studio_log(QString("Export: opening export actions for scene '%1'.").arg(selected_scene_name())); show_studio_page(StudioPage::ExportPage); });
+  action_view_demo_mode_ = new QAction("Demo Mode", this);
+  connect(action_view_demo_mode_, &QAction::triggered, this, [this]() { append_studio_log(QString("Demo Mode: switched for scene '%1'. No robot motion commanded.").arg(selected_scene_name())); show_studio_page(StudioPage::DemoModePage); });
+  action_view_diagnostics_page_ = new QAction("Open Diagnostics", this);
+  connect(action_view_diagnostics_page_, &QAction::triggered, this, [this]() { show_studio_page(StudioPage::DiagnosticsPage); });
+  action_diagnostics_run_self_test_ = new QAction("Run Diagnostics Self-Test", this);
+  connect(action_diagnostics_run_self_test_, &QAction::triggered, this, &MainWindow::run_diagnostics_self_test);
+  action_diagnostics_run_golden_flow_ = new QAction("Run Golden Flow Dry Run", this);
+  connect(action_diagnostics_run_golden_flow_, &QAction::triggered, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
+  action_diagnostics_copy_report_ = new QAction("Copy Diagnostics Report", this);
+  connect(action_diagnostics_copy_report_, &QAction::triggered, this, &MainWindow::copy_diagnostics_report);
+  action_diagnostics_open_folder_ = new QAction("Open Diagnostics Folder", this);
+  connect(action_diagnostics_open_folder_, &QAction::triggered, this, &MainWindow::open_diagnostics_folder);
+  action_diagnostics_copy_build_launch_commands_ = new QAction("Copy Build & Launch Commands", this);
+  connect(action_diagnostics_copy_build_launch_commands_, &QAction::triggered, this, &MainWindow::copy_build_launch_commands_for_selected_scene);
+
+  QToolBar * top_bar = new QToolBar("Workcell Studio Command Bar", this);
+  addToolBar(Qt::TopToolBarArea, top_bar);
+  top_bar->setObjectName("studioTopBar");
+  top_bar->setMovable(false);
+  top_bar->setFloatable(false);
+  top_bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  for (const auto & item : std::initializer_list<std::pair<QString, QAction *>>{{"Studio Home", action_workspace_studio_home_}, {"New Cell", action_workspace_new_cell_}}) {
+    auto * button = new QPushButton(item.first, this);
+    connect(button, &QPushButton::clicked, this, [action = item.second]() { if (action) action->trigger(); });
+    top_bar->addWidget(button);
+  }
+  auto * scenes_open_button = new QToolButton(this);
+  scenes_open_button->setText("Scenes / Open");
+  scenes_open_button->setPopupMode(QToolButton::InstantPopup);
+  auto * scenes_open_menu = new QMenu(scenes_open_button);
+  scenes_open_menu->addAction(action_workspace_open_scene_builder_);
+  scenes_open_menu->addSeparator();
+  scenes_open_menu->addAction(action_generate_yaml_);
+  scenes_open_menu->addAction(action_generate_task_intent_);
+  scenes_open_menu->addAction(action_generate_package_);
+  scenes_open_button->setMenu(scenes_open_menu);
+  top_bar->addWidget(scenes_open_button);
+  auto * run_next_button = new QToolButton(this);
+  run_next_button->setText("Run Next");
+  run_next_button->setPopupMode(QToolButton::InstantPopup);
+  auto * run_next_menu = new QMenu(run_next_button);
+  run_next_menu->addAction(action_validate_offline_);
+  run_next_menu->addAction(action_validate_generated_scene_);
+  run_next_menu->addAction(action_simulate_plan_preview_);
+  run_next_menu->addAction(action_export_open_page_);
+  run_next_button->setMenu(run_next_menu);
+  top_bar->addWidget(run_next_button);
+  auto * more_button = new QToolButton(this);
+  more_button->setText("More");
+  more_button->setPopupMode(QToolButton::InstantPopup);
+  auto * more_menu = new QMenu(more_button);
+  more_menu->addAction(action_view_demo_mode_);
+  more_menu->addAction(action_view_diagnostics_page_);
+  more_menu->addAction(action_validate_open_report_);
+  more_menu->addAction(action_validate_open_readiness_);
+  more_menu->addSeparator();
+  more_menu->addAction(action_diagnostics_run_self_test_);
+  more_menu->addAction(action_diagnostics_run_golden_flow_);
+  more_menu->addAction(action_diagnostics_copy_report_);
+  more_menu->addAction(action_diagnostics_open_folder_);
+  more_menu->addAction(action_diagnostics_copy_build_launch_commands_);
+  more_button->setMenu(more_menu);
+  top_bar->addWidget(more_button);
 }
 
 void MainWindow::refresh_scene_bundle_export_panel()
