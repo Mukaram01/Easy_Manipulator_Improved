@@ -110,6 +110,10 @@ private:
   void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
   void draw_frustum(const QColor & color, bool translucent = true);
+  void draw_ground_grid_pass();
+  void draw_world_axes_pass();
+  bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
+  QString gizmo_mode_label() const;
   void draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it);
   void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);
   void draw_conveyor(const ScenePreviewWidget::PreviewItem & it);
