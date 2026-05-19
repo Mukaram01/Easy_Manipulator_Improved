@@ -529,6 +529,9 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  int editable_layout_item_count_{ 0 };
+  int preview_fallback_item_count_{ 0 };
+  QString preview_provenance_summary_;
   QStringList preview_warning_details_;
   QStringList readiness_warning_details_;
 };

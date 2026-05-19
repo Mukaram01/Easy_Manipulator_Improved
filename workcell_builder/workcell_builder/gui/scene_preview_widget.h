@@ -131,6 +131,7 @@ public:
   void set_3d_available(bool available, const QString & reason = QString());
   void set_preview_items(const QVector<PreviewItem> & items);
   void set_preview_scene_name(const QString & scene_name);
+  void set_preview_status_summary(const QString & summary);
   void set_task_overlay_model(const TaskOverlayModel & model);
   void set_reachability_overlay_model(const ReachabilityOverlayModel & model);
   void set_collision_overlay_model(const CollisionOverlayModel & model);
@@ -201,5 +202,6 @@ private:
   CameraOverlayModel camera_overlay_model_;
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
+  QString preview_status_summary_;
   MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
 };

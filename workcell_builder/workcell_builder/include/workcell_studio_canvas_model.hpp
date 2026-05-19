@@ -4,6 +4,21 @@
 #include <vector>
 
 namespace workcell_builder {
+enum class WorkcellStudioItemProvenance
+{
+  EditableLayout,
+  GeneratedOrLegacyPreview,
+  StaticFallbackPreview
+};
+
+struct WorkcellStudioProvenanceStatus
+{
+  int editable_layout_count{0};
+  int generated_or_legacy_preview_count{0};
+  int static_fallback_preview_count{0};
+  std::string summary;
+};
+
 struct WorkcellStudioCanvasItem {
   std::string id; std::string type; std::string role; std::string label; std::string source_file;
   double x{0.0}, y{0.0}, z{0.0}, roll{0.0}, pitch{0.0}, yaw{0.0}, width{0.25}, depth{0.25}, height{0.25}, radius{0.0};
@@ -16,6 +31,7 @@ struct WorkcellStudioCanvasItem {
   double origin_offset_x{0.0}, origin_offset_y{0.0}, origin_offset_z{0.0};
   bool mesh_available{false};
   std::string mesh_load_warning;
+  WorkcellStudioItemProvenance provenance{WorkcellStudioItemProvenance::GeneratedOrLegacyPreview};
   bool locked{false};
   std::vector<std::string> warnings;
 };
@@ -23,6 +39,7 @@ struct WorkcellStudioCanvasModel {
   std::string scene_name, template_name, robot_summary, tool_summary, status;
   bool fake_hardware_first{true}, no_robot_motion{true}, has_warnings{false};
   std::string pick_source, grasp_strategy, place_target, release_strategy;
+  WorkcellStudioProvenanceStatus provenance_status;
   std::vector<std::string> warnings; std::vector<WorkcellStudioCanvasItem> items;
 };
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
