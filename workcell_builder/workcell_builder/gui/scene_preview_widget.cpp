@@ -13,7 +13,6 @@
 #include <QMouseEvent>
 #include "scene3d_viewport_widget.h"
 #include <QPainter>
-#include <QPushButton>
 #include <QStackedWidget>
 #include <QVector3D>
 #include <QVBoxLayout>
@@ -68,14 +67,20 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   labels_selector_->setCurrentText("Important");
   labels_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   controls->addWidget(labels_selector_);
-  reset_view_button_ = new QPushButton("Reset View", this); controls->addWidget(reset_view_button_);
-  isometric_view_button_ = new QPushButton("Isometric", this); controls->addWidget(isometric_view_button_);
-  top_view_button_ = new QPushButton("Top", this); controls->addWidget(top_view_button_);
-  front_view_button_ = new QPushButton("Front", this); controls->addWidget(front_view_button_);
-  side_view_button_ = new QPushButton("Side", this); controls->addWidget(side_view_button_);
-  fit_scene_button_ = new QPushButton("Fit Scene", this); controls->addWidget(fit_scene_button_);
-  focus_selected_button_ = new QPushButton("Focus Selected", this); controls->addWidget(focus_selected_button_);
-  clear_selection_button_ = new QPushButton("Clear Selection", this); controls->addWidget(clear_selection_button_);
+  controls->addSpacing(8);
+  controls->addWidget(new QLabel("Mode:", this));
+  interaction_mode_selector_ = new QComboBox(this);
+  interaction_mode_selector_->addItems({"Select", "Place Asset", "Move", "Rotate", "Inspect"});
+  controls->addWidget(interaction_mode_selector_);
+  controls->addWidget(new QLabel("View:", this));
+  view_actions_selector_ = new QComboBox(this);
+  view_actions_selector_->addItems({"Top", "Front", "Side", "Isometric", "Fit View", "Labels", "Mesh Mode", "Overlays"});
+  controls->addWidget(view_actions_selector_);
+  toolbar_status_chip_ = new QLabel(this);
+  toolbar_status_chip_->setObjectName("previewToolbarChip");
+  toolbar_status_chip_->setStyleSheet("QLabel#previewToolbarChip { background-color: rgba(30,41,59,225); color: #e2e8f0; border-radius: 9px; padding: 2px 8px; }");
+  toolbar_status_chip_->setAlignment(Qt::AlignCenter);
+  controls->addWidget(toolbar_status_chip_);
   auto * mouse_help_label = new QLabel(QStringLiteral("ⓘ"), this);
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
@@ -102,7 +107,6 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   info_chip_label_->setWordWrap(true);
   stack_->addWidget(view3d_container_); stack_->addWidget(view2d_container_); root->addWidget(stack_, 1);
   connect(mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, &ScenePreviewWidget::on_mode_changed);
-  connect(reset_view_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_reset_view_clicked);
   connect(labels_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = labels_selector_->currentText();
@@ -111,6 +115,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Selected") v->label_mode = LabelMode::Selected;
     else v->label_mode = LabelMode::All;
     v->update();
+    refresh_info_chip();
   });
   connect(snap_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
@@ -122,6 +127,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "15 deg") v->snap_mode = Scene3DViewportWidget::SnapMode::Deg15;
     else v->snap_mode = Scene3DViewportWidget::SnapMode::Off;
     v->update();
+    refresh_info_chip();
   });
   connect(gizmo_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
@@ -131,6 +137,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice.startsWith("Scale")) v->gizmo_mode = Scene3DViewportWidget::GizmoMode::ScaleDisabled;
     else v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select;
     v->update();
+    refresh_info_chip();
   });
   connect(mesh_preview_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
@@ -141,13 +148,28 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     v->mesh_preview_mode = mesh_preview_mode_;
     v->update();
   });
-  connect(fit_scene_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_fit_scene_clicked);
-  connect(isometric_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_isometric_view(); });
-  connect(top_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_top_view(); });
-  connect(front_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_front_view(); });
-  connect(side_view_button_, &QPushButton::clicked, this, [this](){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->set_side_view(); });
-  connect(focus_selected_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_focus_selected_clicked);
-  connect(clear_selection_button_, &QPushButton::clicked, this, &ScenePreviewWidget::on_clear_selection_clicked);
+  connect(interaction_mode_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    const QString choice = interaction_mode_selector_->currentText();
+    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (choice == "Move") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Move"); }
+    else if (choice == "Rotate") { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Rotate"); }
+    else { v->gizmo_mode = Scene3DViewportWidget::GizmoMode::Select; if (gizmo_mode_selector_) gizmo_mode_selector_->setCurrentText("Select"); }
+    v->update();
+    refresh_info_chip();
+  });
+  connect(view_actions_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+    const QString choice = view_actions_selector_->currentText();
+    auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+    if (choice == "Top") v->set_top_view();
+    else if (choice == "Front") v->set_front_view();
+    else if (choice == "Side") v->set_side_view();
+    else if (choice == "Isometric") v->set_isometric_view();
+    else if (choice == "Fit View") on_fit_scene_clicked();
+    else if (choice == "Labels" && labels_selector_) labels_selector_->showPopup();
+    else if (choice == "Mesh Mode" && mesh_preview_mode_selector_) mesh_preview_mode_selector_->showPopup();
+    else if (choice == "Overlays" && overlays_selector_) overlays_selector_->showPopup();
+    refresh_info_chip();
+  });
   connect(overlays_selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
     auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
     const QString choice = overlays_selector_->currentText();
@@ -161,6 +183,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Fit overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
     v->update();
+    refresh_info_chip();
   });
   static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
   static_cast<Scene3DViewportWidget *>(simple_3d_view_)->status_message_cb = [this](const QString & message) {
@@ -292,4 +315,4 @@ void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Sce
 
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
-void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_; info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(summary).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); }
+void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_; info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(summary).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); if (toolbar_status_chip_) { const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select"); const QString snap = snap_mode_selector_ ? snap_mode_selector_->currentText() : QStringLiteral("Off"); toolbar_status_chip_->setText(QString("%1 • Snap %2 • Warn %3").arg(interaction).arg(snap).arg(total_warning_count())); }}

@@ -6,7 +6,6 @@
 
 class QComboBox;
 class QLabel;
-class QPushButton;
 class QStackedWidget;
 class QComboBox;
 class QGraphicsView;
@@ -167,14 +166,9 @@ private:
   bool task_is_ready() const;
 
   QComboBox * mode_selector_{ nullptr };
-  QPushButton * reset_view_button_{ nullptr };
-  QPushButton * fit_scene_button_{ nullptr };
-  QPushButton * isometric_view_button_{ nullptr };
-  QPushButton * top_view_button_{ nullptr };
-  QPushButton * front_view_button_{ nullptr };
-  QPushButton * side_view_button_{ nullptr };
-  QPushButton * focus_selected_button_{ nullptr };
-  QPushButton * clear_selection_button_{ nullptr };
+  QComboBox * interaction_mode_selector_{ nullptr };
+  QComboBox * view_actions_selector_{ nullptr };
+  QLabel * toolbar_status_chip_{ nullptr };
   QComboBox * overlays_selector_{ nullptr };
   QComboBox * labels_selector_{ nullptr };
   QComboBox * mesh_preview_mode_selector_{ nullptr };
