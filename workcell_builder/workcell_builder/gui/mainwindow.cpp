@@ -5127,48 +5127,39 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
 
   std::vector<SceneWorkflowStep> steps;
   steps.push_back(compute_scene_workflow_step(
-    "Scene selected: " + QString(scene_selected ? "Ready" : "Missing"),
+    "Scene",
     scene_selected, "A scene is selected.", "Select or create a scene first.", {}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Editable layout: " + QString(editable_layout_ready ? "Ready" : "Missing"),
-    editable_layout_ready, "Editable canvas assets are available.",
+    "Layout",
+    editable_layout_ready && layout_saved_, "Editable layout exists and is saved.",
     preview_only_scene ?
     "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
-    "No editable assets found in the scene canvas.",
-    {"scene_selected"}, gates, editable_layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction));
+    "Create/edit and save layout to persist edits before YAML generation.",
+    {"editable_layout"}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Current));
   steps.push_back(compute_scene_workflow_step(
-    "Layout saved: " + QString(layout_saved_ ? "Done" : "Not yet"),
-    layout_saved_, "Layout is saved and up to date.",
-    "Save layout to persist edits before YAML generation.",
-    {"editable_layout"}, gates, layout_saved_ ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Current));
-  steps.push_back(compute_scene_workflow_step(
-    "YAML definition: " + QString(yaml_ready ? "Ready" : "Missing"),
+    "YAML",
     yaml_ready, "cell_definition.yaml exists.",
     "Generate YAML definition from current layout.",
     {"layout_saved"}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Scene package: " + QString(launch_artifacts_ready_ ? "Ready" : "Missing"),
+    "Package",
     launch_artifacts_ready_, "Launch/package artifacts are present.",
     "Generate scene package to create launch and package metadata.",
     {"yaml_definition", "validation"}, gates));
-  QString validation_label = "Not run";
-  if (validation_report_ready && validation_stale_) validation_label = "Blocked";
-  else if (validation_gate_ready && has_warnings) validation_label = "Warnings";
-  else if (validation_gate_ready) validation_label = "Passed";
   steps.push_back(compute_scene_workflow_step(
-    "Validation: " + validation_label,
+    "Validation",
     validation_gate_ready, has_warnings ? "Validation completed with warnings." : "Validation checks passed.",
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
   steps.push_back(compute_scene_workflow_step(
-    "Fake hardware preview: " + QString(fake_hardware_ready ? "Ready" : "Blocked"),
+    "Preview",
     fake_hardware_ready,
     "Ready (Safety: fake hardware only, no robot motion).",
     "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.",
     {"scene_package", "validation"}, gates, fake_hardware_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
-    "Export: " + QString(export_ready ? "Ready" : "Blocked"),
+    "Export",
     export_ready, "Export prerequisites are satisfied.",
     "Complete YAML and scene package generation before export.",
     {"yaml_definition", "scene_package"}, gates, export_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
@@ -5209,12 +5200,12 @@ QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) c
 {
   switch (status) {
     case SceneWorkflowStepStatus::Done: return "Done";
-    case SceneWorkflowStepStatus::Current: return "Current";
-    case SceneWorkflowStepStatus::NeedsAction: return "Needs action";
+    case SceneWorkflowStepStatus::Current: return "Ready";
+    case SceneWorkflowStepStatus::NeedsAction: return "Needed";
     case SceneWorkflowStepStatus::Blocked: return "Blocked";
-    case SceneWorkflowStepStatus::Warning: return "Warning";
+    case SceneWorkflowStepStatus::Warning: return "Missing";
   }
-  return "Needs action";
+  return "Needed";
 }
 
 QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) const
@@ -5267,7 +5258,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
   }
   if (editable_layout_item_count_ == 0 && preview_fallback_item_count_ > 0) {
     add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
-      "No editable layout items are available yet; seed an editable layout from loaded preview metadata.",
+      "Create editable layout from preview",
       RecommendedWorkflowActionHandler::SaveLayout);
     add_action("generate_yaml", "Generate YAML", false, "Create an editable layout first.", "YAML generation requires editable layout content.", RecommendedWorkflowActionHandler::GenerateYaml);
     return actions;
@@ -5290,7 +5281,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
       (fs::exists(s.scene_dir / "launch/demo.launch.py") || fs::exists(s.scene_dir / "cell_definition.yaml"));
     if (legacy_preview_only_scene) {
       add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
-        "Legacy preview-only scene detected. Convert preview artifacts into an editable layout before other edits.",
+        "Create editable layout from preview",
         RecommendedWorkflowActionHandler::AddAsset);
       add_action("add_asset", "Add asset", false, "Convert preview-only scene first.", "After conversion, add assets to finalize layout.", RecommendedWorkflowActionHandler::AddAsset);
       return actions;
@@ -5405,7 +5396,7 @@ void MainWindow::refresh_scene_workflow_rail()
   for (int i = 0; i < static_cast<int>(steps.size()); ++i) {
     const auto & step = steps[static_cast<size_t>(i)];
     const QString detail = format_scene_builder_status_text(step.detail).toHtmlEscaped();
-    html += QString("%1. %2 %3<br/><span style='color:#9ca3af;font-size:11px;'>%4</span><br/>")
+    html += QString("%1. <span title='%4'>%2 %3</span><br/>")
       .arg(i + 1)
       .arg(step.label, scene_workflow_status_chip(step.status), detail);
   }
@@ -5413,7 +5404,7 @@ void MainWindow::refresh_scene_workflow_rail()
   const auto recommendations = resolve_recommended_workflow_actions();
   const auto recommendation = recommendations.empty() ? RecommendedWorkflowAction{} : recommendations.front();
   if (scene_workflow_recommendation_label_) {
-    scene_workflow_recommendation_label_->setText("Recommended next action: " + recommendation.explanatory_text);
+    scene_workflow_recommendation_label_->setText("<b>Next:</b> " + recommendation.explanatory_text);
   }
   if (scene_workflow_recommendation_button_) {
     scene_workflow_recommendation_button_->setText(QString("Run Next: %1").arg(recommendation.label));
