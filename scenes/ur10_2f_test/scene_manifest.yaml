@@ -1,0 +1,22 @@
+scene:
+  name: ur10_2f_test
+  folder: scenes/ur10_2f_test
+  package: ur10_2f_test
+
+files:
+  environment: environment.yaml
+  cell_definition: cell_definition.yaml
+  layout: layout/workcell_studio_layout.yaml
+  launch: launch/demo.launch.py
+  urdf_xacro: urdf/scene.urdf.xacro
+
+robot:
+  model: ur10
+  planning_group: manipulator
+  base_frame: base_link
+  ee_link: gripper_base_link
+
+end_effector:
+  type: finger
+  brand: robotiq_85_gripper
+  grasp_frame: gripper_base_link

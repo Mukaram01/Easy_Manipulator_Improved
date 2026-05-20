@@ -1,0 +1,22 @@
+scene:
+  name: ur3_suction_test
+  folder: scenes/ur3_suction_test
+  package: ur3_suction_test
+
+files:
+  environment: environment.yaml
+  cell_definition: cell_definition.yaml
+  layout: layout/workcell_studio_layout.yaml
+  launch: launch/demo.launch.py
+  urdf_xacro: urdf/scene.urdf.xacro
+
+robot:
+  model: ur3
+  planning_group: manipulator
+  base_frame: base_link
+  ee_link: suction_cup_link
+
+end_effector:
+  type: suction
+  brand: single_suction_gripper
+  grasp_frame: suction_cup_link
