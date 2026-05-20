@@ -20,6 +20,28 @@ def main():
     src = CPP.read_text(encoding="utf-8")
     diag_src = (ROOT / "scripts/validate_scene3d_visual_diagnostics.py").read_text(encoding="utf-8")
     body = fn_body(src, "bool Scene3DViewportWidget::draw_mesh_preview_if_available")
+    # Lightweight guard: ensure paintGL closes before the next method definition.
+    paint_sig = "void Scene3DViewportWidget::paintGL()"
+    bounds_sig = "bool Scene3DViewportWidget::scene_bounds_from_visible_items("
+    paint_pos = src.find(paint_sig)
+    bounds_pos = src.find(bounds_sig)
+    must(paint_pos != -1 and bounds_pos != -1 and bounds_pos > paint_pos, "paintGL or scene_bounds_from_visible_items signature missing/reordered")
+    paint_open = src.find("{", paint_pos)
+    must(paint_open != -1 and paint_open < bounds_pos, "paintGL opening brace not found")
+    depth = 0
+    paint_close = -1
+    for i in range(paint_open, len(src)):
+        ch = src[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                paint_close = i
+                break
+    must(paint_close != -1, "paintGL closing brace not found")
+    must(paint_close < bounds_pos, "paintGL does not close before scene_bounds_from_visible_items (possible unmatched brace)")
+
     for token in [
         "fit_include_overlays",
         "scene_bounds_from_visible_items",
