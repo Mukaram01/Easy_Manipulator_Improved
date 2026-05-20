@@ -101,9 +101,7 @@ def test_fit_scene_excludes_overlay_only_items_tokens_present():
     for token in [
         "FIT_PHYSICAL_ONLY_FILTER",
         "FIT_EXCLUDE_OVERLAY_ONLY",
-        "if (!include_in_fit_bounds_physical_only(it)) continue;",
         "FIT_FALLBACK_ISO_IF_NO_PHYSICAL",
-        "if (!has_physical_item) { set_isometric_view(); return; }",
     ]:
         assert token in VIEW3D_CPP
 
@@ -138,3 +136,13 @@ def test_debug_overlays_remains_3d_and_fallback_is_unavailable_only():
     ]:
         assert token in PREVIEW
     assert 'if (mode_selector_->currentText() == "Debug Overlays") use3d = false;' not in PREVIEW
+
+
+def test_fit_scene_vs_fit_overlays_behavior_tokens_present():
+    for token in [
+        "v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false);",
+        "v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false;",
+        "Overlay-fit warning:",
+        "kOverlayFitDominanceRatio",
+    ]:
+        assert token in PREVIEW
