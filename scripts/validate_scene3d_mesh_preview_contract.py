@@ -67,9 +67,20 @@ def main():
     for token in [
         "def compute_link_world_tfs",
         "matmul4(cur_tf, tf_from_xyz_rpy",
-        "link_world_tfs, link_status, gw = compute_link_world_tfs",
+        "link_world_tfs, link_status, link_parent, link_parent_joint, link_chain_map, gw = compute_link_world_tfs",
     ]:
         must(token in extractor_src, f"missing link-world transform token: {token}")
+
+
+    for token in [
+        "parse_collada_bytes_for_test",
+        'ext == QStringLiteral("dae")',
+        "unsupported mesh format",
+        "mesh_format_counts",
+        "renderable_mesh_count",
+        "non_renderable_mesh_count",
+    ]:
+        must(token in src if token.startswith("parse_collada") or token.startswith("ext ==") or token == "unsupported mesh format" else token in extractor_src, f"missing DAE/report token: {token}")
 
     # Contract: visual schema exposes local/link/world pose information + status.
     for token in [
@@ -90,7 +101,7 @@ def main():
         must(token in extractor_src, f"missing collapsed-pose warning token: {token}")
 
     test_src = (ROOT / "tests/test_scene_urdf_visual_mesh_index.py").read_text(encoding="utf-8")
-    for token in ["assert data['resolved'] > 0", "assert not unresolved_only", "assert ur_scene_resolved"]:
+    for token in ["assert data['resolved'] > 0", "assert 'mesh_format_counts' in data", "assert data.get('renderable_mesh_count', 0) > 0"]:
         must(token in test_src, f"missing test assertion token: {token}")
 
     mw_src = MAINWINDOW.read_text(encoding="utf-8")

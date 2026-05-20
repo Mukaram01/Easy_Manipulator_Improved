@@ -28,6 +28,8 @@ def test_scene_urdf_visual_mesh_index_generation():
     assert data['scene_count'] >= 8
     assert data['visual_count'] >= data['scene_count']
     assert data['resolved'] > 0
+    assert 'mesh_format_counts' in data
+    assert data.get('renderable_mesh_count', 0) > 0
 
     # Gather per-scene index data for data-driven validation.
     scene_payloads = []
@@ -89,3 +91,7 @@ def test_scene_urdf_visual_mesh_index_generation():
     # Non-fatal unresolved meshes should be represented as unresolved+warning entries.
     assert unresolved_warnings >= data.get('unresolved', 0)
     assert data.get('unresolved', 0) >= 0
+    mesh_counts = data.get('mesh_format_counts', {})
+    dae_present = any((i.get('mesh_extension') or '').lower() == '.dae' for i in all_items)
+    if dae_present:
+        assert mesh_counts.get('.dae', 0) > 0

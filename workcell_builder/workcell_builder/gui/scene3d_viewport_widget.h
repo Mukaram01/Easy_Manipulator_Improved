@@ -77,6 +77,9 @@ public:
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,
                                        int triangle_limit = 100000);
+  static bool parse_collada_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                           InternalTriangleMesh & out_mesh, QString & out_error,
+                                           int triangle_limit = 100000);
   static bool compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max);
   static bool should_attempt_mesh_draw_for_mode_for_test(ScenePreviewWidget::MeshPreviewMode mode,
                                                          bool cache_loaded, bool cache_valid);
