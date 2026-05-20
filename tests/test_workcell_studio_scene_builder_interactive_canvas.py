@@ -19,3 +19,10 @@ def test_focus_selected_centers_on_selected_item():
     text = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
     assert 'if (it.id != selected_id) continue;' in text
     assert 'orbit_offset_' in text
+
+
+def test_default_label_suppression_and_metadata_tag_storage_tokens_present():
+    main_text = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    view_text = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
+    assert 'p.metadata_tags = tag;' in main_text
+    assert 'if (!selected && is_urdf_visual && missing_reason.isEmpty()' in view_text

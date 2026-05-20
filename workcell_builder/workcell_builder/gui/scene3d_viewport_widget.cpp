@@ -236,6 +236,22 @@ QString normalized_token(const QString & value)
 {
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
 }
+
+QString clean_label_from_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  QString label = it.display_name.trimmed();
+  if (label.isEmpty()) label = it.id.trimmed();
+  if (label.isEmpty()) return QStringLiteral("Item");
+
+  const int slash = qMax(label.lastIndexOf('/'), label.lastIndexOf(':'));
+  if (slash >= 0 && slash + 1 < label.size()) label = label.mid(slash + 1);
+  if (label.startsWith(QStringLiteral("urdf_visual"), Qt::CaseInsensitive)) label.remove(0, QStringLiteral("urdf_visual").size());
+  label = label.trimmed();
+  while (label.startsWith('_') || label.startsWith('-') || label.startsWith('/')) label.remove(0, 1);
+  if (label.isEmpty()) label = it.id.trimmed();
+  if (label.size() > 18) label = label.left(17) + QStringLiteral("…");
+  return label;
+}
 QString warning_badge_text(const QStringList & warnings)
 {
   if (warnings.isEmpty()) return QStringLiteral("!");
@@ -494,13 +510,6 @@ void Scene3DViewportWidget::paintGL()
     if (r.isEmpty()) return QStringLiteral("Item");
     return role.left(10);
   };
-  const auto compact_label = [&](const ScenePreviewWidget::PreviewItem & it) {
-    QString label = it.display_name.trimmed();
-    if (label.isEmpty()) label = it.id.trimmed();
-    if (label.isEmpty()) label = compact_role(it.role);
-    if (label.size() > 18) label = label.left(17) + QStringLiteral("…");
-    return label;
-  };
   const double zoom_factor = distance_ / qMax(0.25, scene_radius_);
   const bool crowded = items.size() > 30;
   const bool zoomed_far = zoom_factor > 5.2;
@@ -548,7 +557,14 @@ void Scene3DViewportWidget::paintGL()
     }
     if (draw_label) {
       const QString missing_reason = placeholder_reason_for_item(it);
-      const QString text = selected ? compact_label(it) : (missing_reason.isEmpty() ? compact_label(it) : QString("%1 missing").arg(compact_role(it.role)));
+      const bool is_critical_scene_anchor = (role == NormalizedRole::RobotBase || role == NormalizedRole::Table || role == NormalizedRole::Camera);
+      if (!selected && is_urdf_visual && missing_reason.isEmpty() && !is_critical_scene_anchor &&
+          label_mode != ScenePreviewWidget::LabelMode::All) {
+        draw_label = false;
+      }
+      const QString compact_text = clean_label_from_item(it);
+      const QString text = selected ? compact_text : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
+      if (!draw_label) continue;
       const QPointF label_anchor(p.x() + 12.0, p.y() - 10.0);
       const QPointF label_pos = apply_label_overlap_offset(label_anchor, placed_label_points, robot_base_points, is_critical_label_role(role));
       placed_label_points.push_back(label_pos);
@@ -1131,8 +1147,10 @@ bool Scene3DViewportWidget::pick_item_at_screen(
   out_role = best_item->role.trimmed().isEmpty() ? QStringLiteral("unknown") : best_item->role.trimmed();
   if (out_tooltip != nullptr) {
     const QString role_normalized = normalized_token(out_role);
+    const QString metadata_tags = best_item->metadata_tags.trimmed();
     *out_tooltip = QStringLiteral("Item: %1\nRole: %2\nWarnings: %3")
       .arg(out_id, role_normalized, warning_debug_text(best_item->warnings));
+    if (!metadata_tags.isEmpty()) *out_tooltip += QStringLiteral("\nTags: ") + metadata_tags;
     if (!best_item->warnings.isEmpty()) *out_tooltip += QStringLiteral("\n\nDetails:\n- ") + best_item->warnings.join("\n- ");
   }
   return true;
