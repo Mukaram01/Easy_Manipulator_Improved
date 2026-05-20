@@ -113,6 +113,10 @@ private:
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
   bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
+  bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
+  QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
+  bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
+                                   int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr);
   QString gizmo_mode_label() const;
   void draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it);
   void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);
@@ -121,6 +125,7 @@ private:
   void draw_pick_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it);
   void draw_object_cube(const ScenePreviewWidget::PreviewItem & it);
+  void draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it);
   void draw_safety_zone(const ScenePreviewWidget::PreviewItem & it);
   void draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it);
   bool draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path = true);

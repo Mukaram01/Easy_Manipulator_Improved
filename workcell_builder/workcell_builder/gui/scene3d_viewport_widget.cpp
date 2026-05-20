@@ -348,6 +348,8 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
 }
 void Scene3DViewportWidget::fit_scene() {
   QVector3D bmin, bmax;
+  // if (!include_in_fit_bounds_physical_only(it)) continue;
+  // if (!has_physical_item) { set_isometric_view(); return; }
   if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
@@ -395,33 +397,19 @@ void Scene3DViewportWidget::paintGL()
   for (const auto & it : items) draw_items.push_back(&it);
   std::sort(draw_items.begin(), draw_items.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
 
+  int mesh_backed_count = 0;
+  int placeholder_count = 0;
+  int wireframe_box_count = 0;
   for (const auto * it : draw_items) {
-    if (classify_item_role(*it) == NormalizedRole::Object && !it->source_path.trimmed().isEmpty()) {
-      const MeshCacheEntry & mesh_entry = ensure_mesh_cached(it->source_path);
-      if (!mesh_entry.valid) warn_mesh_fallback_once(it->id, mesh_entry.warning, it->source_path);
-    }
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) continue;
 
-    switch (role) {
-      case NormalizedRole::RobotBase: draw_robot_base_with_axis(*it); break;
-      case NormalizedRole::Table: draw_table_slab(*it); break;
-      case NormalizedRole::Conveyor: draw_conveyor(*it); break;
-      case NormalizedRole::Camera: draw_camera_body_with_frustum(*it); break;
-      case NormalizedRole::PickZone: draw_pick_zone(*it); break;
-      case NormalizedRole::PlaceBin: draw_place_target_bin(*it); break;
-      case NormalizedRole::Object: draw_object_cube(*it); break;
-      case NormalizedRole::SafetyZone: draw_safety_zone(*it); break;
-      case NormalizedRole::WarningAnchor: draw_warning_badge_anchor(*it); break;
-      case NormalizedRole::Generic:
-        if (!draw_mesh_preview_if_available(*it, item_color(*it), true))
-          draw_box(it->x, it->y, it->z, it->sx, it->sy, it->sz, item_color(*it));
-        break;
-    }
+    draw_truthful_item_geometry(*it, &placeholder_count, &mesh_backed_count, &wireframe_box_count);
     if (it->id == selected_id) {
       const ItemBounds bounds = item_bounds_for_role(*it);
       const bool editable = item_is_editable_for_gizmo(*it);
       draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
+      // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
     }
   }
 
@@ -471,6 +459,10 @@ void Scene3DViewportWidget::paintGL()
     }
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
     if (show_warning_labels && !it.warnings.isEmpty()) {
+      if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
+        const QString debug_warning_text = warning_debug_text(it.warnings);
+        Q_UNUSED(debug_warning_text);
+      }
       painter.setPen(Qt::NoPen);
       painter.setBrush(QColor("#f59e0b"));
       painter.drawEllipse(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0));
@@ -478,7 +470,8 @@ void Scene3DViewportWidget::paintGL()
       painter.drawText(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0), Qt::AlignCenter, warning_badge_text(it.warnings));
     }
     if (draw_label) {
-      const QString text = selected ? it.id : compact_role(it.role);
+      const QString missing_reason = placeholder_reason_for_item(it);
+      const QString text = selected ? it.id : (missing_reason.isEmpty() ? compact_role(it.role) : QString("%1 missing geometry").arg(compact_role(it.role)));
       const QPointF label_anchor(p.x() + 12.0, p.y() - 10.0);
       const QPointF label_pos = apply_label_overlap_offset(label_anchor, placed_label_points, robot_base_points, is_critical_label_role(role));
       placed_label_points.push_back(label_pos);
@@ -494,8 +487,10 @@ void Scene3DViewportWidget::paintGL()
   painter.setPen(QColor("#e2e8f0"));
   painter.drawText(QRectF(20.0, 18.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
   painter.drawText(QRectF(20.0, 34.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Items: editable %1 / preview %2").arg(editable_count).arg(preview_count));
+                   QString("Scene: %1").arg(scene_name));
   painter.drawText(QRectF(20.0, 50.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Items %1 • Mesh %2 • Box %3 • Missing %4").arg(items.size()).arg(mesh_backed_count).arg(wireframe_box_count).arg(placeholder_count));
+  painter.drawText(QRectF(20.0, 66.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Mode: %1").arg(gizmo_mode_label()));
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
@@ -523,6 +518,44 @@ bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min,
     out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
   }
   return has_fittable_item;
+}
+
+bool Scene3DViewportWidget::item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const
+{
+  return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+}
+
+QString Scene3DViewportWidget::placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const
+{
+  if (item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty()) return QString();
+  if (item_has_explicit_dimensions(item)) return QString();
+  return QStringLiteral("missing geometry");
+}
+
+bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count,
+                                                        int * out_mesh_count, int * out_wireframe_count)
+{
+  // Always try mesh-backed draw first for physical items.
+  if (draw_mesh_preview_if_available(it, item_color(it), true)) {
+    if (out_mesh_count) ++(*out_mesh_count);
+    return true;
+  }
+  const QString missing_reason = placeholder_reason_for_item(it);
+  if (!missing_reason.isEmpty()) {
+    draw_missing_geometry_marker(it);
+    if (out_placeholder_count) ++(*out_placeholder_count);
+    if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("missing geometry"), it.source_path);
+    return false;
+  }
+  if (item_has_explicit_dimensions(it)) {
+    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#cbd5e1"), 1.4f);
+    if (out_wireframe_count) ++(*out_wireframe_count);
+    return false;
+  }
+  draw_missing_geometry_marker(it);
+  if (out_placeholder_count) ++(*out_placeholder_count);
+  return false;
 }
 
 QString Scene3DViewportWidget::gizmo_mode_label() const
@@ -739,6 +772,12 @@ void Scene3DViewportWidget::draw_world_axes_pass()
   glColor4f(0.35f, 0.95f, 0.35f, 1.0f); glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 0.45f, 0.0f);
   glColor4f(0.35f, 0.65f, 0.98f, 1.0f); glVertex3f(0.0f, 0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 0.45f);
   glEnd();
+  QPainter painter(this);
+  painter.setPen(QColor("#f8fafc"));
+  painter.drawText(project_to_screen(0.50, 0.0, 0.0), "X");
+  painter.drawText(project_to_screen(0.0, 0.50, 0.0), "Y");
+  painter.drawText(project_to_screen(0.0, 0.0, 0.50), "Z");
+  painter.drawText(QPointF(10.0, height() - 14.0), "Scale: major grid 5 m");
 }
 
 void Scene3DViewportWidget::draw_unit_cube_triangles(const QColor & color)
@@ -801,6 +840,12 @@ void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewIt
   if (draw_mesh_preview_if_available(it, item_color(it), true)) return;
   const double cube = qMax(0.05, qMin(it.sx, qMin(it.sy, it.sz)));
   draw_box(it.x, it.y, it.z, cube, cube, cube, item_color(it));
+}
+void Scene3DViewportWidget::draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it)
+{
+  const double marker = 0.08;
+  draw_box(it.x, it.y, it.z, marker, marker, marker, QColor("#ef4444"), true);
+  draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor("#fca5a5"), 2.0f);
 }
 void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 96), true); }
 void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it)
