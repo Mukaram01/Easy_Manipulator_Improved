@@ -51,6 +51,44 @@ def main():
     ]:
         must(token in extractor_src, f"missing extractor token: {token}")
 
+    # Contract: URDF graph parsing (joint structures + parent/child link handling).
+    for token in [
+        "def parse_urdf_graph",
+        "'inbound_joints'",
+        "'outbound_joints'",
+        "joint.find('parent')",
+        "joint.find('child')",
+        "links[parent]['outbound_joints'].append(j)",
+        "links[child]['inbound_joints'].append(j)",
+    ]:
+        must(token in extractor_src, f"missing URDF graph token: {token}")
+
+    # Contract: link->world transform computation path exists.
+    for token in [
+        "def compute_link_world_tfs",
+        "matmul4(cur_tf, tf_from_xyz_rpy",
+        "link_world_tfs, link_status, gw = compute_link_world_tfs",
+    ]:
+        must(token in extractor_src, f"missing link-world transform token: {token}")
+
+    # Contract: visual schema exposes local/link/world pose information + status.
+    for token in [
+        '"transform_status"',
+        '"local_visual_pose"',
+        '"link_world_pose"',
+        '"pose"',
+    ]:
+        must(token in extractor_src, f"missing visual schema token: {token}")
+
+    # Contract: collapsed-pose detection + warning emission are implemented.
+    for token in [
+        "def has_collapsed_visual_poses",
+        "collapse_warning = \"all visual poses collapsed; transform assembly likely failed\"",
+        "has_transform_collapse_warning = has_collapsed_visual_poses(items)",
+        "warnings.append(collapse_warning)",
+    ]:
+        must(token in extractor_src, f"missing collapsed-pose warning token: {token}")
+
     test_src = (ROOT / "tests/test_scene_urdf_visual_mesh_index.py").read_text(encoding="utf-8")
     for token in ["assert data['resolved'] > 0", "assert not unresolved_only", "assert ur_scene_resolved"]:
         must(token in test_src, f"missing test assertion token: {token}")
@@ -58,6 +96,21 @@ def main():
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")
+
+    # Contract: preview ingestion reads computed world pose for placement and keeps URDF locking behavior.
+    for token in [
+        'yaml_map_key(v, "pose")',
+        'p.x =',
+        'p.y =',
+        'p.z =',
+        'p.roll =',
+        'p.pitch =',
+        'p.yaw =',
+        'p.locked = true',
+        'p.editable = false',
+        'p.lock_reason = "URDF visual preview item (locked)"',
+    ]:
+        must(token in mw_src, f"missing preview ingestion token: {token}")
     must("use_fake_hardware:=true" in mw_src, "fake hardware launch token missing")
 
     print("scene3d mesh preview contract: OK")
