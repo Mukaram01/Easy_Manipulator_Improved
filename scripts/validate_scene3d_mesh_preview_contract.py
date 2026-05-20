@@ -158,14 +158,9 @@ def main():
         + ", ".join(parent_chain_tokens))
 
     # Contract: regeneration command must include required flags and avoid raw scripts/... literal callsites.
-    regen_call_pattern = re.search(
-        r"regen_args\s*<<(?P<expr>.*?extract_scene_urdf_visual_mesh_index\.py.*?);",
-        mw_src,
-        re.DOTALL,
-    )
-    must(regen_call_pattern is not None,
-         "unable to locate regen_args construction for extract_scene_urdf_visual_mesh_index.py")
-    regen_expr = regen_call_pattern.group("expr")
+    regen_call_pattern = re.search(r"regen_args\s*<<(.*?);", mw_src, re.DOTALL)
+    must(regen_call_pattern is not None, "unable to locate regen_args construction")
+    regen_expr = regen_call_pattern.group(1)
     must("--scene" in regen_expr, "regen args regression: missing required --scene flag")
     must("--prefer-xacro" in regen_expr, "regen args regression: missing required --prefer-xacro flag")
     must(
@@ -190,6 +185,12 @@ def main():
 
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")
+    must(
+        "const auto connect_if = [](QObject * sender, QObject * receiver, auto signal, auto slot)" not in mw_src,
+        "typed Qt connect regression: generic QObject* connect_if helper reintroduced")
+    must(
+        "QObject::connect(sender, signal, receiver, slot);" not in mw_src,
+        "typed Qt connect regression: erased sender/receiver QObject::connect pattern found")
 
     # Contract: preview ingestion reads computed world pose for placement and keeps URDF locking behavior.
     for token in [

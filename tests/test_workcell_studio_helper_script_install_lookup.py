@@ -27,6 +27,6 @@ def test_visual_mesh_regen_uses_resolved_script_and_expected_flags():
     assert 'easy_manipulation_deployment/scripts/' in MAIN
     assert 'QCoreApplication::applicationDirPath() + "/../../../scripts/"' in MAIN
     assert 'QDir::currentPath() + "/scripts/"' in MAIN
-    assert 'fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py"' in MAIN
+    assert "resolve_scene3d_extractor_script_path(d)" in MAIN
     assert '"--scene"' in MAIN
     assert '"--prefer-xacro"' in MAIN
