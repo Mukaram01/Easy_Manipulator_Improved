@@ -305,6 +305,21 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
 }
 
 
+
+
+bool is_overlay_visual_role(NormalizedRole role)
+{
+  switch (role) {
+    case NormalizedRole::PickZone:
+    case NormalizedRole::PlaceBin:
+    case NormalizedRole::SafetyZone:
+    case NormalizedRole::WarningAnchor:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool is_critical_label_role(NormalizedRole role)
 {
   switch (role) {
@@ -468,18 +483,28 @@ void Scene3DViewportWidget::paintGL()
   int mesh_backed_count = 0;
   int placeholder_count = 0;
   int wireframe_box_count = 0;
+  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
+  std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+    if (is_overlay_visual_role(role)) overlay_items.push_back(it);
+    else physical_items.push_back(it);
+  }
 
-    draw_truthful_item_geometry(*it, &placeholder_count, &mesh_backed_count, &wireframe_box_count);
-    if (it->id == selected_id) {
+  auto draw_item_batch = [&](const std::vector<const ScenePreviewWidget::PreviewItem *> & batch) {
+    for (const auto * it : batch) {
+      draw_truthful_item_geometry(*it, &placeholder_count, &mesh_backed_count, &wireframe_box_count);
+      if (it->id == selected_id) {
       const ItemBounds bounds = item_bounds_for_role(*it);
       const bool editable = item_is_editable_for_gizmo(*it);
       draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
       // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
+      }
     }
-  }
+  };
+  draw_item_batch(overlay_items);  // draw translucent overlays before solids to keep physical meshes legible.
+  draw_item_batch(physical_items);
 
   glDisable(GL_BLEND);
 
@@ -922,12 +947,12 @@ void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidg
   draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
   if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 58), true);
 }
-void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 96), true); }
+void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 64), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 110), 1.0f); }
 void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
 {
   draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
   const double wall = qMax(0.02, qMin(it.sx, it.sz) * 0.1);
-  draw_box_outline(it.x + wall, it.y + wall, it.z + wall, qMax(0.01, it.sx - 2 * wall), qMax(0.01, it.sy - wall), qMax(0.01, it.sz - 2 * wall), QColor("#fecdd3"), 1.5f);
+  draw_box_outline(it.x + wall, it.y + wall, it.z + wall, qMax(0.01, it.sx - 2 * wall), qMax(0.01, it.sy - wall), qMax(0.01, it.sz - 2 * wall), QColor(254, 205, 211, 120), 1.0f);
 }
 void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewItem & it)
 {
@@ -941,7 +966,7 @@ void Scene3DViewportWidget::draw_missing_geometry_marker(const ScenePreviewWidge
   draw_box(it.x, it.y, it.z, marker, marker, marker, QColor("#ef4444"), true);
   draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor("#fca5a5"), 2.0f);
 }
-void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 96), true); }
+void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 60), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 110), 1.0f); }
 void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it)
 {
   const double cube = qMax(0.04, qMin(it.sx, qMin(it.sy, it.sz)));
