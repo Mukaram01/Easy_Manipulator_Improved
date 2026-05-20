@@ -117,8 +117,6 @@
 #include "gui/asset_catalog_discovery.h"
 #include "gui/transform_clipboard_utils.h"
 
-namespace fs = boost::filesystem;
-
 static QStringList generation_asset_support_preflight(const fs::path & layout_path, bool * severe_failure);
 
 namespace {
@@ -3352,6 +3350,94 @@ QStringList MainWindow::helper_script_search_paths(const QString & script_name) 
   return candidates;
 }
 
+QStringList MainWindow::candidate_repo_roots_for_scene(const fs::path & selected_scene_dir) const
+{
+  QStringList candidates;
+  QSet<QString> seen;
+  auto add_candidate = [&](const QString & candidate) {
+    if (candidate.isEmpty()) {
+      return;
+    }
+    const QString normalized = QDir::cleanPath(candidate);
+    if (!seen.contains(normalized)) {
+      candidates << normalized;
+      seen.insert(normalized);
+    }
+  };
+
+  for (fs::path cursor = selected_scene_dir; !cursor.empty(); cursor = cursor.parent_path()) {
+    add_candidate(QString::fromStdString(cursor.string()));
+    if (cursor == cursor.parent_path()) {
+      break;
+    }
+  }
+
+  const QString home_dir = QDir::homePath();
+  const QString username = QFileInfo(home_dir).fileName();
+  if (!username.isEmpty()) {
+    add_candidate(QString("/home/%1/workcell_ws/src/easy_manipulation_deployment").arg(username));
+  }
+
+  for (QDir cwd(QDir::currentPath()); cwd.exists(); ) {
+    add_candidate(cwd.absolutePath());
+    if (!cwd.cdUp()) {
+      break;
+    }
+  }
+
+  for (QDir app_dir(QCoreApplication::applicationDirPath()); app_dir.exists(); ) {
+    add_candidate(app_dir.absolutePath());
+    if (!app_dir.cdUp()) {
+      break;
+    }
+  }
+
+  const QString ament_prefix_raw = qEnvironmentVariable("AMENT_PREFIX_PATH");
+  const QStringList ament_entries = ament_prefix_raw.split(':', Qt::SkipEmptyParts);
+  for (const QString & raw_entry : ament_entries) {
+    const QString entry = QDir::cleanPath(raw_entry.trimmed());
+    if (entry.isEmpty()) {
+      continue;
+    }
+    const QString share_root = QDir(entry).filePath("share/easy_manipulation_deployment");
+    add_candidate(share_root);
+    for (QDir share_dir(share_root); share_dir.exists(); ) {
+      add_candidate(share_dir.absolutePath());
+      if (!share_dir.cdUp()) {
+        break;
+      }
+    }
+    add_candidate(entry);
+    for (QDir prefix_dir(entry); prefix_dir.exists(); ) {
+      add_candidate(prefix_dir.absolutePath());
+      if (!prefix_dir.cdUp()) {
+        break;
+      }
+    }
+  }
+
+  return candidates;
+}
+
+QString MainWindow::find_repo_root_with_extractor(const QStringList & candidate_roots) const
+{
+  for (const QString & root : candidate_roots) {
+    const QString script_path =
+      QDir(root).filePath("scripts/extract_scene_urdf_visual_mesh_index.py");
+    const QFileInfo script_info(script_path);
+    if (script_info.exists() && script_info.isFile()) {
+      return script_info.absoluteFilePath();
+    }
+  }
+  return "";
+}
+
+QString MainWindow::resolve_scene3d_extractor_script_path(const fs::path & selected_scene_dir) const
+{
+  const QStringList candidate_roots = candidate_repo_roots_for_scene(selected_scene_dir);
+  return find_repo_root_with_extractor(candidate_roots);
+}
+
 QString MainWindow::selected_scene_name() const
 {
   if (!selected_scene_state_.valid) {
@@ -4848,12 +4934,19 @@ void MainWindow::populate_scene_hierarchy()
   }
   if (refresh_urdf_visual_index) {
     append_studio_log("Visual mesh index stale; regenerating");
-    QProcess regen_proc;
     QStringList regen_args;
-    regen_args << QString::fromStdString((fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py").string()) << "--scene" << QString::fromStdString(d.filename().string()) << "--prefer-xacro";
-    const int code = QProcess::execute("python3", regen_args);
-    if (code == 0) append_studio_log("Visual mesh index regenerated with xacro");
-    else append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    const QString extractor_script_path = resolve_scene3d_extractor_script_path(d);
+    if (extractor_script_path.isEmpty()) {
+      append_studio_log("Visual mesh index extractor script not found; preview may show placeholders");
+    } else {
+      regen_args << extractor_script_path << "--scene" << QString::fromStdString(d.filename().string()) <<
+        "--prefer-xacro";
+    }
+    if (!regen_args.isEmpty()) {
+      const int code = QProcess::execute("python3", regen_args);
+      if (code == 0) append_studio_log("Visual mesh index regenerated with xacro");
+      else append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    }
   }
   if (fs::exists(urdf_visual_index)) {
     try {
