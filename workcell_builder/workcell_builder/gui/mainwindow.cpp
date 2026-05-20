@@ -4990,26 +4990,40 @@ void MainWindow::populate_scene_hierarchy()
       }
     }
   }
+  int visual_index_loaded_count = 0;
+  int visual_preview_added_count = 0;
+  bool visual_index_safe_for_preview = false;
+  QString visual_index_extraction_mode = "unknown";
   if (fs::exists(urdf_visual_index)) {
     try {
       const YAML::Node urdf_index = YAML::LoadFile(urdf_visual_index.string());
+      visual_index_safe_for_preview = workcell_builder::yaml_map_key(urdf_index, "safe_for_preview").as<bool>(false);
+      visual_index_extraction_mode = QString::fromStdString(
+        workcell_builder::yaml_map_value_or_empty(urdf_index, "extraction_mode"));
       const YAML::Node visual_items = workcell_builder::yaml_map_key(urdf_index, "visual_items");
       if (visual_items && visual_items.IsSequence()) {
         for (const auto &v : visual_items) {
           if (!v.IsMap()) continue;
+          ++visual_index_loaded_count;
           const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
           if (id.isEmpty() || preview_ids.contains(id)) continue;
+          const bool render_expected = workcell_builder::yaml_map_key(v, "render_expected").as<bool>(false);
+          if (!render_expected) continue;
           ScenePreviewWidget::PreviewItem p;
           p.id = id;
           p.display_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link"));
-          p.category = "URDF Visual";
-          p.role = "urdf_visual";
+          if (p.display_name.trimmed().isEmpty()) p.display_name = id;
+          p.category = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "category"));
+          if (p.category.trimmed().isEmpty()) p.category = "URDF Visual";
+          p.role = p.category;
           p.status = "ready";
           p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
+          if (p.source_path.trimmed().isEmpty() || !fs::exists(fs::path(p.source_path.toStdString()))) continue;
           p.mesh_path = p.source_path;
           p.locked = true;
           p.editable = false;
-          p.lock_reason = "URDF visual preview item (locked)";
+          p.selectable = true;
+          p.lock_reason = "URDF visual preview-only item (locked)";
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
           const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
           const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
@@ -5035,9 +5049,18 @@ void MainWindow::populate_scene_hierarchy()
             p.has_mesh_metadata = true;
           }
           preview_items.push_back(p);
+          ++visual_preview_added_count;
           preview_ids.insert(id);
           add_tree_node(p);
         }
+      }
+      append_studio_log(QString("Visual mesh index loaded from: %1").arg(QString::fromStdString(urdf_visual_index.string())));
+      append_studio_log(QString("Visual mesh index safe_for_preview: %1").arg(visual_index_safe_for_preview ? "true" : "false"));
+      append_studio_log(QString("Visual mesh index extraction_mode: %1").arg(visual_index_extraction_mode));
+      append_studio_log(QString("Visual mesh index loaded: %1 visual items").arg(visual_index_loaded_count));
+      append_studio_log(QString("Visual mesh preview items added: %1").arg(visual_preview_added_count));
+      if (visual_index_safe_for_preview && visual_preview_added_count == 0) {
+        append_studio_log("Visual mesh index safe but no preview items were ingested");
       }
     } catch (...) {
       append_studio_log("Preview warning: failed to parse generated/scene_visual_mesh_index.json");
