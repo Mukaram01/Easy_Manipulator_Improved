@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json, os, re, shutil, subprocess
+import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import yaml
@@ -36,6 +37,99 @@ def cat(link: str):
     if any(t in low for t in ["table", "conveyor", "camera", "fixture", "zone", "cell", "env"]): return "environment_visual"
     if "object" in low or "bin" in low: return "object_visual"
     return "unknown_visual"
+
+
+def identity_tf():
+    return [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+
+
+def matmul4(a, b):
+    return [[sum(a[r][k] * b[k][c] for k in range(4)) for c in range(4)] for r in range(4)]
+
+
+def tf_from_xyz_rpy(xyz, rpy):
+    x, y, z = (xyz + [0.0, 0.0, 0.0])[:3]
+    rr, pp, yy = (rpy + [0.0, 0.0, 0.0])[:3]
+    cr, sr = math.cos(rr), math.sin(rr)
+    cp, sp = math.cos(pp), math.sin(pp)
+    cy, sy = math.cos(yy), math.sin(yy)
+    rot = [
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ]
+    out = identity_tf()
+    for r in range(3):
+        for c in range(3):
+            out[r][c] = rot[r][c]
+    out[0][3], out[1][3], out[2][3] = x, y, z
+    return out
+
+
+def parse_urdf_graph(root: ET.Element):
+    links = {}
+    joints = []
+    for link in root.findall('.//link'):
+        lname = link.attrib.get('name', 'unknown_link')
+        links.setdefault(lname, {'inbound_joints': [], 'outbound_joints': []})
+    for joint in root.findall('.//joint'):
+        name = joint.attrib.get('name', '')
+        jtype = joint.attrib.get('type', 'fixed')
+        parent = (joint.find('parent').attrib.get('link', '') if joint.find('parent') is not None else '')
+        child = (joint.find('child').attrib.get('link', '') if joint.find('child') is not None else '')
+        origin = joint.find('origin')
+        xyz = parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3)
+        rpy = parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3)
+        axis_tag = joint.find('axis')
+        axis = parse_vec(axis_tag.attrib.get('xyz') if axis_tag is not None else None, 3)
+        j = {'name': name, 'type': jtype, 'parent': parent, 'child': child, 'origin': {'xyz': xyz, 'rpy': rpy}, 'axis': axis}
+        joints.append(j)
+        links.setdefault(parent, {'inbound_joints': [], 'outbound_joints': []})
+        links.setdefault(child, {'inbound_joints': [], 'outbound_joints': []})
+        links[parent]['outbound_joints'].append(j)
+        links[child]['inbound_joints'].append(j)
+    roots = sorted([lname for lname, meta in links.items() if not meta['inbound_joints']])
+    return links, joints, roots
+
+
+def compute_link_world_tfs(link_graph, roots):
+    world = {}
+    status = {k: 'local_only' for k in link_graph.keys()}
+    warnings = []
+
+    def dfs(link, cur_tf, stack):
+        world[link] = cur_tf
+        status[link] = 'resolved'
+        for j in link_graph.get(link, {}).get('outbound_joints', []):
+            child = j.get('child', '')
+            if not child:
+                continue
+            if child in stack:
+                status[child] = 'partial'
+                warnings.append(f"cyclic joint graph detected: {' -> '.join(stack + [child])}")
+                continue
+            if child in world:
+                continue
+            # static/default view: joint value = 0 for revolute/continuous/prismatic, so origin-only tf
+            child_tf = matmul4(cur_tf, tf_from_xyz_rpy(j['origin']['xyz'], j['origin']['rpy']))
+            dfs(child, child_tf, stack + [child])
+
+    if not roots and link_graph:
+        warnings.append('no root links detected; graph may be cyclic or disconnected')
+    for root in roots:
+        dfs(root, identity_tf(), [root])
+
+    for link in link_graph.keys():
+        if link in world:
+            continue
+        inbound = link_graph[link].get('inbound_joints', [])
+        if inbound:
+            status[link] = 'partial'
+            warnings.append(f"link disconnected from root propagation: {link}")
+        else:
+            world[link] = identity_tf()
+            status[link] = 'local_only'
+    return world, status, warnings
 
 
 def discover_package_map(scene_dir: Path):
@@ -132,6 +226,9 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
     try:
         root = ET.fromstring(xml_text)
         idx = 0
+        link_graph, joints, roots = parse_urdf_graph(root)
+        link_world_tfs, link_status, gw = compute_link_world_tfs(link_graph, roots)
+        warnings.extend(gw)
         for link in root.findall('.//link'):
             lname = link.attrib.get('name', 'unknown_link')
             for visual in link.findall('visual'):
@@ -142,9 +239,14 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                 src, normalized = resolve_uri(package_uri, scene_dir, package_map, args)
                 warn = "" if src else f"unresolved mesh path: {normalized}"
                 origin = visual.find('origin')
+                visual_tf = tf_from_xyz_rpy(parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3), parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3))
+                link_tf = link_world_tfs.get(lname, identity_tf())
+                world_visual_tf = matmul4(link_tf, visual_tf)
                 items.append({"id": f"urdf_visual_{idx}_{lname}", "link": lname, "visual": visual.attrib.get('name', ''),
                               "source_path": src, "package_uri": normalized,
                               "pose": {"xyz": parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3), "rpy": parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3)},
+                              "world_visual_tf": world_visual_tf,
+                              "link_status": link_status.get(lname, 'local_only'),
                               "scale": parse_vec(mesh.attrib.get('scale'), 3, 1.0), "material": {}, "category": cat(lname), "resolved": bool(src), "warning": warn})
                 if warn: warnings.append(warn)
                 idx += 1
