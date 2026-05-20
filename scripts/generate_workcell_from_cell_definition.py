@@ -363,6 +363,44 @@ def _resolve_layout_path(layout_path: str, cell_definition_path: Path) -> Path |
     return None
 
 
+def _normalize_workcell_studio_layout(layout_data: Any) -> dict[str, Any]:
+    normalized: dict[str, Any] = layout_data if isinstance(layout_data, dict) else {}
+    normalized["schema_version"] = "workcell_studio_layout/v1"
+    raw_items = normalized.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
+    fixed: list[dict[str, Any]] = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id", "")).strip() or f"item_{idx+1}"
+        pose = item.get("pose") if isinstance(item.get("pose"), dict) else {}
+        xyz = pose.get("xyz") if isinstance(pose.get("xyz"), list) else []
+        rpy = pose.get("rpy") if isinstance(pose.get("rpy"), list) else []
+        pose["xyz"] = list(xyz[:3]) + [0.0] * max(0, 3 - len(xyz))
+        pose["rpy"] = list(rpy[:3]) + [0.0] * max(0, 3 - len(rpy))
+        item["id"] = item_id
+        item["pose"] = pose
+        fixed.append(item)
+    has_camera_metadata = any(
+        isinstance(item, dict)
+        and (
+            "camera_asset_id" in item
+            or "pointcloud_topic" in item
+            or "perception" in item
+            or "camera" in str(item.get("type", "")).lower()
+        )
+        for item in fixed
+    )
+    if not has_camera_metadata:
+        fixed = [
+            item
+            for item in fixed
+            if "camera" not in str(item.get("type", "")).lower() and "fov" not in str(item.get("type", "")).lower()
+        ]
+    normalized["items"] = fixed
+    return normalized
+
+
 def _extract_asset_tracking(cell_def: dict[str, Any], warnings: list[str], cell_definition_path: Path) -> dict[str, Any]:
     tracked: list[dict[str, Any]] = []
     supported: list[dict[str, Any]] = []
@@ -523,7 +561,13 @@ def generate_package(
     if isinstance(layout_ref, str) and layout_ref.strip():
         resolved_layout = _resolve_layout_path(layout_ref, cell_definition_path)
         if resolved_layout and resolved_layout.is_file():
-            shutil.copyfile(resolved_layout, package_dir / "layout" / "workcell_studio_layout.yaml")
+            with resolved_layout.open("r", encoding="utf-8") as handle:
+                loaded_layout = yaml.safe_load(handle)
+            normalized_layout = _normalize_workcell_studio_layout(loaded_layout)
+            (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
+                yaml.safe_dump(normalized_layout, sort_keys=False),
+                encoding="utf-8",
+            )
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
     workcell_yaml_path = package_dir / "workcell.yaml"
