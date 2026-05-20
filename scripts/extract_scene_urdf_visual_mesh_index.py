@@ -161,9 +161,30 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
     return items, warnings
 
 
+def has_collapsed_visual_poses(items: list[dict], min_count: int = 3, epsilon: float = 1e-6):
+    xyz_values = [i.get("pose", {}).get("xyz") for i in items if isinstance(i.get("pose", {}).get("xyz"), list) and len(i.get("pose", {}).get("xyz")) == 3]
+    if len(xyz_values) <= min_count:
+        return False
+    ref = xyz_values[0]
+    for xyz in xyz_values[1:]:
+        if any(abs(float(a) - float(b)) > epsilon for a, b in zip(ref, xyz)):
+            return False
+    return True
+
+
 def main():
     scenes = sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()])
-    report = {"scene_count": 0, "visual_count": 0, "resolved": 0, "unresolved": 0, "scenes": []}
+    report = {
+        "scene_count": 0,
+        "visual_count": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "collapse_warning_count": 0,
+        "unresolved_mesh_warning_count": 0,
+        "has_transform_collapse_warnings": False,
+        "has_unresolved_mesh_warnings": False,
+        "scenes": [],
+    }
     for scene_dir in scenes:
         manifest = read_yaml(scene_dir / "scene_manifest.yaml") or {}
         urdf_rel = ((manifest.get("files") or {}).get("urdf_xacro") or "urdf/scene.urdf.xacro")
@@ -185,12 +206,31 @@ def main():
         if not items:
             items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"scale":[1,1,1],"material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
 
+        collapse_warning = "all visual poses collapsed; transform assembly likely failed"
+        has_transform_collapse_warning = has_collapsed_visual_poses(items)
+        if has_transform_collapse_warning:
+            warnings.append(collapse_warning)
+
+        unresolved_mesh_warnings = [w for w in warnings if w.startswith("unresolved mesh path:")]
+        has_unresolved_mesh_warning = bool(unresolved_mesh_warnings)
+
         out = scene_dir / "generated" / "scene_visual_mesh_index.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"scene_name": scene_dir.name, "source_urdf_xacro_path": str(urdf_path), "extraction_mode": mode, "visual_items": items, "warnings": warnings}, indent=2), encoding="utf-8")
         report["scene_count"] += 1; report["visual_count"] += len(items)
         report["resolved"] += sum(1 for i in items if i.get("resolved")); report["unresolved"] += sum(1 for i in items if not i.get("resolved"))
-        report["scenes"].append({"scene": scene_dir.name, "visual_count": len(items), "warnings": warnings, "output": str(out)})
+        report["collapse_warning_count"] += int(has_transform_collapse_warning)
+        report["unresolved_mesh_warning_count"] += len(unresolved_mesh_warnings)
+        report["has_transform_collapse_warnings"] = report["has_transform_collapse_warnings"] or has_transform_collapse_warning
+        report["has_unresolved_mesh_warnings"] = report["has_unresolved_mesh_warnings"] or has_unresolved_mesh_warning
+        report["scenes"].append({
+            "scene": scene_dir.name,
+            "visual_count": len(items),
+            "has_transform_collapse_warning": has_transform_collapse_warning,
+            "unresolved_mesh_warning_count": len(unresolved_mesh_warnings),
+            "warnings": warnings,
+            "output": str(out),
+        })
 
     build = ROOT / "build"; build.mkdir(exist_ok=True)
     rpt = build / "workcell_studio_urdf_visual_mesh_index_report.json"
