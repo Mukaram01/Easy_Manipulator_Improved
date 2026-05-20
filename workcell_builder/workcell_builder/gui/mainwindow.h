@@ -606,6 +606,9 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  QString visual_index_script_missing_reported_scene_key_;
+  QString visual_index_regen_failure_reported_scene_key_;
+  bool visual_index_regen_throttle_session_active_{ false };
   int editable_layout_item_count_{ 0 };
   int preview_fallback_item_count_{ 0 };
   QString preview_provenance_summary_;

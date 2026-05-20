@@ -678,6 +678,9 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
     QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
   }
   show_studio_page(StudioPage::SceneBuilderPage);
+  visual_index_script_missing_reported_scene_key_.clear();
+  visual_index_regen_failure_reported_scene_key_.clear();
+  visual_index_regen_throttle_session_active_ = false;
   append_studio_log(
     QString("%1: opened Scene Builder for '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
   return true;
@@ -2545,8 +2548,14 @@ void MainWindow::select_scene_by_row(int row)
 {
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
+  const QString previous_scene_path = selected_scene_path();
   selected_scene_index_ = row;
   sync_selected_scene_state();
+  if (previous_scene_path != selected_scene_path()) {
+    visual_index_script_missing_reported_scene_key_.clear();
+    visual_index_regen_failure_reported_scene_key_.clear();
+    visual_index_regen_throttle_session_active_ = false;
+  }
   sync_selected_item_state();
   const auto & s = scene_browser_result_.scenes[(size_t)row];
   refresh_scene_builder_selected_scene_ui();
@@ -4847,13 +4856,39 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
   if (refresh_urdf_visual_index) {
+    const QString regen_scene_key =
+      QString::fromStdString(d.string()) + "::" + QString::fromStdString(d.filename().string());
     append_studio_log("Visual mesh index stale; regenerating");
     QProcess regen_proc;
     QStringList regen_args;
-    regen_args << QString::fromStdString((fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py").string()) << "--scene" << QString::fromStdString(d.filename().string()) << "--prefer-xacro";
-    const int code = QProcess::execute("python3", regen_args);
-    if (code == 0) append_studio_log("Visual mesh index regenerated with xacro");
-    else append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    const fs::path helper_script = fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py";
+    const QString helper_script_path = QString::fromStdString(helper_script.string());
+    regen_args << helper_script_path << "--scene" << QString::fromStdString(d.filename().string()) << "--prefer-xacro";
+    if (!fs::exists(helper_script)) {
+      if (visual_index_script_missing_reported_scene_key_ != regen_scene_key || !visual_index_regen_throttle_session_active_) {
+        append_studio_log(
+          QString("Visual mesh index regeneration skipped for scene '%1': helper script missing. Searched strategy: relative scripts path (%2) with --prefer-xacro.")
+          .arg(QString::fromStdString(d.filename().string()), helper_script_path));
+        visual_index_script_missing_reported_scene_key_ = regen_scene_key;
+      }
+      visual_index_regen_throttle_session_active_ = true;
+      append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+    } else {
+      const int code = QProcess::execute("python3", regen_args);
+      if (code == 0) {
+        append_studio_log("Visual mesh index regenerated with xacro");
+      } else {
+        if (visual_index_regen_failure_reported_scene_key_ != regen_scene_key || !visual_index_regen_throttle_session_active_) {
+          append_studio_log(
+            QString("Visual mesh index regeneration failed for scene '%1' (exit=%2).")
+            .arg(QString::fromStdString(d.filename().string()))
+            .arg(code));
+          visual_index_regen_failure_reported_scene_key_ = regen_scene_key;
+        }
+        visual_index_regen_throttle_session_active_ = true;
+        append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+      }
+    }
   }
   if (fs::exists(urdf_visual_index)) {
     try {
