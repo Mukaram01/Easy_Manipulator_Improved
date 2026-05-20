@@ -47,6 +47,20 @@ def matmul4(a, b):
     return [[sum(a[r][k] * b[k][c] for k in range(4)) for c in range(4)] for r in range(4)]
 
 
+def xyz_rpy_from_tf(tf):
+    x, y, z = tf[0][3], tf[1][3], tf[2][3]
+    sy = -tf[2][0]
+    pitch = math.asin(max(-1.0, min(1.0, sy)))
+    cp = math.cos(pitch)
+    if abs(cp) > 1e-8:
+        roll = math.atan2(tf[2][1], tf[2][2])
+        yaw = math.atan2(tf[1][0], tf[0][0])
+    else:
+        roll = math.atan2(-tf[1][2], tf[1][1])
+        yaw = 0.0
+    return {"xyz": [x, y, z], "rpy": [roll, pitch, yaw]}
+
+
 def tf_from_xyz_rpy(xyz, rpy):
     x, y, z = (xyz + [0.0, 0.0, 0.0])[:3]
     rr, pp, yy = (rpy + [0.0, 0.0, 0.0])[:3]
@@ -95,11 +109,16 @@ def parse_urdf_graph(root: ET.Element):
 def compute_link_world_tfs(link_graph, roots):
     world = {}
     status = {k: 'local_only' for k in link_graph.keys()}
+    parent_joint = {}
+    parent_link = {}
+    chain_map = {}
     warnings = []
 
     def dfs(link, cur_tf, stack):
         world[link] = cur_tf
         status[link] = 'resolved'
+        if link not in chain_map:
+            chain_map[link] = []
         for j in link_graph.get(link, {}).get('outbound_joints', []):
             child = j.get('child', '')
             if not child:
@@ -112,6 +131,9 @@ def compute_link_world_tfs(link_graph, roots):
                 continue
             # static/default view: joint value = 0 for revolute/continuous/prismatic, so origin-only tf
             child_tf = matmul4(cur_tf, tf_from_xyz_rpy(j['origin']['xyz'], j['origin']['rpy']))
+            parent_joint[child] = j
+            parent_link[child] = link
+            chain_map[child] = chain_map.get(link, []) + [j.get('name', '') or f"{j.get('parent', '')}->{j.get('child', '')}"]
             dfs(child, child_tf, stack + [child])
 
     if not roots and link_graph:
@@ -129,7 +151,8 @@ def compute_link_world_tfs(link_graph, roots):
         else:
             world[link] = identity_tf()
             status[link] = 'local_only'
-    return world, status, warnings
+            chain_map.setdefault(link, [])
+    return world, status, parent_link, parent_joint, chain_map, warnings
 
 
 def discover_package_map(scene_dir: Path):
@@ -227,7 +250,7 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
         root = ET.fromstring(xml_text)
         idx = 0
         link_graph, joints, roots = parse_urdf_graph(root)
-        link_world_tfs, link_status, gw = compute_link_world_tfs(link_graph, roots)
+        link_world_tfs, link_status, link_parent, link_parent_joint, link_chain_map, gw = compute_link_world_tfs(link_graph, roots)
         warnings.extend(gw)
         for link in root.findall('.//link'):
             lname = link.attrib.get('name', 'unknown_link')
@@ -242,11 +265,24 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                 visual_tf = tf_from_xyz_rpy(parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3), parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3))
                 link_tf = link_world_tfs.get(lname, identity_tf())
                 world_visual_tf = matmul4(link_tf, visual_tf)
+                local_pose = xyz_rpy_from_tf(visual_tf)
+                link_pose = xyz_rpy_from_tf(link_tf)
+                world_pose = xyz_rpy_from_tf(world_visual_tf)
+                joint_chain = link_chain_map.get(lname, [])
+                tstatus = link_status.get(lname, 'local_only')
+                parent = link_parent.get(lname, '')
+                transform_source = f"{tstatus}; link={lname}; parent={parent or 'none'}; chain_len={len(joint_chain)}"
                 items.append({"id": f"urdf_visual_{idx}_{lname}", "link": lname, "visual": visual.attrib.get('name', ''),
+                              "parent_link": parent,
                               "source_path": src, "package_uri": normalized,
-                              "pose": {"xyz": parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3), "rpy": parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3)},
+                              "pose": world_pose,
+                              "local_visual_pose": local_pose,
+                              "link_world_pose": link_pose,
                               "world_visual_tf": world_visual_tf,
-                              "link_status": link_status.get(lname, 'local_only'),
+                              "joint_chain": joint_chain,
+                              "transform_source": transform_source,
+                              "transform_status": tstatus,
+                              "link_status": tstatus,
                               "scale": parse_vec(mesh.attrib.get('scale'), 3, 1.0), "material": {}, "category": cat(lname), "resolved": bool(src), "warning": warn})
                 if warn: warnings.append(warn)
                 idx += 1
@@ -258,7 +294,10 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
         src, normalized = resolve_uri(m.group(1), scene_dir, package_map, args)
         warn = "" if src else f"unresolved mesh path: {normalized}"
         items.append({"id": f"urdf_visual_regex_{idx}", "link": "unknown_link", "visual": "", "source_path": src, "package_uri": normalized,
-                      "pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "scale": [1,1,1], "material": {}, "category": "unknown_visual", "resolved": bool(src), "warning": warn})
+                      "pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "local_visual_pose": {"xyz": [0,0,0], "rpy": [0,0,0]},
+                      "link_world_pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "parent_link": "", "joint_chain": [],
+                      "transform_source": "local_only; regex_fallback", "transform_status": "local_only",
+                      "scale": [1,1,1], "material": {}, "category": "unknown_visual", "resolved": bool(src), "warning": warn})
         if warn: warnings.append(warn)
     return items, warnings
 
@@ -285,6 +324,7 @@ def main():
         "unresolved_mesh_warning_count": 0,
         "has_transform_collapse_warnings": False,
         "has_unresolved_mesh_warnings": False,
+        "transform_status_counts": {"resolved": 0, "partial": 0, "local_only": 0},
         "scenes": [],
     }
     for scene_dir in scenes:
@@ -306,7 +346,7 @@ def main():
         else:
             warnings.append(f"missing urdf_xacro: {urdf_path}")
         if not items:
-            items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"scale":[1,1,1],"material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
+            items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","parent_link":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"local_visual_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"link_world_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"joint_chain":[],"transform_source":"local_only; unresolved_fallback","transform_status":"local_only","scale":[1,1,1],"material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
 
         collapse_warning = "all visual poses collapsed; transform assembly likely failed"
         has_transform_collapse_warning = has_collapsed_visual_poses(items)
@@ -315,6 +355,12 @@ def main():
 
         unresolved_mesh_warnings = [w for w in warnings if w.startswith("unresolved mesh path:")]
         has_unresolved_mesh_warning = bool(unresolved_mesh_warnings)
+        scene_transform_counts = {"resolved": 0, "partial": 0, "local_only": 0}
+        for item in items:
+            ts = item.get("transform_status", "local_only")
+            if ts not in scene_transform_counts:
+                ts = "local_only"
+            scene_transform_counts[ts] += 1
 
         out = scene_dir / "generated" / "scene_visual_mesh_index.json"
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -325,9 +371,12 @@ def main():
         report["unresolved_mesh_warning_count"] += len(unresolved_mesh_warnings)
         report["has_transform_collapse_warnings"] = report["has_transform_collapse_warnings"] or has_transform_collapse_warning
         report["has_unresolved_mesh_warnings"] = report["has_unresolved_mesh_warnings"] or has_unresolved_mesh_warning
+        for k in report["transform_status_counts"].keys():
+            report["transform_status_counts"][k] += scene_transform_counts[k]
         report["scenes"].append({
             "scene": scene_dir.name,
             "visual_count": len(items),
+            "transform_status_counts": scene_transform_counts,
             "has_transform_collapse_warning": has_transform_collapse_warning,
             "unresolved_mesh_warning_count": len(unresolved_mesh_warnings),
             "warnings": warnings,
