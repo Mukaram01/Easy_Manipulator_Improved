@@ -144,18 +144,22 @@ def test_validator_fails_for_top_header_label_hacks():
 
 def test_validator_fails_when_new_forbidden_always_visible_buttons_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQPushButton *btn = new QPushButton("Delete Scene", scene_builder);\nQPushButton *btn2 = new QPushButton("Select", scene_builder);\nQPushButton *btn3 = new QPushButton("Place Asset", scene_builder);\nQPushButton *btn4 = new QPushButton("Move", scene_builder);\nQPushButton *btn5 = new QPushButton("Inspect", scene_builder);\nQPushButton *btn6 = new QPushButton("Save Layout", scene_builder);\nQPushButton *btn7 = new QPushButton("Undo", scene_builder);\nQPushButton *btn8 = new QPushButton("Redo", scene_builder);\nQPushButton *btn9 = new QPushButton("Validate", scene_builder);\nQPushButton *btn10 = new QPushButton("Plan", scene_builder);\nQPushButton *btn11 = new QPushButton("Simulate", scene_builder);\nQPushButton *btn12 = new QPushButton("Export", scene_builder);\n'
+    broken["mainwindow_cpp"] += '\nQPushButton *btn = new QPushButton("Delete Scene", scene_builder);\nQPushButton *btn2 = new QPushButton("Select", scene_builder);\nQPushButton *btn3 = new QPushButton("Place Asset", scene_builder);\nQPushButton *btn4 = new QPushButton("Move", scene_builder);\nQPushButton *btn5 = new QPushButton("Inspect", scene_builder);\nQPushButton *btn6 = new QPushButton("Save Layout", scene_builder);\nQPushButton *btn7 = new QPushButton("Undo", scene_builder);\nQPushButton *btn8 = new QPushButton("Redo", scene_builder);\nQPushButton *btn9 = new QPushButton("Validate", scene_builder);\nQPushButton *btn10 = new QPushButton("Plan", scene_builder);\nQPushButton *btn11 = new QPushButton("Simulate", scene_builder);\nQPushButton *btn12 = new QPushButton("Export", scene_builder);\ndashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_);\ndashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_);\ndashboard_plan_button_ = new QPushButton("Plan / Simulate", dashboard_selected_scene_card_);\ndashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_);\ndashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_);\n'
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
 
     assert "forbidden direct top-bar primary actions" in failed
     assert "allowed visible top-level set only" in failed
+    assert "forbidden always-visible selected-scene action buttons" in failed
 
 
 def test_validator_allows_forbidden_labels_in_actions_tab_or_menus_only():
-    checks = run_checks(_base_fixture())
+    fixture = _base_fixture()
+    fixture["mainwindow_cpp"] += '\nQToolButton *dashboard_scene_actions_button_ = new QToolButton(this);\nQMenu *dashboard_scene_actions_menu_ = new QMenu(this);\ndashboard_scene_actions_menu_->addAction("Open in Scene Builder");\ndashboard_scene_actions_menu_->addAction("Validate");\ndashboard_scene_actions_menu_->addAction("Plan / Simulate");\ndashboard_scene_actions_menu_->addAction("Export");\ndashboard_scene_actions_menu_->addSeparator();\ndashboard_scene_actions_menu_->addAction("Delete Scene");\n'
+    checks = run_checks(fixture)
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" not in failed
+    assert "forbidden always-visible selected-scene action buttons" not in failed
 
 
 def test_validator_rejects_explicit_trailing_underscore_nav_labels():
