@@ -1,0 +1,27 @@
+schema_version: workcell_studio_layout/v1
+items:
+  - id: robot_base
+    type: robot
+    pose:
+      xyz: [0.0, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+  - id: table_main
+    type: table
+    pose:
+      xyz: [0.5, 0.0, 0.0]
+      rpy: [0.0, 0.0, 0.0]
+  - id: pick_zone
+    type: pick_zone
+    pose:
+      xyz: [0.12, 0.0, 0.74]
+      rpy: [0.0, 0.0, 0.0]
+  - id: place_zone_a
+    type: place_zone
+    pose:
+      xyz: [0.40, -0.20, 0.74]
+      rpy: [0.0, 0.0, 0.0]
+  - id: place_zone_b
+    type: place_zone
+    pose:
+      xyz: [0.40, 0.00, 0.74]
+      rpy: [0.0, 0.0, 0.0]
