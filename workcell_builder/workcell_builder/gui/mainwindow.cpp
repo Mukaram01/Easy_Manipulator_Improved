@@ -4833,6 +4833,28 @@ void MainWindow::populate_scene_hierarchy()
   QSet<QString> preview_ids;
   for (const auto &existing : preview_items) preview_ids.insert(existing.id);
   const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+  bool refresh_urdf_visual_index = !fs::exists(urdf_visual_index);
+  if (fs::exists(urdf_visual_index)) {
+    try {
+      const YAML::Node existing_index = YAML::LoadFile(urdf_visual_index.string());
+      const bool safe_for_preview = workcell_builder::yaml_map_key(existing_index, "safe_for_preview").as<bool>(false);
+      if (!safe_for_preview) {
+        refresh_urdf_visual_index = true;
+        append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+      }
+    } catch (...) {
+      refresh_urdf_visual_index = true;
+    }
+  }
+  if (refresh_urdf_visual_index) {
+    append_studio_log("Visual mesh index stale; regenerating");
+    QProcess regen_proc;
+    QStringList regen_args;
+    regen_args << QString::fromStdString((fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py").string()) << "--scene" << QString::fromStdString(d.filename().string()) << "--prefer-xacro";
+    const int code = QProcess::execute("python3", regen_args);
+    if (code == 0) append_studio_log("Visual mesh index regenerated with xacro");
+    else append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
+  }
   if (fs::exists(urdf_visual_index)) {
     try {
       const YAML::Node urdf_index = YAML::LoadFile(urdf_visual_index.string());
