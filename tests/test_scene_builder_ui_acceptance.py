@@ -107,7 +107,7 @@ def test_validator_fails_when_undo_redo_are_direct_canvas_buttons():
 
 def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQAction *validate = toolbar->addAction("Validate");\n'
+    broken["mainwindow_cpp"] += '\nQPushButton *validate = new QPushButton("Validate", scene_builder);\n'
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" in failed
@@ -139,6 +139,32 @@ def test_validator_fails_for_top_header_label_hacks():
     assert "top-header labels are exact and menu-hint free" in failed
     assert any("forbidden top-header label hack" in d for d in failed["top-header labels are exact and menu-hint free"])
 
+
+
+
+def test_validator_fails_when_new_forbidden_always_visible_buttons_exist():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\nQPushButton *btn = new QPushButton("Delete Scene", scene_builder);\nQPushButton *btn2 = new QPushButton("Select", scene_builder);\nQPushButton *btn3 = new QPushButton("Place Asset", scene_builder);\nQPushButton *btn4 = new QPushButton("Move", scene_builder);\nQPushButton *btn5 = new QPushButton("Inspect", scene_builder);\nQPushButton *btn6 = new QPushButton("Save Layout", scene_builder);\nQPushButton *btn7 = new QPushButton("Undo", scene_builder);\nQPushButton *btn8 = new QPushButton("Redo", scene_builder);\nQPushButton *btn9 = new QPushButton("Validate", scene_builder);\nQPushButton *btn10 = new QPushButton("Plan", scene_builder);\nQPushButton *btn11 = new QPushButton("Simulate", scene_builder);\nQPushButton *btn12 = new QPushButton("Export", scene_builder);\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+
+    assert "forbidden direct top-bar primary actions" in failed
+    assert "allowed visible top-level set only" in failed
+
+
+def test_validator_allows_forbidden_labels_in_actions_tab_or_menus_only():
+    checks = run_checks(_base_fixture())
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "forbidden direct top-bar primary actions" not in failed
+
+
+def test_validator_rejects_explicit_trailing_underscore_nav_labels():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\nQLabel *hack1 = new QLabel("Run Next_");\nQLabel *hack2 = new QLabel("More_");\nQLabel *hack3 = new QLabel("Scenes/Open_");\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+
+    assert "top-header labels reject trailing underscore hacks" in failed
 
 def test_repository_ui_acceptance_validator_runs_on_current_sources():
     checks = run_checks()

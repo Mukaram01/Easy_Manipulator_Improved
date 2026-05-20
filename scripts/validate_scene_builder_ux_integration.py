@@ -51,7 +51,9 @@ def main() -> int:
         top_labels[button] = m.group(1) if m else ""
     no_label_hacks = all("/" not in text and not text.endswith("_") for text in top_labels.values())
     ok.append(check("top header labels avoid slash/underscore hacks", no_label_hacks))
-    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness)\"", mainwindow_cpp)
+    trailing_underscore_hacks = [label for label in ["Run Next_", "More_", "Scenes/Open_"] if label in mainwindow_cpp]
+    ok.append(check("top header trailing underscore nav-label hacks absent", len(trailing_underscore_hacks) == 0, detail=str(trailing_underscore_hacks)))
+    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness|Delete Scene|Select|Place Asset|Move|Inspect|Save Layout|Undo|Redo)\"", mainwindow_cpp)
     ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
     ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Layout", "Generate", "Validate", "Simulate", "Export", "Diagnostics"])))
