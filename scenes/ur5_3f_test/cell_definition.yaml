@@ -1,0 +1,36 @@
+schema_version: cell_definition/v1
+cell:
+  id: ur5_3f_test
+  name: ur5_3f_test
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+end_effector:
+  id: robotiq_3f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+environment:
+  frame: world
+  layout: layout/workcell_studio_layout.yaml
+task:
+  id: default_task
+  type: pick_place
+  source_object: commissioning_object
+  destinations:
+    - id: default_drop_zone
+      frame: world
+      pose_xyz: [0.5, -0.3, 0.1]
+      pose_rpy: [0.0, 0.0, 0.0]
+  rules:
+    - id: default_place
+      when:
+        always: true
+      destination: default_drop_zone
+commissioning:
+  self_test_enabled: true
+  export_bundle: false
