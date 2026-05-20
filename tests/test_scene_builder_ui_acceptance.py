@@ -72,6 +72,21 @@ def _base_fixture() -> dict[str, str]:
                 'QString parity = "Canvas/Generated Parity";',
                 'QString undo_layout = "Undo Layout Edit";',
                 'QString redo_layout = "Redo Layout Edit";',
+                'dashboard_scene_actions_button_ = new QToolButton(dashboard_selected_scene_card_);',
+                'dashboard_scene_actions_button_->setText("Scene Actions");',
+                'dashboard_scene_actions_menu_ = new QMenu(dashboard_scene_actions_button_);',
+                'dashboard_open_scene_action_ = dashboard_scene_actions_menu_->addAction("Open in Scene Builder");',
+                'dashboard_validate_action_ = dashboard_scene_actions_menu_->addAction("Validate");',
+                'dashboard_plan_action_ = dashboard_scene_actions_menu_->addAction("Plan / Simulate");',
+                'dashboard_export_action_ = dashboard_scene_actions_menu_->addAction("Export");',
+                'dashboard_scene_actions_menu_->addSeparator();',
+                'dashboard_delete_action_ = dashboard_scene_actions_menu_->addAction("Delete Scene");',
+                'dashboard_scene_actions_button_->setMenu(dashboard_scene_actions_menu_);',
+                'connect(dashboard_open_scene_action_, &QAction::triggered, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });',
+                'connect(dashboard_validate_action_, &QAction::triggered, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });',
+                'connect(dashboard_plan_action_, &QAction::triggered, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });',
+                'connect(dashboard_export_action_, &QAction::triggered, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });',
+                'connect(dashboard_delete_action_, &QAction::triggered, this, &MainWindow::delete_selected_scene);',
             ]
         ),
         "preview_cpp": "Preview panel supports 2D Layout and 3D Layout Preview. Actions Layout Generate Validate Simulate Export Diagnostics",
@@ -159,6 +174,13 @@ def test_validator_allows_forbidden_labels_in_actions_tab_or_menus_only():
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" not in failed
     assert "forbidden always-visible selected-scene action buttons" not in failed
+
+
+def test_repository_contract_rejects_reintroduced_selected_scene_direct_buttons():
+    checks = run_checks()
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "forbidden always-visible selected-scene action buttons" not in failed
+    assert "selected-scene card exposes only Scene Actions control with menu wiring" not in failed
 
 
 def test_validator_rejects_explicit_trailing_underscore_nav_labels():
