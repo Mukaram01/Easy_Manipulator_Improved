@@ -17,6 +17,7 @@ def fn_body(src: str, signature_prefix: str) -> str:
 
 def main():
     src = CPP.read_text(encoding="utf-8")
+    diag_src = (ROOT / "scripts/validate_scene3d_visual_diagnostics.py").read_text(encoding="utf-8")
     body = fn_body(src, "bool Scene3DViewportWidget::draw_mesh_preview_if_available")
     for token in [
         "MeshPreviewMode::Primitives",
@@ -90,6 +91,9 @@ def main():
         '"pose"',
     ]:
         must(token in extractor_src, f"missing visual schema token: {token}")
+    # extended report/placeholder contract
+    for token in ["candidate_mesh_count","emitted_visual_count","skipped_duplicate_count","skipped_unresolved_macro_count","unresolved xacro substitution placeholder","fallback_asset_search"]:
+        must(token in extractor_src or token in diag_src, f"missing extended contract token: {token}")
 
     # Contract: collapsed-pose detection + warning emission are implemented.
     for token in [
@@ -105,7 +109,6 @@ def main():
         must(token in test_src, f"missing test assertion token: {token}")
 
 
-    diag_src = (ROOT / "scripts/validate_scene3d_visual_diagnostics.py").read_text(encoding="utf-8")
     for token in [
         "workcell_studio_scene3d_visual_diagnostics.json",
         "loaded_mesh_count",

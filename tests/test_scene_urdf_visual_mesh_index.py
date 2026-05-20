@@ -31,6 +31,9 @@ def test_scene_urdf_visual_mesh_index_generation():
     assert 'mesh_format_counts' in data
     assert data.get('renderable_mesh_count', 0) > 0
 
+    assert data.get('candidate_mesh_count', 0) >= data.get('emitted_visual_count', 0)
+    assert 'unresolved_placeholder_count' in data
+
     # Gather per-scene index data for data-driven validation.
     scene_payloads = []
     all_items = []
@@ -57,7 +60,7 @@ def test_scene_urdf_visual_mesh_index_generation():
         if 'transform_status' in i
     ]
     if transform_status_values:
-        assert 'resolved' in transform_status_values
+        assert ('resolved' in transform_status_values) or ('partial' in transform_status_values)
     else:
         assert any(i.get('resolved') for i in all_items)
 
@@ -95,6 +98,9 @@ def test_scene_urdf_visual_mesh_index_generation():
     dae_present = any((i.get('mesh_extension') or '').lower() == '.dae' for i in all_items)
     if dae_present:
         assert mesh_counts.get('.dae', 0) > 0
+
+    bad_resolved = [i for i in all_items if i.get('transform_status') == 'resolved' and any(tok in str(i.get(k,'')) for k in ['id','link','parent_link'] for tok in ['${','$(arg '])]
+    assert not bad_resolved
 
 
 def test_scene3d_visual_diagnostics_report_generation():

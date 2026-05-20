@@ -75,9 +75,9 @@
       "joint_chain": [
         "table_base_joint_${prefix}"
       ],
-      "transform_source": "resolved; link=table_${prefix}; parent=${parent}; chain_len=1",
-      "transform_status": "resolved",
-      "link_status": "resolved",
+      "transform_source": "resolved; link=table_${prefix}; parent=${parent}; chain_len=1; unresolved_placeholder",
+      "transform_status": "partial",
+      "link_status": "partial",
       "scale": [
         0.001,
         0.001,
@@ -86,7 +86,7 @@
       "material": {},
       "category": "environment_visual",
       "resolved": true,
-      "warning": "",
+      "warning": "unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
       "render_warning": ""
@@ -164,9 +164,9 @@
         "${name}_joint",
         "${name}_link_joint"
       ],
-      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2",
-      "transform_status": "resolved",
-      "link_status": "resolved",
+      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2; unresolved_placeholder",
+      "transform_status": "partial",
+      "link_status": "partial",
       "scale": [
         1.0,
         1.0,
@@ -175,7 +175,7 @@
       "material": {},
       "category": "unknown_visual",
       "resolved": true,
-      "warning": "",
+      "warning": "unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
       "mesh_extension": ".dae",
       "render_expected": true,
       "render_warning": ""
@@ -252,9 +252,9 @@
       "joint_chain": [
         "${prefix}gripper_base_joint"
       ],
-      "transform_source": "resolved; link=${prefix}gripper_base_link; parent=${parent}; chain_len=1",
-      "transform_status": "resolved",
-      "link_status": "resolved",
+      "transform_source": "resolved; link=${prefix}gripper_base_link; parent=${parent}; chain_len=1; unresolved_placeholder",
+      "transform_status": "partial",
+      "link_status": "partial",
       "scale": [
         0.001,
         0.001,
@@ -263,7 +263,7 @@
       "material": {},
       "category": "robot_visual",
       "resolved": false,
-      "warning": "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl",
+      "warning": "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl; unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
       "render_warning": ""
@@ -272,6 +272,8 @@
   "warnings": [
     "xacro executable unavailable; using best_effort parsing",
     "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro",
-    "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl"
+    "unresolved xacro substitution placeholder",
+    "unresolved xacro substitution placeholder",
+    "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl; unresolved xacro substitution placeholder"
   ]
 }

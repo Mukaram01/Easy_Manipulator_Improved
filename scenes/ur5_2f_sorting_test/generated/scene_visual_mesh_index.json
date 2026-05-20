@@ -76,9 +76,9 @@
         "${name}_joint",
         "${name}_link_joint"
       ],
-      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2",
-      "transform_status": "resolved",
-      "link_status": "resolved",
+      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2; unresolved_placeholder",
+      "transform_status": "partial",
+      "link_status": "partial",
       "scale": [
         1.0,
         1.0,
@@ -87,7 +87,7 @@
       "material": {},
       "category": "unknown_visual",
       "resolved": true,
-      "warning": "",
+      "warning": "unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
       "mesh_extension": ".dae",
       "render_expected": true,
       "render_warning": ""
@@ -96,6 +96,7 @@
   "warnings": [
     "xacro executable unavailable; using best_effort parsing",
     "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro",
-    "link disconnected from root propagation: "
+    "link disconnected from root propagation: ",
+    "unresolved xacro substitution placeholder"
   ]
 }
