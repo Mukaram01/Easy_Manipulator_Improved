@@ -98,6 +98,7 @@
 #include <functional>
 #include <iostream>
 #include <string>
+#include <utility>
 #include "workcell_builder_ui_utils.hpp"
 
 
@@ -176,6 +177,15 @@ protected:
     return QGraphicsRectItem::itemChange(change, value);
   }
 };
+
+template <typename Sender, typename Receiver, typename Signal, typename Slot>
+void connect_if(Sender * sender, Receiver * receiver, Signal signal, Slot && slot)
+{
+  if (!sender || !receiver) {
+    return;
+  }
+  QObject::connect(sender, signal, receiver, std::forward<Slot>(slot));
+}
 
 bool is_empty_directory(const fs::path & directory_path)
 {
