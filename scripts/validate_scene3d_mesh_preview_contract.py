@@ -104,6 +104,20 @@ def main():
     for token in ["assert data['resolved'] > 0", "assert 'mesh_format_counts' in data", "assert data.get('renderable_mesh_count', 0) > 0"]:
         must(token in test_src, f"missing test assertion token: {token}")
 
+
+    diag_src = (ROOT / "scripts/validate_scene3d_visual_diagnostics.py").read_text(encoding="utf-8")
+    for token in [
+        "workcell_studio_scene3d_visual_diagnostics.json",
+        "loaded_mesh_count",
+        "failed_mesh_count",
+        "world_bounds",
+        "largest_mesh",
+        "smallest_mesh",
+        "many mesh items share identical world positions",
+        "extreme mesh scale detected",
+    ]:
+        must(token in diag_src, f"missing diagnostics token: {token}")
+
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")

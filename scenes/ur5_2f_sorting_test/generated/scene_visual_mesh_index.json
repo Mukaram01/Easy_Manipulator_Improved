@@ -7,6 +7,1068 @@
       "id": "urdf_visual_regex_0",
       "link": "unknown_link",
       "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_1",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_base_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_base_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_2",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_3",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_4",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_5",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_6",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_7",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_8",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_9",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_10",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_11",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_12",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_13",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_14",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_15",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_16",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_17",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "package_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": "",
+      "mesh_extension": ".stl",
+      "render_expected": true,
+      "render_warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_18",
+      "link": "unknown_link",
+      "visual": "",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
       "pose": {
@@ -65,6 +1127,7 @@
   ],
   "warnings": [
     "xacro executable unavailable; using best_effort parsing",
-    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro"
+    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro",
+    "all visual poses collapsed; transform assembly likely failed"
   ]
 }
