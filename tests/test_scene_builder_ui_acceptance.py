@@ -65,6 +65,10 @@ def _base_fixture() -> dict[str, str]:
                 'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
                 'QString side_tab = "Actions";',
                 'QString grouped = "Grouped sections";',
+                'QString validate_label = "Validate";',
+                'QString simulate_label = "Simulate";',
+                'QString export_label = "Export";',
+                'QString diagnostics_label = "Diagnostics";',
                 'QString parity = "Canvas/Generated Parity";',
             ]
         ),
@@ -91,12 +95,48 @@ def test_validator_fails_with_clear_diagnostics_when_tokens_or_patterns_missing(
     assert "fixed-width button anti-pattern checks" in failed
 
 
-def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
+def test_validator_fails_when_forbidden_direct_always_visible_actions_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQAction *validate = toolbar->addAction("Validate");\n'
+    broken["mainwindow_cpp"] += (
+        '\nQToolBar* toolbar = new QToolBar(this);'
+        '\ntoolbar->addWidget(new QPushButton("Validate", this));'
+        '\ntoolbar->addWidget(new QPushButton("Plan / Simulate", this));'
+        '\ntoolbar->addWidget(new QToolButton(this)); // Select'
+        '\ntoolbar->addWidget(new QPushButton("Delete Scene", this));\n'
+    )
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" in failed
+
+
+def test_validator_allows_forbidden_labels_when_only_in_menu_or_actions_tab():
+    allowed = _base_fixture()
+    allowed["mainwindow_cpp"] += "\n" + "\n".join([
+        "actions_menu->addAction(\"Validate\");",
+        "actions_menu->addAction(\"Plan / Simulate\");",
+        "actions_menu->addAction(\"Plan\");",
+        "actions_menu->addAction(\"Simulate\");",
+        "actions_menu->addAction(\"Export\");",
+        "actions_menu->addAction(\"Delete Scene\");",
+        "actions_menu->addAction(\"Select\");",
+        "actions_menu->addAction(\"Place Asset\");",
+        "actions_menu->addAction(\"Move\");",
+        "actions_menu->addAction(\"Inspect\");",
+        "actions_menu->addAction(\"Save Layout\");",
+        "actions_menu->addAction(\"Undo\");",
+        "actions_menu->addAction(\"Redo\");",
+    ])
+    checks = run_checks(allowed)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "forbidden direct top-bar primary actions" not in failed
+
+
+def test_validator_rejects_trailing_underscore_nav_labels():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += "\nQString bad1 = \"Run Next_\";\nQString bad2 = \"More_\";\nQString bad3 = \"Scenes/Open_\";\n"
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "no trailing-underscore nav labels" in failed
 
 
 def test_validator_reports_new_scene3d_acceptance_failures_when_markers_absent():

@@ -28,7 +28,7 @@ def main() -> int:
     model_cpp = read("workcell_builder/workcell_builder/src_workcell_studio_canvas_model.cpp")
 
     ok = []
-    ok.append(check("primary actions present", all(t in mainwindow_cpp for t in ["Select", "Place Asset", "Move", "Inspect", "Save Layout"])))
+    ok.append(check("primary actions available in actions/menu surfaces", all(t in mainwindow_cpp for t in ["Select", "Place Asset", "Move", "Inspect", "Save Layout"])))
     ok.append(check("secondary menus present", all(t in mainwindow_cpp for t in ["Overlays", "Canvas More", "Visual Modes", "Label mode", "Mesh preview mode", "Snap mode"])))
     ok.append(check("toolbar overflow wiring", all(t in mainwindow_cpp + mainwindow_h for t in ["scene_builder_secondary_overflow_button_", "scene_builder_secondary_overflow_menu_", "update_scene_builder_top_controls_overflow"])) )
     ok.append(check("no fixed-width toolbar anti-pattern", "setFixedWidth" not in mainwindow_cpp or "button" not in mainwindow_cpp))
@@ -39,8 +39,10 @@ def main() -> int:
     ok.append(check("viewport helper passes", all(t in viewport_h + viewport_cpp for t in ["draw_ground_grid_pass", "draw_world_axes_pass", "scene_bounds_from_visible_items", "View: 3D"])) )
     ok.append(check("fake-hardware safety token retained", "use_fake_hardware:=true" in mainwindow_cpp))
     ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes/Open", "Run Next", "More"])))
-    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness)\"", mainwindow_cpp)
-    ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
+    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Plan\s*/\s*Simulate|Export|Readiness|Delete Scene|Select|Place Asset|Move|Inspect|Save Layout|Undo|Redo)\"", mainwindow_cpp)
+    ok.append(check("forbidden direct always-visible button actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
+    trailing_nav = re.findall(r"\"(?:Run\s+Next_|More_|Scenes/Open_)\"", mainwindow_cpp)
+    ok.append(check("no trailing-underscore nav labels", len(trailing_nav) == 0, detail=str(trailing_nav)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
     ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Layout", "Generate", "Validate", "Simulate", "Export", "Diagnostics"])))
     ok.append(check("shared action registry exists", "scene_builder_action_registry_" in mainwindow_h and "register_scene_builder_action" in mainwindow_cpp))
