@@ -1,5 +1,14 @@
 scene:
   name: ur5_2f_builder_pick_place_demo
+  folder: scenes/ur5_2f_builder_pick_place_demo
+  package: ur5_2f_builder_pick_place_demo
+
+files:
+  environment: environment.yaml
+  cell_definition: cell_definition.yaml
+  layout: layout/workcell_studio_layout.yaml
+  launch: launch/demo.launch.py
+  urdf_xacro: urdf/scene.urdf.xacro
 
 robot:
   model: ur5
