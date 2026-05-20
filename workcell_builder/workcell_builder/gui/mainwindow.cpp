@@ -1156,7 +1156,7 @@ void MainWindow::setup_studio_shell()
   mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
   auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(true);
   auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(true);
-  overlays_button->setMenu(overlays_menu); controls->addWidget(overlays_button);
+  overlays_button->setMenu(overlays_menu);
   connect(show_warnings_action, &QAction::toggled, toggle_warnings_box_, &QCheckBox::setChecked);
   connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
   connect(show_approach_retreat_overlay_box, &QCheckBox::toggled, this, [this, show_approach_retreat_overlay_box](bool){
@@ -1192,7 +1192,6 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Toggle Labels")->setCheckable(true);
   canvas_more_menu->addAction("Toggle Warnings")->setCheckable(true);
   canvas_more_actions->setMenu(canvas_more_menu);
-  controls->addWidget(canvas_more_actions);
   scene_builder_visual_modes_button_ = new QToolButton(scene_builder);
   scene_builder_visual_modes_button_->setObjectName("scene_builder_secondary_visual_modes_button");  // acceptance: secondary grouped actions
   scene_builder_visual_modes_button_->setText("Visual Modes");
@@ -1210,12 +1209,14 @@ void MainWindow::setup_studio_shell()
   auto * snap_1cm = snap_mode_menu->addAction("Snap: 1 cm");
   auto * snap_off = snap_mode_menu->addAction("Snap Off");
   scene_builder_visual_modes_button_->setMenu(visual_modes_menu);
-  controls->addWidget(scene_builder_visual_modes_button_);
   scene_builder_secondary_overflow_button_ = new QToolButton(scene_builder);
   scene_builder_secondary_overflow_button_->setObjectName("scene_builder_secondary_overflow_button");
   scene_builder_secondary_overflow_button_->setText("More");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
+  scene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");
+  scene_builder_secondary_overflow_menu_->addMenu(visual_modes_menu)->setText("Visual Modes");
+  scene_builder_secondary_overflow_menu_->addMenu(canvas_more_menu)->setText("Layout/Edit Settings");
   auto * secondary_layout_menu = scene_builder_secondary_overflow_menu_->addMenu("Layout");
   secondary_layout_menu->addAction(scene_builder_action("layout.undo"));
   secondary_layout_menu->addAction(scene_builder_action("layout.redo"));

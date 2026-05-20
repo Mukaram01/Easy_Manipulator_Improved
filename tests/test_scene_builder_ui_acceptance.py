@@ -64,6 +64,9 @@ def _base_fixture() -> dict[str, str]:
                 'scenes_open_button->setText("Scenes");',
                 'run_next_button->setText("Run Next");',
                 'more_button->setText("More");',
+                'scene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");',
+                'scene_builder_secondary_overflow_menu_->addMenu(visual_modes_menu)->setText("Visual Modes");',
+                'scene_builder_secondary_overflow_menu_->addMenu(canvas_more_menu)->setText("Layout/Edit Settings");',
                 'QComboBox *mode = new QComboBox(this); mode->setObjectName("Mode");',
                 'QComboBox *view = new QComboBox(this); view->setObjectName("View");',
                 'QString side_tab = "Actions";',
@@ -174,6 +177,21 @@ def test_validator_allows_forbidden_labels_in_actions_tab_or_menus_only():
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" not in failed
     assert "forbidden always-visible selected-scene action buttons" not in failed
+
+def test_validator_fails_when_secondary_canvas_controls_are_added_as_direct_toolbar_widgets():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\ncontrols->addWidget(scene_builder_overlays_button_);\ncontrols->addWidget(scene_builder_canvas_more_button_);\ncontrols->addWidget(scene_builder_visual_modes_button_);\ncontrols->addWidget(toggle_grid_box_);\ncontrols->addWidget(snap_to_grid_box_);\ncontrols->addWidget(fine_move_mode_box_);\ncontrols->addWidget(unlock_robot_base_box_);\ncontrols->addWidget(toggle_labels_box_);\ncontrols->addWidget(toggle_warnings_box_);\ncontrols->addWidget(show_minimap_box_);\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "secondary canvas controls are not direct always-visible toolbar widgets" in failed
+
+
+def test_validator_allows_secondary_canvas_controls_inside_more_menu_surfaces():
+    fixture = _base_fixture()
+    fixture["mainwindow_cpp"] += '\nscene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");\nscene_builder_secondary_overflow_menu_->addMenu(visual_modes_menu)->setText("Visual Modes");\nscene_builder_secondary_overflow_menu_->addMenu(canvas_more_menu)->setText("Layout/Edit Settings");\n'
+    checks = run_checks(fixture)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "secondary canvas controls remain available in menu surfaces" not in failed
 
 
 def test_repository_contract_rejects_reintroduced_selected_scene_direct_buttons():
