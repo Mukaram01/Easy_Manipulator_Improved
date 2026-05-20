@@ -199,17 +199,30 @@ def main():
     xacro_available=shutil.which('xacro') is not None
     if a.require_xacro and not xacro_available: print('xacro executable unavailable (required)'); return 2
     scenes=[SCENES_ROOT/a.scene] if a.scene else sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()])
+    prefer = a.prefer_xacro or a.require_xacro
     report={'scene_count':0,'visual_count':0,'resolved':0,'unresolved':0,'safe_for_preview_count':0,'unsafe_preview_count':0,'xacro_expanded_count':0,'best_effort_count':0,'unresolved_placeholder_count':0,'identical_position_warning_count':0,'candidate_mesh_count':0,'emitted_visual_count':0,'mesh_format_counts':{},'renderable_mesh_count':0,'non_renderable_mesh_count':0,'skipped_unresolved_macro_count':0,'skipped_duplicate_count':0,'scenes':[]}
     for scene_dir in scenes:
       if not scene_dir.exists(): print(f'scene not found: {scene_dir.name}'); return 1
       manifest=read_yaml(scene_dir/'scene_manifest.yaml') or {}
       urdf_path=scene_dir/(((manifest.get('files') or {}).get('urdf_xacro')) or 'urdf/scene.urdf.xacro')
       package_map=discover_package_map(scene_dir); included=set(); warnings=[]; mode='best_effort'; args={'scene_dir':str(scene_dir)}
-      if a.prefer_xacro and xacro_available:
+      xacro_attempted = False
+      xacro_succeeded = False
+      if prefer and xacro_available:
+        xacro_attempted = True
         expanded,mode,w=expand_xacro(urdf_path); warnings.extend(w)
-        text=expanded if expanded else ''
+        xacro_succeeded = bool(expanded) and mode == 'xacro_expanded'
+        text=expanded if xacro_succeeded else ''
       else: text=''
+      if a.require_xacro and xacro_attempted and not xacro_succeeded:
+        warnings.append('xacro expansion required and failed; skipping best-effort fallback for this scene')
+        report['scene_count']+=1
+        report['unsafe_preview_count'] += 1
+        report['scenes'].append({'scene':scene_dir.name,'safe_for_preview':False,'extraction_mode':'xacro_required_failed','stale_index':False,'unsafe_reasons':['xacro_required_failed']})
+        continue
       if not text:
+        if a.prefer_xacro and xacro_attempted:
+          warnings.append('xacro expansion failed; falling back to best-effort recursive parse')
         text=gather_text_with_includes(urdf_path,package_map,args,set(),warnings,included); text='<robot>\n'+re.sub(r'<\?xml[^>]*\?>','',text)+'\n</robot>'; mode='best_effort_recursive'
       items,ew=extract(text,scene_dir,package_map,args); warnings.extend(ew)
       candidate=len(items)
@@ -240,6 +253,9 @@ def main():
       report['xacro_expanded_count'] += int(mode=='xacro_expanded'); report['best_effort_count'] += int(mode!='xacro_expanded')
       report['scenes'].append({'scene':scene_dir.name,'safe_for_preview':safe,'extraction_mode':mode,'stale_index':stale,'unsafe_reasons':reasons})
     (ROOT/'build').mkdir(exist_ok=True)
+    if a.require_xacro and report['xacro_expanded_count'] == 0:
+      print('require-xacro enabled but zero scenes succeeded with xacro_expanded')
+      return 3
     rpt=ROOT/'build'/'workcell_studio_urdf_visual_mesh_index_report.json'; rpt.write_text(json.dumps(report,indent=2)+'\n')
     print(f"scanned={report['scene_count']} visuals={report['visual_count']} xacro_expanded={report['xacro_expanded_count']} best_effort={report['best_effort_count']}")
     print(rpt); return 0
