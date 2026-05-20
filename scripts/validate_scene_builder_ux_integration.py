@@ -38,7 +38,21 @@ def main() -> int:
     ok.append(check("workflow rail editable layout stage", "Editable layout" in mainwindow_cpp))
     ok.append(check("viewport helper passes", all(t in viewport_h + viewport_cpp for t in ["draw_ground_grid_pass", "draw_world_axes_pass", "scene_bounds_from_visible_items", "View: 3D"])) )
     ok.append(check("fake-hardware safety token retained", "use_fake_hardware:=true" in mainwindow_cpp))
-    ok.append(check("allowed visible top-level set", all(t in mainwindow_cpp for t in ["Studio Home", "New Cell", "Scenes", "Run Next", "More"])))
+    top_header_literals_ok = all(t in mainwindow_cpp for t in ["Studio Home", "New Cell"])
+    visible_assignments = {
+        "scenes_open_button": "Scenes",
+        "run_next_button": "Run Next",
+        "more_button": "More",
+    }
+    visible_details = []
+    for button, expected in visible_assignments.items():
+        m = re.search(rf'{button}\s*->\s*setText\("([^"]+)"\);', mainwindow_cpp)
+        if not m:
+            visible_details.append(f"missing {button}")
+            continue
+        if m.group(1) != expected:
+            visible_details.append(f"{button}={m.group(1)!r}")
+    ok.append(check("allowed visible top-level set", top_header_literals_ok and len(visible_details) == 0, detail=str(visible_details)))
     top_header_exact = all(t in mainwindow_cpp for t in [
         'scenes_open_button->setText("Scenes");',
         'run_next_button->setText("Run Next");',
@@ -53,7 +67,7 @@ def main() -> int:
     ok.append(check("top header labels avoid slash/underscore hacks", no_label_hacks))
     trailing_underscore_hacks = [label for label in ["Run Next_", "More_", "Scenes/Open_"] if label in mainwindow_cpp]
     ok.append(check("top header trailing underscore nav-label hacks absent", len(trailing_underscore_hacks) == 0, detail=str(trailing_underscore_hacks)))
-    forbidden_topbar = re.findall(r"addWidget\(new\s+(?:QPushButton|QToolButton)\([^;]*\"(Validate|Generate|Plan|Simulate|Export|Readiness|Delete Scene|Select|Place Asset|Move|Inspect|Save Layout|Undo|Redo)\"", mainwindow_cpp)
+    forbidden_topbar = re.findall(r"addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"(Validate|Generate|Plan|Simulate|Export|Readiness|Delete Scene|Select|Place Asset|Move|Inspect|Save Layout|Undo|Redo)\"", mainwindow_cpp)
     ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
     ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Layout", "Generate", "Validate", "Simulate", "Export", "Diagnostics"])))
