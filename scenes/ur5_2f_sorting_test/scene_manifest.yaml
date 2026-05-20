@@ -1,5 +1,14 @@
 scene:
   name: ur5_2f_sorting_test
+  folder: scenes/ur5_2f_sorting_test
+  package: ur5_2f_sorting_test
+
+files:
+  environment: environment.yaml
+  cell_definition: cell_definition.yaml
+  layout: layout/workcell_studio_layout.yaml
+  launch: launch/demo.launch.py
+  urdf_xacro: urdf/scene.urdf.xacro
 
 robot:
   model: ur5

@@ -1,5 +1,14 @@
 scene:
   name: suction_test
+  folder: scenes/suction_test
+  package: suction_test
+
+files:
+  environment: environment.yaml
+  cell_definition: cell_definition.yaml
+  layout: layout/workcell_studio_layout.yaml
+  launch: launch/demo.launch.py
+  urdf_xacro: urdf/scene.urdf.xacro
 
 robot:
   model: ur5
