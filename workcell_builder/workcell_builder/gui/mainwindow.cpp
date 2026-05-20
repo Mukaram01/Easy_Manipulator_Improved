@@ -5227,9 +5227,7 @@ void MainWindow::populate_scene_hierarchy()
 
   for (auto & p : preview_items) {
     const QString tag = role_tag_for_id(p.id);
-    if (!tag.isEmpty()) {
-      p.display_name = QString("%1 %2").arg(p.display_name, tag);
-    }
+    if (!tag.isEmpty()) p.metadata_tags = tag;
   }
 
   for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {

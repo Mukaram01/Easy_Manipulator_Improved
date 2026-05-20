@@ -118,6 +118,14 @@ def test_warning_badge_compact_and_long_text_debug_gated_tokens_present():
     assert 'if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty())' in VIEW3D_CPP
     assert 'warning_debug_text(it.warnings)' in VIEW3D_CPP
 
+def test_default_locked_urdf_visual_labels_suppressed_except_all_mode_tokens_present():
+    for token in [
+        'is_urdf_visual && !selected && label_mode != ScenePreviewWidget::LabelMode::All',
+        'if (!selected && is_urdf_visual && missing_reason.isEmpty()',
+        'label_mode != ScenePreviewWidget::LabelMode::All',
+    ]:
+        assert token in VIEW3D_CPP
+
 
 def test_task_overlay_label_toggle_preserves_selected_only_default_tokens_present():
     assert 'else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;' in PREVIEW
