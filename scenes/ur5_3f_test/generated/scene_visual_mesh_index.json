@@ -4,58 +4,87 @@
   "extraction_mode": "best_effort_recursive",
   "visual_items": [
     {
-      "id": "urdf_visual_regex_0",
-      "link": "unknown_link",
-      "visual": "",
+      "id": "urdf_visual_0_table_${prefix}",
+      "link": "table_${prefix}",
+      "visual": "None_${prefix}",
+      "parent_link": "${parent}",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/visual/table.stl",
       "package_uri": "package://workbench_description/meshes/visual/table.stl",
       "pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          -0.0,
+          0.0
         ]
       },
       "local_visual_pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          -0.0,
+          0.0
         ]
       },
-      "parent_link": "",
-      "joint_chain": [],
-      "transform_source": "local_only; regex_fallback",
+      "world_visual_tf": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "joint_chain": [
+        "table_base_joint_${prefix}"
+      ],
+      "transform_source": "resolved; link=table_${prefix}; parent=${parent}; chain_len=1",
       "transform_status": "resolved",
+      "link_status": "resolved",
       "scale": [
-        1,
-        1,
-        1
+        0.001,
+        0.001,
+        0.001
       ],
       "material": {},
-      "category": "unknown_visual",
+      "category": "environment_visual",
       "resolved": true,
       "warning": "",
       "mesh_extension": ".stl",
@@ -63,114 +92,85 @@
       "render_warning": ""
     },
     {
-      "id": "urdf_visual_regex_1",
-      "link": "unknown_link",
+      "id": "urdf_visual_1_${name}_link",
+      "link": "${name}_link",
       "visual": "",
-      "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/collision/table.stl",
-      "package_uri": "package://workbench_description/meshes/collision/table.stl",
-      "pose": {
-        "xyz": [
-          0,
-          0,
-          0
-        ],
-        "rpy": [
-          0,
-          0,
-          0
-        ]
-      },
-      "local_visual_pose": {
-        "xyz": [
-          0,
-          0,
-          0
-        ],
-        "rpy": [
-          0,
-          0,
-          0
-        ]
-      },
-      "link_world_pose": {
-        "xyz": [
-          0,
-          0,
-          0
-        ],
-        "rpy": [
-          0,
-          0,
-          0
-        ]
-      },
-      "parent_link": "",
-      "joint_chain": [],
-      "transform_source": "local_only; regex_fallback",
-      "transform_status": "resolved",
-      "scale": [
-        1,
-        1,
-        1
-      ],
-      "material": {},
-      "category": "unknown_visual",
-      "resolved": true,
-      "warning": "",
-      "mesh_extension": ".stl",
-      "render_expected": true,
-      "render_warning": ""
-    },
-    {
-      "id": "urdf_visual_regex_2",
-      "link": "unknown_link",
-      "visual": "",
+      "parent_link": "${name}_bottom_screw_frame",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
       "pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          -0.0,
+          0.0
         ]
       },
       "local_visual_pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ]
       },
       "link_world_pose": {
         "xyz": [
-          0,
-          0,
-          0
+          0.0,
+          0.0,
+          0.0
         ],
         "rpy": [
-          0,
-          0,
-          0
+          0.0,
+          -0.0,
+          0.0
         ]
       },
-      "parent_link": "",
-      "joint_chain": [],
-      "transform_source": "local_only; regex_fallback",
+      "world_visual_tf": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "joint_chain": [
+        "${name}_joint",
+        "${name}_link_joint"
+      ],
+      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2",
       "transform_status": "resolved",
+      "link_status": "resolved",
       "scale": [
-        1,
-        1,
-        1
+        1.0,
+        1.0,
+        1.0
       ],
       "material": {},
       "category": "unknown_visual",

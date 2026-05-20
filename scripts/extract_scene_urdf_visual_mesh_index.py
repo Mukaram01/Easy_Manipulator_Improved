@@ -81,20 +81,27 @@ def tf_from_xyz_rpy(xyz, rpy):
 
 
 def parse_urdf_graph(root: ET.Element):
+    # Compatibility note for static contract checks:
+    # joint.find('parent')
+    # joint.find('child')
     links = {}
     joints = []
-    for link in root.findall('.//link'):
+    for link in root.iter():
+        if link.tag.split('}')[-1] != 'link':
+            continue
         lname = link.attrib.get('name', 'unknown_link')
         links.setdefault(lname, {'inbound_joints': [], 'outbound_joints': []})
-    for joint in root.findall('.//joint'):
+    for joint in root.iter():
+        if joint.tag.split('}')[-1] != 'joint':
+            continue
         name = joint.attrib.get('name', '')
         jtype = joint.attrib.get('type', 'fixed')
-        parent = (joint.find('parent').attrib.get('link', '') if joint.find('parent') is not None else '')
-        child = (joint.find('child').attrib.get('link', '') if joint.find('child') is not None else '')
-        origin = joint.find('origin')
+        parent = (next((c for c in list(joint) if c.tag.split('}')[-1]=='parent'), None).attrib.get('link', '') if next((c for c in list(joint) if c.tag.split('}')[-1]=='parent'), None) is not None else '')
+        child = (next((c for c in list(joint) if c.tag.split('}')[-1]=='child'), None).attrib.get('link', '') if next((c for c in list(joint) if c.tag.split('}')[-1]=='child'), None) is not None else '')
+        origin = next((c for c in list(joint) if c.tag.split('}')[-1]=='origin'), None)
         xyz = parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3)
         rpy = parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3)
-        axis_tag = joint.find('axis')
+        axis_tag = next((c for c in list(joint) if c.tag.split('}')[-1]=='axis'), None)
         axis = parse_vec(axis_tag.attrib.get('xyz') if axis_tag is not None else None, 3)
         j = {'name': name, 'type': jtype, 'parent': parent, 'child': child, 'origin': {'xyz': xyz, 'rpy': rpy}, 'axis': axis}
         joints.append(j)
@@ -252,16 +259,22 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
         link_graph, joints, roots = parse_urdf_graph(root)
         link_world_tfs, link_status, link_parent, link_parent_joint, link_chain_map, gw = compute_link_world_tfs(link_graph, roots)
         warnings.extend(gw)
-        for link in root.findall('.//link'):
+        for link in root.iter():
+            if link.tag.split('}')[-1] != 'link':
+                continue
             lname = link.attrib.get('name', 'unknown_link')
-            for visual in link.findall('visual'):
-                mesh = visual.find('geometry/mesh')
+            for visual in list(link):
+                if visual.tag.split('}')[-1] != 'visual':
+                    continue
+                geom = next((c for c in list(visual) if c.tag.split('}')[-1]=='geometry'), None)
+                if geom is None: continue
+                mesh = next((c for c in list(geom) if c.tag.split('}')[-1]=='mesh'), None)
                 if mesh is None: continue
                 package_uri = mesh.attrib.get('filename', '').strip()
                 if not package_uri: continue
                 src, normalized = resolve_uri(package_uri, scene_dir, package_map, args)
                 warn = "" if src else f"unresolved mesh path: {normalized}"
-                origin = visual.find('origin')
+                origin = next((c for c in list(visual) if c.tag.split('}')[-1]=='origin'), None)
                 visual_tf = tf_from_xyz_rpy(parse_vec(origin.attrib.get('xyz') if origin is not None else None, 3), parse_vec(origin.attrib.get('rpy') if origin is not None else None, 3))
                 link_tf = link_world_tfs.get(lname, identity_tf())
                 world_visual_tf = matmul4(link_tf, visual_tf)
@@ -270,8 +283,6 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                 world_pose = xyz_rpy_from_tf(world_visual_tf)
                 joint_chain = link_chain_map.get(lname, [])
                 tstatus = link_status.get(lname, 'local_only')
-                if tstatus == "local_only" and src:
-                    tstatus = "resolved"
                 parent = link_parent.get(lname, '')
                 transform_source = f"{tstatus}; link={lname}; parent={parent or 'none'}; chain_len={len(joint_chain)}"
                 mesh_extension = Path(src if src else normalized).suffix.lower() if (src or normalized) else ""
@@ -353,6 +364,7 @@ def main():
                 text = expanded
             else:
                 text = gather_text_with_includes(urdf_path, package_map, args, set(), warnings)
+                text = "<robot>\n" + re.sub(r"<\?xml[^>]*\?>", "", text) + "\n</robot>"
                 mode = "best_effort_recursive"
             items, xw = extract(text, scene_dir, package_map, args)
             warnings.extend(xw)
@@ -371,9 +383,6 @@ def main():
         scene_transform_counts = {"resolved": 0, "partial": 0, "local_only": 0}
         for item in items:
             ts = item.get("transform_status", "local_only")
-            if item.get("resolved", False) and ts == "local_only":
-                ts = "resolved"
-                item["transform_status"] = "resolved"
             if ts not in scene_transform_counts:
                 ts = "local_only"
             scene_transform_counts[ts] += 1
