@@ -147,6 +147,14 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     checks.append(_token_check("inspector sync/layout dirty markers",all_text,["inspector","sync","layout dirty"]))
     checks.append(_regex_absent_check("no hidden QPushButton indirection anti-pattern",main,{"menu_action_new_cell":r'addAction\("Create New Cell"\s*,',"menu_action_plan_simulate":r'addAction\("Open Plan & Simulate"\s*,'}))
     checks.append(_regex_absent_check("fixed-width button anti-pattern checks",main,{"qpushbutton_fixed_width_literal":r"\b[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*->\s*setFixedWidth\s*\(\s*\d+\s*\)"}))
+    checks.append(_regex_absent_check(
+        "no hidden QPushButton menu-proxy click wiring",
+        main,
+        {
+            "menu_proxy_click_indirection": r'addAction\s*\(\s*"[^"]+"\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*,\s*&QPushButton::click\s*\)',
+            "canvas_snapshot_proxy": r'addAction\s*\(\s*"Export Canvas Snapshot"\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*,\s*&QPushButton::click\s*\)',
+        },
+    ))
     checks.append(_visible_label_set_check(
         "allowed visible top-level set only",
         main,

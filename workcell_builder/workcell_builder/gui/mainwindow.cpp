@@ -1225,7 +1225,7 @@ void MainWindow::setup_studio_shell()
   secondary_layout_menu->addAction(scene_builder_action("layout.remove"));
   scene_builder_secondary_overflow_button_->setMenu(scene_builder_secondary_overflow_menu_);
   controls->addWidget(scene_builder_secondary_overflow_button_);
-  auto * export_snapshot = new QPushButton("Export Canvas Snapshot", scene_builder); center_panel_layout->addLayout(controls);
+  center_panel_layout->addLayout(controls);
   digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
   digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
@@ -1237,18 +1237,14 @@ void MainWindow::setup_studio_shell()
   create_starter_layout_button_ = new QPushButton("Create editable layout from preview", scene_builder);
   create_starter_layout_button_->setVisible(false);
   layout_controls->addWidget(create_starter_layout_button_);
-  revert_layout_button_ = new QPushButton("Revert Layout", scene_builder);
-  auto * run_layout_merge_button = new QPushButton("Run Layout Merge", scene_builder);
-  auto * open_layout_merge_report_button = new QPushButton("Open Merge Report", scene_builder);
-  auto * copy_layout_merge_summary_button = new QPushButton("Copy Merge Summary", scene_builder);
   canvas_more_menu->addSeparator();
   canvas_more_menu->addAction("Duplicate Selected", this, [this](){ duplicate_selected_item(); });
   canvas_more_menu->addAction("Remove Selected Layout Item", this, [this](){ delete_selected_item(); });
-  canvas_more_menu->addAction("Revert Layout", revert_layout_button_, &QPushButton::click);
-  canvas_more_menu->addAction("Run Layout Merge", run_layout_merge_button, &QPushButton::click);
-  canvas_more_menu->addAction("Open Merge Report", open_layout_merge_report_button, &QPushButton::click);
-  canvas_more_menu->addAction("Copy Merge Summary", copy_layout_merge_summary_button, &QPushButton::click);
-  canvas_more_menu->addAction("Export Canvas Snapshot", export_snapshot, &QPushButton::click);
+  canvas_more_menu->addAction("Revert Layout", this, &MainWindow::revert_layout_changes);
+  canvas_more_menu->addAction("Run Layout Merge", this, [this](){ run_layout_merge_for_selected_scene(false); });
+  canvas_more_menu->addAction("Open Merge Report", this, &MainWindow::open_layout_merge_report);
+  canvas_more_menu->addAction("Copy Merge Summary", this, &MainWindow::copy_layout_merge_summary);
+  canvas_more_menu->addAction("Export Canvas Snapshot", this, &MainWindow::export_canvas_snapshot);
   connect(label_selected, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected); });
   connect(label_all, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Important); });
   connect(label_off, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Off); });
@@ -1732,10 +1728,6 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   auto * redo_sc = new QShortcut(QKeySequence::Redo, scene_builder); connect(redo_sc, &QShortcut::activated, this, &MainWindow::redo_layout_edit);
   auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
-  connect(run_layout_merge_button, &QPushButton::clicked, this, [this](){ run_layout_merge_for_selected_scene(false); });
-  connect(open_layout_merge_report_button, &QPushButton::clicked, this, &MainWindow::open_layout_merge_report);
-  connect(copy_layout_merge_summary_button, &QPushButton::clicked, this, &MainWindow::copy_layout_merge_summary);
-  connect(revert_layout_button_, &QPushButton::clicked, this, &MainWindow::revert_layout_changes);
   connect(scene_hierarchy_tree_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column){ Q_UNUSED(column); on_hierarchy_item_selected(item); });
   connect(asset_filter_combo_, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::on_asset_filter_changed);
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(p).isDir() ? p : QFileInfo(p).absolutePath())); });
@@ -1750,7 +1742,6 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
-  connect(export_snapshot, &QPushButton::clicked, this, [this](){ if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return; fs::path out; if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) { const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_]; out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png"; } else { out = fs::path(diagnostics_output_root().toStdString()) / "preview" / "workcell_studio_canvas_snapshot.png"; } fs::create_directories(out.parent_path()); QImage image(1280, 800, QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#0f131a")); QPainter painter(&image); digital_twin_canvas_->scene()->render(&painter); painter.end(); image.save(QString::fromStdString(out.string())); append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string())); });
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
@@ -1773,6 +1764,27 @@ void MainWindow::register_scene_builder_action(const QString & key, QAction * ac
 {
   if (!action) return;
   scene_builder_action_registry_.insert(key, action);
+}
+
+
+void MainWindow::export_canvas_snapshot()
+{
+  if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return;
+  fs::path out;
+  if (selected_scene_index_ >= 0 && selected_scene_index_ < (int)scene_browser_result_.scenes.size()) {
+    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    out = s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png";
+  } else {
+    out = fs::path(diagnostics_output_root().toStdString()) / "preview" / "workcell_studio_canvas_snapshot.png";
+  }
+  fs::create_directories(out.parent_path());
+  QImage image(1280, 800, QImage::Format_ARGB32_Premultiplied);
+  image.fill(QColor("#0f131a"));
+  QPainter painter(&image);
+  digital_twin_canvas_->scene()->render(&painter);
+  painter.end();
+  image.save(QString::fromStdString(out.string()));
+  append_studio_log("Export Canvas Snapshot: " + QString::fromStdString(out.string()));
 }
 
 void MainWindow::build_studio_header_actions()

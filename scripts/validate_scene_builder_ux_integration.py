@@ -32,6 +32,8 @@ def main() -> int:
     ok.append(check("secondary menus present", all(t in mainwindow_cpp for t in ["Overlays", "Canvas More", "Visual Modes", "Label mode", "Mesh preview mode", "Snap mode"])))
     ok.append(check("toolbar overflow wiring", all(t in mainwindow_cpp + mainwindow_h for t in ["scene_builder_secondary_overflow_button_", "scene_builder_secondary_overflow_menu_", "update_scene_builder_top_controls_overflow"])) )
     ok.append(check("no fixed-width toolbar anti-pattern", "setFixedWidth" not in mainwindow_cpp or "button" not in mainwindow_cpp))
+    proxy_click_hits = re.findall(r'addAction\s*\(\s*"[^"]+"\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*button[a-zA-Z0-9_]*\s*,\s*&QPushButton::click\s*\)', mainwindow_cpp)
+    ok.append(check("no hidden QPushButton menu-proxy click wiring", len(proxy_click_hits) == 0, detail=str(proxy_click_hits)))
     ok.append(check("scene/item state split", all(t in mainwindow_h + mainwindow_cpp for t in ["SelectedSceneState", "SelectedSceneItemState", "selected_scene_state_", "selected_item_state_", "refresh_scene_builder_selected_scene_ui"])))
     ok.append(check("provenance summary helper", all(t in model_h + model_cpp for t in ["WorkcellStudioProvenanceStatus", "provenance_summary_text", "Editable layout:", "Preview fallback:"])))
     ok.append(check("create editable layout action wiring", all(t in mainwindow_cpp + mainwindow_h for t in ["create_starter_layout_from_preview", "refresh_create_starter_layout_action", "Create editable layout from preview"])))

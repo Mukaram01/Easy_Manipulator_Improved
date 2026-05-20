@@ -194,6 +194,14 @@ def test_validator_allows_secondary_canvas_controls_inside_more_menu_surfaces():
     assert "secondary canvas controls remain available in menu surfaces" not in failed
 
 
+
+def test_validator_fails_when_menu_actions_use_hidden_qpushbutton_click_proxy():
+    broken = _base_fixture()
+    broken["mainwindow_cpp"] += '\ncanvas_more_menu->addAction("Revert Layout", revert_layout_button_, &QPushButton::click);\n'
+    checks = run_checks(broken)
+    failed = {c.name: c.details for c in checks if not c.ok}
+    assert "no hidden QPushButton menu-proxy click wiring" in failed
+
 def test_repository_contract_rejects_reintroduced_selected_scene_direct_buttons():
     checks = run_checks()
     failed = {c.name: c.details for c in checks if not c.ok}

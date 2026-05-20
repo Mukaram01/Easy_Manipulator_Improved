@@ -299,6 +299,7 @@ private:
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
   void open_layout_merge_report();
   void copy_layout_merge_summary();
+  void export_canvas_snapshot();
   void refresh_scene_bundle_export_panel();
   void export_scene_bundle_for_selected_scene();
   void import_scene_bundle_into_scenes_root();
@@ -495,7 +496,6 @@ private:
   QPushButton * delete_layout_button_{ nullptr };
   QPushButton * save_layout_button_{ nullptr };
   QPushButton * create_starter_layout_button_{ nullptr };
-  QPushButton * revert_layout_button_{ nullptr };
   QGraphicsView * minimap_view_{ nullptr };
   bool minimap_requested_visible_{ true };
   QVector<AssetCatalogEntry> asset_catalog_entries_;
