@@ -70,6 +70,20 @@ def main() -> int:
     forbidden_topbar = re.findall(r"addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"(Validate|Generate|Plan|Simulate|Export|Readiness|Delete Scene|Select|Place Asset|Move|Inspect|Save Layout|Undo|Redo)\"", mainwindow_cpp)
     ok.append(check("forbidden direct top-bar primary actions absent", len(forbidden_topbar) == 0, detail=str(forbidden_topbar)))
     ok.append(check("canvas mode and view dropdown controls present", all(t in mainwindow_cpp for t in ["Mode", "View"])))
+    secondary_direct_widget_hits = re.findall(
+        r'controls->addWidget\s*\(\s*(scene_builder_overlays_button_|scene_builder_canvas_more_button_|scene_builder_visual_modes_button_|toggle_grid_box_|snap_to_grid_box_|fine_move_mode_box_|unlock_robot_base_box_|toggle_labels_box_|toggle_warnings_box_|show_minimap_box_)\s*\)',
+        mainwindow_cpp,
+    )
+    ok.append(check("secondary canvas controls are not direct always-visible toolbar widgets", len(secondary_direct_widget_hits) == 0, detail=str(secondary_direct_widget_hits)))
+    secondary_menu_contract = all(
+        token in mainwindow_cpp
+        for token in [
+            'scene_builder_secondary_overflow_menu_->addMenu(overlays_menu)->setText("Overlays");',
+            'scene_builder_secondary_overflow_menu_->addMenu(visual_modes_menu)->setText("Visual Modes");',
+            'scene_builder_secondary_overflow_menu_->addMenu(canvas_more_menu)->setText("Layout/Edit Settings");',
+        ]
+    )
+    ok.append(check("secondary canvas controls remain available in menu surfaces", secondary_menu_contract))
     ok.append(check("actions side-tab grouped sections present", all(t in mainwindow_cpp for t in ["Actions", "Layout", "Generate", "Validate", "Simulate", "Export", "Diagnostics"])))
     ok.append(check("shared action registry exists", "scene_builder_action_registry_" in mainwindow_h and "register_scene_builder_action" in mainwindow_cpp))
     ok.append(check("top header uses shared actions", "scenes_open_menu->addAction(action_generate_yaml_)" in mainwindow_cpp and "more_menu->addAction(action_diagnostics_run_self_test_)" in mainwindow_cpp))

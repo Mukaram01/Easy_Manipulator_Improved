@@ -208,6 +208,31 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         },
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
+    checks.append(_regex_absent_check(
+        "secondary canvas controls are not direct always-visible toolbar widgets",
+        main,
+        {
+            "overlays_direct_widget": r'controls->addWidget\s*\(\s*scene_builder_overlays_button_\s*\)',
+            "canvas_more_direct_widget": r'controls->addWidget\s*\(\s*scene_builder_canvas_more_button_\s*\)',
+            "visual_modes_direct_widget": r'controls->addWidget\s*\(\s*scene_builder_visual_modes_button_\s*\)',
+            "toggle_grid_direct_widget": r'controls->addWidget\s*\(\s*toggle_grid_box_\s*\)',
+            "snap_direct_widget": r'controls->addWidget\s*\(\s*snap_to_grid_box_\s*\)',
+            "fine_move_direct_widget": r'controls->addWidget\s*\(\s*fine_move_mode_box_\s*\)',
+            "unlock_direct_widget": r'controls->addWidget\s*\(\s*unlock_robot_base_box_\s*\)',
+            "labels_direct_widget": r'controls->addWidget\s*\(\s*toggle_labels_box_\s*\)',
+            "warnings_direct_widget": r'controls->addWidget\s*\(\s*toggle_warnings_box_\s*\)',
+            "minimap_direct_widget": r'controls->addWidget\s*\(\s*show_minimap_box_\s*\)',
+        },
+    ))
+    checks.append(_regex_present_check(
+        "secondary canvas controls remain available in menu surfaces",
+        main,
+        {
+            "overlays_nested_in_more": r'scene_builder_secondary_overflow_menu_->addMenu\(overlays_menu\)->setText\("Overlays"\);',
+            "visual_modes_nested_in_more": r'scene_builder_secondary_overflow_menu_->addMenu\(visual_modes_menu\)->setText\("Visual Modes"\);',
+            "layout_settings_nested_in_more": r'scene_builder_secondary_overflow_menu_->addMenu\(canvas_more_menu\)->setText\("Layout/Edit Settings"\);',
+        },
+    ))
     checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Layout","Generate","Validate","Simulate","Export","Diagnostics"]))
     checks.append(_token_check("layout undo/redo exposed via action surfaces",all_text,["Undo Layout Edit","Redo Layout Edit"]))
     checks.append(_regex_absent_check(
