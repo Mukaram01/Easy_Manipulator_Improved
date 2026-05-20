@@ -95,3 +95,17 @@ def test_scene_urdf_visual_mesh_index_generation():
     dae_present = any((i.get('mesh_extension') or '').lower() == '.dae' for i in all_items)
     if dae_present:
         assert mesh_counts.get('.dae', 0) > 0
+
+
+def test_scene3d_visual_diagnostics_report_generation():
+    proc = subprocess.run(['python3', str(ROOT / 'scripts' / 'validate_scene3d_visual_diagnostics.py')], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert 'Traceback' not in (proc.stdout + proc.stderr)
+
+    report = ROOT / 'build' / 'workcell_studio_scene3d_visual_diagnostics.json'
+    assert report.exists()
+    data = json.loads(report.read_text())
+    assert 'scenes' in data and data['scenes']
+    first = data['scenes'][0]
+    for key in ['item_count','mesh_item_count','loaded_mesh_count','failed_mesh_count','world_bounds','largest_mesh','smallest_mesh','warnings']:
+        assert key in first
