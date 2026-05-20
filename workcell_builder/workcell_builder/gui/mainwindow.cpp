@@ -2172,12 +2172,16 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString role = state.role_or_category.isEmpty() ? "unknown" : state.role_or_category;
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
+  const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
   inspector_lines << "";
   inspector_lines << QString("Selected item name: %1").arg(display);
   inspector_lines << QString("Selected item role: %1").arg(role);
+  inspector_lines << QString("Selected item category: %1").arg(role);
   inspector_lines << QString("Selected item ID: %1").arg(state.id);
   inspector_lines << QString("Selected item source: %1").arg(source);
+  inspector_lines << QString("Selected item source_path: %1").arg(source);
+  if (is_locked_urdf_preview) inspector_lines << "Reason: locked/preview-only";
   inspector_lines << locked_line;
   inspector_label_->setText(inspector_lines.join("\n"));
   inspector_label_->setToolTip(QString("%1\n%2").arg(selected_scene_state_.valid ? selected_scene_state_.path : QString(), source));
@@ -3760,7 +3764,7 @@ void MainWindow::rebuild_digital_twin_canvas()
 
   if (model.items.empty()) {
     digital_twin_scene_->addSimpleText("Scene selected but no previewable layout metadata found. Run Generate Preview/Readiness Pack or add layout items.")->setPos(-360, -260);
-    append_studio_log(QString("Scene canvas: '%1' has no previewable layout items. Missing files may include environment.yaml, scene_manifest.yaml, layout/workcell_studio_layout.yaml.").arg(selected_scene_name()));
+    append_studio_log(QString("Scene canvas: '%1' has 0 editable layout items and 0 URDF visual preview locked items. Missing files may include environment.yaml, scene_manifest.yaml, layout/workcell_studio_layout.yaml.").arg(selected_scene_name()));
   } else {
     append_studio_log(QString("Scene canvas: loaded %1 item(s) for '%2' from %3.").arg(model.items.size()).arg(selected_scene_name(), selected_scene_path()));
   }
@@ -4181,6 +4185,7 @@ void MainWindow::save_layout_changes()
   YAML::Node updated_placed(YAML::NodeType::Sequence);
   for (auto * gi : digital_twin_scene_->items()) {
     if (gi->data(RoleRole).toString() != "asset") continue;
+    if (gi->data(RoleLocked).toBool()) continue;
     const std::string item_id = gi->data(RoleId).toString().toStdString();
     if (!workcell_builder::workcell_studio_is_valid_id(item_id)) {
       QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(QString::fromStdString(item_id)));
@@ -4332,15 +4337,22 @@ bool MainWindow::parse_transform_clipboard_text(
 void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * item)
 {
   if (!item) return;
+  const bool locked = item->data(RoleLocked).toBool();
   inspector_update_guard_ = true;
   inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
   inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
+  for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
+    if (sb) sb->setReadOnly(locked);
+  }
+  if (inspector_apply_button_) inspector_apply_button_->setEnabled(!locked);
+  if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
+  if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
   inspector_update_guard_ = false;
 }
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
 
-void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); refresh_selection_transform_editor_from_item(i); }
+void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); if (i->data(RoleLocked).toBool()) return; QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose Edit"); refresh_selection_transform_editor_from_item(i); }
 
 void MainWindow::revert_selection_transform_editor()
 {
@@ -5196,8 +5208,16 @@ void MainWindow::populate_scene_hierarchy()
   else perception_line = "Perception: not configured.";
 
   const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
-  const QString preview_line = QString("%1 Metadata warnings: %2.")
-    .arg(preview_provenance_summary_.isEmpty() ? QString("Editable layout: 0 items. Preview fallback: 0 items loaded from scene metadata.") : preview_provenance_summary_)
+  const int urdf_visual_locked_count = visual_preview_added_count;
+  const QString preview_counts_line = QString("Editable layout: %1 items | URDF visual preview: %2 locked items")
+    .arg(editable_layout_item_count_)
+    .arg(urdf_visual_locked_count);
+  const QString preview_provenance_line = preview_provenance_summary_.isEmpty()
+    ? QString("Preview fallback: 0 items loaded from scene metadata.")
+    : preview_provenance_summary_;
+  const QString preview_line = QString("%1 | %2 Metadata warnings: %3.")
+    .arg(preview_counts_line)
+    .arg(preview_provenance_line)
     .arg(preview_warning_count);
 
   if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
