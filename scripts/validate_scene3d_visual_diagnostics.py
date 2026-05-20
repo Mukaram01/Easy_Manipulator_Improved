@@ -27,7 +27,9 @@ def bounds_from_items(items):
 
 def main():
     BUILD.mkdir(parents=True, exist_ok=True)
-    diagnostics={'scenes':[], 'warning_count':0}
+    diagnostics={'scenes':[], 'warning_count':0, 'identical_position_warning_count':0,
+                 'transform_resolved_count':0,'transform_partial_count':0,'transform_local_only_count':0,
+                 'fallback_asset_item_count':0}
     hard_errors=[]
     for scene in sorted([p for p in SCENES.iterdir() if p.is_dir()]):
         idx=scene/'generated'/'scene_visual_mesh_index.json'
@@ -49,8 +51,23 @@ def main():
         b=bounds_from_items(mesh_items or items)
         radius=0.5*math.sqrt(sum(float(v)*float(v) for v in b['extents']))
         warnings=[]
+        transform_counts={'resolved':0,'partial':0,'local_only':0}
+        for i in items:
+            ts=i.get('transform_status','local_only')
+            if ts not in transform_counts: ts='local_only'
+            transform_counts[ts]+=1
+            if 'fallback_asset_search' in (i.get('transform_source') or ''):
+                diagnostics['fallback_asset_item_count'] += 1
         xyzs=[tuple((i.get('pose') or {}).get('xyz') or [0,0,0]) for i in mesh_items]
-        if xyzs and len(set(xyzs)) <= max(1, len(xyzs)//4): warnings.append('many mesh items share identical world positions')
+        shared=[]
+        if xyzs and len(set(xyzs)) <= max(1, len(xyzs)//4):
+            warnings.append('many mesh items share identical world positions')
+            diagnostics['identical_position_warning_count'] += 1
+            pos_to_ids={}
+            for i in mesh_items:
+                key=tuple((i.get('pose') or {}).get('xyz') or [0,0,0])
+                pos_to_ids.setdefault(key,[]).append(i.get('id'))
+            shared=[{'xyz':list(k),'visual_ids':v} for k,v in pos_to_ids.items() if len(v)>1]
         if largest>20.0 or (smallest>0 and smallest<0.001): warnings.append('extreme mesh scale detected')
         if radius>200 or (radius>0 and radius<0.001): warnings.append('scene bounds radius extreme')
         if largest>0 and smallest>0 and (largest/max(smallest,1e-12))>10000: warnings.append('fit view may be dominated by one bad mesh')
@@ -67,7 +84,14 @@ def main():
             'smallest_mesh': smallest,
             'fit_radius': radius,
             'warnings': warnings,
+            'transform_resolved_count': transform_counts['resolved'],
+            'transform_partial_count': transform_counts['partial'],
+            'transform_local_only_count': transform_counts['local_only'],
+            'shared_position_groups': shared,
         })
+        diagnostics['transform_resolved_count'] += transform_counts['resolved']
+        diagnostics['transform_partial_count'] += transform_counts['partial']
+        diagnostics['transform_local_only_count'] += transform_counts['local_only']
     OUT.write_text(json.dumps(diagnostics, indent=2)+"\n")
     if hard_errors:
         print('\n'.join(hard_errors))
