@@ -91,7 +91,7 @@
       "id": "urdf_visual_regex_3",
       "link": "unknown_link",
       "visual": "",
-      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/meshes/airpick4.stl",
+      "source_path": "",
       "package_uri": "package://onrobot_airpick4_description/meshes/airpick4.stl",
       "pose": {
         "xyz": [
@@ -112,14 +112,14 @@
       ],
       "material": {},
       "category": "unknown_visual",
-      "resolved": true,
-      "warning": ""
+      "resolved": false,
+      "warning": "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl"
     },
     {
       "id": "urdf_visual_regex_4",
       "link": "unknown_link",
       "visual": "",
-      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/meshes/airpick4.stl",
+      "source_path": "",
       "package_uri": "package://onrobot_airpick4_description/meshes/airpick4.stl",
       "pose": {
         "xyz": [
@@ -140,12 +140,15 @@
       ],
       "material": {},
       "category": "unknown_visual",
-      "resolved": true,
-      "warning": ""
+      "resolved": false,
+      "warning": "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl"
     }
   ],
   "warnings": [
     "xacro executable unavailable; using best_effort parsing",
-    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro"
+    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro",
+    "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl",
+    "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl",
+    "all visual poses collapsed; transform assembly likely failed"
   ]
 }
