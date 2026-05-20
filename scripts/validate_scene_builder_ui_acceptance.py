@@ -83,6 +83,12 @@ def _visible_label_set_check(name:str,haystack:str,allowed:set[str],forbidden_hi
     details=[*(f"missing visible top-level label: {m}" for m in missing),*(f"forbidden visible top-level label: {f}" for f in forbidden)]
     return CheckResult(name,not details,details)
 
+
+def _top_header_trailing_underscore_guard_check(name:str,haystack:str)->CheckResult:
+    forbidden_examples=["Run Next_","More_","Scenes/Open_"]
+    details=[f'forbidden trailing-underscore nav label: {label}' for label in forbidden_examples if label in haystack]
+    return CheckResult(name,not details,details)
+
 def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
     if file_text_map is None:
         file_text_map={
@@ -127,16 +133,22 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         ["Validate","Generate","Plan","Simulate","Export","Readiness"],
     ))
     checks.append(_top_header_label_hygiene_check("top-header labels are exact and menu-hint free",main))
+    checks.append(_top_header_trailing_underscore_guard_check("top-header labels reject trailing underscore hacks",main))
     checks.append(_regex_absent_check(
         "forbidden direct top-bar primary actions",
         main,
         {
-            "validate_action": r'\bValidate\b',
-            "generate_action": r'\bGenerate\b',
-            "plan_action": r'\bPlan\b',
-            "simulate_action": r'\bSimulate\b',
-            "export_action": r'\bExport\b',
-            "readiness_action": r'\bReadiness\b',
+            "validate_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Validate\"',
+            "plan_or_simulate_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"(?:Plan|Simulate)\"',
+            "export_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Export\"',
+            "delete_scene_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Delete Scene\"',
+            "select_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Select\"',
+            "place_asset_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Place Asset\"',
+            "move_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Move\"',
+            "inspect_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Inspect\"',
+            "save_layout_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Save Layout\"',
+            "undo_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Undo\"',
+            "redo_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Redo\"',
         },
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
