@@ -15,3 +15,6 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     assert "drag_asset_preview_visible_" in viewport_h
     assert "workcell_studio_next_id" in main_cpp
     assert "mark_layout_dirty" in main_cpp
+    assert "parse_collada_bytes_for_test" in viewport_cpp
+    assert "ext == QStringLiteral(\"dae\")" in viewport_cpp
+    assert "unsupported mesh format" in viewport_cpp

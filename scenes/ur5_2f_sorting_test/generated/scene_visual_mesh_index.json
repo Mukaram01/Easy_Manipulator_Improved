@@ -21,6 +21,34 @@
           0
         ]
       },
+      "local_visual_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "parent_link": "",
+      "joint_chain": [],
+      "transform_source": "local_only; regex_fallback",
+      "transform_status": "resolved",
       "scale": [
         1,
         1,
@@ -29,7 +57,10 @@
       "material": {},
       "category": "unknown_visual",
       "resolved": true,
-      "warning": ""
+      "warning": "",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_warning": ""
     }
   ],
   "warnings": [

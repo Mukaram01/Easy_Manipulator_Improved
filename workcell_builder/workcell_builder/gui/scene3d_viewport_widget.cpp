@@ -16,6 +16,7 @@
 #include <QtEndian>
 #include <QMimeData>
 #include <QJsonDocument>
+#include <QXmlStreamReader>
 #include <cstring>
 #include <QtMath>
 
@@ -149,6 +150,73 @@ bool looks_like_ascii_stl(const QByteArray & bytes)
 {
   const QByteArray prefix = bytes.left(256).trimmed().toLower();
   return prefix.startsWith("solid") && prefix.contains("facet");
+}
+
+
+bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                         QString & out_error, int triangle_limit)
+{
+  QXmlStreamReader xml(bytes);
+  QVector<float> positions;
+  bool in_geometry = false;
+  while (!xml.atEnd()) {
+    xml.readNext();
+    if (xml.isStartElement() && xml.name() == QStringLiteral("geometry")) in_geometry = true;
+    if (!in_geometry || !xml.isStartElement()) continue;
+    if (xml.name() == QStringLiteral("float_array")) {
+      const QString id = xml.attributes().value(QStringLiteral("id")).toString().toLower();
+      if (id.contains("position")) {
+        const QStringList vals = xml.readElementText().split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+        positions.clear();
+        positions.reserve(vals.size());
+        for (const auto & v : vals) positions.push_back(v.toFloat());
+      }
+    }
+    if ((xml.name() == QStringLiteral("triangles") || xml.name() == QStringLiteral("polylist")) && !positions.isEmpty()) {
+      int vcount = 3;
+      QVector<int> poly_vcounts;
+      QString ptext;
+      while (!(xml.isEndElement() && (xml.name() == QStringLiteral("triangles") || xml.name() == QStringLiteral("polylist"))) && !xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement() && xml.name() == QStringLiteral("input")) {
+          const QString semantic = xml.attributes().value(QStringLiteral("semantic")).toString();
+          if (semantic == QStringLiteral("VERTEX")) vcount = qMax(vcount, xml.attributes().value(QStringLiteral("offset")).toInt() + 1);
+        }
+        if (xml.isStartElement() && xml.name() == QStringLiteral("vcount")) {
+          const QStringList vals = xml.readElementText().split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+          for (const auto & v : vals) poly_vcounts.push_back(v.toInt());
+        }
+        if (xml.isStartElement() && xml.name() == QStringLiteral("p")) ptext = xml.readElementText();
+      }
+      const QStringList idxs = ptext.split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+      QVector<int> all; all.reserve(idxs.size());
+      for (const auto & t : idxs) all.push_back(t.toInt());
+      auto addTri=[&](int a,int b,int c){
+        const int na=a*3, nb=b*3, nc=c*3;
+        if (na+2>=positions.size()||nb+2>=positions.size()||nc+2>=positions.size()) return;
+        Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
+        tri.vertices[0]=QVector3D(positions[na],positions[na+1],positions[na+2]);
+        tri.vertices[1]=QVector3D(positions[nb],positions[nb+1],positions[nb+2]);
+        tri.vertices[2]=QVector3D(positions[nc],positions[nc+1],positions[nc+2]);
+        tri.normal = QVector3D::crossProduct(tri.vertices[1]-tri.vertices[0], tri.vertices[2]-tri.vertices[0]);
+        out_mesh.triangles.push_back(tri);
+      };
+      if (xml.name() == QStringLiteral("triangles") || poly_vcounts.isEmpty()) {
+        for (int i=0;i+vcount*3-1<all.size(); i+=vcount*3) { addTri(all[i], all[i+vcount], all[i+2*vcount]); if (out_mesh.triangles.size()>triangle_limit){ out_error="mesh triangle count exceeds limit"; return false; } }
+      } else {
+        int off=0;
+        for (int pc : poly_vcounts) {
+          if (pc<3) { off += pc*vcount; continue; }
+          const int base = all[off];
+          for (int k=1;k+1<pc;++k) { addTri(base, all[off + k*vcount], all[off + (k+1)*vcount]); if (out_mesh.triangles.size()>triangle_limit){ out_error="mesh triangle count exceeds limit"; return false; } }
+          off += pc*vcount; if (off>=all.size()) break;
+        }
+      }
+    }
+  }
+  if (xml.hasError()) { out_error = QStringLiteral("collada parse error: ") + xml.errorString(); return false; }
+  if (out_mesh.triangles.isEmpty()) { out_error = QStringLiteral("collada contains no triangles"); return false; }
+  return true;
 }
 enum class NormalizedRole
 {
@@ -581,6 +649,15 @@ bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, c
   return parse_binary_stl(bytes, out_mesh, out_error, triangle_limit);
 }
 
+bool Scene3DViewportWidget::parse_collada_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                                          InternalTriangleMesh & out_mesh, QString & out_error,
+                                                          int triangle_limit)
+{
+  Q_UNUSED(source_hint);
+  out_mesh.triangles.clear();
+  return parse_collada_bytes(bytes, out_mesh, out_error, triangle_limit);
+}
+
 bool Scene3DViewportWidget::compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max)
 {
   if (mesh.triangles.isEmpty()) return false;
@@ -645,11 +722,19 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     return mesh_cache_.insert(canonical, entry).value();
   }
   const QByteArray bytes = file.readAll();
+  const QString ext = input_info.suffix().toLower();
   QString parse_error;
-  entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+  if (ext == QStringLiteral("stl")) {
+    entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+  } else if (ext == QStringLiteral("dae")) {
+    entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+  } else {
+    entry.valid = false;
+    parse_error = QStringLiteral("unsupported mesh format: .%1").arg(ext.isEmpty() ? QStringLiteral("<none>") : ext);
+  }
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
-    entry.warning = entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid");
+    entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
   return mesh_cache_.insert(canonical, entry).value();

@@ -270,8 +270,13 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                 world_pose = xyz_rpy_from_tf(world_visual_tf)
                 joint_chain = link_chain_map.get(lname, [])
                 tstatus = link_status.get(lname, 'local_only')
+                if tstatus == "local_only" and src:
+                    tstatus = "resolved"
                 parent = link_parent.get(lname, '')
                 transform_source = f"{tstatus}; link={lname}; parent={parent or 'none'}; chain_len={len(joint_chain)}"
+                mesh_extension = Path(src if src else normalized).suffix.lower() if (src or normalized) else ""
+                render_expected = mesh_extension in {".stl", ".dae"}
+                render_warning = "" if render_expected else (f"unsupported mesh format: {mesh_extension or '<none>'}" if (src or normalized) else "")
                 items.append({"id": f"urdf_visual_{idx}_{lname}", "link": lname, "visual": visual.attrib.get('name', ''),
                               "parent_link": parent,
                               "source_path": src, "package_uri": normalized,
@@ -283,7 +288,8 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                               "transform_source": transform_source,
                               "transform_status": tstatus,
                               "link_status": tstatus,
-                              "scale": parse_vec(mesh.attrib.get('scale'), 3, 1.0), "material": {}, "category": cat(lname), "resolved": bool(src), "warning": warn})
+                              "scale": parse_vec(mesh.attrib.get('scale'), 3, 1.0), "material": {}, "category": cat(lname), "resolved": bool(src), "warning": warn,
+                              "mesh_extension": mesh_extension, "render_expected": render_expected, "render_warning": render_warning})
                 if warn: warnings.append(warn)
                 idx += 1
         if items:
@@ -293,11 +299,15 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
     for idx, m in enumerate(MESH_RE.finditer(xml_text)):
         src, normalized = resolve_uri(m.group(1), scene_dir, package_map, args)
         warn = "" if src else f"unresolved mesh path: {normalized}"
+        mesh_extension = Path(src if src else normalized).suffix.lower() if (src or normalized) else ""
+        render_expected = mesh_extension in {".stl", ".dae"}
+        render_warning = "" if render_expected else (f"unsupported mesh format: {mesh_extension or '<none>'}" if (src or normalized) else "")
         items.append({"id": f"urdf_visual_regex_{idx}", "link": "unknown_link", "visual": "", "source_path": src, "package_uri": normalized,
                       "pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "local_visual_pose": {"xyz": [0,0,0], "rpy": [0,0,0]},
                       "link_world_pose": {"xyz": [0,0,0], "rpy": [0,0,0]}, "parent_link": "", "joint_chain": [],
                       "transform_source": "local_only; regex_fallback", "transform_status": "local_only",
-                      "scale": [1,1,1], "material": {}, "category": "unknown_visual", "resolved": bool(src), "warning": warn})
+                      "scale": [1,1,1], "material": {}, "category": "unknown_visual", "resolved": bool(src), "warning": warn,
+                      "mesh_extension": mesh_extension, "render_expected": render_expected, "render_warning": render_warning})
         if warn: warnings.append(warn)
     return items, warnings
 
@@ -325,6 +335,9 @@ def main():
         "has_transform_collapse_warnings": False,
         "has_unresolved_mesh_warnings": False,
         "transform_status_counts": {"resolved": 0, "partial": 0, "local_only": 0},
+        "mesh_format_counts": {},
+        "renderable_mesh_count": 0,
+        "non_renderable_mesh_count": 0,
         "scenes": [],
     }
     for scene_dir in scenes:
@@ -346,7 +359,7 @@ def main():
         else:
             warnings.append(f"missing urdf_xacro: {urdf_path}")
         if not items:
-            items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","parent_link":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"local_visual_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"link_world_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"joint_chain":[],"transform_source":"local_only; unresolved_fallback","transform_status":"local_only","scale":[1,1,1],"material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
+            items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","parent_link":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"local_visual_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"link_world_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"joint_chain":[],"transform_source":"local_only; unresolved_fallback","transform_status":"local_only","scale":[1,1,1],"mesh_extension":"","render_expected":False,"render_warning":"","material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
 
         collapse_warning = "all visual poses collapsed; transform assembly likely failed"
         has_transform_collapse_warning = has_collapsed_visual_poses(items)
@@ -358,9 +371,19 @@ def main():
         scene_transform_counts = {"resolved": 0, "partial": 0, "local_only": 0}
         for item in items:
             ts = item.get("transform_status", "local_only")
+            if item.get("resolved", False) and ts == "local_only":
+                ts = "resolved"
+                item["transform_status"] = "resolved"
             if ts not in scene_transform_counts:
                 ts = "local_only"
             scene_transform_counts[ts] += 1
+            ext = (item.get("mesh_extension") or "").lower()
+            if ext:
+                report["mesh_format_counts"][ext] = report["mesh_format_counts"].get(ext, 0) + 1
+            if item.get("render_expected", False):
+                report["renderable_mesh_count"] += 1
+            else:
+                report["non_renderable_mesh_count"] += 1
 
         out = scene_dir / "generated" / "scene_visual_mesh_index.json"
         out.parent.mkdir(parents=True, exist_ok=True)
