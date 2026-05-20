@@ -258,5 +258,9 @@ def main():
       return 3
     rpt=ROOT/'build'/'workcell_studio_urdf_visual_mesh_index_report.json'; rpt.write_text(json.dumps(report,indent=2)+'\n')
     print(f"scanned={report['scene_count']} visuals={report['visual_count']} xacro_expanded={report['xacro_expanded_count']} best_effort={report['best_effort_count']}")
-    print(rpt); return 0
+    print(rpt)
+    if a.require_xacro and report['best_effort_count'] > 0:
+        print('strict xacro mode failed: one or more scenes used best_effort extraction')
+        return 3
+    return 0
 if __name__=='__main__': raise SystemExit(main())
