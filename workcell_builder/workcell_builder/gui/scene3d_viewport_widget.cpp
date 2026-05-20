@@ -522,46 +522,41 @@ void Scene3DViewportWidget::paintGL()
   int overlay_count = 0;
   int locked_urdf_count = 0;
   int physical_item_count = 0;
-  for (const auto * it : draw_items) {
-    const NormalizedRole role = classify_item_role(*it);
-    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
-    const bool overlay_only = is_overlay_only_item(*it);
-    if (overlay_only) ++overlay_count;
-    else ++physical_item_count;
-    if (is_locked_urdf_item(*it)) ++locked_urdf_count;
-
-    int item_placeholder_count = 0;
-    int item_mesh_backed_count = 0;
-    int item_wireframe_box_count = 0;
-    draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count);
-    if (!overlay_only) {
-      placeholder_count += item_placeholder_count;
-      mesh_backed_count += item_mesh_backed_count;
-      wireframe_box_count += item_wireframe_box_count;
-    }
-    if (it->id == selected_id) {
   std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
   std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+    if (is_locked_urdf_item(*it)) ++locked_urdf_count;
     if (is_overlay_visual_role(role)) overlay_items.push_back(it);
-    else physical_items.push_back(it);
+    else {
+      physical_items.push_back(it);
+      ++physical_item_count;
+    }
   }
+  overlay_count = static_cast<int>(overlay_items.size());
 
-  auto draw_item_batch = [&](const std::vector<const ScenePreviewWidget::PreviewItem *> & batch) {
+  auto draw_item_batch = [&](const std::vector<const ScenePreviewWidget::PreviewItem *> & batch, bool count_in_stats) {
     for (const auto * it : batch) {
-      draw_truthful_item_geometry(*it, &placeholder_count, &mesh_backed_count, &wireframe_box_count);
+      int item_placeholder_count = 0;
+      int item_mesh_backed_count = 0;
+      int item_wireframe_box_count = 0;
+      draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count);
+      if (count_in_stats) {
+        placeholder_count += item_placeholder_count;
+        mesh_backed_count += item_mesh_backed_count;
+        wireframe_box_count += item_wireframe_box_count;
+      }
       if (it->id == selected_id) {
-      const ItemBounds bounds = item_bounds_for_role(*it);
-      const bool editable = item_is_editable_for_gizmo(*it);
-      draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
-      // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
+        const ItemBounds bounds = item_bounds_for_role(*it);
+        const bool editable = item_is_editable_for_gizmo(*it);
+        draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
+        // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
       }
     }
-  };
-  draw_item_batch(overlay_items);  // draw translucent overlays before solids to keep physical meshes legible.
-  draw_item_batch(physical_items);
+  }
+  draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep physical meshes legible.
+  draw_item_batch(physical_items, true);
 
   glDisable(GL_BLEND);
 
@@ -639,7 +634,6 @@ void Scene3DViewportWidget::paintGL()
     }
   }
   const int editable_count = std::count_if(items.cbegin(), items.cend(), [](const auto & it) { return it.editable; });
-  const int preview_count = items.size() - editable_count;
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));
   painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);
