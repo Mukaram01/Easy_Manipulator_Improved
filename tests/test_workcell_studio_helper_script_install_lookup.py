@@ -18,3 +18,15 @@ def test_helper_scripts_installed_to_share_scripts():
 
 def test_missing_helper_script_message_is_clear():
     assert 'Could not find Workcell Studio helper script' in MAIN
+
+
+def test_visual_mesh_regen_uses_resolved_script_and_expected_flags():
+    assert '/workcell_ws/scripts/' not in MAIN
+    assert 'helper_script_search_paths' in MAIN
+    assert 'ament_index_cpp::get_package_share_directory("workcell_builder")' in MAIN
+    assert 'easy_manipulation_deployment/scripts/' in MAIN
+    assert 'QCoreApplication::applicationDirPath() + "/../../../scripts/"' in MAIN
+    assert 'QDir::currentPath() + "/scripts/"' in MAIN
+    assert 'fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py"' in MAIN
+    assert '"--scene"' in MAIN
+    assert '"--prefer-xacro"' in MAIN
