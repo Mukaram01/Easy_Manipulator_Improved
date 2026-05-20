@@ -554,7 +554,7 @@ void Scene3DViewportWidget::paintGL()
         // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
       }
     }
-  };
+  };  // draw_item_batch
   draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep physical meshes legible.
   draw_item_batch(physical_items, true);
 
