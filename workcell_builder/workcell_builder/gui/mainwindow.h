@@ -369,11 +369,13 @@ private:
   QFrame * dashboard_empty_state_card_{ nullptr };
   QFrame * dashboard_selected_scene_card_{ nullptr };
   QLabel * dashboard_selected_scene_details_{ nullptr };
-  QPushButton * dashboard_open_scene_button_{ nullptr };
-  QPushButton * dashboard_validate_button_{ nullptr };
-  QPushButton * dashboard_plan_button_{ nullptr };
-  QPushButton * dashboard_export_button_{ nullptr };
-  QPushButton * dashboard_delete_button_{ nullptr };
+  QToolButton * dashboard_scene_actions_button_{ nullptr };
+  QMenu * dashboard_scene_actions_menu_{ nullptr };
+  QAction * dashboard_open_scene_action_{ nullptr };
+  QAction * dashboard_validate_action_{ nullptr };
+  QAction * dashboard_plan_action_{ nullptr };
+  QAction * dashboard_export_action_{ nullptr };
+  QAction * dashboard_delete_action_{ nullptr };
   QTableWidget * existing_scene_table_{ nullptr };
   QLabel * dashboard_summary_label_{ nullptr };
   QLabel * scene_builder_title_{ nullptr };

@@ -151,6 +151,17 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
             "redo_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Redo\"',
         },
     ))
+    checks.append(_regex_absent_check(
+        "forbidden always-visible selected-scene action buttons",
+        main,
+        {
+            "open_in_scene_builder_direct_button": r'dashboard_open_scene_button_\s*=\s*new\s+QPushButton\s*\(\s*"Open in Scene Builder"',
+            "validate_direct_button": r'dashboard_validate_button_\s*=\s*new\s+QPushButton\s*\(\s*"Validate"',
+            "plan_simulate_direct_button": r'dashboard_plan_button_\s*=\s*new\s+QPushButton\s*\(\s*"Plan / Simulate"',
+            "export_direct_button": r'dashboard_export_button_\s*=\s*new\s+QPushButton\s*\(\s*"Export"',
+            "delete_scene_direct_button": r'dashboard_delete_button_\s*=\s*new\s+QPushButton\s*\(\s*"Delete Scene"',
+        },
+    ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))
     checks.append(_token_check("actions side-tab grouped sections",all_text,["Actions","Layout","Generate","Validate","Simulate","Export","Diagnostics"]))
     checks.append(_token_check("layout undo/redo exposed via action surfaces",all_text,["Undo Layout Edit","Redo Layout Edit"]))

@@ -62,6 +62,9 @@ def main() -> int:
     ok.append(check("Run Next uses recommendation actions", "refresh_run_next_menu" in mainwindow_cpp and "trigger_recommended_workflow_action" in mainwindow_cpp))
     ok.append(check("no duplicate layout label variants", "Create Starter Layout from Preview" not in mainwindow_cpp and "Create editable layout from preview" in mainwindow_cpp))
     ok.append(check("canonical duplicate visible labels present", all(t in mainwindow_cpp for t in ["Create editable layout from preview", "Canvas/Generated Parity"])))
+    ok.append(check("selected-scene actions moved to Scene Actions menu", all(t in mainwindow_cpp + mainwindow_h for t in ["Scene Actions", "dashboard_scene_actions_button_", "dashboard_scene_actions_menu_", "dashboard_open_scene_action_", "dashboard_delete_action_"])))
+    forbidden_selected_scene_buttons = re.findall(r'dashboard_(?:open_scene|validate|plan|export|delete)_button_\s*=\s*new\s+QPushButton\s*\(\s*"(?:Open in Scene Builder|Validate|Plan / Simulate|Export|Delete Scene)"', mainwindow_cpp)
+    ok.append(check("no always-visible selected-scene action QPushButtons", len(forbidden_selected_scene_buttons) == 0, detail=str(forbidden_selected_scene_buttons)))
     # Ensure scene set before item state update in refresh flow.
     flow = re.search(r"selected_scene_state_\s*=\s*\{\};.*selected_scene_state_\.valid\s*=\s*true;.*selected_item_state_\s*=\s*current_selected_scene_item\(\);", mainwindow_cpp, flags=re.S)
     ok.append(check("scene state updated before item state", flow is not None))
