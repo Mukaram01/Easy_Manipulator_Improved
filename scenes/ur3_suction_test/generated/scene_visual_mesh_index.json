@@ -1,14 +1,14 @@
 {
   "scene_name": "ur3_suction_test",
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur3_suction_test/urdf/scene.urdf.xacro",
-  "extraction_mode": "best_effort",
+  "extraction_mode": "best_effort_recursive",
   "visual_items": [
     {
-      "id": "urdf_visual_unresolved_0",
+      "id": "urdf_visual_regex_0",
       "link": "unknown_link",
       "visual": "",
-      "source_path": "",
-      "package_uri": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/meshes/wrist_fixture.STL",
+      "package_uri": "package://single_suction_description/meshes/wrist_fixture.STL",
       "pose": {
         "xyz": [
           0,
@@ -28,11 +28,124 @@
       ],
       "material": {},
       "category": "unknown_visual",
-      "resolved": false,
-      "warning": "no mesh references discovered in URDF/Xacro best-effort parse"
+      "resolved": true,
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_1",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/meshes/wrist_fixture.STL",
+      "package_uri": "package://single_suction_description/meshes/wrist_fixture.STL",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_2",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/meshes/visual/table.stl",
+      "package_uri": "package://table_description/meshes/visual/table.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_3",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/meshes/visual/table.stl",
+      "package_uri": "package://table_description/meshes/visual/table.stl",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_regex_4",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
+      "package_uri": "package://realsense2_description/meshes/d435.dae",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": true,
+      "warning": ""
     }
   ],
   "warnings": [
-    "xacro executable unavailable; using best_effort parsing"
+    "xacro executable unavailable; using best_effort parsing",
+    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro"
   ]
 }
