@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -155,9 +156,22 @@ def print_table(rows: list[SceneAudit]) -> None:
         print(f"{row.scene_name} | {row.status} | {req_ok}/{len(row.required_files)} | {yaml_ok}/{len(row.yaml_parse)} | {'ok' if row.layout_previewable else 'issues'} | {notes}")
 
 
+def run_visual_index_extractor(repo_root: Path) -> str:
+    script = repo_root / "scripts" / "extract_scene_urdf_visual_mesh_index.py"
+    if not script.exists():
+        return "extractor_missing"
+    try:
+        proc = subprocess.run(["python3", str(script)], capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            return "extractor_failed"
+        return "ok"
+    except Exception:
+        return "extractor_error"
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     scenes_root = resolve_scenes_root(repo_root)
+    extractor_status = run_visual_index_extractor(repo_root)
     scene_dirs = sorted([p for p in scenes_root.iterdir() if p.is_dir()])
     audits = [audit_scene(scene_dir) for scene_dir in scene_dirs]
 
@@ -169,6 +183,7 @@ def main() -> int:
         "scenes_root": str(scenes_root),
         "scene_count": len(audits),
         "status_counts": counts,
+        "visual_mesh_index_extractor": extractor_status,
         "scenes": [asdict(audit) for audit in audits],
     }
 

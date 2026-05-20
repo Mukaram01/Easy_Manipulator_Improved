@@ -4829,6 +4829,64 @@ void MainWindow::populate_scene_hierarchy()
     }
   }
 
+
+  QSet<QString> preview_ids;
+  for (const auto &existing : preview_items) preview_ids.insert(existing.id);
+  const fs::path urdf_visual_index = d / "generated" / "scene_visual_mesh_index.json";
+  if (fs::exists(urdf_visual_index)) {
+    try {
+      const YAML::Node urdf_index = YAML::LoadFile(urdf_visual_index.string());
+      const YAML::Node visual_items = workcell_builder::yaml_map_key(urdf_index, "visual_items");
+      if (visual_items && visual_items.IsSequence()) {
+        for (const auto &v : visual_items) {
+          if (!v.IsMap()) continue;
+          const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
+          if (id.isEmpty() || preview_ids.contains(id)) continue;
+          ScenePreviewWidget::PreviewItem p;
+          p.id = id;
+          p.display_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link"));
+          p.category = "URDF Visual";
+          p.role = "urdf_visual";
+          p.status = "ready";
+          p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
+          p.mesh_path = p.source_path;
+          p.locked = true;
+          p.editable = false;
+          p.lock_reason = "URDF visual preview item (locked)";
+          const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
+          const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
+          const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
+          p.x = workcell_builder::yaml_seq_index(xyz,0).as<double>(0.0);
+          p.y = workcell_builder::yaml_seq_index(xyz,1).as<double>(0.0);
+          p.z = workcell_builder::yaml_seq_index(xyz,2).as<double>(0.0);
+          p.roll = workcell_builder::yaml_seq_index(rpy,0).as<double>(0.0);
+          p.pitch = workcell_builder::yaml_seq_index(rpy,1).as<double>(0.0);
+          p.yaw = workcell_builder::yaml_seq_index(rpy,2).as<double>(0.0);
+          const YAML::Node scale = workcell_builder::yaml_map_key(v, "scale");
+          p.sx = workcell_builder::yaml_seq_index(scale,0).as<double>(0.25);
+          p.sy = workcell_builder::yaml_seq_index(scale,1).as<double>(0.25);
+          p.sz = workcell_builder::yaml_seq_index(scale,2).as<double>(0.25);
+          const bool resolved = workcell_builder::yaml_map_key(v, "resolved").as<bool>(false);
+          if (!resolved || p.source_path.trimmed().isEmpty()) {
+            p.status = "warning";
+            p.mesh_available = false;
+            p.warnings << QStringLiteral("Preview warning: URDF visual unresolved");
+            const QString warning = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "warning"));
+            if (!warning.isEmpty()) p.warnings << warning;
+          } else {
+            p.mesh_available = true;
+            p.has_mesh_metadata = true;
+          }
+          preview_items.push_back(p);
+          preview_ids.insert(id);
+          add_tree_node(p);
+        }
+      }
+    } catch (...) {
+      append_studio_log("Preview warning: failed to parse generated/scene_visual_mesh_index.json");
+    }
+  }
+
   if (preview_items.empty()) {
     const QString scene_source = QString::fromStdString(s.scene_dir.string());
     add_preview_item("robot_base", "robot base", "Robot", "robot", "ready", scene_source, true);

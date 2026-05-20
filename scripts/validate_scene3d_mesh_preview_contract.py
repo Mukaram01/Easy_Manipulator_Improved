@@ -39,6 +39,8 @@ def main():
     must("warned_mesh_fallbacks_.clear();" in inv_body, "reload does not clear warning-once set")
 
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
+    for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
+        must(token in mw_src, f"missing mainwindow token: {token}")
     must("use_fake_hardware:=true" in mw_src, "fake hardware launch token missing")
 
     print("scene3d mesh preview contract: OK")
