@@ -37,6 +37,8 @@
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_layout_merge.hpp"
 
+namespace fs = boost::filesystem;
+
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 QT_END_NAMESPACE
@@ -331,6 +333,9 @@ private:
   void open_diagnostics_folder();
   bool helper_script_exists(const QString & script_name, QString * path = nullptr) const;
   QStringList helper_script_search_paths(const QString & script_name) const;
+  QString resolve_scene3d_extractor_script_path(const fs::path & selected_scene_dir) const;
+  QString find_repo_root_with_extractor(const QStringList & candidate_roots) const;
+  QStringList candidate_repo_roots_for_scene(const fs::path & selected_scene_dir) const;
   QString diagnostics_output_root() const;
   QString diagnostics_status_from_counts(int blocked, int warn) const;
   enum class CanvasGeneratedParityState {

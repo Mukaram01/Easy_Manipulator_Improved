@@ -130,3 +130,51 @@ def test_scene_option_and_local_smoke_missing_xacro_graceful():
     proc2 = subprocess.run(['python3', str(smoke)], capture_output=True, text=True)
     assert proc2.returncode in (0, 2)
     assert 'Traceback' not in (proc2.stdout + proc2.stderr)
+
+
+def test_require_xacro_strict_rejects_best_effort_modes():
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--all', '--prefer-xacro', '--require-xacro', '--no-write']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+
+    if rc == 2:
+        # Environment has no xacro binary; strict non-zero behavior is covered by the failure-path test.
+        return
+
+    assert rc == 0
+    report = ROOT / 'build' / 'workcell_studio_urdf_visual_mesh_index_report.json'
+    data = json.loads(report.read_text())
+    assert data.get('best_effort_count', 0) == 0
+    assert data.get('xacro_expanded_count', 0) == data.get('scene_count', 0)
+    assert all(scene.get('extraction_mode') == 'xacro_expanded' for scene in data.get('scenes', []))
+
+
+def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
+    import sys
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+
+    monkeypatch.setattr(mesh_index.shutil, 'which', lambda _: '/usr/bin/xacro')
+
+    def _fake_expand(_path):
+        return None, 'best_effort', ['xacro expansion failed: simulated failure']
+
+    monkeypatch.setattr(mesh_index, 'expand_xacro', _fake_expand)
+    monkeypatch.setattr(
+        mesh_index,
+        'SCENES_ROOT',
+        ROOT / 'tests' / 'fixtures' / 'scene_readiness' / 'duplicate_mesh_workcell' / 'scenes',
+    )
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ['extract_scene_urdf_visual_mesh_index.py', '--all', '--prefer-xacro', '--require-xacro', '--no-write']
+        rc = mesh_index.main()
+    finally:
+        sys.argv = original_argv
+    assert rc != 0

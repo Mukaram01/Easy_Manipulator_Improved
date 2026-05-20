@@ -117,8 +117,6 @@
 #include "gui/asset_catalog_discovery.h"
 #include "gui/transform_clipboard_utils.h"
 
-namespace fs = boost::filesystem;
-
 static QStringList generation_asset_support_preflight(const fs::path & layout_path, bool * severe_failure);
 
 namespace {
@@ -1594,6 +1592,11 @@ void MainWindow::setup_studio_shell()
   preview_process_ = new QProcess(this);
 
   build_studio_header_actions();
+  const auto connect_if = [](QObject * sender, QObject * receiver, auto signal, auto slot) {
+    if (sender && receiver) {
+      QObject::connect(sender, signal, receiver, slot);
+    }
+  };
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   show_studio_page(StudioPage::DashboardPage);
@@ -1622,20 +1625,20 @@ void MainWindow::setup_studio_shell()
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
-  connect(dashboard_open_scene_action_, &QAction::triggered, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect(dashboard_validate_action_, &QAction::triggered, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
-  connect(dashboard_plan_action_, &QAction::triggered, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
-  connect(dashboard_export_action_, &QAction::triggered, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
-  connect(dashboard_delete_action_, &QAction::triggered, this, &MainWindow::delete_selected_scene);
+  connect_if(dashboard_open_scene_action_, this, &QAction::triggered, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
+  connect_if(dashboard_validate_action_, this, &QAction::triggered, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
+  connect_if(dashboard_plan_action_, this, &QAction::triggered, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
+  connect_if(dashboard_export_action_, this, &QAction::triggered, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
+  connect_if(dashboard_delete_action_, this, &QAction::triggered, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
   connect(import_asset_action, &QAction::triggered, this, [this](){ append_studio_log("Import STL / URDF: choose asset import flow from Asset Browser."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ append_studio_log("Add Existing STL to Canvas: choose STL in Asset Browser and click Add to Canvas."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ append_studio_log("Generate Simple Box/Cylinder Placeholder: use quick-add placeholders in catalog."); });
-  connect(pick_source_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_pick_zone);
-  connect(place_target_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_place_zone);
-  connect(camera_button_, &QPushButton::clicked, this, &MainWindow::bind_selected_item_as_camera);
+  connect_if(pick_source_button_, this, &QPushButton::clicked, &MainWindow::bind_selected_item_as_pick_zone);
+  connect_if(place_target_button_, this, &QPushButton::clicked, &MainWindow::bind_selected_item_as_place_zone);
+  connect_if(camera_button_, this, &QPushButton::clicked, &MainWindow::bind_selected_item_as_camera);
 connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo readiness completed"); });
   connect(open_dash, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
   connect(copy_summary, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("demo_summary_copy"); });
@@ -1644,30 +1647,30 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(go_export, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::ExportPage); append_studio_log("Go to Export: switched to Export page"); });
   connect(go_scene_builder, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::SceneBuilderPage); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
   connect(go_preview_commands, &QPushButton::clicked, this, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
-  connect(run_build_button_, &QPushButton::clicked, this, &MainWindow::run_preview_build);
-  connect(run_preview_button_, &QPushButton::clicked, this, &MainWindow::run_fake_hardware_preview);
-  connect(stop_preview_button_, &QPushButton::clicked, this, &MainWindow::stop_preview_process);
-  connect(copy_build_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
-  connect(copy_source_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
-  connect(copy_launch_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
-  connect(copy_all_button_, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
-  connect(open_preview_folder_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
-  connect(open_preview_transcript_button_, &QPushButton::clicked, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect_if(run_build_button_, this, &QPushButton::clicked, &MainWindow::run_preview_build);
+  connect_if(run_preview_button_, this, &QPushButton::clicked, &MainWindow::run_fake_hardware_preview);
+  connect_if(stop_preview_button_, this, &QPushButton::clicked, &MainWindow::stop_preview_process);
+  connect_if(copy_build_button_, this, &QPushButton::clicked, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
+  connect_if(copy_source_button_, this, &QPushButton::clicked, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
+  connect_if(copy_launch_button_, this, &QPushButton::clicked, [this](){ QApplication::clipboard()->setText(selected_scene_launch_command()); });
+  connect_if(copy_all_button_, this, &QPushButton::clicked, [this](){ QApplication::clipboard()->setText(selected_scene_preview_command_block()); });
+  connect_if(open_preview_folder_button_, this, &QPushButton::clicked, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
+  connect_if(open_preview_transcript_button_, this, &QPushButton::clicked, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
   connect(run_offline_validation_button, &QPushButton::clicked, this, &MainWindow::run_offline_validation);
   connect(validate_layout_button, &QPushButton::clicked, this, &MainWindow::run_layout_validation_only);
-  connect(open_validation_report_action, &QAction::triggered, this, &MainWindow::open_validation_report);
-  connect(copy_validation_summary_action, &QAction::triggered, this, &MainWindow::copy_validation_summary);
+  connect_if(open_validation_report_action, this, &QAction::triggered, &MainWindow::open_validation_report);
+  connect_if(copy_validation_summary_action, this, &QAction::triggered, &MainWindow::copy_validation_summary);
   connect(generate_readiness_pack_button, &QPushButton::clicked, this, &MainWindow::generate_readiness_pack);
-  connect(open_readiness_dashboard_action, &QAction::triggered, this, &MainWindow::open_readiness_dashboard);
-  connect(check_canvas_parity_action, &QAction::triggered, this, &MainWindow::check_canvas_generated_parity);
+  connect_if(open_readiness_dashboard_action, this, &QAction::triggered, &MainWindow::open_readiness_dashboard);
+  connect_if(check_canvas_parity_action, this, &QAction::triggered, &MainWindow::check_canvas_generated_parity);
   connect(export_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::export_scene_bundle_for_selected_scene);
   connect(import_scene_bundle_button, &QPushButton::clicked, this, &MainWindow::import_scene_bundle_into_scenes_root);
-  connect(open_export_folder_action, &QAction::triggered, this, &MainWindow::open_scene_bundle_export_folder);
-  connect(open_scene_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
-  connect(open_preview_report_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
-  connect(open_dashboard_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("demo_dashboard"); });
-  connect(copy_source_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
-  connect(copy_build_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
+  connect_if(open_export_folder_action, this, &QAction::triggered, &MainWindow::open_scene_bundle_export_folder);
+  connect_if(open_scene_folder_action, this, &QAction::triggered, [this](){ open_selected_scene_artifact("preview_launch_folder"); });
+  connect_if(open_preview_report_action, this, &QAction::triggered, [this](){ open_selected_scene_artifact("preview_launch_transcript"); });
+  connect_if(open_dashboard_action, this, &QAction::triggered, [this](){ open_selected_scene_artifact("demo_dashboard"); });
+  connect_if(copy_source_action, this, &QAction::triggered, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
+  connect_if(copy_build_action, this, &QAction::triggered, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect(run_self_test_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_self_test);
   connect(run_golden_flow_button_, &QPushButton::clicked, this, &MainWindow::run_diagnostics_golden_flow_dry_run);
   connect(copy_diagnostics_report_button_, &QPushButton::clicked, this, &MainWindow::copy_diagnostics_report);
@@ -1738,7 +1741,7 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ const QString p = selected_catalog_item_path(); if (p.isEmpty()) { QMessageBox::information(this, "Asset Catalog", "Select an asset first."); return; } QApplication::clipboard()->setText(p); append_studio_log("Copy Asset Path: " + p); });
   connect(add_to_canvas_button_, &QPushButton::clicked, this, [this](){ if (!asset_catalog_tree_ || !asset_catalog_tree_->currentItem()) { QMessageBox::information(this, "Asset Catalog", "Select an asset to add to canvas."); return; } auto *it = asset_catalog_tree_->currentItem(); const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) { QMessageBox::information(this, "Asset Catalog", e.disabled_reason); return; } add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
   connect(add_asset_button_, &QPushButton::clicked, this, &MainWindow::open_add_asset_dialog);
-  connect(scene_workflow_recommendation_button_, &QPushButton::clicked, this, [this]() {
+  connect_if(scene_workflow_recommendation_button_, this, &QPushButton::clicked, [this]() {
     trigger_recommended_workflow_action(resolve_recommended_workflow_action().handler);
   });
   connect(asset_catalog_tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *it, int){ if (!it) return; const int idx = it->data(0, CatalogRoleIndex).toInt(); if (idx < 0 || idx >= asset_catalog_entries_.size()) return; const auto & e = asset_catalog_entries_[idx]; if (!e.disabled_reason.trimmed().isEmpty()) return; add_asset_to_canvas_from_catalog(e.category, e.display_name, e.source_path); });
@@ -3361,6 +3364,94 @@ QStringList MainWindow::helper_script_search_paths(const QString & script_name) 
   return candidates;
 }
 
+QStringList MainWindow::candidate_repo_roots_for_scene(const fs::path & selected_scene_dir) const
+{
+  QStringList candidates;
+  QSet<QString> seen;
+  auto add_candidate = [&](const QString & candidate) {
+    if (candidate.isEmpty()) {
+      return;
+    }
+    const QString normalized = QDir::cleanPath(candidate);
+    if (!seen.contains(normalized)) {
+      candidates << normalized;
+      seen.insert(normalized);
+    }
+  };
+
+  for (fs::path cursor = selected_scene_dir; !cursor.empty(); cursor = cursor.parent_path()) {
+    add_candidate(QString::fromStdString(cursor.string()));
+    if (cursor == cursor.parent_path()) {
+      break;
+    }
+  }
+
+  const QString home_dir = QDir::homePath();
+  const QString username = QFileInfo(home_dir).fileName();
+  if (!username.isEmpty()) {
+    add_candidate(QString("/home/%1/workcell_ws/src/easy_manipulation_deployment").arg(username));
+  }
+
+  for (QDir cwd(QDir::currentPath()); cwd.exists(); ) {
+    add_candidate(cwd.absolutePath());
+    if (!cwd.cdUp()) {
+      break;
+    }
+  }
+
+  for (QDir app_dir(QCoreApplication::applicationDirPath()); app_dir.exists(); ) {
+    add_candidate(app_dir.absolutePath());
+    if (!app_dir.cdUp()) {
+      break;
+    }
+  }
+
+  const QString ament_prefix_raw = qEnvironmentVariable("AMENT_PREFIX_PATH");
+  const QStringList ament_entries = ament_prefix_raw.split(':', Qt::SkipEmptyParts);
+  for (const QString & raw_entry : ament_entries) {
+    const QString entry = QDir::cleanPath(raw_entry.trimmed());
+    if (entry.isEmpty()) {
+      continue;
+    }
+    const QString share_root = QDir(entry).filePath("share/easy_manipulation_deployment");
+    add_candidate(share_root);
+    for (QDir share_dir(share_root); share_dir.exists(); ) {
+      add_candidate(share_dir.absolutePath());
+      if (!share_dir.cdUp()) {
+        break;
+      }
+    }
+    add_candidate(entry);
+    for (QDir prefix_dir(entry); prefix_dir.exists(); ) {
+      add_candidate(prefix_dir.absolutePath());
+      if (!prefix_dir.cdUp()) {
+        break;
+      }
+    }
+  }
+
+  return candidates;
+}
+
+QString MainWindow::find_repo_root_with_extractor(const QStringList & candidate_roots) const
+{
+  for (const QString & root : candidate_roots) {
+    const QString script_path =
+      QDir(root).filePath("scripts/extract_scene_urdf_visual_mesh_index.py");
+    const QFileInfo script_info(script_path);
+    if (script_info.exists() && script_info.isFile()) {
+      return script_info.absoluteFilePath();
+    }
+  }
+  return "";
+}
+
+QString MainWindow::resolve_scene3d_extractor_script_path(const fs::path & selected_scene_dir) const
+{
+  const QStringList candidate_roots = candidate_repo_roots_for_scene(selected_scene_dir);
+  return find_repo_root_with_extractor(candidate_roots);
+}
+
 QString MainWindow::selected_scene_name() const
 {
   if (!selected_scene_state_.valid) {
@@ -4859,7 +4950,6 @@ void MainWindow::populate_scene_hierarchy()
     const QString regen_scene_key =
       QString::fromStdString(d.string()) + "::" + QString::fromStdString(d.filename().string());
     append_studio_log("Visual mesh index stale; regenerating");
-    QProcess regen_proc;
     QStringList regen_args;
     const fs::path helper_script = fs::path("scripts") / "extract_scene_urdf_visual_mesh_index.py";
     const QString helper_script_path = QString::fromStdString(helper_script.string());
@@ -4888,6 +4978,17 @@ void MainWindow::populate_scene_hierarchy()
         visual_index_regen_throttle_session_active_ = true;
         append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
       }
+    const QString extractor_script_path = resolve_scene3d_extractor_script_path(d);
+    if (extractor_script_path.isEmpty()) {
+      append_studio_log("Visual mesh index extractor script not found; preview may show placeholders");
+    } else {
+      regen_args << extractor_script_path << "--scene" << QString::fromStdString(d.filename().string()) <<
+        "--prefer-xacro";
+    }
+    if (!regen_args.isEmpty()) {
+      const int code = QProcess::execute("python3", regen_args);
+      if (code == 0) append_studio_log("Visual mesh index regenerated with xacro");
+      else append_studio_log("Visual mesh index unsafe/best-effort; preview may show placeholders");
     }
   }
   if (fs::exists(urdf_visual_index)) {
