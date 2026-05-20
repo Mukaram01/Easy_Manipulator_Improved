@@ -316,4 +316,52 @@ void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Sce
 
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
-void ScenePreviewWidget::refresh_info_chip() { if (!info_chip_label_) return; const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout"); const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays"); const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)"); const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_; info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3  Warn: %4  Task: %5").arg(preview_scene_name_).arg(render_mode).arg(summary).arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing")); info_chip_label_->adjustSize(); if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0); if (toolbar_status_chip_) { const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select"); const QString snap = snap_mode_selector_ ? snap_mode_selector_->currentText() : QStringLiteral("Off"); toolbar_status_chip_->setText(QString("%1 • Snap %2 • Warn %3").arg(interaction).arg(snap).arg(total_warning_count())); }}
+void ScenePreviewWidget::refresh_info_chip()
+{
+  if (!info_chip_label_) return;
+  const QString mode = mode_selector_ ? mode_selector_->currentText() : QStringLiteral("2D Layout");
+  const bool requested_3d = (mode == "3D Layout Preview") || (mode == "Debug Overlays");
+  const QString render_mode = requested_3d && preview3d_available_ ? mode : QStringLiteral("2D Layout (Fallback)");
+  const QString summary = preview_status_summary_.isEmpty() ? QString("Items: %1").arg(preview_items_.size()) : preview_status_summary_;
+
+  int mesh_count = 0;
+  int box_count = 0;
+  int missing_count = 0;
+  int overlay_count = 0;
+  int locked_urdf_count = 0;
+  int physical_count = 0;
+  for (const auto & item : preview_items_) {
+    const QString role = item.role.trimmed().toLower();
+    const QString category = item.category.trimmed().toLower();
+    const QString lock_reason = item.lock_reason.trimmed().toLower();
+    const bool overlay_only = role.contains("overlay") || role.contains("helper") || role.contains("guide") ||
+                              role.contains("warning_anchor") || role.contains("warning_badge") ||
+                              category.contains("overlay") || lock_reason.contains("overlay");
+    if (overlay_only) {
+      ++overlay_count;
+      continue;
+    }
+    ++physical_count;
+    const bool mesh_backed = item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty();
+    if (mesh_backed) ++mesh_count;
+    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++box_count;
+    else ++missing_count;
+
+    if (item.locked && !item.editable &&
+        (category.contains("urdf") || lock_reason.contains("urdf") || lock_reason.contains("robot model") ||
+         lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual"))) ++locked_urdf_count;
+  }
+
+  const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
+                                  .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
+  info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
+                              .arg(preview_scene_name_).arg(render_mode).arg(summary).arg(compact_stats)
+                              .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing"));
+  info_chip_label_->adjustSize();
+  if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
+  if (toolbar_status_chip_) {
+    const QString interaction = interaction_mode_selector_ ? interaction_mode_selector_->currentText() : QStringLiteral("Select");
+    const QString snap = snap_mode_selector_ ? snap_mode_selector_->currentText() : QStringLiteral("Off");
+    toolbar_status_chip_->setText(QString("%1 • Snap %2 • Warn %3").arg(interaction).arg(snap).arg(total_warning_count()));
+  }
+}
