@@ -5,6 +5,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 CPP = ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
 MAINWINDOW = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
+MAINWINDOW_H = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.h"
 
 def must(cond, msg):
     if not cond:
@@ -122,11 +123,70 @@ def main():
         must(token in diag_src, f"missing diagnostics token: {token}")
 
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
+    mw_h_src = MAINWINDOW_H.read_text(encoding="utf-8")
+    mw_combined = mw_src + "\n" + mw_h_src
 
     for token in ["--scene", "--require-xacro", "--prefer-xacro", "safe_for_preview", "extractor_version", "generated_at"]:
         must(token in extractor_src, f"missing new extractor contract token: {token}")
     for token in ["Visual mesh index stale; regenerating", "Visual mesh index regenerated with xacro", "Visual mesh index unsafe/best-effort; preview may show placeholders"]:
         must(token in mw_src, f"missing mainwindow regen log token: {token}")
+
+    # Contract: do not hardcode a specific workspace absolute helper path in mainwindow resolver/callsite.
+    forbidden_abs = "/workcell_ws/scripts/extract_scene_urdf_visual_mesh_index.py"
+    must(
+        forbidden_abs not in mw_src,
+        "mainwindow.cpp regression: hardcoded absolute extractor path found "
+        f"({forbidden_abs}); use resolver helpers instead")
+
+    # Contract: resolver helpers/tokens must exist in mainwindow.cpp/.h for robust script lookup.
+    resolver_required_tokens = [
+        ("helper_script_search_paths(", "missing script resolver helper declaration/definition"),
+        ("helper_script_exists(", "missing script existence helper declaration/definition"),
+        ("detect_workspace_root(", "missing workspace root resolver hook"),
+        ("selected_scene_path()", "missing selected scene accessor used by resolver context"),
+        ("QCoreApplication::applicationDirPath", "missing appDir fallback search path token"),
+        ("AMENT_PREFIX_PATH", "missing AMENT_PREFIX_PATH resolver token/marker"),
+    ]
+    for token, explanation in resolver_required_tokens:
+        must(token in mw_combined, f"{explanation}: expected token `{token}` in mainwindow.cpp/.h")
+
+    # Contract: selected-scene parent-chain search token(s) should exist for scene/workspace resolution.
+    parent_chain_tokens = ["parent_path()", "canonical_root.parent_path()"]
+    must(
+        any(t in mw_src for t in parent_chain_tokens),
+        "missing selected-scene parent-chain search token(s): expected one of "
+        + ", ".join(parent_chain_tokens))
+
+    # Contract: regeneration command must include required flags and avoid raw scripts/... literal callsites.
+    regen_call_pattern = re.search(
+        r"regen_args\s*<<(?P<expr>.*?extract_scene_urdf_visual_mesh_index\.py.*?);",
+        mw_src,
+        re.DOTALL,
+    )
+    must(regen_call_pattern is not None,
+         "unable to locate regen_args construction for extract_scene_urdf_visual_mesh_index.py")
+    regen_expr = regen_call_pattern.group("expr")
+    must("--scene" in regen_expr, "regen args regression: missing required --scene flag")
+    must("--prefer-xacro" in regen_expr, "regen args regression: missing required --prefer-xacro flag")
+    must(
+        "fs::path(\"scripts\")" not in regen_expr and "scripts/" not in regen_expr,
+        "regen callsite regression: raw scripts/... literal used; expected resolved absolute script path variable")
+    must(
+        "regen_script" in regen_expr or "resolved_script" in regen_expr or "helper_script" in regen_expr or "script_path" in regen_expr,
+        "regen callsite regression: extractor path should come from a resolved script-path variable")
+
+    # Contract: extractor strict mode must fail hard when --require-xacro constraints are unmet.
+    must("--require-xacro" in extractor_src,
+         "extractor strict-mode regression: missing --require-xacro argument")
+    must(
+        "if a.require_xacro and not xacro_available" in extractor_src,
+        "extractor strict-mode regression: missing require_xacro/xacro_available guard")
+    must(
+        "return 2" in extractor_src and "xacro executable unavailable (required)" in extractor_src,
+        "extractor strict-mode regression: strict branch must return non-zero on unmet xacro requirement")
+    must(
+        "if a.require_xacro and mode != 'xacro_expanded'" in extractor_src,
+        "extractor strict-mode regression: missing guard against silent best-effort fallback when require-xacro is set")
 
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")
