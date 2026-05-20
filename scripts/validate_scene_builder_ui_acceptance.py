@@ -54,6 +54,10 @@ def _regex_absent_check(name,haystack,forbidden):
     hits=[f"forbidden pattern matched ({label}): {pat}" for label,pat in forbidden.items() if re.search(pat,haystack,re.MULTILINE)]
     return CheckResult(name,not hits,hits)
 
+def _regex_present_check(name,haystack,required):
+    missing=[f"missing pattern ({label}): {pat}" for label,pat in required.items() if not re.search(pat,haystack,re.MULTILINE|re.DOTALL)]
+    return CheckResult(name,not missing,missing)
+
 def _top_header_label_hygiene_check(name:str,haystack:str)->CheckResult:
     details=[]
     required={
@@ -177,6 +181,30 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
             "plan_simulate_direct_button": r'dashboard_plan_button_\s*=\s*new\s+QPushButton\s*\(\s*"Plan / Simulate"',
             "export_direct_button": r'dashboard_export_button_\s*=\s*new\s+QPushButton\s*\(\s*"Export"',
             "delete_scene_direct_button": r'dashboard_delete_button_\s*=\s*new\s+QPushButton\s*\(\s*"Delete Scene"',
+        },
+    ))
+    checks.append(_regex_present_check(
+        "selected-scene card exposes only Scene Actions control with menu wiring",
+        main,
+        {
+            "scene_actions_control_label": r'dashboard_scene_actions_button_\s*=\s*new\s+QToolButton\([^\n]+\);\s*.*?dashboard_scene_actions_button_->setText\("Scene Actions"\);',
+            "scene_actions_menu_assigned": r'dashboard_scene_actions_button_->setMenu\(dashboard_scene_actions_menu_\);',
+            "open_action": r'dashboard_open_scene_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Open in Scene Builder"\);',
+            "validate_action": r'dashboard_validate_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Validate"\);',
+            "plan_action": r'dashboard_plan_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Plan / Simulate"\);',
+            "export_action": r'dashboard_export_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Export"\);',
+            "separator_before_delete": r'dashboard_export_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Export"\);\s*dashboard_scene_actions_menu_->addSeparator\(\);\s*dashboard_delete_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Delete Scene"\);',
+        },
+    ))
+    checks.append(_regex_present_check(
+        "selected-scene Scene Actions are connected to existing behaviors",
+        main,
+        {
+            "open_trigger": r'connect\(dashboard_open_scene_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*open_scene_builder_for_selected_scene\("Dashboard Open in Scene Builder"\);\s*\}\);',
+            "validate_trigger": r'connect\(dashboard_validate_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_validate_offline_\)\s*action_validate_offline_->trigger\(\);\s*\}\);',
+            "plan_trigger": r'connect\(dashboard_plan_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_simulate_plan_preview_\)\s*action_simulate_plan_preview_->trigger\(\);\s*\}\);',
+            "export_trigger": r'connect\(dashboard_export_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_export_open_page_\)\s*action_export_open_page_->trigger\(\);\s*\}\);',
+            "delete_trigger": r'connect\(dashboard_delete_action_,\s*&QAction::triggered,\s*this,\s*&MainWindow::delete_selected_scene\);',
         },
     ))
     checks.append(_token_check("canvas mode and view dropdown controls",all_text,["Mode","View"]))

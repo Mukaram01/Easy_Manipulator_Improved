@@ -79,6 +79,31 @@ def main() -> int:
     ok.append(check("selected-scene actions moved to Scene Actions menu", all(t in mainwindow_cpp + mainwindow_h for t in ["Scene Actions", "dashboard_scene_actions_button_", "dashboard_scene_actions_menu_", "dashboard_open_scene_action_", "dashboard_delete_action_"])))
     forbidden_selected_scene_buttons = re.findall(r'dashboard_(?:open_scene|validate|plan|export|delete)_button_\s*=\s*new\s+QPushButton\s*\(\s*"(?:Open in Scene Builder|Validate|Plan / Simulate|Export|Delete Scene)"', mainwindow_cpp)
     ok.append(check("no always-visible selected-scene action QPushButtons", len(forbidden_selected_scene_buttons) == 0, detail=str(forbidden_selected_scene_buttons)))
+    scene_actions_menu_contract = re.search(
+        r'dashboard_scene_actions_button_\s*=\s*new\s+QToolButton\([^\n]+\);\s*'
+        r'.*?dashboard_scene_actions_button_->setText\("Scene Actions"\);\s*'
+        r'.*?dashboard_scene_actions_menu_\s*=\s*new\s+QMenu\([^\n]+\);\s*'
+        r'.*?dashboard_open_scene_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Open in Scene Builder"\);\s*'
+        r'.*?dashboard_validate_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Validate"\);\s*'
+        r'.*?dashboard_plan_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Plan / Simulate"\);\s*'
+        r'.*?dashboard_export_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Export"\);\s*'
+        r'.*?dashboard_scene_actions_menu_->addSeparator\(\);\s*'
+        r'.*?dashboard_delete_action_\s*=\s*dashboard_scene_actions_menu_->addAction\("Delete Scene"\);\s*'
+        r'.*?dashboard_scene_actions_button_->setMenu\(dashboard_scene_actions_menu_\);',
+        mainwindow_cpp,
+        flags=re.S,
+    )
+    ok.append(check("selected-scene Scene Actions menu contract", scene_actions_menu_contract is not None))
+    action_wiring_contract = all(
+        re.search(pattern, mainwindow_cpp) is not None for pattern in [
+            r'connect\(dashboard_open_scene_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*open_scene_builder_for_selected_scene\("Dashboard Open in Scene Builder"\);\s*\}\);',
+            r'connect\(dashboard_validate_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_validate_offline_\)\s*action_validate_offline_->trigger\(\);\s*\}\);',
+            r'connect\(dashboard_plan_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_simulate_plan_preview_\)\s*action_simulate_plan_preview_->trigger\(\);\s*\}\);',
+            r'connect\(dashboard_export_action_,\s*&QAction::triggered,\s*this,\s*\[this\]\(\)\{\s*if\s*\(action_export_open_page_\)\s*action_export_open_page_->trigger\(\);\s*\}\);',
+            r'connect\(dashboard_delete_action_,\s*&QAction::triggered,\s*this,\s*&MainWindow::delete_selected_scene\);',
+        ]
+    )
+    ok.append(check("selected-scene Scene Actions wiring contract", action_wiring_contract))
     # Ensure scene set before item state update in refresh flow.
     flow = re.search(r"selected_scene_state_\s*=\s*\{\};.*selected_scene_state_\.valid\s*=\s*true;.*selected_item_state_\s*=\s*current_selected_scene_item\(\);", mainwindow_cpp, flags=re.S)
     ok.append(check("scene state updated before item state", flow is not None))
