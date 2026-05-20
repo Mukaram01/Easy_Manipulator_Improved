@@ -38,6 +38,23 @@ def main():
     must("mesh_cache_.clear();" in inv_body, "reload does not clear mesh_cache_")
     must("warned_mesh_fallbacks_.clear();" in inv_body, "reload does not clear warning-once set")
 
+
+    extractor_src = (ROOT / "scripts/extract_scene_urdf_visual_mesh_index.py").read_text(encoding="utf-8")
+    for token in [
+        "def discover_package_map",
+        "AMENT_PREFIX_PATH",
+        "package://",
+        "find\\s+",
+        "gather_text_with_includes",
+        "INCLUDE_RE",
+        "best_effort_recursive",
+    ]:
+        must(token in extractor_src, f"missing extractor token: {token}")
+
+    test_src = (ROOT / "tests/test_scene_urdf_visual_mesh_index.py").read_text(encoding="utf-8")
+    for token in ["assert data['resolved'] > 0", "assert not unresolved_only", "assert ur_scene_resolved"]:
+        must(token in test_src, f"missing test assertion token: {token}")
+
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")
