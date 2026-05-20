@@ -554,7 +554,7 @@ void Scene3DViewportWidget::paintGL()
         // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
       }
     }
-  }
+  };
   draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep physical meshes legible.
   draw_item_batch(physical_items, true);
 
@@ -633,7 +633,6 @@ void Scene3DViewportWidget::paintGL()
       painter.drawText(label_pos, text);
     }
   }
-  const int editable_count = std::count_if(items.cbegin(), items.cend(), [](const auto & it) { return it.editable; });
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));
   painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);
