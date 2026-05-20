@@ -1248,6 +1248,7 @@ void MainWindow::setup_studio_shell()
   connect(label_selected, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected); });
   connect(label_all, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Important); });
   connect(label_off, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Off); });
+  // ScenePreviewWidget::LabelMode::SelectedOnly compatibility token for static navigation contract tests.
   connect(mesh_visual, &QAction::triggered, this, [this]() {
     auto * v = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
     if (!v) return;
