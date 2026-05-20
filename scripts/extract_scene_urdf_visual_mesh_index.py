@@ -11,6 +11,8 @@ SCENES_ROOT = ROOT / "scenes"
 MESH_RE = re.compile(r"<mesh[^>]*filename=[\"']([^\"']+)[\"'][^>]*/?>")
 INCLUDE_RE = re.compile(r"<xacro:include[^>]*filename=[\"']([^\"']+)[\"'][^>]*/?>")
 ARG_RE = re.compile(r"<xacro:arg[^>]*name=[\"']([^\"']+)[\"'][^>]*default=[\"']([^\"']+)[\"']")
+PROPERTY_RE = re.compile(r"<xacro:property[^>]*name=[\"']([^\"']+)[\"'][^>]*value=[\"']([^\"']+)[\"']")
+PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 
 
 def read_yaml(path: Path):
@@ -189,6 +191,13 @@ def discover_package_map(scene_dir: Path):
     return package_map
 
 
+def contains_placeholder(text):
+    if text is None:
+        return False
+    if isinstance(text, (list, tuple, dict)):
+        text = json.dumps(text, sort_keys=True)
+    return bool(PLACEHOLDER_RE.search(str(text)))
+
 def apply_subs(text: str, args: dict[str, str]):
     out = text
     out = re.sub(r"\$\(arg\s+([^\)]+)\)", lambda m: args.get(m.group(1).strip(), ""), out)
@@ -228,6 +237,8 @@ def gather_text_with_includes(path: Path, package_map: dict[str, Path], args: di
     text = path.read_text(encoding="utf-8", errors="ignore")
     for n, d in ARG_RE.findall(text):
         args.setdefault(n.strip(), apply_subs(d.strip(), args))
+    for n, v in PROPERTY_RE.findall(text):
+        args.setdefault(n.strip(), apply_subs(v.strip(), args))
     chunks = [text]
     for inc in INCLUDE_RE.findall(text):
         resolved, _ = resolve_uri(inc, path.parent, package_map, args)
@@ -285,6 +296,12 @@ def extract(xml_text: str, scene_dir: Path, package_map: dict[str, Path], args: 
                 tstatus = link_status.get(lname, 'local_only')
                 parent = link_parent.get(lname, '')
                 transform_source = f"{tstatus}; link={lname}; parent={parent or 'none'}; chain_len={len(joint_chain)}"
+                unresolved_fields = [f for f,v in {"id":f"urdf_visual_{idx}_{lname}","link":lname,"visual":visual.attrib.get("name", ""),"parent_link":parent,"joint_chain":joint_chain}.items() if contains_placeholder(v)]
+                unresolved_pose = contains_placeholder(origin.attrib if origin is not None else "")
+                if unresolved_fields or unresolved_pose:
+                    tstatus = "partial" if tstatus == "resolved" else tstatus
+                    transform_source += "; unresolved_placeholder"
+                    warn = ((warn + "; ") if warn else "") + "unresolved xacro substitution placeholder"
                 mesh_extension = Path(src if src else normalized).suffix.lower() if (src or normalized) else ""
                 render_expected = mesh_extension in {".stl", ".dae"}
                 render_warning = "" if render_expected else (f"unsupported mesh format: {mesh_extension or '<none>'}" if (src or normalized) else "")
@@ -346,6 +363,12 @@ def main():
         "has_transform_collapse_warnings": False,
         "has_unresolved_mesh_warnings": False,
         "transform_status_counts": {"resolved": 0, "partial": 0, "local_only": 0},
+        "unresolved_placeholder_count": 0,
+        "candidate_mesh_count": 0,
+        "emitted_visual_count": 0,
+        "deduplicated_mesh_count": 0,
+        "skipped_duplicate_count": 0,
+        "skipped_unresolved_macro_count": 0,
         "mesh_format_counts": {},
         "renderable_mesh_count": 0,
         "non_renderable_mesh_count": 0,
@@ -357,6 +380,8 @@ def main():
         urdf_path = scene_dir / urdf_rel
         warnings, items, mode = [], [], "best_effort"
         package_map = discover_package_map(scene_dir)
+        scene_candidate_count = 0
+        scene_skipped_unresolved = 0
         if urdf_path.exists():
             expanded, mode, w = expand_xacro(urdf_path); warnings.extend(w)
             args = {"scene_dir": str(scene_dir)}
@@ -370,6 +395,21 @@ def main():
             warnings.extend(xw)
         else:
             warnings.append(f"missing urdf_xacro: {urdf_path}")
+        scene_candidate_count = len(items)
+        deduped = []
+        seen = set()
+        for it in items:
+            key = (it.get("link"), it.get("visual"), it.get("package_uri"), tuple((it.get("pose") or {}).get("xyz") or [0,0,0]))
+            if key in seen:
+                report["skipped_duplicate_count"] += 1
+                continue
+            seen.add(key)
+            if contains_placeholder(it.get("id")) or contains_placeholder(it.get("link")) or contains_placeholder(it.get("parent_link")):
+                it["transform_status"] = "partial" if it.get("transform_status") == "resolved" else it.get("transform_status", "local_only")
+                it["warning"] = ((it.get("warning","") + "; ") if it.get("warning") else "") + "unresolved xacro substitution placeholder"
+                scene_skipped_unresolved += 1
+            deduped.append(it)
+        items = deduped
         if not items:
             items.append({"id":"urdf_visual_unresolved_0","link":"unknown_link","visual":"","parent_link":"","source_path":"","package_uri":"","pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"local_visual_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"link_world_pose":{"xyz":[0,0,0],"rpy":[0,0,0]},"joint_chain":[],"transform_source":"local_only; unresolved_fallback","transform_status":"local_only","scale":[1,1,1],"mesh_extension":"","render_expected":False,"render_warning":"","material":{},"category":"unknown_visual","resolved":False,"warning":"no mesh references discovered in URDF/Xacro parse"})
 
@@ -398,11 +438,16 @@ def main():
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"scene_name": scene_dir.name, "source_urdf_xacro_path": str(urdf_path), "extraction_mode": mode, "visual_items": items, "warnings": warnings}, indent=2), encoding="utf-8")
         report["scene_count"] += 1; report["visual_count"] += len(items)
+        report["candidate_mesh_count"] += scene_candidate_count
+        report["emitted_visual_count"] += len(items)
+        report["deduplicated_mesh_count"] += len(items)
+        report["skipped_unresolved_macro_count"] += scene_skipped_unresolved
         report["resolved"] += sum(1 for i in items if i.get("resolved")); report["unresolved"] += sum(1 for i in items if not i.get("resolved"))
         report["collapse_warning_count"] += int(has_transform_collapse_warning)
         report["unresolved_mesh_warning_count"] += len(unresolved_mesh_warnings)
         report["has_transform_collapse_warnings"] = report["has_transform_collapse_warnings"] or has_transform_collapse_warning
         report["has_unresolved_mesh_warnings"] = report["has_unresolved_mesh_warnings"] or has_unresolved_mesh_warning
+        report["unresolved_placeholder_count"] += sum(1 for i in items if "unresolved xacro substitution placeholder" in (i.get("warning") or ""))
         for k in report["transform_status_counts"].keys():
             report["transform_status_counts"][k] += scene_transform_counts[k]
         report["scenes"].append({

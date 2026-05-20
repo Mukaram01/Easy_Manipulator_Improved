@@ -29,7 +29,7 @@ def main():
     BUILD.mkdir(parents=True, exist_ok=True)
     diagnostics={'scenes':[], 'warning_count':0, 'identical_position_warning_count':0,
                  'transform_resolved_count':0,'transform_partial_count':0,'transform_local_only_count':0,
-                 'fallback_asset_item_count':0}
+                 'fallback_asset_item_count':0,'unresolved_placeholder_count':0,'candidate_mesh_count':0,'emitted_visual_count':0}
     hard_errors=[]
     for scene in sorted([p for p in SCENES.iterdir() if p.is_dir()]):
         idx=scene/'generated'/'scene_visual_mesh_index.json'
@@ -37,8 +37,10 @@ def main():
             hard_errors.append(f'missing index: {idx}')
             continue
         payload=json.loads(idx.read_text())
-        items=payload.get('visual_items', [])
-        mesh_items=[i for i in items if i.get('mesh_extension')]
+        items=payload.get('scene_urdf_visual_items', payload.get('visual_items', []))
+        supplemental=payload.get('supplemental_asset_visual_items', [])
+        all_items=items+supplemental
+        mesh_items=[i for i in all_items if i.get('mesh_extension')]
         loaded=[i for i in mesh_items if i.get('resolved')]
         failed=[i for i in mesh_items if not i.get('resolved')]
         exts=[]
@@ -52,7 +54,7 @@ def main():
         radius=0.5*math.sqrt(sum(float(v)*float(v) for v in b['extents']))
         warnings=[]
         transform_counts={'resolved':0,'partial':0,'local_only':0}
-        for i in items:
+        for i in all_items:
             ts=i.get('transform_status','local_only')
             if ts not in transform_counts: ts='local_only'
             transform_counts[ts]+=1
@@ -92,6 +94,9 @@ def main():
         diagnostics['transform_resolved_count'] += transform_counts['resolved']
         diagnostics['transform_partial_count'] += transform_counts['partial']
         diagnostics['transform_local_only_count'] += transform_counts['local_only']
+        diagnostics['unresolved_placeholder_count'] += sum(1 for i in all_items if 'unresolved xacro substitution placeholder' in (i.get('warning') or ''))
+        diagnostics['candidate_mesh_count'] += payload.get('candidate_mesh_count', len(all_items))
+        diagnostics['emitted_visual_count'] += payload.get('emitted_visual_count', len(all_items))
     OUT.write_text(json.dumps(diagnostics, indent=2)+"\n")
     if hard_errors:
         print('\n'.join(hard_errors))
