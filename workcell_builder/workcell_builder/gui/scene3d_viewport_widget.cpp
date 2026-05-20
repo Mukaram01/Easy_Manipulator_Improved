@@ -494,6 +494,13 @@ void Scene3DViewportWidget::paintGL()
     if (r.isEmpty()) return QStringLiteral("Item");
     return role.left(10);
   };
+  const auto compact_label = [&](const ScenePreviewWidget::PreviewItem & it) {
+    QString label = it.display_name.trimmed();
+    if (label.isEmpty()) label = it.id.trimmed();
+    if (label.isEmpty()) label = compact_role(it.role);
+    if (label.size() > 18) label = label.left(17) + QStringLiteral("…");
+    return label;
+  };
   const double zoom_factor = distance_ / qMax(0.25, scene_radius_);
   const bool crowded = items.size() > 30;
   const bool zoomed_far = zoom_factor > 5.2;
@@ -525,7 +532,9 @@ void Scene3DViewportWidget::paintGL()
         draw_label = true;
         break;
     }
+    const bool is_urdf_visual = it.locked && !it.editable && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive);
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
+    if (is_urdf_visual && !selected && label_mode != ScenePreviewWidget::LabelMode::All) draw_label = false;
     if (show_warning_labels && !it.warnings.isEmpty()) {
       if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
         const QString debug_warning_text = warning_debug_text(it.warnings);
@@ -539,7 +548,7 @@ void Scene3DViewportWidget::paintGL()
     }
     if (draw_label) {
       const QString missing_reason = placeholder_reason_for_item(it);
-      const QString text = selected ? it.id : (missing_reason.isEmpty() ? compact_role(it.role) : QString("%1 missing geometry").arg(compact_role(it.role)));
+      const QString text = selected ? compact_label(it) : (missing_reason.isEmpty() ? compact_label(it) : QString("%1 missing").arg(compact_role(it.role)));
       const QPointF label_anchor(p.x() + 12.0, p.y() - 10.0);
       const QPointF label_pos = apply_label_overlap_offset(label_anchor, placed_label_points, robot_base_points, is_critical_label_role(role));
       placed_label_points.push_back(label_pos);

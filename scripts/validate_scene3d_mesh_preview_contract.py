@@ -203,7 +203,7 @@ def main():
         'p.yaw =',
         'p.locked = true',
         'p.editable = false',
-        'p.lock_reason = "URDF visual preview item (locked)"',
+        'p.lock_reason = "URDF visual preview-only item (locked)"',
     ]:
         must(token in mw_src, f"missing preview ingestion token: {token}")
     must("use_fake_hardware:=true" in mw_src, "fake hardware launch token missing")
