@@ -1,5 +1,23 @@
 #include "scene_preview_widget.h"
 
+namespace {
+constexpr double kOverlayFitDominanceRatio = 4.0;
+
+void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & physical_bounds, const QRectF & overlay_bounds)
+{
+  if (!self) return;
+  if (!physical_bounds.isValid() || physical_bounds.isEmpty()) return;
+  if (!overlay_bounds.isValid() || overlay_bounds.isEmpty()) return;
+  const double physical_area = qMax(1e-6, physical_bounds.width() * physical_bounds.height());
+  const double overlay_area = qMax(0.0, overlay_bounds.width() * overlay_bounds.height());
+  const double ratio = overlay_area / physical_area;
+  if (ratio < kOverlayFitDominanceRatio) return;
+  emit self->studio_log_requested(QString("Overlay-fit warning: overlay bounds are %1x physical bounds; use Fit Scene to keep physical meshes legible.")
+                                      .arg(QString::number(ratio, 'f', 1)));
+}
+}
+
+
 #include <algorithm>
 #include <QComboBox>
 #include <QFrame>
@@ -236,8 +254,8 @@ void ScenePreviewWidget::reload_meshes()
   emit studio_log_requested("Reloaded mesh preview cache (visual-only).");
 }
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
-void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); }
-void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; }
+void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); } // Fit Scene intentionally excludes overlay-only bounds by default.
+void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); const QRectF physical_bounds = rendered_items_bounds_2d(false); const QRectF overlay_bounds = rendered_items_bounds_2d(true); maybe_warn_overlay_fit_dominance(this, physical_bounds, overlay_bounds); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; } // Fit overlays includes overlay bounds for explicit overlay-focused framing.
 void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->focus_selected(); }
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_mode_and_state()

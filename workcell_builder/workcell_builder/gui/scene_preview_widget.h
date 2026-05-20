@@ -38,6 +38,7 @@ public:
     bool editable{ true };
     bool locked{ false };
     QString lock_reason;
+    QString metadata_tags;
     bool metadata_complete{ true };
     QStringList warnings;
     bool has_mesh_metadata{ false };

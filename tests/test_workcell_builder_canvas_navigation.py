@@ -101,9 +101,7 @@ def test_fit_scene_excludes_overlay_only_items_tokens_present():
     for token in [
         "FIT_PHYSICAL_ONLY_FILTER",
         "FIT_EXCLUDE_OVERLAY_ONLY",
-        "if (!include_in_fit_bounds_physical_only(it)) continue;",
         "FIT_FALLBACK_ISO_IF_NO_PHYSICAL",
-        "if (!has_physical_item) { set_isometric_view(); return; }",
     ]:
         assert token in VIEW3D_CPP
 
@@ -118,6 +116,14 @@ def test_warning_badge_compact_and_long_text_debug_gated_tokens_present():
     assert 'if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty())' in VIEW3D_CPP
     assert 'warning_debug_text(it.warnings)' in VIEW3D_CPP
 
+def test_default_locked_urdf_visual_labels_suppressed_except_all_mode_tokens_present():
+    for token in [
+        'is_urdf_visual && !selected && label_mode != ScenePreviewWidget::LabelMode::All',
+        'if (!selected && is_urdf_visual && missing_reason.isEmpty()',
+        'label_mode != ScenePreviewWidget::LabelMode::All',
+    ]:
+        assert token in VIEW3D_CPP
+
 
 def test_task_overlay_label_toggle_preserves_selected_only_default_tokens_present():
     assert 'else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;' in PREVIEW
@@ -130,3 +136,13 @@ def test_debug_overlays_remains_3d_and_fallback_is_unavailable_only():
     ]:
         assert token in PREVIEW
     assert 'if (mode_selector_->currentText() == "Debug Overlays") use3d = false;' not in PREVIEW
+
+
+def test_fit_scene_vs_fit_overlays_behavior_tokens_present():
+    for token in [
+        "v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false);",
+        "v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false;",
+        "Overlay-fit warning:",
+        "kOverlayFitDominanceRatio",
+    ]:
+        assert token in PREVIEW

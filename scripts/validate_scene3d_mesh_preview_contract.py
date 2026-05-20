@@ -21,6 +21,14 @@ def main():
     diag_src = (ROOT / "scripts/validate_scene3d_visual_diagnostics.py").read_text(encoding="utf-8")
     body = fn_body(src, "bool Scene3DViewportWidget::draw_mesh_preview_if_available")
     for token in [
+        "fit_include_overlays",
+        "scene_bounds_from_visible_items",
+        "include_in_fit_bounds",
+        "FIT_PHYSICAL_ONLY_FILTER",
+    ]:
+        must(token in src, f"missing fit-default contract token: {token}")
+
+    for token in [
         "MeshPreviewMode::Primitives",
         "MeshPreviewMode::Meshes",
         "MeshPreviewMode::Auto",
