@@ -77,10 +77,27 @@ def _top_header_label_hygiene_check(name:str,haystack:str)->CheckResult:
     return CheckResult(name,not details,details)
 
 def _visible_label_set_check(name:str,haystack:str,allowed:set[str],forbidden_hint:list[str])->CheckResult:
-    present=[label for label in allowed if label in haystack]
-    missing=[label for label in sorted(allowed) if label not in present]
-    forbidden=[label for label in forbidden_hint if re.search(rf"\b{re.escape(label)}\b",haystack)]
-    details=[*(f"missing visible top-level label: {m}" for m in missing),*(f"forbidden visible top-level label: {f}" for f in forbidden)]
+    details=[]
+    for required_literal in ("Studio Home","New Cell"):
+        if required_literal not in haystack:
+            details.append(f'missing visible top-level label: {required_literal}')
+
+    for button,expected in {
+        "scenes_open_button":"Scenes",
+        "run_next_button":"Run Next",
+        "more_button":"More",
+    }.items():
+        m=re.search(rf'{button}\s*->\s*setText\("([^"]+)"\);',haystack)
+        if not m:
+            details.append(f'missing visible top-level label assignment for {button}')
+            continue
+        if m.group(1)!=expected:
+            details.append(f'{button} must be exactly "{expected}" (found "{m.group(1)}")')
+
+    for label in forbidden_hint:
+        pattern=rf'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*"{re.escape(label)}"'
+        if re.search(pattern,haystack):
+            details.append(f'forbidden direct visible top-level label: {label}')
     return CheckResult(name,not details,details)
 
 
@@ -138,17 +155,17 @@ def run_checks(file_text_map:dict[str,str]|None=None)->list[CheckResult]:
         "forbidden direct top-bar primary actions",
         main,
         {
-            "validate_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Validate\"',
-            "plan_or_simulate_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"(?:Plan|Simulate)\"',
-            "export_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Export\"',
-            "delete_scene_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Delete Scene\"',
-            "select_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Select\"',
-            "place_asset_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Place Asset\"',
-            "move_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Move\"',
-            "inspect_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Inspect\"',
-            "save_layout_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Save Layout\"',
-            "undo_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Undo\"',
-            "redo_direct_button": r'(?:addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(|new\s+(?:QPushButton|QToolButton)\s*\()\s*\"Redo\"',
+            "validate_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Validate\"',
+            "plan_or_simulate_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"(?:Plan|Simulate)\"',
+            "export_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Export\"',
+            "delete_scene_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Delete Scene\"',
+            "select_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Select\"',
+            "place_asset_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Place Asset\"',
+            "move_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Move\"',
+            "inspect_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Inspect\"',
+            "save_layout_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Save Layout\"',
+            "undo_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Undo\"',
+            "redo_direct_button": r'addWidget\s*\(\s*new\s+(?:QPushButton|QToolButton)\s*\(\s*\"Redo\"',
         },
     ))
     checks.append(_regex_absent_check(

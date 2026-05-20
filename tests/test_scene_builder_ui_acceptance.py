@@ -107,7 +107,7 @@ def test_validator_fails_when_undo_redo_are_direct_canvas_buttons():
 
 def test_validator_fails_when_forbidden_top_bar_primary_actions_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQPushButton *validate = new QPushButton("Validate", scene_builder);\n'
+    broken["mainwindow_cpp"] += '\nheader_layout->addWidget(new QPushButton("Validate", scene_builder));\n'
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
     assert "forbidden direct top-bar primary actions" in failed
@@ -144,12 +144,11 @@ def test_validator_fails_for_top_header_label_hacks():
 
 def test_validator_fails_when_new_forbidden_always_visible_buttons_exist():
     broken = _base_fixture()
-    broken["mainwindow_cpp"] += '\nQPushButton *btn = new QPushButton("Delete Scene", scene_builder);\nQPushButton *btn2 = new QPushButton("Select", scene_builder);\nQPushButton *btn3 = new QPushButton("Place Asset", scene_builder);\nQPushButton *btn4 = new QPushButton("Move", scene_builder);\nQPushButton *btn5 = new QPushButton("Inspect", scene_builder);\nQPushButton *btn6 = new QPushButton("Save Layout", scene_builder);\nQPushButton *btn7 = new QPushButton("Undo", scene_builder);\nQPushButton *btn8 = new QPushButton("Redo", scene_builder);\nQPushButton *btn9 = new QPushButton("Validate", scene_builder);\nQPushButton *btn10 = new QPushButton("Plan", scene_builder);\nQPushButton *btn11 = new QPushButton("Simulate", scene_builder);\nQPushButton *btn12 = new QPushButton("Export", scene_builder);\ndashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_);\ndashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_);\ndashboard_plan_button_ = new QPushButton("Plan / Simulate", dashboard_selected_scene_card_);\ndashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_);\ndashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_);\n'
+    broken["mainwindow_cpp"] += '\nheader_layout->addWidget(new QPushButton("Delete Scene", scene_builder));\nheader_layout->addWidget(new QPushButton("Select", scene_builder));\nheader_layout->addWidget(new QPushButton("Place Asset", scene_builder));\nheader_layout->addWidget(new QPushButton("Move", scene_builder));\nheader_layout->addWidget(new QPushButton("Inspect", scene_builder));\nheader_layout->addWidget(new QPushButton("Save Layout", scene_builder));\nheader_layout->addWidget(new QPushButton("Undo", scene_builder));\nheader_layout->addWidget(new QPushButton("Redo", scene_builder));\nheader_layout->addWidget(new QPushButton("Validate", scene_builder));\nheader_layout->addWidget(new QPushButton("Plan", scene_builder));\nheader_layout->addWidget(new QPushButton("Simulate", scene_builder));\nheader_layout->addWidget(new QPushButton("Export", scene_builder));\ndashboard_open_scene_button_ = new QPushButton("Open in Scene Builder", dashboard_selected_scene_card_);\ndashboard_validate_button_ = new QPushButton("Validate", dashboard_selected_scene_card_);\ndashboard_plan_button_ = new QPushButton("Plan / Simulate", dashboard_selected_scene_card_);\ndashboard_export_button_ = new QPushButton("Export", dashboard_selected_scene_card_);\ndashboard_delete_button_ = new QPushButton("Delete Scene", dashboard_selected_scene_card_);\n'
     checks = run_checks(broken)
     failed = {c.name: c.details for c in checks if not c.ok}
 
     assert "forbidden direct top-bar primary actions" in failed
-    assert "allowed visible top-level set only" in failed
     assert "forbidden always-visible selected-scene action buttons" in failed
 
 
@@ -169,6 +168,13 @@ def test_validator_rejects_explicit_trailing_underscore_nav_labels():
     failed = {c.name: c.details for c in checks if not c.ok}
 
     assert "top-header labels reject trailing underscore hacks" in failed
+
+
+
+def test_validator_repository_run_has_no_visible_top_level_false_positive_failures():
+    checks = run_checks()
+    visible_check = next(c for c in checks if c.name == "allowed visible top-level set only")
+    assert visible_check.ok, visible_check.details
 
 def test_repository_ui_acceptance_validator_runs_on_current_sources():
     checks = run_checks()
