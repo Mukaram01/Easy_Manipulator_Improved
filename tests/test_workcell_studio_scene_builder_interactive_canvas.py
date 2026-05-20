@@ -21,6 +21,12 @@ def test_focus_selected_centers_on_selected_item():
     assert 'orbit_offset_' in text
 
 
+def test_info_chip_and_viewport_have_locked_urdf_and_separated_overlay_mesh_counters():
+    viewport = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
+    preview = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
+    assert 'Items %1 • Mesh %2 • Boxes %3 • Missing %4' in viewport
+    assert 'Overlays %1 • Locked URDF %2' in viewport
+    assert 'Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6' in preview
 def test_default_label_suppression_and_metadata_tag_storage_tokens_present():
     main_text = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
     view_text = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')

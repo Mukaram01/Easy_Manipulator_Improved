@@ -320,6 +320,26 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   return true;
 }
 
+bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  const NormalizedRole role = classify_item_role(it);
+  if (role == NormalizedRole::SafetyZone || role == NormalizedRole::WarningAnchor) return true;
+  const QString role_text = it.role.trimmed().toLower();
+  const QString category = it.category.trimmed().toLower();
+  const QString lock_reason = it.lock_reason.trimmed().toLower();
+  return role_text.contains("overlay") || role_text.contains("helper") || role_text.contains("guide") ||
+         category.contains("overlay") || lock_reason.contains("overlay");
+}
+
+bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  if (!(it.locked && !it.editable)) return false;
+  const QString category = it.category.trimmed().toLower();
+  const QString lock_reason = it.lock_reason.trimmed().toLower();
+  return category.contains("urdf") || lock_reason.contains("urdf") || lock_reason.contains("robot model") ||
+         lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual");
+}
+
 
 
 
@@ -499,6 +519,27 @@ void Scene3DViewportWidget::paintGL()
   int mesh_backed_count = 0;
   int placeholder_count = 0;
   int wireframe_box_count = 0;
+  int overlay_count = 0;
+  int locked_urdf_count = 0;
+  int physical_item_count = 0;
+  for (const auto * it : draw_items) {
+    const NormalizedRole role = classify_item_role(*it);
+    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+    const bool overlay_only = is_overlay_only_item(*it);
+    if (overlay_only) ++overlay_count;
+    else ++physical_item_count;
+    if (is_locked_urdf_item(*it)) ++locked_urdf_count;
+
+    int item_placeholder_count = 0;
+    int item_mesh_backed_count = 0;
+    int item_wireframe_box_count = 0;
+    draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count);
+    if (!overlay_only) {
+      placeholder_count += item_placeholder_count;
+      mesh_backed_count += item_mesh_backed_count;
+      wireframe_box_count += item_wireframe_box_count;
+    }
+    if (it->id == selected_id) {
   std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
   std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
@@ -601,15 +642,17 @@ void Scene3DViewportWidget::paintGL()
   const int preview_count = items.size() - editable_count;
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));
-  painter.drawRoundedRect(QRectF(12.0, 12.0, 220.0, 58.0), 6.0, 6.0);
+  painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);
   painter.setPen(QColor("#e2e8f0"));
-  painter.drawText(QRectF(20.0, 18.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
-  painter.drawText(QRectF(20.0, 34.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+  painter.drawText(QRectF(20.0, 18.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
+  painter.drawText(QRectF(20.0, 34.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Scene: %1").arg(scene_name));
-  painter.drawText(QRectF(20.0, 50.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Items %1 • Mesh %2 • Box %3 • Missing %4").arg(items.size()).arg(mesh_backed_count).arg(wireframe_box_count).arg(placeholder_count));
-  painter.drawText(QRectF(20.0, 66.0, 204.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Mode: %1").arg(gizmo_mode_label()));
+  painter.drawText(QRectF(20.0, 50.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Items %1 • Mesh %2 • Boxes %3 • Missing %4")
+                     .arg(physical_item_count).arg(mesh_backed_count).arg(wireframe_box_count).arg(placeholder_count));
+  painter.drawText(QRectF(20.0, 66.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Overlays %1 • Locked URDF %2 • Mode: %3")
+                     .arg(overlay_count).arg(locked_urdf_count).arg(gizmo_mode_label()));
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;

@@ -18,3 +18,6 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     assert "parse_collada_bytes_for_test" in viewport_cpp
     assert "ext == QStringLiteral(\"dae\")" in viewport_cpp
     assert "unsupported mesh format" in viewport_cpp
+    assert "Locked URDF" in viewport_cpp
+    assert "Overlays %1" in viewport_cpp
+    assert "Items %1 • Mesh %2 • Boxes %3 • Missing %4" in viewport_cpp
