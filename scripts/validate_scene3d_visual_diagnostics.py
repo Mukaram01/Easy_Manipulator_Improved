@@ -29,7 +29,7 @@ def main():
     BUILD.mkdir(parents=True, exist_ok=True)
     diagnostics={'scenes':[], 'warning_count':0, 'identical_position_warning_count':0,
                  'transform_resolved_count':0,'transform_partial_count':0,'transform_local_only_count':0,
-                 'fallback_asset_item_count':0,'unresolved_placeholder_count':0,'candidate_mesh_count':0,'emitted_visual_count':0}
+                 'fallback_asset_item_count':0,'unresolved_placeholder_count':0,'candidate_mesh_count':0,'emitted_visual_count':0,'safe_for_preview_count':0,'unsafe_preview_count':0,'xacro_expanded_count':0,'best_effort_count':0,'stale_index_count':0,'unsafe_reasons':{}}
     hard_errors=[]
     for scene in sorted([p for p in SCENES.iterdir() if p.is_dir()]):
         idx=scene/'generated'/'scene_visual_mesh_index.json'
@@ -96,6 +96,13 @@ def main():
         diagnostics['transform_local_only_count'] += transform_counts['local_only']
         diagnostics['unresolved_placeholder_count'] += sum(1 for i in all_items if 'unresolved xacro substitution placeholder' in (i.get('warning') or ''))
         diagnostics['candidate_mesh_count'] += payload.get('candidate_mesh_count', len(all_items))
+        diagnostics['safe_for_preview_count'] += int(bool(payload.get('safe_for_preview', False)))
+        diagnostics['unsafe_preview_count'] += int(not bool(payload.get('safe_for_preview', False)))
+        diagnostics['xacro_expanded_count'] += int(payload.get('extraction_mode') == 'xacro_expanded')
+        diagnostics['best_effort_count'] += int(payload.get('extraction_mode') != 'xacro_expanded')
+        diagnostics['stale_index_count'] += int(bool(payload.get('stale_index', False)))
+        if not payload.get('safe_for_preview', False):
+            diagnostics['unsafe_reasons'][scene.name] = payload.get('unsafe_reasons', ['unknown'])
         diagnostics['emitted_visual_count'] += payload.get('emitted_visual_count', len(all_items))
     OUT.write_text(json.dumps(diagnostics, indent=2)+"\n")
     if hard_errors:

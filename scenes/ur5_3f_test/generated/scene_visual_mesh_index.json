@@ -1,7 +1,48 @@
 {
   "scene_name": "ur5_3f_test",
-  "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro",
+  "generated_at": "2026-05-20T14:35:22.403054+00:00",
+  "extractor_version": "2.0",
   "extraction_mode": "best_effort_recursive",
+  "xacro_available": false,
+  "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro",
+  "source_mtime": 1779281021.454677,
+  "included_source_paths": [
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro"
+  ],
+  "included_source_mtimes": {
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro": 1779281021.454677,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779281020.4666886,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779281020.4666886,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779281020.4666886,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779281020.4666886,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro": 1779281020.6186867
+  },
+  "unresolved_include_count": 1,
+  "unresolved_placeholder_count": 2,
+  "has_transform_collapse_warning": false,
+  "candidate_mesh_count": 2,
+  "emitted_visual_count": 2,
+  "transform_status_counts": {
+    "resolved": 0,
+    "partial": 2,
+    "local_only": 0
+  },
+  "identical_position_clustered": true,
+  "safe_for_preview": false,
+  "unsafe_reasons": [
+    "unresolved_placeholders",
+    "best_effort_unresolved_includes",
+    "identical_world_positions"
+  ],
+  "stale_index": true,
+  "stale_reasons": [
+    "unsafe_index"
+  ],
   "visual_items": [
     {
       "id": "urdf_visual_0_table_${prefix}",
@@ -46,47 +87,19 @@
           0.0
         ]
       },
-      "world_visual_tf": [
-        [
-          1.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
       "joint_chain": [
         "table_base_joint_${prefix}"
       ],
-      "transform_source": "resolved; link=table_${prefix}; parent=${parent}; chain_len=1; unresolved_placeholder",
+      "transform_source": "partial; link=table_${prefix}",
       "transform_status": "partial",
-      "link_status": "partial",
       "scale": [
         0.001,
         0.001,
         0.001
       ],
-      "material": {},
       "category": "environment_visual",
       "resolved": true,
-      "warning": "unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
+      "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
       "render_warning": ""
@@ -134,57 +147,26 @@
           0.0
         ]
       },
-      "world_visual_tf": [
-        [
-          1.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
       "joint_chain": [
         "${name}_joint",
         "${name}_link_joint"
       ],
-      "transform_source": "resolved; link=${name}_link; parent=${name}_bottom_screw_frame; chain_len=2; unresolved_placeholder",
+      "transform_source": "partial; link=${name}_link",
       "transform_status": "partial",
-      "link_status": "partial",
       "scale": [
         1.0,
         1.0,
         1.0
       ],
-      "material": {},
       "category": "unknown_visual",
       "resolved": true,
-      "warning": "unresolved xacro substitution placeholder; unresolved xacro substitution placeholder",
+      "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".dae",
       "render_expected": true,
       "render_warning": ""
     }
   ],
   "warnings": [
-    "xacro executable unavailable; using best_effort parsing",
-    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro",
-    "unresolved xacro substitution placeholder",
-    "unresolved xacro substitution placeholder"
+    "unresolved xacro include: $(find ur_description)/urdf/ur_macro.xacro"
   ]
 }

@@ -122,6 +122,12 @@ def main():
         must(token in diag_src, f"missing diagnostics token: {token}")
 
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
+
+    for token in ["--scene", "--require-xacro", "--prefer-xacro", "safe_for_preview", "extractor_version", "generated_at"]:
+        must(token in extractor_src, f"missing new extractor contract token: {token}")
+    for token in ["Visual mesh index stale; regenerating", "Visual mesh index regenerated with xacro", "Visual mesh index unsafe/best-effort; preview may show placeholders"]:
+        must(token in mw_src, f"missing mainwindow regen log token: {token}")
+
     for token in ["scene_visual_mesh_index.json", "urdf_visual", "Preview warning: URDF visual unresolved", "p.locked = true"]:
         must(token in mw_src, f"missing mainwindow token: {token}")
 

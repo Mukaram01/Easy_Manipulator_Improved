@@ -15,7 +15,7 @@ def _xyz_from_item(item: dict):
 
 def test_scene_urdf_visual_mesh_index_generation():
     script = ROOT / 'scripts' / 'extract_scene_urdf_visual_mesh_index.py'
-    proc = subprocess.run(['python3', str(script)], capture_output=True, text=True)
+    proc = subprocess.run(['python3', str(script), '--all', '--prefer-xacro'], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
 
     report = ROOT / 'build' / 'workcell_studio_urdf_visual_mesh_index_report.json'
@@ -43,6 +43,8 @@ def test_scene_urdf_visual_mesh_index_generation():
         idx = scene / 'generated' / 'scene_visual_mesh_index.json'
         assert idx.exists()
         payload = json.loads(idx.read_text())
+        for key in ['generated_at','extractor_version','extraction_mode','xacro_available','source_urdf_xacro_path','source_mtime','unresolved_placeholder_count','has_transform_collapse_warning','candidate_mesh_count','emitted_visual_count','transform_status_counts','safe_for_preview']:
+            assert key in payload
         items = payload.get('visual_items', [])
         assert items
         all_items.extend(items)
@@ -115,3 +117,16 @@ def test_scene3d_visual_diagnostics_report_generation():
     first = data['scenes'][0]
     for key in ['item_count','mesh_item_count','loaded_mesh_count','failed_mesh_count','world_bounds','largest_mesh','smallest_mesh','warnings']:
         assert key in first
+
+
+def test_scene_option_and_local_smoke_missing_xacro_graceful():
+    script = ROOT / 'scripts' / 'extract_scene_urdf_visual_mesh_index.py'
+    proc = subprocess.run(['python3', str(script), '--scene', 'ur5_2f_test', '--prefer-xacro'], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert 'Traceback' not in (proc.stdout + proc.stderr)
+
+    smoke = ROOT / 'scripts' / 'run_scene3d_local_xacro_smoke.py'
+    assert smoke.exists()
+    proc2 = subprocess.run(['python3', str(smoke)], capture_output=True, text=True)
+    assert proc2.returncode in (0, 2)
+    assert 'Traceback' not in (proc2.stdout + proc2.stderr)
