@@ -1,0 +1,38 @@
+{
+  "scene_name": "ur5_airpick4_test",
+  "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro",
+  "extraction_mode": "best_effort",
+  "visual_items": [
+    {
+      "id": "urdf_visual_unresolved_0",
+      "link": "unknown_link",
+      "visual": "",
+      "source_path": "",
+      "package_uri": "",
+      "pose": {
+        "xyz": [
+          0,
+          0,
+          0
+        ],
+        "rpy": [
+          0,
+          0,
+          0
+        ]
+      },
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "material": {},
+      "category": "unknown_visual",
+      "resolved": false,
+      "warning": "no mesh references discovered in URDF/Xacro best-effort parse"
+    }
+  ],
+  "warnings": [
+    "xacro executable unavailable; using best_effort parsing"
+  ]
+}
