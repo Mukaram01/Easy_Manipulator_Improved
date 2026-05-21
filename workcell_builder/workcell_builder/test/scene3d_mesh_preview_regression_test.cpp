@@ -51,3 +51,11 @@ TEST(Scene3DMeshPreviewRegression, KeepsMeshCacheBoundsAndModeHooks)
   EXPECT_NE(src.find("entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.min_bounds, entry.max_bounds);"), std::string::npos);
   EXPECT_NE(src.find("if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;"), std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/mainwindow.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("Scene3D: editable=%1, mesh=%2, generated=%3, fallback=%4, missing=%5, locked=%6"), std::string::npos);
+  EXPECT_NE(src.find("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4"), std::string::npos);
+}

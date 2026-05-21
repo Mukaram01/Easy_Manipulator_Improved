@@ -5143,6 +5143,8 @@ void MainWindow::populate_scene_hierarchy()
   int non_mesh_geometry_unsupported = 0;
   int package_uri_resolved_by_loader = 0;
   int source_path_from_resolved_path = 0;
+  int unresolved_package_uri_count = 0;
+  int stale_or_absolute_only_mesh_index_count = 0;
   int mesh_item_count = 0;
   int primitive_item_count = 0;
   int unknown_item_count = 0;
@@ -5156,6 +5158,11 @@ void MainWindow::populate_scene_hierarchy()
       visual_index_safe_for_preview = workcell_builder::yaml_map_key(urdf_index, "safe_for_preview").as<bool>(false);
       visual_index_extraction_mode = QString::fromStdString(
         workcell_builder::yaml_map_value_or_empty(urdf_index, "extraction_mode"));
+      stale_or_absolute_only_mesh_index_count =
+        workcell_builder::yaml_map_key(urdf_index, "stale_or_unsafe_count").as<int>(0);
+      if (stale_or_absolute_only_mesh_index_count == 0 && workcell_builder::yaml_map_key(urdf_index, "stale_index").as<bool>(false)) {
+        stale_or_absolute_only_mesh_index_count = 1;
+      }
       const YAML::Node visual_items = workcell_builder::yaml_map_key(urdf_index, "visual_items");
       if (visual_items && visual_items.IsSequence()) {
         for (const auto &v : visual_items) {
@@ -5203,6 +5210,9 @@ void MainWindow::populate_scene_hierarchy()
           p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
           const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
           const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          if (!package_uri.trimmed().isEmpty() && package_uri.startsWith("package://") && !workcell_builder::yaml_map_key(v, "resolved").as<bool>(false)) {
+            ++unresolved_package_uri_count;
+          }
           if (p.source_path.trimmed().isEmpty() && !resolved_path.trimmed().isEmpty()) {
             p.source_path = resolved_path;
             ++source_path_from_resolved_path;
@@ -5457,14 +5467,39 @@ void MainWindow::populate_scene_hierarchy()
 
   const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
   const int urdf_visual_locked_count = visual_preview_added_count;
-  const QString preview_counts_line = QString("Editable layout: %1 items | URDF visual preview: %2 locked items")
-    .arg(editable_layout_item_count_)
-    .arg(urdf_visual_locked_count);
+  int scene3d_editable_count = 0;
+  int scene3d_mesh_count = 0;
+  int scene3d_generated_count = 0;
+  int scene3d_fallback_count = 0;
+  int scene3d_missing_count = 0;
+  int scene3d_locked_count = 0;
+  for (const auto & item : preview_items) {
+    if (item.editable) ++scene3d_editable_count;
+    if (item.active_visual_source == "mesh_preview") ++scene3d_mesh_count;
+    if (item.source_layer == "generated_urdf_visual") ++scene3d_generated_count;
+    if (item.active_visual_source == "primitive_fallback" || item.source_layer == "legacy_static_fallback") ++scene3d_fallback_count;
+    if (!item.mesh_available) ++scene3d_missing_count;
+    if (item.locked) ++scene3d_locked_count;
+  }
+  const QString scene3d_diagnostics_line = QString("Scene3D: editable=%1, mesh=%2, generated=%3, fallback=%4, missing=%5, locked=%6")
+    .arg(scene3d_editable_count)
+    .arg(scene3d_mesh_count)
+    .arg(scene3d_generated_count)
+    .arg(scene3d_fallback_count)
+    .arg(scene3d_missing_count)
+    .arg(scene3d_locked_count);
+  const int missing_mesh_count = skipped_missing_mesh_source_path + skipped_file_not_found + skipped_zero_triangle_mesh;
+  const QString scene3d_warning_buckets = QString("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4")
+    .arg(missing_mesh_count)
+    .arg(unresolved_package_uri_count)
+    .arg(skipped_unsupported_format)
+    .arg(stale_or_absolute_only_mesh_index_count);
   const QString preview_provenance_line = preview_provenance_summary_.isEmpty()
     ? QString("Preview fallback: 0 items loaded from scene metadata.")
     : preview_provenance_summary_;
-  const QString preview_line = QString("%1 | %2 Metadata warnings: %3.")
-    .arg(preview_counts_line)
+  const QString preview_line = QString("%1 | %2 | %3 Metadata warnings: %4.")
+    .arg(scene3d_diagnostics_line)
+    .arg(scene3d_warning_buckets)
     .arg(preview_provenance_line)
     .arg(preview_warning_count);
 
