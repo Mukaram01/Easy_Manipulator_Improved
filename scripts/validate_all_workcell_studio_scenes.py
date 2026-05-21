@@ -355,7 +355,10 @@ def audit_scene(
     if not smoke_available:
         moveit_status = FAIL
     elif simulation_report_error or simulation_entry is None:
-        moveit_status = WARN
+        if launch_report_status in {PASS, WARN, FAIL, SKIP}:
+            moveit_status = launch_report_status
+        else:
+            moveit_status = WARN
     else:
         sim_status = str(simulation_entry.get("status") or "").upper()
         if sim_status == PASS:
