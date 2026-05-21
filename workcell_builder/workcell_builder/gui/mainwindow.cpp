@@ -4973,6 +4973,9 @@ void MainWindow::populate_scene_hierarchy()
     p.role = normalize_role(role_hint, category + " " + display_name);
     p.status = status;
     p.source_path = source_path;
+    p.source_layer = QStringLiteral("generated_preview");
+    p.active_visual_source = QStringLiteral("generated_preview");
+    p.linked_to_editable_layout_state = false;
     p.metadata_complete = metadata_complete;
     if (!metadata_complete) {
       p.warnings << "metadata incomplete";
@@ -5028,6 +5031,24 @@ void MainWindow::populate_scene_hierarchy()
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     p.locked = item.locked;
     p.editable = !item.locked;
+    switch (item.provenance) {
+      case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
+        p.source_layer = QStringLiteral("editable_layout");
+        p.active_visual_source = QStringLiteral("editable_layout");
+        p.linked_to_editable_layout_state = true;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview:
+        p.source_layer = QStringLiteral("primitive_fallback");
+        p.active_visual_source = QStringLiteral("primitive_fallback");
+        p.linked_to_editable_layout_state = false;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+      default:
+        p.source_layer = QStringLiteral("generated_preview");
+        p.active_visual_source = QStringLiteral("mesh_preview");
+        p.linked_to_editable_layout_state = false;
+        break;
+    }
     if (item.locked) {
       const QString base_reason = p.warnings.isEmpty() ? QStringLiteral("item is locked") : p.warnings.front();
       p.lock_reason = base_reason;
@@ -5186,6 +5207,10 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           p.lock_reason = "URDF visual preview-only item (locked)";
+          p.source_layer = QStringLiteral("generated_urdf_visual");
+          p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
+                                                              : QStringLiteral("primitive_fallback");
+          p.linked_to_editable_layout_state = false;
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
           const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
           const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");

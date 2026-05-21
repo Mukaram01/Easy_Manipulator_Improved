@@ -39,6 +39,9 @@ public:
     bool locked{ false };
     QString lock_reason;
     QString metadata_tags;
+    QString source_layer;
+    QString active_visual_source;
+    bool linked_to_editable_layout_state{ false };
     bool metadata_complete{ true };
     QStringList warnings;
     bool has_mesh_metadata{ false };
