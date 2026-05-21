@@ -34,7 +34,19 @@ def load_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def evaluate_scene(scene: str) -> dict:
+def runtime_smoke_json_default(scene: str) -> Path:
+    candidates = [
+        ROOT / "build/workcell_studio/scene3d_gui_smoke.json",
+        ROOT / f"build/workcell_studio/scene3d_gui_smoke_{scene}.json",
+        scene_dir(scene) / "generated/scene3d_gui_smoke.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
     sdir = scene_dir(scene)
     blockers: list[str] = []
 
@@ -106,6 +118,50 @@ def evaluate_scene(scene: str) -> dict:
     if not blockers and visible_after_default_filters == 0:
         blockers.append("no visible scene items after default filters")
 
+    smoke_path = Path(smoke_json_path) if smoke_json_path else runtime_smoke_json_default(scene)
+    runtime_evidence: dict = {"path": str(smoke_path), "valid": False}
+    required_runtime_fields = [
+        "viewport_received_count",
+        "render_cache_count",
+        "rendered_count",
+        "hierarchy_rows_count",
+        "selectable_count",
+        "status",
+    ]
+    runtime_payload = {}
+    if not smoke_path.exists():
+        blockers.append(f"missing runtime smoke evidence JSON: {smoke_path}")
+        runtime_evidence["error"] = "missing"
+    else:
+        runtime_payload = load_json(smoke_path)
+        schema = runtime_payload.get("schema")
+        if schema != "workcell_studio_scene3d_gui_smoke/v1":
+            blockers.append(
+                "runtime smoke evidence has unexpected schema: "
+                f"{schema!r} (expected 'workcell_studio_scene3d_gui_smoke/v1')"
+            )
+
+        invalid_fields: list[str] = []
+        for field in required_runtime_fields:
+            if field not in runtime_payload:
+                invalid_fields.append(field)
+                continue
+            value = runtime_payload[field]
+            if field == "status":
+                if not isinstance(value, str):
+                    invalid_fields.append(field)
+            else:
+                if not isinstance(value, int) or value < 0:
+                    invalid_fields.append(field)
+        if invalid_fields:
+            blockers.append(f"runtime smoke evidence missing/invalid fields: {', '.join(invalid_fields)}")
+        elif runtime_payload.get("status") not in {"ok", "pass", "passed"}:
+            blockers.append(f"runtime smoke evidence status is not passing: {runtime_payload.get('status')!r}")
+        else:
+            runtime_evidence["valid"] = True
+            runtime_evidence["status"] = runtime_payload.get("status")
+            runtime_evidence["counts"] = {k: runtime_payload.get(k) for k in required_runtime_fields if k != "status"}
+
     secondary_checks = {
         "grid_axes_enabled": ("draw_ground_grid_pass" in VIEWPORT.read_text(encoding="utf-8") and "draw_world_axes_pass" in VIEWPORT.read_text(encoding="utf-8")),
         "orbit_pan_zoom_handlers_exist": all(t in VIEWPORT.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
@@ -146,6 +202,7 @@ def evaluate_scene(scene: str) -> dict:
             "generated_layout": str(urdf_generated_layout_path) if urdf_generated_layout_path.exists() else None,
             "overlay_files": [str(p) for p in overlay_sources if p.exists()],
         },
+        "runtime_evidence": runtime_evidence,
         "secondary_checks": secondary_checks,
         "pass": not blockers,
     }
@@ -156,6 +213,7 @@ def main() -> int:
     ap.add_argument("--scene", action="append", default=[])
     ap.add_argument("--json", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.json"))
     ap.add_argument("--markdown", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.md"))
+    ap.add_argument("--smoke-json", default=None, help="path to GUI smoke evidence JSON (workcell_studio_scene3d_gui_smoke/v1)")
     args = ap.parse_args()
 
     scenes = args.scene or ["ur5_2f_test"]
@@ -169,7 +227,7 @@ def main() -> int:
         if s not in unique_scenes:
             unique_scenes.append(s)
 
-    results = [evaluate_scene(s) for s in unique_scenes]
+    results = [evaluate_scene(s, args.smoke_json) for s in unique_scenes]
     blockers = [f"{r['scene']}: {b}" for r in results for b in r.get("blockers", [])]
 
     payload = {
@@ -205,6 +263,9 @@ def main() -> int:
             lines.append(f"- {k}: {v}")
         lines.append("### Source summary")
         for k, v in r["sources"].items():
+            lines.append(f"- {k}: {v}")
+        lines.append("### Runtime smoke evidence")
+        for k, v in r["runtime_evidence"].items():
             lines.append(f"- {k}: {v}")
         lines.append("### Secondary diagnostics")
         for k, v in r["secondary_checks"].items():
