@@ -160,3 +160,12 @@ Audit:
 ```bash
 python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches --include-visual-assets
 ```
+
+## Scene3D preview stability
+
+- `editable_layout` is the authoring layer for user-editable items.
+- `locked_generated_urdf_visual` is generated preview from xacro-expanded URDF and remains read-only.
+- `mesh_preview` improves fidelity but does not own authoring state.
+- `primitive_fallback` remains available when meshes are missing/unsafe.
+- Refresh/generate actions should not silently remove visual items.
+- Contract reports are produced by `scripts/check_scene3d_canvas_contract.py` (JSON + Markdown outputs).
