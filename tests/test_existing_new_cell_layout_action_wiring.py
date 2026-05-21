@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import shutil
 import subprocess
 import yaml
 
@@ -70,3 +72,36 @@ def test_new_cell_camera_metadata_canonical_and_legacy_traceability_tokens_prese
         'none (camera metadata only)',
     ]:
         assert token in txt
+
+
+def test_use_recommended_layout_fixture_populates_scene3d_data_immediately(tmp_path: Path):
+    fixture = Path('tests/fixtures/new_cell_recommended_layout')
+    scene = tmp_path / 'new_cell_recommended_layout'
+    shutil.copytree(fixture, scene)
+
+    subprocess.run([
+        'python3',
+        'scripts/generate_workcell_studio_scene_artifacts.py',
+        '--root', str(tmp_path),
+        '--scene', scene.name,
+        '--overwrite',
+    ], check=True)
+
+    layout_preview = yaml.safe_load((scene / 'layout' / 'workcell_studio_layout.generated.yaml').read_text(encoding='utf-8'))
+    preview_items = layout_preview.get('preview_items', [])
+    assert len(preview_items) > 0
+
+    mesh_index = json.loads((scene / 'generated' / 'scene_visual_mesh_index.json').read_text(encoding='utf-8'))
+    items = mesh_index.get('items', [])
+    by_id = {str(i.get('id')): i for i in items if isinstance(i, dict)}
+    for required in ['robot_base', 'workbench', 'pick_zone', 'place_zone']:
+        assert required in by_id
+
+    for required in ['robot_base', 'workbench', 'pick_zone', 'place_zone']:
+        item = by_id[required]
+        assert item.get('id')
+        assert item.get('source_layer')
+        assert item.get('active_visual_source')
+        assert item.get('editable') is (not item.get('locked'))
+
+    assert int(mesh_index.get('visible_after_filters', 0)) > 0

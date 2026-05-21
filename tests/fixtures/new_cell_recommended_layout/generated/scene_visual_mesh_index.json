@@ -1,0 +1,10 @@
+{
+  "scene": "new_cell_recommended_layout",
+  "visible_after_filters": 4,
+  "items": [
+    {"id": "robot_base", "type": "robot_base", "source_layer": "editable_layout", "active_visual_source": "primitive_fallback", "editable": true, "locked": false},
+    {"id": "workbench", "type": "table", "source_layer": "editable_layout", "active_visual_source": "primitive_fallback", "editable": true, "locked": false},
+    {"id": "pick_zone", "type": "zone", "source_layer": "editable_layout", "active_visual_source": "primitive_fallback", "editable": true, "locked": false},
+    {"id": "place_zone", "type": "zone", "source_layer": "editable_layout", "active_visual_source": "primitive_fallback", "editable": true, "locked": false}
+  ]
+}
