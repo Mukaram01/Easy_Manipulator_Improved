@@ -542,6 +542,10 @@ void Scene3DViewportWidget::paintGL()
   for (const auto & it : items) draw_items.push_back(&it);
   std::sort(draw_items.begin(), draw_items.end(), [&](const auto * a, const auto * b) { return a->z > b->z; });
 
+  int received_item_count = static_cast<int>(draw_items.size());
+  int visible_item_count = 0;
+  int skipped_item_count = 0;
+  int rendered_item_count = 0;
   int mesh_backed_count = 0;
   int placeholder_count = 0;
   int wireframe_box_count = 0;
@@ -552,7 +556,8 @@ void Scene3DViewportWidget::paintGL()
   std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
-    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+    if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
+    ++visible_item_count;
     if (is_locked_urdf_item(*it)) ++locked_urdf_count;
     if (is_overlay_visual_role(role)) overlay_items.push_back(it);
     else {
@@ -568,6 +573,7 @@ void Scene3DViewportWidget::paintGL()
       int item_mesh_backed_count = 0;
       int item_wireframe_box_count = 0;
       draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count);
+      ++rendered_item_count;
       if (count_in_stats) {
         placeholder_count += item_placeholder_count;
         mesh_backed_count += item_mesh_backed_count;
@@ -585,6 +591,14 @@ void Scene3DViewportWidget::paintGL()
   draw_item_batch(physical_items, true);
 
   glDisable(GL_BLEND);
+
+  qDebug() << "Scene3D runtime render: received=" << received_item_count
+           << "visible=" << visible_item_count
+           << "rendered=" << rendered_item_count
+           << "skipped=" << skipped_item_count
+           << "mesh_backed=" << mesh_backed_count
+           << "placeholder=" << placeholder_count
+           << "overlay=" << overlay_count;
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
