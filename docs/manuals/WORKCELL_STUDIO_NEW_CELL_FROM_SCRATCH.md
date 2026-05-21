@@ -113,3 +113,16 @@ This remains the existing New Cell workflow and does **not** introduce a separat
 - Use the existing **Save Layout** action to persist edits to `layout/workcell_studio_layout.yaml`.
 - Pick/place zone edits are propagated to `environment.yaml` task-zone metadata.
 - This remains preview/layout editing only (no physics and no real-hardware approval).
+
+## Visual assets and mesh fallback
+
+- Supported mesh types: `.stl`, `.dae`, `.obj`, `.mesh` (case-insensitive).
+- Mesh path resolution accepts `package://`, `file://`, absolute, scene-relative, repo-relative, and assets-relative paths, with ROS share fallback (`/opt/ros/humble/share`) when package assets are present.
+- If a mesh resolves and exists, the canvas attempts mesh-backed rendering.
+- If a mesh is missing/unsupported, the canvas records a warning and renders primitive fallback instead of silently failing.
+- The visual asset inventory report summarizes scanned asset roots, mesh counts, unresolved references, duplicate names, and coverage expectations for robot/gripper/environment categories.
+
+```bash
+python3 scripts/audit_workcell_studio_visual_assets.py
+python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches --include-visual-assets
+```
