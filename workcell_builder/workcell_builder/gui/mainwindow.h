@@ -399,6 +399,9 @@ private:
   QDoubleSpinBox * inspector_roll_{ nullptr };
   QDoubleSpinBox * inspector_pitch_{ nullptr };
   QDoubleSpinBox * inspector_yaw_{ nullptr };
+  QDoubleSpinBox * inspector_dim_x_{ nullptr };
+  QDoubleSpinBox * inspector_dim_y_{ nullptr };
+  QDoubleSpinBox * inspector_dim_z_{ nullptr };
   QCheckBox * inspector_live_update_box_{ nullptr };
   QPushButton * inspector_apply_button_{ nullptr };
   QPushButton * inspector_revert_button_{ nullptr };
