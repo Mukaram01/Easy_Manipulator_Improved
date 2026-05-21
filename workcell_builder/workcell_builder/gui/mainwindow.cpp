@@ -950,6 +950,23 @@ void MainWindow::setup_studio_shell()
   scene_hierarchy_tree_->setColumnWidth(1, 160);
   scene_hierarchy_tree_->setColumnWidth(2, 120);
   hierarchy_layout->addWidget(scene_hierarchy_tree_);
+  auto * preview_layers_group = new QGroupBox("Scene3D Preview Layers", hierarchy_card);
+  auto * preview_layers_layout = new QVBoxLayout(preview_layers_group);
+  preview_layer_editable_layout_box_ = new QCheckBox("editable layout", preview_layers_group);
+  preview_layer_generated_urdf_visual_box_ = new QCheckBox("generated URDF visuals", preview_layers_group);
+  preview_layer_mesh_preview_box_ = new QCheckBox("mesh previews", preview_layers_group);
+  preview_layer_primitive_fallback_box_ = new QCheckBox("primitive fallbacks", preview_layers_group);
+  preview_layer_overlays_helpers_box_ = new QCheckBox("overlays/helpers", preview_layers_group);
+  preview_layer_warnings_missing_assets_box_ = new QCheckBox("warnings/missing assets", preview_layers_group);
+  for (auto * box : {
+      preview_layer_editable_layout_box_, preview_layer_generated_urdf_visual_box_,
+      preview_layer_mesh_preview_box_, preview_layer_primitive_fallback_box_,
+      preview_layer_overlays_helpers_box_, preview_layer_warnings_missing_assets_box_})
+  {
+    box->setChecked(true);
+    preview_layers_layout->addWidget(box);
+  }
+  hierarchy_layout->addWidget(preview_layers_group);
   scene_tab_layout->addWidget(hierarchy_card);
   auto * catalog_card = new QFrame(assets_tab); catalog_card->setObjectName("studioCard");
   auto * catalog_layout = new QVBoxLayout(catalog_card);
@@ -1737,6 +1754,13 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
     rebuild_digital_twin_canvas();
   });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  for (auto * box : {
+      preview_layer_editable_layout_box_, preview_layer_generated_urdf_visual_box_,
+      preview_layer_mesh_preview_box_, preview_layer_primitive_fallback_box_,
+      preview_layer_overlays_helpers_box_, preview_layer_warnings_missing_assets_box_})
+  {
+    connect(box, &QCheckBox::toggled, this, [this](bool) { apply_scene3d_preview_layer_filters(true); });
+  }
   connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
@@ -4839,6 +4863,46 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   apply_scene_selection(selected_id, selected_role, false, true);
 }
 
+void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
+{
+  if (!scene_preview_widget_) {
+    return;
+  }
+  QVector<ScenePreviewWidget::PreviewItem> filtered_items;
+  auto include_item = [this](const ScenePreviewWidget::PreviewItem & p) {
+      const QString source_layer = p.source_layer.trimmed().toLower();
+      const QString visual_source = p.active_visual_source.trimmed().toLower();
+      const QString role = p.role.trimmed().toLower();
+      const QString category = p.category.trimmed().toLower();
+      const QString combined = role + "|" + category + "|" + p.status.trimmed().toLower() + "|" + p.warnings.join("|").toLower();
+      const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !p.mesh_load_warning.trimmed().isEmpty();
+      const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
+      if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
+      if (source_layer == "generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
+      if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
+      if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
+      if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
+      if (is_warning_or_missing) return preview_layer_warnings_missing_assets_box_ ? preview_layer_warnings_missing_assets_box_->isChecked() : true;
+      return true;
+    };
+  for (const auto & p : all_scene_preview_items_) {
+    if (include_item(p)) filtered_items.push_back(p);
+  }
+  scene_preview_widget_->set_preview_items(filtered_items);
+  if (log_change) {
+    append_studio_log(
+      QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
+      .arg(preview_layer_editable_layout_box_ && preview_layer_editable_layout_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_generated_urdf_visual_box_ && preview_layer_generated_urdf_visual_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_mesh_preview_box_ && preview_layer_mesh_preview_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_primitive_fallback_box_ && preview_layer_primitive_fallback_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_overlays_helpers_box_ && preview_layer_overlays_helpers_box_->isChecked() ? "on" : "off")
+      .arg(preview_layer_warnings_missing_assets_box_ && preview_layer_warnings_missing_assets_box_->isChecked() ? "on" : "off")
+      .arg(filtered_items.size())
+      .arg(all_scene_preview_items_.size()));
+  }
+}
+
 void MainWindow::populate_scene_hierarchy()
 {
   if (!scene_hierarchy_tree_) return;
@@ -5430,11 +5494,12 @@ void MainWindow::populate_scene_hierarchy()
       ? visual_diagnostics_summary
       : QString("%1 | %2").arg(preview_provenance_summary_, visual_diagnostics_summary);
   }
+  all_scene_preview_items_ = preview_items;
   if (scene_preview_widget_) {
     scene_preview_widget_->set_scene_selected(true);
     scene_preview_widget_->set_preview_scene_name(QString::fromStdString(s.scene_name));
     scene_preview_widget_->set_preview_status_summary(preview_provenance_summary_);
-    scene_preview_widget_->set_preview_items(preview_items);
+    apply_scene3d_preview_layer_filters(false);
   }
   preview_warning_details_ = preview_warning_details;
 

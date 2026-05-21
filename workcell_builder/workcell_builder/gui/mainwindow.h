@@ -311,6 +311,7 @@ private:
   void refresh_scene_builder_left_explorer();
   void refresh_scene_builder_view_chips();
   void populate_scene_hierarchy();
+  void apply_scene3d_preview_layer_filters(bool log_change = false);
   void keyPressEvent(QKeyEvent * event) override;
   void populate_asset_catalog();
   void on_hierarchy_item_selected(QTreeWidgetItem * item);
@@ -497,6 +498,13 @@ private:
   QCheckBox * show_trajectory_overlay_box_{ nullptr };
   QCheckBox * show_minimap_box_{ nullptr };
   QCheckBox * place_mode_persistent_box_{ nullptr };
+  QCheckBox * preview_layer_editable_layout_box_{ nullptr };
+  QCheckBox * preview_layer_generated_urdf_visual_box_{ nullptr };
+  QCheckBox * preview_layer_mesh_preview_box_{ nullptr };
+  QCheckBox * preview_layer_primitive_fallback_box_{ nullptr };
+  QCheckBox * preview_layer_overlays_helpers_box_{ nullptr };
+  QCheckBox * preview_layer_warnings_missing_assets_box_{ nullptr };
+  QVector<ScenePreviewWidget::PreviewItem> all_scene_preview_items_;
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };
