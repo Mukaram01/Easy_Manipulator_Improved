@@ -3,8 +3,13 @@ from __future__ import annotations
 import argparse, json, re
 from collections import Counter
 from pathlib import Path
+try:
+    from scripts.scene_root_resolver import resolve_scene_root
+except ModuleNotFoundError:
+    from scene_root_resolver import resolve_scene_root
 
 ROOT = Path(__file__).resolve().parents[1]
+SCENES_ROOT = resolve_scene_root(ROOT)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 
 
@@ -114,13 +119,17 @@ def main():
 
     scenes = []
     if args.all:
-        scenes = sorted([p for p in (ROOT / 'scenes').iterdir() if p.is_dir()])
+        scenes = sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()]) if SCENES_ROOT.exists() else []
     elif args.scene:
-        scenes = [ROOT / 'scenes' / s for s in args.scene]
+        scenes = [SCENES_ROOT / s for s in args.scene]
     else:
         ap.error('use --all or --scene <name>')
 
-    report = [check_scene(s) for s in scenes if s.exists()]
+    missing = [str(s) for s in scenes if not s.exists()]
+    if missing:
+        ap.error(f"requested scene path is missing: {', '.join(missing)}")
+
+    report = [check_scene(s) for s in scenes]
     overall = 'PASS' if all(r['contract_status'] == 'PASS' for r in report) else ('FAIL' if any(r['contract_status']=='FAIL' for r in report) else 'WARN')
     payload = {'overall_status': overall, 'scenes': report}
 

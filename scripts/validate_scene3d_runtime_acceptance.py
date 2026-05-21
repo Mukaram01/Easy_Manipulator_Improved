@@ -2,16 +2,21 @@
 from __future__ import annotations
 import argparse, json
 from pathlib import Path
+try:
+    from scripts.scene_root_resolver import resolve_scene_root
+except ModuleNotFoundError:
+    from scene_root_resolver import resolve_scene_root
 
 SCHEMA = "workcell_studio_scene3d_runtime_acceptance/v1"
 ROOT = Path(__file__).resolve().parents[1]
+SCENES_ROOT = resolve_scene_root(ROOT)
 MAIN = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 PREVIEW = ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
 VIEWPORT = ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
 
 
 def scene_dir(scene: str) -> Path:
-    return ROOT / "workcell_builder" / "scenes" / scene
+    return SCENES_ROOT / scene
 
 
 def has_snapshot_overlay(scene_path: Path) -> bool:
@@ -42,8 +47,8 @@ def main() -> int:
     ap.add_argument("--markdown", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.md"))
     args = ap.parse_args()
     scenes = args.scene or ["ur5_2f_test"]
-    if (ROOT / "workcell_builder/scenes").exists():
-      scenes_dir = ROOT / "workcell_builder/scenes"
+    if SCENES_ROOT.exists():
+      scenes_dir = SCENES_ROOT
       maybe = sorted(p.name for p in scenes_dir.iterdir() if p.is_dir() and "new_cell" in p.name)
       if maybe:
           scenes.append(maybe[0])
@@ -51,6 +56,11 @@ def main() -> int:
     for s in scenes:
         if s not in unique_scenes:
             unique_scenes.append(s)
+
+    missing = [str(scene_dir(s)) for s in unique_scenes if not scene_dir(s).exists()]
+    if missing:
+        ap.error(f"requested scene path is missing: {', '.join(missing)}")
+
     results = [evaluate_scene(s) for s in unique_scenes]
 
     root_checks = {
