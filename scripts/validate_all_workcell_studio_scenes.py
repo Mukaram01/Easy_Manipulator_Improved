@@ -215,6 +215,8 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
     generated_artifacts_present = {
         "generated_environment_assets": optional["generated_environment_assets"],
         "generated_layout": optional["generated_layout"],
+        "task_recipe": optional["task_recipe"],
+        "task_intent": optional["task_intent"],
     }
 
     fake_cmd = f"python3 scripts/run_fake_hardware_smoke_launch.py --scene {scene_dir.name}"
@@ -222,9 +224,7 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
     for key, present in optional.items():
         if not present and key not in {"scene_urdf", "scene_urdf_xacro"}:
-            if key in {"task_recipe", "task_intent"}:
-                warning_groups["runtime_smoke"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
-            elif key in {"generated_environment_assets", "generated_layout"}:
+            if key in {"task_recipe", "task_intent", "generated_environment_assets", "generated_layout"}:
                 warning_groups["generation"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
             else:
                 warning_groups["metadata"].append(f"optional file missing: {OPTIONAL_FILES[key]}")

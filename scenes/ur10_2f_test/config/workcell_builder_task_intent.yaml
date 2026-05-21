@@ -1,0 +1,29 @@
+schema: workcell_builder_task_intent/v1
+scene_package: /workspace/Easy_Manipulator_Improved/scenes/ur10_2f_test
+task:
+  id: ur10_2f_test_preview_task
+  type: pick_place
+  family: pick_place
+  mode: simulation_preview
+pick:
+  source:
+    type: zone
+    id: pick_zone_main
+place:
+  target:
+    type: zone
+    id: place_zone_main
+  release_strategy: tool_release
+grasp:
+  strategy: tool_profile_default
+  approach_axis: z_down
+  retreat_axis: z_up
+safety:
+  preview_only: true
+  use_fake_hardware: true
+  execution_mode: simulation_preview
+  no_robot_motion: true
+provenance:
+  mode: generated_readiness_metadata
+  sources:
+  - environment.yaml

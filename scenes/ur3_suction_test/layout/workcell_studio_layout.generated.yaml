@@ -1,0 +1,22 @@
+schema_version: workcell_studio_layout_preview/v1
+status: inferred
+summary:
+  editable_layout_source: layout/workcell_studio_layout.yaml
+  editable_items_count: 2
+  preview_readiness: ready
+preview_items:
+- id: robot_base
+  type: robot
+  status: ready
+- id: table_main
+  type: table
+  status: ready
+locked_urdf_preview_entities: []
+notes:
+- Generated preview only.
+- Locked URDF preview entities are intentionally not written into editable layout
+  items.
+provenance:
+  mode: generated_readiness_metadata
+  sources:
+  - layout/workcell_studio_layout.yaml
