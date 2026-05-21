@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--markdown-output", type=Path, default=DEFAULT_MD_OUTPUT)
     p.add_argument("--strict", action="store_true", help="Exit non-zero if any supported scene has FAIL readiness")
     p.add_argument("--include-visual-assets", action="store_true", help="Run visual asset inventory and include report links")
+    p.add_argument("--include-scene3d-gui-smoke", action="store_true", help="Run Scene3D GUI smoke for ur5_2f_test and include result")
     return p.parse_args()
 
 
@@ -52,7 +53,7 @@ def _status_counts() -> dict[str, int]:
     return {k: 0 for k in STATUSES}
 
 
-def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None, mesh_index_regeneration: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None, mesh_index_regeneration: dict[str, Any] | None = None, scene3d_gui_smoke: dict[str, Any] | None = None) -> dict[str, Any]:
     scenes_out: list[dict[str, Any]] = []
     counts: dict[str, dict[str, int]] = {dim: _status_counts() for dim in READINESS_DIMENSIONS}
 
@@ -87,6 +88,7 @@ def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payl
         "safety_note": "This is fake-hardware simulation readiness only, not real-hardware validation.",
         "visual_asset_inventory": visual_assets or {},
         "visual_mesh_index_regeneration": mesh_index_regeneration or {},
+        "scene3d_gui_smoke": scene3d_gui_smoke or {},
     }
 
 
@@ -132,6 +134,10 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
             "## Mesh Index Summary",
             "",
             json.dumps(report.get("visual_mesh_index_regeneration", {}).get("summary", {}), indent=2),
+            "",
+            "## Scene3D GUI Smoke",
+            "",
+            json.dumps(report.get("scene3d_gui_smoke", {}), indent=2),
             "",
             "## Suggested Fixes",
             "",
@@ -207,14 +213,59 @@ def main() -> int:
         if regen_json.exists():
             regen = _load_json(regen_json)
             mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", [])), "xacro_fallback_scenes": [r.get("scene") for r in regen.get("scenes", []) if r.get("extraction_mode") != "xacro_expanded"], "unsafe_scenes": [r.get("scene") for r in regen.get("scenes", []) if not r.get("safe_for_preview", False)]}}
-    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration)
+    scene3d_gui_smoke = None
+    if args.include_scene3d_gui_smoke:
+        smoke_json = repo_root / "build/workcell_studio/scene3d_gui_smoke_ur5_2f_test.json"
+        smoke_script = repo_root / "scripts/run_workcell_builder_scene3d_gui_smoke.py"
+        scene3d_gui_smoke = {
+            "scene": "ur5_2f_test",
+            "status": WARN,
+            "json_path": str(smoke_json),
+            "warnings": [],
+            "blockers": [],
+        }
+        if not smoke_script.exists():
+            scene3d_gui_smoke["warnings"].append(f"GUI smoke script missing: {smoke_script}")
+        else:
+            smoke_cmd = ["python3", str(smoke_script), "--scene", "ur5_2f_test", "--json-output", str(smoke_json)]
+            smoke_proc = _run_command(smoke_cmd, repo_root)
+            scene3d_gui_smoke["returncode"] = smoke_proc.returncode
+            if smoke_json.exists():
+                smoke_payload = _load_json(smoke_json)
+                scene3d_gui_smoke["smoke_report"] = smoke_payload
+                reported_status = str(smoke_payload.get("status", "")).upper()
+                scene3d_gui_smoke["warnings"].extend(smoke_payload.get("warnings", []))
+                scene3d_gui_smoke["blockers"].extend(smoke_payload.get("blockers", []))
+                scene3d_gui_smoke["status"] = PASS if reported_status in {PASS, "OK"} else (FAIL if reported_status == FAIL else WARN)
+            else:
+                reason = "scene3d smoke execution failed before producing JSON evidence"
+                stderr = (smoke_proc.stderr or "").strip()
+                if stderr:
+                    reason = f"{reason}: {stderr.splitlines()[-1]}"
+                if smoke_proc.returncode != 0:
+                    explicit_reasons = {
+                        "xvfb": "xvfb is unavailable",
+                        "display": "DISPLAY is not available",
+                        "executable": "required executable is missing",
+                        "not found": "required executable is missing",
+                    }
+                    lowered = f"{smoke_proc.stdout}\n{smoke_proc.stderr}".lower()
+                    for token, msg in explicit_reasons.items():
+                        if token in lowered:
+                            reason = msg
+                            break
+                scene3d_gui_smoke["warnings"].append(reason)
+                scene3d_gui_smoke["status"] = WARN
+    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration, scene3d_gui_smoke)
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
     write_markdown(args.markdown_output, final_report)
 
     strict_fail = args.strict and any(scene["artifact_readiness"] == FAIL or scene["preview_readiness"] == FAIL or scene["moveit_launch_readiness"] == FAIL for scene in final_report["scenes"])
 
-    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail:
+    scene3d_fail = args.include_scene3d_gui_smoke and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
+
+    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail:
         return 1
     return 0
 
