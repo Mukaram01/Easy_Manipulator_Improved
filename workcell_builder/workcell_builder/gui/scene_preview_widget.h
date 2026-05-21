@@ -48,6 +48,13 @@ public:
     double mesh_r{ 0.0 }, mesh_p{ 0.0 }, mesh_y{ 0.0 };
     bool has_origin_offset{ false };
     double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
+    QString camera_id;
+    QString frame_id;
+    QString detection_label;
+    double confidence{ -1.0 };
+    QString tracking_id;
+    QString snapshot_source_file;
+    QString alignment_warning;
   };
   struct CameraOverlayModel
   {
@@ -98,6 +105,13 @@ public:
     double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
     bool has_origin_offset{ false };
     double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
+    QString camera_id;
+    QString frame_id;
+    QString detection_label;
+    double confidence{ -1.0 };
+    QString tracking_id;
+    QString snapshot_source_file;
+    QString alignment_warning;
   };
   struct CollisionOverlayModel
   {
@@ -110,6 +124,13 @@ public:
     double mesh_scale_x{ 1.0 }, mesh_scale_y{ 1.0 }, mesh_scale_z{ 1.0 };
     bool has_origin_offset{ false };
     double origin_offset_x{ 0.0 }, origin_offset_y{ 0.0 }, origin_offset_z{ 0.0 };
+    QString camera_id;
+    QString frame_id;
+    QString detection_label;
+    double confidence{ -1.0 };
+    QString tracking_id;
+    QString snapshot_source_file;
+    QString alignment_warning;
   };
 
   struct TaskOverlayModel

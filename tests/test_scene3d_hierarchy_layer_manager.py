@@ -69,3 +69,8 @@ def test_visibility_toggles_are_preview_only_and_avoid_generated_write_paths():
     ]
     for path in guarded_paths:
         assert path not in toggle_block
+
+
+def test_hierarchy_exposes_stable_id_and_detection_metadata_roles():
+    for token in ['TreeRoleStableId', 'TreeRoleCameraId', 'TreeRoleFrameId', 'TreeRoleDetectionLabel', 'TreeRoleConfidence', 'TreeRoleTrackingId', 'TreeRoleSnapshotSourceFile', 'TreeRoleAlignmentWarning']:
+        assert token in MAIN_CPP

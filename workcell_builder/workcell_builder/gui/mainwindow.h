@@ -217,6 +217,13 @@ private:
     QString visual_backing_status;
     bool generated_visual{ false };
     QString item_type_classification;
+    QString camera_id;
+    QString frame_id;
+    QString detection_label;
+    double confidence{ -1.0 };
+    QString tracking_id;
+    QString snapshot_source_file;
+    QString alignment_warning;
     bool pose_available{ false };
     double pose_x{ 0.0 };
     double pose_y{ 0.0 };
