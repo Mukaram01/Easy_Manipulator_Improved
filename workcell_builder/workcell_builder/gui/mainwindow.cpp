@@ -1636,11 +1636,11 @@ void MainWindow::setup_studio_shell()
   connect(empty_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_new_cell, &QPushButton::clicked, this, &MainWindow::open_new_scene_creation_flow);
   connect(dash_open_selected_scene, &QPushButton::clicked, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open Selected Scene"); });
-  connect_action(dashboard_open_scene_action_, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
-  connect_action(dashboard_validate_action_, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
-  connect_action(dashboard_plan_action_, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
-  connect_action(dashboard_export_action_, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
-  connect_action(dashboard_delete_action_, &MainWindow::delete_selected_scene);
+  connect(dashboard_open_scene_action_, &QAction::triggered, this, [this](){ open_scene_builder_for_selected_scene("Dashboard Open in Scene Builder"); });
+  connect(dashboard_validate_action_, &QAction::triggered, this, [this](){ if (action_validate_offline_) action_validate_offline_->trigger(); });
+  connect(dashboard_plan_action_, &QAction::triggered, this, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
+  connect(dashboard_export_action_, &QAction::triggered, this, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
+  connect(dashboard_delete_action_, &QAction::triggered, this, &MainWindow::delete_selected_scene);
   connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect(open_asset_folder_action, &QAction::triggered, this, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect(copy_asset_path_action, &QAction::triggered, this, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
