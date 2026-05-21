@@ -84,3 +84,11 @@ Additional invariants:
 
 **Future 3D canvas PRs must add capabilities as layers or extend existing layers. They must not remove primitive fallback, mesh preview, xacro-expanded preview, or refresh behavior unless the Scene3D contract is intentionally updated and all regression tests are updated.**
 
+## Selection and transform editing rules
+
+- Selection tracks visual identity only and does not change layer ownership.
+- `editable_layout` is the only layer that owns authoring transforms.
+- `locked_generated_urdf_visual` is inspectable but remains locked/read-only.
+- `mesh_preview` is a visual aid and does not become authoring state by selection.
+- `primitive_fallback` must remain available even when mesh/URDF preview is present.
+- Inspector transform writes must target authoring layout sources only and must not mutate generated artifacts (`scene.urdf.xacro`, expanded preview data, mesh index JSON, or generated preview files).

@@ -104,7 +104,7 @@ This remains the existing New Cell workflow and does **not** introduce a separat
 - Camera FOV and conveyor metadata are represented with placeholder/frustum/primitive visuals when available.
 - This canvas is for layout/preview only: it is not physics simulation and not real-hardware approval.
 
-## 3D selection and transform editing
+## Selecting and editing 3D items
 
 - Click an item in the existing Scene3D canvas to select it and highlight it.
 - The existing inspector/details area shows ID, type, source, editable/locked status, XYZ/RPY, and dimensions where applicable.
