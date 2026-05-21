@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Any
 
 WARNING_CATEGORIES = ("metadata", "preview", "generation", "launch_simulation", "runtime_smoke")
+READINESS_DIMENSIONS = (
+    "artifact_readiness",
+    "preview_readiness",
+    "moveit_launch_readiness",
+    "grasp_planner_readiness",
+    "grasp_execution_readiness",
+    "real_hardware_readiness",
+)
 
 PASS = "PASS"
 WARN = "WARN"
@@ -46,6 +54,12 @@ KNOWN_SCENES = {
 
 
 @dataclass
+class ReadinessDimension:
+    status: str
+    reasons: list[str]
+
+
+@dataclass
 class SceneAudit:
     scene_name: str
     status: str
@@ -61,6 +75,17 @@ class SceneAudit:
     blockers: list[str]
     warnings: list[str]
     warning_groups: dict[str, list[str]]
+    readiness: dict[str, ReadinessDimension]
+
+
+def _dim(status: str, reasons: list[str]) -> ReadinessDimension:
+    if status not in VALID_STATUSES:
+        raise ValueError(f"invalid readiness status: {status}")
+    return ReadinessDimension(status=status, reasons=reasons)
+
+
+def _with_prefix(prefix: str, entries: list[str]) -> list[str]:
+    return [f"{prefix}: {entry}" for entry in entries]
 
 
 def resolve_scenes_root(repo_root: Path) -> Path:
@@ -211,6 +236,59 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
     warnings = [w for group in WARNING_CATEGORIES for w in warning_groups[group] if w]
 
+    metadata_warnings = warning_groups["metadata"]
+    generation_warnings = warning_groups["generation"]
+    preview_warnings = warning_groups["preview"]
+    runtime_warnings = warning_groups["runtime_smoke"]
+    launch_warnings = warning_groups["launch_simulation"]
+
+    artifact_reasons: list[str] = []
+    artifact_reasons.extend([b for b in blockers if "required file" in b or "YAML parse" in b or "PyYAML" in b or "urdf/scene" in b])
+    artifact_reasons.extend(_with_prefix("metadata warning", metadata_warnings))
+    artifact_reasons.extend(_with_prefix("generation warning", generation_warnings))
+    artifact_status = FAIL if any("required file" in b or "YAML parse" in b or "PyYAML" in b or "urdf/scene" in b for b in blockers) else (WARN if artifact_reasons else PASS)
+
+    preview_reasons: list[str] = []
+    preview_reasons.extend([b for b in blockers if "mesh index" in b or "visual mesh" in b])
+    preview_reasons.extend(_with_prefix("preview warning", preview_warnings))
+    preview_reasons.extend(_with_prefix("metadata warning", metadata_warnings))
+    preview_status = FAIL if any("mesh index" in b or "visual mesh" in b for b in blockers) else (WARN if preview_reasons or preview_readiness == "degraded" else PASS)
+
+    moveit_reasons: list[str] = []
+    if not smoke_available:
+        moveit_reasons.append("launch/demo.launch.py missing; fake-hardware smoke command unavailable")
+    moveit_reasons.extend(_with_prefix("launch warning", launch_warnings))
+    moveit_status = FAIL if not smoke_available else (WARN if moveit_reasons else PASS)
+
+    grasp_planner_reasons: list[str] = []
+    if not optional["task_recipe"]:
+        grasp_planner_reasons.append("missing optional planner input: config/task_recipe.yaml")
+    if not optional["task_intent"]:
+        grasp_planner_reasons.append("missing optional planner input: config/workcell_builder_task_intent.yaml")
+    grasp_planner_reasons.extend(_with_prefix("runtime warning", runtime_warnings))
+    grasp_planner_status = WARN if grasp_planner_reasons else PASS
+
+    grasp_exec_reasons: list[str] = [
+        "no explicit grasp execution validation evidence collected by this audit"
+    ]
+    if not smoke_available:
+        grasp_exec_reasons.append("fake-hardware smoke launch command unavailable")
+    grasp_execution_status = WARN
+
+    real_hw_reasons: list[str] = [
+        "real hardware must remain WARN until explicit hardware validation evidence is provided"
+    ]
+    real_hardware_status = WARN
+
+    readiness = {
+        "artifact_readiness": _dim(artifact_status, artifact_reasons),
+        "preview_readiness": _dim(preview_status, preview_reasons),
+        "moveit_launch_readiness": _dim(moveit_status, moveit_reasons),
+        "grasp_planner_readiness": _dim(grasp_planner_status, grasp_planner_reasons),
+        "grasp_execution_readiness": _dim(grasp_execution_status, grasp_exec_reasons),
+        "real_hardware_readiness": _dim(real_hardware_status, real_hw_reasons),
+    }
+
     status = PASS
     if blockers:
         status = FAIL
@@ -232,6 +310,7 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
         blockers=blockers,
         warnings=warnings,
         warning_groups=warning_groups,
+        readiness=readiness,
     )
 
 
@@ -243,14 +322,22 @@ def main() -> int:
     audits = [audit_scene(repo_root, scene_dir) for scene_dir in scene_dirs]
 
     counts = {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
+    readiness_counts = {
+        dim: {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
+        for dim in READINESS_DIMENSIONS
+    }
     for audit in audits:
         counts[audit.status] += 1
+        for dim in READINESS_DIMENSIONS:
+            status = audit.readiness[dim].status
+            readiness_counts[dim][status] += 1
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scenes_root": str(scenes_root),
         "scene_count": len(audits),
         "status_counts": counts,
+        "readiness_dimension_counts": readiness_counts,
         "scenes": [asdict(a) for a in audits],
     }
 
