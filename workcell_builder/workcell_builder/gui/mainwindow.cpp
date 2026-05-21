@@ -2001,7 +2001,7 @@ void MainWindow::refresh_task_intent_panel()
 }
 
 void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
-void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("create_or_update_builder_task_intent.py", &script); workcell_builder::TaskIntentCommandInput input; input.scene_package = QString::fromStdString(sc.scene_dir.string()); input.task_id = QString::fromStdString(sc.scene_name) + "_pick_place"; input.task_type = "pick_place"; input.task_template = "pick_place"; input.grasp_strategy = "finger_top"; const auto resolved_input = workcell_builder::resolve_task_intent_command_input_defaults(input); const auto plan = workcell_builder::build_task_intent_command_plan(script, resolved_input); if (!plan.ready()) { append_studio_log("Generate/Update Task Intent: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Generate/Update Task Intent: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate/Update Task Intent failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate/Update Task Intent: " + plan.display_command() + " (Preview Only)"); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); refresh_task_intent_panel(); refresh_new_cell_checklist(); }
+void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("create_or_update_builder_task_intent.py", &script); workcell_builder::TaskIntentCommandInput input; input.scene_package = QString::fromStdString(sc.scene_dir.string()); input.task_id = QString::fromStdString(sc.scene_name) + "_pick_place"; input.task_type = "pick_place"; input.task_template = "pick_place"; input.grasp_strategy = "finger_top"; const auto resolved_input = workcell_builder::resolve_task_intent_command_input_defaults(input); const auto plan = workcell_builder::build_task_intent_command_plan(script, resolved_input); if (!plan.ready()) { append_studio_log("Generate/Update Task Intent: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Generate/Update Task Intent: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate/Update Task Intent failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate/Update Task Intent: " + plan.display_command() + " (Preview Only)"); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); const fs::path task_dir = sc.scene_dir / "task"; boost::system::error_code ec; fs::create_directories(task_dir, ec); fs::create_directories(sc.scene_dir / "plan_preview", ec); const fs::path config_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml"; const fs::path generated_path = sc.scene_dir / "generated" / "workcell_builder_task_intent.yaml"; const fs::path source_path = fs::exists(config_path) ? config_path : generated_path; if (fs::exists(source_path)) { fs::copy_file(source_path, task_dir / "workcell_builder_task_intent.yaml", fs::copy_option::overwrite_if_exists, ec); if (ec) append_studio_log(QString("WARN Generate/Update Task Intent: failed writing task/workcell_builder_task_intent.yaml (%1)").arg(QString::fromStdString(ec.message()))); ec.clear(); fs::copy_file(source_path, task_dir / "task_recipe_from_builder_intent.yaml", fs::copy_option::overwrite_if_exists, ec); if (ec) append_studio_log(QString("WARN Generate/Update Task Intent: failed writing task/task_recipe_from_builder_intent.yaml (%1)").arg(QString::fromStdString(ec.message()))); std::ofstream preview((sc.scene_dir / "plan_preview" / "offline_plan_preview_request.yaml").string()); preview << "schema: offline_plan_preview_request/v1\nscene_name: " << sc.scene_name << "\nsource: existing_new_cell_flow\n"; preview.close(); } else { append_studio_log("WARN Generate/Update Task Intent: helper succeeded but no generated/config task intent file was found."); } refresh_task_intent_panel(); refresh_new_cell_checklist(); }
 void MainWindow::generate_yaml_draft_for_selected_scene()
 {
   if (selected_scene_index_ < 0) return;
@@ -4141,6 +4141,17 @@ void MainWindow::save_layout_changes()
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
+  const fs::path scene_dir = layout_path.parent_path().parent_path();
+  const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
+  for (const char * dir_name : required_dirs) {
+    boost::system::error_code mk_ec;
+    fs::create_directories(scene_dir / dir_name, mk_ec);
+    if (mk_ec) {
+      append_studio_log(QString("Save Layout failed: cannot create %1/ (%2)")
+        .arg(dir_name, QString::fromStdString(mk_ec.message())));
+      return;
+    }
+  }
   const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ?
     scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
   YAML::Node root;
@@ -4254,6 +4265,46 @@ void MainWindow::save_layout_changes()
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
   append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
+  const fs::path workcell_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  YAML::Node workcell_layout(YAML::NodeType::Map);
+  workcell_layout["schema_version"] = "workcell_studio_layout/v1";
+  workcell_layout["schema"] = "workcell_studio_layout/v1";
+  workcell_layout["scene_name"] = scene_name;
+  YAML::Node items(YAML::NodeType::Sequence);
+  for (const auto & node : updated_placed) {
+    YAML::Node item = YAML::Clone(node);
+    item["source"] = "existing_new_cell_flow";
+    items.push_back(item);
+  }
+  workcell_layout["items"] = items;
+  std::ofstream workcell_out(workcell_layout_path.string());
+  workcell_out << workcell_layout;
+  workcell_out.close();
+  append_studio_log(QString("Save Layout: wrote editable layout items to %1")
+    .arg(QString::fromStdString(workcell_layout_path.string())));
+
+  YAML::Node environment(YAML::NodeType::Map);
+  environment["scene_name"] = scene_name;
+  environment["fake_hardware_first"] = true;
+  environment["safety_note"] = "Preview metadata only. Not approval for real-hardware execution.";
+  YAML::Node task_zones(YAML::NodeType::Sequence);
+  for (const auto & node : updated_placed) {
+    const std::string type = workcell_builder::yaml_map_value_or_empty(node, "type");
+    if (type == "pick_zone" || type == "place_zone") {
+      YAML::Node zone(YAML::NodeType::Map);
+      zone["id"] = workcell_builder::yaml_map_value_or_empty(node, "id");
+      zone["type"] = type == "pick_zone" ? "pick" : "place";
+      zone["source"] = "existing_new_cell_flow";
+      task_zones.push_back(zone);
+    }
+  }
+  environment["task_zones"] = task_zones;
+  const fs::path environment_path = scene_dir / "environment.yaml";
+  std::ofstream env_out(environment_path.string());
+  env_out << environment;
+  env_out.close();
+  append_studio_log(QString("Save Layout: wrote environment metadata to %1")
+    .arg(QString::fromStdString(environment_path.string())));
   refresh_scene_builder_left_explorer();
   if (scene_preview_widget_) {
     if (!selected_preview_id.isEmpty()) {
@@ -4312,7 +4363,8 @@ void MainWindow::create_starter_layout_from_preview()
     append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
     return;
   }
-  append_studio_log(QString("Create Starter Layout success: wrote %1 item(s) to %2").arg(model.items.size()).arg(QString::fromStdString(layout_file.string())));
+  append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(model.items.size()).arg(QString::fromStdString(layout_file.string())));
+  append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
   rebuild_digital_twin_canvas();
   refresh_scene_builder_left_explorer();
   refresh_scene_builder_selected_scene_ui();

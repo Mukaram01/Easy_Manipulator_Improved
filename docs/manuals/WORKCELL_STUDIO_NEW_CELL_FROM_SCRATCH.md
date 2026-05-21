@@ -80,3 +80,13 @@ The **existing New Cell flow** now drives runtime scene-contract generation dire
   - `python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches`
 
 > Safety policy: generated New Cell scenes are simulation/fake-hardware-first scaffolds and are **not** real-hardware execution approval.
+
+## Existing New Cell action wiring
+
+The existing **New Cell** flow now wires runtime actions directly:
+- **Use Recommended Layout** populates starter layout items from current preview metadata.
+- **Save Layout** writes both `layout/workcell_studio_layout.yaml` and `environment.yaml` metadata (including pick/place task zones).
+- **Generate/Update Task Intent** writes task-intent artifacts under `task/` and creates an offline plan preview request.
+- The existing canvas refresh path reads saved layout metadata so editable items show up without manual YAML repair.
+
+This remains the existing New Cell workflow and does **not** introduce a separate generator workflow.
