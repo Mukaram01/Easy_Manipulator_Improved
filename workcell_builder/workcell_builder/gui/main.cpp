@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <QApplication>
+#include <QAction>
 #include <QDateTime>
 #include <QFile>
 #include <QJsonArray>

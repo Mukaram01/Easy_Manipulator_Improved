@@ -471,30 +471,3 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
   return root;
 }
 }
-
-struct RuntimeVisualDiagnosticsCounts {
-  int editable_layout_items_loaded{0};
-  int locked_preview_items_loaded{0};
-  int mesh_backed_items_loaded{0};
-  int primitive_fallback_items_loaded{0};
-  int missing_mesh_items{0};
-  int unsupported_mesh_items{0};
-  int unresolved_placeholder_items{0};
-};
-
-static RuntimeVisualDiagnosticsCounts compute_runtime_visual_diagnostics_counts(const WorkcellStudioCanvasModel & model)
-{
-  // mesh-backed items loaded
-  // primitive fallback items loaded
-  // missing mesh items
-  // unsupported mesh items
-  RuntimeVisualDiagnosticsCounts c;
-  for (const auto & item : model.items) {
-    if (!item.locked) c.editable_layout_items_loaded++; else c.locked_preview_items_loaded++;
-    if (item.has_mesh_metadata && item.mesh_available) c.mesh_backed_items_loaded++;
-    else c.primitive_fallback_items_loaded++;
-    if (item.has_mesh_metadata && !item.mesh_available) c.missing_mesh_items++;
-    if (item.mesh_type == "unsupported") c.unsupported_mesh_items++;
-  }
-  return c;
-}
