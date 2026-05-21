@@ -29,3 +29,9 @@ def test_contract_checker_generates_json_and_markdown(tmp_path):
     data = json.loads(out_json.read_text(encoding='utf-8'))
     assert 'overall_status' in data
     assert data['scenes']
+    scene = data['scenes'][0]
+    for key in ['preview_items_count', 'visible_after_filters_count', 'filtered_hidden_count', 'render_cache_received_count']:
+        assert key in scene
+    assert isinstance(scene['preview_items_count'], int)
+    assert isinstance(scene['visible_after_filters_count'], int)
+    assert isinstance(scene['filtered_hidden_count'], int)

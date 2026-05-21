@@ -46,7 +46,11 @@ def test_feature_regression_static_sentinel_contract_checker_has_status_field(tm
     out_json = tmp_path / 'contract.json'
     subprocess.run(['python3', str(ROOT / 'scripts' / 'check_scene3d_canvas_contract.py'), '--scene', 'suction_test', '--json', str(out_json)], check=False)
     payload = json.loads(out_json.read_text(encoding='utf-8'))
-    assert 'contract_status' in payload['scenes'][0]
+    scene = payload['scenes'][0]
+    assert 'contract_status' in scene
+    for key in ['preview_items_count', 'visible_after_filters_count', 'filtered_hidden_count', 'render_cache_received_count']:
+        assert key in scene
+    assert isinstance(scene['visible_after_filters_count'], int)
 
 
 def test_feature_regression_behavior_successful_drag_writes_once_cancel_and_read_only_write_never():

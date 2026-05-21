@@ -15,6 +15,38 @@ def _load_json(path: Path):
         return None
 
 
+def _count_preview_items_from_generated_metadata(scene_dir: Path) -> int:
+    generated_layout = scene_dir / 'layout' / 'workcell_studio_layout.generated.yaml'
+    if not generated_layout.exists():
+        return 0
+    in_preview_items = False
+    count = 0
+    for raw in generated_layout.read_text(encoding='utf-8').splitlines():
+        line = raw.rstrip()
+        if line.strip() == 'preview_items:':
+            in_preview_items = True
+            continue
+        if in_preview_items and line and not line.startswith(' '):
+            break
+        if in_preview_items and line.lstrip().startswith('- id:'):
+            count += 1
+    return count
+
+
+def _runtime_scene_diagnostics(scene: str) -> dict:
+    diag_path = ROOT / 'build' / 'workcell_studio_scene3d_visual_diagnostics.json'
+    payload = _load_json(diag_path)
+    if not isinstance(payload, dict):
+        return {}
+    scenes = payload.get('scenes', [])
+    if not isinstance(scenes, list):
+        return {}
+    for item in scenes:
+        if isinstance(item, dict) and item.get('scene') == scene:
+            return item
+    return {}
+
+
 def check_scene(scene_dir: Path) -> dict:
     scene = scene_dir.name
     layout_path = scene_dir / 'layout' / 'workcell_studio_layout.yaml'
@@ -51,6 +83,15 @@ def check_scene(scene_dir: Path) -> dict:
     primitive_count = layer_counts['primitive_fallback']
     mesh_count = layer_counts['mesh_preview']
     urdf_count = layer_counts['locked_generated_urdf_visual']
+    meaningful_total = primitive_count + mesh_count + urdf_count
+
+    preview_items_count = _count_preview_items_from_generated_metadata(scene_dir)
+    visible_after_filters_count = sum(1 for i in items if i.get('hidden_by_filters') is not True)
+    filtered_hidden_count = max(0, len(items) - visible_after_filters_count)
+    diag_scene = _runtime_scene_diagnostics(scene)
+    render_cache_received_count = None
+    if diag_scene:
+        render_cache_received_count = diag_scene.get('render_cache_received_count', diag_scene.get('render_cache_received'))
 
     if not has_layout:
         blockers.append('missing layout/workcell_studio_layout.yaml')
@@ -61,6 +102,12 @@ def check_scene(scene_dir: Path) -> dict:
         fixes.append('if safe mesh index exists, map items into mesh_preview layer')
     if unresolved > 0 and bool(idx.get('safe_for_preview', False)):
         blockers.append('unresolved placeholders remain in IDs during safe preview')
+    if meaningful_total == 0:
+        blockers.append('meaningful layer counts are all zero')
+    if visible_after_filters_count == 0:
+        blockers.append('visible_after_filters_count is zero by default')
+    if mesh_count == 0 and primitive_count > 0 and visible_after_filters_count > 0:
+        fixes.append('optional mesh assets missing; primitive fallback is present and visible')
 
     status = 'PASS'
     if blockers:
@@ -77,6 +124,10 @@ def check_scene(scene_dir: Path) -> dict:
         'overlay_count': layer_counts['overlay'],
         'unsafe_visual_reason_count': unsafe_reasons,
         'unresolved_placeholder_count': unresolved,
+        'preview_items_count': preview_items_count,
+        'visible_after_filters_count': visible_after_filters_count,
+        'filtered_hidden_count': filtered_hidden_count,
+        'render_cache_received_count': render_cache_received_count,
         'contract_status': status,
         'blockers': blockers,
         'suggested_fixes': fixes,
@@ -95,7 +146,11 @@ def markdown(report: list[dict]) -> str:
                   f"- primitive_fallback_count: {r['primitive_fallback_count']}",
                   f"- overlay_count: {r['overlay_count']}",
                   f"- unsafe_visual_reason_count: {r['unsafe_visual_reason_count']}",
-                  f"- unresolved_placeholder_count: {r['unresolved_placeholder_count']}"]
+                  f"- unresolved_placeholder_count: {r['unresolved_placeholder_count']}",
+                  f"- preview_items_count: {r['preview_items_count']}",
+                  f"- visible_after_filters_count: {r['visible_after_filters_count']}",
+                  f"- filtered_hidden_count: {r['filtered_hidden_count']}",
+                  f"- render_cache_received_count: {r['render_cache_received_count']}"]
         if r['blockers']:
             lines.append('- blockers:'); lines += [f"  - {b}" for b in r['blockers']]
         if r['suggested_fixes']:
