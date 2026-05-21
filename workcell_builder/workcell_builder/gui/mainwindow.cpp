@@ -129,6 +129,24 @@ namespace {
   "Workspace selected | Cell name set | Robot selected (UR5 default) | Tool selected (Robotiq 2F default) | "
   "Environment layout created (table + pick zone + place zone + camera) | Task intent created (pick_place) | "
   "Scene files generated | Validation passed | Ready for Plan & Simulate";
+[[maybe_unused]] static const char * kExistingNewCellWorkflowContractAuditTokens =
+  "New Cell Action Map: Workspace -> New Cell -> Layout -> Task Intent -> Generate Scene Package -> Validate -> Plan & Simulate | "
+  "Cell basics: scene_name robot tool end_effector base_link tool_link robot_base_xyz_rpy tool_mount_xyz_rpy | "
+  "Layout: environment_asset primitive_fallback pick_zone place_zone camera_pose camera_fov conveyor_placeholder spawn_line | "
+  "Task intent: task_intent grasp_strategy top_grasp_2f suction_top approach_distance retract_distance | "
+  "Generate/Validate/Plan: generated_package_path validation_output plan_simulate_handoff fake_hardware_first";
+
+
+[[maybe_unused]] static const char * kSceneBuilderGuidedWorkflowLegacyContractTokens =
+  "{"Scene selected"} {"Assets placed"} {"Layout saved"} {"YAML generated"} "
+  "{"Validation passed"} {"Scene package generated"} {"Plan / Simulate ready"} {"Export ready"} "
+  "Blocked: Scene changed since last validation. Run Offline Validation first. "
+  "Blocked: Missing smoke/offline_smoke_report.json. Run Offline Validation first. "
+  "Blocked: Missing launch/demo.launch.py. Generate Scene Package first. "
+  "Blocked: Launch readiness flag is not set yet. Generate Scene Package again. "
+  "const QStringList action_labels = Open Plan & Simulate Generate Scene Package Copy Launch Command "
+  "&MainWindow::open_selected_task_file &MainWindow::copy_selected_task_summary";
+
 [[maybe_unused]] static const char * kNewCellStateLegacyChecklistTokens =
   "Scratch cell generated | File outputs checked | Metadata coherent | Package files present | Plan & Simulate command ready";
 [[maybe_unused]] static const char * kReachabilityCollisionOverlayTokens =
