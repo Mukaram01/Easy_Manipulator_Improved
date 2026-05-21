@@ -8,3 +8,13 @@ VIEW = Path('workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp')
 def test_viewport_data_handoff_and_callbacks_wired():
     for token in ['set_preview_items(filtered_items)', 'preview_item_selected', 'select_cb', 'transform_changed_cb']:
         assert token in PREVIEW or token in MAIN or token in VIEW
+
+
+def test_structured_diagnostics_handoff_tokens_present():
+    for token in [
+        'model_items_count',
+        'preview_items_count',
+        'filtered_visible_count',
+        'viewport_received_count',
+    ]:
+        assert token in MAIN or token in PREVIEW or token in VIEW

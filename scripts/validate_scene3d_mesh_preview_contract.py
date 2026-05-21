@@ -61,6 +61,7 @@ def main():
     ]:
         must(token in src if token == "compute_mesh_bounds_for_test" else token in body, f"missing token: {token}")
 
+
     loop_pos = body.find("for (const auto & tri : cache.mesh.triangles)")
     cube_pos = body.find("draw_unit_cube_triangles(")
     must(loop_pos != -1, "triangle loop missing")
@@ -155,6 +156,18 @@ def main():
     mw_src = MAINWINDOW.read_text(encoding="utf-8")
     mw_h_src = MAINWINDOW_H.read_text(encoding="utf-8")
     mw_combined = mw_src + "\n" + mw_h_src
+    diagnostics_tokens = [
+        "model_items_count",
+        "preview_items_count",
+        "filtered_visible_count",
+        "viewport_received_count",
+        "render_cache_count",
+        "rendered_count",
+        "skipped_count",
+        "paintGL cache-only guard: no YAML/file IO in paint path",
+    ]
+    for token in diagnostics_tokens:
+        must(token in src or token in mw_src, f"missing Scene3D diagnostics token: {token}")
 
     for token in ["--scene", "--require-xacro", "--prefer-xacro", "safe_for_preview", "extractor_version", "generated_at"]:
         must(token in extractor_src, f"missing new extractor contract token: {token}")

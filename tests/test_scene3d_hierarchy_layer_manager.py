@@ -70,6 +70,10 @@ def test_visibility_toggles_are_preview_only_and_avoid_generated_write_paths():
     for path in guarded_paths:
         assert path not in toggle_block
 
+    assert 'Scene3D diagnostics {model_items_count=' in MAIN_CPP
+    assert 'Scene3D diagnostics {model_items_count=' in MAIN_CPP
+    assert 'Scene3D diagnostics {preview_items_count=' in PREVIEW_CPP
+
 
 def test_hierarchy_exposes_stable_id_and_detection_metadata_roles():
     for token in ['TreeRoleStableId', 'TreeRoleCameraId', 'TreeRoleFrameId', 'TreeRoleDetectionLabel', 'TreeRoleConfidence', 'TreeRoleTrackingId', 'TreeRoleSnapshotSourceFile', 'TreeRoleAlignmentWarning']:

@@ -524,6 +524,7 @@ void Scene3DViewportWidget::resizeGL(int w, int h) { glViewport(0, 0, w, h); }
 
 void Scene3DViewportWidget::paintGL()
 {
+  static const char * kPaintGLCacheOnlyGuard = "paintGL cache-only guard: no YAML/file IO in paint path";
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   QMatrix4x4 proj, view;
   camera_matrices(proj, view);
@@ -599,6 +600,12 @@ void Scene3DViewportWidget::paintGL()
            << "mesh_backed=" << mesh_backed_count
            << "placeholder=" << placeholder_count
            << "overlay=" << overlay_count;
+  qDebug() << kPaintGLCacheOnlyGuard;
+  qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
+           << ", render_cache_count=" << mesh_cache_.size()
+           << ", rendered_count=" << rendered_item_count
+           << ", skipped_count=" << skipped_item_count
+           << "}";
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
