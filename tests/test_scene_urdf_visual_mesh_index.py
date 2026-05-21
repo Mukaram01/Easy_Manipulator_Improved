@@ -103,6 +103,23 @@ def test_scene_urdf_visual_mesh_index_generation():
 
     bad_resolved = [i for i in all_items if i.get('transform_status') == 'resolved' and any(tok in str(i.get(k,'')) for k in ['id','link','parent_link'] for tok in ['${','$(arg '])]
     assert not bad_resolved
+    mesh_resolved = [i for i in all_items if i.get('geometry_type') == 'mesh' and i.get('resolved')]
+    assert mesh_resolved
+    assert all((i.get('source_path') or '').strip() for i in mesh_resolved)
+    assert all(Path(i.get('source_path')).exists() for i in mesh_resolved if (i.get('source_path') or '').strip())
+    primitive_items = [i for i in all_items if i.get('geometry_type') in ('box', 'cylinder', 'sphere')]
+    for i in primitive_items:
+        if i.get('geometry_type') == 'box':
+            assert isinstance(i.get('size'), list) and len(i.get('size')) == 3
+        if i.get('geometry_type') == 'cylinder':
+            assert 'radius' in i and 'length' in i
+        if i.get('geometry_type') == 'sphere':
+            assert 'radius' in i
+    skipped = [i for i in all_items if i.get('render_expected') and i.get('geometry_type') == 'mesh' and not (i.get('source_path') or '').strip()]
+    assert len(skipped) <= max(2, len(all_items) // 4)
+    for i in all_items:
+        if not i.get('render_expected') or i.get('geometry_type') == 'unknown' or (i.get('geometry_type') == 'mesh' and not i.get('resolved')):
+            assert (i.get('render_skip_reason') or i.get('warning') or '').strip()
 
 
 def test_scene3d_visual_diagnostics_report_generation():

@@ -5004,13 +5004,21 @@ void MainWindow::populate_scene_hierarchy()
   }
   int visual_index_loaded_count = 0;
   int visual_preview_added_count = 0;
-  int skipped_missing_source_path = 0;
+  int skipped_missing_mesh_source_path = 0;
   int skipped_file_not_found = 0;
   int skipped_render_expected_false = 0;
   int skipped_duplicate_id = 0;
   int skipped_invalid_pose = 0;
   int skipped_unsupported_format = 0;
   int skipped_zero_triangle_mesh = 0;
+  int skipped_unknown_geometry = 0;
+  int non_mesh_geometry_added = 0;
+  int non_mesh_geometry_unsupported = 0;
+  int package_uri_resolved_by_loader = 0;
+  int source_path_from_resolved_path = 0;
+  int mesh_item_count = 0;
+  int primitive_item_count = 0;
+  int unknown_item_count = 0;
   int skipped_other = 0;
   QString visual_diagnostics_summary;
   bool visual_index_safe_for_preview = false;
@@ -5038,6 +5046,10 @@ void MainWindow::populate_scene_hierarchy()
             ++skipped_duplicate_id;
             continue;
           }
+          const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
+          if (geometry_type == "mesh") ++mesh_item_count;
+          else if (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere") ++primitive_item_count;
+          else ++unknown_item_count;
           const bool render_expected = workcell_builder::yaml_map_key(v, "render_expected").as<bool>(false);
           if (!render_expected) {
             ++skipped_render_expected_false;
@@ -5062,15 +5074,20 @@ void MainWindow::populate_scene_hierarchy()
           p.role = p.category;
           p.status = "ready";
           p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
-          if (p.source_path.trimmed().isEmpty()) {
-            ++skipped_missing_source_path;
-            continue;
+          const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
+          const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          if (p.source_path.trimmed().isEmpty() && !resolved_path.trimmed().isEmpty()) {
+            p.source_path = resolved_path;
+            ++source_path_from_resolved_path;
           }
-          if (!fs::exists(fs::path(p.source_path.toStdString()))) {
-            ++skipped_file_not_found;
-            continue;
+          if (p.source_path.trimmed().isEmpty() && (package_uri.startsWith("file://") || package_uri.startsWith("/"))) {
+            QString candidate = package_uri;
+            if (candidate.startsWith("file://")) candidate = candidate.mid(7);
+            if (fs::exists(fs::path(candidate.toStdString()))) {
+              p.source_path = candidate;
+              ++package_uri_resolved_by_loader;
+            }
           }
-          p.mesh_path = p.source_path;
           p.locked = true;
           p.editable = false;
           p.selectable = true;
@@ -5093,7 +5110,19 @@ void MainWindow::populate_scene_hierarchy()
           p.sy = workcell_builder::yaml_seq_index(scale,1).as<double>(0.25);
           p.sz = workcell_builder::yaml_seq_index(scale,2).as<double>(0.25);
           const bool resolved = workcell_builder::yaml_map_key(v, "resolved").as<bool>(false);
-          if (!resolved || p.source_path.trimmed().isEmpty()) {
+          const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
+          if (geometry_type == "mesh") {
+            if (p.source_path.trimmed().isEmpty()) { ++skipped_missing_mesh_source_path; continue; }
+            if (!fs::exists(fs::path(p.source_path.toStdString()))) { ++skipped_file_not_found; continue; }
+            p.mesh_path = p.source_path;
+          } else if (is_primitive) {
+            ++non_mesh_geometry_added;
+          } else {
+            ++skipped_unknown_geometry;
+            ++non_mesh_geometry_unsupported;
+            continue;
+          }
+          if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
             p.status = "warning";
             p.mesh_available = false;
             p.warnings << QStringLiteral("Preview warning: URDF visual unresolved");
@@ -5110,7 +5139,7 @@ void MainWindow::populate_scene_hierarchy()
         }
       }
       const int visual_skipped_total =
-        skipped_missing_source_path +
+        skipped_missing_mesh_source_path +
         skipped_file_not_found +
         skipped_render_expected_false +
         skipped_duplicate_id +
@@ -5122,17 +5151,21 @@ void MainWindow::populate_scene_hierarchy()
       append_studio_log(QString("Visual mesh index safe_for_preview: %1").arg(visual_index_safe_for_preview ? "true" : "false"));
       append_studio_log(QString("Visual mesh index extraction_mode: %1").arg(visual_index_extraction_mode));
       append_studio_log(QString("Visual mesh index loaded: %1 visual items").arg(visual_index_loaded_count));
+      append_studio_log(QString("Mesh items: %1, primitive items: %2, unknown items: %3").arg(mesh_item_count).arg(primitive_item_count).arg(unknown_item_count));
       append_studio_log(QString("Visual mesh preview items added: %1 / %2").arg(visual_preview_added_count).arg(visual_index_loaded_count));
       append_studio_log(
-        QString("Skipped visual items: missing_source_path=%1 file_not_found=%2 render_expected_false=%3 duplicate_id=%4 invalid_pose=%5 unsupported_format=%6 zero_triangle_mesh=%7 other=%8")
-        .arg(skipped_missing_source_path)
+        QString("Skipped visual items: missing_mesh_source_path=%1 file_not_found=%2 render_expected_false=%3 duplicate_id=%4 invalid_pose=%5 unsupported_format=%6 zero_triangle_mesh=%7 unknown_geometry=%8 other=%9")
+        .arg(skipped_missing_mesh_source_path)
         .arg(skipped_file_not_found)
         .arg(skipped_render_expected_false)
         .arg(skipped_duplicate_id)
         .arg(skipped_invalid_pose)
         .arg(skipped_unsupported_format)
         .arg(skipped_zero_triangle_mesh)
+        .arg(skipped_unknown_geometry)
         .arg(skipped_other));
+      append_studio_log(QString("Loader fallbacks: package_uri_resolved_by_loader=%1 source_path_from_resolved_path=%2 non_mesh_geometry_added=%3 non_mesh_geometry_unsupported=%4")
+        .arg(package_uri_resolved_by_loader).arg(source_path_from_resolved_path).arg(non_mesh_geometry_added).arg(non_mesh_geometry_unsupported));
       if (visual_index_loaded_count != (visual_preview_added_count + visual_skipped_total)) {
         append_studio_log(
           QString("Preview warning: visual ingestion mismatch loaded=%1 added=%2 skipped_sum=%3")
@@ -5144,7 +5177,7 @@ void MainWindow::populate_scene_hierarchy()
         QString("Visuals: added %1/%2 • skipped msrc=%3 nf=%4 render=%5 dup=%6 pose=%7 fmt=%8 tri0=%9 other=%10")
         .arg(visual_preview_added_count)
         .arg(visual_index_loaded_count)
-        .arg(skipped_missing_source_path)
+        .arg(skipped_missing_mesh_source_path)
         .arg(skipped_file_not_found)
         .arg(skipped_render_expected_false)
         .arg(skipped_duplicate_id)

@@ -21,3 +21,8 @@ def test_scene3d_asset_drag_drop_tokens_exist():
     assert "Locked URDF" in viewport_cpp
     assert "Overlays %1" in viewport_cpp
     assert "Items %1 • Mesh %2 • Boxes %3 • Missing %4" in viewport_cpp
+    assert "geometry_type" in main_cpp
+    assert "resolved_path" in main_cpp
+    assert "package_uri" in main_cpp
+    assert "missing_mesh_source_path" in main_cpp
+    assert "non_mesh_geometry_added" in main_cpp

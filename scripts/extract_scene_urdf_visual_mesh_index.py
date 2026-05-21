@@ -161,15 +161,52 @@ def extract(xml_text,scene_dir,package_map,args):
         if visual.tag.split('}')[-1]!='visual': continue
         geom=next((c for c in list(visual) if c.tag.split('}')[-1]=='geometry'),None)
         mesh=next((c for c in list(geom) if c.tag.split('}')[-1]=='mesh'),None) if geom is not None else None
-        if mesh is None: continue
-        src,normalized=resolve_uri(mesh.attrib.get('filename','').strip(),scene_dir,package_map,args)
+        box=next((c for c in list(geom) if c.tag.split('}')[-1]=='box'),None) if geom is not None else None
+        cylinder=next((c for c in list(geom) if c.tag.split('}')[-1]=='cylinder'),None) if geom is not None else None
+        sphere=next((c for c in list(geom) if c.tag.split('}')[-1]=='sphere'),None) if geom is not None else None
         origin=next((c for c in list(visual) if c.tag.split('}')[-1]=='origin'),None)
         visual_tf=tf_from_xyz_rpy(parse_vec(origin.attrib.get('xyz') if origin is not None else None,3),parse_vec(origin.attrib.get('rpy') if origin is not None else None,3))
-        world_tf=matmul4(ltf.get(lname,identity_tf()),visual_tf); tstatus=lstatus.get(lname,'local_only'); warn='' if src else f'unresolved mesh path: {normalized}'
+        world_tf=matmul4(ltf.get(lname,identity_tf()),visual_tf); tstatus=lstatus.get(lname,'local_only'); warn=''
+        geometry_type = 'unknown'
+        src = ''
+        normalized = ''
+        ext = ''
+        render_expected = False
+        resolved = False
+        render_skip_reason = ''
+        primitive = {}
+        if mesh is not None:
+          geometry_type = 'mesh'
+          src,normalized=resolve_uri(mesh.attrib.get('filename','').strip(),scene_dir,package_map,args)
+          ext=Path(src if src else normalized).suffix.lower() if (src or normalized) else ''
+          render_expected = True
+          resolved = bool(src)
+          if not resolved:
+            render_skip_reason = f'unresolved mesh path: {normalized}'
+        elif box is not None:
+          geometry_type = 'box'
+          render_expected = True
+          resolved = True
+          primitive['size'] = parse_vec(box.attrib.get('size'),3,0.0)
+        elif cylinder is not None:
+          geometry_type = 'cylinder'
+          render_expected = True
+          resolved = True
+          primitive['radius'] = float(cylinder.attrib.get('radius',0.0) or 0.0)
+          primitive['length'] = float(cylinder.attrib.get('length',0.0) or 0.0)
+        elif sphere is not None:
+          geometry_type = 'sphere'
+          render_expected = True
+          resolved = True
+          primitive['radius'] = float(sphere.attrib.get('radius',0.0) or 0.0)
+        else:
+          render_skip_reason = 'unsupported or missing geometry tag'
         unresolved_fields = [f for f,v in {'id':f'urdf_visual_{idx}_{lname}','link':lname,'visual':visual.attrib.get('name',''),'parent_link':lparent.get(lname,''),'joint_chain':lchain.get(lname,[])}.items() if contains_placeholder(v)]
-        if contains_placeholder(mesh.attrib) or unresolved_fields or contains_placeholder(origin.attrib if origin is not None else ''): tstatus='partial'; warn=((warn+'; ') if warn else '')+'unresolved xacro substitution placeholder'
-        ext=Path(src if src else normalized).suffix.lower() if (src or normalized) else ''
-        items.append({'id':f'urdf_visual_{idx}_{lname}','link':lname,'visual':visual.attrib.get('name',''),'parent_link':lparent.get(lname,''),'source_path':src,'package_uri':normalized,'pose':xyz_rpy_from_tf(world_tf),'local_visual_pose':xyz_rpy_from_tf(visual_tf),'link_world_pose':xyz_rpy_from_tf(ltf.get(lname,identity_tf())),'joint_chain':lchain.get(lname,[]),'transform_source':f'{tstatus}; link={lname}','transform_status':tstatus,'scale':parse_vec(mesh.attrib.get('scale'),3,1.0),'category':cat(lname),'resolved':bool(src),'warning':warn,'mesh_extension':ext,'render_expected':ext in {'.stl','.dae'},'render_warning':''}); idx+=1
+        if (mesh is not None and contains_placeholder(mesh.attrib)) or unresolved_fields or contains_placeholder(origin.attrib if origin is not None else ''): tstatus='partial'; warn=((warn+'; ') if warn else '')+'unresolved xacro substitution placeholder'
+        if geometry_type == 'mesh' and not resolved and not warn:
+          warn = render_skip_reason
+        scale=parse_vec(mesh.attrib.get('scale'),3,1.0) if mesh is not None else [1.0,1.0,1.0]
+        items.append({'id':f'urdf_visual_{idx}_{lname}','link':lname,'visual':visual.attrib.get('name',''),'parent_link':lparent.get(lname,''),'source_path':src,'resolved_path':src,'package_uri':normalized,'geometry_type':geometry_type,'pose':xyz_rpy_from_tf(world_tf),'local_visual_pose':xyz_rpy_from_tf(visual_tf),'link_world_pose':xyz_rpy_from_tf(ltf.get(lname,identity_tf())),'joint_chain':lchain.get(lname,[]),'transform_source':f'{tstatus}; link={lname}','transform_status':tstatus,'scale':scale,'category':cat(lname),'resolved':resolved,'warning':warn,'mesh_extension':ext,'render_expected':render_expected,'render_skip_reason':render_skip_reason,**primitive}); idx+=1
     return items,warnings
 
 def compute_safe_for_preview(meta):
@@ -220,6 +257,8 @@ def main():
         report['unsafe_preview_count'] += 1
         report['scenes'].append({'scene':scene_dir.name,'safe_for_preview':False,'extraction_mode':'xacro_required_failed','stale_index':False,'unsafe_reasons':['xacro_required_failed']})
         continue
+      if a.require_xacro and mode != 'xacro_expanded':
+        warnings.append('xacro expansion required and extraction mode is not xacro_expanded')
       if not text:
         if a.prefer_xacro and xacro_attempted:
           warnings.append('xacro expansion failed; falling back to best-effort recursive parse')
