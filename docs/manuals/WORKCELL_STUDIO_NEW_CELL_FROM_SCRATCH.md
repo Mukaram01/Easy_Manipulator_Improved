@@ -59,3 +59,24 @@ Choose Workspace → New Cell → New Scene → Use Recommended Layout → Add t
 ```bash
 python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches
 ```
+
+
+## Runtime generation behavior
+
+The **existing New Cell flow** now drives runtime scene-contract generation directly from UI state (no parallel generator path).
+
+- **Use Recommended Layout** populates starter environment/layout metadata (workbench or primitive fallback, pick/place zones, robot base marker, camera marker/FOV when configured, and conveyor placeholder/spawn line when configured in the existing layout step).
+- **Save Layout / Generate Task Intent / Generate Scene Package** update the scene contract files used by Workcell Studio, including:
+  - `environment.yaml`
+  - `cell_definition.yaml`
+  - `scene_manifest.yaml`
+  - `layout/workcell_studio_layout.yaml`
+  - `task/workcell_builder_task_intent.yaml`
+  - `task/task_recipe_from_builder_intent.yaml` (where supported)
+  - `plan_preview/offline_plan_preview_request.yaml` (where supported)
+  - `launch/demo.launch.py` (or explicit blockers)
+- Primitive fallback behavior is recorded as warning metadata so preview stays usable even when optional meshes are unavailable.
+- Validation path remains the same existing readiness workflow. Recommended command:
+  - `python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches`
+
+> Safety policy: generated New Cell scenes are simulation/fake-hardware-first scaffolds and are **not** real-hardware execution approval.
