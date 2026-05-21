@@ -11,6 +11,15 @@ def test_contract_document_exists_and_contains_required_rule():
     assert 'must not remove primitive fallback, mesh preview, xacro-expanded preview, or refresh behavior' in text
 
 
+def test_preview_item_contract_metadata_struct_and_gate_paths_exist():
+    header = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.h').read_text(encoding='utf-8')
+    viewport = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
+    for tok in ['QString source_layer;', 'QString active_visual_source;', 'bool linked_to_editable_layout_state{ false };']:
+        assert tok in header
+    for tok in ['source_layer == "editable_layout"', 'source_layer == "primitive_fallback"', 'visual_source == "mesh_preview"']:
+        assert tok in viewport
+
+
 def test_contract_checker_generates_json_and_markdown(tmp_path):
     out_json = tmp_path / 'report.json'
     out_md = tmp_path / 'report.md'

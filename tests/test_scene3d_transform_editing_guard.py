@@ -17,6 +17,16 @@ def test_contract_documents_transform_editing_guards():
     assert 'must not mutate generated artifacts' in CONTRACT_DOC
 
 
+def test_mainwindow_populates_preview_item_contract_source_metadata():
+    for tok in [
+        'p.source_layer = QStringLiteral("editable_layout")',
+        'p.source_layer = QStringLiteral("primitive_fallback")',
+        'p.active_visual_source = QStringLiteral("mesh_preview")',
+        'p.linked_to_editable_layout_state = true',
+    ]:
+        assert tok in MAIN_CPP
+
+
 def test_invalid_or_locked_edit_is_rejected_safely():
     assert 'Locked/generated item edit rejected' in MAIN_CPP
     assert 'if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;' in MAIN_CPP
