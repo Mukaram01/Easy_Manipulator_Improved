@@ -35,3 +35,8 @@ def test_locked_items_remain_read_only_in_inspector():
     assert 'inspector_apply_button_->setEnabled(!locked)' in MAIN_CPP
     assert 'inspector_revert_button_->setEnabled(!locked)' in MAIN_CPP
     assert 'Locked/generated item edit rejected' in MAIN_CPP
+
+
+def test_inspector_renders_read_only_detection_and_camera_fov_detail_block():
+    for token in ['Read-only details:', 'detection_label:', 'snapshot_source_file:', 'locked_reason:', 'camera_id:', 'frame_id:', 'confidence:']:
+        assert token in MAIN_CPP

@@ -34,6 +34,13 @@ struct WorkcellStudioCanvasItem {
   std::string mesh_load_warning;
   WorkcellStudioItemProvenance provenance{WorkcellStudioItemProvenance::GeneratedOrLegacyPreview};
   bool locked{false};
+  std::string camera_id;
+  std::string frame_id;
+  std::string detection_label;
+  double confidence{-1.0};
+  std::string tracking_id;
+  std::string snapshot_source_file;
+  std::string alignment_warning;
   std::vector<std::string> warnings;
 };
 struct WorkcellStudioCanvasModel {

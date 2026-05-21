@@ -244,7 +244,8 @@ bool is_good_scene_path(const fs::path & scene_path)
 enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
-  TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass
+  TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
+  TreeRoleStableId, TreeRoleCameraId, TreeRoleFrameId, TreeRoleDetectionLabel, TreeRoleConfidence, TreeRoleTrackingId, TreeRoleSnapshotSourceFile, TreeRoleAlignmentWarning
 };
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
 
@@ -2215,6 +2216,13 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.visual_backing_status = item->data(0, TreeRoleVisualBackingStatus).toString().trimmed();
     state.generated_visual = item->data(0, TreeRoleGeneratedVisual).toBool();
     state.item_type_classification = item->data(0, TreeRoleItemTypeClass).toString().trimmed();
+    state.camera_id = item->data(0, TreeRoleCameraId).toString().trimmed();
+    state.frame_id = item->data(0, TreeRoleFrameId).toString().trimmed();
+    state.detection_label = item->data(0, TreeRoleDetectionLabel).toString().trimmed();
+    state.confidence = item->data(0, TreeRoleConfidence).toDouble();
+    state.tracking_id = item->data(0, TreeRoleTrackingId).toString().trimmed();
+    state.snapshot_source_file = item->data(0, TreeRoleSnapshotSourceFile).toString().trimmed();
+    state.alignment_warning = item->data(0, TreeRoleAlignmentWarning).toString().trimmed();
     state.pose_available = item->data(0, TreeRolePoseAvailable).toBool();
     state.pose_x = item->data(0, TreeRolePoseX).toDouble();
     state.pose_y = item->data(0, TreeRolePoseY).toDouble();
@@ -2332,6 +2340,20 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   inspector_lines << QString("Selected item item_type_classification: %1").arg(type_class);
   if (is_locked_urdf_preview) inspector_lines << "Reason: locked/preview-only";
   inspector_lines << locked_line;
+  const bool is_detection_item = source_layer.compare("overlay", Qt::CaseInsensitive) == 0 || !state.detection_label.isEmpty();
+  const bool is_camera_fov_item = role.contains("camera", Qt::CaseInsensitive) || type_class.contains("camera", Qt::CaseInsensitive);
+  if (is_detection_item || is_camera_fov_item) {
+    inspector_lines << "";
+    inspector_lines << "Read-only details:";
+    if (!state.camera_id.isEmpty()) inspector_lines << QString("camera_id: %1").arg(state.camera_id);
+    if (!state.frame_id.isEmpty()) inspector_lines << QString("frame_id: %1").arg(state.frame_id);
+    if (!state.detection_label.isEmpty()) inspector_lines << QString("detection_label: %1").arg(state.detection_label);
+    if (state.confidence >= 0.0) inspector_lines << QString("confidence: %1").arg(state.confidence, 0, 'f', 3);
+    if (!state.tracking_id.isEmpty()) inspector_lines << QString("tracking_id: %1").arg(state.tracking_id);
+    if (!state.snapshot_source_file.isEmpty()) inspector_lines << QString("snapshot_source_file: %1").arg(state.snapshot_source_file);
+    if (!state.alignment_warning.isEmpty()) inspector_lines << QString("alignment_warning: %1").arg(state.alignment_warning);
+    if (!state.editable) inspector_lines << QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("preview-only overlay") : state.lock_reason);
+  }
   inspector_label_->setText(inspector_lines.join("\n"));
   inspector_label_->setToolTip(QString("%1\n%2").arg(selected_scene_state_.valid ? selected_scene_state_.path : QString(), source));
   live_coordinate_label_->setText(QString("Transform: %1").arg(pose));
@@ -5145,6 +5167,14 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleVisualBackingStatus, visual_status);
     node->setData(0, TreeRoleGeneratedVisual, p.source_layer != QStringLiteral("editable_layout"));
     node->setData(0, TreeRoleItemTypeClass, p.category);
+    node->setData(0, TreeRoleStableId, p.id);
+    node->setData(0, TreeRoleCameraId, p.camera_id);
+    node->setData(0, TreeRoleFrameId, p.frame_id);
+    node->setData(0, TreeRoleDetectionLabel, p.detection_label);
+    node->setData(0, TreeRoleConfidence, p.confidence);
+    node->setData(0, TreeRoleTrackingId, p.tracking_id);
+    node->setData(0, TreeRoleSnapshotSourceFile, p.snapshot_source_file);
+    node->setData(0, TreeRoleAlignmentWarning, p.alignment_warning);
   };
 
   auto add_preview_item = [&](const QString & id,
@@ -5164,6 +5194,10 @@ void MainWindow::populate_scene_hierarchy()
     p.source_layer = QStringLiteral("generated_preview");
     p.active_visual_source = QStringLiteral("generated_preview");
     p.linked_to_editable_layout_state = false;
+          p.source_layer = QStringLiteral("overlay");
+          p.active_visual_source = QStringLiteral("overlay");
+          p.editable = false;
+          p.selectable = true;
     p.metadata_complete = metadata_complete;
     if (!metadata_complete) {
       p.warnings << "metadata incomplete";
@@ -5218,6 +5252,13 @@ void MainWindow::populate_scene_hierarchy()
     p.mesh_available = item.mesh_available;
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     p.locked = item.locked;
+    p.camera_id = QString::fromStdString(item.camera_id);
+    p.frame_id = QString::fromStdString(item.frame_id);
+    p.detection_label = QString::fromStdString(item.detection_label);
+    p.confidence = item.confidence;
+    p.tracking_id = QString::fromStdString(item.tracking_id);
+    p.snapshot_source_file = QString::fromStdString(item.snapshot_source_file);
+    p.alignment_warning = QString::fromStdString(item.alignment_warning);
     p.editable = !item.locked;
     switch (item.provenance) {
       case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
@@ -5229,12 +5270,20 @@ void MainWindow::populate_scene_hierarchy()
         p.source_layer = QStringLiteral("primitive_fallback");
         p.active_visual_source = QStringLiteral("primitive_fallback");
         p.linked_to_editable_layout_state = false;
+          p.source_layer = QStringLiteral("overlay");
+          p.active_visual_source = QStringLiteral("overlay");
+          p.editable = false;
+          p.selectable = true;
         break;
       case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
       default:
         p.source_layer = QStringLiteral("generated_preview");
         p.active_visual_source = QStringLiteral("mesh_preview");
         p.linked_to_editable_layout_state = false;
+          p.source_layer = QStringLiteral("overlay");
+          p.active_visual_source = QStringLiteral("overlay");
+          p.editable = false;
+          p.selectable = true;
         break;
     }
     if (item.locked) {
@@ -5409,6 +5458,10 @@ void MainWindow::populate_scene_hierarchy()
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                                               : QStringLiteral("primitive_fallback");
           p.linked_to_editable_layout_state = false;
+          p.source_layer = QStringLiteral("overlay");
+          p.active_visual_source = QStringLiteral("overlay");
+          p.editable = false;
+          p.selectable = true;
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
           const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
           const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
