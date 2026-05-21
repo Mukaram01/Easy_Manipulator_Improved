@@ -55,6 +55,26 @@ def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_prese
         assert token in MAIN_CPP
 
 
+def test_save_roundtrip_reselects_by_stable_id_or_clears_when_missing():
+    for token in [
+        'stable_selected_id_before_refresh',
+        'Save Layout: rebuilding Scene3D data after save',
+        'apply_scene_selection(stable_selected_id_before_refresh',
+        'Selection id missing after refresh, clearing atomically',
+        'apply_scene_selection(QString(), selected_role, true, false);',
+    ]:
+        assert token in MAIN_CPP
+
+
+def test_duplicate_names_are_selection_independent_by_stable_id():
+    for token in [
+        'tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id',
+        'gi->data(RoleId).toString().trimmed() == selected_id',
+        'current_selected_scene_item_id_ = selected_id',
+    ]:
+        assert token in MAIN_CPP
+
+
 def test_locked_item_edit_rejected_and_no_real_hardware_banned_tokens():
     assert 'Locked/generated item edit rejected' in MAIN_CPP
     banned = ['use_fake_hardware:=false', 'fake_hardware:=false', 'ur_robot_driver', 'ethercat', 'canopen']
