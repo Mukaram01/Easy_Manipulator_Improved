@@ -164,6 +164,27 @@ def _fake_hardware_command_available(scene_dir: Path) -> bool:
     return (scene_dir / "launch" / "demo.launch.py").exists()
 
 
+def _load_launch_simulation_report(scene_dir: Path) -> tuple[str | None, list[str]]:
+    report_path = scene_dir / "generated" / "fake_hardware_smoke_launch_report.json"
+    if not report_path.exists():
+        return None, []
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return FAIL, [f"launch simulation report unreadable: {exc.__class__.__name__}: {exc}"]
+    if payload.get("schema") != "fake_hardware_smoke_launch_report/v1":
+        return SKIP, ["launch simulation report schema unsupported"]
+    status = str((payload.get("result") or {}).get("status") or "").upper()
+    if status not in {PASS, WARN, FAIL, SKIP}:
+        return WARN, [f"launch simulation report returned unknown status: {status or '(missing)'}"]
+    reasons: list[str] = []
+    for key in ("warnings", "errors"):
+        for msg in (payload.get("result") or {}).get(key, []) or []:
+            if isinstance(msg, str) and msg.strip():
+                reasons.append(f"launch simulation report {key[:-1]}: {msg}")
+    return status, reasons
+
+
 def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
     files = {k: (scene_dir / rel).exists() for k, rel in REQUIRED_FILES.items()}
     optional = {k: (scene_dir / rel).exists() for k, rel in OPTIONAL_FILES.items()}
@@ -255,10 +276,17 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
     preview_status = FAIL if any("mesh index" in b or "visual mesh" in b for b in blockers) else (WARN if preview_reasons or preview_readiness == "degraded" else PASS)
 
     moveit_reasons: list[str] = []
+    launch_report_status, launch_report_reasons = _load_launch_simulation_report(scene_dir)
     if not smoke_available:
         moveit_reasons.append("launch/demo.launch.py missing; fake-hardware smoke command unavailable")
+    moveit_reasons.extend(launch_report_reasons)
     moveit_reasons.extend(_with_prefix("launch warning", launch_warnings))
-    moveit_status = FAIL if not smoke_available else (WARN if moveit_reasons else PASS)
+    if not smoke_available:
+        moveit_status = FAIL
+    elif launch_report_status in {PASS, WARN, FAIL, SKIP}:
+        moveit_status = launch_report_status
+    else:
+        moveit_status = WARN if moveit_reasons else PASS
 
     grasp_planner_reasons: list[str] = []
     if not optional["task_recipe"]:

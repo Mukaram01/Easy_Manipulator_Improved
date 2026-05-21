@@ -79,3 +79,29 @@ def test_scene_warnings_are_grouped_and_non_ambiguous():
         for warning in scene.get("warnings", []):
             assert warning.strip()
             assert any(token in warning.lower() for token in ("missing", "issue", "degraded", "failed", "unreadable", "not in known-scenes"))
+
+
+def test_moveit_launch_readiness_uses_synthetic_launch_report_statuses(tmp_path):
+    from scripts.validate_all_workcell_studio_scenes import audit_scene
+
+    def _mk_scene(name: str, report_status: str):
+        scene = tmp_path / name
+        (scene / "layout").mkdir(parents=True)
+        (scene / "generated").mkdir(parents=True)
+        (scene / "launch").mkdir(parents=True)
+        (scene / "urdf").mkdir(parents=True)
+        (scene / "scene_manifest.yaml").write_text("schema_version: x\n", encoding="utf-8")
+        (scene / "environment.yaml").write_text("schema_version: y\nsupport_surfaces: []\ntask_zones: []\n", encoding="utf-8")
+        (scene / "layout/workcell_studio_layout.yaml").write_text("schema_version: workcell_studio_layout/v1\nitems: [{id: i1, type: marker}]\n", encoding="utf-8")
+        (scene / "launch/demo.launch.py").write_text("# launch\n", encoding="utf-8")
+        (scene / "urdf/scene.urdf").write_text("<robot/>\n", encoding="utf-8")
+        (scene / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"items": [{"render_expected": True}]}), encoding="utf-8")
+        (scene / "generated/fake_hardware_smoke_launch_report.json").write_text(
+            json.dumps({"schema": "fake_hardware_smoke_launch_report/v1", "result": {"status": report_status, "warnings": [], "errors": []}}),
+            encoding="utf-8",
+        )
+        return scene
+
+    assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s1", "PASS")).readiness["moveit_launch_readiness"].status == "PASS"
+    assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s2", "WARN")).readiness["moveit_launch_readiness"].status == "WARN"
+    assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s3", "FAIL")).readiness["moveit_launch_readiness"].status == "FAIL"
