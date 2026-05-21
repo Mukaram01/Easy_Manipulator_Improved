@@ -11,6 +11,7 @@ struct PerceptionContractSummary
   bool enabled{false};
   std::string mode{"legacy_disabled"};
   std::string warning;
+  std::string legacy_source_mode;
 };
 
 std::string yaml_scalar_or_empty(const YAML::Node & node);

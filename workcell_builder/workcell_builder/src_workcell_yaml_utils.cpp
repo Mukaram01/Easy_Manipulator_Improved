@@ -3,6 +3,38 @@
 
 namespace workcell_builder
 {
+static std::string to_lower_copy(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+static std::string canonicalize_scene3d_camera_mode(const std::string & raw_mode, std::string * legacy_source)
+{
+  const std::string raw_lower = to_lower_copy(raw_mode);
+  if (legacy_source) legacy_source->clear();
+  if (raw_lower.empty()) return "none";
+  if (raw_lower == "none") return "none";
+  if (raw_lower == "epd_optional") return "epd_optional";
+  if (raw_lower == "snapshot_overlay") return "snapshot_overlay";
+
+  if (raw_lower == "live_epd" || raw_lower == "live_epd_realsense" || raw_lower == "live") {
+    if (legacy_source) *legacy_source = raw_mode;
+    return "epd_optional";
+  }
+  if (raw_lower == "saved_snapshot" || raw_lower == "epd_replay") {
+    if (legacy_source) *legacy_source = raw_mode;
+    return "snapshot_overlay";
+  }
+  if (raw_lower == "manual_simulated" || raw_lower == "not_configured" || raw_lower == "disabled") {
+    if (legacy_source) *legacy_source = raw_mode;
+    return "none";
+  }
+
+  if (legacy_source) *legacy_source = raw_mode;
+  return "none";
+}
+
 std::string yaml_scalar_or_empty(const YAML::Node & node)
 {
   if (!node || !node.IsScalar()) return "";
@@ -148,11 +180,13 @@ PerceptionContractSummary parse_perception_contract_summary(const YAML::Node & t
     return out;
   }
   out.enabled = true;
-  out.mode = yaml_map_value_or_empty(perception, "mode");
-  if (out.mode.empty()) {
-    out.mode = "enabled_partial";
-    out.warning = "perception map present but mode missing";
+  const std::string raw_mode = yaml_map_value_or_empty(perception, "mode");
+  if (raw_mode.empty()) {
+    out.mode = "epd_optional";
+    out.warning = "perception map present but mode missing; defaulted to epd_optional";
+    return out;
   }
+  out.mode = canonicalize_scene3d_camera_mode(raw_mode, &out.legacy_source_mode);
   return out;
 }
 }
