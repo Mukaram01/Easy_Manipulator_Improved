@@ -200,8 +200,8 @@ Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const
   return out;
 }
 [[maybe_unused]] static const char * kSceneBuilderGuidedWorkflowLegacyContractTokens =
-  "{"Scene selected"} {"Assets placed"} {"Layout saved"} {"YAML generated"} "
-  "{"Validation passed"} {"Scene package generated"} {"Plan / Simulate ready"} {"Export ready"} "
+  "{Scene selected} {Assets placed} {Layout saved} {YAML generated}"
+  "{Validation passed} {Scene package generated} {Plan / Simulate ready} {Export ready} "
   "Blocked: Scene changed since last validation. Run Offline Validation first. "
   "Blocked: Missing smoke/offline_smoke_report.json. Run Offline Validation first. "
   "Blocked: Missing launch/demo.launch.py. Generate Scene Package first. "
@@ -5110,7 +5110,7 @@ void MainWindow::populate_scene_hierarchy()
   QMap<QString, QTreeWidgetItem*> hierarchy_groups;
   auto group_for_item = [&](const ScenePreviewWidget::PreviewItem & p) {
     const QString lower = (p.role + " " + p.category + " " + p.source_layer + " " + p.active_visual_source).toLower();
-    if (p.status.contains("warning", Qt::CaseInsensitive) || p.visual_warning_status.contains("missing", Qt::CaseInsensitive)) return QString("Warnings / Missing Assets");
+    if (p.status.contains("warning", Qt::CaseInsensitive) || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive)) return QString("Warnings / Missing Assets");
     if (lower.contains("editable_layout")) return QString("Editable Layout");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
     if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");

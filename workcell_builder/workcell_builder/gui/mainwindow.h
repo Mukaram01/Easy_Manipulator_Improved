@@ -36,6 +36,7 @@
 #include "attributes/workcell.h"
 #include "workcell_studio_scene_browser.hpp"
 #include "workcell_studio_layout_merge.hpp"
+#include "gui/scene_preview_widget.h"
 
 namespace fs = boost::filesystem;
 
@@ -55,7 +56,6 @@ class QCheckBox;
 class QPushButton;
 class QDoubleSpinBox;
 class QGraphicsSceneMouseEvent;
-class ScenePreviewWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QComboBox;
