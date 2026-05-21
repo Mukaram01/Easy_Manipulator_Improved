@@ -137,6 +137,68 @@ namespace {
   "Generate/Validate/Plan: generated_package_path validation_output plan_simulate_handoff fake_hardware_first";
 
 
+
+struct Scene3DDetectionSnapshotLoadResult {
+  QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
+  QStringList warnings;
+};
+
+Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const fs::path & scene_dir)
+{
+  Scene3DDetectionSnapshotLoadResult out;
+  const std::vector<fs::path> candidates = {
+    scene_dir / "generated" / "perception_bridge_preview_report.json",
+    scene_dir / "generated" / "emd_bridge_payload_preview.json",
+    scene_dir / "generated" / "epd_detection_snapshot.json",
+  };
+
+  auto malformed_warning = [&](const QString & detail) {
+    out.warnings << QStringLiteral("malformed snapshot: %1").arg(detail);
+  };
+
+  auto parse = [&](const fs::path & file) -> bool {
+    QFile in(QString::fromStdString(file.string()));
+    if (!in.open(QIODevice::ReadOnly)) { malformed_warning(QString::fromStdString(file.filename().string())); return false; }
+    QJsonParseError err;
+    const auto doc = QJsonDocument::fromJson(in.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+      malformed_warning(QString::fromStdString(file.filename().string()));
+      return false;
+    }
+    const QJsonObject root = doc.object();
+    const QString schema = root.value("schema").toString();
+    if (!schema.isEmpty() && schema != QStringLiteral("workcell_studio_detection_snapshot/v1")) {
+      malformed_warning(QStringLiteral("schema mismatch"));
+      return false;
+    }
+    QJsonArray detections = root.value("detections").toArray();
+    if (detections.isEmpty() && root.contains("objects")) detections = root.value("objects").toArray();
+    for (const auto & node : detections) {
+      if (!node.isObject()) continue;
+      const auto o = node.toObject();
+      ScenePreviewWidget::EpdDetectionOverlayModel d;
+      d.detection_id = o.value("id").toString(o.value("detection_id").toString("unknown_detection"));
+      d.label = o.value("label").toString(o.value("class").toString("unknown"));
+      d.confidence = o.value("confidence").toDouble(0.0);
+      const auto pos = o.value("position").toObject();
+      d.x = pos.value("x").toDouble(o.value("x").toDouble(0.0));
+      d.y = pos.value("y").toDouble(o.value("y").toDouble(0.0));
+      d.z = pos.value("z").toDouble(o.value("z").toDouble(0.0));
+      d.status = QStringLiteral("loaded");
+      d.source_path = QString::fromStdString(file.string());
+      out.detections.push_back(d);
+    }
+    return true;
+  };
+
+  for (const auto & candidate : candidates) {
+    if (!fs::exists(candidate)) continue;
+    parse(candidate);
+    return out;
+  }
+  out.warnings << QStringLiteral("detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1");
+  return out;
+}
 [[maybe_unused]] static const char * kSceneBuilderGuidedWorkflowLegacyContractTokens =
   "{"Scene selected"} {"Assets placed"} {"Layout saved"} {"YAML generated"} "
   "{"Validation passed"} {"Scene package generated"} {"Plan / Simulate ready"} {"Export ready"} "
@@ -276,6 +338,7 @@ struct SceneTaskIntentSummary
   QString allowed_roll_yaw{"unknown"};
   QString tool_id{"unknown"};
   QString perception_mode{"unknown"};
+  QString perception_legacy_source{""};
   QString clearance{"unknown"};
   QStringList searched_paths;
 };
@@ -420,6 +483,7 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   if (s.tool_id == "unknown") s.tool_id = scalar_path(task, {"end_effector"});
   const auto perception = workcell_builder::parse_perception_contract_summary(task);
   s.perception_mode = QString::fromStdString(perception.mode);
+  s.perception_legacy_source = QString::fromStdString(perception.legacy_source_mode);
   if (!perception.warning.empty()) {
     static QSet<QString> warned_scene_paths;
     const QString canonical_scene = canonical_scene_path_string(scene_dir);
@@ -1993,7 +2057,8 @@ void MainWindow::refresh_task_intent_panel()
   task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing));
   pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
   grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
-  approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5\nDetection mode: %6\nDetection status: %7\nDetails: %8").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance, "Live EPD / RealSense", "Configured", "Live EPD/RealSense uses runtime camera and EPD topics. Saved snapshots are only for offline preview."));
+  const QString detection_mode_line = ti.perception_legacy_source.isEmpty() ? ti.perception_mode : QString("%1 (mapped from legacy: %2)").arg(ti.perception_mode, ti.perception_legacy_source);
+  approach_retreat_details_label_->setText(QString("Approach distance: %1\nRetreat distance: %2\nApproach frame/axis: %3\nRetreat frame/axis: %4\nClearance: %5\nDetection mode: %6\nDetection status: %7\nDetails: %8").arg(ti.approach_distance, ti.retreat_distance, ti.approach_axis, ti.retreat_axis, ti.clearance, detection_mode_line, "Configured", "Detection snapshot overlays are preview-only and do not require launching live runtime nodes."));
   if (!overlay_warnings.isEmpty()) {
     approach_retreat_details_label_->setText(approach_retreat_details_label_->text() + QString("\nOverlay warnings: %1").arg(overlay_warnings.join(" | ")));
   }
@@ -2024,10 +2089,12 @@ void MainWindow::refresh_task_intent_panel()
     camera.status = "warning";
     camera.warnings << "no camera item found" << "no pick source found" << "pick zone outside camera FOV" << "camera range too short" << "camera frame unknown" << "camera pose metadata incomplete";
     scene_preview_widget_->set_camera_overlay_model(camera);
-    QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
-    ScenePreviewWidget::EpdDetectionOverlayModel det; det.detection_id="epd_preview_placeholder"; det.label="preview placeholder"; det.confidence=0.55; det.x=-0.8; det.y=0.2; det.z=-0.7; det.status="preview_only"; det.source_path="Perception preview unavailable until mode/config is selected."; det.warnings << "Perception preview unavailable until mode/config is selected." << "Live EPD/RealSense uses runtime camera and EPD topics. Saved snapshots are only for offline preview.";
-    detections.push_back(det);
-    scene_preview_widget_->set_epd_detection_overlays(detections);
+    const auto snapshot_preview = load_scene3d_detection_snapshot_preview(sc.scene_dir);
+    scene_preview_widget_->set_epd_detection_overlays(snapshot_preview.detections);
+    for (const auto & snapshot_warning : snapshot_preview.warnings) {
+      append_studio_log(QString("Scene3D detection snapshot warning: %1").arg(snapshot_warning));
+      model.warnings << snapshot_warning;
+    }
     scene_preview_widget_->set_task_overlay_model(model);
     scene_preview_widget_->set_task_overlay_visibility(
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
@@ -5043,7 +5110,7 @@ void MainWindow::populate_scene_hierarchy()
     if (lower.contains("editable_layout")) return QString("Editable Layout");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
     if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");
-    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety")) return QString("Overlays / Helpers");
+    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety") || lower.contains("malformed snapshot") || lower.contains("detection snapshot")) return QString("Overlays / Helpers");
     if (lower.contains("generated_urdf_visual")) return QString("Generated URDF Visuals");
     if (lower.contains("primitive_fallback")) return QString("Primitive Fallbacks");
     if (lower.contains("mesh_preview")) return QString("Mesh Preview");
@@ -5612,9 +5679,7 @@ void MainWindow::populate_scene_hierarchy()
   preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");
-  const bool live_selected = task_summary.perception_mode.compare("live_epd", Qt::CaseInsensitive) == 0;
-  const bool manual_selected = task_summary.perception_mode.compare("manual_simulated", Qt::CaseInsensitive) == 0;
-  const QString perception_mode = snapshot_available ? "saved_snapshot" : (live_selected ? "live_epd" : (manual_selected ? "manual_simulated" : "not_configured"));
+  const QString perception_mode = snapshot_available ? "snapshot_overlay" : task_summary.perception_mode;
 
   QString camera_id;
   for (const auto & p : preview_items) {
@@ -5623,10 +5688,10 @@ void MainWindow::populate_scene_hierarchy()
   const bool has_camera_metadata = !camera_id.trimmed().isEmpty();
 
   QString perception_line;
-  if (perception_mode == "saved_snapshot") perception_line = "Perception: saved snapshot loaded.";
-  else if (perception_mode == "live_epd") perception_line = "Perception: Live EPD/RealSense selected; saved snapshot not required.";
-  else if (perception_mode == "manual_simulated") perception_line = "Perception: manual/simulated mode selected.";
-  else perception_line = "Perception: not configured.";
+  if (perception_mode == "snapshot_overlay") perception_line = "Perception: snapshot overlay loaded (no live launch required).";
+  else if (perception_mode == "epd_optional") perception_line = "Perception: EPD optional (live runtime launch not required for preview overlays).";
+  else perception_line = "Perception: none (camera metadata only).";
+  if (!task_summary.perception_legacy_source.isEmpty()) perception_line += QString(" mapped from legacy mode: %1.").arg(task_summary.perception_legacy_source);
 
   const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
   const int urdf_visual_locked_count = visual_preview_added_count;

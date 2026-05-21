@@ -57,3 +57,16 @@ def test_task_intent_script_writes_zone_bound_intent(tmp_path: Path):
     text = out.read_text(encoding='utf-8').lower()
     for banned in ['use_fake_hardware:=false', 'fake_hardware:=false', 'ur_robot_driver', 'ethercat', 'canopen']:
         assert banned not in text
+
+
+def test_new_cell_camera_metadata_canonical_and_legacy_traceability_tokens_present():
+    txt = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    for token in [
+        'Detection mode: %6',
+        'mapped from legacy: %2',
+        'perception_legacy_source',
+        'snapshot_overlay',
+        'epd_optional',
+        'none (camera metadata only)',
+    ]:
+        assert token in txt

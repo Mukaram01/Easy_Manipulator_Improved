@@ -80,6 +80,17 @@ Additional invariants:
 - Primitive fallback cannot be deleted solely because mesh index exists.
 - If a higher-fidelity visual supersedes fallback rendering, diagnostics must retain fallback relationship metadata.
 
+
+## Camera, FOV, and perception overlay contract
+
+- Camera markers may appear in Scene3D from either editable layout metadata or generated preview sources.
+- When camera marker source is `editable_layout`, pose/metadata edits are allowed through existing authoring controls.
+- When camera marker source is generated preview (`locked_generated_urdf_visual` or `mesh_preview` without explicit mapping), the marker is inspectable only and remains locked/read-only.
+- Camera FOV frustum must render on the `overlay` layer as read-only guidance visuals and must not become an authoring transform owner.
+- Detection snapshot overlays (for example projected detections, historical perception frames, and similar snapshot annotations) must render on the `overlay` layer as read-only visuals.
+- Overlay visuals are preview-only and non-authoritative for scene generation: they must not mutate `environment.yaml`, `layout/workcell_studio_layout.yaml`, task intent files, or generated URDF/mesh artifacts.
+- This feature scope excludes live perception-device launches. No live EPD/RealSense startup, streaming session creation, or hardware bring-up is triggered from Scene3D camera/FOV/detection overlays.
+
 ## Additive Change Rule
 
 **Future 3D canvas PRs must add capabilities as layers or extend existing layers. They must not remove primitive fallback, mesh preview, xacro-expanded preview, or refresh behavior unless the Scene3D contract is intentionally updated and all regression tests are updated.**
