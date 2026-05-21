@@ -20,7 +20,7 @@ class MeshResolution:
 
 
 def discover_package_map(repo_root: Path, extra_roots: list[Path] | None = None) -> dict[str, Path]:
-    roots = [repo_root, repo_root / 'assets', repo_root / 'scenes']
+    roots = [repo_root, repo_root / 'assets', repo_root / 'scenes', repo_root / 'workcell_builder/workcell_builder/assets', Path('/opt/ros/humble/share')]
     if extra_roots:
         roots.extend(extra_roots)
     out: dict[str, Path] = {}

@@ -126,6 +126,29 @@ def discover_package_map(scene_dir):
         for pkg_xml in root.rglob('package.xml'): package_map.setdefault(pkg_xml.parent.name,pkg_xml.parent)
     return package_map
 
+def portable_paths(resolved_path, scene_dir):
+    out = {'repo_relative_source_path':'','scene_relative_source_path':'','asset_relative_source_path':''}
+    if not resolved_path:
+        return out
+    p = Path(resolved_path)
+    try:
+        out['repo_relative_source_path'] = str(p.relative_to(ROOT))
+    except Exception:
+        pass
+    try:
+        out['scene_relative_source_path'] = str(p.relative_to(scene_dir))
+    except Exception:
+        pass
+    assets_root = ROOT / 'assets'
+    wb_assets_root = ROOT / 'workcell_builder/workcell_builder/assets'
+    for ar in (assets_root, wb_assets_root):
+        try:
+            out['asset_relative_source_path'] = str(p.relative_to(ar))
+            break
+        except Exception:
+            continue
+    return out
+
 def gather_text_with_includes(path,package_map,args,seen,warnings,included_files):
     if path in seen or not path.exists(): return ''
     seen.add(path); included_files.add(path)
@@ -206,7 +229,8 @@ def extract(xml_text,scene_dir,package_map,args):
         if geometry_type == 'mesh' and not resolved and not warn:
           warn = render_skip_reason
         scale=parse_vec(mesh.attrib.get('scale'),3,1.0) if mesh is not None else [1.0,1.0,1.0]
-        items.append({'id':f'urdf_visual_{idx}_{lname}','link':lname,'visual':visual.attrib.get('name',''),'parent_link':lparent.get(lname,''),'source_path':src,'resolved_path':src,'resolved_source_path':src,'package_uri':normalized,'original_uri':normalized or mesh.attrib.get('filename','').strip() if mesh is not None else '','geometry_type':geometry_type,'pose':xyz_rpy_from_tf(world_tf),'local_visual_pose':xyz_rpy_from_tf(visual_tf),'link_world_pose':xyz_rpy_from_tf(ltf.get(lname,identity_tf())),'joint_chain':lchain.get(lname,[]),'transform_source':f'{tstatus}; link={lname}','transform_status':tstatus,'scale':scale,'category':cat(lname),'resolved':resolved,'warning':warn,'mesh_extension':ext,'render_expected':render_expected,'render_skip_reason':render_skip_reason,'exists':resolved,'extension':ext,'fallback_reason':(render_skip_reason or warn), 'item_source':('urdf_visual' if geometry_type=='mesh' else 'primitive_fallback'),**primitive}); idx+=1
+        pp = portable_paths(src, scene_dir)
+        items.append({'id':f'urdf_visual_{idx}_{lname}','link':lname,'visual':visual.attrib.get('name',''),'parent_link':lparent.get(lname,''),'source_path':src,'resolved_path':src,'resolved_source_path':src,'package_uri':normalized if normalized.startswith('package://') else '','original_uri':normalized or mesh.attrib.get('filename','').strip() if mesh is not None else '','geometry_type':geometry_type,'pose':xyz_rpy_from_tf(world_tf),'local_visual_pose':xyz_rpy_from_tf(visual_tf),'link_world_pose':xyz_rpy_from_tf(ltf.get(lname,identity_tf())),'joint_chain':lchain.get(lname,[]),'transform_source':f'{tstatus}; link={lname}','transform_status':tstatus,'scale':scale,'category':cat(lname),'resolved':resolved,'warning':warn,'mesh_extension':ext,'render_expected':render_expected,'render_skip_reason':render_skip_reason,'exists':resolved,'extension':ext,'fallback_reason':(render_skip_reason or warn), 'item_source':('urdf_visual' if geometry_type=='mesh' else 'primitive_fallback'), **pp, **primitive}); idx+=1
     return items,warnings
 
 def compute_safe_for_preview(meta):
@@ -228,6 +252,11 @@ def index_staleness(scene_dir,urdf_path,included_files,index_payload):
         if s.exists() and s.stat().st_mtime>idx_m: reasons.append(f'source_newer:{s.name}')
     if (index_payload.get('extractor_version') or '')!=EXTRACTOR_VERSION: reasons.append('extractor_version_changed')
     if not index_payload.get('safe_for_preview',False): reasons.append('unsafe_index')
+    for it in index_payload.get('visual_items', []):
+        rsp = str(it.get('resolved_source_path') or '')
+        if (rsp.startswith('/workspace') or rsp.startswith('/tmp')) and not (it.get('repo_relative_source_path') or it.get('scene_relative_source_path') or it.get('asset_relative_source_path')):
+            reasons.append('absolute_path_without_portable_alternative')
+            break
     return bool(reasons),reasons
 
 def main():

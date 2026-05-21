@@ -31,7 +31,7 @@ def main() -> int:
 
     package_map = discover_package_map(ROOT, [scenes_root])
     scenes = []
-    missing_refs, unresolved_pkg = [], []
+    missing_refs, unresolved_pkg, stale_or_unsafe = [], [], []
     coverage = {k: False for k in ['ur5','robotiq_2f','suction','airpick','table_workbench','conveyor','camera','bins_boxes_fixtures']}
     for f in files:
         s=str(f).lower()
@@ -57,6 +57,11 @@ def main() -> int:
                 missing_refs.append({'scene':scene.name, **res.to_dict()})
                 if ref.startswith('package://'):
                     unresolved_pkg.append(ref)
+        idx = scene / 'generated/scene_visual_mesh_index.json'
+        if idx.exists():
+            idx_data = json.loads(idx.read_text())
+            if idx_data.get('stale_index') or (not idx_data.get('safe_for_preview', True)) or 'unsafe_index' in idx_data.get('stale_reasons', []):
+                stale_or_unsafe.append(scene.name)
         scenes.append({'scene':scene.name, 'mesh_reference_count':len(refs), 'unresolved_reference_count':unresolved})
 
     status = 'PASS' if not missing_refs else 'WARN'
@@ -74,7 +79,8 @@ def main() -> int:
         'duplicate_asset_names': duplicates,
         'oversized_mesh_warnings': [str(p.relative_to(ROOT)) for p in files if p.stat().st_size > 15*1024*1024],
         'coverage_expectations': {k:('PASS' if v else 'WARN') for k,v in coverage.items()},
-        'summary': {'status': status}
+        'stale_or_unsafe_scenes': stale_or_unsafe,
+        'summary': {'status': status, 'suggested_fixes': ['Regenerate visual mesh index on this workspace', 'Check package map for missing mesh package', 'Add asset fallback or primitive placeholder']}
     }
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(payload, indent=2)+'\n')

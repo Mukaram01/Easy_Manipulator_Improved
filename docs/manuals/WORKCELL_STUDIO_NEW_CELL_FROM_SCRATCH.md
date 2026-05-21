@@ -126,3 +126,17 @@ This remains the existing New Cell workflow and does **not** introduce a separat
 python3 scripts/audit_workcell_studio_visual_assets.py
 python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches --include-visual-assets
 ```
+
+## Portable visual mesh indexes
+
+Visual mesh indexes should not rely on absolute workspace paths (for example `/workspace/...`) as canonical identifiers because these paths are machine-specific. Use `package://` URIs plus repo-relative and scene-relative source paths for portability.
+
+Regenerate indexes on the current workspace:
+
+```bash
+python3 scripts/regenerate_scene_visual_mesh_indexes.py --all --portable
+python3 scripts/audit_workcell_studio_visual_assets.py
+python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches --include-visual-assets
+```
+
+When meshes cannot be resolved, fallback primitives are used to keep the New Cell preview and 3D canvas usable while warnings are emitted.
