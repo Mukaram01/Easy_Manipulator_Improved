@@ -180,7 +180,10 @@ bool is_good_scene_path(const fs::path & scene_path)
 }
 
 enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
-enum SceneTreeRoles { TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole };
+enum SceneTreeRoles {
+  TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
+  TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass
+};
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
 
 class DraggableCanvasItem : public QGraphicsRectItem {
@@ -940,7 +943,7 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
-  scene_hierarchy_tree_->setHeaderLabels({"Name", "Role", "Status"});
+  scene_hierarchy_tree_->setHeaderLabels({"Item", "Type", "State"});
   scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   scene_hierarchy_tree_->setTextElideMode(Qt::ElideRight);
   scene_hierarchy_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -2113,6 +2116,14 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.role_or_category = item->data(0, TreeRoleRole).toString().trimmed();
     if (state.role_or_category.isEmpty()) state.role_or_category = item->data(0, TreeRoleCategory).toString().trimmed();
     state.source_path = item->data(0, TreeRoleSource).toString().trimmed();
+    state.source_layer = item->data(0, TreeRoleSourceLayer).toString().trimmed();
+    state.active_visual_source = item->data(0, TreeRoleActiveVisualSource).toString().trimmed();
+    state.editable = item->data(0, TreeRoleEditable).toBool();
+    state.locked = item->data(0, TreeRoleLocked).toBool();
+    state.linked_to_editable_layout_state = item->data(0, TreeRoleLinkedEditableLayout).toBool();
+    state.visual_backing_status = item->data(0, TreeRoleVisualBackingStatus).toString().trimmed();
+    state.generated_visual = item->data(0, TreeRoleGeneratedVisual).toBool();
+    state.item_type_classification = item->data(0, TreeRoleItemTypeClass).toString().trimmed();
     state.pose_available = item->data(0, TreeRolePoseAvailable).toBool();
     state.pose_x = item->data(0, TreeRolePoseX).toDouble();
     state.pose_y = item->data(0, TreeRolePoseY).toDouble();
@@ -2135,6 +2146,12 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.source_path = item->data(RoleSource).toString().trimmed();
     state.locked = item->data(RoleLocked).toBool();
     state.editable = !state.locked;
+    state.source_layer = QStringLiteral("canvas");
+    state.active_visual_source = item->data(RoleGeneratedPlaceholder).toBool() ? QStringLiteral("primitive_fallback") : QStringLiteral("mesh_preview");
+    state.linked_to_editable_layout_state = state.editable;
+    state.visual_backing_status = item->data(RoleGeneratedPlaceholder).toBool() ? QStringLiteral("primitive") : QStringLiteral("mesh");
+    state.generated_visual = item->data(RoleGeneratedPlaceholder).toBool();
+    state.item_type_classification = item->data(RoleType).toString().trimmed();
     state.lock_reason = state.locked ? item->data(RoleWarning).toString().trimmed() : QString();
     state.pose_available = true;
     state.pose_x = item->pos().x() / 100.0;
@@ -2201,6 +2218,10 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString display = state.display_name.isEmpty() ? state.id : state.display_name;
   const QString role = state.role_or_category.isEmpty() ? "unknown" : state.role_or_category;
   const QString source = state.source_path.isEmpty() ? "unknown" : state.source_path;
+  const QString source_layer = state.source_layer.isEmpty() ? "unknown" : state.source_layer;
+  const QString active_visual_source = state.active_visual_source.isEmpty() ? "unknown" : state.active_visual_source;
+  const QString visual_backing = state.visual_backing_status.isEmpty() ? "unknown" : state.visual_backing_status;
+  const QString type_class = state.item_type_classification.isEmpty() ? "unknown" : state.item_type_classification;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
@@ -2211,6 +2232,13 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   inspector_lines << QString("Selected item ID: %1").arg(state.id);
   inspector_lines << QString("Selected item source: %1").arg(source);
   inspector_lines << QString("Selected item source_path: %1").arg(source);
+  inspector_lines << QString("Selected item source_layer: %1").arg(source_layer);
+  inspector_lines << QString("Selected item active_visual_source: %1").arg(active_visual_source);
+  inspector_lines << QString("Selected item editable/locked: %1").arg(state.editable ? "editable" : "locked");
+  inspector_lines << QString("Selected item linked_to_editable_layout_state: %1").arg(state.linked_to_editable_layout_state ? "true" : "false");
+  inspector_lines << QString("Selected item visual backing: %1").arg(visual_backing);
+  inspector_lines << QString("Selected item generated vs authoring: %1").arg(state.generated_visual ? "generated" : "authoring-backed");
+  inspector_lines << QString("Selected item item_type_classification: %1").arg(type_class);
   if (is_locked_urdf_preview) inspector_lines << "Reason: locked/preview-only";
   inspector_lines << locked_line;
   inspector_label_->setText(inspector_lines.join("\n"));
@@ -4923,14 +4951,17 @@ void MainWindow::populate_scene_hierarchy()
   };
 
   QMap<QString, QTreeWidgetItem*> hierarchy_groups;
-  auto group_for_role = [&](const QString &role, const QString &category) {
-    const QString lower = (role + " " + category).toLower();
-    if (lower.contains("robot")) return QString("Robot");
-    if (lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Tool");
-    if (lower.contains("safety")) return QString("Safety");
-    if (lower.contains("pick") || lower.contains("place") || lower.contains("zone")) return QString("Task Zones");
-    if (lower.contains("file")) return QString("Files");
-    return QString("Environment");
+  auto group_for_item = [&](const ScenePreviewWidget::PreviewItem & p) {
+    const QString lower = (p.role + " " + p.category + " " + p.source_layer + " " + p.active_visual_source).toLower();
+    if (p.status.contains("warning", Qt::CaseInsensitive) || p.visual_warning_status.contains("missing", Qt::CaseInsensitive)) return QString("Warnings / Missing Assets");
+    if (lower.contains("editable_layout")) return QString("Editable Layout");
+    if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
+    if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");
+    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety")) return QString("Overlays / Helpers");
+    if (lower.contains("generated_urdf_visual")) return QString("Generated URDF Visuals");
+    if (lower.contains("primitive_fallback")) return QString("Primitive Fallbacks");
+    if (lower.contains("mesh_preview")) return QString("Mesh Preview");
+    return QString("Mesh Preview");
   };
   auto ensure_group = [&](const QString &name) {
     if (hierarchy_groups.contains(name)) return hierarchy_groups[name];
@@ -4940,10 +4971,16 @@ void MainWindow::populate_scene_hierarchy()
     hierarchy_groups[name] = group;
     return group;
   };
-  for (const QString &gn : {QString("Robot"), QString("Tool"), QString("Environment"), QString("Task Zones"), QString("Safety"), QString("Files")}) ensure_group(gn);
+  for (const QString &gn : {QString("Editable Layout"), QString("Mesh Preview"), QString("Generated URDF Visuals"), QString("Primitive Fallbacks"), QString("Cameras"), QString("Robot / Tooling"), QString("Overlays / Helpers"), QString("Warnings / Missing Assets")}) ensure_group(gn);
   auto add_tree_node = [&](const ScenePreviewWidget::PreviewItem & p) {
-    auto * parent = ensure_group(group_for_role(p.role, p.category));
-    auto * node = new QTreeWidgetItem(parent, {p.display_name, p.role, p.status});
+    auto * parent = ensure_group(group_for_item(p));
+    const QString visual_status = p.mesh_path.trimmed().isEmpty() ? (p.active_visual_source.contains("primitive") ? "primitive" : "missing") : "mesh";
+    const QString state_badges = QString("%1 • %2 • %3 • %4")
+      .arg(p.status.isEmpty() ? QStringLiteral("ready") : p.status)
+      .arg(p.editable ? QStringLiteral("editable") : QStringLiteral("locked"))
+      .arg(p.source_layer.isEmpty() ? QStringLiteral("unknown-layer") : p.source_layer)
+      .arg(visual_status);
+    auto * node = new QTreeWidgetItem(parent, {QString("%1 [%2]").arg(p.display_name, p.id), p.role, state_badges});
     node->setToolTip(0, p.display_name); node->setToolTip(1, p.role); node->setToolTip(2, p.status);
     node->setToolTip(0, p.display_name);
     node->setToolTip(1, p.role);
@@ -4969,6 +5006,14 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleYaw, p.yaw);
     node->setData(0, TreeRolePoseAvailable, true);
     node->setData(0, TreeRoleRole, p.role);
+    node->setData(0, TreeRoleSourceLayer, p.source_layer);
+    node->setData(0, TreeRoleActiveVisualSource, p.active_visual_source);
+    node->setData(0, TreeRoleEditable, p.editable);
+    node->setData(0, TreeRoleLocked, p.locked);
+    node->setData(0, TreeRoleLinkedEditableLayout, p.linked_to_editable_layout_state);
+    node->setData(0, TreeRoleVisualBackingStatus, visual_status);
+    node->setData(0, TreeRoleGeneratedVisual, p.source_layer != QStringLiteral("editable_layout"));
+    node->setData(0, TreeRoleItemTypeClass, p.category);
   };
 
   auto add_preview_item = [&](const QString & id,
@@ -5362,7 +5407,7 @@ void MainWindow::populate_scene_hierarchy()
     if (!fs::exists(path)) continue;
 
     auto * node = new QTreeWidgetItem(
-      ensure_group("Files"),
+      ensure_group("Overlays / Helpers"),
       {QString::fromStdString(rel), "file", "present"});
     node->setData(0, TreeRoleId, rel_q);
     node->setData(0, TreeRoleCategory, "file");
