@@ -92,3 +92,13 @@ Additional invariants:
 - `mesh_preview` is a visual aid and does not become authoring state by selection.
 - `primitive_fallback` must remain available even when mesh/URDF preview is present.
 - Inspector transform writes must target authoring layout sources only and must not mutate generated artifacts (`scene.urdf.xacro`, expanded preview data, mesh index JSON, or generated preview files).
+
+## Translate gizmo and drag editing rules
+
+- Drag translation is available only for editable authoring-backed items.
+- Generated visuals remain inspectable/selectable but locked (no drag gizmo).
+- `mesh_preview` remains a visual aid by default and only participates in editing when explicitly mapped to editable layout state.
+- `primitive_fallback` can be editable only when linked to editable layout state.
+- Dragging provides preview movement only; authoring YAML is not written on every mouse move.
+- Drag commit writes only authoring layout XYZ transforms and preserves other transform fields.
+- Drag editing must not mutate generated artifacts (`generated/scene.urdf.xacro`, expanded URDF preview data, mesh index files, generated preview artifacts).

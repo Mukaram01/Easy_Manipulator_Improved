@@ -169,3 +169,14 @@ python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches -
 - `primitive_fallback` remains available when meshes are missing/unsafe.
 - Refresh/generate actions should not silently remove visual items.
 - Contract reports are produced by `scripts/check_scene3d_canvas_contract.py` (JSON + Markdown outputs).
+
+## Dragging editable 3D items
+
+- Select an editable layout item in Scene3D.
+- Use the Scene3D move gizmo/drag affordance to translate the selected item.
+- Inspector XYZ fields track the preview pose while dragging.
+- Releasing the drag commits/saves the final transform back to authoring layout YAML.
+- Generated robot/tool/camera visuals remain locked/read-only even when selected.
+- `mesh_preview` visuals are read-only by default unless explicitly linked to editable layout state.
+- `primitive_fallback` remains available when mesh preview is unavailable.
+- Drag editing does not directly edit generated artifacts.
