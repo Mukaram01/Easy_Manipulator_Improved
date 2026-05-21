@@ -55,9 +55,36 @@ def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_prese
         assert token in MAIN_CPP
 
 
+def test_save_roundtrip_reselects_by_stable_id_or_clears_when_missing():
+    for token in [
+        'stable_selected_id_before_refresh',
+        'Save Layout: rebuilding Scene3D data after save',
+        'apply_scene_selection(stable_selected_id_before_refresh',
+        'Selection id missing after refresh, clearing atomically',
+        'apply_scene_selection(QString(), selected_role, true, false);',
+    ]:
+        assert token in MAIN_CPP
+
+
+def test_duplicate_names_are_selection_independent_by_stable_id():
+    for token in [
+        'tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id',
+        'gi->data(RoleId).toString().trimmed() == selected_id',
+        'current_selected_scene_item_id_ = selected_id',
+    ]:
+        assert token in MAIN_CPP
+
+
 def test_locked_item_edit_rejected_and_no_real_hardware_banned_tokens():
     assert 'Locked/generated item edit rejected' in MAIN_CPP
     banned = ['use_fake_hardware:=false', 'fake_hardware:=false', 'ur_robot_driver', 'ethercat', 'canopen']
     scan = '\n'.join([PREVIEW_H, CANVAS_MODEL_CPP]).lower()
     for token in banned:
         assert token not in scan
+
+
+def test_escape_cancel_path_does_not_save_layout_or_commit_transform():
+    esc_shortcut_block = MAIN_CPP.split('auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder);', 1)[1].split('; });', 1)[0]
+    assert 'save_layout_changes' not in esc_shortcut_block
+    assert 'mark_layout_dirty' not in esc_shortcut_block
+

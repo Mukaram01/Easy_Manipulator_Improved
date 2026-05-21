@@ -4027,6 +4027,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   current_selected_scene_item_id_ = selected_id;
   selection_update_guard_ = true;
 
+  bool matched_tree_item = false;
   if (scene_hierarchy_tree_) {
     QTreeWidgetItem * matched = nullptr;
     for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount() && !matched; ++row) {
@@ -4038,7 +4039,10 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
         if (node && node->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = node;
       }
     }
-    if (matched) scene_hierarchy_tree_->setCurrentItem(matched);
+    if (matched) {
+      matched_tree_item = true;
+      scene_hierarchy_tree_->setCurrentItem(matched);
+    }
   }
 
   QGraphicsItem * matched_canvas_item = nullptr;
@@ -4061,6 +4065,13 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
 
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
   selection_update_guard_ = false;
+
+  const bool selection_resolved = matched_tree_item || matched_canvas_item;
+  if (!selection_resolved) {
+    append_studio_log(QString("Selection id missing after refresh, clearing atomically: %1").arg(selected_id));
+    apply_scene_selection(QString(), selected_role, true, false);
+    return;
+  }
 
   if (matched_canvas_item) {
     select_canvas_item(matched_canvas_item);
@@ -4156,6 +4167,7 @@ void MainWindow::save_layout_changes()
   } else if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
     selected_preview_id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString();
   }
+  const QString stable_selected_id_before_refresh = selected_preview_id.trimmed();
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
@@ -4323,13 +4335,13 @@ void MainWindow::save_layout_changes()
   env_out.close();
   append_studio_log(QString("Save Layout: wrote environment metadata to %1")
     .arg(QString::fromStdString(environment_path.string())));
+  append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
+    .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   refresh_scene_builder_left_explorer();
-  if (scene_preview_widget_) {
-    if (!selected_preview_id.isEmpty()) {
-      scene_preview_widget_->select_preview_item(selected_preview_id);
-    } else {
-      append_studio_log("Save Layout: no selected preview item id to reselect.");
-    }
+  if (!stable_selected_id_before_refresh.isEmpty()) {
+    apply_scene_selection(stable_selected_id_before_refresh, QStringLiteral("unknown"), false, false);
+  } else {
+    append_studio_log("Save Layout: no selected stable item id to reselect.");
   }
   refresh_scene_browser_ui();
 }
@@ -4973,6 +4985,9 @@ void MainWindow::populate_scene_hierarchy()
     p.role = normalize_role(role_hint, category + " " + display_name);
     p.status = status;
     p.source_path = source_path;
+    p.source_layer = QStringLiteral("generated_preview");
+    p.active_visual_source = QStringLiteral("generated_preview");
+    p.linked_to_editable_layout_state = false;
     p.metadata_complete = metadata_complete;
     if (!metadata_complete) {
       p.warnings << "metadata incomplete";
@@ -5028,6 +5043,24 @@ void MainWindow::populate_scene_hierarchy()
     p.mesh_load_warning = QString::fromStdString(item.mesh_load_warning);
     p.locked = item.locked;
     p.editable = !item.locked;
+    switch (item.provenance) {
+      case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
+        p.source_layer = QStringLiteral("editable_layout");
+        p.active_visual_source = QStringLiteral("editable_layout");
+        p.linked_to_editable_layout_state = true;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview:
+        p.source_layer = QStringLiteral("primitive_fallback");
+        p.active_visual_source = QStringLiteral("primitive_fallback");
+        p.linked_to_editable_layout_state = false;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+      default:
+        p.source_layer = QStringLiteral("generated_preview");
+        p.active_visual_source = QStringLiteral("mesh_preview");
+        p.linked_to_editable_layout_state = false;
+        break;
+    }
     if (item.locked) {
       const QString base_reason = p.warnings.isEmpty() ? QStringLiteral("item is locked") : p.warnings.front();
       p.lock_reason = base_reason;
@@ -5186,6 +5219,10 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           p.lock_reason = "URDF visual preview-only item (locked)";
+          p.source_layer = QStringLiteral("generated_urdf_visual");
+          p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
+                                                              : QStringLiteral("primitive_fallback");
+          p.linked_to_editable_layout_state = false;
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
           const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
           const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");

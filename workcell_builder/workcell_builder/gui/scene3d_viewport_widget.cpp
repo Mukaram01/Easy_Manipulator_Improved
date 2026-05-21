@@ -271,7 +271,31 @@ QString warning_debug_text(const QStringList & warnings)
 bool item_is_editable_for_gizmo(const ScenePreviewWidget::PreviewItem & it)
 {
   if (it.locked) return false;
-  return it.editable;
+  const QString source_layer = normalized_token(it.source_layer);
+  const QString visual_source = normalized_token(it.active_visual_source);
+  const QString role = normalized_token(it.role);
+  const QString category = normalized_token(it.category);
+  const QString lock_reason = normalized_token(it.lock_reason);
+
+  const bool overlay_or_helper = role.contains("overlay") || role.contains("helper") || role.contains("guide") ||
+                                 category.contains("overlay") || category.contains("helper") ||
+                                 lock_reason.contains("overlay") || lock_reason.contains("helper");
+  if (overlay_or_helper) return false;
+
+  const bool generated_robot_visual = source_layer.contains("generated") || source_layer.contains("urdf") ||
+                                      visual_source.contains("generated") || lock_reason.contains("urdf") ||
+                                      lock_reason.contains("robot model") || lock_reason.contains("camera generated") ||
+                                      lock_reason.contains("tool generated");
+  if (generated_robot_visual) return false;
+
+  if (source_layer == "editable_layout") return it.editable;
+  if (source_layer == "primitive_fallback" || visual_source == "primitive_fallback") {
+    return it.editable && it.linked_to_editable_layout_state;
+  }
+  if (visual_source == "mesh_preview" || source_layer == "mesh_preview") {
+    return it.editable && it.linked_to_editable_layout_state;
+  }
+  return false;
 }
 
 QString item_locked_reason(const ScenePreviewWidget::PreviewItem & it)
@@ -1505,7 +1529,7 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
       it.roll = drag_start_pose_.roll;
       it.pitch = drag_start_pose_.pitch;
       it.yaw = drag_start_pose_.yaw;
-      if (transform_changed_cb) transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+      // Cancel restores the in-memory preview pose only; commit/save callback is release-only.
       break;
     }
     dragging_gizmo_ = false;
