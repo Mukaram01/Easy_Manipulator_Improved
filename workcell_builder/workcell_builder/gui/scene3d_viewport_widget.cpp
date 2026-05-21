@@ -1478,7 +1478,7 @@ void Scene3DViewportWidget::keyPressEvent(QKeyEvent * e)
       it.roll = drag_start_pose_.roll;
       it.pitch = drag_start_pose_.pitch;
       it.yaw = drag_start_pose_.yaw;
-      if (transform_changed_cb) transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+      // Cancel restores the in-memory preview pose only; commit/save callback is release-only.
       break;
     }
     dragging_gizmo_ = false;

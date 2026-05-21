@@ -61,3 +61,10 @@ def test_locked_item_edit_rejected_and_no_real_hardware_banned_tokens():
     scan = '\n'.join([PREVIEW_H, CANVAS_MODEL_CPP]).lower()
     for token in banned:
         assert token not in scan
+
+
+def test_escape_cancel_path_does_not_save_layout_or_commit_transform():
+    esc_shortcut_block = MAIN_CPP.split('auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder);', 1)[1].split('; });', 1)[0]
+    assert 'save_layout_changes' not in esc_shortcut_block
+    assert 'mark_layout_dirty' not in esc_shortcut_block
+
