@@ -90,3 +90,16 @@ The existing **New Cell** flow now wires runtime actions directly:
 - The existing canvas refresh path reads saved layout metadata so editable items show up without manual YAML repair.
 
 This remains the existing New Cell workflow and does **not** introduce a separate generator workflow.
+
+## 3D canvas behavior
+
+- The existing Scene Builder canvas panel now renders saved `layout/workcell_studio_layout.yaml` metadata in the same in-app canvas area using the 3D preview path.
+- Mouse controls in 3D mode:
+  - Left drag: orbit
+  - Shift + left drag (or middle drag): pan
+  - Mouse wheel: zoom
+- The viewport shows world grid and XYZ orientation cues and uses perspective/depth so occlusion is visually correct.
+- Editable layout items (from layout metadata) are visually separated from locked/generated preview items (for example URDF/mesh-index sourced visuals).
+- When mesh files are missing or unsupported, preview logs warnings and uses primitive fallback geometry so canvas inspection remains usable.
+- Camera FOV and conveyor metadata are represented with placeholder/frustum/primitive visuals when available.
+- This canvas is for layout/preview only: it is not physics simulation and not real-hardware approval.
