@@ -38,6 +38,21 @@ When conveyor options are configured, New Cell includes conveyor placeholder/spa
 - Optional missing mesh/asset: WARN + primitive fallback.
 - Missing required robot/tool package: FAIL with clear blocker.
 
+
+## Side-pick camera metadata, Scene3D visualization, and preview warnings
+
+- Side-pick workflows can store camera metadata (camera pose and FOV/frustum parameters) alongside layout/task metadata.
+- `pick_zone` targeting remains authoritative for task intent; camera metadata is supportive context for preview and adapter handoff.
+- In Scene3D, camera and FOV appear as:
+  - camera marker item in canvas/hierarchy (editable only when sourced from `editable_layout`),
+  - FOV frustum guidance on the overlay layer (read-only),
+  - inspector details showing source/editable/locked state and metadata fields.
+- Optional detection snapshot overlays may appear as read-only preview annotations; these represent captured/recorded perception context and not live device state.
+- Warning semantics:
+  - If an indicated detection region is outside configured `pick_zone`, UI/reporting should emit a warning for operator review.
+  - Missing camera metadata or missing FOV/frustum metadata should emit warning-level diagnostics (not implicit hardware failure) so authoring can continue with reduced preview confidence.
+- Preview-only safety note: camera/FOV/detection overlays support visualization and planning context only. They are not hardware approval, not runtime sensor validation, and not authorization to execute on real hardware.
+
 ## Fake-hardware-first safety note
 Generated New Cell scenes are simulation/fake-hardware-first and **must not be treated as real-hardware approval**.
 
