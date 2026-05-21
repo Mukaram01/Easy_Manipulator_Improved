@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from dataclasses import asdict, dataclass
@@ -40,6 +41,82 @@ OPTIONAL_FILES = {
     "generated_environment_assets": "generated/environment_assets.yaml",
     "generated_layout": "layout/workcell_studio_layout.generated.yaml",
 }
+
+
+
+def _normalize_status(value: Any) -> str | None:
+    if isinstance(value, str):
+        candidate = value.strip().upper()
+        if candidate in VALID_STATUSES:
+            return candidate
+    return None
+
+
+def _load_simulation_launch_report(path: Path) -> tuple[dict[str, dict[str, Any]], str | None]:
+    if not path.exists():
+        return {}, f"simulation launch report missing: {path}"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return {}, f"simulation launch report unreadable: {exc.__class__.__name__}: {exc}"
+
+    scene_map: dict[str, dict[str, Any]] = {}
+    scenes = payload.get("scenes") if isinstance(payload, dict) else None
+    if isinstance(scenes, list):
+        for row in scenes:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("scene_name")
+            if isinstance(name, str) and name.strip():
+                scene_map[name.strip()] = row
+
+    if not scene_map:
+        per_scene = payload.get("scene_results") if isinstance(payload, dict) else None
+        if isinstance(per_scene, dict):
+            for name, row in per_scene.items():
+                if isinstance(name, str) and isinstance(row, dict):
+                    merged = dict(row)
+                    merged.setdefault("scene_name", name)
+                    scene_map[name] = merged
+
+    return scene_map, None
+
+
+def _simulation_launch_evidence_for_scene(scene_name: str, row: dict[str, Any] | None) -> tuple[str | None, list[str], list[str]]:
+    if not row:
+        return None, ["no simulation launch evidence"], []
+
+    status = _normalize_status(row.get("status"))
+    warnings = [str(w) for w in (row.get("warnings") or []) if isinstance(w, str)]
+    blockers = [str(b) for b in (row.get("blockers") or []) if isinstance(b, str)]
+
+    if status == PASS:
+        reasons = [f"simulation launch evidence PASS for {scene_name}"]
+        reasons.extend(_with_prefix("simulation warning", warnings))
+        return PASS, reasons, []
+
+    if status == FAIL:
+        reasons = [f"simulation launch evidence FAIL for {scene_name}"]
+        if blockers:
+            reasons.extend(_with_prefix("simulation blocker", blockers))
+        else:
+            reasons.append("simulation launch report marked FAIL without blockers")
+        reasons.extend(_with_prefix("simulation warning", warnings))
+        return FAIL, reasons, []
+
+    if status == WARN:
+        reasons = [f"simulation launch evidence WARN for {scene_name}"]
+        reasons.extend(_with_prefix("simulation warning", warnings))
+        reasons.extend(_with_prefix("simulation blocker", blockers))
+        return WARN, reasons, []
+
+    if status == SKIP:
+        reasons = [f"simulation launch evidence SKIP for {scene_name}"]
+        reasons.extend(_with_prefix("simulation warning", warnings))
+        reasons.extend(_with_prefix("simulation blocker", blockers))
+        return SKIP, reasons, []
+
+    return None, ["simulation launch evidence status missing or invalid"], []
 
 KNOWN_SCENES = {
     "suction_test",
@@ -164,7 +241,7 @@ def _fake_hardware_command_available(scene_dir: Path) -> bool:
     return (scene_dir / "launch" / "demo.launch.py").exists()
 
 
-def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
+def audit_scene(repo_root: Path, scene_dir: Path, simulation_scene_report: dict[str, Any] | None = None) -> SceneAudit:
     files = {k: (scene_dir / rel).exists() for k, rel in REQUIRED_FILES.items()}
     optional = {k: (scene_dir / rel).exists() for k, rel in OPTIONAL_FILES.items()}
 
@@ -258,7 +335,21 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
     if not smoke_available:
         moveit_reasons.append("launch/demo.launch.py missing; fake-hardware smoke command unavailable")
     moveit_reasons.extend(_with_prefix("launch warning", launch_warnings))
-    moveit_status = FAIL if not smoke_available else (WARN if moveit_reasons else PASS)
+
+    sim_status, sim_reasons, sim_launch_warnings = _simulation_launch_evidence_for_scene(scene_dir.name, simulation_scene_report)
+    moveit_reasons.extend(sim_reasons)
+    warning_groups["launch_simulation"].extend(sim_launch_warnings)
+
+    if not smoke_available:
+        moveit_status = FAIL
+    elif sim_status == FAIL:
+        moveit_status = FAIL
+    elif sim_status == SKIP:
+        moveit_status = SKIP
+    elif sim_status == PASS:
+        moveit_status = PASS
+    else:
+        moveit_status = WARN if moveit_reasons else PASS
 
     grasp_planner_reasons: list[str] = []
     if not optional["task_recipe"]:
@@ -315,11 +406,24 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate all Workcell Studio scenes and emit readiness report")
+    parser.add_argument(
+        "--simulation-launch-report",
+        type=Path,
+        default=Path("build/workcell_studio/rviz_moveit_simulation_launch_report.json"),
+        help="Optional simulation launch report JSON used for moveit_launch_readiness evidence",
+    )
+    args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
     scenes_root = resolve_scenes_root(repo_root)
     scene_dirs = sorted([p for p in scenes_root.iterdir() if p.is_dir()])
 
-    audits = [audit_scene(repo_root, scene_dir) for scene_dir in scene_dirs]
+    simulation_scene_map, simulation_report_error = _load_simulation_launch_report(repo_root / args.simulation_launch_report)
+
+    audits = [
+        audit_scene(repo_root, scene_dir, simulation_scene_map.get(scene_dir.name))
+        for scene_dir in scene_dirs
+    ]
 
     counts = {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
     readiness_counts = {
@@ -333,6 +437,9 @@ def main() -> int:
             readiness_counts[dim][status] += 1
 
     report = {
+        "simulation_launch_report_path": str(repo_root / args.simulation_launch_report),
+        "simulation_launch_report_loaded": simulation_report_error is None,
+        "simulation_launch_report_error": simulation_report_error,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scenes_root": str(scenes_root),
         "scene_count": len(audits),
