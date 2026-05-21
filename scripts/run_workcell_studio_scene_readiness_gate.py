@@ -52,7 +52,7 @@ def _status_counts() -> dict[str, int]:
     return {k: 0 for k in STATUSES}
 
 
-def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None, mesh_index_regeneration: dict[str, Any] | None = None) -> dict[str, Any]:
     scenes_out: list[dict[str, Any]] = []
     counts: dict[str, dict[str, int]] = {dim: _status_counts() for dim in READINESS_DIMENSIONS}
 
@@ -86,6 +86,7 @@ def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payl
         "counts": counts,
         "safety_note": "This is fake-hardware simulation readiness only, not real-hardware validation.",
         "visual_asset_inventory": visual_assets or {},
+        "visual_mesh_index_regeneration": mesh_index_regeneration or {},
     }
 
 
@@ -123,6 +124,21 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
 
     lines.extend(
         [
+            "",
+            "## Visual Asset Summary",
+            "",
+            json.dumps(report.get("visual_asset_inventory", {}).get("summary", {}), indent=2),
+            "",
+            "## Mesh Index Summary",
+            "",
+            json.dumps(report.get("visual_mesh_index_regeneration", {}).get("summary", {}), indent=2),
+            "",
+            "## Suggested Fixes",
+            "",
+            "- Regenerate visual mesh index on this workspace",
+            "- Check package map for missing mesh package",
+            "- Add asset fallback or primitive placeholder",
+            "",
             "",
             "## Next Manual Commands",
             "",
@@ -184,7 +200,13 @@ def main() -> int:
         visual_assets = {"command_returncode": va_proc.returncode, "json_report": str(va_json), "markdown_report": "build/workcell_studio/visual_asset_inventory.md"}
         if va_json.exists():
             visual_assets["summary"] = _load_json(va_json).get("summary", {})
-    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets)
+    mesh_index_regeneration = None
+    if args.include_visual_assets:
+        regen_json = repo_root / "build/workcell_studio/visual_mesh_index_regeneration_report.json"
+        if regen_json.exists():
+            regen = _load_json(regen_json)
+            mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", []))}}
+    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration)
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
     write_markdown(args.markdown_output, final_report)

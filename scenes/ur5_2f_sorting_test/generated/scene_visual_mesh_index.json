@@ -1,35 +1,37 @@
 {
   "scene_name": "ur5_2f_sorting_test",
-  "generated_at": "2026-05-21T11:22:25.984113+00:00",
+  "generated_at": "2026-05-21T12:07:08.911820+00:00",
   "extractor_version": "2.0",
   "extraction_mode": "best_effort_recursive",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_sorting_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1779357248.626315,
+  "source_mtime": 1779357273.525247,
   "included_source_paths": [
+    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.transmission.xacro",
+    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro",
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_sorting_test/urdf/scene.urdf.xacro",
-    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro"
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_sorting_test/urdf/scene.urdf.xacro"
   ],
   "included_source_mtimes": {
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779357247.0181806,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779357247.0181806,
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_sorting_test/urdf/scene.urdf.xacro": 1779357248.626315,
-    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro": 1779357248.7623265,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779357247.0181806,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779357247.0181806
+    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.transmission.xacro": 1779357272.149266,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779357272.5412605,
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_sorting_test/urdf/scene.urdf.xacro": 1779357273.525247,
+    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro": 1779357272.149266,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779357272.5412605,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779357272.5412605,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779357272.5412605
   },
   "unresolved_include_count": 1,
-  "unresolved_placeholder_count": 18,
+  "unresolved_placeholder_count": 27,
   "has_transform_collapse_warning": false,
-  "candidate_mesh_count": 23,
-  "emitted_visual_count": 23,
+  "candidate_mesh_count": 32,
+  "emitted_visual_count": 32,
   "transform_status_counts": {
     "resolved": 5,
-    "partial": 18,
+    "partial": 27,
     "local_only": 0
   },
   "identical_position_clustered": false,
@@ -110,6 +112,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -183,6 +188,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -257,6 +265,9 @@
       "extension": "",
       "fallback_reason": "",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -331,6 +342,9 @@
       "extension": "",
       "fallback_reason": "",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "radius": 0.01,
       "length": 0.64
     },
@@ -402,6 +416,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -476,6 +493,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -550,6 +570,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -624,6 +647,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -698,6 +724,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -772,6 +801,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -846,6 +878,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -920,6 +955,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -994,6 +1032,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1068,6 +1109,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1142,6 +1186,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1216,6 +1263,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1290,6 +1340,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1364,6 +1417,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1438,6 +1494,9 @@
       "extension": "",
       "fallback_reason": "unresolved xacro substitution placeholder",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.0,
         0.0,
@@ -1512,6 +1571,9 @@
       "extension": "",
       "fallback_reason": "",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "size": [
         0.04,
         0.04,
@@ -1586,6 +1648,9 @@
       "extension": "",
       "fallback_reason": "",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "radius": 0.02,
       "length": 0.06
     },
@@ -1657,10 +1722,664 @@
       "extension": "",
       "fallback_reason": "",
       "item_source": "primitive_fallback",
+      "repo_relative_source_path": "",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "",
       "radius": 0.025
     },
     {
-      "id": "urdf_visual_22_${name}_link",
+      "id": "urdf_visual_22_${prefix}gripper_base_link",
+      "link": "${prefix}gripper_base_link",
+      "visual": "",
+      "parent_link": "${parent}",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_base_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "robot_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae"
+    },
+    {
+      "id": "urdf_visual_23_${prefix}gripper_finger1_knuckle_link",
+      "link": "${prefix}gripper_finger1_knuckle_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_base_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.05490451627,
+          0.03060114443,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.05490451627,
+          0.03060114443,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger1_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger1_knuckle_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae"
+    },
+    {
+      "id": "urdf_visual_24_${prefix}gripper_finger2_knuckle_link",
+      "link": "${prefix}gripper_finger2_knuckle_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_base_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.05490451627,
+          -0.03060114443,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.05490451627,
+          -0.03060114443,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger2_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger2_knuckle_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae"
+    },
+    {
+      "id": "urdf_visual_25_${prefix}gripper_finger1_finger_link",
+      "link": "${prefix}gripper_finger1_finger_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_finger1_knuckle_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.050818991720000005,
+          -0.0008848999199999978,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.050818991720000005,
+          -0.0008848999199999978,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger1_joint",
+        "${prefix}gripper_finger1_finger_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger1_finger_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae"
+    },
+    {
+      "id": "urdf_visual_26_${prefix}gripper_finger2_finger_link",
+      "link": "${prefix}gripper_finger2_finger_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_finger2_knuckle_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.050818991720000005,
+          -0.06208718878,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.050818991720000005,
+          -0.06208718878,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger2_joint",
+        "${prefix}gripper_finger2_finger_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger2_finger_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae"
+    },
+    {
+      "id": "urdf_visual_27_${prefix}gripper_finger1_inner_knuckle_link",
+      "link": "${prefix}gripper_finger1_inner_knuckle_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_base_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.06142,
+          0.0127,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.06142,
+          0.0127,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger1_inner_knuckle_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger1_inner_knuckle_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae"
+    },
+    {
+      "id": "urdf_visual_28_${prefix}gripper_finger2_inner_knuckle_link",
+      "link": "${prefix}gripper_finger2_inner_knuckle_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_base_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.06142,
+          -0.0127,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.06142,
+          -0.0127,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger2_inner_knuckle_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger2_inner_knuckle_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae"
+    },
+    {
+      "id": "urdf_visual_29_${prefix}gripper_finger1_finger_tip_link",
+      "link": "${prefix}gripper_finger1_finger_tip_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_finger1_inner_knuckle_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.10445959806999999,
+          -0.024899408209999998,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.10445959806999999,
+          -0.024899408209999998,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger1_inner_knuckle_joint",
+        "${prefix}gripper_finger1_finger_tip_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger1_finger_tip_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae"
+    },
+    {
+      "id": "urdf_visual_30_${prefix}gripper_finger2_finger_tip_link",
+      "link": "${prefix}gripper_finger2_finger_tip_link",
+      "visual": "",
+      "parent_link": "${prefix}gripper_finger2_inner_knuckle_link",
+      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "original_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "geometry_type": "mesh",
+      "pose": {
+        "xyz": [
+          0.10445959806999999,
+          -0.05029940820999999,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "local_visual_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "link_world_pose": {
+        "xyz": [
+          0.10445959806999999,
+          -0.05029940820999999,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "joint_chain": [
+        "${prefix}gripper_base_joint",
+        "${prefix}gripper_finger2_inner_knuckle_joint",
+        "${prefix}gripper_finger2_finger_tip_joint"
+      ],
+      "transform_source": "partial; link=${prefix}gripper_finger2_finger_tip_link",
+      "transform_status": "partial",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "category": "gripper_visual",
+      "resolved": true,
+      "warning": "unresolved xacro substitution placeholder",
+      "mesh_extension": ".dae",
+      "render_expected": true,
+      "render_skip_reason": "",
+      "exists": true,
+      "extension": ".dae",
+      "fallback_reason": "unresolved xacro substitution placeholder",
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae"
+    },
+    {
+      "id": "urdf_visual_31_${name}_link",
       "link": "${name}_link",
       "visual": "",
       "parent_link": "${name}_bottom_screw_frame",
@@ -1726,7 +2445,10 @@
       "exists": true,
       "extension": ".dae",
       "fallback_reason": "unresolved xacro substitution placeholder",
-      "item_source": "urdf_visual"
+      "item_source": "urdf_visual",
+      "repo_relative_source_path": "assets/environment/realsense2_description/meshes/d435.dae",
+      "scene_relative_source_path": "",
+      "asset_relative_source_path": "environment/realsense2_description/meshes/d435.dae"
     }
   ],
   "warnings": [

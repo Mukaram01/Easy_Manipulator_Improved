@@ -1,0 +1,55 @@
+categories:
+  robot_ur:
+    package_candidates: [universal_robot, ur_description]
+    preferred_mesh_uris: [package://ur_description/meshes/ur5/base.dae]
+    primitive_fallback_dimensions: [0.4,0.4,0.4]
+    preview_label: UR Robot
+    required_for_new_cell_preview: true
+  gripper_robotiq_2f:
+    package_candidates: [robotiq_85_description]
+    preferred_mesh_uris: [package://robotiq_85_description/meshes/visual/robotiq_arg2f_85_base_link.STL]
+    primitive_fallback_dimensions: [0.1,0.1,0.2]
+    preview_label: Robotiq 2F
+    required_for_new_cell_preview: false
+  gripper_suction:
+    package_candidates: [single_suction_description]
+    preferred_mesh_uris: [package://single_suction_description/meshes/suction_tool.stl]
+    primitive_fallback_dimensions: [0.08,0.08,0.12]
+    preview_label: Suction Tool
+    required_for_new_cell_preview: false
+  gripper_airpick:
+    package_candidates: [onrobot_airpick4_description]
+    preferred_mesh_uris: [package://onrobot_airpick4_description/meshes/airpick4.dae]
+    primitive_fallback_dimensions: [0.08,0.08,0.12]
+    preview_label: AirPick
+    required_for_new_cell_preview: false
+  table:
+    package_candidates: [table_description]
+    preferred_mesh_uris: [package://table_description/meshes/table.stl]
+    primitive_fallback_dimensions: [1.2,0.8,0.2]
+    preview_label: Table
+    required_for_new_cell_preview: true
+  workbench:
+    package_candidates: [workbench_description]
+    preferred_mesh_uris: [package://workbench_description/meshes/workbench.stl]
+    primitive_fallback_dimensions: [1.4,0.8,0.25]
+    preview_label: Workbench
+    required_for_new_cell_preview: false
+  conveyor_placeholder:
+    package_candidates: [conveyor_placeholder_description]
+    preferred_mesh_uris: [package://conveyor_placeholder_description/meshes/conveyor_placeholder.stl]
+    primitive_fallback_dimensions: [1.2,0.3,0.2]
+    preview_label: Conveyor
+    required_for_new_cell_preview: false
+  camera_realsense:
+    package_candidates: [realsense2_description]
+    preferred_mesh_uris: [package://realsense2_description/meshes/d435.dae]
+    primitive_fallback_dimensions: [0.08,0.08,0.08]
+    preview_label: Camera
+    required_for_new_cell_preview: false
+  bin_box_fixture:
+    package_candidates: [bin_small_description, bin_large_description, fixture_plate_description]
+    preferred_mesh_uris: [package://bin_small_description/meshes/bin_small.stl]
+    primitive_fallback_dimensions: [0.3,0.2,0.2]
+    preview_label: Bin/Fixture
+    required_for_new_cell_preview: false
