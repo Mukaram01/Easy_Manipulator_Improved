@@ -5006,6 +5006,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     if (include_item(p)) filtered_items.push_back(p);
   }
   scene_preview_widget_->set_preview_items(filtered_items);
+  append_studio_log(
+    QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
+      .arg(all_scene_preview_items_.size())
+      .arg(filtered_items.size()));
   if (log_change) {
     append_studio_log(
       QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
@@ -5730,10 +5734,16 @@ void MainWindow::populate_scene_hierarchy()
     .arg(scene3d_warning_buckets)
     .arg(preview_provenance_line)
     .arg(preview_warning_count);
+  const QString scene3d_boundary_diag = QString(
+      "Scene3D diagnostics {model_items_count=%1, preview_items_count=%2, filtered_visible_count=%3}")
+      .arg(model.items.size())
+      .arg(preview_items.size())
+      .arg(all_scene_preview_items_.size());
 
   if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
   if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
   if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
+  append_studio_log(scene3d_boundary_diag);
 }
 
 void MainWindow::populate_asset_catalog()
