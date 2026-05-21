@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
 from pathlib import Path
+
+import yaml
+
 try:
     from scripts.scene_root_resolver import resolve_scene_root
 except ModuleNotFoundError:
@@ -19,25 +24,131 @@ def scene_dir(scene: str) -> Path:
     return SCENES_ROOT / scene
 
 
-def has_snapshot_overlay(scene_path: Path) -> bool:
-    return any((scene_path / p).exists() for p in ["generated/epd_snapshot.json", "generated/detections_snapshot.json", "config/epd_snapshot.json"])
+def load_yaml(path: Path) -> dict:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def load_json(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
 
 
 def evaluate_scene(scene: str) -> dict:
     sdir = scene_dir(scene)
-    layout = sdir / "layout/workcell_studio_layout.yaml"
-    layout_exists = layout.exists()
-    layout_text = layout.read_text(encoding="utf-8", errors="ignore") if layout_exists else ""
-    checks = {
-        "layout_items_count_gt_zero": ("id:" in layout_text),
-        "preview_items_count_gt_zero": "prepare_scene_preview_items" in MAIN.read_text(encoding="utf-8"),
-        "at_least_one_visible_after_default_layers": "default_scene3d_layer_visibility_" in MAIN.read_text(encoding="utf-8"),
-        "at_least_one_editable_item": "editable_layout" in MAIN.read_text(encoding="utf-8"),
-        "primitive_fallback_or_mesh_backed": ("primitive_fallback" in MAIN.read_text(encoding="utf-8") or "mesh_preview" in MAIN.read_text(encoding="utf-8")),
-        "camera_fov_overlay_when_metadata_exists": "show_camera_fov" in VIEWPORT.read_text(encoding="utf-8"),
-        "detection_overlay_when_snapshot_exists": (not has_snapshot_overlay(sdir)) or ("show_epd_detections" in VIEWPORT.read_text(encoding="utf-8")),
+    blockers: list[str] = []
+
+    if not sdir.exists():
+        blockers.append(f"scene directory is missing: {sdir}")
+        return {
+            "scene": scene,
+            "scene_path": str(sdir),
+            "blockers": blockers,
+            "counts": {},
+            "visibility_contract": {
+                "input_items_count": 0,
+                "visible_after_default_filters": 0,
+                "hidden_by_filters_count": 0,
+            },
+            "layers": {},
+            "sources": {},
+            "pass": False,
+        }
+
+    layout_path = sdir / "layout/workcell_studio_layout.yaml"
+    mesh_index_path = sdir / "generated/scene_visual_mesh_index.json"
+    preview_metadata_path = sdir / "generated/scene_preview_metadata.json"
+    urdf_generated_layout_path = sdir / "layout/workcell_studio_layout.generated.yaml"
+    overlay_sources = [
+        sdir / "generated/epd_snapshot.json",
+        sdir / "generated/detections_snapshot.json",
+        sdir / "config/epd_snapshot.json",
+    ]
+
+    if not layout_path.exists():
+        blockers.append(f"missing layout: {layout_path}")
+        layout = {}
+    else:
+        layout = load_yaml(layout_path)
+
+    if not mesh_index_path.exists():
+        blockers.append(f"missing mesh index: {mesh_index_path}")
+        mesh_index = {}
+    else:
+        mesh_index = load_json(mesh_index_path)
+
+    preview_metadata = load_json(preview_metadata_path) if preview_metadata_path.exists() else {}
+    generated_layout = load_yaml(urdf_generated_layout_path) if urdf_generated_layout_path.exists() else {}
+
+    layout_items = layout.get("items") or []
+    editable_layout_count = len(layout_items)
+
+    visual_items = mesh_index.get("visual_items") or []
+    safe_for_preview = bool(mesh_index.get("safe_for_preview"))
+    mesh_preview_count = len(visual_items) if safe_for_preview else 0
+    primitive_fallback_count = int(mesh_index.get("unresolved_placeholder_count") or 0)
+
+    generated_items = generated_layout.get("items") or []
+    locked_generated_urdf_visual_count = sum(1 for item in generated_items if item.get("source") == "generated_urdf_visual")
+
+    overlay_count = 0
+    if preview_metadata:
+        overlay_items = preview_metadata.get("overlays")
+        if isinstance(overlay_items, list):
+            overlay_count = len(overlay_items)
+    if overlay_count == 0:
+        overlay_count = sum(1 for p in overlay_sources if p.exists())
+
+    input_items_count = editable_layout_count + primitive_fallback_count + mesh_preview_count + locked_generated_urdf_visual_count + overlay_count
+    visible_after_default_filters = editable_layout_count + mesh_preview_count
+    hidden_by_filters_count = max(input_items_count - visible_after_default_filters, 0)
+
+    if not blockers and visible_after_default_filters == 0:
+        blockers.append("no visible scene items after default filters")
+
+    secondary_checks = {
+        "grid_axes_enabled": ("draw_ground_grid_pass" in VIEWPORT.read_text(encoding="utf-8") and "draw_world_axes_pass" in VIEWPORT.read_text(encoding="utf-8")),
+        "orbit_pan_zoom_handlers_exist": all(t in VIEWPORT.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
+        "selection_callback_wired": "select_cb" in PREVIEW.read_text(encoding="utf-8"),
+        "inspector_callback_wired": "update_scene_builder_inspector_for_selected_item" in MAIN.read_text(encoding="utf-8"),
+        "drag_commit_callback_wired": "transform_changed_cb" in VIEWPORT.read_text(encoding="utf-8"),
+        "hierarchy_selection_sync_wired": "apply_scene_selection(" in MAIN.read_text(encoding="utf-8"),
+        "layer_toggles_not_default_hide_all": "visible item count after filters" in MAIN.read_text(encoding="utf-8"),
+        "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in VIEWPORT.read_text(encoding="utf-8"),
     }
-    return {"scene": scene, "scene_path": str(sdir), "checks": checks, "pass": all(checks.values())}
+
+    return {
+        "scene": scene,
+        "scene_path": str(sdir),
+        "blockers": blockers,
+        "counts": {
+            "editable_layout_count": editable_layout_count,
+            "primitive_fallback_count": primitive_fallback_count,
+            "mesh_preview_count": mesh_preview_count,
+            "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
+            "overlay_count": overlay_count,
+        },
+        "visibility_contract": {
+            "input_items_count": input_items_count,
+            "visible_after_default_filters": visible_after_default_filters,
+            "hidden_by_filters_count": hidden_by_filters_count,
+        },
+        "layers": {
+            "editable_layout_visible": editable_layout_count,
+            "mesh_preview_visible_if_safe": mesh_preview_count,
+            "locked_generated_urdf_visual_hidden_default": locked_generated_urdf_visual_count,
+            "overlay_items": overlay_count,
+        },
+        "sources": {
+            "layout": str(layout_path),
+            "mesh_index": str(mesh_index_path),
+            "preview_metadata": str(preview_metadata_path) if preview_metadata_path.exists() else None,
+            "generated_layout": str(urdf_generated_layout_path) if urdf_generated_layout_path.exists() else None,
+            "overlay_files": [str(p) for p in overlay_sources if p.exists()],
+        },
+        "secondary_checks": secondary_checks,
+        "pass": not blockers,
+    }
 
 
 def main() -> int:
@@ -46,46 +157,67 @@ def main() -> int:
     ap.add_argument("--json", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.json"))
     ap.add_argument("--markdown", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.md"))
     args = ap.parse_args()
+
     scenes = args.scene or ["ur5_2f_test"]
     if SCENES_ROOT.exists():
-      scenes_dir = SCENES_ROOT
-      maybe = sorted(p.name for p in scenes_dir.iterdir() if p.is_dir() and "new_cell" in p.name)
-      if maybe:
-          scenes.append(maybe[0])
-    unique_scenes = []
+        maybe = sorted(p.name for p in SCENES_ROOT.iterdir() if p.is_dir() and "new_cell" in p.name)
+        if maybe:
+            scenes.append(maybe[0])
+
+    unique_scenes: list[str] = []
     for s in scenes:
         if s not in unique_scenes:
             unique_scenes.append(s)
 
-    missing = [str(scene_dir(s)) for s in unique_scenes if not scene_dir(s).exists()]
-    if missing:
-        ap.error(f"requested scene path is missing: {', '.join(missing)}")
-
     results = [evaluate_scene(s) for s in unique_scenes]
+    blockers = [f"{r['scene']}: {b}" for r in results for b in r.get("blockers", [])]
 
-    root_checks = {
-      "grid_axes_enabled": ("draw_ground_grid_pass" in VIEWPORT.read_text(encoding="utf-8") and "draw_world_axes_pass" in VIEWPORT.read_text(encoding="utf-8")),
-      "orbit_pan_zoom_handlers_exist": all(t in VIEWPORT.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
-      "selection_callback_wired": "select_cb" in PREVIEW.read_text(encoding="utf-8"),
-      "inspector_callback_wired": "update_scene_builder_inspector_for_selected_item" in MAIN.read_text(encoding="utf-8"),
-      "drag_commit_callback_wired": "transform_changed_cb" in VIEWPORT.read_text(encoding="utf-8"),
-      "hierarchy_selection_sync_wired": "apply_scene_selection(" in MAIN.read_text(encoding="utf-8"),
-      "layer_toggles_not_default_hide_all": "visible item count after filters" in MAIN.read_text(encoding="utf-8"),
-      "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in VIEWPORT.read_text(encoding="utf-8"),
+    payload = {
+        "schema": SCHEMA,
+        "scenes": results,
+        "blockers": blockers,
+        "pass": not blockers,
     }
-    payload = {"schema": SCHEMA, "scenes": results, "checks": root_checks, "pass": all(r["pass"] for r in results) and all(root_checks.values())}
 
-    out_json = Path(args.json); out_json.parent.mkdir(parents=True, exist_ok=True); out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    lines = [f"# Scene3D Runtime Acceptance\n", f"- schema: `{SCHEMA}`", f"- overall_pass: `{payload['pass']}`", ""]
+    out_json = Path(args.json)
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    lines = ["# Scene3D Runtime Acceptance", f"- schema: `{SCHEMA}`", f"- overall_pass: `{payload['pass']}`", ""]
+    lines.append("## Blockers")
+    if blockers:
+        for b in blockers:
+            lines.append(f"- FAIL: {b}")
+    else:
+        lines.append("- none")
+
     for r in results:
+        lines.append("")
         lines.append(f"## {r['scene']}")
-        for k,v in r["checks"].items(): lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
-    lines.append("\n## Global checks")
-    for k,v in root_checks.items(): lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
-    out_md = Path(args.markdown); out_md.parent.mkdir(parents=True, exist_ok=True); out_md.write_text("\n".join(lines)+"\n", encoding="utf-8")
+        lines.append("### Counts")
+        for k, v in r["counts"].items():
+            lines.append(f"- {k}: {v}")
+        lines.append("### Visibility contract")
+        for k, v in r["visibility_contract"].items():
+            lines.append(f"- {k}: {v}")
+        lines.append("### Layer summary")
+        for k, v in r["layers"].items():
+            lines.append(f"- {k}: {v}")
+        lines.append("### Source summary")
+        for k, v in r["sources"].items():
+            lines.append(f"- {k}: {v}")
+        lines.append("### Secondary diagnostics")
+        for k, v in r["secondary_checks"].items():
+            lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
+
+    out_md = Path(args.markdown)
+    out_md.parent.mkdir(parents=True, exist_ok=True)
+    out_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     print(f"wrote {out_json}")
     print(f"wrote {out_md}")
-    return 0
+    return 0 if payload["pass"] else 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
