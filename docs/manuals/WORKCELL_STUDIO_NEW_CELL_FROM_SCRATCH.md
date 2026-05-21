@@ -103,3 +103,13 @@ This remains the existing New Cell workflow and does **not** introduce a separat
 - When mesh files are missing or unsupported, preview logs warnings and uses primitive fallback geometry so canvas inspection remains usable.
 - Camera FOV and conveyor metadata are represented with placeholder/frustum/primitive visuals when available.
 - This canvas is for layout/preview only: it is not physics simulation and not real-hardware approval.
+
+## 3D selection and transform editing
+
+- Click an item in the existing Scene3D canvas to select it and highlight it.
+- The existing inspector/details area shows ID, type, source, editable/locked status, XYZ/RPY, and dimensions where applicable.
+- Editable layout items can be changed via inspector XYZ/RPY and dimensions fields.
+- Locked/generated preview items remain selectable for inspection but are read-only in the inspector.
+- Use the existing **Save Layout** action to persist edits to `layout/workcell_studio_layout.yaml`.
+- Pick/place zone edits are propagated to `environment.yaml` task-zone metadata.
+- This remains preview/layout editing only (no physics and no real-hardware approval).
