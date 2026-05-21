@@ -1,11 +1,11 @@
 {
   "scene_name": "ur5_3f_test",
-  "generated_at": "2026-05-21T08:49:39.113731+00:00",
+  "generated_at": "2026-05-21T09:24:32.837674+00:00",
   "extractor_version": "2.0",
   "extraction_mode": "best_effort_recursive",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1779351590.9554014,
+  "source_mtime": 1779354050.6454654,
   "included_source_paths": [
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro",
@@ -15,12 +15,12 @@
     "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro"
   ],
   "included_source_mtimes": {
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779351589.8194098,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro": 1779351589.9954085,
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro": 1779351590.9554014,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779351589.8194098,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779351589.8194098,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779351589.8194098
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779354049.7014654,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro": 1779354049.8454654,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779354049.7014654,
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_3f_test/urdf/scene.urdf.xacro": 1779354050.6454654,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779354049.7014654,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779354049.7014654
   },
   "unresolved_include_count": 1,
   "unresolved_placeholder_count": 2,
@@ -41,8 +41,6 @@
   ],
   "stale_index": true,
   "stale_reasons": [
-    "source_newer:scene.urdf.xacro",
-    "source_newer:scene.urdf.xacro",
     "unsafe_index"
   ],
   "visual_items": [

@@ -24,3 +24,21 @@ Use `python3 scripts/validate_all_workcell_studio_scenes.py` to generate
    - `runtime_smoke`: document or provide smoke-intent metadata (without claiming unvalidated runtime readiness).
 3. Re-run validator and confirm warnings are specific and non-empty.
 4. Keep runtime honesty: if smoke launch or MoveIt execution is unvalidated, do not mark runtime-ready.
+
+## Regenerating scene metadata artifacts
+
+Generate readiness metadata for all supported scenes:
+
+```bash
+python3 scripts/generate_workcell_studio_scene_artifacts.py --all --overwrite
+```
+
+Per-scene outputs:
+- `generated/environment_assets.yaml`
+- `layout/workcell_studio_layout.generated.yaml`
+- `config/task_recipe.yaml`
+- `config/workcell_builder_task_intent.yaml`
+
+These generated files are **readiness metadata** for simulation-first workflows. They keep editable layout (`layout/workcell_studio_layout.yaml`) separate from generated/locked preview metadata, and they keep task intent defaults in simulation-safe mode (`use_fake_hardware: true`, `execution_mode: simulation_preview`).
+
+> Important: generated metadata improves reproducibility and audit visibility only. It does **not** prove MoveIt launch success, grasp planning/execution validity, or real hardware readiness.
