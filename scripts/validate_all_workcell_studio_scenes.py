@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from dataclasses import asdict, dataclass
@@ -185,7 +186,51 @@ def _load_launch_simulation_report(scene_dir: Path) -> tuple[str | None, list[st
     return status, reasons
 
 
-def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Validate Workcell Studio scenes and readiness dimensions.")
+    parser.add_argument(
+        "--simulation-launch-report",
+        type=Path,
+        default=Path("build/workcell_studio/rviz_moveit_simulation_launch_report.json"),
+        help="Path to rviz/moveit simulation launch report JSON.",
+    )
+    return parser.parse_args()
+
+
+def _load_simulation_launch_report(
+    repo_root: Path, report_path: Path
+) -> tuple[dict[str, dict[str, Any]] | None, str | None]:
+    resolved = report_path if report_path.is_absolute() else repo_root / report_path
+    if not resolved.exists():
+        return None, "no simulation launch evidence"
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return None, f"simulation launch report unreadable: {exc.__class__.__name__}: {exc}"
+    if payload.get("schema") != "rviz_moveit_simulation_launch_report/v1":
+        return None, "simulation launch report schema unsupported"
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return None, "simulation launch report missing results list"
+
+    by_scene: dict[str, dict[str, Any]] = {}
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        scene = entry.get("scene")
+        if isinstance(scene, str) and scene.strip():
+            by_scene[scene] = entry
+    return by_scene, None
+
+def audit_scene(
+    repo_root: Path,
+    scene_dir: Path,
+    simulation_results_by_scene: dict[str, dict[str, Any]] | None = None,
+    simulation_report_error: str | None = None,
+) -> SceneAudit:
     files = {k: (scene_dir / rel).exists() for k, rel in REQUIRED_FILES.items()}
     optional = {k: (scene_dir / rel).exists() for k, rel in OPTIONAL_FILES.items()}
 
@@ -277,16 +322,54 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
     moveit_reasons: list[str] = []
     launch_report_status, launch_report_reasons = _load_launch_simulation_report(scene_dir)
+    simulation_entry = (simulation_results_by_scene or {}).get(scene_dir.name)
+
     if not smoke_available:
         moveit_reasons.append("launch/demo.launch.py missing; fake-hardware smoke command unavailable")
+
+    if simulation_report_error:
+        moveit_reasons.append(simulation_report_error)
+    elif simulation_entry is None:
+        moveit_reasons.append("no simulation launch evidence")
+    else:
+        sim_status = str(simulation_entry.get("status") or "").upper()
+        sim_blockers = [b for b in (simulation_entry.get("blockers") or []) if isinstance(b, str) and b.strip()]
+        sim_warnings = [w for w in (simulation_entry.get("warnings") or []) if isinstance(w, str) and w.strip()]
+        if sim_status == PASS:
+            moveit_reasons.append("simulation launch evidence: PASS")
+        elif sim_status == FAIL:
+            moveit_reasons.append("simulation launch evidence: FAIL")
+            moveit_reasons.extend(_with_prefix("simulation blocker", sim_blockers))
+        elif sim_status == WARN:
+            moveit_reasons.append("simulation launch evidence: WARN")
+            moveit_reasons.extend(_with_prefix("simulation warning", sim_warnings))
+            moveit_reasons.extend(_with_prefix("simulation blocker", sim_blockers))
+        elif sim_status == SKIP:
+            moveit_reasons.append("simulation launch evidence: SKIP")
+            moveit_reasons.extend(_with_prefix("simulation warning", sim_warnings))
+        else:
+            moveit_reasons.append(f"simulation launch report returned unknown status: {sim_status or '(missing)'}")
+
     moveit_reasons.extend(launch_report_reasons)
     moveit_reasons.extend(_with_prefix("launch warning", launch_warnings))
     if not smoke_available:
         moveit_status = FAIL
-    elif launch_report_status in {PASS, WARN, FAIL, SKIP}:
-        moveit_status = launch_report_status
+    elif simulation_report_error or simulation_entry is None:
+        moveit_status = WARN
     else:
-        moveit_status = WARN if moveit_reasons else PASS
+        sim_status = str(simulation_entry.get("status") or "").upper()
+        if sim_status == PASS:
+            moveit_status = PASS
+        elif sim_status == FAIL:
+            moveit_status = FAIL
+        elif sim_status == WARN:
+            moveit_status = WARN
+        elif sim_status == SKIP:
+            moveit_status = SKIP
+        elif launch_report_status in {PASS, WARN, FAIL, SKIP}:
+            moveit_status = launch_report_status
+        else:
+            moveit_status = WARN if moveit_reasons else PASS
 
     grasp_planner_reasons: list[str] = []
     if not optional["task_recipe"]:
@@ -343,11 +426,22 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
 
 def main() -> int:
+    args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
     scenes_root = resolve_scenes_root(repo_root)
     scene_dirs = sorted([p for p in scenes_root.iterdir() if p.is_dir()])
 
-    audits = [audit_scene(repo_root, scene_dir) for scene_dir in scene_dirs]
+    simulation_results_by_scene, simulation_report_error = _load_simulation_launch_report(repo_root, args.simulation_launch_report)
+
+    audits = [
+        audit_scene(
+            repo_root,
+            scene_dir,
+            simulation_results_by_scene=simulation_results_by_scene,
+            simulation_report_error=simulation_report_error,
+        )
+        for scene_dir in scene_dirs
+    ]
 
     counts = {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
     readiness_counts = {
