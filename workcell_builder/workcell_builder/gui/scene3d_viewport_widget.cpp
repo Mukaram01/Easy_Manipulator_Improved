@@ -21,11 +21,13 @@
 #include <QtMath>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <sstream>
 
 namespace {
 constexpr int kMeshTriangleLimit = 100000;
+constexpr double kWorkspaceLimitMeters = 1000.0;
 
 QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
 {
@@ -1432,10 +1434,35 @@ void Scene3DViewportWidget::mouseReleaseEvent(QMouseEvent * e)
 {
   if (e->button() == Qt::LeftButton) {
     if (drag_in_progress_ && !drag_cancelled_ && transform_changed_cb) {
-      for (const auto & it : items) {
+      bool committed = false;
+      for (auto & it : items) {
         if (it.id != drag_start_pose_.item_id) continue;
+        const bool id_valid = !it.id.trimmed().isEmpty() && !drag_start_pose_.item_id.trimmed().isEmpty() && it.id == selected_id;
+        const bool finite_xyz = std::isfinite(it.x) && std::isfinite(it.y) && std::isfinite(it.z);
+        const bool bounded_xyz = qAbs(it.x) <= kWorkspaceLimitMeters &&
+                                 qAbs(it.y) <= kWorkspaceLimitMeters &&
+                                 qAbs(it.z) <= kWorkspaceLimitMeters;
+        if (!id_valid || !finite_xyz || !bounded_xyz) {
+          it.x = drag_start_pose_.x;
+          it.y = drag_start_pose_.y;
+          it.z = drag_start_pose_.z;
+          it.roll = drag_start_pose_.roll;
+          it.pitch = drag_start_pose_.pitch;
+          it.yaw = drag_start_pose_.yaw;
+          const QString message = QStringLiteral(
+            "Rejected gizmo drag commit for '%1': invalid final XYZ or mismatched drag source; pose reverted.")
+                                    .arg(drag_start_pose_.item_id);
+          qWarning().noquote() << message;
+          if (status_message_cb) status_message_cb(message);
+          update();
+          break;
+        }
         transform_changed_cb(it.id, it.x, it.y, it.z, it.roll, it.pitch, it.yaw);
+        committed = true;
         break;
+      }
+      if (!committed && status_message_cb) {
+        status_message_cb(QStringLiteral("No valid drag source found for commit; change discarded."));
       }
     }
     dragging_gizmo_ = false;
