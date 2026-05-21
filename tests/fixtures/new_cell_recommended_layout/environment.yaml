@@ -1,0 +1,8 @@
+scene_name: new_cell_recommended_layout
+task_zones:
+  - id: pick_zone
+    type: pick
+  - id: place_zone
+    type: place
+support_surfaces:
+  - id: workbench
