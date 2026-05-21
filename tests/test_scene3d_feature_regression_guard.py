@@ -142,3 +142,12 @@ def test_feature_regression_static_no_generated_artifact_mutation_in_toggle_or_r
         'ofstream',
     ]:
         assert forbidden not in relevant
+
+
+def test_feature_regression_static_epd_snapshot_warning_classified_under_overlays_helpers():
+    for tok in [
+        'malformed snapshot',
+        'detection snapshot',
+        'Overlays / Helpers',
+    ]:
+        assert tok in MAIN_CPP

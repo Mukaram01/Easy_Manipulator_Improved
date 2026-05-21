@@ -137,6 +137,68 @@ namespace {
   "Generate/Validate/Plan: generated_package_path validation_output plan_simulate_handoff fake_hardware_first";
 
 
+
+struct Scene3DDetectionSnapshotLoadResult {
+  QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
+  QStringList warnings;
+};
+
+Scene3DDetectionSnapshotLoadResult load_scene3d_detection_snapshot_preview(const fs::path & scene_dir)
+{
+  Scene3DDetectionSnapshotLoadResult out;
+  const std::vector<fs::path> candidates = {
+    scene_dir / "generated" / "perception_bridge_preview_report.json",
+    scene_dir / "generated" / "emd_bridge_payload_preview.json",
+    scene_dir / "generated" / "epd_detection_snapshot.json",
+  };
+
+  auto malformed_warning = [&](const QString & detail) {
+    out.warnings << QStringLiteral("malformed snapshot: %1").arg(detail);
+  };
+
+  auto parse = [&](const fs::path & file) -> bool {
+    QFile in(QString::fromStdString(file.string()));
+    if (!in.open(QIODevice::ReadOnly)) { malformed_warning(QString::fromStdString(file.filename().string())); return false; }
+    QJsonParseError err;
+    const auto doc = QJsonDocument::fromJson(in.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+      malformed_warning(QString::fromStdString(file.filename().string()));
+      return false;
+    }
+    const QJsonObject root = doc.object();
+    const QString schema = root.value("schema").toString();
+    if (!schema.isEmpty() && schema != QStringLiteral("workcell_studio_detection_snapshot/v1")) {
+      malformed_warning(QStringLiteral("schema mismatch"));
+      return false;
+    }
+    QJsonArray detections = root.value("detections").toArray();
+    if (detections.isEmpty() && root.contains("objects")) detections = root.value("objects").toArray();
+    for (const auto & node : detections) {
+      if (!node.isObject()) continue;
+      const auto o = node.toObject();
+      ScenePreviewWidget::EpdDetectionOverlayModel d;
+      d.detection_id = o.value("id").toString(o.value("detection_id").toString("unknown_detection"));
+      d.label = o.value("label").toString(o.value("class").toString("unknown"));
+      d.confidence = o.value("confidence").toDouble(0.0);
+      const auto pos = o.value("position").toObject();
+      d.x = pos.value("x").toDouble(o.value("x").toDouble(0.0));
+      d.y = pos.value("y").toDouble(o.value("y").toDouble(0.0));
+      d.z = pos.value("z").toDouble(o.value("z").toDouble(0.0));
+      d.status = QStringLiteral("loaded");
+      d.source_path = QString::fromStdString(file.string());
+      out.detections.push_back(d);
+    }
+    return true;
+  };
+
+  for (const auto & candidate : candidates) {
+    if (!fs::exists(candidate)) continue;
+    parse(candidate);
+    return out;
+  }
+  out.warnings << QStringLiteral("detection snapshot missing: generated/perception_bridge_preview_report.json -> generated/emd_bridge_payload_preview.json -> generated/epd_detection_snapshot.json -> workcell_studio_detection_snapshot/v1");
+  return out;
+}
 [[maybe_unused]] static const char * kSceneBuilderGuidedWorkflowLegacyContractTokens =
   "{"Scene selected"} {"Assets placed"} {"Layout saved"} {"YAML generated"} "
   "{"Validation passed"} {"Scene package generated"} {"Plan / Simulate ready"} {"Export ready"} "
@@ -2023,10 +2085,12 @@ void MainWindow::refresh_task_intent_panel()
     camera.status = "warning";
     camera.warnings << "no camera item found" << "no pick source found" << "pick zone outside camera FOV" << "camera range too short" << "camera frame unknown" << "camera pose metadata incomplete";
     scene_preview_widget_->set_camera_overlay_model(camera);
-    QVector<ScenePreviewWidget::EpdDetectionOverlayModel> detections;
-    ScenePreviewWidget::EpdDetectionOverlayModel det; det.detection_id="epd_preview_placeholder"; det.label="preview placeholder"; det.confidence=0.55; det.x=-0.8; det.y=0.2; det.z=-0.7; det.status="preview_only"; det.source_path="Perception preview unavailable until mode/config is selected."; det.warnings << "Perception preview unavailable until mode/config is selected." << "Live EPD/RealSense uses runtime camera and EPD topics. Saved snapshots are only for offline preview.";
-    detections.push_back(det);
-    scene_preview_widget_->set_epd_detection_overlays(detections);
+    const auto snapshot_preview = load_scene3d_detection_snapshot_preview(sc.scene_dir);
+    scene_preview_widget_->set_epd_detection_overlays(snapshot_preview.detections);
+    for (const auto & snapshot_warning : snapshot_preview.warnings) {
+      append_studio_log(QString("Scene3D detection snapshot warning: %1").arg(snapshot_warning));
+      model.warnings << snapshot_warning;
+    }
     scene_preview_widget_->set_task_overlay_model(model);
     scene_preview_widget_->set_task_overlay_visibility(
       show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
@@ -5021,7 +5085,7 @@ void MainWindow::populate_scene_hierarchy()
     if (lower.contains("editable_layout")) return QString("Editable Layout");
     if (lower.contains("camera") || lower.contains("sensor")) return QString("Cameras");
     if (lower.contains("robot") || lower.contains("tool") || lower.contains("gripper") || lower.contains("end_effector")) return QString("Robot / Tooling");
-    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety")) return QString("Overlays / Helpers");
+    if (lower.contains("helper") || lower.contains("overlay") || lower.contains("safety") || lower.contains("malformed snapshot") || lower.contains("detection snapshot")) return QString("Overlays / Helpers");
     if (lower.contains("generated_urdf_visual")) return QString("Generated URDF Visuals");
     if (lower.contains("primitive_fallback")) return QString("Primitive Fallbacks");
     if (lower.contains("mesh_preview")) return QString("Mesh Preview");
