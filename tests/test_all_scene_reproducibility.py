@@ -49,6 +49,7 @@ def test_validator_emits_per_scene_report_and_contract_keys():
         "fake_hardware_smoke_command",
         "blockers",
         "warnings",
+        "warning_groups",
     }
     for scene in scenes:
         assert expected_keys.issubset(scene.keys())
@@ -57,3 +58,24 @@ def test_validator_emits_per_scene_report_and_contract_keys():
         assert isinstance(scene["warnings"], list)
 
     assert "ModuleNotFoundError: No module named 'yaml'" not in (proc.stdout + proc.stderr)
+
+
+def test_scene_warnings_are_grouped_and_non_ambiguous():
+    repo_root = Path(__file__).resolve().parents[1]
+    script = repo_root / "scripts" / "validate_all_workcell_studio_scenes.py"
+    report = repo_root / "build" / "workcell_studio" / "all_scene_reproducibility_report.json"
+
+    subprocess.run([sys.executable, str(script)], cwd=repo_root, check=True, capture_output=True, text=True)
+    payload = json.loads(report.read_text(encoding="utf-8"))
+
+    for scene in payload.get("scenes", []):
+        groups = scene.get("warning_groups")
+        assert isinstance(groups, dict)
+        assert set(groups.keys()) == {"metadata", "preview", "generation", "launch_simulation", "runtime_smoke"}
+        for key, items in groups.items():
+            assert isinstance(items, list), f"{scene.get('scene_name')}:{key}"
+            for msg in items:
+                assert isinstance(msg, str) and msg.strip(), f"{scene.get('scene_name')}:{key}"
+        for warning in scene.get("warnings", []):
+            assert warning.strip()
+            assert any(token in warning.lower() for token in ("missing", "issue", "degraded", "failed", "unreadable", "not in known-scenes"))

@@ -1,28 +1,28 @@
 {
   "scene_name": "ur5_airpick4_test",
-  "generated_at": "2026-05-20T14:35:22.441751+00:00",
+  "generated_at": "2026-05-21T08:49:39.160613+00:00",
   "extractor_version": "2.0",
   "extraction_mode": "best_effort_recursive",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1779281021.454677,
+  "source_mtime": 1779351590.9554014,
   "included_source_paths": [
-    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro",
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro"
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro"
   ],
   "included_source_mtimes": {
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro": 1779281021.454677,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro": 1779281020.0426934,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro": 1779281020.6186867
+    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper.urdf.xacro": 1779351591.0434008,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_airpick4_test/urdf/scene.urdf.xacro": 1779351590.9554014,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/urdf/table.urdf.xacro": 1779351589.9954085,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779351589.8194098
   },
   "unresolved_include_count": 1,
   "unresolved_placeholder_count": 3,
@@ -43,6 +43,7 @@
   ],
   "stale_index": true,
   "stale_reasons": [
+    "source_newer:onrobot_airpick4_gripper.urdf.xacro",
     "unsafe_index"
   ],
   "visual_items": [
@@ -52,7 +53,9 @@
       "visual": "None_${prefix}",
       "parent_link": "${parent}",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/visual/table.stl",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/visual/table.stl",
       "package_uri": "package://workbench_description/meshes/visual/table.stl",
+      "geometry_type": "mesh",
       "pose": {
         "xyz": [
           0.0,
@@ -104,7 +107,7 @@
       "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": ""
     },
     {
       "id": "urdf_visual_1_${name}_link",
@@ -112,7 +115,9 @@
       "visual": "",
       "parent_link": "${name}_bottom_screw_frame",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
+      "geometry_type": "mesh",
       "pose": {
         "xyz": [
           0.0,
@@ -165,15 +170,17 @@
       "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".dae",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": ""
     },
     {
       "id": "urdf_visual_2_${prefix}gripper_base_link",
       "link": "${prefix}gripper_base_link",
       "visual": "",
       "parent_link": "${parent}",
-      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/meshes/airpick4.stl",
+      "source_path": "",
+      "resolved_path": "",
       "package_uri": "package://onrobot_airpick4_description/meshes/airpick4.stl",
+      "geometry_type": "mesh",
       "pose": {
         "xyz": [
           0.0,
@@ -221,11 +228,11 @@
         0.001
       ],
       "category": "robot_visual",
-      "resolved": true,
+      "resolved": false,
       "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": "unresolved mesh path: package://onrobot_airpick4_description/meshes/airpick4.stl"
     }
   ],
   "warnings": [
