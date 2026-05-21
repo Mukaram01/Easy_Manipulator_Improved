@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--json-output", type=Path, default=DEFAULT_JSON_OUTPUT)
     p.add_argument("--markdown-output", type=Path, default=DEFAULT_MD_OUTPUT)
     p.add_argument("--strict", action="store_true", help="Exit non-zero if any supported scene has FAIL readiness")
+    p.add_argument("--include-visual-assets", action="store_true", help="Run visual asset inventory and include report links")
     return p.parse_args()
 
 
@@ -51,7 +52,7 @@ def _status_counts() -> dict[str, int]:
     return {k: 0 for k in STATUSES}
 
 
-def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any]) -> dict[str, Any]:
+def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None) -> dict[str, Any]:
     scenes_out: list[dict[str, Any]] = []
     counts: dict[str, dict[str, int]] = {dim: _status_counts() for dim in READINESS_DIMENSIONS}
 
@@ -84,6 +85,7 @@ def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payl
         "scenes": scenes_out,
         "counts": counts,
         "safety_note": "This is fake-hardware simulation readiness only, not real-hardware validation.",
+        "visual_asset_inventory": visual_assets or {},
     }
 
 
@@ -174,7 +176,15 @@ def main() -> int:
     audit_report_path = repo_root / DEFAULT_AUDIT_REPORT
     audit_payload = _load_json(audit_report_path) if audit_report_path.exists() else {"scenes": []}
 
-    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload)
+    visual_assets = None
+    if args.include_visual_assets:
+        va_cmd = ["python3", "scripts/audit_workcell_studio_visual_assets.py"]
+        va_proc = _run_command(va_cmd, repo_root)
+        va_json = repo_root / "build/workcell_studio/visual_asset_inventory.json"
+        visual_assets = {"command_returncode": va_proc.returncode, "json_report": str(va_json), "markdown_report": "build/workcell_studio/visual_asset_inventory.md"}
+        if va_json.exists():
+            visual_assets["summary"] = _load_json(va_json).get("summary", {})
+    final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets)
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
     write_markdown(args.markdown_output, final_report)

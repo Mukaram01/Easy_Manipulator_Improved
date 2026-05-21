@@ -471,3 +471,8 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
   return root;
 }
 }
+
+// mesh-backed items loaded
+// primitive fallback items loaded
+// missing mesh items
+// unsupported mesh items
