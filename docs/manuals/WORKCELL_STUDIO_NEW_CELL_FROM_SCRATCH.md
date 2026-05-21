@@ -140,3 +140,23 @@ python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches -
 ```
 
 When meshes cannot be resolved, fallback primitives are used to keep the New Cell preview and 3D canvas usable while warnings are emitted.
+
+## Expanded URDF visual preview
+
+Workcell Studio now prefers xacro-expanded URDF extraction for `generated/scene_visual_mesh_index.json`.
+Best-effort recursive extraction is retained only as fallback.
+
+Regenerate:
+```bash
+python3 scripts/regenerate_scene_visual_mesh_indexes.py --all --portable
+```
+
+Fail when expansion is unavailable:
+```bash
+python3 scripts/regenerate_scene_visual_mesh_indexes.py --all --portable --fail-on-unexpanded
+```
+
+Audit:
+```bash
+python3 scripts/run_workcell_studio_scene_readiness_gate.py --dry-run-launches --include-visual-assets
+```

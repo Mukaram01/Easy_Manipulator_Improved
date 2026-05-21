@@ -194,6 +194,7 @@ def main() -> int:
 
     visual_assets = None
     if args.include_visual_assets:
+        subprocess.run(["python3", "scripts/regenerate_scene_visual_mesh_indexes.py", "--all", "--portable"], cwd=repo_root, capture_output=True, text=True)
         va_cmd = ["python3", "scripts/audit_workcell_studio_visual_assets.py"]
         va_proc = _run_command(va_cmd, repo_root)
         va_json = repo_root / "build/workcell_studio/visual_asset_inventory.json"
@@ -205,7 +206,7 @@ def main() -> int:
         regen_json = repo_root / "build/workcell_studio/visual_mesh_index_regeneration_report.json"
         if regen_json.exists():
             regen = _load_json(regen_json)
-            mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", []))}}
+            mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", [])), "xacro_fallback_scenes": [r.get("scene") for r in regen.get("scenes", []) if r.get("extraction_mode") != "xacro_expanded"], "unsafe_scenes": [r.get("scene") for r in regen.get("scenes", []) if not r.get("safe_for_preview", False)]}}
     final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration)
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
