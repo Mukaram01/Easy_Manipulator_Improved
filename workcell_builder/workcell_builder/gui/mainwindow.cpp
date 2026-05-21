@@ -1046,6 +1046,11 @@ void MainWindow::setup_studio_shell()
   controls->setContentsMargins(0, 0, 0, 0);
   controls->setSpacing(8);
   canvas_mode_label_ = new QLabel("Mode: Select · 3D Layout Preview", scene_builder); controls->addWidget(canvas_mode_label_);
+  // Scene canvas entrypoint: keep this same center-panel surface and swap rendering internals through ScenePreviewWidget.
+  // ScenePreviewWidget consumes preview items produced from:
+  //   1) editable layout metadata (layout/workcell_studio_layout.yaml)
+  //   2) locked/generated visual metadata (generated/scene_visual_mesh_index.json)
+  // and forwards them to Scene3DViewportWidget for perspective/depth/orbit-pan-zoom rendering.
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){
@@ -3707,6 +3712,9 @@ void MainWindow::open_diagnostics_folder()
 
 void MainWindow::rebuild_digital_twin_canvas()
 {
+  // 2D fallback canvas rebuild only.
+  // The primary runtime 3D canvas is Scene3DViewportWidget hosted by ScenePreviewWidget in this same panel.
+  // This fallback path remains available when 3D is unavailable, and shares selection/inspector state.
   const QString preserved_selected_id = current_selected_scene_item_id_;
   if (!digital_twin_canvas_) return;
   if (!digital_twin_scene_) {
