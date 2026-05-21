@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+WARNING_CATEGORIES = ("metadata", "preview", "generation", "launch_simulation", "runtime_smoke")
+
 PASS = "PASS"
 WARN = "WARN"
 FAIL = "FAIL"
@@ -58,6 +60,7 @@ class SceneAudit:
     fake_hardware_smoke_command: str
     blockers: list[str]
     warnings: list[str]
+    warning_groups: dict[str, list[str]]
 
 
 def resolve_scenes_root(repo_root: Path) -> Path:
@@ -141,7 +144,7 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
     optional = {k: (scene_dir / rel).exists() for k, rel in OPTIONAL_FILES.items()}
 
     blockers: list[str] = []
-    warnings: list[str] = []
+    warning_groups: dict[str, list[str]] = {k: [] for k in WARNING_CATEGORIES}
 
     for key, present in files.items():
         if not present:
@@ -164,7 +167,8 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
     layout_issues = _layout_metadata_issues(layout_data) if layout_status == "ok" else ["layout not parseable"]
     if layout_issues:
-        warnings.extend([f"layout metadata issue: {issue}" for issue in layout_issues])
+        warning_groups["metadata"].extend([f"layout metadata issue: {issue}" for issue in layout_issues])
+        warning_groups["preview"].append("preview readiness degraded by layout metadata issues")
 
     generated_index = (scene_dir / "generated" / "scene_visual_mesh_index.json").exists()
     regen_status = "not_needed" if generated_index else "attempted"
@@ -193,12 +197,19 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
 
     for key, present in optional.items():
         if not present and key not in {"scene_urdf", "scene_urdf_xacro"}:
-            warnings.append(f"optional file missing: {OPTIONAL_FILES[key]}")
+            if key in {"task_recipe", "task_intent"}:
+                warning_groups["runtime_smoke"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
+            elif key in {"generated_environment_assets", "generated_layout"}:
+                warning_groups["generation"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
+            else:
+                warning_groups["metadata"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
 
     preview_readiness = "ready" if not blockers and not layout_issues else ("degraded" if not blockers else "blocked")
 
     if scene_dir.name not in KNOWN_SCENES:
-        warnings.append("scene is not in known-scenes audit set")
+        warning_groups["metadata"].append("scene is not in known-scenes audit set")
+
+    warnings = [w for group in WARNING_CATEGORIES for w in warning_groups[group] if w]
 
     status = PASS
     if blockers:
@@ -220,6 +231,7 @@ def audit_scene(repo_root: Path, scene_dir: Path) -> SceneAudit:
         fake_hardware_smoke_command=fake_cmd,
         blockers=blockers,
         warnings=warnings,
+        warning_groups=warning_groups,
     )
 
 

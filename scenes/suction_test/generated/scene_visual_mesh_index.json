@@ -1,37 +1,37 @@
 {
   "scene_name": "suction_test",
-  "generated_at": "2026-05-20T14:35:22.164630+00:00",
+  "generated_at": "2026-05-21T08:49:38.852349+00:00",
   "extractor_version": "2.0",
   "extraction_mode": "best_effort_recursive",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/suction_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1779281021.4466772,
+  "source_mtime": 1779351590.9354017,
   "included_source_paths": [
-    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro",
     "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/urdf/table.urdf.xacro",
-    "/workspace/Easy_Manipulator_Improved/scenes/suction_test/urdf/scene.urdf.xacro"
+    "/workspace/Easy_Manipulator_Improved/scenes/suction_test/urdf/scene.urdf.xacro",
+    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro"
   ],
   "included_source_mtimes": {
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro": 1779281020.1186926,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/urdf/table.urdf.xacro": 1779281020.5426877,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779281020.4666886,
-    "/workspace/Easy_Manipulator_Improved/scenes/suction_test/urdf/scene.urdf.xacro": 1779281021.4466772
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/urdf/table.urdf.xacro": 1779351589.9034092,
+    "/workspace/Easy_Manipulator_Improved/scenes/suction_test/urdf/scene.urdf.xacro": 1779351590.9354017,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_materials.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/workcell_builder/workcell_builder/assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro": 1779351591.0434008,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i_imu_modules.urdf.xacro": 1779351589.8194098,
+    "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/urdf/_d435i.urdf.xacro": 1779351589.8194098
   },
   "unresolved_include_count": 1,
-  "unresolved_placeholder_count": 3,
+  "unresolved_placeholder_count": 2,
   "has_transform_collapse_warning": false,
   "candidate_mesh_count": 3,
   "emitted_visual_count": 3,
   "transform_status_counts": {
-    "resolved": 0,
-    "partial": 3,
+    "resolved": 1,
+    "partial": 2,
     "local_only": 0
   },
   "identical_position_clustered": true,
@@ -43,16 +43,19 @@
   ],
   "stale_index": true,
   "stale_reasons": [
+    "source_newer:single_suction_gripper.urdf.xacro",
     "unsafe_index"
   ],
   "visual_items": [
     {
-      "id": "urdf_visual_0_wrist_fixture",
-      "link": "wrist_fixture",
+      "id": "urdf_visual_0_single_suction_gripper_base_link",
+      "link": "single_suction_gripper_base_link",
       "visual": "",
-      "parent_link": "${parent}",
-      "source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/meshes/wrist_fixture.STL",
-      "package_uri": "package://single_suction_description/meshes/wrist_fixture.STL",
+      "parent_link": "",
+      "source_path": "",
+      "resolved_path": "",
+      "package_uri": "",
+      "geometry_type": "cylinder",
       "pose": {
         "xyz": [
           0.0,
@@ -79,21 +82,19 @@
       },
       "link_world_pose": {
         "xyz": [
-          0.0,
-          0.0,
-          0.0
+          0,
+          0,
+          0
         ],
         "rpy": [
           0.0,
-          -0.0,
+          0.0,
           0.0
         ]
       },
-      "joint_chain": [
-        "${prefix}gripper_base_joint"
-      ],
-      "transform_source": "partial; link=wrist_fixture",
-      "transform_status": "partial",
+      "joint_chain": [],
+      "transform_source": "resolved; link=single_suction_gripper_base_link",
+      "transform_status": "resolved",
       "scale": [
         1.0,
         1.0,
@@ -101,10 +102,12 @@
       ],
       "category": "robot_visual",
       "resolved": true,
-      "warning": "unresolved xacro substitution placeholder",
-      "mesh_extension": ".stl",
+      "warning": "",
+      "mesh_extension": "",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": "",
+      "radius": 0.02,
+      "length": 0.05
     },
     {
       "id": "urdf_visual_1_table_${prefix}",
@@ -112,7 +115,9 @@
       "visual": "table_${prefix}",
       "parent_link": "${parent}",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/meshes/visual/table.stl",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/meshes/visual/table.stl",
       "package_uri": "package://table_description/meshes/visual/table.stl",
+      "geometry_type": "mesh",
       "pose": {
         "xyz": [
           0.0,
@@ -164,7 +169,7 @@
       "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".stl",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": ""
     },
     {
       "id": "urdf_visual_2_${name}_link",
@@ -172,7 +177,9 @@
       "visual": "",
       "parent_link": "${name}_bottom_screw_frame",
       "source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
       "package_uri": "package://realsense2_description/meshes/d435.dae",
+      "geometry_type": "mesh",
       "pose": {
         "xyz": [
           0.0,
@@ -225,7 +232,7 @@
       "warning": "unresolved xacro substitution placeholder",
       "mesh_extension": ".dae",
       "render_expected": true,
-      "render_warning": ""
+      "render_skip_reason": ""
     }
   ],
   "warnings": [
