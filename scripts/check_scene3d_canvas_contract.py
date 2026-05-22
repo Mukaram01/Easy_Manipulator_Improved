@@ -4,10 +4,18 @@ import argparse, json, re
 from collections import Counter
 from pathlib import Path
 import yaml
-try:
-    from scripts.scene_root_resolver import resolve_scene_root
-except ModuleNotFoundError:
-    from scene_root_resolver import resolve_scene_root
+
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
+
+ensure_repo_root_on_sys_path(__file__)
+
+from scripts.scene_root_resolver import resolve_scene_root
 
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}

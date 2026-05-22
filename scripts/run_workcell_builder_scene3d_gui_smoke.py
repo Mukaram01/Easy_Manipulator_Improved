@@ -10,8 +10,18 @@ import sys
 import time
 from pathlib import Path
 
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
+
+ensure_repo_root_on_sys_path(__file__)
+
 from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = _REPO_ROOT
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 PASS_STATES = {"ok", "pass", "passed"}
 

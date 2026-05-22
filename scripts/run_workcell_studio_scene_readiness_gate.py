@@ -8,6 +8,17 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
+
+ensure_repo_root_on_sys_path(__file__)
+
 from scripts.workcell_studio_path_resolver import (
     resolve_install_setup,
     resolve_repo_root,
