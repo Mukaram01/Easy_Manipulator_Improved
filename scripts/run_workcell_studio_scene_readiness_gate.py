@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from scripts.workcell_builder_runtime_resolver import resolve_runtime_paths
+
 PASS = "PASS"
 WARN = "WARN"
 FAIL = "FAIL"
@@ -39,6 +41,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--strict", action="store_true", help="Exit non-zero if any supported scene has FAIL readiness")
     p.add_argument("--include-visual-assets", action="store_true", help="Run visual asset inventory and include report links")
     p.add_argument("--include-scene3d-gui-smoke", action="store_true", help="Run Scene3D GUI smoke for ur5_2f_test and include result")
+    p.add_argument("--repo-root", type=Path, default=None)
+    p.add_argument("--workspace-root", type=Path, default=None)
+    p.add_argument("--workcell-builder-executable", default=None)
     return p.parse_args()
 
 
@@ -252,7 +257,13 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
-    repo_root = Path(__file__).resolve().parents[1]
+    resolved_runtime = resolve_runtime_paths(
+        script_path=Path(__file__),
+        repo_root_arg=args.repo_root,
+        workspace_root_arg=args.workspace_root,
+        workcell_builder_executable_arg=args.workcell_builder_executable,
+    )
+    repo_root = Path(resolved_runtime["repo_root"])
 
     sim_report_path = args.json_output.parent / "rviz_moveit_simulation_launch_report.json"
     sim_report_path = DEFAULT_SIM_REPORT if sim_report_path != DEFAULT_SIM_REPORT else sim_report_path
@@ -306,6 +317,10 @@ def main() -> int:
         smoke_script = repo_root / "scripts/run_workcell_builder_scene3d_gui_smoke.py"
         smoke_scenes = ("ur5_2f_test", "ur5_2f_sorting_test")
         mode = "ci_or_dry_run" if (args.dry_run_launches or _is_ci_environment()) else "local_validation"
+        setup_path = resolved_runtime.get("setup_path")
+        executable_path = resolved_runtime.get("executable_path")
+        searched_setup = resolved_runtime.get("searched_setup_paths", [])
+        searched_exe = resolved_runtime.get("searched_executable_paths", [])
         scene3d_gui_smoke = {
             "mode": mode,
             "status": WARN if mode == "ci_or_dry_run" else PASS,
@@ -314,6 +329,27 @@ def main() -> int:
             "warnings": [],
             "blockers": [],
         }
+        if mode == "local_validation":
+            if not setup_path:
+                scene3d_gui_smoke["status"] = FAIL
+                scene3d_gui_smoke["blockers"].append(
+                    "LOCAL_VALIDATION_REQUIRED: missing setup.bash; searched: " + ", ".join(str(p) for p in searched_setup)
+                )
+            if not executable_path:
+                scene3d_gui_smoke["status"] = FAIL
+                scene3d_gui_smoke["blockers"].append(
+                    "LOCAL_VALIDATION_REQUIRED: missing workcell_builder executable; searched: " + ", ".join(str(p) for p in searched_exe)
+                )
+        else:
+            if not setup_path:
+                scene3d_gui_smoke["warnings"].append(
+                    "CI_OR_DRY_RUN_DOWNGRADE: missing setup.bash; searched: " + ", ".join(str(p) for p in searched_setup)
+                )
+            if not executable_path:
+                scene3d_gui_smoke["warnings"].append(
+                    "CI_OR_DRY_RUN_DOWNGRADE: missing workcell_builder executable; searched: " + ", ".join(str(p) for p in searched_exe)
+                )
+
         if not smoke_script.exists():
             marker = "CI_OR_DRY_RUN_DOWNGRADE" if mode == "ci_or_dry_run" else "LOCAL_VALIDATION_REQUIRED"
             msg = f"{marker}: GUI smoke script missing: {smoke_script}"
@@ -331,7 +367,9 @@ def main() -> int:
                     "json_path_abs": str(smoke_json.resolve()),
                     "screenshot_path_abs": str(smoke_png.resolve()),
                 }
-                smoke_cmd = ["python3", str(smoke_script), "--scene", scene_name, "--output", str(smoke_json), "--screenshot", str(smoke_png)]
+                smoke_cmd = ["python3", str(smoke_script), "--scene", scene_name, "--output", str(smoke_json), "--screenshot", str(smoke_png), "--repo-root", str(repo_root), "--workspace-root", str(resolved_runtime["workspace_root"])]
+                if executable_path:
+                    smoke_cmd.extend(["--workcell-builder-executable", str(executable_path)])
                 smoke_proc = _run_command(smoke_cmd, repo_root)
                 scene_result: dict[str, Any] = {"scene": scene_name, "returncode": smoke_proc.returncode}
                 scene3d_gui_smoke["scenes"].append(scene_result)
@@ -385,14 +423,19 @@ def main() -> int:
     final_report["scene3d_consolidated_gate"] = scene3d_consolidated_gate
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
-    write_markdown(args.markdown_output, final_report)
 
     strict_fail = args.strict and any(scene["artifact_readiness"] == FAIL or scene["preview_readiness"] == FAIL or scene["moveit_launch_readiness"] == FAIL for scene in final_report["scenes"])
 
     scene3d_fail = args.include_scene3d_gui_smoke and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
     scene3d_consolidated_fail = scene3d_consolidated_gate.get("status") == FAIL
+    failed = sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail or scene3d_consolidated_fail
 
-    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail or scene3d_consolidated_fail:
+    if not failed:
+        write_markdown(args.markdown_output, final_report)
+    elif args.markdown_output.exists():
+        args.markdown_output.unlink()
+
+    if failed:
         return 1
     return 0
 

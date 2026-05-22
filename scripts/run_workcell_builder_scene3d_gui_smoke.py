@@ -14,16 +14,17 @@ EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 PASS_STATES = {"ok", "pass", "passed"}
 
 
-def resolve_workcell_builder() -> Path | str:
-    install_bin = ROOT / "install/workcell_builder/lib/workcell_builder/workcell_builder"
-    if install_bin.is_file():
-        return install_bin
-    fallback = shutil.which("workcell_builder")
-    if fallback:
-        return fallback
-    raise FileNotFoundError(
-        "unable to resolve workcell_builder executable: checked install/workcell_builder first, then PATH"
+from scripts.workcell_builder_runtime_resolver import resolve_runtime_paths
+
+
+def resolve_workcell_builder(args: argparse.Namespace) -> tuple[Path | None, dict[str, object]]:
+    resolved = resolve_runtime_paths(
+        script_path=Path(__file__),
+        repo_root_arg=args.repo_root,
+        workspace_root_arg=args.workspace_root,
+        workcell_builder_executable_arg=args.workcell_builder_executable,
     )
+    return resolved.get("executable_path"), resolved
 
 
 def build_cmd(exe: Path | str, args: argparse.Namespace) -> list[str]:
@@ -169,16 +170,19 @@ def main() -> int:
     ap.add_argument("--screenshot", type=Path, default=None)
     ap.add_argument("--timeout-sec", type=float, default=30.0)
     ap.add_argument("--xvfb", action="store_true")
+    ap.add_argument("--repo-root", type=Path, default=None)
+    ap.add_argument("--workspace-root", type=Path, default=None)
+    ap.add_argument("--workcell-builder-executable", default=None)
     args = ap.parse_args()
 
     blockers: list[str] = []
     warnings: list[str] = []
     artifacts = {"json": str(args.output), "screenshot": str(args.screenshot) if args.screenshot else None}
 
-    try:
-        exe = resolve_workcell_builder()
-    except FileNotFoundError as exc:
-        print(f"status=FAIL; blockers=[{exc}]")
+    exe, resolved = resolve_workcell_builder(args)
+    if exe is None:
+        searched = ", ".join(str(p) for p in resolved.get("searched_executable_paths", []))
+        print(f"status=FAIL; blockers=[unable to resolve workcell_builder executable; searched: {searched}]")
         return 2
 
     cmd = build_cmd(exe, args)
