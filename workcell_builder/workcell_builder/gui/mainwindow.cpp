@@ -5968,12 +5968,56 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool launch_ready = has("launch/demo.launch.py");
   const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
   const bool scene_selected = has_selected_scene();
-  const bool editable_layout_ready = !workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name).items.empty();
+  const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const bool editable_layout_ready = !canvas_model.items.empty();
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
   const bool fake_hardware_ready = launch_artifacts_ready_ && validation_gate_ready;
   const bool preview_only_scene = !editable_layout_ready && (launch_ready || yaml_ready);
+
+  int classified_editable_count = 0;
+  int classified_generated_count = 0;
+  int classified_fallback_count = 0;
+  int classified_other_count = 0;
+  for (const auto & item : canvas_model.items) {
+    if (item.source_layer == "editable_layout") ++classified_editable_count;
+    else if (item.source_layer == "generated_urdf_visual") ++classified_generated_count;
+    else if (item.source_layer == "primitive_fallback") ++classified_fallback_count;
+    else ++classified_other_count;
+  }
+
+  const int preview_received_count = all_scene_preview_items_.size();
+  const int preview_visible_count = std::count_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), [this](const ScenePreviewWidget::PreviewItem & p) {
+    const QString source_layer = p.source_layer.trimmed().toLower();
+    const QString visual_source = p.active_visual_source.trimmed().toLower();
+    const QString category = p.category.trimmed().toLower();
+    const QString status = p.status.trimmed().toLower();
+    const bool is_overlay_or_helper = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
+    const bool is_warning_or_missing = status.contains("warning") || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
+    if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
+    if (source_layer == "generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
+    if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
+    if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
+    if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
+    if (is_warning_or_missing) return preview_layer_warnings_missing_assets_box_ ? preview_layer_warnings_missing_assets_box_->isChecked() : true;
+    return true;
+  });
+  const int preview_rendered_count = preview_visible_count;
+
+  bool editable_layout_yaml_malformed = false;
+  const std::vector<fs::path> editable_yaml_candidates = {
+    dir / "layout" / "workcell_studio_layout.yaml",
+    dir / "environment_layout.yaml"
+  };
+  for (const auto & path : editable_yaml_candidates) {
+    if (!fs::exists(path)) continue;
+    try { YAML::LoadFile(path.string()); }
+    catch (const YAML::Exception &) { editable_layout_yaml_malformed = true; break; }
+  }
+
+  const bool preview_runtime_ready = preview_received_count > 0 || preview_visible_count > 0 || preview_rendered_count > 0 ||
+    classified_generated_count > 0 || classified_fallback_count > 0 || classified_other_count > 0;
   const QMap<QString, bool> gates = {
     {"scene_selected", scene_selected},
     {"editable_layout", editable_layout_ready},
@@ -5989,35 +6033,64 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   steps.push_back(compute_scene_workflow_step(
     "Scene",
     scene_selected, "A scene is selected.", "Select or create a scene first.", {}, gates));
+  const QString layout_missing_detail = preview_runtime_ready && classified_editable_count == 0 ?
+    "Create editable layout from preview to continue editing." :
+    (preview_only_scene ?
+    "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
+    "Create/edit and save layout to persist edits before YAML generation.");
   steps.push_back(compute_scene_workflow_step(
     "Layout",
     editable_layout_ready && layout_saved_, "Editable layout exists and is saved.",
-    preview_only_scene ?
-    "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
-    "Create/edit and save layout to persist edits before YAML generation.",
-    {"editable_layout"}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Current));
+    layout_missing_detail,
+    {}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction));
   steps.push_back(compute_scene_workflow_step(
     "YAML",
     yaml_ready, "cell_definition.yaml exists.",
     "Generate YAML definition from current layout.",
-    {"layout_saved"}, gates));
+    {}, gates));
   steps.push_back(compute_scene_workflow_step(
     "Package",
     launch_artifacts_ready_, "Launch/package artifacts are present.",
     "Generate scene package to create launch and package metadata.",
-    {"yaml_definition", "validation"}, gates));
+    {}, gates));
   steps.push_back(compute_scene_workflow_step(
     "Validation",
     validation_gate_ready, has_warnings ? "Validation completed with warnings." : "Validation checks passed.",
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
     validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
-  steps.push_back(compute_scene_workflow_step(
-    "Preview",
-    fake_hardware_ready,
-    "Ready (Safety: fake hardware only, no robot motion).",
-    "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.",
-    {"scene_package", "validation"}, gates, fake_hardware_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Blocked));
+  const bool preview_gate_blocked = !launch_artifacts_ready_ || !validation_gate_ready;
+  const bool preview_has_runtime_content = preview_runtime_ready;
+  const QString preview_ready_detail = "Ready (Safety: fake hardware only, no robot motion).";
+  QString preview_missing_detail = "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.";
+  SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
+  if (fake_hardware_ready && !editable_layout_yaml_malformed && classified_editable_count > 0 && preview_has_runtime_content) {
+    preview_status = SceneWorkflowStepStatus::Done;
+  } else if (preview_gate_blocked && !preview_has_runtime_content) {
+    preview_status = SceneWorkflowStepStatus::Blocked;
+  } else if (editable_layout_yaml_malformed && (preview_visible_count > 0 || preview_rendered_count > 0)) {
+    preview_status = SceneWorkflowStepStatus::Warning;
+    preview_missing_detail = "Preview visuals exist, but editable/layout YAML is malformed. Fix YAML to restore editable preview health.";
+  } else if (preview_has_runtime_content && classified_editable_count == 0) {
+    preview_status = SceneWorkflowStepStatus::Warning;
+    preview_missing_detail = "Create editable layout from preview to complete editable classification.";
+  } else if (preview_gate_blocked) {
+    preview_status = SceneWorkflowStepStatus::NeedsAction;
+  }
+  SceneWorkflowStep preview_step;
+  preview_step.label = "Preview";
+  preview_step.status = preview_status;
+  preview_step.detail = (preview_status == SceneWorkflowStepStatus::Done ? preview_ready_detail :
+    QString("%1 Runtime counters: received=%2 visible=%3 rendered=%4; classified layers: editable=%5 generated=%6 fallback=%7 other=%8.")
+      .arg(preview_missing_detail)
+      .arg(preview_received_count)
+      .arg(preview_visible_count)
+      .arg(preview_rendered_count)
+      .arg(classified_editable_count)
+      .arg(classified_generated_count)
+      .arg(classified_fallback_count)
+      .arg(classified_other_count));
+  steps.push_back(preview_step);
   steps.push_back(compute_scene_workflow_step(
     "Export",
     export_ready, "Export prerequisites are satisfied.",
