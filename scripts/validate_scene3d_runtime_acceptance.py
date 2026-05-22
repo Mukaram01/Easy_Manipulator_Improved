@@ -13,11 +13,6 @@ except ModuleNotFoundError:
     from scene_root_resolver import resolve_scene_root
 
 SCHEMA = "workcell_studio_scene3d_runtime_acceptance/v1"
-ROOT = Path(__file__).resolve().parents[1]
-SCENES_ROOT = resolve_scene_root(ROOT)
-MAIN = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
-PREVIEW = ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
-VIEWPORT = ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
 CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}
 
 
@@ -32,8 +27,8 @@ def normalize_layer_token(value: str | None) -> str:
     return token
 
 
-def scene_dir(scene: str) -> Path:
-    return SCENES_ROOT / scene
+def scene_dir(scenes_root: Path, scene: str) -> Path:
+    return scenes_root / scene
 
 
 def load_yaml(path: Path) -> dict:
@@ -46,11 +41,11 @@ def load_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def runtime_smoke_json_default(scene: str) -> Path:
+def runtime_smoke_json_default(repo_root: Path, scenes_root: Path, scene: str) -> Path:
     candidates = [
-        ROOT / "build/workcell_studio/scene3d_gui_smoke.json",
-        ROOT / f"build/workcell_studio/scene3d_gui_smoke_{scene}.json",
-        scene_dir(scene) / "generated/scene3d_gui_smoke.json",
+        repo_root / "build/workcell_studio/scene3d_gui_smoke.json",
+        repo_root / f"build/workcell_studio/scene3d_gui_smoke_{scene}.json",
+        scene_dir(scenes_root, scene) / "generated/scene3d_gui_smoke.json",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -58,8 +53,8 @@ def runtime_smoke_json_default(scene: str) -> Path:
     return candidates[0]
 
 
-def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
-    sdir = scene_dir(scene)
+def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_path: Path, viewport_path: Path, scene: str, smoke_json_path: str | None) -> dict:
+    sdir = scene_dir(scenes_root, scene)
     blockers: list[str] = []
 
     if not sdir.exists():
@@ -139,7 +134,7 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
     if not blockers and visible_after_default_filters == 0:
         blockers.append("no visible scene items after default filters")
 
-    smoke_path = Path(smoke_json_path) if smoke_json_path else runtime_smoke_json_default(scene)
+    smoke_path = Path(smoke_json_path) if smoke_json_path else runtime_smoke_json_default(repo_root, scenes_root, scene)
     runtime_evidence: dict = {"path": str(smoke_path), "valid": False}
     required_runtime_fields = [
         "viewport_received_count",
@@ -184,14 +179,14 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
             runtime_evidence["counts"] = {k: runtime_payload.get(k) for k in required_runtime_fields if k != "status"}
 
     secondary_checks = {
-        "grid_axes_enabled": ("draw_ground_grid_pass" in VIEWPORT.read_text(encoding="utf-8") and "draw_world_axes_pass" in VIEWPORT.read_text(encoding="utf-8")),
-        "orbit_pan_zoom_handlers_exist": all(t in VIEWPORT.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
-        "selection_callback_wired": "select_cb" in PREVIEW.read_text(encoding="utf-8"),
-        "inspector_callback_wired": "update_scene_builder_inspector_for_selected_item" in MAIN.read_text(encoding="utf-8"),
-        "drag_commit_callback_wired": "transform_changed_cb" in VIEWPORT.read_text(encoding="utf-8"),
-        "hierarchy_selection_sync_wired": "apply_scene_selection(" in MAIN.read_text(encoding="utf-8"),
-        "layer_toggles_not_default_hide_all": "visible item count after filters" in MAIN.read_text(encoding="utf-8"),
-        "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in VIEWPORT.read_text(encoding="utf-8"),
+        "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_path.read_text(encoding="utf-8") and "draw_world_axes_pass" in viewport_path.read_text(encoding="utf-8")),
+        "orbit_pan_zoom_handlers_exist": all(t in viewport_path.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
+        "selection_callback_wired": "select_cb" in preview_path.read_text(encoding="utf-8"),
+        "inspector_callback_wired": "update_scene_builder_inspector_for_selected_item" in main_path.read_text(encoding="utf-8"),
+        "drag_commit_callback_wired": "transform_changed_cb" in viewport_path.read_text(encoding="utf-8"),
+        "hierarchy_selection_sync_wired": "apply_scene_selection(" in main_path.read_text(encoding="utf-8"),
+        "layer_toggles_not_default_hide_all": "visible item count after filters" in main_path.read_text(encoding="utf-8"),
+        "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_path.read_text(encoding="utf-8"),
     }
 
     return {
@@ -234,14 +229,24 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", action="append", default=[])
-    ap.add_argument("--json", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.json"))
-    ap.add_argument("--markdown", default=str(ROOT / "build/workcell_studio/scene3d_runtime_acceptance.md"))
+    ap.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
+    ap.add_argument("--json", default=None)
+    ap.add_argument("--markdown", default=None)
     ap.add_argument("--smoke-json", default=None, help="path to GUI smoke evidence JSON (workcell_studio_scene3d_gui_smoke/v1)")
     args = ap.parse_args()
 
+    repo_root = Path(args.repo_root).resolve()
+    scenes_root = resolve_scene_root(repo_root)
+    main_path = repo_root / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
+    preview_path = repo_root / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
+    viewport_path = repo_root / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
+
+    if not scenes_root.exists():
+        ap.error(f"scenes root does not exist: {scenes_root}")
+
     scenes = args.scene or ["ur5_2f_test"]
-    if SCENES_ROOT.exists():
-        maybe = sorted(p.name for p in SCENES_ROOT.iterdir() if p.is_dir() and "new_cell" in p.name)
+    if scenes_root.exists():
+        maybe = sorted(p.name for p in scenes_root.iterdir() if p.is_dir() and "new_cell" in p.name)
         if maybe:
             scenes.append(maybe[0])
 
@@ -250,17 +255,19 @@ def main() -> int:
         if s not in unique_scenes:
             unique_scenes.append(s)
 
-    results = [evaluate_scene(s, args.smoke_json) for s in unique_scenes]
+    results = [evaluate_scene(repo_root, scenes_root, main_path, preview_path, viewport_path, s, args.smoke_json) for s in unique_scenes]
     blockers = [f"{r['scene']}: {b}" for r in results for b in r.get("blockers", [])]
 
     payload = {
         "schema": SCHEMA,
+        "repo_root": str(repo_root),
+        "scenes_root": str(scenes_root),
         "scenes": results,
         "blockers": blockers,
         "pass": not blockers,
     }
 
-    out_json = Path(args.json)
+    out_json = Path(args.json) if args.json else repo_root / "build/workcell_studio/scene3d_runtime_acceptance.json"
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -294,7 +301,7 @@ def main() -> int:
         for k, v in r["secondary_checks"].items():
             lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
 
-    out_md = Path(args.markdown)
+    out_md = Path(args.markdown) if args.markdown else repo_root / "build/workcell_studio/scene3d_runtime_acceptance.md"
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
