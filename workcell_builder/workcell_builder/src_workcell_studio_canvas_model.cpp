@@ -8,7 +8,37 @@
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 
-static bool read_yaml(const fs::path & p, YAML::Node * out){ try{ if(!fs::exists(p)) return false; *out = YAML::LoadFile(p.string()); return true;}catch(...){ workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", p, "scene YAML parse failed"); return false;} }
+struct YamlLoadStatus
+{
+  bool exists{false};
+  bool loaded{false};
+  bool parse_warning{false};
+  std::string reason;
+};
+
+static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
+{
+  YamlLoadStatus status;
+  status.exists = fs::exists(p);
+  if (!status.exists) return status;
+  try {
+    *out = YAML::LoadFile(p.string());
+    status.loaded = true;
+    return status;
+  } catch (const YAML::Exception & e) {
+    status.parse_warning = true;
+    status.reason = e.what();
+  } catch (const std::exception & e) {
+    status.parse_warning = true;
+    status.reason = e.what();
+  } catch (...) {
+    status.parse_warning = true;
+    status.reason = "unknown exception";
+  }
+  workcell_builder::log_warning_once_per_context_path_reason(
+    "task_metadata_summary_loader", p, "scene YAML parse warning: " + status.reason);
+  return status;
+}
 
 static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string> * out)
 {
@@ -124,18 +154,36 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   };
 
   YAML::Node env, manifest, task, layout;
-  const bool env_ok = read_yaml(scene_dir / "environment.yaml", &env);
-  const bool manifest_ok = read_yaml(scene_dir / "scene_manifest.yaml", &manifest);
-  const bool task_ok = read_yaml(scene_dir / "config" / "task_recipe.yaml", &task);
-  const bool layout_ok = read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout);
+  const fs::path env_path = scene_dir / "environment.yaml";
+  const fs::path manifest_path = scene_dir / "scene_manifest.yaml";
+  const fs::path task_path = scene_dir / "config" / "task_recipe.yaml";
+  const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const YamlLoadStatus env_status = read_yaml(env_path, &env);
+  const YamlLoadStatus manifest_status = read_yaml(manifest_path, &manifest);
+  const YamlLoadStatus task_status = read_yaml(task_path, &task);
+  const YamlLoadStatus layout_status = read_yaml(layout_path, &layout);
+  const bool env_ok = env_status.loaded;
+  const bool manifest_ok = manifest_status.loaded;
+  const bool task_ok = task_status.loaded;
+  const bool layout_ok = layout_status.loaded;
   if (!layout_ok) {
-    if (fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
+    if (layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
     else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
   }
-  if (!env_ok) m.warnings.push_back("Malformed or missing environment.yaml");
-  if (!manifest_ok) m.warnings.push_back("Missing scene_manifest.yaml");
-  if (!task_ok) m.warnings.push_back("Task intent missing");
-  if (!layout_ok && fs::exists(scene_dir / "layout" / "workcell_studio_layout.yaml")) m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml; falling back safely");
+  if (!env_ok) m.warnings.push_back(env_status.parse_warning ?
+    ("environment.yaml parse warning (" + env_path.string() + "): " + env_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
+    "Malformed or missing environment.yaml");
+  if (!manifest_ok) m.warnings.push_back(manifest_status.parse_warning ?
+    ("scene_manifest.yaml parse warning (" + manifest_path.string() + "): " + manifest_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
+    "Missing scene_manifest.yaml");
+  if (!task_ok) m.warnings.push_back(task_status.parse_warning ?
+    ("task_recipe.yaml parse warning (" + task_path.string() + "): " + task_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
+    "Task intent missing");
+  if (!layout_ok && layout_status.exists) {
+    const std::string parse_reason = layout_status.parse_warning ? (": " + layout_status.reason) : "";
+    m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml (" + layout_path.string() + ")" + parse_reason +
+                         "; falling back safely. Repair guidance: run YAML validation (e.g., `yamllint`) and fix syntax/indentation.");
+  }
 
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";
@@ -397,10 +445,10 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   if (!m.warnings.empty()) { m.has_warnings = true; m.status = "WARNINGS"; { WorkcellStudioCanvasItem w; w.id="warning"; w.type="warning"; w.role="warning"; w.label="warning"; w.source_file="environment.yaml"; w.x=-1.2; w.y=1.2; w.width=0.1; w.depth=0.1; w.height=0.0; w.warnings=m.warnings; m.items.push_back(w); } }
   else { m.status = "READY"; }
   return m;
-  } catch (const YAML::Exception &) {
-    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "YAML parse exception in preview loader");
-  } catch (const std::exception &) {
-    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", "std exception in preview loader");
+  } catch (const YAML::Exception & e) {
+    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("YAML parse exception in preview loader: ") + e.what());
+  } catch (const std::exception & e) {
+    workcell_builder::log_warning_once_per_context_path_reason("task_metadata_summary_loader", scene_dir / "layout" / "workcell_studio_layout.yaml", std::string("std exception in preview loader: ") + e.what());
   }
   WorkcellStudioCanvasModel fallback;
   fallback.scene_name = scene_name;
@@ -414,7 +462,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
 std::size_t count_editable_layout_entries(const fs::path & scene_dir)
 {
   YAML::Node layout;
-  if (!read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout)) return 0;
+  if (!read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout).loaded) return 0;
   const std::string schema_version = yaml_map_value_or_empty(layout, "schema_version");
   if (schema_version != "workcell_studio_layout/v1") return 0;
   const YAML::Node items = yaml_map_key(layout, "items");
