@@ -74,6 +74,17 @@ public:
   void set_isometric_view();
   void invalidate_mesh_cache();
 
+  struct RenderDebugCounters
+  {
+    int mesh_rendered_count{ 0 };
+    int generated_fallback_count{ 0 };
+    int overlay_count{ 0 };
+    int labels_drawn{ 0 };
+    int labels_suppressed{ 0 };
+    int hierarchy_child_row_count{ 0 };
+  };
+  RenderDebugCounters last_render_counters;
+
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,
                                        int triangle_limit = 100000);

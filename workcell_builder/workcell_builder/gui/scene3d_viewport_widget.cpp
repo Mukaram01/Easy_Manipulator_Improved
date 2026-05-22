@@ -602,6 +602,9 @@ void Scene3DViewportWidget::paintGL()
     }
   }
   overlay_count = static_cast<int>(overlay_items.size());
+  last_render_counters = RenderDebugCounters{};
+  last_render_counters.overlay_count = overlay_count;
+  last_render_counters.hierarchy_child_row_count = static_cast<int>(items.size());
 
   auto draw_item_batch = [&](const std::vector<const ScenePreviewWidget::PreviewItem *> & batch, bool count_in_stats) {
     for (const auto * it : batch) {
@@ -634,7 +637,12 @@ void Scene3DViewportWidget::paintGL()
            << "skipped=" << skipped_item_count
            << "mesh_backed=" << mesh_backed_count
            << "placeholder=" << placeholder_count
-           << "overlay=" << overlay_count;
+           << "overlay=" << overlay_count
+           << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
+           << "generated_fallback_count=" << last_render_counters.generated_fallback_count
+           << "labels_drawn=" << last_render_counters.labels_drawn
+           << "labels_suppressed=" << last_render_counters.labels_suppressed
+           << "hierarchy_child_row_count=" << last_render_counters.hierarchy_child_row_count;
   qDebug() << kPaintGLCacheOnlyGuard;
   qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
            << ", render_cache_count=" << mesh_cache_.size()
@@ -715,6 +723,8 @@ void Scene3DViewportWidget::paintGL()
 
   QVector<QRectF> placed_label_boxes;
   QVector<QPointF> placed_label_points;
+  int labels_drawn = 0;
+  int labels_suppressed = 0;
   for (const auto & candidate : label_candidates) {
     const QPointF label_pos = apply_label_overlap_offset(candidate.anchor, placed_label_points, robot_base_points, candidate.critical);
     const QRectF label_rect = painter.boundingRect(QRectF(label_pos.x() - 2.0, label_pos.y() - 14.0, 220.0, 18.0), Qt::AlignLeft | Qt::AlignVCenter, candidate.text);
@@ -727,13 +737,16 @@ void Scene3DViewportWidget::paintGL()
       }
     }
     // LABEL_OVERLAP_SUPPRESS_LOWER_PRIORITY: keep high priority, suppress lower when overlap remains.
-    if (overlaps) continue;
+    if (overlaps) { ++labels_suppressed; continue; }
 
     placed_label_points.push_back(label_pos);
     placed_label_boxes.push_back(label_rect);
     painter.setPen(candidate.color);
     painter.drawText(label_pos, candidate.text);
+    ++labels_drawn;
   }
+  last_render_counters.labels_drawn = labels_drawn;
+  last_render_counters.labels_suppressed = labels_suppressed;
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));
   painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);
@@ -793,12 +806,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   // Always try mesh-backed draw first for physical items.
   if (draw_mesh_preview_if_available(it, item_color(it), true)) {
     if (out_mesh_count) ++(*out_mesh_count);
+    ++last_render_counters.mesh_rendered_count;
     return true;
   }
   const QString missing_reason = placeholder_reason_for_item(it);
   if (!missing_reason.isEmpty()) {
     draw_missing_geometry_marker(it);
     if (out_placeholder_count) ++(*out_placeholder_count);
+    ++last_render_counters.generated_fallback_count;
     if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("missing geometry"), it.source_path);
     return false;
   }
@@ -810,6 +825,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   draw_missing_geometry_marker(it);
   if (out_placeholder_count) ++(*out_placeholder_count);
+  ++last_render_counters.generated_fallback_count;
   return false;
 }
 

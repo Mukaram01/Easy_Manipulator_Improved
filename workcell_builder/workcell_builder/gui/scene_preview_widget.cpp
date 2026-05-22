@@ -370,11 +370,17 @@ void ScenePreviewWidget::refresh_info_chip()
          lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual"))) ++locked_urdf_count;
   }
 
+  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  const auto counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
+  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels=%4/%5 hierarchy_child_row_count=%6")
+                                  .arg(counters.mesh_rendered_count).arg(counters.generated_fallback_count)
+                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed)
+                                  .arg(counters.hierarchy_child_row_count);
   info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
                               .arg(preview_scene_name_).arg(render_mode).arg(summary).arg(compact_stats)
-                              .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing"));
+                              .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing") + QString("\n") + smoke_stats);
   info_chip_label_->adjustSize();
   if (fallback_info_chip_proxy_) fallback_info_chip_proxy_->setPos(12.0, 12.0);
   if (toolbar_status_chip_) {
