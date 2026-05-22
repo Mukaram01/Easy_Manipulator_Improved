@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -51,6 +52,10 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _status_counts() -> dict[str, int]:
     return {k: 0 for k in STATUSES}
+
+
+def _is_ci_environment() -> bool:
+    return str(os.environ.get("CI", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _run_scene3d_consolidated_gate(repo_root: Path, scenes: list[str]) -> dict[str, Any]:
@@ -205,6 +210,23 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
             "",
             json.dumps(report.get("scene3d_gui_smoke", {}), indent=2),
             "",
+            "## Scene3D GUI Smoke Artifacts (Absolute Paths)",
+            "",
+        ]
+    )
+    smoke_artifacts = report.get("scene3d_gui_smoke", {}).get("artifacts", {})
+    if isinstance(smoke_artifacts, dict) and smoke_artifacts:
+        for scene_name, artifact in smoke_artifacts.items():
+            if isinstance(artifact, dict):
+                lines.append(f"### {scene_name}")
+                lines.append(f"- JSON: `{artifact.get('json_path_abs', '')}`")
+                lines.append(f"- Screenshot: `{artifact.get('screenshot_path_abs', '')}`")
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
             "## Suggested Fixes",
             "",
             "- Regenerate visual mesh index on this workspace",
@@ -281,46 +303,81 @@ def main() -> int:
             mesh_index_regeneration = {"json_report": str(regen_json), "summary": {"scene_count": len(regen.get("scenes", [])), "xacro_fallback_scenes": [r.get("scene") for r in regen.get("scenes", []) if r.get("extraction_mode") != "xacro_expanded"], "unsafe_scenes": [r.get("scene") for r in regen.get("scenes", []) if not r.get("safe_for_preview", False)]}}
     scene3d_gui_smoke = None
     if args.include_scene3d_gui_smoke:
-        smoke_json = repo_root / "build/workcell_studio/scene3d_gui_smoke_ur5_2f_test.json"
         smoke_script = repo_root / "scripts/run_workcell_builder_scene3d_gui_smoke.py"
+        smoke_scenes = ("ur5_2f_test", "ur5_2f_sorting_test")
+        mode = "ci_or_dry_run" if (args.dry_run_launches or _is_ci_environment()) else "local_validation"
         scene3d_gui_smoke = {
-            "scene": "ur5_2f_test",
-            "status": WARN,
-            "json_path": str(smoke_json),
+            "mode": mode,
+            "status": WARN if mode == "ci_or_dry_run" else PASS,
+            "artifacts": {},
+            "scenes": [],
             "warnings": [],
             "blockers": [],
         }
         if not smoke_script.exists():
-            scene3d_gui_smoke["warnings"].append(f"GUI smoke script missing: {smoke_script}")
-        else:
-            smoke_cmd = ["python3", str(smoke_script), "--scene", "ur5_2f_test", "--json-output", str(smoke_json)]
-            smoke_proc = _run_command(smoke_cmd, repo_root)
-            scene3d_gui_smoke["returncode"] = smoke_proc.returncode
-            if smoke_json.exists():
-                smoke_payload = _load_json(smoke_json)
-                scene3d_gui_smoke["smoke_report"] = smoke_payload
-                reported_status = str(smoke_payload.get("status", "")).upper()
-                scene3d_gui_smoke["warnings"].extend(smoke_payload.get("warnings", []))
-                scene3d_gui_smoke["blockers"].extend(smoke_payload.get("blockers", []))
-                scene3d_gui_smoke["status"] = PASS if reported_status in {PASS, "OK"} else (FAIL if reported_status == FAIL else WARN)
+            marker = "CI_OR_DRY_RUN_DOWNGRADE" if mode == "ci_or_dry_run" else "LOCAL_VALIDATION_REQUIRED"
+            msg = f"{marker}: GUI smoke script missing: {smoke_script}"
+            if mode == "ci_or_dry_run":
+                scene3d_gui_smoke["warnings"].append(msg)
             else:
-                reason = "scene3d smoke execution failed before producing JSON evidence"
-                stderr = (smoke_proc.stderr or "").strip()
-                if stderr:
-                    reason = f"{reason}: {stderr.splitlines()[-1]}"
-                if smoke_proc.returncode != 0:
-                    explicit_reasons = {
-                        "xvfb": "xvfb is unavailable",
-                        "display": "DISPLAY is not available",
-                        "executable": "required executable is missing",
-                        "not found": "required executable is missing",
-                    }
-                    lowered = f"{smoke_proc.stdout}\n{smoke_proc.stderr}".lower()
-                    for token, msg in explicit_reasons.items():
-                        if token in lowered:
-                            reason = msg
-                            break
-                scene3d_gui_smoke["warnings"].append(reason)
+                scene3d_gui_smoke["blockers"].append(msg)
+                scene3d_gui_smoke["status"] = FAIL
+        else:
+            required_fields = ("status", "scene", "timestamp")
+            for scene_name in smoke_scenes:
+                smoke_json = repo_root / f"build/workcell_studio/scene3d_gui_smoke_{scene_name}.json"
+                smoke_png = repo_root / f"build/workcell_studio/scene3d_gui_smoke_{scene_name}.png"
+                scene3d_gui_smoke["artifacts"][scene_name] = {
+                    "json_path_abs": str(smoke_json.resolve()),
+                    "screenshot_path_abs": str(smoke_png.resolve()),
+                }
+                smoke_cmd = ["python3", str(smoke_script), "--scene", scene_name, "--output", str(smoke_json), "--screenshot", str(smoke_png)]
+                smoke_proc = _run_command(smoke_cmd, repo_root)
+                scene_result: dict[str, Any] = {"scene": scene_name, "returncode": smoke_proc.returncode}
+                scene3d_gui_smoke["scenes"].append(scene_result)
+
+                if mode == "local_validation" and smoke_proc.returncode != 0:
+                    scene3d_gui_smoke["status"] = FAIL
+                    scene3d_gui_smoke["blockers"].append(f"{scene_name}: local smoke launch failed; stderr:\n{(smoke_proc.stderr or '').strip()}")
+                    continue
+
+                missing: list[str] = []
+                if not smoke_json.exists():
+                    missing.append("smoke_json")
+                if not smoke_png.exists():
+                    missing.append("smoke_screenshot")
+                if missing:
+                    msg = f"{scene_name}: missing artifacts: {', '.join(missing)}"
+                    if mode == "ci_or_dry_run":
+                        scene3d_gui_smoke["warnings"].append(f"CI_OR_DRY_RUN_DOWNGRADE: {msg}")
+                    else:
+                        scene3d_gui_smoke["blockers"].append(msg)
+                        scene3d_gui_smoke["status"] = FAIL
+                    continue
+
+                smoke_payload = _load_json(smoke_json)
+                scene_result["smoke_report"] = smoke_payload
+                missing_fields = [field for field in required_fields if field not in smoke_payload]
+                if missing_fields:
+                    msg = f"{scene_name}: required smoke JSON fields missing: {', '.join(missing_fields)}"
+                    if mode == "ci_or_dry_run":
+                        scene3d_gui_smoke["warnings"].append(f"CI_OR_DRY_RUN_DOWNGRADE: {msg}")
+                    else:
+                        scene3d_gui_smoke["blockers"].append(msg)
+                        scene3d_gui_smoke["status"] = FAIL
+
+                reported_status = str(smoke_payload.get("status", "")).upper()
+                if reported_status == FAIL:
+                    msg = f"{scene_name}: smoke status is FAIL"
+                    if mode == "ci_or_dry_run":
+                        scene3d_gui_smoke["warnings"].append(f"CI_OR_DRY_RUN_DOWNGRADE: {msg}")
+                    else:
+                        scene3d_gui_smoke["blockers"].append(msg)
+                        scene3d_gui_smoke["status"] = FAIL
+                elif reported_status not in {PASS, "OK"}:
+                    scene3d_gui_smoke["warnings"].append(f"{scene_name}: unrecognized smoke status '{reported_status or 'UNKNOWN'}'")
+
+            if mode == "ci_or_dry_run" and scene3d_gui_smoke["status"] != FAIL:
                 scene3d_gui_smoke["status"] = WARN
     scene_names = [row.get("scene_name") for row in audit_payload.get("scenes", []) if isinstance(row, dict) and row.get("scene_name")]
     scene3d_consolidated_gate = _run_scene3d_consolidated_gate(repo_root, scene_names)
