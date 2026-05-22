@@ -5537,11 +5537,14 @@ void MainWindow::populate_scene_hierarchy()
             p.mesh_available = false;
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("primitive_fallback");
-            p.source_layer = QStringLiteral("generated_urdf_visual");
+            p.source_layer = QStringLiteral("locked_generated_urdf_visual");
             p.editable = false;
             p.selectable = true;
             p.lock_reason = QStringLiteral("generated_urdf_visual");
             p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using primitive fallback");
+            if (!render_expected) {
+              p.warnings << QStringLiteral("Preview warning: xacro-expanded visual kept as generated primitive fallback");
+            }
           } else if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
             p.status = "warning";
             p.mesh_available = false;
