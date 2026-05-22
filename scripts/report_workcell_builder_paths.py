@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from scripts.workcell_studio_path_resolver import resolve_repo_root
+
 MESH_EXTS = {".stl", ".dae", ".obj"}
 
 
@@ -60,7 +62,7 @@ def build_report(repo_root: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--repo-root", type=Path, default=resolve_repo_root())
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
