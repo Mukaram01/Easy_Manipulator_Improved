@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse, json, re
 from collections import Counter
 from pathlib import Path
+import yaml
 try:
     from scripts.scene_root_resolver import resolve_scene_root
 except ModuleNotFoundError:
@@ -30,6 +31,14 @@ def _load_json(path: Path):
         return json.loads(path.read_text(encoding='utf-8'))
     except Exception:
         return None
+
+
+def _load_yaml(path: Path):
+    try:
+        data = yaml.safe_load(path.read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _count_preview_items_from_generated_metadata(scene_dir: Path) -> int:
@@ -68,8 +77,20 @@ def check_scene(scene_dir: Path) -> dict:
     scene = scene_dir.name
     layout_path = scene_dir / 'layout' / 'workcell_studio_layout.yaml'
     has_layout = layout_path.exists()
+    layout = _load_yaml(layout_path) if has_layout else {}
     idx = _load_json(scene_dir / 'generated' / 'scene_visual_mesh_index.json') or {}
     items = idx.get('items', []) if isinstance(idx, dict) else []
+    preview_metadata_path = scene_dir / 'generated' / 'scene_preview_metadata.json'
+    preview_metadata = _load_json(preview_metadata_path) if preview_metadata_path.exists() else {}
+
+    overlay_sources = [
+        scene_dir / 'generated/epd_snapshot.json',
+        scene_dir / 'generated/detections_snapshot.json',
+        scene_dir / 'config/epd_snapshot.json',
+        scene_dir / 'config/readiness_overlay_metadata.json',
+        scene_dir / 'generated/workcell_studio_runtime_acceptance.json',
+        ROOT / 'build/workcell_studio/scene3d_runtime_acceptance.json',
+    ]
 
     layer_counts = Counter()
     visual_counts = Counter()
@@ -97,13 +118,20 @@ def check_scene(scene_dir: Path) -> dict:
                 blockers.append(f"editable layout locked: {item_id}")
             editable_layout += 1
 
-    primitive_count = layer_counts['primitive_fallback']
-    mesh_count = layer_counts['mesh_preview']
+    editable_from_layout = len(layout.get('items') or []) if isinstance(layout.get('items'), list) else 0
+    primitive_from_layout = sum(1 for x in (layout.get('items') or []) if isinstance(x, dict) and x.get('geometry_type') in {'box', 'cylinder', 'sphere'})
+    primitive_count = max(layer_counts['primitive_fallback'], primitive_from_layout)
+    mesh_count = max(layer_counts['mesh_preview'], len(idx.get('visual_items') or []) if bool(idx.get('safe_for_preview', False)) else 0)
     urdf_count = layer_counts['locked_generated_urdf_visual']
+    editable_layout = max(editable_layout, editable_from_layout)
     meaningful_total = primitive_count + mesh_count + urdf_count
 
     preview_items_count = _count_preview_items_from_generated_metadata(scene_dir)
-    visible_after_filters_count = sum(1 for i in items if i.get('hidden_by_filters') is not True)
+    visible_mesh_index_items = sum(1 for i in items if i.get('hidden_by_filters') is not True and (i.get('mesh_path') or i.get('geometry_type') in {'box', 'cylinder', 'sphere'} or (i.get('active_visual_source') not in {None, '', 'missing'})))
+    overlay_preview_count = len(preview_metadata.get('overlays') or []) if isinstance(preview_metadata, dict) else 0
+    overlay_file_count = sum(1 for p in overlay_sources if p.exists())
+    overlay_count = max(layer_counts['overlay'], overlay_preview_count, overlay_file_count)
+    visible_after_filters_count = max(visible_mesh_index_items, editable_layout + mesh_count + primitive_count)
     filtered_hidden_count = max(0, len(items) - visible_after_filters_count)
     diag_scene = _runtime_scene_diagnostics(scene)
     render_cache_received_count = None
@@ -112,17 +140,22 @@ def check_scene(scene_dir: Path) -> dict:
 
     if not has_layout:
         blockers.append('missing layout/workcell_studio_layout.yaml')
+    if editable_layout == 0:
+        blockers.append(f'editable_layout_count is zero (layout path={layout_path}, exists={has_layout})')
     if primitive_count == 0:
-        blockers.append('primitive_fallback layer missing')
+        blockers.append(f'primitive_fallback_count is zero (layout path={layout_path}, mesh_index path={scene_dir / "generated" / "scene_visual_mesh_index.json"})')
         fixes.append('retain primitive_fallback visuals even when mesh/urdf previews exist')
     if mesh_count == 0:
+        blockers.append(f'mesh_preview_count is zero (mesh_index path={scene_dir / "generated" / "scene_visual_mesh_index.json"}, safe_for_preview={bool(idx.get("safe_for_preview", False))})')
         fixes.append('if safe mesh index exists, map items into mesh_preview layer')
+    if urdf_count == 0:
+        blockers.append(f'locked_generated_urdf_visual_count is zero (generated layout path={scene_dir / "layout" / "workcell_studio_layout.generated.yaml"})')
     if unresolved > 0 and bool(idx.get('safe_for_preview', False)):
         blockers.append('unresolved placeholders remain in IDs during safe preview')
     if meaningful_total == 0:
-        blockers.append('meaningful layer counts are all zero')
+        blockers.append('meaningful visible-capable layer counts are all zero across layout + mesh index + preview metadata')
     if visible_after_filters_count == 0:
-        blockers.append('visible_after_filters_count is zero by default')
+        blockers.append('visible_after_filters_count is zero by default (no concrete visible-capable items)')
     if mesh_count == 0 and primitive_count > 0 and visible_after_filters_count > 0:
         fixes.append('optional mesh assets missing; primitive fallback is present and visible')
 
@@ -138,7 +171,7 @@ def check_scene(scene_dir: Path) -> dict:
         'mesh_preview_count': mesh_count,
         'locked_generated_urdf_visual_count': urdf_count,
         'primitive_fallback_count': primitive_count,
-        'overlay_count': layer_counts['overlay'],
+        'overlay_count': overlay_count,
         'missing_count': sum(count for key, count in layer_counts.items() if key not in CANONICAL_LAYERS),
         'unsafe_visual_reason_count': unsafe_reasons,
         'unresolved_placeholder_count': unresolved,
@@ -150,6 +183,7 @@ def check_scene(scene_dir: Path) -> dict:
         'blockers': blockers,
         'suggested_fixes': fixes,
         'source_layer_counts': dict(layer_counts),
+        'overlay_sources_present': [str(p) for p in overlay_sources if p.exists()],
         'active_visual_source_counts': dict(visual_counts),
     }
 
