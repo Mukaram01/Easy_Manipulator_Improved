@@ -32,7 +32,7 @@ public:
 
   QVector<ScenePreviewWidget::PreviewItem> items;
   QString selected_id;
-  ScenePreviewWidget::LabelMode label_mode{ ScenePreviewWidget::LabelMode::Important };
+  ScenePreviewWidget::LabelMode label_mode{ ScenePreviewWidget::LabelMode::Selected };
   bool show_warnings{ true }, show_safety{ true }, show_pick_place{ true };
   bool show_reachability_heatmap{ true }, show_collision_warnings{ true }, show_work_envelope{ true }, show_warning_labels{ true };
   bool show_task_route{ true }, show_approach_retreat{ true };

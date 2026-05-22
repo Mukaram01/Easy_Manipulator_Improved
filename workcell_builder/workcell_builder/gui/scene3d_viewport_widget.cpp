@@ -468,6 +468,28 @@ QPointF apply_label_overlap_offset(const QPointF & anchor, const QVector<QPointF
   }
 
   return candidates.back();
+
+int label_priority_bucket(bool selected, bool has_warnings, NormalizedRole role)
+{
+  // LABEL_PRIORITY_SELECTED_WARN_ANCHOR: selected > warnings > key anchors.
+  if (selected) return 0;
+  if (has_warnings) return 1;
+  if (is_critical_label_role(role)) return 2;
+  return 3;
+}
+
+struct LabelDrawCandidate
+{
+  int item_index{ -1 };
+  QPointF anchor;
+  QPointF base_point;
+  QString text;
+  QColor color;
+  int priority{ 3 };
+  bool critical{ false };
+};
+
+
 }
 }
 
@@ -628,26 +650,19 @@ void Scene3DViewportWidget::paintGL()
     const ItemBounds bounds = item_bounds_for_role(it);
     robot_base_points.push_back(project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5)));
   }
-  QVector<QPointF> placed_label_points;
-  for (const auto & it : items) {
+  QVector<LabelDrawCandidate> label_candidates;
+  for (int i = 0; i < items.size(); ++i) {
+    const auto & it = items[i];
     const ItemBounds bounds = item_bounds_for_role(it);
     const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
     const bool selected = (it.id == selected_id);
     const NormalizedRole role = classify_item_role(it);
     bool draw_label = false;
     switch (label_mode) {
-      case ScenePreviewWidget::LabelMode::Off:
-        draw_label = selected;
-        break;
-      case ScenePreviewWidget::LabelMode::Important:
-        draw_label = selected || is_critical_label_role(role);
-        break;
-      case ScenePreviewWidget::LabelMode::Selected:
-        draw_label = selected;
-        break;
-      case ScenePreviewWidget::LabelMode::All:
-        draw_label = true;
-        break;
+      case ScenePreviewWidget::LabelMode::Off: draw_label = selected; break;
+      case ScenePreviewWidget::LabelMode::Important: draw_label = selected || is_critical_label_role(role); break;
+      case ScenePreviewWidget::LabelMode::Selected: draw_label = selected; break;
+      case ScenePreviewWidget::LabelMode::All: draw_label = true; break;
     }
     const bool is_urdf_visual = it.locked && !it.editable && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive);
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
@@ -663,22 +678,48 @@ void Scene3DViewportWidget::paintGL()
       painter.setPen(QColor("#111827"));
       painter.drawText(QRectF(p.x() - 7.0, p.y() - 18.0, 14.0, 14.0), Qt::AlignCenter, warning_badge_text(it.warnings));
     }
-    if (draw_label) {
-      const QString missing_reason = placeholder_reason_for_item(it);
-      const bool is_critical_scene_anchor = (role == NormalizedRole::RobotBase || role == NormalizedRole::Table || role == NormalizedRole::Camera);
-      if (!selected && is_urdf_visual && missing_reason.isEmpty() && !is_critical_scene_anchor &&
-          label_mode != ScenePreviewWidget::LabelMode::All) {
-        draw_label = false;
+    if (!draw_label) continue;
+    const QString missing_reason = placeholder_reason_for_item(it);
+    const bool is_critical_scene_anchor = (role == NormalizedRole::RobotBase || role == NormalizedRole::Table || role == NormalizedRole::Camera);
+    if (!selected && is_urdf_visual && missing_reason.isEmpty() && !is_critical_scene_anchor && label_mode != ScenePreviewWidget::LabelMode::All) continue;
+
+    const QString compact_text = clean_label_from_item(it);
+    const QString text = selected ? compact_text : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
+    LabelDrawCandidate candidate;
+    candidate.item_index = i;
+    candidate.base_point = p;
+    candidate.anchor = QPointF(p.x() + 12.0, p.y() - 10.0);
+    candidate.text = text;
+    candidate.color = QColor("#e2e8f0");
+    candidate.critical = is_critical_label_role(role);
+    candidate.priority = label_priority_bucket(selected, !it.warnings.isEmpty(), role);
+    label_candidates.push_back(candidate);
+  }
+
+  std::stable_sort(label_candidates.begin(), label_candidates.end(), [](const LabelDrawCandidate & a, const LabelDrawCandidate & b) {
+    return a.priority < b.priority;
+  });
+
+  QVector<QRectF> placed_label_boxes;
+  QVector<QPointF> placed_label_points;
+  for (const auto & candidate : label_candidates) {
+    const QPointF label_pos = apply_label_overlap_offset(candidate.anchor, placed_label_points, robot_base_points, candidate.critical);
+    const QRectF label_rect = painter.boundingRect(QRectF(label_pos.x() - 2.0, label_pos.y() - 14.0, 220.0, 18.0), Qt::AlignLeft | Qt::AlignVCenter, candidate.text);
+
+    bool overlaps = false;
+    for (const QRectF & existing_rect : placed_label_boxes) {
+      if (label_rect.adjusted(-2.0, -1.0, 2.0, 1.0).intersects(existing_rect)) {
+        overlaps = true;
+        break;
       }
-      const QString compact_text = clean_label_from_item(it);
-      const QString text = selected ? compact_text : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
-      if (!draw_label) continue;
-      const QPointF label_anchor(p.x() + 12.0, p.y() - 10.0);
-      const QPointF label_pos = apply_label_overlap_offset(label_anchor, placed_label_points, robot_base_points, is_critical_label_role(role));
-      placed_label_points.push_back(label_pos);
-      painter.setPen(QColor("#e2e8f0"));
-      painter.drawText(label_pos, text);
     }
+    // LABEL_OVERLAP_SUPPRESS_LOWER_PRIORITY: keep high priority, suppress lower when overlap remains.
+    if (overlaps) continue;
+
+    placed_label_points.push_back(label_pos);
+    placed_label_boxes.push_back(label_rect);
+    painter.setPen(candidate.color);
+    painter.drawText(label_pos, candidate.text);
   }
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));

@@ -59,3 +59,21 @@ TEST(ScenePreviewWidgetUi, MeshPreviewModeToggles)
   mesh_combo->setCurrentText("Auto");
   EXPECT_EQ(widget.mesh_preview_mode(), ScenePreviewWidget::MeshPreviewMode::Auto);
 }
+
+
+TEST(ScenePreviewWidgetUi, LabelModeDefaultsToSelected)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget widget;
+  const auto combos = widget.findChildren<QComboBox *>();
+  QComboBox * label_combo = nullptr;
+  for (auto * combo : combos) {
+    if (combo && combo->findText("Important") >= 0 && combo->findText("Selected") >= 0 && combo->findText("All") >= 0) {
+      label_combo = combo;
+      break;
+    }
+  }
+  ASSERT_NE(label_combo, nullptr);
+  EXPECT_EQ(label_combo->currentText(), QString("Selected"));
+}
