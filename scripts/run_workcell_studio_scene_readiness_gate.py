@@ -8,6 +8,12 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from scripts.workcell_studio_path_resolver import (
+    resolve_install_setup,
+    resolve_repo_root,
+    resolve_workcell_builder_executable,
+    resolve_workspace_root,
+)
 
 PASS = "PASS"
 WARN = "WARN"
@@ -39,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--strict", action="store_true", help="Exit non-zero if any supported scene has FAIL readiness")
     p.add_argument("--include-visual-assets", action="store_true", help="Run visual asset inventory and include report links")
     p.add_argument("--include-scene3d-gui-smoke", action="store_true", help="Run Scene3D GUI smoke for ur5_2f_test and include result")
+    p.add_argument("--repo-root", type=Path, default=None)
+    p.add_argument("--workspace-root", type=Path, default=None)
+    p.add_argument("--workcell-builder-executable", type=Path, default=None)
     return p.parse_args()
 
 
@@ -56,6 +65,32 @@ def _status_counts() -> dict[str, int]:
 
 def _is_ci_environment() -> bool:
     return str(os.environ.get("CI", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_setup_candidates(workspace_root: Path | None, repo_root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    if workspace_root is not None:
+        candidates.append(workspace_root / "install" / "setup.bash")
+    candidates.extend([repo_root / "install" / "setup.bash", repo_root.parent / "install" / "setup.bash"])
+    return candidates
+
+
+def _resolve_executable_candidates(workspace_root: Path | None, repo_root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    if workspace_root is not None:
+        candidates.extend(
+            [
+                workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
+                workspace_root / "build" / "workcell_builder" / "workcell_builder",
+            ]
+        )
+    candidates.extend(
+        [
+            repo_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
+            repo_root / "build" / "workcell_builder" / "workcell_builder",
+        ]
+    )
+    return candidates
 
 
 def _run_scene3d_consolidated_gate(repo_root: Path, scenes: list[str]) -> dict[str, Any]:
@@ -252,7 +287,8 @@ def write_markdown(path: Path, report: dict[str, Any]) -> None:
 
 def main() -> int:
     args = parse_args()
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = (args.repo_root.resolve() if args.repo_root else resolve_repo_root())
+    workspace_root = args.workspace_root.resolve() if args.workspace_root else resolve_workspace_root(repo_root)
 
     sim_report_path = args.json_output.parent / "rviz_moveit_simulation_launch_report.json"
     sim_report_path = DEFAULT_SIM_REPORT if sim_report_path != DEFAULT_SIM_REPORT else sim_report_path
@@ -323,15 +359,50 @@ def main() -> int:
                 scene3d_gui_smoke["blockers"].append(msg)
                 scene3d_gui_smoke["status"] = FAIL
         else:
+            resolved_setup = resolve_install_setup(workspace_root, repo_root)
+            resolved_executable = args.workcell_builder_executable.resolve() if args.workcell_builder_executable else resolve_workcell_builder_executable(workspace_root, repo_root)
+            setup_candidates = _resolve_setup_candidates(workspace_root, repo_root)
+            executable_candidates = [args.workcell_builder_executable.resolve()] if args.workcell_builder_executable else _resolve_executable_candidates(workspace_root, repo_root)
+            if resolved_setup is None:
+                msg = "missing install setup.bash; searched=" + " | ".join(str(p) for p in setup_candidates)
+                if mode == "ci_or_dry_run":
+                    scene3d_gui_smoke["warnings"].append(f"CI_OR_DRY_RUN_DOWNGRADE: {msg}")
+                else:
+                    scene3d_gui_smoke["blockers"].append(msg)
+                    scene3d_gui_smoke["status"] = FAIL
+            if resolved_executable is None:
+                msg = "missing workcell_builder executable; searched=" + " | ".join(str(p) for p in executable_candidates)
+                if mode == "ci_or_dry_run":
+                    scene3d_gui_smoke["warnings"].append(f"CI_OR_DRY_RUN_DOWNGRADE: {msg}")
+                else:
+                    scene3d_gui_smoke["blockers"].append(msg)
+                    scene3d_gui_smoke["status"] = FAIL
             required_fields = ("status", "scene", "timestamp")
             for scene_name in smoke_scenes:
+                if mode == "local_validation" and scene3d_gui_smoke.get("status") == FAIL:
+                    continue
                 smoke_json = repo_root / f"build/workcell_studio/scene3d_gui_smoke_{scene_name}.json"
                 smoke_png = repo_root / f"build/workcell_studio/scene3d_gui_smoke_{scene_name}.png"
                 scene3d_gui_smoke["artifacts"][scene_name] = {
                     "json_path_abs": str(smoke_json.resolve()),
                     "screenshot_path_abs": str(smoke_png.resolve()),
                 }
-                smoke_cmd = ["python3", str(smoke_script), "--scene", scene_name, "--output", str(smoke_json), "--screenshot", str(smoke_png)]
+                smoke_cmd = [
+                    "python3",
+                    str(smoke_script),
+                    "--repo-root",
+                    str(repo_root),
+                    "--workspace-root",
+                    str(workspace_root or repo_root),
+                    "--scene",
+                    scene_name,
+                    "--output",
+                    str(smoke_json),
+                    "--screenshot",
+                    str(smoke_png),
+                ]
+                if resolved_executable is not None:
+                    smoke_cmd.extend(["--executable", str(resolved_executable)])
                 smoke_proc = _run_command(smoke_cmd, repo_root)
                 scene_result: dict[str, Any] = {"scene": scene_name, "returncode": smoke_proc.returncode}
                 scene3d_gui_smoke["scenes"].append(scene_result)
