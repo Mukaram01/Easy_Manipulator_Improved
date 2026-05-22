@@ -1,3 +1,7 @@
+# ⚠️ Historical Record Only (Non-Authoritative)
+
+This document is retained only as a historical troubleshooting log. It is **not** evidence of successful validation, release readiness, or runtime acceptance. Readiness tooling and release decisions must rely on canonical readiness artifacts and automated checks instead.
+
 # Scene3D Runtime Acceptance Attempt (2026-05-22 UTC)
 
 Requested workspace: `~/workcell_ws`
