@@ -9,8 +9,6 @@ try:
 except ModuleNotFoundError:
     from scene_root_resolver import resolve_scene_root
 
-ROOT = Path(__file__).resolve().parents[1]
-SCENES_ROOT = resolve_scene_root(ROOT)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}
 
@@ -59,8 +57,8 @@ def _count_preview_items_from_generated_metadata(scene_dir: Path) -> int:
     return count
 
 
-def _runtime_scene_diagnostics(scene: str) -> dict:
-    diag_path = ROOT / 'build' / 'workcell_studio_scene3d_visual_diagnostics.json'
+def _runtime_scene_diagnostics(repo_root: Path, scene: str) -> dict:
+    diag_path = repo_root / 'build' / 'workcell_studio_scene3d_visual_diagnostics.json'
     payload = _load_json(diag_path)
     if not isinstance(payload, dict):
         return {}
@@ -73,7 +71,7 @@ def _runtime_scene_diagnostics(scene: str) -> dict:
     return {}
 
 
-def check_scene(scene_dir: Path) -> dict:
+def check_scene(repo_root: Path, scene_dir: Path) -> dict:
     scene = scene_dir.name
     layout_path = scene_dir / 'layout' / 'workcell_studio_layout.yaml'
     has_layout = layout_path.exists()
@@ -89,7 +87,7 @@ def check_scene(scene_dir: Path) -> dict:
         scene_dir / 'config/epd_snapshot.json',
         scene_dir / 'config/readiness_overlay_metadata.json',
         scene_dir / 'generated/workcell_studio_runtime_acceptance.json',
-        ROOT / 'build/workcell_studio/scene3d_runtime_acceptance.json',
+        repo_root / 'build/workcell_studio/scene3d_runtime_acceptance.json',
     ]
 
     layer_counts = Counter()
@@ -133,7 +131,7 @@ def check_scene(scene_dir: Path) -> dict:
     overlay_count = max(layer_counts['overlay'], overlay_preview_count, overlay_file_count)
     visible_after_filters_count = max(visible_mesh_index_items, editable_layout + mesh_count + primitive_count)
     filtered_hidden_count = max(0, len(items) - visible_after_filters_count)
-    diag_scene = _runtime_scene_diagnostics(scene)
+    diag_scene = _runtime_scene_diagnostics(repo_root, scene)
     render_cache_received_count = None
     if diag_scene:
         render_cache_received_count = diag_scene.get('render_cache_received_count', diag_scene.get('render_cache_received'))
@@ -213,27 +211,33 @@ def markdown(report: list[dict]) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--repo-root', default=str(Path(__file__).resolve().parents[1]))
     ap.add_argument('--scene', action='append')
     ap.add_argument('--all', action='store_true')
     ap.add_argument('--json')
     ap.add_argument('--markdown')
     args = ap.parse_args()
 
+    repo_root = Path(args.repo_root).resolve()
+    scenes_root = resolve_scene_root(repo_root)
+    if not scenes_root.exists():
+        ap.error(f"scenes root does not exist: {scenes_root}")
+
     scenes = []
     if args.all:
-        scenes = sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()]) if SCENES_ROOT.exists() else []
+        scenes = sorted([p for p in scenes_root.iterdir() if p.is_dir()]) if scenes_root.exists() else []
     elif args.scene:
-        scenes = [SCENES_ROOT / s for s in args.scene]
+        scenes = [scenes_root / s for s in args.scene]
     else:
         ap.error('use --all or --scene <name>')
 
     missing = [str(s) for s in scenes if not s.exists()]
     if missing:
-        ap.error(f"requested scene path is missing: {', '.join(missing)}")
+        ap.error(f"requested scene path is missing under scenes root {scenes_root}: {', '.join(missing)}")
 
-    report = [check_scene(s) for s in scenes]
+    report = [check_scene(repo_root, s) for s in scenes]
     overall = 'PASS' if all(r['contract_status'] == 'PASS' for r in report) else ('FAIL' if any(r['contract_status']=='FAIL' for r in report) else 'WARN')
-    payload = {'overall_status': overall, 'scenes': report}
+    payload = {'overall_status': overall, 'repo_root': str(repo_root), 'scenes_root': str(scenes_root), 'scenes': report}
 
     if args.json:
         Path(args.json).write_text(json.dumps(payload, indent=2), encoding='utf-8')
