@@ -10,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 
+from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 PASS_STATES = {"ok", "pass", "passed"}
@@ -113,6 +114,10 @@ def validate_smoke_json(path: Path) -> tuple[list[str], list[str], str]:
     ]
     missing_or_bad: list[str] = [field for field in required_fields if field not in payload]
 
+    for field in ["viewport_received_count", "render_cache_count", "rendered_count", "hierarchy_rows_count", "selectable_count"]:
+        if field in payload and (not isinstance(payload.get(field), int) or int(payload.get(field)) < 0):
+            missing_or_bad.append(field)
+
     int_fields = [
         "unique_visible_item_count",
         "mesh_rendered_count",
@@ -200,12 +205,18 @@ def main() -> int:
     blockers: list[str] = []
     warnings: list[str] = []
     artifacts = {"json": str(args.output), "screenshot": str(args.screenshot) if args.screenshot else None}
+    extra_resolution = {"repo_root": None, "workspace_root": None}
 
+    repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
+    extra_resolution["repo_root"] = str(repo_root)
+    extra_resolution["workspace_root"] = str(workspace_root) if workspace_root else None
+    workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
     if args.executable is not None:
         exe = args.executable
         searched_candidates: list[Path] = [args.executable]
     else:
-        exe, searched_candidates = resolve_workcell_builder(args.workspace_root)
+        exe = resolve_workcell_builder_executable(workspace_root)
+        searched_candidates = _resolve_executable_candidates(workspace_root or repo_root)
 
     if exe is None or not Path(exe).is_file():
         searched = " | ".join(str(p) for p in searched_candidates)
@@ -217,7 +228,7 @@ def main() -> int:
             print("status=WARN smoke_status=SKIP elapsed_sec=0.00")
             print(f"blockers=0 warnings={len(warnings)}")
             print("warning_list=" + " | ".join(str(w) for w in warnings))
-            print("artifacts=" + json.dumps(artifacts, sort_keys=True))
+            print("artifacts=" + json.dumps({**artifacts, **extra_resolution}, sort_keys=True))
             return 0
         print(f"status=FAIL; blockers=[{message}]")
         return 2
@@ -251,7 +262,7 @@ def main() -> int:
         print("blocker_list=" + " | ".join(blockers))
     if warnings:
         print("warning_list=" + " | ".join(str(w) for w in warnings))
-    print("artifacts=" + json.dumps(artifacts, sort_keys=True))
+    print("artifacts=" + json.dumps({**artifacts, **extra_resolution}, sort_keys=True))
 
     return 0 if not blockers else 1
 

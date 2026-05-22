@@ -48,6 +48,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--repo-root", type=Path, default=None)
     p.add_argument("--workspace-root", type=Path, default=None)
     p.add_argument("--workcell-builder-executable", type=Path, default=None)
+    p.add_argument("--include-local-validation", action="store_true")
+    p.add_argument("--output-dir", type=Path, default=Path("build/workcell_studio"))
     return p.parse_args()
 
 
@@ -359,8 +361,8 @@ def main() -> int:
                 scene3d_gui_smoke["blockers"].append(msg)
                 scene3d_gui_smoke["status"] = FAIL
         else:
-            resolved_setup = resolve_install_setup(workspace_root, repo_root)
-            resolved_executable = args.workcell_builder_executable.resolve() if args.workcell_builder_executable else resolve_workcell_builder_executable(workspace_root, repo_root)
+            resolved_setup = resolve_install_setup(workspace_root)
+            resolved_executable = args.workcell_builder_executable.resolve() if args.workcell_builder_executable else resolve_workcell_builder_executable(workspace_root)
             setup_candidates = _resolve_setup_candidates(workspace_root, repo_root)
             executable_candidates = [args.workcell_builder_executable.resolve()] if args.workcell_builder_executable else _resolve_executable_candidates(workspace_root, repo_root)
             if resolved_setup is None:
@@ -450,10 +452,30 @@ def main() -> int:
 
             if mode == "ci_or_dry_run" and scene3d_gui_smoke["status"] != FAIL:
                 scene3d_gui_smoke["status"] = WARN
+
+    local_validation = {}
+    if args.include_local_validation:
+        lv_cmd = [
+            "python3",
+            "scripts/run_workcell_studio_local_validation.py",
+            "--repo-root", str(repo_root),
+            "--output-dir", str(args.output_dir / "local_validation"),
+            "--include-gui-smoke",
+            "--dry-run" if args.dry_run_launches or _is_ci_environment() else "--require-gui-smoke",
+        ]
+        if workspace_root:
+            lv_cmd += ["--workspace-root", str(workspace_root)]
+        if args.workcell_builder_executable:
+            lv_cmd += ["--workcell-builder-executable", str(args.workcell_builder_executable.resolve())]
+        lv_proc = _run_command([c for c in lv_cmd if c], repo_root)
+        lv_json = repo_root / (args.output_dir / "local_validation/workcell_studio_local_validation.json")
+        local_validation = {"returncode": lv_proc.returncode, "json_report": str(lv_json)}
+
     scene_names = [row.get("scene_name") for row in audit_payload.get("scenes", []) if isinstance(row, dict) and row.get("scene_name")]
     scene3d_consolidated_gate = _run_scene3d_consolidated_gate(repo_root, scene_names)
     final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration, scene3d_gui_smoke)
     final_report["scene3d_consolidated_gate"] = scene3d_consolidated_gate
+    final_report["local_validation"] = local_validation
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
     write_markdown(args.markdown_output, final_report)
@@ -463,7 +485,8 @@ def main() -> int:
     scene3d_fail = args.include_scene3d_gui_smoke and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
     scene3d_consolidated_fail = scene3d_consolidated_gate.get("status") == FAIL
 
-    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail or scene3d_consolidated_fail:
+    local_validation_fail = bool(local_validation) and local_validation.get("returncode",0) != 0
+    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail or scene3d_consolidated_fail or local_validation_fail:
         return 1
     return 0
 
