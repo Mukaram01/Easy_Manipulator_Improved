@@ -35,8 +35,29 @@ def main() -> int:
     print(f"resolved repo_root={repo_root}\nworkspace_root={workspace_root}\ninstall_setup={setup}\nexecutable={exe}\nscenes_root={scenes_root}\noutput_dir={output_dir}")
     blockers=[]; warnings=[]; commands=[]; per_scene=[]; smoke_json=[]; screenshots=[]
 
+    def _tail(text: str | None, lines: int = 40) -> str:
+        if not text:
+            return ""
+        chunks = text.strip().splitlines()
+        return "\n".join(chunks[-lines:])
+
+    def _record_command(name: str, cmd: list[str], cwd: Path) -> int:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        commands.append({
+            "name": name,
+            "status": "PASS" if proc.returncode == 0 else "FAIL",
+            "returncode": proc.returncode,
+            "command": " ".join(cmd),
+            "stdout_tail": _tail(proc.stdout),
+            "stderr_tail": _tail(proc.stderr),
+        })
+        return proc.returncode
+
     if args.build and workspace_root:
-        commands.append(["colcon","build","--symlink-install","--packages-select","workcell_builder"])
+        build_cmd = ["colcon","build","--symlink-install","--packages-select","workcell_builder"]
+        build_rc = _record_command("build_workcell_builder", build_cmd, workspace_root)
+        if build_rc != 0:
+            blockers.append(f"build failed returncode={build_rc}")
 
     if args.include_gui_smoke:
         for s in args.scenes:
@@ -50,21 +71,82 @@ def main() -> int:
                     warnings.append(msg)
                 continue
             cmd=["python3", str(repo_root / "scripts/run_workcell_builder_scene3d_gui_smoke.py"), "--repo-root", str(repo_root), "--workspace-root", str(workspace_root or repo_root), "--scene", s, "--output", str(sj), "--screenshot", str(sp), "--executable", str(exe)]
-            commands.append(cmd)
-            rc=subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True).returncode
+            rc = _record_command(f"gui_smoke_{s}", cmd, repo_root)
             per_scene.append({"scene":s,"returncode":rc,"json":str(sj),"screenshot":str(sp)})
-            if rc!=0: blockers.append(f"GUI smoke failed for {s}")
+            if rc!=0:
+                blockers.append(f"GUI smoke failed for {s}")
+                blockers.append(f"returncode={rc}")
+                if not sj.exists():
+                    blockers.append("smoke JSON missing")
+                if not sp.exists():
+                    blockers.append("screenshot missing")
+                if not s:
+                    blockers.append("selected_scene_name empty")
 
     if args.include_readiness:
         cmd=["python3", str(repo_root / "scripts/run_workcell_studio_scene_readiness_gate.py"), "--repo-root", str(repo_root)]
         if workspace_root: cmd += ["--workspace-root", str(workspace_root)]
-        commands.append(cmd)
+        readiness_rc = _record_command("scene_readiness_gate", cmd, repo_root)
+        if readiness_rc != 0:
+            blockers.append(f"readiness gate failed returncode={readiness_rc}")
 
     status = "FAIL" if blockers else ("WARN" if warnings else "PASS")
-    report={"schema":"workcell_studio_local_validation/v1","repo_root":str(repo_root),"workspace_root":str(workspace_root) if workspace_root else None,"install_setup_path":str(setup) if setup else None,"workcell_builder_executable":str(exe) if exe else None,"scenes_root":str(scenes_root),"output_dir":str(output_dir),"commands_run":[" ".join(c) for c in commands],"per_scene_results":per_scene,"smoke_json_paths":smoke_json,"screenshot_paths":screenshots,"blockers":blockers,"warnings":warnings,"resolution":describe_resolution(),"status":status}
+    if status == "FAIL" and not blockers:
+        blockers.append("local_validation_failed_without_blockers")
+        for c in commands:
+            if c["returncode"] != 0:
+                blockers.append(f"{c['name']} returncode={c['returncode']}")
+
+    report={"schema":"workcell_studio_local_validation/v1","repo_root":str(repo_root),"workspace_root":str(workspace_root) if workspace_root else None,"install_setup_path":str(setup) if setup else None,"workcell_builder_executable":str(exe) if exe else None,"scenes_root":str(scenes_root),"output_dir":str(output_dir),"commands_run":[c["command"] for c in commands],"command_results":commands,"per_scene_results":per_scene,"smoke_json_paths":smoke_json,"screenshot_paths":screenshots,"blockers":blockers,"warnings":warnings,"resolution":describe_resolution(),"status":status}
     j=output_dir/"workcell_studio_local_validation.json"; m=output_dir/"workcell_studio_local_validation.md"
     j.write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
-    m.write_text(f"# Workcell Studio Local Validation\n\nStatus: **{status}**\n", encoding="utf-8")
+    md = [
+        "# Workcell Studio Local Validation",
+        "",
+        f"## Status",
+        "",
+        f"**{status}**",
+        "",
+        "## Resolved paths",
+        "",
+        f"- repo_root: `{repo_root}`",
+        f"- workspace_root: `{workspace_root}`",
+        f"- install_setup: `{setup}`",
+        f"- executable: `{exe}`",
+        f"- scenes_root: `{scenes_root}`",
+        f"- output_dir: `{output_dir}`",
+        "",
+        "## Top-level blockers",
+        "",
+    ]
+    md.extend([f"- {b}" for b in blockers] if blockers else ["- none"])
+    md.extend(["", "## Top-level warnings", ""])
+    md.extend([f"- {w}" for w in warnings] if warnings else ["- none"])
+    md.extend(["", "## Commands run", "", "| Name | Status | Return code | Command |", "|---|---:|---:|---|"])
+    for c in commands:
+        md.append(f"| {c['name']} | {c['status']} | {c['returncode']} | `{c['command']}` |")
+    for c in commands:
+        if c["returncode"] != 0:
+            md.extend(["", f"### Failed command: {c['name']}", "", "```text", "stderr tail:", c["stderr_tail"] or "<empty>", "", "stdout tail:", c["stdout_tail"] or "<empty>", "```"])
+    md.extend(["", "## Per-scene results", ""])
+    if per_scene:
+        for r in per_scene:
+            md.append(f"- scene={r['scene']} returncode={r['returncode']} json=`{r['json']}` screenshot=`{r['screenshot']}`")
+    else:
+        md.append("- none")
+    md.extend(["", "## Artifact paths", "", f"- json report: `{j}`", f"- markdown report: `{m}`"])
+    if smoke_json:
+        md.append(f"- smoke JSON: {', '.join(f'`{p}`' for p in smoke_json)}")
+    if screenshots:
+        md.append(f"- screenshots: {', '.join(f'`{p}`' for p in screenshots)}")
+    md.extend(["", "## Next fix", ""])
+    if blockers:
+        md.append(f"Address blockers first: {blockers[0]}")
+    elif warnings:
+        md.append(f"Resolve warnings: {warnings[0]}")
+    else:
+        md.append("No immediate fix required.")
+    m.write_text("\n".join(md) + "\n", encoding="utf-8")
     return 1 if status=="FAIL" else 0
 
 if __name__=="__main__":
