@@ -3697,7 +3697,7 @@ void MainWindow::refresh_scene_builder_selected_scene_ui()
 {
   sync_selected_scene_state();
   sync_selected_item_state();
-  if (!selected_scene_state_.valid) {
+  if (!selected_scene_state_.valid && !has_selected_scene()) {
     if (scene_builder_title_) scene_builder_title_->setText("<h2>Scene Builder</h2>");
     refresh_scene_builder_view_chips();
     if (scene_builder_path_label_) scene_builder_path_label_->setText("Path: (none)");
@@ -3965,6 +3965,8 @@ void MainWindow::rebuild_digital_twin_canvas()
 
 void MainWindow::refresh_scene_builder_left_explorer()
 {
+  sync_selected_scene_state();
+  sync_selected_item_state();
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
   populate_asset_catalog();
@@ -5005,7 +5007,9 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   for (const auto & p : all_scene_preview_items_) {
     if (include_item(p)) filtered_items.push_back(p);
   }
+  visible_scene_preview_items_ = filtered_items;
   scene_preview_widget_->set_preview_items(filtered_items);
+  if (!scene_hierarchy_refreshing_) populate_scene_hierarchy();
   append_studio_log(
     QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
       .arg(all_scene_preview_items_.size())
@@ -5027,9 +5031,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
 void MainWindow::populate_scene_hierarchy()
 {
   if (!scene_hierarchy_tree_) return;
+  scene_hierarchy_refreshing_ = true;
   scene_hierarchy_tree_->clear();
 
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(false); scene_preview_widget_->set_preview_scene_name("No scene"); } return; }
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { if (scene_preview_widget_) { scene_preview_widget_->set_scene_selected(false); scene_preview_widget_->set_preview_scene_name("No scene"); } scene_hierarchy_refreshing_ = false; return; }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path d = s.scene_dir;
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
@@ -5198,19 +5203,12 @@ void MainWindow::populate_scene_hierarchy()
     p.source_layer = QStringLiteral("generated_preview");
     p.active_visual_source = QStringLiteral("generated_preview");
     p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
     p.metadata_complete = metadata_complete;
     if (!metadata_complete) {
       p.warnings << "metadata incomplete";
       preview_warning_details << QString("%1 (%2): metadata incomplete").arg(p.id, p.role);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role)) {
-      add_tree_node(p);
-    }
 
     if (!metadata_complete) {
       ++preview_warning_count;
@@ -5274,20 +5272,12 @@ void MainWindow::populate_scene_hierarchy()
         p.source_layer = QStringLiteral("primitive_fallback");
         p.active_visual_source = QStringLiteral("primitive_fallback");
         p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
         break;
       case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
       default:
         p.source_layer = QStringLiteral("generated_preview");
         p.active_visual_source = QStringLiteral("mesh_preview");
         p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
         break;
     }
     if (item.locked) {
@@ -5296,9 +5286,6 @@ void MainWindow::populate_scene_hierarchy()
       p.warnings << QStringLiteral("Locked: %1").arg(base_reason);
     }
     preview_items.push_back(p);
-    if (allowed_scene_roles.contains(p.role)) {
-      add_tree_node(p);
-    }
 
     if (!item.warnings.empty()) {
       ++preview_warning_count;
@@ -5462,10 +5449,6 @@ void MainWindow::populate_scene_hierarchy()
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                                               : QStringLiteral("primitive_fallback");
           p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
           const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
           const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
@@ -5610,6 +5593,9 @@ void MainWindow::populate_scene_hierarchy()
     node->setData(0, TreeRoleId, rel_q);
     node->setData(0, TreeRoleCategory, "file");
     node->setData(0, TreeRoleSource, QString::fromStdString(path.string()));
+    node->setData(0, TreeRoleStableId, rel_q);
+    node->setData(0, TreeRoleSourceLayer, QStringLiteral("scene_file_artifact"));
+    node->setData(0, TreeRoleActiveVisualSource, QStringLiteral("scene_file_artifact"));
     node->setData(0, TreeRolePoseAvailable, false);
     node->setData(0, TreeRoleRole, "file");
   }
@@ -5649,6 +5635,13 @@ void MainWindow::populate_scene_hierarchy()
     if (!tag.isEmpty()) p.metadata_tags = tag;
   }
 
+  const QVector<ScenePreviewWidget::PreviewItem> hierarchy_preview_items =
+    visible_scene_preview_items_.isEmpty() ? preview_items : visible_scene_preview_items_;
+  for (const auto & p : hierarchy_preview_items) {
+    if (!allowed_scene_roles.contains(p.role)) continue;
+    add_tree_node(p);
+  }
+
   for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
     auto * group = scene_hierarchy_tree_->topLevelItem(i);
     if (!group) continue;
@@ -5680,6 +5673,7 @@ void MainWindow::populate_scene_hierarchy()
     scene_preview_widget_->set_preview_status_summary(preview_provenance_summary_);
     apply_scene3d_preview_layer_filters(false);
   }
+  scene_hierarchy_refreshing_ = false;
   preview_warning_details_ = preview_warning_details;
 
   const bool snapshot_available = fs::exists(d / "preview" / "epd_detection_snapshot.png");

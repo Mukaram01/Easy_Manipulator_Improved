@@ -518,6 +518,8 @@ private:
   QCheckBox * preview_layer_overlays_helpers_box_{ nullptr };
   QCheckBox * preview_layer_warnings_missing_assets_box_{ nullptr };
   QVector<ScenePreviewWidget::PreviewItem> all_scene_preview_items_;
+  QVector<ScenePreviewWidget::PreviewItem> visible_scene_preview_items_;
+  bool scene_hierarchy_refreshing_{ false };
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };
