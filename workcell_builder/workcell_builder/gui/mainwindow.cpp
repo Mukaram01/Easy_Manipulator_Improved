@@ -249,6 +249,20 @@ enum SceneTreeRoles {
 };
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
 
+QString canonical_scene3d_token(const QString & value)
+{
+  const QString normalized = value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+  if (normalized == QStringLiteral("generated_preview") ||
+      normalized == QStringLiteral("generated_urdf_visual") ||
+      normalized == QStringLiteral("locked_generated_urdf") ||
+      normalized == QStringLiteral("locked_generated_urdf_visual")) {
+    return QStringLiteral("locked_generated_urdf_visual");
+  }
+  if (normalized == QStringLiteral("legacy_static_fallback")) return QStringLiteral("primitive_fallback");
+  if (normalized == QStringLiteral("overlays") || normalized == QStringLiteral("helper_overlay")) return QStringLiteral("overlay");
+  return normalized;
+}
+
 class DraggableCanvasItem : public QGraphicsRectItem {
 public:
   explicit DraggableCanvasItem(const QRectF & r): QGraphicsRectItem(r) {}
@@ -4987,15 +5001,15 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   }
   QVector<ScenePreviewWidget::PreviewItem> filtered_items;
   auto include_item = [this](const ScenePreviewWidget::PreviewItem & p) {
-      const QString source_layer = p.source_layer.trimmed().toLower();
-      const QString visual_source = p.active_visual_source.trimmed().toLower();
+      const QString source_layer = canonical_scene3d_token(p.source_layer);
+      const QString visual_source = canonical_scene3d_token(p.active_visual_source);
       const QString role = p.role.trimmed().toLower();
       const QString category = p.category.trimmed().toLower();
       const QString combined = role + "|" + category + "|" + p.status.trimmed().toLower() + "|" + p.warnings.join("|").toLower();
       const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !p.mesh_load_warning.trimmed().isEmpty();
       const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
       if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
-      if (source_layer == "generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
+      if (source_layer == "locked_generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
       if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
       if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
       if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
@@ -5195,13 +5209,11 @@ void MainWindow::populate_scene_hierarchy()
     p.role = normalize_role(role_hint, category + " " + display_name);
     p.status = status;
     p.source_path = source_path;
-    p.source_layer = QStringLiteral("generated_preview");
-    p.active_visual_source = QStringLiteral("generated_preview");
+    p.source_layer = QStringLiteral("overlay");
+    p.active_visual_source = QStringLiteral("overlay");
     p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
+    p.editable = false;
+    p.selectable = true;
     p.metadata_complete = metadata_complete;
     if (!metadata_complete) {
       p.warnings << "metadata incomplete";
@@ -5274,20 +5286,12 @@ void MainWindow::populate_scene_hierarchy()
         p.source_layer = QStringLiteral("primitive_fallback");
         p.active_visual_source = QStringLiteral("primitive_fallback");
         p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
         break;
       case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
       default:
-        p.source_layer = QStringLiteral("generated_preview");
+        p.source_layer = QStringLiteral("locked_generated_urdf_visual");
         p.active_visual_source = QStringLiteral("mesh_preview");
         p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
-          p.editable = false;
-          p.selectable = true;
         break;
     }
     if (item.locked) {
@@ -5458,12 +5462,10 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           p.lock_reason = "URDF visual preview-only item (locked)";
-          p.source_layer = QStringLiteral("generated_urdf_visual");
+          p.source_layer = QStringLiteral("locked_generated_urdf_visual");
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                                               : QStringLiteral("primitive_fallback");
           p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
           p.editable = false;
           p.selectable = true;
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
@@ -5706,11 +5708,19 @@ void MainWindow::populate_scene_hierarchy()
   int scene3d_missing_count = 0;
   int scene3d_locked_count = 0;
   for (const auto & item : preview_items) {
-    if (item.editable) ++scene3d_editable_count;
-    if (item.active_visual_source == "mesh_preview") ++scene3d_mesh_count;
-    if (item.source_layer == "generated_urdf_visual") ++scene3d_generated_count;
-    if (item.active_visual_source == "primitive_fallback" || item.source_layer == "legacy_static_fallback") ++scene3d_fallback_count;
-    if (!item.mesh_available) ++scene3d_missing_count;
+    const QString source_layer = canonical_scene3d_token(item.source_layer);
+    const QString visual_source = canonical_scene3d_token(item.active_visual_source);
+    if (source_layer == "editable_layout") ++scene3d_editable_count;
+    if (visual_source == "mesh_preview") ++scene3d_mesh_count;
+    if (source_layer == "locked_generated_urdf_visual") ++scene3d_generated_count;
+    if (visual_source == "primitive_fallback" || source_layer == "primitive_fallback") ++scene3d_fallback_count;
+    if (source_layer != "editable_layout" &&
+        source_layer != "mesh_preview" &&
+        source_layer != "locked_generated_urdf_visual" &&
+        source_layer != "primitive_fallback" &&
+        source_layer != "overlay") {
+      ++scene3d_missing_count;
+    }
     if (item.locked) ++scene3d_locked_count;
   }
   const QString scene3d_diagnostics_line = QString("Scene3D: editable=%1, mesh=%2, generated=%3, fallback=%4, missing=%5, locked=%6")

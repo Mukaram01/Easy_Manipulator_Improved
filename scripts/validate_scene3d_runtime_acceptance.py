@@ -18,6 +18,18 @@ SCENES_ROOT = resolve_scene_root(ROOT)
 MAIN = ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 PREVIEW = ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
 VIEWPORT = ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
+CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}
+
+
+def normalize_layer_token(value: str | None) -> str:
+    token = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if token in {"generated_preview", "generated_urdf_visual", "locked_generated_urdf"}:
+        return "locked_generated_urdf_visual"
+    if token == "legacy_static_fallback":
+        return "primitive_fallback"
+    if token in {"overlays", "helper_overlay"}:
+        return "overlay"
+    return token
 
 
 def scene_dir(scene: str) -> Path:
@@ -101,7 +113,9 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
     primitive_fallback_count = int(mesh_index.get("unresolved_placeholder_count") or 0)
 
     generated_items = generated_layout.get("items") or []
-    locked_generated_urdf_visual_count = sum(1 for item in generated_items if item.get("source") == "generated_urdf_visual")
+    locked_generated_urdf_visual_count = sum(
+        1 for item in generated_items if normalize_layer_token(item.get("source")) == "locked_generated_urdf_visual"
+    )
 
     overlay_count = 0
     if preview_metadata:
@@ -111,7 +125,14 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
     if overlay_count == 0:
         overlay_count = sum(1 for p in overlay_sources if p.exists())
 
-    input_items_count = editable_layout_count + primitive_fallback_count + mesh_preview_count + locked_generated_urdf_visual_count + overlay_count
+    source_layer_counts: dict[str, int] = {}
+    for item in (mesh_index.get("items") or []):
+        layer = normalize_layer_token(item.get("source_layer") or item.get("item_source"))
+        if layer:
+            source_layer_counts[layer] = source_layer_counts.get(layer, 0) + 1
+    missing_count = sum(count for layer, count in source_layer_counts.items() if layer not in CANONICAL_LAYERS)
+
+    input_items_count = editable_layout_count + primitive_fallback_count + mesh_preview_count + locked_generated_urdf_visual_count + overlay_count + missing_count
     visible_after_default_filters = editable_layout_count + mesh_preview_count
     hidden_by_filters_count = max(input_items_count - visible_after_default_filters, 0)
 
@@ -183,6 +204,7 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
             "mesh_preview_count": mesh_preview_count,
             "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
             "overlay_count": overlay_count,
+            "missing_count": missing_count,
         },
         "visibility_contract": {
             "input_items_count": input_items_count,
@@ -202,6 +224,7 @@ def evaluate_scene(scene: str, smoke_json_path: str | None) -> dict:
             "generated_layout": str(urdf_generated_layout_path) if urdf_generated_layout_path.exists() else None,
             "overlay_files": [str(p) for p in overlay_sources if p.exists()],
         },
+        "source_layer_counts": source_layer_counts,
         "runtime_evidence": runtime_evidence,
         "secondary_checks": secondary_checks,
         "pass": not blockers,
