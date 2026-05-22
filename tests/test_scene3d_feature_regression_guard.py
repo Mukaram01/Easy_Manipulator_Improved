@@ -155,3 +155,15 @@ def test_feature_regression_static_epd_snapshot_warning_classified_under_overlay
         'Overlays / Helpers',
     ]:
         assert tok in MAIN_CPP
+
+
+def test_feature_regression_safety_string_guards_keep_real_hardware_and_perception_launch_blocked():
+    safety_text = "\n".join([MAIN_CPP, PREVIEW_CPP, VIEWPORT_CPP]).lower()
+    guarded_tokens = [
+        "use_fake_hardware:=false",
+        "real_hardware:=true",
+        "runtime_execution_enabled:=true",
+        "missing required use_fake_hardware:=true",
+    ]
+    for token in guarded_tokens:
+        assert token in safety_text
