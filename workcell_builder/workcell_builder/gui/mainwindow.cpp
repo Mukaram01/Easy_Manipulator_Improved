@@ -6068,9 +6068,11 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::Done;
   } else if (preview_gate_blocked && !preview_has_runtime_content) {
     preview_status = SceneWorkflowStepStatus::Blocked;
-  } else if (editable_layout_yaml_malformed && (preview_visible_count > 0 || preview_rendered_count > 0)) {
+  } else if ((editable_layout_yaml_malformed || classified_fallback_count > 0) && (preview_visible_count > 0 || preview_rendered_count > 0)) {
     preview_status = SceneWorkflowStepStatus::Warning;
-    preview_missing_detail = "Preview visuals exist, but editable/layout YAML is malformed. Fix YAML to restore editable preview health.";
+    preview_missing_detail = editable_layout_yaml_malformed
+      ? "Preview visuals exist, but editable/layout YAML is malformed. Fix YAML to restore editable preview health."
+      : "Preview is visible via fallback content (scene metadata / URDF mesh index). Repair layout/workcell_studio_layout.yaml and validate YAML syntax to restore editable preview health.";
   } else if (preview_has_runtime_content && classified_editable_count == 0) {
     preview_status = SceneWorkflowStepStatus::Warning;
     preview_missing_detail = "Create editable layout from preview to complete editable classification.";
