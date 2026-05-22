@@ -239,6 +239,19 @@ QString normalized_token(const QString & value)
   return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
 }
 
+QString normalized_scene3d_layer_token(const QString & value)
+{
+  const QString normalized = normalized_token(value);
+  if (normalized == QStringLiteral("generated_preview") ||
+      normalized == QStringLiteral("generated_urdf_visual") ||
+      normalized == QStringLiteral("locked_generated_urdf")) {
+    return QStringLiteral("locked_generated_urdf_visual");
+  }
+  if (normalized == QStringLiteral("legacy_static_fallback")) return QStringLiteral("primitive_fallback");
+  if (normalized == QStringLiteral("overlays") || normalized == QStringLiteral("helper_overlay")) return QStringLiteral("overlay");
+  return normalized;
+}
+
 QString clean_label_from_item(const ScenePreviewWidget::PreviewItem & it)
 {
   QString label = it.display_name.trimmed();
@@ -271,8 +284,8 @@ QString warning_debug_text(const QStringList & warnings)
 bool item_is_editable_for_gizmo(const ScenePreviewWidget::PreviewItem & it)
 {
   if (it.locked) return false;
-  const QString source_layer = normalized_token(it.source_layer);
-  const QString visual_source = normalized_token(it.active_visual_source);
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const QString role = normalized_token(it.role);
   const QString category = normalized_token(it.category);
   const QString lock_reason = normalized_token(it.lock_reason);

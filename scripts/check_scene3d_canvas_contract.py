@@ -11,6 +11,18 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = resolve_scene_root(ROOT)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
+CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}
+
+
+def normalize_layer_token(value: str | None) -> str:
+    token = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if token in {"generated_preview", "generated_urdf_visual", "locked_generated_urdf"}:
+        return "locked_generated_urdf_visual"
+    if token == "legacy_static_fallback":
+        return "primitive_fallback"
+    if token in {"overlays", "helper_overlay"}:
+        return "overlay"
+    return token
 
 
 def _load_json(path: Path):
@@ -68,7 +80,7 @@ def check_scene(scene_dir: Path) -> dict:
     blockers, fixes = [], []
 
     for i in items:
-        layer = i.get('source_layer') or i.get('item_source') or ('primitive_fallback' if i.get('geometry_type') in {'box','cylinder','sphere'} else 'mesh_preview')
+        layer = normalize_layer_token(i.get('source_layer') or i.get('item_source') or ('primitive_fallback' if i.get('geometry_type') in {'box','cylinder','sphere'} else 'mesh_preview'))
         visual = i.get('active_visual_source') or ('expanded_urdf_mesh' if i.get('extraction_mode') == 'xacro_expanded' else ('mesh' if i.get('mesh_path') else 'primitive'))
         layer_counts[layer] += 1
         visual_counts[visual] += 1
@@ -127,6 +139,7 @@ def check_scene(scene_dir: Path) -> dict:
         'locked_generated_urdf_visual_count': urdf_count,
         'primitive_fallback_count': primitive_count,
         'overlay_count': layer_counts['overlay'],
+        'missing_count': sum(count for key, count in layer_counts.items() if key not in CANONICAL_LAYERS),
         'unsafe_visual_reason_count': unsafe_reasons,
         'unresolved_placeholder_count': unresolved,
         'preview_items_count': preview_items_count,
