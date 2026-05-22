@@ -5943,6 +5943,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool scene_selected = has_selected_scene();
   const bool editable_layout_ready = !workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name).items.empty();
   const bool has_warnings = !readiness_warning_details_.isEmpty();
+  const bool preview_fallback_visible = preview_fallback_item_count_ > 0;
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
   const bool fake_hardware_ready = launch_artifacts_ready_ && validation_gate_ready;
@@ -5988,9 +5989,12 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   steps.push_back(compute_scene_workflow_step(
     "Preview",
     fake_hardware_ready,
-    "Ready (Safety: fake hardware only, no robot motion).",
+    preview_fallback_visible ?
+      "Ready with fallback visible (Safety: fake hardware only, no robot motion)." :
+      "Ready (Safety: fake hardware only, no robot motion).",
     "Blocked until scene package and validation gates are satisfied. Safety gate remains enforced: fake hardware only.",
-    {"scene_package", "validation"}, gates, fake_hardware_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::Blocked));
+    {"scene_package", "validation"}, gates,
+    fake_hardware_ready ? (preview_fallback_visible ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Blocked));
   steps.push_back(compute_scene_workflow_step(
     "Export",
     export_ready, "Export prerequisites are satisfied.",
