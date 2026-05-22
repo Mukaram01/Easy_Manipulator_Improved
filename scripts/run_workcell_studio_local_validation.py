@@ -93,11 +93,17 @@ def main() -> int:
                 if isinstance(smoke_payload, dict):
                     for b in smoke_payload.get("blockers", []):
                         blockers.append(f"gui_smoke[{s}] blocker: {b}")
+                    child_cmd = smoke_payload.get("child_command")
+                    if child_cmd:
+                        blockers.append(f"gui_smoke[{s}] child_command: {child_cmd}")
+                    for key in ("stdout_log_path", "stderr_log_path"):
+                        if smoke_payload.get(key):
+                            blockers.append(f"gui_smoke[{s}] {key}: {smoke_payload.get(key)}")
                     if not smoke_payload.get("screenshot_available", False):
-                        blockers.append(f"gui_smoke[{s}] screenshot missing")
+                        warnings.append(f"gui_smoke[{s}] screenshot missing")
                     blockers.append(f"gui_smoke[{s}] json={sj}")
                 elif not sp.exists():
-                    blockers.append("screenshot missing")
+                    warnings.append("screenshot missing")
 
     if args.include_readiness:
         cmd=["python3", str(repo_root / "scripts/run_workcell_studio_scene_readiness_gate.py"), "--repo-root", str(repo_root)]

@@ -16,6 +16,8 @@
 #include <QApplication>
 #include <QAction>
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -266,7 +268,10 @@ private:
     }
 
     const bool pass = blockers_.isEmpty();
-    root["result"] = pass ? "PASS" : "FAIL";
+    root["status"] = pass ? "PASS" : "FAIL";
+    root["screenshot_available"] = root.value("screenshot_saved").toBool(false);
+    const QFileInfo out_info(opts_.smoke_output);
+    QDir().mkpath(out_info.absolutePath());
     QFile out(opts_.smoke_output);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
       std::cerr << "Unable to write smoke report: " << opts_.smoke_output.toStdString() << std::endl;
