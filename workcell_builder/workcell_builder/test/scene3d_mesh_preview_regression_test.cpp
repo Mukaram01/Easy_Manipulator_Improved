@@ -42,6 +42,8 @@ TEST(Scene3DMeshPreviewRegression, KeepsSelectionAndOverlayRendering)
   EXPECT_NE(src.find("if (it->id == selected_id)"), std::string::npos);
   EXPECT_NE(src.find("draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz"), std::string::npos);
   EXPECT_NE(src.find("if (show_warning_labels && !it.warnings.isEmpty())"), std::string::npos);
+  EXPECT_NE(src.find("LABEL_OVERLAP_SUPPRESS_LOWER_PRIORITY"), std::string::npos);
+  EXPECT_NE(src.find("LABEL_PRIORITY_SELECTED_WARN_ANCHOR"), std::string::npos);
 }
 
 TEST(Scene3DMeshPreviewRegression, KeepsMeshCacheBoundsAndModeHooks)

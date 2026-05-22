@@ -82,7 +82,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   controls->addWidget(new QLabel("Labels:", this));
   labels_selector_ = new QComboBox(this);
   labels_selector_->addItems({"Off", "Important", "Selected", "All"});
-  labels_selector_->setCurrentText("Important");
+  labels_selector_->setCurrentText("Selected");
   labels_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
   controls->addWidget(labels_selector_);
   controls->addSpacing(8);
