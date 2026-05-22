@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse, json, re
 from collections import Counter
+
 from pathlib import Path
 try:
     from scripts.scene_root_resolver import resolve_scene_root
@@ -38,6 +39,58 @@ def _count_preview_items_from_generated_metadata(scene_dir: Path) -> int:
     return count
 
 
+def _count_layout_entries(layout_path: Path) -> dict:
+    counts = {'editable': 0, 'primitive': 0}
+    if not layout_path.exists():
+        return counts
+    in_items = False
+    for raw in layout_path.read_text(encoding='utf-8').splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped == 'items:':
+            in_items = True
+            continue
+        if in_items and line and not line.startswith(' '):
+            break
+        if in_items and stripped.startswith('- id:'):
+            counts['editable'] += 1
+        lowered = stripped.lower()
+        if any(tok in lowered for tok in ('primitive', 'geometry_type: box', 'geometry_type: cylinder', 'geometry_type: sphere')):
+            counts['primitive'] += 1
+    return counts
+
+
+def _preview_metadata_overlay_count(scene_dir: Path) -> int:
+    metadata = _load_json(scene_dir / 'generated' / 'scene_preview_metadata.json') or {}
+    if not isinstance(metadata, dict):
+        return 0
+    overlays = metadata.get('overlays')
+    return len(overlays) if isinstance(overlays, list) else 0
+
+
+def _runtime_acceptance_overlay_warning_count(scene_dir: Path) -> tuple[int, list[str]]:
+    paths = [
+        scene_dir / 'generated' / 'scene3d_runtime_acceptance.json',
+        ROOT / 'build' / 'workcell_studio' / 'scene3d_runtime_acceptance.json',
+    ]
+    for p in paths:
+        payload = _load_json(p)
+        if not isinstance(payload, dict):
+            continue
+        scenes = payload.get('scenes', [])
+        if not isinstance(scenes, list):
+            continue
+        for s in scenes:
+            if not isinstance(s, dict) or s.get('scene') != scene_dir.name:
+                continue
+            counts = s.get('counts', {})
+            overlay = int((counts or {}).get('overlay_count', 0)) if isinstance(counts, dict) else 0
+            blockers = s.get('blockers', [])
+            warning_like = sum(1 for b in blockers if isinstance(b, str) and ('warning' in b.lower() or 'camera' in b.lower() or 'task' in b.lower() or 'overlay' in b.lower()))
+            return overlay + warning_like, [str(p)]
+    return 0, []
+
+
 def _runtime_scene_diagnostics(scene: str) -> dict:
     diag_path = ROOT / 'build' / 'workcell_studio_scene3d_visual_diagnostics.json'
     payload = _load_json(diag_path)
@@ -67,6 +120,7 @@ def check_scene(scene_dir: Path) -> dict:
     editable_layout = 0
     blockers, fixes = [], []
 
+    visible_capable_from_mesh_index = 0
     for i in items:
         layer = i.get('source_layer') or i.get('item_source') or ('primitive_fallback' if i.get('geometry_type') in {'box','cylinder','sphere'} else 'mesh_preview')
         visual = i.get('active_visual_source') or ('expanded_urdf_mesh' if i.get('extraction_mode') == 'xacro_expanded' else ('mesh' if i.get('mesh_path') else 'primitive'))
@@ -76,6 +130,8 @@ def check_scene(scene_dir: Path) -> dict:
         unresolved += 1 if PLACEHOLDER_RE.search(item_id) else 0
         if i.get('unsafe_visual_reason'):
             unsafe_reasons += 1
+        if i.get('render_expected') is True and i.get('hidden_by_filters') is not True:
+            visible_capable_from_mesh_index += 1
         if layer == 'locked_generated_urdf_visual':
             if i.get('editable') is not False:
                 blockers.append(f"locked item editable: {item_id}")
@@ -85,10 +141,16 @@ def check_scene(scene_dir: Path) -> dict:
                 blockers.append(f"editable layout locked: {item_id}")
             editable_layout += 1
 
-    primitive_count = layer_counts['primitive_fallback']
+    layout_counts = _count_layout_entries(layout_path)
+    runtime_overlay_warning_count, runtime_sources = _runtime_acceptance_overlay_warning_count(scene_dir)
+    preview_overlay_count = _preview_metadata_overlay_count(scene_dir)
+
+    primitive_count = max(layer_counts['primitive_fallback'], layout_counts['primitive'])
     mesh_count = layer_counts['mesh_preview']
     urdf_count = layer_counts['locked_generated_urdf_visual']
-    meaningful_total = primitive_count + mesh_count + urdf_count
+    overlay_count = max(layer_counts['overlay'], preview_overlay_count, runtime_overlay_warning_count)
+    editable_layout_total = max(editable_layout, layout_counts['editable'])
+    meaningful_total = editable_layout_total + primitive_count + mesh_count + urdf_count
 
     preview_items_count = _count_preview_items_from_generated_metadata(scene_dir)
     visible_after_filters_count = sum(1 for i in items if i.get('hidden_by_filters') is not True)
@@ -101,16 +163,23 @@ def check_scene(scene_dir: Path) -> dict:
     if not has_layout:
         blockers.append('missing layout/workcell_studio_layout.yaml')
     if primitive_count == 0:
-        blockers.append('primitive_fallback layer missing')
+        reason = 'mesh index has no visible primitives and layout has no primitive-capable entries'
+        blockers.append(f'primitive_fallback layer missing ({reason}); checked: {scene_dir / "generated" / "scene_visual_mesh_index.json"}, {layout_path}')
         fixes.append('retain primitive_fallback visuals even when mesh/urdf previews exist')
     if mesh_count == 0:
         fixes.append('if safe mesh index exists, map items into mesh_preview layer')
     if unresolved > 0 and bool(idx.get('safe_for_preview', False)):
         blockers.append('unresolved placeholders remain in IDs during safe preview')
     if meaningful_total == 0:
-        blockers.append('meaningful layer counts are all zero')
+        blockers.append(f'meaningful visible-capable counts are all zero; checked paths: {layout_path}, {scene_dir / "generated" / "scene_visual_mesh_index.json"}')
     if visible_after_filters_count == 0:
         blockers.append('visible_after_filters_count is zero by default')
+    if visible_capable_from_mesh_index == 0 and (scene_dir / 'generated' / 'scene_visual_mesh_index.json').exists():
+        blockers.append('mesh index exists but provides zero visible-capable entries (render_expected && not hidden_by_filters)')
+    if overlay_count == 0:
+        overlay_paths = [scene_dir / 'generated' / 'scene_preview_metadata.json', scene_dir / 'generated' / 'scene3d_runtime_acceptance.json', ROOT / 'build' / 'workcell_studio' / 'scene3d_runtime_acceptance.json']
+        missing = [str(p) for p in overlay_paths if not p.exists()]
+        blockers.append(f'overlay/task/camera warning sources resolved to zero visible overlays; missing paths: {", ".join(missing)}')
     if mesh_count == 0 and primitive_count > 0 and visible_after_filters_count > 0:
         fixes.append('optional mesh assets missing; primitive fallback is present and visible')
 
@@ -122,11 +191,11 @@ def check_scene(scene_dir: Path) -> dict:
 
     return {
         'scene': scene,
-        'editable_layout_count': editable_layout,
+        'editable_layout_count': editable_layout_total,
         'mesh_preview_count': mesh_count,
         'locked_generated_urdf_visual_count': urdf_count,
         'primitive_fallback_count': primitive_count,
-        'overlay_count': layer_counts['overlay'],
+        'overlay_count': overlay_count,
         'unsafe_visual_reason_count': unsafe_reasons,
         'unresolved_placeholder_count': unresolved,
         'preview_items_count': preview_items_count,
@@ -138,6 +207,7 @@ def check_scene(scene_dir: Path) -> dict:
         'suggested_fixes': fixes,
         'source_layer_counts': dict(layer_counts),
         'active_visual_source_counts': dict(visual_counts),
+        'runtime_acceptance_sources': runtime_sources,
     }
 
 
