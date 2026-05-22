@@ -41,6 +41,7 @@ def test_selection_sync_contract_tokens_exist():
     assert 'Selection id missing after refresh, clearing atomically:' in MAIN_CPP
     assert 'Preview selection cleared after refresh (id missing):' in PREVIEW_CPP
     assert 'apply_scene_selection(stable_selected_id_before_refresh' in MAIN_CPP
+    assert 'scene_hierarchy_tree_' in MAIN_CPP and 'selected_id' in MAIN_CPP
 
 
 def test_generated_locked_items_are_read_only_and_drag_guarded():
