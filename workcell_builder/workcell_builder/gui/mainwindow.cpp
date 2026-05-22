@@ -5414,15 +5414,18 @@ void MainWindow::populate_scene_hierarchy()
           else if (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere") ++primitive_item_count;
           else ++unknown_item_count;
           const bool render_expected = workcell_builder::yaml_map_key(v, "render_expected").as<bool>(false);
-          if (!render_expected) {
+          const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
+          const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
+          const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
+          const bool has_visual_metadata =
+            !id.trimmed().isEmpty() &&
+            !QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed().isEmpty() &&
+            xyz && rpy && xyz.IsSequence() && rpy.IsSequence() && xyz.size() >= 3 && rpy.size() >= 3;
+          if (!render_expected && !has_visual_metadata) {
             ++skipped_render_expected_false;
             continue;
           }
           const bool unsupported_format = workcell_builder::yaml_map_key(v, "unsupported_format").as<bool>(false);
-          if (unsupported_format) {
-            ++skipped_unsupported_format;
-            continue;
-          }
           const int triangle_count = workcell_builder::yaml_map_key(v, "triangle_count").as<int>(-1);
           if (triangle_count == 0) {
             ++skipped_zero_triangle_mesh;
@@ -5462,13 +5465,8 @@ void MainWindow::populate_scene_hierarchy()
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                                               : QStringLiteral("primitive_fallback");
           p.linked_to_editable_layout_state = false;
-          p.source_layer = QStringLiteral("overlay");
-          p.active_visual_source = QStringLiteral("overlay");
           p.editable = false;
           p.selectable = true;
-          const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
-          const YAML::Node xyz = workcell_builder::yaml_map_key(pose, "xyz");
-          const YAML::Node rpy = workcell_builder::yaml_map_key(pose, "rpy");
           if (!xyz || !rpy || !xyz.IsSequence() || !rpy.IsSequence() || xyz.size() < 3 || rpy.size() < 3) {
             ++skipped_invalid_pose;
             continue;
@@ -5485,10 +5483,17 @@ void MainWindow::populate_scene_hierarchy()
           p.sz = workcell_builder::yaml_seq_index(scale,2).as<double>(0.25);
           const bool resolved = workcell_builder::yaml_map_key(v, "resolved").as<bool>(false);
           const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
+          bool mesh_fallback = false;
           if (geometry_type == "mesh") {
-            if (p.source_path.trimmed().isEmpty()) { ++skipped_missing_mesh_source_path; continue; }
-            if (!fs::exists(fs::path(p.source_path.toStdString()))) { ++skipped_file_not_found; continue; }
-            p.mesh_path = p.source_path;
+            if (unsupported_format) {
+              mesh_fallback = true;
+            } else if (p.source_path.trimmed().isEmpty()) {
+              mesh_fallback = true;
+            } else if (!fs::exists(fs::path(p.source_path.toStdString()))) {
+              mesh_fallback = true;
+            } else {
+              p.mesh_path = p.source_path;
+            }
           } else if (is_primitive) {
             ++non_mesh_geometry_added;
           } else {
@@ -5496,7 +5501,17 @@ void MainWindow::populate_scene_hierarchy()
             ++non_mesh_geometry_unsupported;
             continue;
           }
-          if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
+          if (mesh_fallback) {
+            p.status = "warning";
+            p.mesh_available = false;
+            p.has_mesh_metadata = true;
+            p.active_visual_source = QStringLiteral("primitive_fallback");
+            p.source_layer = QStringLiteral("generated_urdf_visual");
+            p.editable = false;
+            p.selectable = true;
+            p.lock_reason = QStringLiteral("generated_urdf_visual");
+            p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using primitive fallback");
+          } else if (!resolved || (geometry_type == "mesh" && p.source_path.trimmed().isEmpty())) {
             p.status = "warning";
             p.mesh_available = false;
             p.warnings << QStringLiteral("Preview warning: URDF visual unresolved");
