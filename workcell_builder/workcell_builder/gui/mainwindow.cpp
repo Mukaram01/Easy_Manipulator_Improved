@@ -6024,10 +6024,20 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   int classified_fallback_count = 0;
   int classified_other_count = 0;
   for (const auto & item : canvas_model.items) {
-    if (item.source_layer == "editable_layout") ++classified_editable_count;
-    else if (item.source_layer == "generated_urdf_visual") ++classified_generated_count;
-    else if (item.source_layer == "primitive_fallback") ++classified_fallback_count;
-    else ++classified_other_count;
+    switch (item.provenance) {
+      case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
+        ++classified_editable_count;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+        ++classified_generated_count;
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview:
+        ++classified_fallback_count;
+        break;
+      default:
+        ++classified_other_count;
+        break;
+    }
   }
 
   const int preview_received_count = all_scene_preview_items_.size();
