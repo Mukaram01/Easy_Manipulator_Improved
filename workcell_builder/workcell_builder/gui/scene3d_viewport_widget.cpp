@@ -481,6 +481,7 @@ QPointF apply_label_overlap_offset(const QPointF & anchor, const QVector<QPointF
   }
 
   return candidates.back();
+}
 
 int label_priority_bucket(bool selected, bool has_warnings, NormalizedRole role)
 {
@@ -488,6 +489,7 @@ int label_priority_bucket(bool selected, bool has_warnings, NormalizedRole role)
   if (selected) return 0;
   if (has_warnings) return 1;
   if (is_critical_label_role(role)) return 2;
+  if (role == NormalizedRole::WarningAnchor) return 2;
   return 3;
 }
 
@@ -665,6 +667,7 @@ void Scene3DViewportWidget::paintGL()
   const bool crowded = items.size() > 30;
   const bool zoomed_far = zoom_factor > 5.2;
   const bool suppress_dense_non_critical_labels = crowded || zoomed_far;
+  label_mode = ScenePreviewWidget::LabelMode::Selected;
   QVector<QPointF> robot_base_points;
   for (const auto & it : items) {
     if (classify_item_role(it) != NormalizedRole::RobotBase) continue;
@@ -678,16 +681,12 @@ void Scene3DViewportWidget::paintGL()
     const QPointF p = project_to_screen(bounds.x + (bounds.sx * 0.5), bounds.y + (bounds.sy * 0.5), bounds.z + (bounds.sz * 0.5));
     const bool selected = (it.id == selected_id);
     const NormalizedRole role = classify_item_role(it);
-    bool draw_label = false;
-    switch (label_mode) {
-      case ScenePreviewWidget::LabelMode::Off: draw_label = selected; break;
-      case ScenePreviewWidget::LabelMode::Important: draw_label = selected || is_critical_label_role(role); break;
-      case ScenePreviewWidget::LabelMode::Selected: draw_label = selected; break;
-      case ScenePreviewWidget::LabelMode::All: draw_label = true; break;
-    }
     const bool is_urdf_visual = it.locked && !it.editable && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive);
+    const bool overlay_only = is_overlay_only_item(it);
+    bool draw_label = selected;
+    if (!selected && overlay_only) draw_label = false;
+    if (!selected && is_urdf_visual) draw_label = false;
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
-    if (is_urdf_visual && !selected && label_mode != ScenePreviewWidget::LabelMode::All) draw_label = false;
     if (show_warning_labels && !it.warnings.isEmpty()) {
       if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty()) {
         const QString debug_warning_text = warning_debug_text(it.warnings);
@@ -702,7 +701,7 @@ void Scene3DViewportWidget::paintGL()
     if (!draw_label) continue;
     const QString missing_reason = placeholder_reason_for_item(it);
     const bool is_critical_scene_anchor = (role == NormalizedRole::RobotBase || role == NormalizedRole::Table || role == NormalizedRole::Camera);
-    if (!selected && is_urdf_visual && missing_reason.isEmpty() && !is_critical_scene_anchor && label_mode != ScenePreviewWidget::LabelMode::All) continue;
+    if (!selected && is_urdf_visual && missing_reason.isEmpty() && !is_critical_scene_anchor) continue;
 
     const QString compact_text = clean_label_from_item(it);
     const QString text = selected ? compact_text : (missing_reason.isEmpty() ? compact_text : QString("%1 missing").arg(compact_role(it.role)));
@@ -725,6 +724,8 @@ void Scene3DViewportWidget::paintGL()
   QVector<QPointF> placed_label_points;
   int labels_drawn = 0;
   int labels_suppressed = 0;
+  int labels_suppressed_overlap = 0;
+  int overlap_budget = 6;
   for (const auto & candidate : label_candidates) {
     const QPointF label_pos = apply_label_overlap_offset(candidate.anchor, placed_label_points, robot_base_points, candidate.critical);
     const QRectF label_rect = painter.boundingRect(QRectF(label_pos.x() - 2.0, label_pos.y() - 14.0, 220.0, 18.0), Qt::AlignLeft | Qt::AlignVCenter, candidate.text);
@@ -737,7 +738,13 @@ void Scene3DViewportWidget::paintGL()
       }
     }
     // LABEL_OVERLAP_SUPPRESS_LOWER_PRIORITY: keep high priority, suppress lower when overlap remains.
-    if (overlaps) { ++labels_suppressed; continue; }
+    if (overlaps) {
+      ++labels_suppressed;
+      ++labels_suppressed_overlap;
+      if (candidate.priority >= 2) --overlap_budget;
+      if (overlap_budget <= 0 && candidate.priority >= 2) break;
+      continue;
+    }
 
     placed_label_points.push_back(label_pos);
     placed_label_boxes.push_back(label_rect);
@@ -747,6 +754,7 @@ void Scene3DViewportWidget::paintGL()
   }
   last_render_counters.labels_drawn = labels_drawn;
   last_render_counters.labels_suppressed = labels_suppressed;
+  last_render_counters.labels_suppressed_overlap = labels_suppressed_overlap;
   painter.setPen(Qt::NoPen);
   painter.setBrush(QColor(15, 23, 42, 190));
   painter.drawRoundedRect(QRectF(12.0, 12.0, 360.0, 74.0), 6.0, 6.0);

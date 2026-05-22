@@ -81,6 +81,7 @@ public:
     int overlay_count{ 0 };
     int labels_drawn{ 0 };
     int labels_suppressed{ 0 };
+    int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
   };
   RenderDebugCounters last_render_counters;

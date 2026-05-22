@@ -33,6 +33,7 @@
 
 #include "gui/mainwindow.h"
 #include "gui/scene_select.h"
+#include "gui/scene3d_viewport_widget.h"
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
 
@@ -189,6 +190,10 @@ private:
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
     counters["log_line_count"] = log ? log->toPlainText().split('\n', Qt::SkipEmptyParts).size() : 0;
     counters["log_has_scene3d_diagnostics"] = log ? log->toPlainText().contains("Scene3D diagnostics") : false;
+    auto * viewport = window_->findChild<Scene3DViewportWidget *>();
+    const auto render_counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
+    counters["labels_drawn"] = render_counters.labels_drawn;
+    counters["labels_suppressed_overlap"] = render_counters.labels_suppressed_overlap;
     root["counters"] = counters;
     root["warnings"] = warnings_;
     root["blockers"] = blockers_;

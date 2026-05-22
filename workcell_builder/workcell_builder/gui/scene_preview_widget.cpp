@@ -235,8 +235,8 @@ void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_
   v->show_task_route = task_route;
   v->show_pick_place = pick_place_zones;
   v->show_approach_retreat = approach_retreat;
-  if (labels) v->label_mode = LabelMode::All;
-  else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::Important;
+  Q_UNUSED(labels);
+  v->label_mode = LabelMode::Selected;
   // else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;
   v->update();
 }
@@ -374,9 +374,9 @@ void ScenePreviewWidget::refresh_info_chip()
   const auto counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels=%4/%5 hierarchy_child_row_count=%6")
+  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels_drawn=%4 labels_suppressed_overlap=%5 hierarchy_child_row_count=%6")
                                   .arg(counters.mesh_rendered_count).arg(counters.generated_fallback_count)
-                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed)
+                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed_overlap)
                                   .arg(counters.hierarchy_child_row_count);
   info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
                               .arg(preview_scene_name_).arg(render_mode).arg(summary).arg(compact_stats)
