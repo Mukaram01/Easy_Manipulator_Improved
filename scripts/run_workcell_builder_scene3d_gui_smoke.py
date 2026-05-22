@@ -71,8 +71,38 @@ def validate_smoke_json(path: Path) -> tuple[list[str], list[str], str]:
     if schema != EXPECTED_SCHEMA:
         blockers.append(f"schema mismatch: expected {EXPECTED_SCHEMA!r}, got {schema!r}")
 
-    missing_or_bad: list[str] = []
-    for field in ["viewport_received_count", "render_cache_count", "rendered_count", "hierarchy_rows_count", "selectable_count"]:
+    required_fields = [
+        "scene",
+        "status",
+        "screenshot_path",
+        "unique_visible_item_count",
+        "mesh_rendered_count",
+        "generated_fallback_count",
+        "editable_layout_count",
+        "primitive_fallback_count",
+        "overlay_count",
+        "labels_drawn",
+        "labels_suppressed_overlap",
+        "hierarchy_child_row_count",
+        "selected_scene_name",
+        "selected_item_id",
+        "blockers",
+        "warnings",
+    ]
+    missing_or_bad: list[str] = [field for field in required_fields if field not in payload]
+
+    int_fields = [
+        "unique_visible_item_count",
+        "mesh_rendered_count",
+        "generated_fallback_count",
+        "editable_layout_count",
+        "primitive_fallback_count",
+        "overlay_count",
+        "labels_drawn",
+        "labels_suppressed_overlap",
+        "hierarchy_child_row_count",
+    ]
+    for field in int_fields:
         value = payload.get(field)
         if not isinstance(value, int) or value < 0:
             missing_or_bad.append(field)
@@ -81,11 +111,51 @@ def validate_smoke_json(path: Path) -> tuple[list[str], list[str], str]:
         missing_or_bad.append("status")
     else:
         status = raw_status
+    for string_field in ["scene", "screenshot_path", "selected_scene_name", "selected_item_id"]:
+        if not isinstance(payload.get(string_field), str):
+            missing_or_bad.append(string_field)
+    for list_field in ["blockers", "warnings"]:
+        if not isinstance(payload.get(list_field), list):
+            missing_or_bad.append(list_field)
     if missing_or_bad:
-        blockers.append("missing/invalid required fields: " + ", ".join(missing_or_bad))
+        blockers.append("missing/invalid required fields: " + ", ".join(sorted(set(missing_or_bad))))
 
     if isinstance(raw_status, str) and raw_status.lower() not in PASS_STATES:
         blockers.append(f"status is FAIL-like: {raw_status!r}")
+
+    scene_name = str(payload.get("scene") or "").strip()
+    unique_visible_item_count = int(payload.get("unique_visible_item_count") or 0)
+    if scene_name in {"ur5_2f_test", "ur5_2f_sorting_test"} and unique_visible_item_count <= 1:
+        blockers.append(f"{scene_name}: unique_visible_item_count <= 1 ({unique_visible_item_count})")
+
+    total_renderable = sum(int(payload.get(k) or 0) for k in ["mesh_rendered_count", "generated_fallback_count", "editable_layout_count", "primitive_fallback_count"])
+    if total_renderable == 0:
+        blockers.append("mesh_rendered_count + generated_fallback_count + editable_layout_count + primitive_fallback_count == 0")
+
+    hierarchy_child_row_count = int(payload.get("hierarchy_child_row_count") or 0)
+    if hierarchy_child_row_count == 0:
+        blockers.append("hierarchy_child_row_count == 0")
+
+    selected_scene_name = str(payload.get("selected_scene_name") or "").strip()
+    if not selected_scene_name:
+        blockers.append("selected_scene_name is empty")
+
+    label_mode_value = " ".join(
+        str(payload.get(k) or "").strip().lower()
+        for k in ("label_mode", "labels_mode", "overlay_label_mode")
+    )
+    labels_drawn = int(payload.get("labels_drawn") or 0)
+    if "selected" in label_mode_value and labels_drawn > 1:
+        blockers.append(f"labels_drawn excessive for Selected-label mode: {labels_drawn}")
+
+    missing_required_classification = payload.get("missing_required_classification_fields")
+    if isinstance(missing_required_classification, list) and missing_required_classification:
+        blockers.append(
+            "items missing required classification fields: " + ", ".join(str(v) for v in missing_required_classification)
+        )
+    classification_missing_count = payload.get("classification_missing_count")
+    if isinstance(classification_missing_count, int) and classification_missing_count > 0:
+        blockers.append(f"items missing required classification fields (count={classification_missing_count})")
 
     warnings.extend(payload.get("warnings", []) if isinstance(payload.get("warnings"), list) else [])
     return blockers, warnings, status
