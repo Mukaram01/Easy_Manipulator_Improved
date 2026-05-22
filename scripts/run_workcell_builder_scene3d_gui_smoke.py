@@ -8,9 +8,8 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
-
-import sys
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -215,18 +214,61 @@ def main() -> int:
     blockers: list[str] = []
     warnings: list[str] = []
     artifacts = {"json": str(args.output), "screenshot": str(args.screenshot) if args.screenshot else None}
-    extra_resolution = {"repo_root": None, "workspace_root": None}
+    repo_root: Path | None = None
+    workspace_root: Path | None = None
+    exe: Path | None = None
+    searched_candidates: list[Path] = []
 
-    repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
-    extra_resolution["repo_root"] = str(repo_root)
-    extra_resolution["workspace_root"] = str(workspace_root) if workspace_root else None
-    workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
-    if args.executable is not None:
-        exe = args.executable
-        searched_candidates: list[Path] = [args.executable]
-    else:
-        exe = resolve_workcell_builder_executable(workspace_root)
-        searched_candidates = _resolve_executable_candidates(workspace_root or repo_root)
+    def _write_fail_output(
+        *,
+        blocker: str,
+        warning_list: list[str] | None = None,
+        exc: Exception | None = None,
+    ) -> None:
+        payload = {
+            "schema": EXPECTED_SCHEMA,
+            "status": "FAIL",
+            "scene": args.scene,
+            "repo_root": str(repo_root) if repo_root else None,
+            "workspace_root": str(workspace_root) if workspace_root else None,
+            "executable": str(exe) if exe else None,
+            "blockers": [blocker],
+            "warnings": warning_list or [],
+            "searched_paths": [str(p) for p in searched_candidates],
+            "exception_type": type(exc).__name__ if exc else None,
+            "exception_message": str(exc) if exc else None,
+            "traceback_tail": "\n".join(traceback.format_exception(exc)[-3:]) if exc else None,
+            "screenshot_path": str(args.screenshot) if args.screenshot else None,
+            "screenshot_available": bool(args.screenshot and args.screenshot.is_file()),
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    try:
+        repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
+        workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
+        if args.executable is not None:
+            exe = args.executable
+            searched_candidates = [args.executable]
+        elif workspace_root is not None:
+            exe = resolve_workcell_builder_executable(workspace_root)
+            searched_candidates = _resolve_executable_candidates(workspace_root)
+        else:
+            exe = None
+            searched_candidates = []
+    except Exception as exc:
+        _write_fail_output(blocker=f"smoke_setup_exception: {type(exc).__name__}: {exc}", exc=exc)
+        print(f"status=FAIL; blockers=[smoke_setup_exception: {type(exc).__name__}: {exc}]")
+        return 2
+
+    extra_resolution = {"repo_root": str(repo_root) if repo_root else None, "workspace_root": str(workspace_root) if workspace_root else None}
+
+    if workspace_root is None:
+        blocker = "workspace_root_unresolved"
+        warnings.append("screenshot missing")
+        _write_fail_output(blocker=blocker, warning_list=warnings)
+        print(f"status=FAIL; blockers=[{blocker}]")
+        return 2
 
     if exe is None or not Path(exe).is_file():
         searched = " | ".join(str(p) for p in searched_candidates)
@@ -240,6 +282,7 @@ def main() -> int:
             print("warning_list=" + " | ".join(str(w) for w in warnings))
             print("artifacts=" + json.dumps({**artifacts, **extra_resolution}, sort_keys=True))
             return 0
+        _write_fail_output(blocker=message, warning_list=warnings)
         print(f"status=FAIL; blockers=[{message}]")
         return 2
 

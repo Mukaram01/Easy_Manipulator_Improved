@@ -82,12 +82,22 @@ def main() -> int:
             if rc!=0:
                 blockers.append(f"GUI smoke failed for {s}")
                 blockers.append(f"returncode={rc}")
-                if not sj.exists():
+                smoke_payload = None
+                if sj.exists():
+                    try:
+                        smoke_payload = json.loads(sj.read_text(encoding="utf-8"))
+                    except Exception as exc:
+                        blockers.append(f"invalid smoke JSON for {s}: {exc}")
+                else:
                     blockers.append("smoke JSON missing")
-                if not sp.exists():
+                if isinstance(smoke_payload, dict):
+                    for b in smoke_payload.get("blockers", []):
+                        blockers.append(f"gui_smoke[{s}] blocker: {b}")
+                    if not smoke_payload.get("screenshot_available", False):
+                        blockers.append(f"gui_smoke[{s}] screenshot missing")
+                    blockers.append(f"gui_smoke[{s}] json={sj}")
+                elif not sp.exists():
                     blockers.append("screenshot missing")
-                if not s:
-                    blockers.append("selected_scene_name empty")
 
     if args.include_readiness:
         cmd=["python3", str(repo_root / "scripts/run_workcell_studio_scene_readiness_gate.py"), "--repo-root", str(repo_root)]
