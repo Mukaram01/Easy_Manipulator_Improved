@@ -6,6 +6,8 @@ from typing import Any
 import re
 import yaml
 
+from scripts.workcell_studio_path_resolver import resolve_repo_root
+
 DEFAULTS={
     "robot":{"role":"robot_base","pose":{"x":0,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"mesh_collision","support_status":"supported"},
     "end_effector":{"role":"end_effector","pose":{"x":0,"y":0,"z":0,"roll":0,"pitch":0,"yaw":0},"collision_mode":"mesh_collision","support_status":"supported"},
@@ -110,7 +112,7 @@ def import_custom_stl(state:dict[str,Any], filepath:str, collision_mode:str="vis
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return resolve_repo_root()
 
 
 def _run(cmd:list[str], cwd:Path|None=None)->dict[str,Any]:

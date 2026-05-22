@@ -3,8 +3,13 @@ from __future__ import annotations
 import json, os, subprocess
 from pathlib import Path
 
+from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
+
 def main() -> int:
-    exe = os.environ.get("WORKCELL_BUILDER_EXE", "workcell_builder")
+    repo_root = resolve_repo_root()
+    workspace_root = resolve_workspace_root(repo_root)
+    resolved = resolve_workcell_builder_executable(workspace_root, repo_root)
+    exe = os.environ.get("WORKCELL_BUILDER_EXE") or (str(resolved) if resolved else "workcell_builder")
     env = dict(os.environ)
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     cmd = [exe, "--self-test-gui"]

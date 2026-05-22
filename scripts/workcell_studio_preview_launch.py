@@ -4,6 +4,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scripts.workcell_studio_path_resolver import resolve_workspace_root
+
 DENYLIST = [
     'use_fake_hardware:=false',
     'real_hardware:=true',
@@ -14,14 +16,9 @@ DENYLIST = [
 ]
 
 def detect_workspace_root(scene_dir: Path | None = None) -> str:
-    cwd = Path.cwd()
-    if (cwd / 'src').is_dir():
-        return str(cwd)
-    if scene_dir:
-        for parent in [scene_dir, *scene_dir.parents]:
-            if (parent / 'src').is_dir():
-                return str(parent)
-    return ''
+    start = scene_dir.resolve() if scene_dir else Path.cwd().resolve()
+    ws = resolve_workspace_root(start)
+    return str(ws) if ws else ''
 
 def build_preview_commands(scene_name: str, workspace_root: str = '') -> dict[str, str]:
     ws = workspace_root or '<workspace_root>'
