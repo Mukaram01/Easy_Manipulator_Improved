@@ -330,7 +330,7 @@ void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool
 void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->reach_overlay = model; emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->collision_overlay = model; emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 
-void ScenePreviewWidget::set_label_mode(LabelMode mode){ auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = mode; if (labels_selector_) { if (mode == LabelMode::Off) labels_selector_->setCurrentText("Off"); else if (mode == LabelMode::Important) labels_selector_->setCurrentText("Important"); else if (mode == LabelMode::Selected) labels_selector_->setCurrentText("Selected"); else labels_selector_->setCurrentText("All"); } v->update(); }
+void ScenePreviewWidget::set_label_mode(LabelMode mode){ Q_UNUSED(mode); auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = LabelMode::Selected; if (labels_selector_) labels_selector_->setCurrentText("Selected"); v->update(); }
 
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
@@ -374,9 +374,9 @@ void ScenePreviewWidget::refresh_info_chip()
   const auto counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels=%4/%5 hierarchy_child_row_count=%6 selected_scene_name=%7 selected_item_id=%8")
+  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels_drawn=%4 labels_suppressed_overlap=%5 hierarchy_child_row_count=%6 selected_scene_name=%7 selected_item_id=%8")
                                   .arg(counters.mesh_rendered_count).arg(counters.generated_fallback_count)
-                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed)
+                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed_overlap)
                                   .arg(counters.hierarchy_child_row_count)
                                   .arg(preview_scene_name_.isEmpty() ? QStringLiteral("(none)") : preview_scene_name_)
                                   .arg(selected_preview_item_id_.isEmpty() ? QStringLiteral("(none)") : selected_preview_item_id_);

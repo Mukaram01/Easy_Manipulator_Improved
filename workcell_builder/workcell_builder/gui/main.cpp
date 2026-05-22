@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "gui/mainwindow.h"
+#include "gui/scene3d_viewport_widget.h"
 #include "gui/scene_select.h"
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
@@ -231,6 +232,14 @@ private:
     counters["selected_scene_name"] = selected_scene_name;
     counters["selected_item_id"] = selected_item_id;
     counters["inspector_no_scene_selected"] = inspector_no_scene_selected;
+    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    if (viewport) {
+      counters["labels_drawn"] = viewport->last_render_counters.labels_drawn;
+      counters["labels_suppressed_overlap"] = viewport->last_render_counters.labels_suppressed_overlap;
+    } else {
+      counters["labels_drawn"] = 0;
+      counters["labels_suppressed_overlap"] = 0;
+    }
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
       blockers_.append("Inspector scene name is empty");
