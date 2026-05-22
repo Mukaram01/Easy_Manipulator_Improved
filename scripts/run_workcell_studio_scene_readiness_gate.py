@@ -53,6 +53,72 @@ def _status_counts() -> dict[str, int]:
     return {k: 0 for k in STATUSES}
 
 
+def _run_scene3d_consolidated_gate(repo_root: Path, scenes: list[str]) -> dict[str, Any]:
+    gate: dict[str, Any] = {"status": PASS, "scenes": [], "blockers": [], "warnings": []}
+    out_root = repo_root / "build/workcell_studio"
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    for scene in scenes:
+        runtime_json = out_root / f"scene3d_runtime_acceptance_{scene}.json"
+        runtime_md = out_root / f"scene3d_runtime_acceptance_{scene}.md"
+        contract_json = out_root / f"scene3d_canvas_contract_{scene}.json"
+        contract_md = out_root / f"scene3d_canvas_contract_{scene}.md"
+        smoke_json = out_root / f"scene3d_gui_smoke_{scene}.json"
+        smoke_png = out_root / f"scene3d_gui_smoke_{scene}.png"
+
+        runtime_cmd = ["python3", "scripts/validate_scene3d_runtime_acceptance.py", "--scene", scene, "--json", str(runtime_json), "--markdown", str(runtime_md), "--smoke-json", str(smoke_json)]
+        contract_cmd = ["python3", "scripts/check_scene3d_canvas_contract.py", "--scene", scene, "--json", str(contract_json), "--markdown", str(contract_md)]
+        smoke_cmd = ["python3", "scripts/run_workcell_builder_scene3d_gui_smoke.py", "--scene", scene, "--output", str(smoke_json), "--screenshot", str(smoke_png)]
+
+        smoke_proc = _run_command(smoke_cmd, repo_root)
+        runtime_proc = _run_command(runtime_cmd, repo_root)
+        contract_proc = _run_command(contract_cmd, repo_root)
+
+        runtime_payload = _load_json(runtime_json) if runtime_json.exists() else {}
+        contract_payload = _load_json(contract_json) if contract_json.exists() else {}
+        smoke_payload = _load_json(smoke_json) if smoke_json.exists() else {}
+
+        contract_scene = next((s for s in contract_payload.get("scenes", []) if isinstance(s, dict) and s.get("scene") == scene), {})
+        runtime_scene = next((s for s in runtime_payload.get("scenes", []) if isinstance(s, dict) and s.get("scene") == scene), {})
+
+        primitive_count = int(contract_scene.get("primitive_fallback_count", 0) or 0)
+        mesh_count = int(contract_scene.get("mesh_preview_count", 0) or 0)
+        editable_layout_count = int(contract_scene.get("editable_layout_count", 0) or 0)
+        unresolved_placeholders = int(contract_scene.get("unresolved_placeholder_count", 0) or 0)
+        visible_after_filters = int(contract_scene.get("visible_after_filters_count", 0) or 0)
+        hierarchy_rows = int(smoke_payload.get("hierarchy_rows_count", 0) or 0)
+        unique_visible_item_count = smoke_payload.get("unique_visible_item_count", smoke_payload.get("visible_unique_item_count", visible_after_filters))
+        unique_visible_item_count = int(unique_visible_item_count or 0)
+        selected_scene = str(smoke_payload.get("selected_scene") or smoke_payload.get("open_scene") or "").strip()
+        selected_item = str(smoke_payload.get("selected_item_id") or smoke_payload.get("selected_item") or "").strip()
+
+        scene_blockers: list[str] = []
+        if visible_after_filters > 0 and unresolved_placeholders >= visible_after_filters:
+            scene_blockers.append(f"{scene}: visible objects exist but are placeholder-only (visible={visible_after_filters}, unresolved_placeholders={unresolved_placeholders})")
+        if mesh_count == 0 and primitive_count == 0 and editable_layout_count == 0:
+            scene_blockers.append(f"{scene}: mesh_preview_count + primitive_fallback_count + editable_layout_count are all zero")
+        if scene in {"ur5_2f_test", "ur5_2f_sorting_test"} and unique_visible_item_count == 1:
+            scene_blockers.append(f"{scene}: unique visible item count is 1")
+        if hierarchy_rows == 0:
+            scene_blockers.append(f"{scene}: hierarchy_rows_count is zero")
+        if not selected_scene and not selected_item:
+            scene_blockers.append(f"{scene}: inspector has no selected/open scene")
+
+        scene_report = {
+            "scene": scene,
+            "status": FAIL if scene_blockers or smoke_proc.returncode != 0 or runtime_proc.returncode != 0 or contract_proc.returncode != 0 else PASS,
+            "returncodes": {"smoke": smoke_proc.returncode, "runtime_acceptance": runtime_proc.returncode, "canvas_contract": contract_proc.returncode},
+            "diagnostics": {"visible_after_filters_count": visible_after_filters, "unresolved_placeholder_count": unresolved_placeholders, "mesh_preview_count": mesh_count, "primitive_fallback_count": primitive_count, "editable_layout_count": editable_layout_count, "unique_visible_item_count": unique_visible_item_count, "hierarchy_rows_count": hierarchy_rows, "selected_scene": selected_scene, "selected_item": selected_item},
+            "blockers": scene_blockers,
+            "artifacts": {"runtime_json": str(runtime_json), "contract_json": str(contract_json), "smoke_json": str(smoke_json), "smoke_screenshot": str(smoke_png)},
+        }
+        gate["scenes"].append(scene_report)
+        gate["blockers"].extend(scene_blockers)
+        if scene_report["status"] == FAIL:
+            gate["status"] = FAIL
+    return gate
+
+
 def build_gate_report(sim_report_path: Path, audit_report_path: Path, audit_payload: dict[str, Any], visual_assets: dict[str, Any] | None = None, mesh_index_regeneration: dict[str, Any] | None = None, scene3d_gui_smoke: dict[str, Any] | None = None) -> dict[str, Any]:
     scenes_out: list[dict[str, Any]] = []
     counts: dict[str, dict[str, int]] = {dim: _status_counts() for dim in READINESS_DIMENSIONS}
@@ -256,7 +322,10 @@ def main() -> int:
                             break
                 scene3d_gui_smoke["warnings"].append(reason)
                 scene3d_gui_smoke["status"] = WARN
+    scene_names = [row.get("scene_name") for row in audit_payload.get("scenes", []) if isinstance(row, dict) and row.get("scene_name")]
+    scene3d_consolidated_gate = _run_scene3d_consolidated_gate(repo_root, scene_names)
     final_report = build_gate_report(DEFAULT_SIM_REPORT, DEFAULT_AUDIT_REPORT, audit_payload, visual_assets, mesh_index_regeneration, scene3d_gui_smoke)
+    final_report["scene3d_consolidated_gate"] = scene3d_consolidated_gate
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(final_report, indent=2) + "\n", encoding="utf-8")
     write_markdown(args.markdown_output, final_report)
@@ -264,8 +333,9 @@ def main() -> int:
     strict_fail = args.strict and any(scene["artifact_readiness"] == FAIL or scene["preview_readiness"] == FAIL or scene["moveit_launch_readiness"] == FAIL for scene in final_report["scenes"])
 
     scene3d_fail = args.include_scene3d_gui_smoke and bool(scene3d_gui_smoke) and scene3d_gui_smoke.get("status") == FAIL
+    scene3d_consolidated_fail = scene3d_consolidated_gate.get("status") == FAIL
 
-    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail:
+    if sim_proc.returncode != 0 or audit_proc.returncode != 0 or strict_fail or scene3d_fail or scene3d_consolidated_fail:
         return 1
     return 0
 
