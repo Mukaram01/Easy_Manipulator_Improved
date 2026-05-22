@@ -481,6 +481,7 @@ QPointF apply_label_overlap_offset(const QPointF & anchor, const QVector<QPointF
   }
 
   return candidates.back();
+}
 
 int label_priority_bucket(bool selected, bool has_warnings, NormalizedRole role)
 {
@@ -503,7 +504,6 @@ struct LabelDrawCandidate
 };
 
 
-}
 }
 
 
