@@ -2,12 +2,18 @@
 from __future__ import annotations
 import argparse, json, subprocess, os
 from pathlib import Path
-try:
-    from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_install_setup, resolve_workcell_builder_executable, resolve_scenes_root, describe_resolution
-except ModuleNotFoundError:
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_install_setup, resolve_workcell_builder_executable, resolve_scenes_root, describe_resolution
+
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
+
+ensure_repo_root_on_sys_path(__file__)
+
+from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_install_setup, resolve_workcell_builder_executable, resolve_scenes_root, describe_resolution
 
 
 def main() -> int:
