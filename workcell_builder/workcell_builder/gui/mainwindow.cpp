@@ -1560,7 +1560,7 @@ void MainWindow::setup_studio_shell()
   create_action_button(simulate_actions, "simulate.stop");
   create_action_button(diagnostics_actions, "diagnostics.self_test");
   create_action_button(diagnostics_actions, "diagnostics.golden_flow");
-  inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
+  inspector_label_=new QLabel("Inspector selection: none"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selection_tab_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("Selected: none", scene_builder); selection_tab_layout->addWidget(live_coordinate_label_);
   auto * pose_grid = new QGridLayout();
   inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("x "); pose_grid->addWidget(inspector_x_, 0, 0);
@@ -5716,6 +5716,16 @@ void MainWindow::populate_scene_hierarchy()
       }
     }
   }
+  int hierarchy_child_row_count = 0;
+  for (int i = 0; i < scene_hierarchy_tree_->topLevelItemCount(); ++i) {
+    auto * group = scene_hierarchy_tree_->topLevelItem(i);
+    if (!group) continue;
+    hierarchy_child_row_count += group->childCount();
+  }
+  append_studio_log(QString("Scene3D diagnostics {hierarchy_child_row_count=%1, selected_scene_name=%2, selected_item_id=%3}")
+                      .arg(hierarchy_child_row_count)
+                      .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("(none)") : selected_scene_state_.name)
+                      .arg(current_selected_scene_item_id_.isEmpty() ? QStringLiteral("(none)") : current_selected_scene_item_id_));
 
   editable_layout_item_count_ = model.provenance_status.editable_layout_count;
   preview_fallback_item_count_ = model.provenance_status.generated_or_legacy_preview_count + model.provenance_status.static_fallback_preview_count;

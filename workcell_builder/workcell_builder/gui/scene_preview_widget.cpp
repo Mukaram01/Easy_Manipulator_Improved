@@ -374,10 +374,12 @@ void ScenePreviewWidget::refresh_info_chip()
   const auto counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels=%4/%5 hierarchy_child_row_count=%6")
+  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels=%4/%5 hierarchy_child_row_count=%6 selected_scene_name=%7 selected_item_id=%8")
                                   .arg(counters.mesh_rendered_count).arg(counters.generated_fallback_count)
                                   .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed)
-                                  .arg(counters.hierarchy_child_row_count);
+                                  .arg(counters.hierarchy_child_row_count)
+                                  .arg(preview_scene_name_.isEmpty() ? QStringLiteral("(none)") : preview_scene_name_)
+                                  .arg(selected_preview_item_id_.isEmpty() ? QStringLiteral("(none)") : selected_preview_item_id_);
   info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
                               .arg(preview_scene_name_).arg(render_mode).arg(summary).arg(compact_stats)
                               .arg(total_warning_count()).arg(task_is_ready() ? "Ready" : "Missing") + QString("\n") + smoke_stats);

@@ -604,7 +604,14 @@ void Scene3DViewportWidget::paintGL()
   overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters = RenderDebugCounters{};
   last_render_counters.overlay_count = overlay_count;
-  last_render_counters.hierarchy_child_row_count = static_cast<int>(items.size());
+  int visible_hierarchy_items = 0;
+  for (const auto * it : draw_items) {
+    if (!it) continue;
+    const NormalizedRole role = classify_item_role(*it);
+    if (!show_safety && role == NormalizedRole::SafetyZone) continue;
+    ++visible_hierarchy_items;
+  }
+  last_render_counters.hierarchy_child_row_count = visible_hierarchy_items;
 
   auto draw_item_batch = [&](const std::vector<const ScenePreviewWidget::PreviewItem *> & batch, bool count_in_stats) {
     for (const auto * it : batch) {

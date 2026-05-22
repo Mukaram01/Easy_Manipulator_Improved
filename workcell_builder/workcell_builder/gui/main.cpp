@@ -147,10 +147,25 @@ private:
   bool scene3d_ready()
   {
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
-    auto * inspector = window_->findChild<QLabel *>();
+    auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
-    const bool hierarchy_ok = (tree != nullptr && tree->topLevelItemCount() > 0);
-    const bool inspector_ok = (inspector != nullptr && !inspector->text().contains("Selected item: (none)"));
+    int hierarchy_child_rows = 0;
+    if (tree) {
+      for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto * top = tree->topLevelItem(i);
+        if (top) hierarchy_child_rows += top->childCount();
+      }
+    }
+    const bool hierarchy_ok = (tree != nullptr && hierarchy_child_rows > 0);
+    const bool inspector_has_scene_name = (inspector != nullptr && inspector->text().contains("Scene: ") &&
+                                           !inspector->text().contains("Scene: none"));
+    const bool inspector_has_scene_path = (inspector != nullptr && inspector->text().contains("Scene path: ") &&
+                                           !inspector->text().contains("Scene path: (none)"));
+    const bool inspector_has_scene_status = (inspector != nullptr && inspector->text().contains("Scene status: ") &&
+                                             !inspector->text().contains("Scene status: (none)"));
+    const bool inspector_not_empty = (inspector != nullptr && !inspector->text().contains("No scene selected") &&
+                                      !inspector->text().contains("Selected item: (none)"));
+    const bool inspector_ok = inspector_has_scene_name && inspector_has_scene_path && inspector_has_scene_status && inspector_not_empty;
     const bool log_ok = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
     return hierarchy_ok && inspector_ok && log_ok;
   }
@@ -187,8 +202,40 @@ private:
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
     QJsonObject counters;
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
+    int hierarchy_child_rows = 0;
+    bool hierarchy_has_only_headings = false;
+    if (tree) {
+      for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto * top = tree->topLevelItem(i);
+        if (top) hierarchy_child_rows += top->childCount();
+      }
+      hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_child_rows == 0);
+    }
+    counters["hierarchy_child_row_count"] = hierarchy_child_rows;
+    counters["hierarchy_has_only_headings"] = hierarchy_has_only_headings;
     counters["log_line_count"] = log ? log->toPlainText().split('\n', Qt::SkipEmptyParts).size() : 0;
     counters["log_has_scene3d_diagnostics"] = log ? log->toPlainText().contains("Scene3D diagnostics") : false;
+    auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
+    QString selected_scene_name = "(none)";
+    QString selected_item_id = "(none)";
+    bool inspector_no_scene_selected = true;
+    if (inspector) {
+      const QString text = inspector->text();
+      inspector_no_scene_selected = text.contains("No scene selected", Qt::CaseInsensitive);
+      const QStringList lines = text.split('\n');
+      for (const QString & line : lines) {
+        if (line.startsWith("Scene: ")) selected_scene_name = line.mid(QString("Scene: ").size()).trimmed();
+        if (line.startsWith("Selected item ID: ")) selected_item_id = line.mid(QString("Selected item ID: ").size()).trimmed();
+      }
+    }
+    counters["selected_scene_name"] = selected_scene_name;
+    counters["selected_item_id"] = selected_item_id;
+    counters["inspector_no_scene_selected"] = inspector_no_scene_selected;
+    if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
+    if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
+      blockers_.append("Inspector scene name is empty");
+    }
+    if (inspector_no_scene_selected) blockers_.append("Inspector remains 'No scene selected'");
     root["counters"] = counters;
     root["warnings"] = warnings_;
     root["blockers"] = blockers_;
