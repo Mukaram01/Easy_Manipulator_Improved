@@ -3705,8 +3705,10 @@ void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
   append_studio_log(QString::fromStdString(result.status ? "Layout merge completed" : "Layout merge blocked"));
   if (!result.report_path.empty()) {
     append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
-  } else if (!result.error.empty()) {
-    append_studio_log("Merge report blocker: " + QString::fromStdString(result.error));
+  } else if (!result.blockers.empty()) {
+    append_studio_log("Merge report blocker: " + QString::fromStdString(result.blockers.front()));
+  } else if (!result.stderr_log.empty()) {
+    append_studio_log("Merge report stderr: " + QString::fromStdString(result.stderr_log).left(400));
   } else {
     append_studio_log("Merge report blocker: layout merge failed without report path");
   }
