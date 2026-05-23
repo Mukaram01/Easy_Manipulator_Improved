@@ -30,7 +30,9 @@
 #include <QTextEdit>
 #include <QImage>
 #include <QWidget>
+#include <QSet>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #include "gui/mainwindow.h"
@@ -56,6 +58,130 @@ QString cli_value(const QStringList & args, const QString & flag)
 }
 
 QJsonObject run_gui_self_test();
+
+struct Scene3DViewportCandidate
+{
+  Scene3DViewportWidget * widget{ nullptr };
+  QString pointer_address;
+  QString object_name;
+  bool is_visible{ false };
+  QString parent_object_name;
+  Scene3DViewportWidget::RenderDebugCounters counters{};
+  bool under_active_scene_builder_panel{ false };
+  bool is_named_viewport{ false };
+  int non_zero_counter_count{ 0 };
+};
+
+struct ActiveScene3DViewportResolution
+{
+  Scene3DViewportWidget * selected{ nullptr };
+  QVector<Scene3DViewportCandidate> candidates;
+  int selected_index{ -1 };
+  QString source_label{ "missing" };
+};
+
+bool object_name_hints_scene_builder_panel(const QString & object_name)
+{
+  const QString name = object_name.trimmed().toLower();
+  return name.contains("scenebuilder") ||
+         name.contains("scene_builder") ||
+         name.contains("scenebuilderpanel") ||
+         name.contains("studiocenterstack");
+}
+
+bool has_active_scene_builder_ancestor(QWidget * widget)
+{
+  for (QWidget * cur = widget; cur != nullptr; cur = cur->parentWidget()) {
+    if (!cur->isVisible()) {
+      continue;
+    }
+    if (object_name_hints_scene_builder_panel(cur->objectName())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+ActiveScene3DViewportResolution resolve_active_scene3d_viewport(MainWindow * mw)
+{
+  ActiveScene3DViewportResolution resolution;
+  if (!mw) {
+    return resolution;
+  }
+
+  const QList<ScenePreviewWidget *> previews = mw->findChildren<ScenePreviewWidget *>();
+  const QList<Scene3DViewportWidget *> viewports = mw->findChildren<Scene3DViewportWidget *>();
+  QSet<Scene3DViewportWidget *> known_widgets;
+
+  auto add_candidate = [&](Scene3DViewportWidget * viewport) {
+    if (!viewport || known_widgets.contains(viewport)) {
+      return;
+    }
+    known_widgets.insert(viewport);
+
+    Scene3DViewportCandidate candidate;
+    candidate.widget = viewport;
+    candidate.pointer_address = QStringLiteral("0x%1").arg(reinterpret_cast<quintptr>(viewport), 0, 16);
+    candidate.object_name = viewport->objectName();
+    candidate.is_visible = viewport->isVisible();
+    candidate.parent_object_name = (viewport->parent() ? viewport->parent()->objectName() : QString());
+    candidate.counters = viewport->render_debug_counters();
+    candidate.under_active_scene_builder_panel = has_active_scene_builder_ancestor(viewport);
+    candidate.is_named_viewport = (candidate.object_name == QStringLiteral("scene3dViewportWidget"));
+
+    const auto & rc = candidate.counters;
+    candidate.non_zero_counter_count =
+      (rc.viewport_received_count > 0 ? 1 : 0) +
+      (rc.render_cache_count > 0 ? 1 : 0) +
+      (rc.rendered_count > 0 ? 1 : 0) +
+      (rc.visible_count > 0 ? 1 : 0) +
+      (rc.last_paint_completed ? 1 : 0) +
+      (rc.preview_items_count > 0 ? 1 : 0);
+
+    resolution.candidates.push_back(candidate);
+  };
+
+  for (auto * preview : previews) {
+    if (!preview) continue;
+    const auto preview_viewports = preview->findChildren<Scene3DViewportWidget *>();
+    for (auto * viewport : preview_viewports) add_candidate(viewport);
+  }
+  for (auto * viewport : viewports) add_candidate(viewport);
+
+  auto score = [](const Scene3DViewportCandidate & c) {
+    int s = 0;
+    if (c.is_visible) s += 100000;
+    if (c.under_active_scene_builder_panel) s += 10000;
+    if (c.is_named_viewport) s += 1000;
+    s += c.non_zero_counter_count * 10;
+    return s;
+  };
+
+  int best_score = std::numeric_limits<int>::min();
+  int best_idx = -1;
+  for (int i = 0; i < resolution.candidates.size(); ++i) {
+    const int s = score(resolution.candidates[i]);
+    if (s > best_score) {
+      best_score = s;
+      best_idx = i;
+    }
+  }
+
+  if (best_idx >= 0) {
+    resolution.selected_index = best_idx;
+    resolution.selected = resolution.candidates[best_idx].widget;
+    const auto & selected = resolution.candidates[best_idx];
+    if (selected.is_visible) {
+      resolution.source_label = QStringLiteral("active_visible_viewport");
+    } else if (selected.is_named_viewport) {
+      resolution.source_label = QStringLiteral("named_viewport");
+    } else {
+      resolution.source_label = QStringLiteral("fallback_candidate");
+    }
+  }
+
+  return resolution;
+}
 
 struct Scene3DSmokeOptions
 {
@@ -132,7 +258,8 @@ private:
     auto * timer = new QTimer(this);
     const qint64 start_ms = QDateTime::currentMSecsSinceEpoch();
     connect(timer, &QTimer::timeout, this, [this, timer, start_ms, timeout_ms]() {
-      if (auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget")) {
+      const auto viewport_resolution = resolve_active_scene3d_viewport(window_);
+      if (auto * viewport = viewport_resolution.selected) {
         viewport->update();
         viewport->repaint();
         app_->processEvents();
@@ -169,7 +296,8 @@ private:
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    const auto viewport_resolution = resolve_active_scene3d_viewport(window_);
+    auto * viewport = viewport_resolution.selected;
     int hierarchy_child_rows = 0;
     bool hierarchy_has_only_headings = false;
     if (tree) {
@@ -314,7 +442,8 @@ private:
     counters["inspector_scene_path"] = inspector_scene_path;
     counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    const auto viewport_resolution = resolve_active_scene3d_viewport(window_);
+    auto * viewport = viewport_resolution.selected;
     if (viewport) {
       viewport->update();
       viewport->repaint();
@@ -341,7 +470,8 @@ private:
       counters["active_viewport_received_count"] = rc.viewport_received_count;
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
-      counters["viewport_counter_source"] = QString("active_widget");
+      counters["viewport_counter_source"] = viewport_resolution.source_label;
+      counters["active_viewport_object_name"] = viewport->objectName();
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -355,7 +485,8 @@ private:
       counters["active_viewport_received_count"] = 0;
       counters["active_rendered_count"] = 0;
       counters["active_render_cache_count"] = 0;
-      counters["viewport_counter_source"] = QString("missing");
+      counters["viewport_counter_source"] = viewport_resolution.source_label;
+      counters["active_viewport_object_name"] = QString();
     }
     auto * preview_chip = window_->findChild<QLabel *>("sceneStatusChip");
     if (preview_chip) {
@@ -397,8 +528,8 @@ private:
 
     if (!opts_.screenshot_path.trimmed().isEmpty()) {
       bool screenshot_ok = false;
-      auto * viewport = window_->findChild<QWidget *>("scene3dViewportWidget");
-      QWidget * source = viewport ? viewport : window_;
+      const auto viewport_resolution = resolve_active_scene3d_viewport(window_);
+      QWidget * source = viewport_resolution.selected ? static_cast<QWidget *>(viewport_resolution.selected) : window_;
       if (source) {
         QImage img = source->grab().toImage();
         screenshot_ok = img.save(opts_.screenshot_path);
