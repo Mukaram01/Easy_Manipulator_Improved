@@ -45,14 +45,44 @@ def tag_name(e): return e.tag.split('}')[-1]
 
 def discover_package_map(scene_dir, workspace_root=None):
     out={}
-    roots=[ROOT,ROOT/'assets',ROOT/'scenes',ROOT/'workcell_builder/workcell_builder/assets',scene_dir]
+    diagnostics={'resolved_packages':[], 'shadowed_packages':[], 'resolution_paths':[]}
     ws = Path(workspace_root) if workspace_root else None
-    if ws: roots += [ws/'install', ws/'src', ws/'src/easy_manipulation_deployment/assets', ws/'src/assets']
-    if Path('/opt/ros/humble/share').exists(): roots.append(Path('/opt/ros/humble/share'))
-    for r in roots:
-        if not r.exists(): continue
-        for pkg in r.rglob('package.xml'): out.setdefault(pkg.parent.name,pkg.parent)
-    return out
+    roots=[
+        ('scene_generated_package', scene_dir/'generated'),
+        ('workspace_install_share', (ws/'install/share') if ws else None),
+        ('workspace_src_easy_manipulation_deployment_assets', (ws/'src/easy_manipulation_deployment/assets') if ws else None),
+        ('workspace_src_assets', (ws/'src/assets') if ws else None),
+        ('repo_assets', ROOT/'assets'),
+        ('ros_humble_share', Path('/opt/ros/humble/share')),
+    ]
+    for tier, root in roots:
+        if root is None or not root.exists():
+            continue
+        for pkg_xml in root.rglob('package.xml'):
+            pkg_dir = pkg_xml.parent
+            pkg_name = pkg_dir.name
+            parse_error = ''
+            try:
+                xml_root = ET.parse(pkg_xml).getroot()
+                name_node = xml_root.find('name')
+                if name_node is not None and (name_node.text or '').strip():
+                    pkg_name = name_node.text.strip()
+            except Exception as e:
+                parse_error = str(e)
+            candidate={'package_name':pkg_name,'root_path':str(pkg_dir),'source_tier':tier,'package_xml':str(pkg_xml)}
+            if parse_error:
+                candidate['name_fallback']='directory_name'
+                candidate['parse_error']=parse_error
+            if pkg_name in out:
+                diagnostics['shadowed_packages'].append({
+                    **candidate,
+                    'shadowed_by':str(out[pkg_name]),
+                })
+                continue
+            out[pkg_name]=pkg_dir
+            diagnostics['resolved_packages'].append(candidate)
+            diagnostics['resolution_paths'].append({'package_name':pkg_name,'root_path':str(pkg_dir),'source_tier':tier})
+    return out, diagnostics
 
 def xacro_env(scene_dir, workspace_root=None):
     rp=[str(ROOT),str(ROOT/'assets'),str(ROOT/'workcell_builder/workcell_builder/assets'),str(ROOT/'scenes')]
@@ -172,12 +202,12 @@ def main():
         if a.require_xacro and not xacro_avail:
             print('xacro executable unavailable (required)'); return 2
         if not xml_text: xml_text=(urdf_path.read_text(errors='ignore') if urdf_path.exists() else '<robot/>')
-        package_map = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None))
+        package_map, package_diagnostics = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None))
         try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         safe=bool(items) and (len(unresolved)==0) and (mode=='xacro_expanded')
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd}
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
