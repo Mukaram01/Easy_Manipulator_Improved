@@ -1151,6 +1151,7 @@ void MainWindow::setup_studio_shell()
   //   2) locked/generated visual metadata (generated/scene_visual_mesh_index.json)
   // and forwards them to Scene3DViewportWidget for perspective/depth/orbit-pan-zoom rendering.
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
+  scene_preview_widget_->setObjectName("scenePreviewWidget");
   scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){
     append_studio_log(m);
@@ -1164,6 +1165,7 @@ void MainWindow::setup_studio_shell()
   });
   auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
   if (scene3d_viewport) {
+    scene3d_viewport->setObjectName("scene3dViewportWidget");
     scene3d_viewport->transform_changed_cb = [this](const QString &id, double x, double y, double z, double r, double p, double yaw){
       if (!digital_twin_scene_) return;
       for (auto * item : digital_twin_scene_->items()) {

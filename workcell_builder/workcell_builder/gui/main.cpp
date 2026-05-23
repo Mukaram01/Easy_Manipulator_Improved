@@ -35,6 +35,7 @@
 
 #include "gui/mainwindow.h"
 #include "gui/scene3d_viewport_widget.h"
+#include "gui/scene_preview_widget.h"
 #include "gui/scene_select.h"
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"
@@ -132,10 +133,12 @@ private:
     auto * timer = new QTimer(this);
     const qint64 start_ms = QDateTime::currentMSecsSinceEpoch();
     connect(timer, &QTimer::timeout, this, [this, timer, start_ms, timeout_ms]() {
-      if (auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget")) {
+      if (auto * preview = window_->active_scene_preview_widget()) {
+        if (auto * viewport = preview->findChild<Scene3DViewportWidget *>("scene3dViewportWidget")) {
         viewport->update();
         viewport->repaint();
         app_->processEvents();
+        }
       }
       if (scene3d_ready()) {
         timer->stop();
@@ -169,7 +172,8 @@ private:
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    auto * active_preview_widget = window_->active_scene_preview_widget();
+    auto * viewport = active_preview_widget ? active_preview_widget->findChild<Scene3DViewportWidget *>("scene3dViewportWidget") : nullptr;
     int hierarchy_child_rows = 0;
     bool hierarchy_has_only_headings = false;
     if (tree) {
@@ -314,7 +318,18 @@ private:
     counters["inspector_scene_path"] = inspector_scene_path;
     counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    auto * active_preview_widget = window_->active_scene_preview_widget();
+    auto * resolver_preview_widget = window_->findChild<ScenePreviewWidget *>("scenePreviewWidget");
+    auto * viewport = active_preview_widget ? active_preview_widget->findChild<Scene3DViewportWidget *>("scene3dViewportWidget") : nullptr;
+    const auto preview_widget_matches_resolver = (active_preview_widget != nullptr && active_preview_widget == resolver_preview_widget);
+    const auto preview_widget_count = window_->findChildren<ScenePreviewWidget *>("scenePreviewWidget").size();
+    const auto viewport_widget_count = window_->findChildren<Scene3DViewportWidget *>("scene3dViewportWidget").size();
+    counters["scene_preview_widget_object_name"] = active_preview_widget ? active_preview_widget->objectName() : QString();
+    counters["scene_preview_widget_count"] = preview_widget_count;
+    counters["scene_preview_widget_matches_resolver"] = preview_widget_matches_resolver;
+    counters["scene3d_viewport_widget_object_name"] = viewport ? viewport->objectName() : QString();
+    counters["scene3d_viewport_widget_found"] = (viewport != nullptr);
+    counters["scene3d_viewport_widget_count"] = viewport_widget_count;
     if (viewport) {
       viewport->update();
       viewport->repaint();
@@ -397,8 +412,7 @@ private:
 
     if (!opts_.screenshot_path.trimmed().isEmpty()) {
       bool screenshot_ok = false;
-      auto * viewport = window_->findChild<QWidget *>("scene3dViewportWidget");
-      QWidget * source = viewport ? viewport : window_;
+      QWidget * source = viewport ? static_cast<QWidget *>(viewport) : window_;
       if (source) {
         QImage img = source->grab().toImage();
         screenshot_ok = img.save(opts_.screenshot_path);

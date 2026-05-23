@@ -108,7 +108,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
   view3d_container_ = new QWidget(this); auto * v3 = new QVBoxLayout(view3d_container_);
-  simple_3d_view_ = new Scene3DViewportWidget(view3d_container_); v3->addWidget(simple_3d_view_);
+  simple_3d_view_ = new Scene3DViewportWidget(view3d_container_);
+  simple_3d_view_->setObjectName("scene3dViewportWidget");
+  v3->addWidget(simple_3d_view_);
   empty_state_label_ = new QLabel("No scene selected\nOpen a scene or create a new cell to preview it.", view3d_container_);
   empty_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(empty_state_label_);
   error_state_label_ = new QLabel("3D Layout Preview unavailable", view3d_container_); error_state_label_->setAlignment(Qt::AlignCenter); v3->addWidget(error_state_label_);
