@@ -181,7 +181,9 @@ add_executable(workcell_builder
     include/external_asset_import_dialog.hpp
     include/workspace_validation.hpp
     src_workspace_validation.cpp
-    src_workcell_builder_command_builders.cpp)
+    src_workcell_builder_command_builders.cpp
+    src_rviz_preview_runner.cpp
+    include/rviz_preview_runner.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
