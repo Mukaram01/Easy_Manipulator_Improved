@@ -43,6 +43,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(assimp QUIET)
 
 include_directories(include)
 include_directories(include/attributes)
@@ -59,6 +60,8 @@ add_executable(workcell_builder
     gui/scene_preview_widget.h
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_viewport_widget.h
+    src_scene3d_visual_backend.cpp
+    include/scene3d_visual_backend.hpp
 
     gui/replacewarning.cpp
     gui/replacewarning.h
@@ -207,6 +210,10 @@ target_link_libraries(workcell_builder
   yaml-cpp
   ${Boost_LIBRARIES}
 )
+
+if(assimp_FOUND)
+  target_link_libraries(workcell_builder assimp::assimp)
+endif()
 
 target_include_directories(workcell_builder
   PRIVATE
