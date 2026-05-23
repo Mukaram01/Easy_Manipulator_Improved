@@ -47,6 +47,7 @@
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTimer>
 #include <QFileInfo>
 #include <QGraphicsView>
 #include <QGraphicsScene>
@@ -1985,8 +1986,10 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(import_asset_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Import STL / URDF keeps existing behavior via filesystem import workflows."); });
   connect(add_existing_stl_action, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Asset Catalog", "Add Existing STL to Canvas keeps existing behavior for scene assets."); });
   connect(placeholder_action, &QAction::triggered, this, [this](){ add_asset_to_canvas_from_catalog("Custom", "Generated Placeholder", "placeholder://generated"); });
+  connect(preview_process_, &QProcess::started, this, &MainWindow::handle_preview_started);
   connect(preview_process_, &QProcess::readyReadStandardOutput, this, &MainWindow::handle_preview_stdout);
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
+  connect(preview_process_, &QProcess::errorOccurred, this, &MainWindow::handle_preview_error);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
@@ -3602,7 +3605,7 @@ bool MainWindow::run_canvas_generated_parity_check(CanvasGeneratedParityMode mod
   return true;
 }
 
-void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} active_preview_command_=selected_scene_build_command(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
+void MainWindow::run_preview_build(){ QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Plan & Simulate",blockers.join("\n")); return; } if(detect_workspace_root().isEmpty()){ QMessageBox::warning(this,"Preview Launch","Workspace root not detected. Copy commands and run manually."); return;} if (preview_process_ && preview_process_->state() != QProcess::NotRunning) { append_studio_log("WARN Plan & Simulate build start ignored: another preview/build process is already running."); return; } active_preview_command_=selected_scene_build_command(); preview_running_scene_key_ = selected_scene_name(); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_); set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started"); preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); }
 void MainWindow::run_fake_hardware_preview(){
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
     QMessageBox::warning(this, "Plan & Simulate", "No scene selected");
@@ -3633,20 +3636,30 @@ void MainWindow::run_fake_hardware_preview(){
     "Command:\n" + command + "\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded.");
   if (rc != QMessageBox::Yes) return;
 
+  const QString selected_scene_key = QString::fromStdString(scene.scene_name);
+  if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
+    if (preview_running_scene_key_ == selected_scene_key) {
+      append_studio_log("WARN Plan & Simulate launch ignored: preview already running for selected scene.");
+    } else {
+      append_studio_log(QString("WARN Plan & Simulate launch ignored: another preview is running for scene '%1'.").arg(preview_running_scene_key_));
+    }
+    return;
+  }
+
   active_preview_command_ = command;
+  preview_running_scene_key_ = selected_scene_key;
   if (preview_log_) preview_log_->appendPlainText("$ " + command);
   set_preview_state("PREVIEW_RUNNING");
   write_preview_launch_transcript(true, command, "preview_started");
   preview_process_->start("/bin/bash", {"-lc", command});
-  const qint64 launch_pid = preview_process_ ? preview_process_->processId() : -1;
-  const QString launch_state = preview_process_ ? QString::number(static_cast<int>(preview_process_->state())) : QStringLiteral("-1");
-  append_studio_log(QString("Plan & Simulate launch started: pid=%1 state=%2").arg(launch_pid).arg(launch_state));
   refresh_new_cell_checklist();
 }
-void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); if(!preview_process_->waitForFinished(2000)){ preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); preview_process_->waitForFinished(1000);} refresh_new_cell_checklist(); }
-void MainWindow::handle_preview_stdout(){ const QString out = QString::fromUtf8(preview_process_->readAllStandardOutput()); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[preview stdout] " + out.trimmed()); }
-void MainWindow::handle_preview_stderr(){ const QString err = QString::fromUtf8(preview_process_->readAllStandardError()); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[preview stderr] " + err.trimmed()); }
-void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); append_studio_log(QString("Plan & Simulate launch exit: exit_code=%1 exit_status=%2 state=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_state_)); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
+void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); if(preview_log_) preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); QTimer::singleShot(2000, this, [this]() { if(preview_process_ && preview_process_->state()!=QProcess::NotRunning){ if(preview_log_) preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); } }); refresh_new_cell_checklist(); }
+void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out = QString::fromUtf8(preview_process_->readAllStandardOutput()); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[preview stdout] " + out.trimmed()); }
+void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err = QString::fromUtf8(preview_process_->readAllStandardError()); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[preview stderr] " + err.trimmed()); }
+void MainWindow::handle_preview_started(){ if(!preview_process_) return; const qint64 pid = preview_process_->processId(); const QString state = QString::number(static_cast<int>(preview_process_->state())); append_studio_log(QString("Plan & Simulate process started: pid=%1 state=%2").arg(pid).arg(state)); }
+void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg = preview_process_ ? preview_process_->errorString() : QStringLiteral("unknown error"); append_studio_log(QString("ERROR Plan & Simulate process error: code=%1 message=%2").arg(static_cast<int>(error)).arg(msg)); if(preview_state_=="PREVIEW_RUNNING" || preview_state_=="BUILD_RUNNING") set_preview_state("PREVIEW_FAILED"); }
+void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); append_studio_log(QString("Plan & Simulate launch exit: exit_code=%1 exit_status=%2 state=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_state_)); preview_running_scene_key_.clear(); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
 
 void MainWindow::write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code)
 {
