@@ -618,6 +618,7 @@ private:
   QProcess * preview_process_{ nullptr };
   QString preview_state_{ "IDLE" };
   QString active_preview_command_;
+  QString active_preview_scene_name_;
   workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
   int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
