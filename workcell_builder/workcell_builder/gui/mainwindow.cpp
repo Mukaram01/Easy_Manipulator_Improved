@@ -1319,7 +1319,7 @@ void MainWindow::setup_studio_shell()
   register_scene_action("generate.task", "Generate Task/Grasp Files", [this]() { generate_or_update_task_intent_for_selected_scene(); });
   register_scene_action("validate.generated_scene", "Validate Generated Scene", [this]() { validate_generated_scene_for_selected_scene(); });
   register_scene_action("validate.offline", "Run Offline Validation", [this]() { run_offline_validation(); });
-  register_scene_action("simulate.open_rviz", "Open RViz2 / MoveIt", [this]() { if (run_build_button_) run_build_button_->click(); });
+  register_scene_action("simulate.open_rviz", "Open RViz Truth Preview", [this]() { if (run_build_button_) run_build_button_->click(); });
   register_scene_action("simulate.run_fake", "Run Fake-Hardware Simulation", [this]() { if (run_preview_button_) run_preview_button_->click(); });
   register_scene_action("simulate.stop", "Stop Simulation", [this]() { if (stop_preview_button_) stop_preview_button_->click(); });
   register_scene_action("diagnostics.self_test", "Run Self-Test", [this]() { if (run_self_test_button_) run_self_test_button_->click(); });
@@ -1725,8 +1725,8 @@ void MainWindow::setup_studio_shell()
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
   preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); pl->addWidget(preview_commands_);
   preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("Live Log: command started / command output / command finished or failed / transcript path"); preview_log_->setObjectName("studioCard"); pl->addWidget(preview_log_);
-  pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz2 / MoveIt | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
-  run_build_button_ = new QPushButton("Open RViz2 / MoveIt", preview); pl->addWidget(run_build_button_);
+  pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
+  run_build_button_ = new QPushButton("Open RViz Truth Preview", preview); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Fake-Hardware Simulation", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
@@ -3616,12 +3616,15 @@ void MainWindow::run_fake_hardware_preview(){
 
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const std::string workspace_root = detect_workspace_root().toStdString();
+  append_studio_log(QString("Plan & Simulate selection: scene=%1 workspace_root=%2")
+      .arg(QString::fromStdString(scene.scene_name), QString::fromStdString(workspace_root)));
   const auto readiness = workcell_builder::validate_readiness(scene, workspace_root);
   if (!readiness.ready) {
     QMessageBox::warning(this, "Plan & Simulate", readiness.blocker_reason);
     append_studio_log("Plan & Simulate launch blocked: " + readiness.blocker_reason);
     return;
   }
+  append_studio_log("Plan & Simulate readiness: PASS");
 
   QString command;
   const auto dry_run_status = workcell_builder::dry_run(scene, workspace_root, &command);
@@ -3650,6 +3653,7 @@ void MainWindow::run_fake_hardware_preview(){
   active_preview_command_ = command;
   preview_running_scene_key_ = selected_scene_key;
   if (preview_log_) preview_log_->appendPlainText("$ " + command);
+  append_studio_log("Plan & Simulate launch started");
   set_preview_state("PREVIEW_RUNNING");
   write_preview_launch_transcript(true, command, "preview_started");
   preview_process_->start("/bin/bash", {"-lc", command});

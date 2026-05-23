@@ -21,7 +21,8 @@ FORBIDDEN_TOKENS = (
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Validate RViz truth preview UI launch path")
-    p.add_argument("scene_pkg", help="Scene package name, e.g. ur5_2f_test")
+    p.add_argument("scene_pkg", nargs="?", help="Scene package name, e.g. ur5_2f_test")
+    p.add_argument("--scene", dest="scene_opt", help="Scene package name, e.g. ur5_2f_test")
     p.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     p.add_argument("--workspace-root", type=Path, default=None)
     p.add_argument("--check-ros2-prefix", action="store_true")
@@ -43,11 +44,14 @@ def _runner_commands(workspace_root: Path, launch_command: str) -> dict[str, str
 
 def main() -> int:
     args = parse_args()
+    scene_pkg = (args.scene_opt or args.scene_pkg or "").strip()
+    if not scene_pkg:
+        raise SystemExit("scene package is required: pass positional <scene_pkg> or --scene <scene_pkg>")
     repo_root = args.repo_root.resolve()
     workspace_root = args.workspace_root.resolve() if args.workspace_root else repo_root
-    scene_dir = workspace_root / "scenes" / args.scene_pkg
+    scene_dir = workspace_root / "scenes" / scene_pkg
 
-    launch_command = _build_launch_command(args.scene_pkg)
+    launch_command = _build_launch_command(scene_pkg)
     runner = _runner_commands(workspace_root, launch_command)
 
     blockers: list[str] = []
@@ -77,7 +81,7 @@ def main() -> int:
 
     ros2_prefix: dict[str, Any] | None = None
     if args.check_ros2_prefix:
-        proc = subprocess.run(["bash", "-lc", f"source {shlex.quote(str(setup_bash))} && ros2 pkg prefix {shlex.quote(args.scene_pkg)}"], cwd=repo_root, capture_output=True, text=True, check=False)
+        proc = subprocess.run(["bash", "-lc", f"source {shlex.quote(str(setup_bash))} && ros2 pkg prefix {shlex.quote(scene_pkg)}"], cwd=repo_root, capture_output=True, text=True, check=False)
         ros2_prefix = {
             "checked": True,
             "returncode": proc.returncode,
@@ -90,7 +94,7 @@ def main() -> int:
 
     payload: dict[str, Any] = {
         "schema": "rviz_truth_preview_ui_path_validation/v1",
-        "scene_pkg": args.scene_pkg,
+        "scene_pkg": scene_pkg,
         "workspace_root": str(workspace_root),
         "required_artifacts": {
             "package_xml": str(package_xml),
@@ -113,3 +117,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+    if not repo_root.exists():
+        blockers.append("repo root does not exist")
+    if not workspace_root.exists():
+        blockers.append("workspace root does not exist")
