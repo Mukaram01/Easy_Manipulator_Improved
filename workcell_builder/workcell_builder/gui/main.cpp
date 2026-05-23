@@ -98,6 +98,15 @@ struct ActiveScene3DViewportResolution
   QString source_label{ "missing" };
 };
 
+bool paint_cycle_completed(
+  const Scene3DViewportWidget::RenderDebugCounters & counters,
+  bool screenshot_saved)
+{
+  return counters.last_paint_completed ||
+         counters.rendered_count > 0 ||
+         (counters.render_cache_count > 0 && screenshot_saved);
+}
+
 bool object_name_hints_scene_builder_panel(const QString & object_name)
 {
   const QString name = object_name.trimmed().toLower();
@@ -395,17 +404,18 @@ private:
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
     const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
     const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
-    const bool screenshot_available = !opts_.screenshot_path.trimmed().isEmpty();
+    const bool screenshot_saved = latest_counters_.value("screenshot_saved").toBool(false);
+    const bool paint_completed = paint_cycle_completed(rc, screenshot_saved);
     const bool render_ready =
       rc.viewport_received_count > 0 &&
       rc.visible_count > 0 &&
-      (rc.rendered_count > 0 || (rc.render_cache_count > 0 && screenshot_available));
+      paint_completed;
     markers["hierarchy_ready"] = hierarchy_ready;
     markers["inspector_ready"] = inspector_ready;
     markers["log_ready"] = log_ready;
     markers["screenshot_ready"] = true;
     markers["render_ready"] = render_ready;
-    markers["paint_completed"] = rc.last_paint_completed;
+    markers["paint_completed"] = paint_completed;
     markers["selected_scene_ready"] = selected_scene_ready;
     markers["selected_item_required"] = false;
     return markers;
@@ -432,7 +442,15 @@ private:
       if (!markers.value("paint_completed").toBool(false) &&
           latest_counters_.value("rendered_count").toInt() <= 0 &&
           latest_counters_.value("render_cache_count").toInt() <= 0) {
-        return QString("paint_cycle_not_completed: direct_accessor_rendered_count=0 render_cache_count=0 screenshot_saved=true");
+        return QString("paint_cycle_not_completed: candidate_count=%1 active_candidate=%2 counters=viewport_received_count:%3 visible_count:%4 rendered_count:%5 render_cache_count:%6 last_paint_completed:%7 screenshot_saved:%8")
+          .arg(latest_counters_.value("scene3d_viewport_widget_count").toInt())
+          .arg(latest_counters_.value("active_viewport_candidate_index").toInt())
+          .arg(latest_counters_.value("viewport_received_count").toInt())
+          .arg(latest_counters_.value("visible_count").toInt())
+          .arg(latest_counters_.value("rendered_count").toInt())
+          .arg(latest_counters_.value("render_cache_count").toInt())
+          .arg(latest_counters_.value("last_paint_completed").toBool(false) ? "true" : "false")
+          .arg(latest_counters_.value("screenshot_saved").toBool(false) ? "true" : "false");
       }
       return QString("Scene3D readiness failed: render_ready=false viewport_received_count=%1 visible_count=%2 rendered_count=%3 render_cache_count=%4 skipped_count=%5")
         .arg(latest_counters_.value("viewport_received_count").toInt())
@@ -609,6 +627,8 @@ private:
       counters["labels_drawn"] = rc.labels_drawn;
       counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
       counters["last_paint_completed"] = rc.last_paint_completed;
+      counters["paint_cycle_completed"] = paint_cycle_completed(
+        rc, latest_counters_.value("screenshot_saved").toBool(false));
       counters["active_viewport_received_count"] = rc.viewport_received_count;
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
@@ -623,6 +643,7 @@ private:
         counters[key] = 0;
       }
       counters["last_paint_completed"] = false;
+      counters["paint_cycle_completed"] = false;
       counters["active_viewport_received_count"] = 0;
       counters["active_rendered_count"] = 0;
       counters["active_render_cache_count"] = 0;
@@ -706,6 +727,12 @@ private:
       root["warnings"] = warnings_;
       root["screenshot_path"] = opts_.screenshot_path;
       root["screenshot_saved"] = screenshot_ok;
+      counters["paint_cycle_completed"] =
+        counters.value("last_paint_completed").toBool(false) ||
+        counters.value("rendered_count").toInt() > 0 ||
+        (counters.value("render_cache_count").toInt() > 0 && screenshot_ok);
+      latest_counters_["paint_cycle_completed"] = counters.value("paint_cycle_completed");
+      latest_counters_["screenshot_saved"] = screenshot_ok;
       if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0) {
         warnings_.append("screenshot_saved_without_render_cache");
         blockers_.append("screenshot_saved_without_render_cache");
