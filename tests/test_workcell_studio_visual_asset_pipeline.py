@@ -13,6 +13,22 @@ def test_resolver_package_uri_fake_map(tmp_path):
     assert r.exists and r.source_kind == 'package_uri'
 
 
+def test_resolver_robotiq_package_uri_nested_assets_root(tmp_path):
+    from scripts.workcell_visual_asset_resolver import resolve_mesh_uri
+    repo_root = tmp_path / 'repo'
+    pkg = repo_root / 'assets' / 'end_effectors' / 'robotiq_85' / 'robotiq_85_description'
+    (pkg / 'meshes' / 'visual').mkdir(parents=True)
+    mesh = pkg / 'meshes' / 'visual' / 'robotiq_85_base_link.dae'
+    mesh.write_text('x')
+    (pkg / 'package.xml').write_text('<package><name>robotiq_85_description</name></package>')
+    resolved = resolve_mesh_uri(
+        'package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae',
+        repo_root=repo_root,
+    )
+    assert resolved.exists
+    assert str(mesh) == str(resolved.resolved_path)
+
+
 def test_resolver_relative_scene_and_repo_assets(tmp_path):
     from scripts.workcell_visual_asset_resolver import resolve_mesh_uri
     scene = tmp_path / 'scene'; (scene / 'urdf').mkdir(parents=True)

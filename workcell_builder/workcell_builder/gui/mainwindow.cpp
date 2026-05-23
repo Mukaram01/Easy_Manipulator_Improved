@@ -35,6 +35,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
+#include <QDirIterator>
 #include <QUrl>
 #include <QDateTime>
 #include <QIODevice>
@@ -461,6 +462,40 @@ static QString canonical_scene_path_string(const fs::path & scene_dir)
   return QString::fromStdString((ec ? scene_dir.lexically_normal() : canonical).string());
 }
 
+
+static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_dir, const QString & workspace_root)
+{
+  QMap<QString, QString> package_map;
+  auto scan_root = [&](const QString & root) {
+    if (root.trimmed().isEmpty()) return;
+    const QDir base(root);
+    if (!base.exists()) return;
+    QDirIterator it(root, QStringList() << "package.xml", QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+      const QString package_xml = it.next();
+      const QFileInfo info(package_xml);
+      const QString package_root = info.dir().absolutePath();
+      const QString package_name = QFileInfo(package_root).fileName();
+      if (package_name.trimmed().isEmpty()) continue;
+      if (!package_map.contains(package_name)) package_map.insert(package_name, package_root);
+    }
+  };
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path().parent_path();
+  const QString ws = workspace_root.trimmed();
+  scan_root(QString::fromStdString((scene_dir / "generated").string()));
+  scan_root(ws + "/install/share");
+  scan_root(ws + "/src");
+  scan_root(ws + "/src/easy_manipulation_deployment/assets");
+  scan_root(ws + "/src/assets");
+  scan_root(QString::fromStdString((repo_root / "assets").string()));
+  scan_root(QString::fromStdString((repo_root / "assets/environment").string()));
+  scan_root(QString::fromStdString((repo_root / "assets/robots").string()));
+  scan_root(QString::fromStdString((repo_root / "assets/end_effectors").string()));
+  scan_root(QStringLiteral("/opt/ros/humble/share"));
+  return package_map;
+}
+
 static QString resolve_visual_mesh_source_path(
   const QString & raw_path, const QString & package_uri, const fs::path & scene_dir,
   const QString & workspace_root, QStringList * tried_candidates)
@@ -490,18 +525,17 @@ static QString resolve_visual_mesh_source_path(
 
   const QString trimmed_uri = package_uri.trimmed();
   if (trimmed_uri.startsWith("package://")) {
-    QString package_tail = trimmed_uri.mid(QString("package://").size());
+    const QString package_tail = trimmed_uri.mid(QString("package://").size());
     const int slash = package_tail.indexOf('/');
     const QString package_name = (slash >= 0) ? package_tail.left(slash) : package_tail;
     const QString package_rel = (slash >= 0) ? package_tail.mid(slash + 1) : QString();
-    const QString scene_gen_package = QString::fromStdString((scene_dir / "generated" / package_name.toStdString()).string());
-    for (const QString & root : {
-           scene_gen_package,
-           workspace_root + "/src/easy_manipulation_deployment/assets",
-           workspace_root + "/src/assets",
-           QString("/opt/ros/humble/share/%1").arg(package_name)}) {
-      if (root.trimmed().isEmpty()) continue;
-      const QString resolved = add_candidate(QDir(root).filePath(package_rel));
+    static QHash<QString, QMap<QString, QString>> workspace_cache;
+    const QString cache_key = QString::fromStdString(scene_dir.string()) + "::" + workspace_root;
+    if (!workspace_cache.contains(cache_key)) workspace_cache.insert(cache_key, discover_visual_mesh_package_map(scene_dir, workspace_root));
+    const QMap<QString, QString> package_map = workspace_cache.value(cache_key);
+    const QString package_root = package_map.value(package_name);
+    if (!package_root.trimmed().isEmpty()) {
+      const QString resolved = add_candidate(QDir(package_root).filePath(package_rel));
       if (!resolved.isEmpty()) return resolved;
     }
   } else if (trimmed_uri.startsWith("file://")) {
@@ -5557,12 +5591,19 @@ void MainWindow::populate_scene_hierarchy()
           p.status = "ready";
           p.source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "source_path"));
           const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
+          const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_source_path"));
           const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
-          if (!package_uri.trimmed().isEmpty() && package_uri.startsWith("package://") && !workcell_builder::yaml_map_key(v, "resolved").as<bool>(false)) {
-            ++unresolved_package_uri_count;
-          }
+          bool unresolved_package_uri = false;
           if (p.source_path.trimmed().isEmpty() && !resolved_path.trimmed().isEmpty()) {
             p.source_path = resolved_path;
+            ++source_path_from_resolved_path;
+          }
+          if (!resolved_source_path.trimmed().isEmpty() && fs::exists(fs::path(resolved_source_path.toStdString()))) {
+            p.source_path = resolved_source_path;
+            p.mesh_path = resolved_source_path;
+            p.mesh_available = true;
+            p.has_mesh_metadata = true;
+            p.active_visual_source = QStringLiteral("mesh_preview");
             ++source_path_from_resolved_path;
           }
           if (p.source_path.trimmed().isEmpty() && (package_uri.startsWith("file://") || package_uri.startsWith("/"))) {
@@ -5632,20 +5673,25 @@ void MainWindow::populate_scene_hierarchy()
           const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
           bool mesh_fallback = false;
           if (geometry_type == "mesh") {
-            QStringList tried_candidates;
-            const QString resolved_mesh_path = resolve_visual_mesh_source_path(
-              p.source_path, package_uri, d, detect_workspace_root(), &tried_candidates);
-            if (unsupported_format) {
-              mesh_fallback = true;
-            } else if (resolved_mesh_path.trimmed().isEmpty()) {
-              mesh_fallback = true;
-            } else {
-              p.mesh_path = resolved_mesh_path;
-              p.source_path = resolved_mesh_path;
+            if (p.mesh_path.trimmed().isEmpty()) {
+              QStringList tried_candidates;
+              const QString resolved_mesh_path = resolve_visual_mesh_source_path(
+                p.source_path, package_uri, d, detect_workspace_root(), &tried_candidates);
+              if (unsupported_format) {
+                mesh_fallback = true;
+              } else if (resolved_mesh_path.trimmed().isEmpty()) {
+                mesh_fallback = true;
+              } else {
+                p.mesh_path = resolved_mesh_path;
+                p.source_path = resolved_mesh_path;
+              }
+              if (mesh_fallback && !tried_candidates.isEmpty()) {
+                append_studio_log(QString("URDF visual mesh unresolved for %1: raw=%2 package=%3 tried=[%4]")
+                                    .arg(p.id, p.source_path, package_uri, tried_candidates.join(" | ")));
+              }
             }
-            if (mesh_fallback && !tried_candidates.isEmpty()) {
-              append_studio_log(QString("URDF visual mesh unresolved for %1: raw=%2 package=%3 tried=[%4]")
-                                  .arg(p.id, p.source_path, package_uri, tried_candidates.join(" | ")));
+            if (p.mesh_path.trimmed().isEmpty() && package_uri.startsWith("package://")) {
+              unresolved_package_uri = true;
             }
           } else if (is_primitive) {
             ++non_mesh_geometry_added;
@@ -5677,6 +5723,8 @@ void MainWindow::populate_scene_hierarchy()
             p.mesh_available = true;
             p.has_mesh_metadata = true;
           }
+          if (unresolved_package_uri) ++unresolved_package_uri_count;
+          if (unresolved_package_uri && !is_primitive) ++skipped_missing_mesh_source_path;
           preview_items.push_back(p);
           ++visual_preview_added_count;
           preview_ids.insert(id);

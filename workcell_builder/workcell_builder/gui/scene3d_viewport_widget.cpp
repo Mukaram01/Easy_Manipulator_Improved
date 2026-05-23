@@ -561,18 +561,39 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
 }
 void Scene3DViewportWidget::fit_scene() {
   QVector3D bmin, bmax;
-  // if (!include_in_fit_bounds_physical_only(it)) continue;
-  // if (!has_physical_item) { set_isometric_view(); return; }
-  if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) { set_isometric_view(); return; } // FIT_FALLBACK_ISO_IF_NO_PHYSICAL
+  bool has_generated_mesh_focus = false;
+  QVector3D mesh_min(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  QVector3D mesh_max(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  for (const auto & it : items) {
+    if (!include_in_fit_bounds(it, false)) continue;
+    const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool mesh_backed = it.mesh_available || !it.mesh_path.trimmed().isEmpty();
+    if (!generated_urdf || !mesh_backed) continue;
+    const ItemBounds bounds = item_bounds_for_role(it);
+    mesh_min.setX(std::min(mesh_min.x(), static_cast<float>(bounds.x)));
+    mesh_min.setY(std::min(mesh_min.y(), static_cast<float>(bounds.y)));
+    mesh_min.setZ(std::min(mesh_min.z(), static_cast<float>(bounds.z)));
+    mesh_max.setX(std::max(mesh_max.x(), static_cast<float>(bounds.x + bounds.sx)));
+    mesh_max.setY(std::max(mesh_max.y(), static_cast<float>(bounds.y + bounds.sy)));
+    mesh_max.setZ(std::max(mesh_max.z(), static_cast<float>(bounds.z + bounds.sz)));
+    has_generated_mesh_focus = true;
+  }
+  if (has_generated_mesh_focus) {
+    bmin = mesh_min;
+    bmax = mesh_max;
+  } else if (!scene_bounds_from_visible_items(bmin, bmax, fit_include_overlays)) {
+    set_isometric_view();
+    return;
+  }
   orbit_offset_ = (bmin + bmax) * 0.5f;
   const QVector3D ext = bmax - bmin;
   const double radius = qMax(0.25, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
   scene_radius_ = radius;
   const double fov = qDegreesToRadians(50.0);
-  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.45;
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 0.95;
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   pitch_ = qBound(0.28, pitch_, 0.9);
-  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.15, radius * 0.1)));
+  orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
   update();
 }
 void Scene3DViewportWidget::focus_selected() {
