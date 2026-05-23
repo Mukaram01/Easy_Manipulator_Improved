@@ -86,6 +86,21 @@ def check_scene(repo_root: Path, scene_dir: Path) -> dict:
     layout = _load_yaml(layout_path) if has_layout else {}
     idx = _load_json(scene_dir / 'generated' / 'scene_visual_mesh_index.json') or {}
     items = idx.get('items', []) if isinstance(idx, dict) else []
+
+    def _ext_of(i):
+        ext = str(i.get('extension') or '').strip().lower()
+        if not ext:
+            mesh_path = str(i.get('resolved_source_path') or i.get('resolved_path') or i.get('source_path') or i.get('mesh_path') or '')
+            ext = Path(mesh_path).suffix.lower()
+        return ext
+
+    mesh_uri_count = sum(1 for i in items if str(i.get('original_uri') or i.get('mesh_uri') or i.get('package_uri') or '').strip())
+    mesh_resolved_count = sum(1 for i in items if i.get('resolved') is True or str(i.get('resolved_source_path') or i.get('resolved_path') or '').strip())
+    stl_count = sum(1 for i in items if _ext_of(i) == '.stl')
+    dae_count = sum(1 for i in items if _ext_of(i) == '.dae')
+    obj_count = sum(1 for i in items if _ext_of(i) == '.obj')
+    supported_mesh_count = stl_count
+    unsupported_extension_count = dae_count + obj_count
     preview_metadata_path = scene_dir / 'generated' / 'scene_preview_metadata.json'
     preview_metadata = _load_json(preview_metadata_path) if preview_metadata_path.exists() else {}
 
@@ -191,6 +206,14 @@ def check_scene(repo_root: Path, scene_dir: Path) -> dict:
         'source_layer_counts': dict(layer_counts),
         'overlay_sources_present': [str(p) for p in overlay_sources if p.exists()],
         'active_visual_source_counts': dict(visual_counts),
+        'visual_mesh_index_total': len(items),
+        'mesh_uri_count': mesh_uri_count,
+        'mesh_resolved_count': mesh_resolved_count,
+        'stl_count': stl_count,
+        'dae_count': dae_count,
+        'obj_count': obj_count,
+        'supported_mesh_count': supported_mesh_count,
+        'unsupported_extension_count': unsupported_extension_count,
     }
 
 
