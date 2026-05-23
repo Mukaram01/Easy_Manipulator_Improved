@@ -3712,20 +3712,9 @@ void MainWindow::refresh_scene_builder_selection_state_ui()
   refresh_task_intent_panel();
 }
 
-MainWindow::SelectedSceneState MainWindow::active_scene_builder_state() const
-{
-  return selected_scene_state_;
-}
-
 ScenePreviewWidget * MainWindow::active_scene_preview_widget() const
 {
   return scene_preview_widget_;
-}
-
-Scene3DViewportWidget::RenderDebugCounters MainWindow::active_scene3d_viewport_counters() const
-{
-  auto * preview = active_scene_preview_widget();
-  return preview ? preview->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
 }
 
 void MainWindow::refresh_scene_builder_state_from_active_scene()

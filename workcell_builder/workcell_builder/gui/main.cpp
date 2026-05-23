@@ -193,7 +193,7 @@ private:
     const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
     const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
-    const auto rc = window_->active_scene3d_viewport_counters();
+    const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
     const bool screenshot_available = !opts_.screenshot_path.trimmed().isEmpty();
     const bool render_ready =
       rc.viewport_received_count > 0 &&
@@ -319,7 +319,7 @@ private:
       viewport->update();
       viewport->repaint();
       QApplication::processEvents(QEventLoop::AllEvents, 250);
-      const auto rc = window_->active_scene3d_viewport_counters();
+      const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
       counters["preview_items_count"] = rc.preview_items_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
       counters["render_cache_count"] = rc.render_cache_count;
