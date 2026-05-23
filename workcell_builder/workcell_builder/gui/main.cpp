@@ -315,11 +315,94 @@ private:
     counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
-    if (viewport) {
-      viewport->update();
-      viewport->repaint();
+
+    enum class ViewportCounterSource
+    {
+      Missing,
+      ActiveWidget,
+      NonZeroCandidate
+    };
+    auto viewport_counter_source_to_string = [](ViewportCounterSource source) {
+      switch (source) {
+        case ViewportCounterSource::ActiveWidget:
+          return QString("active_widget");
+        case ViewportCounterSource::NonZeroCandidate:
+          return QString("nonzero_candidate");
+        case ViewportCounterSource::Missing:
+        default:
+          return QString("missing");
+      }
+    };
+
+    const auto viewport_candidates = window_->findChildren<Scene3DViewportWidget *>();
+    QJsonArray viewport_candidates_json;
+    int active_viewport_candidate_index = -1;
+    int best_nonzero_candidate_index = -1;
+    int best_nonzero_candidate_score = -1;
+    Scene3DViewportWidget::RenderDebugCounters active_candidate_counters{};
+    bool active_candidate_found = false;
+    for (int i = 0; i < viewport_candidates.size(); ++i) {
+      auto * candidate = viewport_candidates.at(i);
+      if (!candidate) {
+        continue;
+      }
+      const auto rc = candidate->render_debug_counters();
+      QJsonObject candidate_json;
+      candidate_json["object_name"] = candidate->objectName();
+      candidate_json["visible"] = candidate->isVisible();
+      candidate_json["parent_object_name"] = candidate->parentWidget() ? candidate->parentWidget()->objectName() : QString();
+      candidate_json["viewport_received_count"] = rc.viewport_received_count;
+      candidate_json["render_cache_count"] = rc.render_cache_count;
+      candidate_json["rendered_count"] = rc.rendered_count;
+      candidate_json["visible_count"] = rc.visible_count;
+      candidate_json["last_paint_completed"] = rc.last_paint_completed;
+      viewport_candidates_json.append(candidate_json);
+
+      if (candidate == viewport) {
+        active_viewport_candidate_index = i;
+        active_candidate_counters = rc;
+        active_candidate_found = true;
+      }
+      const int score = rc.viewport_received_count + rc.render_cache_count + rc.rendered_count + rc.visible_count;
+      if (score > 0 && score > best_nonzero_candidate_score) {
+        best_nonzero_candidate_score = score;
+        best_nonzero_candidate_index = i;
+      }
+    }
+    if (viewport_candidates_json.isEmpty()) {
+      blockers_.append("scene3d_viewport_widget_not_found");
+    }
+
+    ViewportCounterSource viewport_counter_source = ViewportCounterSource::Missing;
+    Scene3DViewportWidget::RenderDebugCounters selected_counters{};
+    if (active_candidate_found) {
+      selected_counters = active_candidate_counters;
+      viewport_counter_source = ViewportCounterSource::ActiveWidget;
+    }
+    const bool selected_all_zero =
+      selected_counters.viewport_received_count <= 0 &&
+      selected_counters.render_cache_count <= 0 &&
+      selected_counters.rendered_count <= 0 &&
+      selected_counters.visible_count <= 0;
+    if (selected_all_zero && best_nonzero_candidate_index >= 0) {
+      auto * chosen = viewport_candidates.at(best_nonzero_candidate_index);
+      if (chosen) {
+        selected_counters = chosen->render_debug_counters();
+        viewport_counter_source = ViewportCounterSource::NonZeroCandidate;
+        warnings_.append("active_viewport_selected_from_nonzero_candidate");
+      }
+    }
+
+    if (active_candidate_found || viewport_counter_source == ViewportCounterSource::NonZeroCandidate) {
+      if (viewport) {
+        viewport->update();
+        viewport->repaint();
+      }
       QApplication::processEvents(QEventLoop::AllEvents, 250);
-      const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+      if (viewport_counter_source == ViewportCounterSource::ActiveWidget && viewport) {
+        selected_counters = viewport->render_debug_counters();
+      }
+      const auto rc = selected_counters;
       counters["preview_items_count"] = rc.preview_items_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
       counters["render_cache_count"] = rc.render_cache_count;
@@ -341,7 +424,7 @@ private:
       counters["active_viewport_received_count"] = rc.viewport_received_count;
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
-      counters["viewport_counter_source"] = QString("active_widget");
+      counters["viewport_counter_source"] = viewport_counter_source_to_string(viewport_counter_source);
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -355,8 +438,10 @@ private:
       counters["active_viewport_received_count"] = 0;
       counters["active_rendered_count"] = 0;
       counters["active_render_cache_count"] = 0;
-      counters["viewport_counter_source"] = QString("missing");
+      counters["viewport_counter_source"] = viewport_counter_source_to_string(viewport_counter_source);
     }
+    root["viewport_candidates"] = viewport_candidates_json;
+    root["active_viewport_candidate_index"] = active_viewport_candidate_index;
     auto * preview_chip = window_->findChild<QLabel *>("sceneStatusChip");
     if (preview_chip) {
       const QString text = preview_chip->text();
