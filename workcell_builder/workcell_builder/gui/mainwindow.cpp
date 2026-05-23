@@ -2913,7 +2913,13 @@ void MainWindow::refresh_selected_scene_details_card()
 }
 
 
-QString MainWindow::selected_scene_launch_command() const { if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return ""; const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString command = QString("ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(QString::fromStdString(scene.scene_name)); const fs::path launch_file = scene.scene_dir / "launch" / "demo.launch.py"; std::ifstream ifs(launch_file.string()); if (ifs) { std::string launch_text((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>()); if (launch_text.find("launch_task_preview") != std::string::npos) { command += " launch_task_preview:=true"; } } return command; }
+QString MainWindow::selected_scene_launch_command() const
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return "";
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  return workcell_builder::build_command(QString::fromStdString(scene.scene_name));
+}
+
 
 void MainWindow::open_selected_scene_artifact(const QString & artifact)
 { if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) { QMessageBox::information(this,"Workcell Studio","No scene selected."); return; }
@@ -3367,24 +3373,36 @@ QString MainWindow::selected_scene_preview_command_block() const { return select
 
 bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
 {
-  if (selected_scene_index_ < 0) { if (blockers) blockers->append("No scene selected"); return false; }
-  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  if (QString::fromStdString(s.status).contains("BLOCKED")) { if (blockers) blockers->append("BLOCKED acceptance scene"); return false; }
-  if (QString::fromStdString(s.status).contains("PREVIEW_ONLY")) { if (blockers) blockers->append("PREVIEW_ONLY scenes cannot run"); return false; }
-  const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
-  const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
-  if (fs::exists(layout_file) && (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
-    if (blockers) blockers->append("Layout changed since last generation. Run Generate Scene / Layout Merge before preview.");
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    if (blockers) blockers->append("No scene selected");
     return false;
   }
-  return true;
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const auto status = workcell_builder::validate_readiness(scene, detect_workspace_root().toStdString());
+  if (!status.ready && blockers) blockers->append(status.blocker_reason);
+  return status.ready;
 }
+
 bool MainWindow::preview_command_is_safe(const QString & command, QStringList * blockers) const
-{ bool ok = command.contains("use_fake_hardware:=true") && !command.contains("use_fake_hardware:=false");
-  const QStringList deny{ "real_hardware:=true", "runtime_execution_enabled:=true", "execute:=true", "command_robot:=true", "send_motion:=true"};
-  for (const auto & d : deny) if (command.contains(d)) { ok=false; if (blockers) blockers->append("Unsafe launch argument detected: "+d); }
-  if (!command.contains("use_fake_hardware:=true") && blockers) blockers->append("Missing required use_fake_hardware:=true");
-  return ok; }
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    if (blockers) blockers->append("No scene selected");
+    return false;
+  }
+  QString dry_command;
+  const auto status = workcell_builder::dry_run(
+    scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)],
+    detect_workspace_root().toStdString(),
+    &dry_command);
+  if (!status.ready) {
+    if (blockers) blockers->append(status.blocker_reason);
+    return false;
+  }
+  const QString expected = "cd " + detect_workspace_root() + " && source install/setup.bash && " + dry_command;
+  const bool safe = (command.trimmed() == dry_command.trimmed()) || (command.trimmed() == expected.trimmed());
+  if (!safe && blockers) blockers->append("Unsafe launch argument detected: command does not match expected fake-hardware preview command");
+  return safe;
+}
 
 void MainWindow::set_preview_state(const QString & state){ preview_state_=state; refresh_preview_launch_ui(); }
 
