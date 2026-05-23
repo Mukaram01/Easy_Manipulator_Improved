@@ -7,6 +7,7 @@ import os
 import shlex
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -106,7 +107,35 @@ def safety_violations(command: str) -> list[str]:
     return [token for token in REAL_HARDWARE_TOKENS if token in lower]
 
 
-def run_scene(scene_name: str, launch_file: Path, timeout_sec: int, launch_rviz: bool, dry_run: bool) -> dict[str, Any]:
+def _run_truth_preview_guard(scene_name: str, repo_root: Path, workspace_root: Path) -> tuple[bool, dict[str, Any]]:
+    cmd = [
+        sys.executable,
+        str(repo_root / "scripts" / "validate_rviz_truth_preview_command.py"),
+        scene_name,
+        "--repo-root",
+        str(repo_root),
+        "--workspace-root",
+        str(workspace_root),
+        "--check-ros2-prefix",
+        "--json",
+    ]
+    proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+    payload: dict[str, Any] = {
+        "status": "FAIL",
+        "blockers": [f"truth_preview_guard_invocation_failed: exit={proc.returncode}"],
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
+    if proc.stdout.strip():
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload["blockers"].append("truth_preview_guard_invalid_json")
+    ok = proc.returncode == 0 and str(payload.get("status", "")).upper() == "PASS"
+    return ok, payload
+
+
+def run_scene(scene_name: str, launch_file: Path, timeout_sec: int, launch_rviz: bool, dry_run: bool, repo_root: Path, workspace_root: Path) -> dict[str, Any]:
     command = f"ros2 launch {scene_name} demo.launch.py use_fake_hardware:=true launch_rviz:={'true' if launch_rviz else 'false'}"
     print(command)
 
@@ -123,6 +152,7 @@ def run_scene(scene_name: str, launch_file: Path, timeout_sec: int, launch_rviz:
         "warnings": [],
         "stdout_tail": "",
         "stderr_tail": "",
+        "truth_preview_guard": {},
     }
 
     if not launch_file.is_file():
@@ -134,6 +164,17 @@ def run_scene(scene_name: str, launch_file: Path, timeout_sec: int, launch_rviz:
     if violations:
         result["status"] = "FAIL"
         result["blockers"].append(f"safety_rejected: {', '.join(violations)}")
+        return result
+
+    guard_ok, guard_payload = _run_truth_preview_guard(scene_name, repo_root, workspace_root)
+    result["truth_preview_guard"] = guard_payload
+    if not guard_ok:
+        result["status"] = "FAIL"
+        guard_blockers = guard_payload.get("blockers", [])
+        if isinstance(guard_blockers, list):
+            result["blockers"].extend([f"truth_preview_guard: {str(item)}" for item in guard_blockers])
+        else:
+            result["blockers"].append("truth_preview_guard: failed")
         return result
 
     if dry_run:
@@ -201,6 +242,7 @@ def main() -> int:
         launch_rviz = False
 
     repo_root = Path(__file__).resolve().parents[1]
+    workspace_root = repo_root
     scenes = discover_scenes(repo_root)
     scene_map = {item["scene"]: item for item in scenes}
 
@@ -219,6 +261,8 @@ def main() -> int:
             timeout_sec=args.timeout_sec,
             launch_rviz=launch_rviz,
             dry_run=args.dry_run,
+            repo_root=repo_root,
+            workspace_root=workspace_root,
         )
         for item in targets
     ]
