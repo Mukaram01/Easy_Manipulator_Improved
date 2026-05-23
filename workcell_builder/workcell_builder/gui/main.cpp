@@ -58,6 +58,13 @@ QString cli_value(const QStringList & args, const QString & flag)
   return QString();
 }
 
+QString diagnostics_dump_path_from_runtime(const QStringList & args)
+{
+  const QString cli = cli_value(args, "--scene3d-diagnostics-dump");
+  if (!cli.trimmed().isEmpty()) return cli.trimmed();
+  return qEnvironmentVariable("SCENE3D_DIAGNOSTICS_DUMP").trimmed();
+}
+
 QJsonObject run_gui_self_test();
 
 struct Scene3DViewportCandidate
@@ -923,6 +930,7 @@ int main(int argc, char * argv[])
   smoke_opts.screenshot_path = cli_value(args, "--smoke-screenshot");
   smoke_opts.exit_after_smoke = has_cli_flag(args, "--exit-after-smoke");
   smoke_opts.new_cell_recommended_layout_smoke = has_cli_flag(args, "--new-cell-recommended-layout-smoke");
+  const QString scene3d_diag_dump_path = diagnostics_dump_path_from_runtime(args);
 
   if (smoke_opts.enabled) {
     if (smoke_opts.smoke_output.trimmed().isEmpty()) {
@@ -933,6 +941,18 @@ int main(int argc, char * argv[])
     const QString ros_distro = cli_value(args, "--ros-distro");
     MainWindow w(workspace, ros_distro);
     w.show();
+    if (!scene3d_diag_dump_path.isEmpty()) {
+      QObject::connect(&a, &QCoreApplication::aboutToQuit, [&w, scene3d_diag_dump_path]() {
+        const auto preview_resolution = resolve_active_scene_preview_widget(&w);
+        const auto viewport_resolution = resolve_active_scene3d_viewport(&w, preview_resolution.selected);
+        if (!viewport_resolution.selected) return;
+        QJsonObject root;
+        root["timestamp_utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        root["mesh_diagnostics"] = viewport_resolution.selected->export_mesh_diagnostics();
+        QFile out(scene3d_diag_dump_path);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text)) out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+      });
+    }
     auto * runner = new Scene3DSmokeRunner(&a, &w, smoke_opts);
     runner->start();
     return a.exec();
@@ -945,5 +965,17 @@ int main(int argc, char * argv[])
 
   MainWindow w(startup.selected_workspace(), startup.selected_ros_distro());
   w.show();
+  if (!scene3d_diag_dump_path.isEmpty()) {
+    QObject::connect(&a, &QCoreApplication::aboutToQuit, [&w, scene3d_diag_dump_path]() {
+      const auto preview_resolution = resolve_active_scene_preview_widget(&w);
+      const auto viewport_resolution = resolve_active_scene3d_viewport(&w, preview_resolution.selected);
+      if (!viewport_resolution.selected) return;
+      QJsonObject root;
+      root["timestamp_utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+      root["mesh_diagnostics"] = viewport_resolution.selected->export_mesh_diagnostics();
+      QFile out(scene3d_diag_dump_path);
+      if (out.open(QIODevice::WriteOnly | QIODevice::Text)) out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    });
+  }
   return a.exec();
 }

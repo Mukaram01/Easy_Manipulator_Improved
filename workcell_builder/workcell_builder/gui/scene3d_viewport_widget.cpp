@@ -16,6 +16,7 @@
 #include <QtEndian>
 #include <QMimeData>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QXmlStreamReader>
 #include <cstring>
 #include <QtMath>
@@ -1074,11 +1075,16 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   entry.loaded = true;
   if (!input_info.exists() || !input_info.isFile()) {
     entry.valid = false;
+    entry.rejection_reason_code = QStringLiteral("missing_on_disk");
+    entry.parse_error_code = QStringLiteral("missing_on_disk");
     entry.warning = QStringLiteral("mesh missing on disk");
     return mesh_cache_.insert(canonical, entry).value();
   }
   QFile file(canonical);
   if (!file.open(QIODevice::ReadOnly)) {
+    entry.valid = false;
+    entry.rejection_reason_code = QStringLiteral("unreadable");
+    entry.parse_error_code = QStringLiteral("unreadable");
     entry.warning = QStringLiteral("mesh unreadable");
     return mesh_cache_.insert(canonical, entry).value();
   }
@@ -1086,30 +1092,72 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   const QString ext = input_info.suffix().toLower();
   QString parse_error;
   if (ext == QStringLiteral("stl")) {
+    entry.parser_type = QStringLiteral("stl");
     entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
   } else if (ext == QStringLiteral("dae")) {
+    entry.parser_type = QStringLiteral("dae");
     entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
   } else {
     entry.valid = false;
+    entry.parser_type = QStringLiteral("unsupported");
     parse_error = QStringLiteral("unsupported mesh format: .%1").arg(ext.isEmpty() ? QStringLiteral("<none>") : ext);
+    entry.parse_error_code = QStringLiteral("unsupported_format");
+    entry.rejection_reason_code = QStringLiteral("unsupported_format");
   }
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
+    entry.parse_error_code = entry.oversized ? QStringLiteral("triangle_limit_exceeded") : (entry.parse_error_code == "none" ? QStringLiteral("parse_failed") : entry.parse_error_code);
+    entry.rejection_reason_code = entry.oversized ? QStringLiteral("oversized") : (entry.rejection_reason_code == "none" ? QStringLiteral("invalid_mesh") : entry.rejection_reason_code);
     entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
+  if (entry.has_bounds) {
+    entry.local_span = entry.local_max - entry.local_min;
+    entry.guard_raw_span = qMax(entry.local_span.x(), qMax(entry.local_span.y(), entry.local_span.z()));
+  }
   if (entry.valid && entry.has_bounds) {
-    const QVector3D span = entry.local_max - entry.local_min;
+    const QVector3D span = entry.local_span;
     const bool finite_bounds = qIsFinite(entry.local_min.x()) && qIsFinite(entry.local_min.y()) && qIsFinite(entry.local_min.z()) &&
                                qIsFinite(entry.local_max.x()) && qIsFinite(entry.local_max.y()) && qIsFinite(entry.local_max.z()) &&
                                qIsFinite(span.x()) && qIsFinite(span.y()) && qIsFinite(span.z());
     const float max_span = qMax(span.x(), qMax(span.y(), span.z()));
+    entry.guard_final_span = max_span;
     if (!finite_bounds || max_span > 100.0f) {
       entry.valid = false;
+      entry.parse_error_code = !finite_bounds ? QStringLiteral("non_finite_bounds") : QStringLiteral("bounds_exceed_guard");
+      entry.rejection_reason_code = !finite_bounds ? QStringLiteral("non_finite_bounds") : QStringLiteral("unreasonable_bounds");
       entry.warning = QStringLiteral("mesh invalid (unreasonable bounds)");
     }
   }
   return mesh_cache_.insert(canonical, entry).value();
+}
+
+QJsonArray Scene3DViewportWidget::export_mesh_diagnostics() const
+{
+  QJsonArray out;
+  for (auto it = mesh_cache_.cbegin(); it != mesh_cache_.cend(); ++it) {
+    const QString canonical_path = it.key();
+    const MeshCacheEntry & e = it.value();
+    QJsonObject obj;
+    obj["canonical_path"] = canonical_path;
+    obj["loaded"] = e.loaded;
+    obj["valid"] = e.valid;
+    obj["warning"] = e.warning;
+    obj["oversized"] = e.oversized;
+    obj["parser_type"] = e.parser_type;
+    obj["parse_error_code"] = e.parse_error_code;
+    obj["rejected_reason_code"] = e.rejection_reason_code;
+    obj["triangle_count"] = e.mesh.triangles.size();
+    obj["has_bounds"] = e.has_bounds;
+    obj["local_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
+    obj["local_max"] = QJsonArray{e.local_max.x(), e.local_max.y(), e.local_max.z()};
+    obj["span"] = QJsonArray{e.local_span.x(), e.local_span.y(), e.local_span.z()};
+    obj["guard_raw_span"] = e.guard_raw_span;
+    obj["guard_item_context_evaluated"] = e.guard_item_context_evaluated;
+    obj["guard_final_span"] = e.guard_final_span;
+    out.append(obj);
+  }
+  return out;
 }
 
 
@@ -1424,6 +1472,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
   const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
   if (mesh_source.trimmed().isEmpty()) return false;
   const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(mesh_source);
+  const_cast<MeshCacheEntry &>(cache).guard_item_context_evaluated = true;
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
   QMatrix4x4 transform;
@@ -1462,6 +1511,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
                  qMax(0.0f, wmax.x() - wmin.x()),
                  qMax(0.0f, wmax.y() - wmin.y()),
                  qMax(0.0f, wmax.z() - wmin.z()) };
+  const_cast<MeshCacheEntry &>(cache).guard_final_span = qMax(out_bounds.sx, qMax(out_bounds.sy, out_bounds.sz));
   return true;
 }
 bool Scene3DViewportWidget::pick_item_at_screen(

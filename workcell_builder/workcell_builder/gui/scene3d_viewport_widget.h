@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QVector3D>
 #include <QJsonObject>
+#include <QJsonArray>
 
 #include <array>
 
@@ -99,6 +100,7 @@ public:
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
+  QJsonArray export_mesh_diagnostics() const;
 
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,
@@ -188,10 +190,17 @@ private:
     bool valid{ false };
     bool oversized{ false };
     QString warning;
+    QString parser_type{ "unsupported" };
+    QString parse_error_code{ "none" };
+    QString rejection_reason_code{ "none" };
     InternalTriangleMesh mesh;
     bool has_bounds{ false };
     QVector3D local_min;
     QVector3D local_max;
+    QVector3D local_span;
+    double guard_raw_span{ 0.0 };
+    bool guard_item_context_evaluated{ false };
+    double guard_final_span{ 0.0 };
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;
