@@ -100,6 +100,8 @@ private slots:
   void stop_preview_process();
   void handle_preview_stdout();
   void handle_preview_stderr();
+  void handle_preview_started();
+  void handle_preview_error(QProcess::ProcessError error);
   void handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status);
 
 private:
@@ -618,6 +620,7 @@ private:
   QProcess * preview_process_{ nullptr };
   QString preview_state_{ "IDLE" };
   QString active_preview_command_;
+  QString preview_running_scene_key_;
   workcell_builder::WorkcellStudioSceneBrowserResult scene_browser_result_;
   int selected_scene_index_{ -1 };
   struct WorkcellLoadResult
