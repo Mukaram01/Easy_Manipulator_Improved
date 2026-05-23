@@ -5521,7 +5521,9 @@ void MainWindow::populate_scene_hierarchy()
   int non_mesh_geometry_added = 0;
   int non_mesh_geometry_unsupported = 0;
   int package_uri_resolved_by_loader = 0;
+  int package_uri_resolved_after_stale_resolved_source_path = 0;
   int source_path_from_resolved_path = 0;
+  int stale_resolved_source_path_count = 0;
   int unresolved_package_uri_count = 0;
   int stale_or_absolute_only_mesh_index_count = 0;
   int mesh_item_count = 0;
@@ -5593,25 +5595,45 @@ void MainWindow::populate_scene_hierarchy()
           const QString resolved_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_path"));
           const QString resolved_source_path = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "resolved_source_path"));
           const QString package_uri = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "package_uri"));
+          p.resolved_source_path_original = resolved_source_path;
+          p.package_uri = package_uri;
           bool unresolved_package_uri = false;
           if (p.source_path.trimmed().isEmpty() && !resolved_path.trimmed().isEmpty()) {
             p.source_path = resolved_path;
             ++source_path_from_resolved_path;
           }
-          if (!resolved_source_path.trimmed().isEmpty() && fs::exists(fs::path(resolved_source_path.toStdString()))) {
+          const bool has_resolved_source_path = !resolved_source_path.trimmed().isEmpty();
+          const bool resolved_source_path_exists =
+            has_resolved_source_path && fs::exists(fs::path(resolved_source_path.toStdString()));
+          if (resolved_source_path_exists) {
             p.source_path = resolved_source_path;
             p.mesh_path = resolved_source_path;
             p.mesh_available = true;
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("mesh_preview");
+            p.source_path_resolution_outcome = QStringLiteral("resolved_source_path_exists");
             ++source_path_from_resolved_path;
+          } else if (has_resolved_source_path) {
+            p.resolved_source_path_stale = true;
+            p.source_path_resolution_outcome = QStringLiteral("resolved_source_path_missing");
+            ++stale_resolved_source_path_count;
+            append_studio_log(QString(
+              "URDF visual stale resolved_source_path for %1: resolved_source_path=%2 package_uri=%3")
+              .arg(p.id, resolved_source_path, package_uri));
           }
           if (p.source_path.trimmed().isEmpty() && (package_uri.startsWith("file://") || package_uri.startsWith("/"))) {
             QString candidate = package_uri;
             if (candidate.startsWith("file://")) candidate = candidate.mid(7);
             if (fs::exists(fs::path(candidate.toStdString()))) {
               p.source_path = candidate;
+              p.source_path_resolution_outcome = p.resolved_source_path_stale
+                ? QStringLiteral("resolved_via_package_uri_after_stale_resolved_source_path")
+                : QStringLiteral("resolved_via_package_uri");
               ++package_uri_resolved_by_loader;
+              if (p.resolved_source_path_stale) ++package_uri_resolved_after_stale_resolved_source_path;
+              append_studio_log(QString(
+                "URDF visual resolution outcome for %1: resolved_source_path=%2 package_uri=%3 outcome=%4 source_path=%5")
+                .arg(p.id, resolved_source_path, package_uri, p.source_path_resolution_outcome, p.source_path));
             }
           }
           p.locked = true;
@@ -5681,9 +5703,19 @@ void MainWindow::populate_scene_hierarchy()
                 mesh_fallback = true;
               } else if (resolved_mesh_path.trimmed().isEmpty()) {
                 mesh_fallback = true;
+                if (p.resolved_source_path_stale &&
+                    p.source_path_resolution_outcome == QStringLiteral("resolved_source_path_missing")) {
+                  p.source_path_resolution_outcome = QStringLiteral("stale_resolved_source_path_unresolved_after_package_uri_attempt");
+                  append_studio_log(QString(
+                    "URDF visual resolution outcome for %1: resolved_source_path=%2 package_uri=%3 outcome=%4")
+                    .arg(p.id, resolved_source_path, package_uri, p.source_path_resolution_outcome));
+                }
               } else {
                 p.mesh_path = resolved_mesh_path;
                 p.source_path = resolved_mesh_path;
+                if (p.source_path_resolution_outcome.trimmed().isEmpty()) {
+                  p.source_path_resolution_outcome = QStringLiteral("resolved_via_mesh_source_resolution");
+                }
               }
               if (mesh_fallback && !tried_candidates.isEmpty()) {
                 append_studio_log(QString("URDF visual mesh unresolved for %1: raw=%2 package=%3 tried=[%4]")
@@ -5710,6 +5742,9 @@ void MainWindow::populate_scene_hierarchy()
             p.selectable = true;
             p.lock_reason = QStringLiteral("generated URDF visual");
             p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using primitive fallback");
+            if (p.resolved_source_path_stale) {
+              p.warnings << QStringLiteral("Preview warning: resolved_source_path is stale; package_uri fallback was attempted");
+            }
             if (!render_expected) {
               p.warnings << QStringLiteral("Preview warning: xacro-expanded visual kept as generated primitive fallback");
             }
@@ -5759,6 +5794,9 @@ void MainWindow::populate_scene_hierarchy()
         .arg(skipped_other));
       append_studio_log(QString("Loader fallbacks: package_uri_resolved_by_loader=%1 source_path_from_resolved_path=%2 non_mesh_geometry_added=%3 non_mesh_geometry_unsupported=%4")
         .arg(package_uri_resolved_by_loader).arg(source_path_from_resolved_path).arg(non_mesh_geometry_added).arg(non_mesh_geometry_unsupported));
+      append_studio_log(QString("Resolved source path diagnostics: stale_resolved_source_path=%1 package_uri_resolved_after_stale=%2")
+        .arg(stale_resolved_source_path_count)
+        .arg(package_uri_resolved_after_stale_resolved_source_path));
       if (visual_index_loaded_count != (visual_preview_added_count + visual_skipped_total)) {
         append_studio_log(
           QString("Preview warning: visual ingestion mismatch loaded=%1 added=%2 skipped_sum=%3")
