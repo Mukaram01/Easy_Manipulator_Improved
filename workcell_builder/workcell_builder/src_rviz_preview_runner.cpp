@@ -76,12 +76,16 @@ PreviewReadinessStatus validate_readiness(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root)
 {
-  if (scene_info.scene_name.empty()) return blocked("No scene selected");
+  if (scene_info.scene_name.empty()) return blocked("selected scene missing");
   if (!boost::filesystem::exists(workspace_root)) return blocked("Workspace root does not exist");
+  if (!scene_info.has_package_xml) return blocked("package.xml missing");
   if (scene_info.status.find("BLOCKED") != std::string::npos) return blocked("BLOCKED acceptance scene");
   if (scene_info.status.find("PREVIEW_ONLY") != std::string::npos) return blocked("PREVIEW_ONLY scenes cannot run");
-  if (!scene_info.has_launch_demo) return blocked("Missing launch/demo.launch.py");
+  if (!scene_info.has_launch_demo) return blocked("launch/demo.launch.py missing");
   if (!scene_info.has_task_intent) return blocked("Missing config/workcell_builder_task_intent.yaml");
+
+  const boost::filesystem::path workspace_setup = workspace_root / "install" / "setup.bash";
+  if (!boost::filesystem::exists(workspace_setup)) return blocked("install/setup.bash missing under workspace root");
 
   const boost::filesystem::path layout_file = scene_info.scene_dir / "layout" / "workcell_studio_layout.yaml";
   const boost::filesystem::path merge_report = scene_info.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
@@ -133,7 +137,7 @@ PreviewReadinessStatus run(
   if (!err.isEmpty() && stderr_callback) stderr_callback(err);
 
   if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-    return blocked(QString("Preview command failed with exit code %1").arg(process.exitCode()));
+    return blocked("ros2 launch failed");
   }
 
   PreviewReadinessStatus ok;
@@ -156,6 +160,21 @@ PreviewReadinessStatus dry_run(
   if (!launch_command_is_safe(generated, &reason)) {
     return blocked(reason);
   }
+
+  QProcess pkg_check;
+  pkg_check.setProgram("/bin/bash");
+  pkg_check.setArguments({
+      "-lc",
+      QString("source /opt/ros/humble/setup.bash && source '%1' && ros2 pkg prefix %2")
+        .arg(QString::fromStdString((workspace_root / "install" / "setup.bash").string()))
+        .arg(QString::fromStdString(scene_info.scene_name))});
+  pkg_check.start();
+  if (!pkg_check.waitForFinished(10000) ||
+    pkg_check.exitStatus() != QProcess::NormalExit || pkg_check.exitCode() != 0)
+  {
+    return blocked("package not found by ros2");
+  }
+
   PreviewReadinessStatus ok;
   ok.ready = true;
   return ok;
