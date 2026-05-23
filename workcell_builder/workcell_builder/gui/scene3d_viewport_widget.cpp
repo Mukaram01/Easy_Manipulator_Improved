@@ -204,13 +204,14 @@ bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::Intern
       const QStringList idxs = ptext.split(QRegExp("\\s+"), Qt::SkipEmptyParts);
       QVector<int> all; all.reserve(idxs.size());
       for (const auto & t : idxs) all.push_back(t.toInt());
+      const double unit_meter = (out_unit_meter && *out_unit_meter > 0.0 && qIsFinite(*out_unit_meter)) ? *out_unit_meter : 1.0;
       auto addTri=[&](int a,int b,int c){
         const int na=a*3, nb=b*3, nc=c*3;
         if (na+2>=positions.size()||nb+2>=positions.size()||nc+2>=positions.size()) return;
         Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
-        tri.vertices[0]=QVector3D(positions[na],positions[na+1],positions[na+2]);
-        tri.vertices[1]=QVector3D(positions[nb],positions[nb+1],positions[nb+2]);
-        tri.vertices[2]=QVector3D(positions[nc],positions[nc+1],positions[nc+2]);
+        tri.vertices[0]=QVector3D(positions[na],positions[na+1],positions[na+2]) * static_cast<float>(unit_meter);
+        tri.vertices[1]=QVector3D(positions[nb],positions[nb+1],positions[nb+2]) * static_cast<float>(unit_meter);
+        tri.vertices[2]=QVector3D(positions[nc],positions[nc+1],positions[nc+2]) * static_cast<float>(unit_meter);
         tri.normal = QVector3D::crossProduct(tri.vertices[1]-tri.vertices[0], tri.vertices[2]-tri.vertices[0]);
         out_mesh.triangles.push_back(tri);
       };
@@ -1123,6 +1124,15 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     entry.oversized = parse_error.contains("exceeds limit");
     entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
+  if (entry.valid && entry.parser_type == QStringLiteral("dae") && entry.dae_unit_meter > 0.0 && qIsFinite(entry.dae_unit_meter)) {
+    Scene3DViewportWidget::InternalTriangleMesh pre_unit_mesh = entry.mesh;
+    const float inv_unit = static_cast<float>(1.0 / entry.dae_unit_meter);
+    for (auto & tri : pre_unit_mesh.triangles) {
+      for (int i = 0; i < 3; ++i) tri.vertices[i] *= inv_unit;
+    }
+    entry.dae_has_pre_unit_bounds = compute_mesh_bounds_for_test(pre_unit_mesh, entry.dae_pre_unit_min, entry.dae_pre_unit_max);
+    if (entry.dae_has_pre_unit_bounds) entry.dae_pre_unit_span = entry.dae_pre_unit_max - entry.dae_pre_unit_min;
+  }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
   if (entry.has_bounds) entry.local_span = entry.local_max - entry.local_min;
   return mesh_cache_.insert(canonical, entry).value();
@@ -1141,13 +1151,10 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
 {
   if (!entry.has_bounds) return true;
   constexpr double kFinalSpanThresholdMeters = 50.0;
-  const double unit = (entry.parser_type == QStringLiteral("dae") && entry.dae_unit_meter > 0.0 && qIsFinite(entry.dae_unit_meter))
-    ? entry.dae_unit_meter
-    : 1.0;
   const QVector3D raw_span = entry.local_span;
-  const QVector3D final_span(raw_span.x() * unit * it.mesh_scale_x,
-                             raw_span.y() * unit * it.mesh_scale_y,
-                             raw_span.z() * unit * it.mesh_scale_z);
+  const QVector3D final_span(raw_span.x() * it.mesh_scale_x,
+                             raw_span.y() * it.mesh_scale_y,
+                             raw_span.z() * it.mesh_scale_z);
   if (out_raw_span) *out_raw_span = raw_span;
   if (out_final_span) *out_final_span = final_span;
   const QVector3D abs_final(qAbs(final_span.x()), qAbs(final_span.y()), qAbs(final_span.z()));
@@ -1185,6 +1192,14 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["local_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
     row["local_max"] = QJsonArray{e.local_max.x(), e.local_max.y(), e.local_max.z()};
     row["span"] = QJsonArray{e.local_span.x(), e.local_span.y(), e.local_span.z()};
+    row["dae_unit_meter"] = e.dae_unit_meter;
+    row["dae_has_pre_unit_bounds"] = e.dae_has_pre_unit_bounds;
+    row["dae_pre_unit_min"] = QJsonArray{e.dae_pre_unit_min.x(), e.dae_pre_unit_min.y(), e.dae_pre_unit_min.z()};
+    row["dae_pre_unit_max"] = QJsonArray{e.dae_pre_unit_max.x(), e.dae_pre_unit_max.y(), e.dae_pre_unit_max.z()};
+    row["dae_pre_unit_span"] = QJsonArray{e.dae_pre_unit_span.x(), e.dae_pre_unit_span.y(), e.dae_pre_unit_span.z()};
+    row["dae_post_unit_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
+    row["dae_post_unit_max"] = QJsonArray{e.local_max.x(), e.local_max.y(), e.local_max.z()};
+    row["dae_post_unit_span"] = QJsonArray{e.local_span.x(), e.local_span.y(), e.local_span.z()};
 
     QJsonArray guard_details;
     for (const auto & item : items) {

@@ -200,6 +200,10 @@ private:
     QVector3D local_max;
     QVector3D local_span;
     double dae_unit_meter{ 1.0 };
+    bool dae_has_pre_unit_bounds{ false };
+    QVector3D dae_pre_unit_min;
+    QVector3D dae_pre_unit_max;
+    QVector3D dae_pre_unit_span;
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;
