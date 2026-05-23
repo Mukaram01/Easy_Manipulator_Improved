@@ -31,6 +31,7 @@
 #include <QImage>
 #include <QWidget>
 #include <QSet>
+#include <QRegularExpression>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -259,6 +260,41 @@ ActiveScene3DViewportResolution resolve_active_scene3d_viewport(MainWindow * mw,
   }
 
   return resolution;
+}
+
+
+QJsonObject parse_latest_scene3d_diagnostics(const QString & log_text)
+{
+  QJsonObject parsed;
+  const QStringList lines = log_text.split('\n');
+  QRegularExpression count_re(QStringLiteral("([A-Za-z_][A-Za-z0-9_]*)\\s*[:=]\\s*(-?\\d+)"));
+  for (int i = lines.size() - 1; i >= 0; --i) {
+    const QString line = lines[i];
+    if (!line.contains(QStringLiteral("Scene3D diagnostics"), Qt::CaseInsensitive)) {
+      continue;
+    }
+    QJsonObject counts;
+    auto it = count_re.globalMatch(line);
+    while (it.hasNext()) {
+      const auto m = it.next();
+      counts[m.captured(1)] = m.captured(2).toInt();
+    }
+    parsed["line"] = line.trimmed();
+    parsed["line_index"] = i;
+    parsed["counts"] = counts;
+    parsed["parsed_count"] = counts.size();
+    break;
+  }
+  return parsed;
+}
+
+int sum_json_object_int_values(const QJsonObject & obj)
+{
+  int total = 0;
+  for (auto it = obj.begin(); it != obj.end(); ++it) {
+    total += it.value().toInt();
+  }
+  return total;
 }
 
 struct Scene3DSmokeOptions
@@ -492,6 +528,10 @@ private:
 
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
+    const QString log_text = log ? log->toPlainText() : QString();
+    const QJsonObject parsed_runtime_diagnostics = parse_latest_scene3d_diagnostics(log_text);
+    const QJsonObject parsed_runtime_diagnostics_counts = parsed_runtime_diagnostics.value("counts").toObject();
+    const int parsed_runtime_diagnostics_total = sum_json_object_int_values(parsed_runtime_diagnostics_counts);
     QJsonObject counters;
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
     int hierarchy_child_rows = 0;
@@ -505,8 +545,10 @@ private:
     }
     counters["hierarchy_child_row_count"] = hierarchy_child_rows;
     counters["hierarchy_has_only_headings"] = hierarchy_has_only_headings;
-    counters["log_line_count"] = log ? log->toPlainText().split('\n', Qt::SkipEmptyParts).size() : 0;
-    counters["log_has_scene3d_diagnostics"] = log ? log->toPlainText().contains("Scene3D diagnostics") : false;
+    counters["log_line_count"] = log_text.split('\n', Qt::SkipEmptyParts).size();
+    counters["log_has_scene3d_diagnostics"] = log_text.contains("Scene3D diagnostics");
+    counters["runtime_scene3d_diagnostics_total"] = parsed_runtime_diagnostics_total;
+    counters["runtime_scene3d_diagnostics_counts"] = parsed_runtime_diagnostics_counts;
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     QString selected_scene_name = "(none)";
     QString selected_item_id = "(none)";
@@ -555,6 +597,9 @@ private:
       viewport_candidates_json.append(candidate_json);
     }
     root["viewport_candidates"] = viewport_candidates_json;
+    root["runtime_scene3d_diagnostics"] = parsed_runtime_diagnostics;
+    root["active_viewport_candidate_index"] = viewport_resolution.selected_index;
+    root["active_viewport_candidate_source"] = viewport_resolution.source_label;
     counters["scene_preview_widget_found"] = (active_preview_widget != nullptr);
     counters["scene_preview_widget_count"] = preview_resolution.candidates.size();
     counters["scene_preview_widget_object_name"] = active_preview_widget ? active_preview_widget->objectName() : QString();
@@ -601,6 +646,8 @@ private:
         counters["active_viewport_candidate_index"] = viewport_resolution.selected_index;
         counters["viewport_counter_source"] = viewport_resolution.source_label;
         warnings_.append("active_viewport_selected_from_nonzero_candidate");
+        root["active_viewport_candidate_index"] = viewport_resolution.selected_index;
+        root["active_viewport_candidate_source"] = viewport_resolution.source_label;
       }
     }
     const QJsonObject readiness_markers = collect_readiness_markers();
@@ -657,6 +704,10 @@ private:
     const int active_received_count = counters.value("active_viewport_received_count").toInt();
     const int active_rendered_count = counters.value("active_rendered_count").toInt();
     const bool has_active_items = (active_received_count > 0 || active_rendered_count > 0);
+    if (parsed_runtime_diagnostics_total > 0 && !has_active_items) {
+      warnings_.append("active_viewport_counter_handoff_failed");
+      blockers_.append("active_viewport_counter_handoff_failed");
+    }
     const bool fallback_render_path_active =
       counters.value("generated_fallback_count").toInt() > 0 ||
       counters.value("primitive_fallback_count").toInt() > 0 ||
