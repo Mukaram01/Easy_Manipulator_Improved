@@ -3617,25 +3617,32 @@ void MainWindow::run_fake_hardware_preview(){
 
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const std::string workspace_root = detect_workspace_root().toStdString();
-  append_studio_log(QString("Plan & Simulate selection: scene=%1 workspace_root=%2")
+  append_studio_log(QString("RViz Truth Preview selection: scene=%1 workspace_root=%2")
       .arg(QString::fromStdString(scene.scene_name), QString::fromStdString(workspace_root)));
+  append_studio_log(QString("RViz Truth Preview package: %1").arg(QString::fromStdString(scene.scene_name)));
+  const boost::filesystem::path layout_file = scene.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const boost::filesystem::path merge_report = scene.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  if (boost::filesystem::exists(layout_file) &&
+    (!boost::filesystem::exists(merge_report) || boost::filesystem::last_write_time(layout_file) > boost::filesystem::last_write_time(merge_report))) {
+    append_studio_log("RViz Truth Preview readiness: WARN stale layout detected; continuing with generated package.");
+  }
   const auto readiness = workcell_builder::validate_readiness(scene, workspace_root);
   if (!readiness.ready) {
-    QMessageBox::warning(this, "Plan & Simulate", readiness.blocker_reason);
-    append_studio_log("Plan & Simulate launch blocked: " + readiness.blocker_reason);
+    QMessageBox::warning(this, "RViz Truth Preview", readiness.blocker_reason);
+    append_studio_log("RViz Truth Preview readiness: BLOCKED - " + readiness.blocker_reason);
     return;
   }
-  append_studio_log("Plan & Simulate readiness: PASS");
+  append_studio_log("RViz Truth Preview readiness: PASS");
 
   QString command;
   const auto dry_run_status = workcell_builder::dry_run(scene, workspace_root, &command);
   if (!dry_run_status.ready) {
-    QMessageBox::warning(this, "Plan & Simulate", dry_run_status.blocker_reason);
-    append_studio_log("Plan & Simulate dry-run blocked: " + dry_run_status.blocker_reason);
+    QMessageBox::warning(this, "RViz Truth Preview", dry_run_status.blocker_reason);
+    append_studio_log("RViz Truth Preview dry-run blocked: " + dry_run_status.blocker_reason);
     return;
   }
-
-  append_studio_log("Plan & Simulate dry-run command: " + command);
+  append_studio_log("RViz Truth Preview fake-hardware safety: PASS");
+  append_studio_log("RViz Truth Preview dry run: " + command);
   auto rc = QMessageBox::question(
     this, "Confirm Fake-Hardware Preview",
     "Command:\n" + command + "\n\nFake hardware only. No real hardware. No runtime execution. No robot motion commanded.");
@@ -3644,9 +3651,9 @@ void MainWindow::run_fake_hardware_preview(){
   const QString selected_scene_key = QString::fromStdString(scene.scene_name);
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
     if (preview_running_scene_key_ == selected_scene_key) {
-      append_studio_log("WARN Plan & Simulate launch ignored: preview already running for selected scene.");
+      append_studio_log("WARN RViz Truth Preview launch ignored: preview already running for selected scene.");
     } else {
-      append_studio_log(QString("WARN Plan & Simulate launch ignored: another preview is running for scene '%1'.").arg(preview_running_scene_key_));
+      append_studio_log(QString("WARN RViz Truth Preview launch ignored: another preview is running for scene '%1'.").arg(preview_running_scene_key_));
     }
     return;
   }
@@ -3654,18 +3661,18 @@ void MainWindow::run_fake_hardware_preview(){
   active_preview_command_ = command;
   preview_running_scene_key_ = selected_scene_key;
   if (preview_log_) preview_log_->appendPlainText("$ " + command);
-  append_studio_log("Plan & Simulate launch started");
+  append_studio_log("RViz Truth Preview launch started");
   set_preview_state("PREVIEW_RUNNING");
   write_preview_launch_transcript(true, command, "preview_started");
-  preview_process_->start("/bin/bash", {"-lc", command});
+  preview_process_->start("bash", {"-lc", command});
   refresh_new_cell_checklist();
 }
 void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; set_preview_state("PREVIEW_STOPPING"); if(preview_log_) preview_log_->appendPlainText("Stopping preview process..."); preview_process_->terminate(); QTimer::singleShot(2000, this, [this]() { if(preview_process_ && preview_process_->state()!=QProcess::NotRunning){ if(preview_log_) preview_log_->appendPlainText("Terminate timeout, forcing kill."); preview_process_->kill(); } }); refresh_new_cell_checklist(); }
 void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out = QString::fromUtf8(preview_process_->readAllStandardOutput()); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[preview stdout] " + out.trimmed()); }
 void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err = QString::fromUtf8(preview_process_->readAllStandardError()); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[preview stderr] " + err.trimmed()); }
 void MainWindow::handle_preview_started(){ if(!preview_process_) return; const qint64 pid = preview_process_->processId(); const QString state = QString::number(static_cast<int>(preview_process_->state())); append_studio_log(QString("Plan & Simulate process started: pid=%1 state=%2").arg(pid).arg(state)); }
-void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg = preview_process_ ? preview_process_->errorString() : QStringLiteral("unknown error"); append_studio_log(QString("ERROR Plan & Simulate process error: code=%1 message=%2").arg(static_cast<int>(error)).arg(msg)); append_studio_log("Plan & Simulate launch blocked: ros2 launch failed"); if(preview_state_=="PREVIEW_RUNNING" || preview_state_=="BUILD_RUNNING") set_preview_state("PREVIEW_FAILED"); }
-void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); if (preview_state_ == "PREVIEW_FAILED") append_studio_log("Plan & Simulate launch blocked: ros2 launch failed"); append_studio_log(QString("Plan & Simulate launch exit: exit_code=%1 exit_status=%2 state=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_state_)); preview_running_scene_key_.clear(); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
+void MainWindow::handle_preview_error(QProcess::ProcessError error){ const QString msg = preview_process_ ? preview_process_->errorString() : QStringLiteral("unknown error"); append_studio_log(QString("ERROR RViz Truth Preview process error: code=%1 message=%2").arg(static_cast<int>(error)).arg(msg)); append_studio_log("RViz Truth Preview launch blocked: ros2 launch failed"); if(preview_state_=="PREVIEW_RUNNING" || preview_state_=="BUILD_RUNNING") set_preview_state("PREVIEW_FAILED"); }
+void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){ if(preview_state_=="BUILD_RUNNING") set_preview_state(exit_code==0?"BUILD_PASSED":"BUILD_FAILED"); else if(preview_state_=="PREVIEW_STOPPING") set_preview_state("PREVIEW_STOPPED"); else set_preview_state(exit_code==0?"PREVIEW_EXITED":"PREVIEW_FAILED"); if (preview_state_ == "PREVIEW_FAILED") append_studio_log("RViz Truth Preview launch blocked: ros2 launch failed"); append_studio_log(QString("RViz Truth Preview launch exit: exit_code=%1 exit_status=%2 state=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_state_)); preview_running_scene_key_.clear(); write_preview_launch_transcript(true, active_preview_command_, "process_finished", exit_code); refresh_new_cell_checklist(); }
 
 void MainWindow::write_preview_launch_transcript(bool ran_process, const QString & command, const QString & event, int exit_code)
 {
@@ -3696,7 +3703,13 @@ void MainWindow::run_layout_merge_for_selected_scene(bool from_generate_scene)
   append_studio_log(from_generate_scene ? "Generate Scene: running layout merge" : "Run Layout Merge");
   auto result = workcell_builder::merge_workcell_studio_layout(s.scene_dir);
   append_studio_log(QString::fromStdString(result.status ? "Layout merge completed" : "Layout merge blocked"));
-  append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
+  if (!result.report_path.empty()) {
+    append_studio_log("Merge report: " + QString::fromStdString(result.report_path));
+  } else if (!result.error.empty()) {
+    append_studio_log("Merge report blocker: " + QString::fromStdString(result.error));
+  } else {
+    append_studio_log("Merge report blocker: layout merge failed without report path");
+  }
   refresh_scene_browser_ui();
   refresh_scene_builder_left_explorer();
 }

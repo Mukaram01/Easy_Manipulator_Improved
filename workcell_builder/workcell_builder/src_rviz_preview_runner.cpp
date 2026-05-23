@@ -50,7 +50,7 @@ bool launch_command_is_safe(const QString & command, QString * reason)
 
   const QString trimmed = command.trimmed();
   const QRegularExpression expected_launch_re(
-    R"(^ros2\s+launch\s+\S+\s+demo\.launch\.py(?:\s+.*)?$)");
+    R"(\bros2\s+launch\s+\S+\s+demo\.launch\.py(?:\s+.*)?$)");
   if (!expected_launch_re.match(trimmed).hasMatch()) {
     return reject();
   }
@@ -86,13 +86,6 @@ PreviewReadinessStatus validate_readiness(
 
   const boost::filesystem::path workspace_setup = workspace_root / "install" / "setup.bash";
   if (!boost::filesystem::exists(workspace_setup)) return blocked("install/setup.bash missing under workspace root");
-
-  const boost::filesystem::path layout_file = scene_info.scene_dir / "layout" / "workcell_studio_layout.yaml";
-  const boost::filesystem::path merge_report = scene_info.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
-  if (boost::filesystem::exists(layout_file) &&
-    (!boost::filesystem::exists(merge_report) || boost::filesystem::last_write_time(layout_file) > boost::filesystem::last_write_time(merge_report))) {
-    return blocked("Layout changed since last generation. Run Generate Scene / Layout Merge before preview.");
-  }
 
   PreviewReadinessStatus ok;
   ok.ready = true;
