@@ -344,6 +344,9 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 }
 
 
+bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it);
+bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it);
+
 
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
