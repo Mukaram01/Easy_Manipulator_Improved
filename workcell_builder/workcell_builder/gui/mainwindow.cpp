@@ -2105,10 +2105,17 @@ void MainWindow::build_studio_header_actions()
   auto * run_next_menu = new QMenu(run_next_button);
   run_next_menu->addAction(action_validate_offline_);
   run_next_menu->addAction(action_validate_generated_scene_);
+  action_simulate_plan_preview_->setText("Open RViz Truth Preview");
   run_next_menu->addAction(action_simulate_plan_preview_);
   run_next_menu->addAction(action_export_open_page_);
   run_next_button->setMenu(run_next_menu);
   top_bar->addWidget(run_next_button);
+  auto * native_scene3d_help_label = new QLabel(
+    "Native Scene3D: lightweight editable layout preview; not guaranteed RViz-equivalent.",
+    this);
+  native_scene3d_help_label->setWordWrap(true);
+  native_scene3d_help_label->setObjectName("studioNativeScene3DHelpLabel");
+  top_bar->addWidget(native_scene3d_help_label);
   auto * more_button = new QToolButton(this);
   more_button->setText("More");
   more_button->setPopupMode(QToolButton::InstantPopup);
@@ -2125,6 +2132,12 @@ void MainWindow::build_studio_header_actions()
   more_menu->addAction(action_diagnostics_copy_build_launch_commands_);
   more_button->setMenu(more_menu);
   top_bar->addWidget(more_button);
+  auto * rviz_truth_preview_help_label = new QLabel(
+    "RViz Truth Preview: authoritative generated scene preview using ROS/MoveIt/RViz stack.",
+    this);
+  rviz_truth_preview_help_label->setWordWrap(true);
+  rviz_truth_preview_help_label->setObjectName("studioRvizTruthPreviewHelpLabel");
+  top_bar->addWidget(rviz_truth_preview_help_label);
 }
 
 void MainWindow::refresh_scene_bundle_export_panel()
