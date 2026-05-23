@@ -56,6 +56,10 @@ public:
     QString tracking_id;
     QString snapshot_source_file;
     QString alignment_warning;
+    bool resolved_source_path_stale{ false };
+    QString resolved_source_path_original;
+    QString package_uri;
+    QString source_path_resolution_outcome;
   };
   struct CameraOverlayModel
   {
