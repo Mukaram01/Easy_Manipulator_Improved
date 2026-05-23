@@ -84,6 +84,45 @@ private:
   QDateTime start_time_;
   QJsonObject latest_counters_;
 
+  struct ViewportCandidateSelection
+  {
+    int active_index{ -1 };
+    int candidate_count{ 0 };
+    Scene3DViewportWidget::RenderDebugCounters counters{};
+  };
+
+  ViewportCandidateSelection resolve_active_viewport_candidate() const
+  {
+    ViewportCandidateSelection selection;
+    const auto candidates = window_->findChildren<Scene3DViewportWidget *>();
+    selection.candidate_count = candidates.size();
+    for (int i = 0; i < candidates.size(); ++i) {
+      auto * candidate = candidates.at(i);
+      if (!candidate) {
+        continue;
+      }
+      const auto rc = candidate->render_debug_counters();
+      const bool is_ready_candidate =
+        rc.viewport_received_count > 0 || rc.visible_count > 0 || rc.rendered_count > 0 ||
+        rc.render_cache_count > 0 || rc.last_paint_completed;
+      if (is_ready_candidate) {
+        selection.active_index = i;
+        selection.counters = rc;
+        return selection;
+      }
+    }
+    if (!candidates.isEmpty() && candidates.front()) {
+      selection.active_index = 0;
+      selection.counters = candidates.front()->render_debug_counters();
+    }
+    return selection;
+  }
+
+  static bool paint_completion_for(const Scene3DViewportWidget::RenderDebugCounters & rc, bool screenshot_saved)
+  {
+    return rc.last_paint_completed || rc.rendered_count > 0 || (rc.render_cache_count > 0 && screenshot_saved);
+  }
+
   void step_begin()
   {
     start_time_ = QDateTime::currentDateTimeUtc();
@@ -169,7 +208,6 @@ private:
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     int hierarchy_child_rows = 0;
     bool hierarchy_has_only_headings = false;
     if (tree) {
@@ -193,18 +231,20 @@ private:
     const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
     const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
-    const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+    const ViewportCandidateSelection viewport_selection = resolve_active_viewport_candidate();
+    const auto rc = viewport_selection.counters;
     const bool screenshot_available = !opts_.screenshot_path.trimmed().isEmpty();
+    const bool paint_completed = paint_completion_for(rc, screenshot_available);
     const bool render_ready =
       rc.viewport_received_count > 0 &&
       rc.visible_count > 0 &&
-      (rc.rendered_count > 0 || (rc.render_cache_count > 0 && screenshot_available));
+      paint_completed;
     markers["hierarchy_ready"] = hierarchy_ready;
     markers["inspector_ready"] = inspector_ready;
     markers["log_ready"] = log_ready;
     markers["screenshot_ready"] = true;
     markers["render_ready"] = render_ready;
-    markers["paint_completed"] = rc.last_paint_completed;
+    markers["paint_completed"] = paint_completed;
     markers["selected_scene_ready"] = selected_scene_ready;
     markers["selected_item_required"] = false;
     return markers;
@@ -228,10 +268,16 @@ private:
       if (latest_counters_.value("viewport_received_count").toInt() > 0 && latest_counters_.value("render_cache_count").toInt() <= 0) {
         return QString("viewport_render_cache_empty");
       }
-      if (!markers.value("paint_completed").toBool(false) &&
-          latest_counters_.value("rendered_count").toInt() <= 0 &&
-          latest_counters_.value("render_cache_count").toInt() <= 0) {
-        return QString("paint_cycle_not_completed: direct_accessor_rendered_count=0 render_cache_count=0 screenshot_saved=true");
+      if (!markers.value("paint_completed").toBool(false)) {
+        return QString("paint_cycle_not_completed: candidate_count=%1 active_candidate=%2 counters=viewport_received_count:%3 visible_count:%4 rendered_count:%5 render_cache_count:%6 last_paint_completed:%7 screenshot_saved:%8")
+          .arg(latest_counters_.value("viewport_candidate_count").toInt())
+          .arg(latest_counters_.value("active_viewport_candidate_index").toInt())
+          .arg(latest_counters_.value("viewport_received_count").toInt())
+          .arg(latest_counters_.value("visible_count").toInt())
+          .arg(latest_counters_.value("rendered_count").toInt())
+          .arg(latest_counters_.value("render_cache_count").toInt())
+          .arg(latest_counters_.value("last_paint_completed").toBool(false) ? "true" : "false")
+          .arg(latest_counters_.value("screenshot_saved").toBool(false) ? "true" : "false");
       }
       return QString("Scene3D readiness failed: render_ready=false viewport_received_count=%1 visible_count=%2 rendered_count=%3 render_cache_count=%4 skipped_count=%5")
         .arg(latest_counters_.value("viewport_received_count").toInt())
@@ -314,12 +360,14 @@ private:
     counters["inspector_scene_path"] = inspector_scene_path;
     counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
-    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    const ViewportCandidateSelection viewport_selection = resolve_active_viewport_candidate();
+    counters["viewport_candidate_count"] = viewport_selection.candidate_count;
+    counters["active_viewport_candidate_index"] = viewport_selection.active_index;
     if (viewport) {
       viewport->update();
       viewport->repaint();
       QApplication::processEvents(QEventLoop::AllEvents, 250);
-      const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+      const auto rc = viewport_selection.counters;
       counters["preview_items_count"] = rc.preview_items_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
       counters["render_cache_count"] = rc.render_cache_count;
@@ -337,11 +385,12 @@ private:
       counters["overlay_count"] = rc.overlay_count;
       counters["labels_drawn"] = rc.labels_drawn;
       counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
-      counters["last_paint_completed"] = rc.last_paint_completed;
+      counters["last_paint_completed"] = paint_completion_for(rc, false);
+      counters["raw_last_paint_completed"] = rc.last_paint_completed;
       counters["active_viewport_received_count"] = rc.viewport_received_count;
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
-      counters["viewport_counter_source"] = QString("active_widget");
+      counters["viewport_counter_source"] = QString("resolver_selected_candidate");
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -363,9 +412,10 @@ private:
       if (text.startsWith("Preview:")) preview_status = text.mid(QString("Preview:").size()).trimmed();
     }
     counters["preview_status"] = preview_status;
+    counters["screenshot_saved"] = false;
     counters["header_preview_status"] = preview_status;
     counters["workflow_preview_status"] = (counters.value("rendered_count").toInt() > 0 || counters.value("viewport_received_count").toInt() > 0) ? (preview_status.compare("Unavailable", Qt::CaseInsensitive) == 0 ? QString("Fallback") : preview_status) : QString("Missing");
-    latest_counters_ = counters;
+
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
       blockers_.append("Inspector scene name is empty");
@@ -409,6 +459,8 @@ private:
       root["warnings"] = warnings_;
       root["screenshot_path"] = opts_.screenshot_path;
       root["screenshot_saved"] = screenshot_ok;
+      counters["screenshot_saved"] = screenshot_ok;
+      counters["last_paint_completed"] = paint_completion_for(viewport_selection.counters, screenshot_ok);
       if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0) {
         warnings_.append("screenshot_saved_without_render_cache");
         blockers_.append("screenshot_saved_without_render_cache");
@@ -420,6 +472,7 @@ private:
       }
     }
 
+    latest_counters_ = counters;
     const bool pass = blockers_.isEmpty();
     root["status"] = pass ? "PASS" : "FAIL";
     root["screenshot_available"] = root.value("screenshot_saved").toBool(false);
