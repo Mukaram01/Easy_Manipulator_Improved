@@ -526,6 +526,31 @@ void Scene3DViewportWidget::invalidate_mesh_cache()
   warned_mesh_fallbacks_.clear();
   update();
 }
+void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items)
+{
+  items = preview_items;
+  int visible_item_count = 0;
+  int skipped_item_count = 0;
+  QSet<QString> unique_visible_ids;
+  std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
+  for (const auto & it : items) {
+    const NormalizedRole role = classify_item_role(it);
+    if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
+    ++visible_item_count;
+    unique_visible_ids.insert(it.id);
+    if (is_overlay_visual_role(role)) overlay_items.push_back(&it);
+  }
+  last_render_counters.preview_items_count = items.size();
+  last_render_counters.viewport_received_count = items.size();
+  last_render_counters.render_cache_count = mesh_cache_.size();
+  last_render_counters.visible_count = visible_item_count;
+  last_render_counters.skipped_count = skipped_item_count;
+  last_render_counters.unique_visible_item_count = unique_visible_ids.size();
+  last_render_counters.overlay_count = static_cast<int>(overlay_items.size());
+  last_render_counters.hierarchy_child_row_count = visible_item_count;
+  last_render_counters.last_paint_completed = false;
+  update();
+}
 void Scene3DViewportWidget::fit_scene() {
   QVector3D bmin, bmax;
   // if (!include_in_fit_bounds_physical_only(it)) continue;
@@ -651,6 +676,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.mesh_backed_count = mesh_backed_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.primitive_fallback_count = placeholder_count;
+  last_render_counters.last_paint_completed = true;
 
   glDisable(GL_BLEND);
 
