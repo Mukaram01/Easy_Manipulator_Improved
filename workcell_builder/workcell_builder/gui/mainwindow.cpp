@@ -1597,7 +1597,7 @@ void MainWindow::setup_studio_shell()
   auto * generate_actions = make_action_section("Generate");
   auto * validate_actions = make_action_section("Validate");
   auto * simulate_actions = make_action_section("Simulate");
-  auto * export_actions = make_action_section("Export");
+  make_action_section("Export");
   auto * diagnostics_actions = make_action_section("Diagnostics");
 
   create_action_button(layout_actions, "layout.save");
@@ -4058,12 +4058,10 @@ void MainWindow::refresh_scene_builder_left_explorer()
 
 void MainWindow::refresh_scene_builder_view_chips()
 {
-  bool preview_available = false;
   bool launch_ready = false;
   QString preview_chip_status = QStringLiteral("Unavailable");
   if (has_selected_scene()) {
     const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-    preview_available = s.has_static_preview_svg || s.has_static_preview_html || s.has_smoke_report_json;
     launch_ready = s.has_launch_demo && s.has_package_xml;
     if (scene_preview_widget_) {
       const auto counters = scene_preview_widget_->render_debug_counters();
@@ -5884,7 +5882,7 @@ void MainWindow::populate_scene_hierarchy()
   if (!task_summary.perception_legacy_source.isEmpty()) perception_line += QString(" mapped from legacy mode: %1.").arg(task_summary.perception_legacy_source);
 
   const QString camera_line = has_camera_metadata ? QString("Camera: %1 configured.").arg(camera_id) : "Camera: no camera metadata in this scene.";
-  const int urdf_visual_locked_count = visual_preview_added_count;
+  [[maybe_unused]] const int urdf_visual_locked_count = visual_preview_added_count;
   int scene3d_editable_count = 0;
   int scene3d_mesh_count = 0;
   int scene3d_generated_count = 0;

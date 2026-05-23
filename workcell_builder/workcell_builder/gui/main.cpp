@@ -417,13 +417,11 @@ private:
     const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
     auto * viewport = viewport_resolution.selected;
     int hierarchy_child_rows = 0;
-    bool hierarchy_has_only_headings = false;
     if (tree) {
       for (int i = 0; i < tree->topLevelItemCount(); ++i) {
         auto * top = tree->topLevelItem(i);
         if (top) hierarchy_child_rows += top->childCount();
       }
-      hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_child_rows == 0);
     }
     QString selected_scene_name = "(none)";
     bool inspector_no_scene_selected = true;
@@ -461,7 +459,7 @@ private:
   {
     const QJsonObject markers = collect_readiness_markers();
     QStringList failed;
-    for (const QString key : {QStringLiteral("hierarchy_ready"), QStringLiteral("inspector_ready"), QStringLiteral("log_ready"),
+    for (const QString & key : {QStringLiteral("hierarchy_ready"), QStringLiteral("inspector_ready"), QStringLiteral("log_ready"),
       QStringLiteral("screenshot_ready"), QStringLiteral("render_ready"), QStringLiteral("selected_scene_ready")}) {
       if (!markers.value(key).toBool(false)) failed.append(key + "=false");
     }
