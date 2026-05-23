@@ -14,3 +14,4 @@ def test_cpp_handles_scene3d_smoke_flags_and_output_write():
     for token in ["--scene3d-smoke", "--smoke-output", "--smoke-screenshot", "--exit-after-smoke"]:
         assert token in MAIN_CPP
     assert "QFile out(opts_.smoke_output)" in MAIN_CPP
+    assert "visual_quality_failed" in MAIN_CPP

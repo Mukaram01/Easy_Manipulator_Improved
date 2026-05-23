@@ -588,13 +588,17 @@ void Scene3DViewportWidget::paintGL()
   int overlay_count = 0;
   int locked_urdf_count = 0;
   int physical_item_count = 0;
+  QSet<QString> unique_visible_ids;
+  int editable_layout_count = 0;
   std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
   std::vector<const ScenePreviewWidget::PreviewItem *> physical_items;
   for (const auto * it : draw_items) {
     const NormalizedRole role = classify_item_role(*it);
     if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
     ++visible_item_count;
+    unique_visible_ids.insert(it->id);
     if (is_locked_urdf_item(*it)) ++locked_urdf_count;
+    if (it->linked_to_editable_layout_state) ++editable_layout_count;
     if (is_overlay_visual_role(role)) overlay_items.push_back(it);
     else {
       physical_items.push_back(it);
@@ -603,7 +607,15 @@ void Scene3DViewportWidget::paintGL()
   }
   overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters = RenderDebugCounters{};
+  last_render_counters.preview_items_count = items.size();
+  last_render_counters.viewport_received_count = received_item_count;
+  last_render_counters.render_cache_count = mesh_cache_.size();
+  last_render_counters.visible_count = visible_item_count;
+  last_render_counters.skipped_count = skipped_item_count;
+  last_render_counters.unique_visible_item_count = unique_visible_ids.size();
   last_render_counters.overlay_count = overlay_count;
+  last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  last_render_counters.editable_layout_count = editable_layout_count;
   int visible_hierarchy_items = 0;
   for (const auto * it : draw_items) {
     if (!it) continue;
@@ -635,6 +647,10 @@ void Scene3DViewportWidget::paintGL()
   };  // draw_item_batch
   draw_item_batch(overlay_items, false);  // draw translucent overlays before solids to keep physical meshes legible.
   draw_item_batch(physical_items, true);
+  last_render_counters.rendered_count = rendered_item_count;
+  last_render_counters.mesh_backed_count = mesh_backed_count;
+  last_render_counters.placeholder_count = placeholder_count;
+  last_render_counters.primitive_fallback_count = placeholder_count;
 
   glDisable(GL_BLEND);
 
@@ -787,6 +803,11 @@ void Scene3DViewportWidget::paintGL()
     draw_box(x, y, 0.0, 0.35, 0.35, 0.35, QColor(56, 189, 248, 120), true);
     QToolTip::showText(mapToGlobal(drag_asset_screen_pos_), drag_asset_drop_status_, this);
   }
+}
+
+Scene3DViewportWidget::RenderDebugCounters Scene3DViewportWidget::render_debug_counters() const
+{
+  return last_render_counters;
 }
 
 bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const
