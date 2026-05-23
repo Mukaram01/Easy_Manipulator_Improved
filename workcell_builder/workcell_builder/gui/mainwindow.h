@@ -133,6 +133,8 @@ private:
     QString name;
     QString path;
     QString status;
+    QString robot_summary;
+    QString end_effector_summary;
     bool launchable{ false };
   };
   void sync_selected_scene_state();
