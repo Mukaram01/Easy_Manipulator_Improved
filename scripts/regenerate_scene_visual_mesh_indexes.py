@@ -29,10 +29,18 @@ def summarize(scene):
     mesh_backed=sum(1 for i in items if i.get('geometry_type')=='mesh')
     primitive=sum(1 for i in items if i.get('item_source')=='primitive_fallback' or i.get('geometry_type') in ('box','cylinder','sphere'))
     unresolved=data.get('unresolved_placeholder_count',0)
+    poses=[i.get('pose',{}).get('xyz',[0,0,0]) for i in items if isinstance(i.get('pose',{}).get('xyz'), list) and len(i.get('pose',{}).get('xyz'))==3]
+    distinct_pose_count=len({tuple(round(float(v),6) for v in xyz) for xyz in poses})
+    if poses:
+        mins=[min(float(p[i]) for p in poses) for i in range(3)]
+        maxs=[max(float(p[i]) for p in poses) for i in range(3)]
+    else:
+        mins,maxs=[0,0,0],[0,0,0]
+    collapsed_pose_warning = bool(poses) and distinct_pose_count <= max(1, len(poses)//3)
     safe=data.get('safe_for_preview',False)
     status='PASS' if safe else ('FAIL' if not items else 'WARN')
     stale_unsafe = int(bool(data.get('stale_index'))) + (1 if not safe else 0)
-    return {'scene':scene.name,'extraction_mode':data.get('extraction_mode','unknown'),'xacro_available':data.get('xacro_available',False),'expanded_urdf_written':bool(data.get('source_expanded_urdf_path')),'safe_for_preview':safe,'fallback_reason':data.get('fallback_reason',''),'unresolved_placeholder_count':unresolved,'mesh_backed_count':mesh_backed,'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'primitive_fallback_count':primitive,'stale_index':data.get('stale_index',False),'status':status,'visual_item_count':len(items),'unresolved_count':unresolved,'stale_or_unsafe_count':stale_unsafe,'generated_index_path':str(idx.relative_to(ROOT))}
+    return {'scene':scene.name,'extraction_mode':data.get('extraction_mode','unknown'),'xacro_available':data.get('xacro_available',False),'expanded_urdf_written':bool(data.get('source_expanded_urdf_path')),'safe_for_preview':safe,'fallback_reason':data.get('fallback_reason',''),'unresolved_placeholder_count':unresolved,'mesh_backed_count':mesh_backed,'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'primitive_fallback_count':primitive,'stale_index':data.get('stale_index',False),'status':status,'visual_item_count':len(items),'unresolved_count':unresolved,'stale_or_unsafe_count':stale_unsafe,'generated_index_path':str(idx.relative_to(ROOT)),'distinct_pose_count':distinct_pose_count,'bounding_box_min':mins,'bounding_box_max':maxs,'collapsed_pose_warning':collapsed_pose_warning}
 
 def main():
     a=parse(); rows=[]
@@ -42,7 +50,7 @@ def main():
         if a.fail_on_unexpanded: cmd.append('--fail-on-unexpanded')
         subprocess.run(cmd,check=False)
         row=summarize(s); rows.append(row)
-        print(f"{row['scene']}: visual_items={row['visual_item_count']} mesh={row['mesh_backed_count']} skipped={row['skipped_count']} safe={row['safe_for_preview']} fallback_reason={row['fallback_reason']}")
+        print(f"{row['scene']}: visual_items={row['visual_item_count']} mesh={row['mesh_backed_count']} primitive={row['primitive_fallback_count']} distinct_pose_count={row['distinct_pose_count']} bbox_min={row['bounding_box_min']} bbox_max={row['bounding_box_max']} collapsed_pose_warning={row['collapsed_pose_warning']} skipped={row['skipped_count']} safe={row['safe_for_preview']} fallback_reason={row['fallback_reason']}")
     payload={'schema':'workcell_studio_visual_mesh_index_regeneration/v2','scenes':rows,'summary':{'scene_count':len(rows)}}
     OUT.parent.mkdir(parents=True,exist_ok=True); OUT.write_text(json.dumps(payload,indent=2)+'\n'); print(OUT)
     if a.fail_on_unsafe and any(r['status']!='PASS' for r in rows): return 1

@@ -213,3 +213,22 @@ def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
     finally:
         sys.argv = original_argv
     assert rc != 0
+
+def test_synthetic_chain_transform_composition_and_primitives():
+    import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
+    xml = '''<robot name="t"><link name="root"/><link name="link1"/><link name="link2"/>
+    <joint name="j1" type="fixed"><parent link="root"/><child link="link1"/><origin xyz="1 0 0" rpy="0 0 0"/></joint>
+    <joint name="j2" type="fixed"><parent link="link1"/><child link="link2"/><origin xyz="0 2 0" rpy="0 0 1.5708"/></joint>
+    <link name="link2"><visual name="v"><origin xyz="0 0 0.3" rpy="0 0 0"/><geometry><box size="1 2 3"/></geometry></visual></link>
+    </robot>'''
+    items = mesh_index.extract_from_urdf(xml, {})
+    assert len(items) == 1
+    item = items[0]
+    xyz = item['pose']['xyz']
+    assert abs(xyz[0] - 1.0) < 1e-4
+    assert abs(xyz[1] - 2.0) < 1e-4
+    assert abs(xyz[2] - 0.3) < 1e-4
+    assert item['geometry_type'] == 'box'
+    assert item['size'] == [1.0, 2.0, 3.0]
+    assert item['transform_status'] == 'resolved'
+    assert len(item['transform_chain']) == 2
