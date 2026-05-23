@@ -1,6 +1,7 @@
 #include "rviz_preview_runner.hpp"
 
 #include <QProcess>
+#include <QRegularExpression>
 
 namespace workcell_builder
 {
@@ -18,22 +19,42 @@ PreviewReadinessStatus blocked(const QString & reason)
 
 bool launch_command_is_safe(const QString & command, QString * reason)
 {
-  if (!command.contains("use_fake_hardware:=true") || command.contains("use_fake_hardware:=false")) {
-    if (reason) {
-      *reason = "Missing required use_fake_hardware:=true";
-    }
-    return false;
-  }
-  const QStringList deny{
-    "real_hardware:=true", "runtime_execution_enabled:=true", "execute:=true", "command_robot:=true", "send_motion:=true"};
-  for (const auto & token : deny) {
-    if (command.contains(token)) {
+  auto reject = [reason]() {
       if (reason) {
-        *reason = "Unsafe launch argument detected: " + token;
+        *reason = "command rejected by fake-hardware safety guard";
       }
       return false;
+    };
+
+  if (!command.contains("use_fake_hardware:=true") || command.contains("use_fake_hardware:=false")) {
+    return reject();
+  }
+  if (!command.contains("launch_rviz:=true")) {
+    return reject();
+  }
+  const QStringList deny{
+    "real_hardware:=true",
+    "runtime_execution_enabled:=true",
+    "execute:=true",
+    "command_robot:=true",
+    "send_motion:=true",
+    "fake_hardware:=false",
+    "ur_robot_driver",
+    "ethercat",
+    "canopen"};
+  for (const auto & token : deny) {
+    if (command.contains(token)) {
+      return reject();
     }
   }
+
+  const QString trimmed = command.trimmed();
+  const QRegularExpression expected_launch_re(
+    R"(^ros2\s+launch\s+\S+\s+demo\.launch\.py(?:\s+.*)?$)");
+  if (!expected_launch_re.match(trimmed).hasMatch()) {
+    return reject();
+  }
+
   return true;
 }
 
