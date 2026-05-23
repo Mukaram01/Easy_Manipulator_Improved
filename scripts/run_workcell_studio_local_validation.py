@@ -16,6 +16,13 @@ ensure_repo_root_on_sys_path(__file__)
 from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_install_setup, resolve_workcell_builder_executable, resolve_scenes_root, describe_resolution
 
 
+def _readiness_failure_markers(payload: dict) -> list[str]:
+    markers = payload.get("readiness_markers", {}) if isinstance(payload, dict) else {}
+    if not isinstance(markers, dict):
+        return []
+    keys = ["hierarchy_ready", "inspector_ready", "log_ready", "screenshot_ready", "render_ready", "selected_scene_ready"]
+    return [k for k in keys if markers.get(k) is False]
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root")
@@ -93,6 +100,13 @@ def main() -> int:
                 if isinstance(smoke_payload, dict):
                     for b in smoke_payload.get("blockers", []):
                         blockers.append(f"gui_smoke[{s}] blocker: {b}")
+                    missing=_readiness_failure_markers(smoke_payload)
+                    if missing:
+                        blockers.append(f"gui_smoke[{s}] readiness_markers_false: {', '.join(missing)}")
+                    counters = smoke_payload.get("counters", {})
+                    if isinstance(counters, dict):
+                        summary = f"visible={counters.get('visible_count','n/a')} rendered={counters.get('rendered_count','n/a')} unique_visible={counters.get('unique_visible_item_count','n/a')} mesh_rendered={counters.get('mesh_rendered_count','n/a')} generated_fallback={counters.get('generated_fallback_count','n/a')}"
+                        warnings.append(f"gui_smoke[{s}] render_summary: {summary}")
                     child_cmd = smoke_payload.get("child_command")
                     if child_cmd:
                         blockers.append(f"gui_smoke[{s}] child_command: {child_cmd}")

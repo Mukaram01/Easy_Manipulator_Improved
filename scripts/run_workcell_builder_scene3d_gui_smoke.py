@@ -110,7 +110,12 @@ def main() -> int:
     if rc not in (0, None): blockers.append("child_process_returned_nonzero")
 
     if args.output.exists():
-        print(f"status=PASS smoke_status=APP_JSON_PRESENT returncode={rc} timed_out={timed_out}")
+        app_status="UNKNOWN"
+        try:
+            app_status=json.loads(args.output.read_text(encoding="utf-8")).get("status","UNKNOWN")
+        except Exception:
+            pass
+        print(f"status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))
         print("stderr_log_path=" + str(stderr_log))

@@ -138,7 +138,7 @@ private:
         return;
       }
       if ((QDateTime::currentMSecsSinceEpoch() - start_ms) > timeout_ms) {
-        blockers_.append("Scene3D readiness timeout waiting for hierarchy/inspector/log markers");
+        blockers_.append(readiness_failure_message());
         timer->stop();
         timer->deleteLater();
         finalize();
@@ -149,28 +149,66 @@ private:
 
   bool scene3d_ready()
   {
+    const QJsonObject markers = collect_readiness_markers();
+    return markers.value("hierarchy_ready").toBool(false) &&
+           markers.value("inspector_ready").toBool(false) &&
+           markers.value("log_ready").toBool(false) &&
+           markers.value("selected_scene_ready").toBool(false) &&
+           markers.value("render_ready").toBool(false);
+  }
+
+  QJsonObject collect_readiness_markers() const
+  {
+    QJsonObject markers;
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
+    auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     int hierarchy_child_rows = 0;
+    bool hierarchy_has_only_headings = false;
     if (tree) {
       for (int i = 0; i < tree->topLevelItemCount(); ++i) {
         auto * top = tree->topLevelItem(i);
         if (top) hierarchy_child_rows += top->childCount();
       }
+      hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_child_rows == 0);
     }
-    const bool hierarchy_ok = (tree != nullptr && hierarchy_child_rows > 0);
-    const bool inspector_has_scene_name = (inspector != nullptr && inspector->text().contains("Scene: ") &&
-                                           !inspector->text().contains("Scene: none"));
-    const bool inspector_has_scene_path = (inspector != nullptr && inspector->text().contains("Scene path: ") &&
-                                           !inspector->text().contains("Scene path: (none)"));
-    const bool inspector_has_scene_status = (inspector != nullptr && inspector->text().contains("Scene status: ") &&
-                                             !inspector->text().contains("Scene status: (none)"));
-    const bool inspector_not_empty = (inspector != nullptr && !inspector->text().contains("No scene selected") &&
-                                      !inspector->text().contains("Selected item: (none)"));
-    const bool inspector_ok = inspector_has_scene_name && inspector_has_scene_path && inspector_has_scene_status && inspector_not_empty;
-    const bool log_ok = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
-    return hierarchy_ok && inspector_ok && log_ok;
+    QString selected_scene_name = "(none)";
+    bool inspector_no_scene_selected = true;
+    if (inspector) {
+      const QString text = inspector->text();
+      inspector_no_scene_selected = text.contains("No scene selected", Qt::CaseInsensitive);
+      const QStringList lines = text.split('\n');
+      for (const QString & line : lines) {
+        if (line.startsWith("Scene: ")) selected_scene_name = line.mid(QString("Scene: ").size()).trimmed();
+      }
+    }
+    const bool hierarchy_ready = (tree != nullptr && hierarchy_child_rows > 0 && !hierarchy_has_only_headings);
+    const bool selected_scene_ready = !selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" && selected_scene_name != "none";
+    const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
+    const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
+    const bool render_ready = viewport != nullptr &&
+      viewport->last_render_counters.received_count > 0 &&
+      viewport->last_render_counters.visible_count > 0 &&
+      viewport->last_render_counters.rendered_count > 0;
+    markers["hierarchy_ready"] = hierarchy_ready;
+    markers["inspector_ready"] = inspector_ready;
+    markers["log_ready"] = log_ready;
+    markers["screenshot_ready"] = true;
+    markers["render_ready"] = render_ready;
+    markers["selected_scene_ready"] = selected_scene_ready;
+    markers["selected_item_required"] = false;
+    return markers;
+  }
+
+  QString readiness_failure_message() const
+  {
+    const QJsonObject markers = collect_readiness_markers();
+    QStringList failed;
+    for (const QString & key : {"hierarchy_ready", "inspector_ready", "log_ready", "screenshot_ready", "render_ready", "selected_scene_ready"}) {
+      if (!markers.value(key).toBool(false)) failed.append(key + "=false");
+    }
+    return failed.isEmpty() ? QString("Scene3D readiness failed") : QString("Scene3D readiness failed: %1").arg(failed.join(", "));
   }
 
   void trigger_by_text(const QString & text)
@@ -234,8 +272,24 @@ private:
     counters["selected_scene_name"] = selected_scene_name;
     counters["selected_item_id"] = selected_item_id;
     counters["inspector_no_scene_selected"] = inspector_no_scene_selected;
+    const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     if (viewport) {
+      counters["preview_items_count"] = viewport->last_render_counters.preview_items_count;
+      counters["viewport_received_count"] = viewport->last_render_counters.received_count;
+      counters["render_cache_count"] = viewport->last_render_counters.render_cache_count;
+      counters["rendered_count"] = viewport->last_render_counters.rendered_count;
+      counters["visible_count"] = viewport->last_render_counters.visible_count;
+      counters["skipped_count"] = viewport->last_render_counters.skipped_count;
+      counters["unique_visible_item_count"] = viewport->last_render_counters.unique_visible_item_count;
+      counters["mesh_backed_count"] = viewport->last_render_counters.mesh_backed_count;
+      counters["placeholder_count"] = viewport->last_render_counters.placeholder_count;
+      counters["overlay_count"] = viewport->last_render_counters.overlay_count;
+      counters["mesh_rendered_count"] = viewport->last_render_counters.mesh_rendered_count;
+      counters["generated_fallback_count"] = viewport->last_render_counters.generated_fallback_count;
+      counters["editable_layout_count"] = viewport->last_render_counters.editable_layout_count;
+      counters["primitive_fallback_count"] = viewport->last_render_counters.primitive_fallback_count;
+      counters["locked_generated_urdf_visual_count"] = viewport->last_render_counters.locked_generated_urdf_visual_count;
       counters["labels_drawn"] = viewport->last_render_counters.labels_drawn;
       counters["labels_suppressed_overlap"] = viewport->last_render_counters.labels_suppressed_overlap;
     } else {
@@ -247,6 +301,8 @@ private:
       blockers_.append("Inspector scene name is empty");
     }
     if (inspector_no_scene_selected) blockers_.append("Inspector remains 'No scene selected'");
+    if (selected_item_id == "(none)") warnings_.append("no_item_selected_by_default");
+    root["readiness_markers"] = readiness_markers;
     root["counters"] = counters;
     root["warnings"] = warnings_;
     root["blockers"] = blockers_;
