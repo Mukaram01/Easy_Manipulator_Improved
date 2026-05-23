@@ -305,6 +305,9 @@ private:
     const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     if (viewport) {
+      viewport->update();
+      viewport->repaint();
+      QApplication::processEvents(QEventLoop::AllEvents, 250);
       const auto rc = viewport->render_debug_counters();
       counters["preview_items_count"] = rc.preview_items_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
@@ -372,6 +375,11 @@ private:
       if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0) {
         warnings_.append("screenshot_saved_without_render_cache");
         blockers_.append("screenshot_saved_without_render_cache");
+      }
+      if (screenshot_ok && counters.value("viewport_received_count").toInt() <= 0 &&
+          counters.value("rendered_count").toInt() <= 0) {
+        warnings_.append("smoke_counter_handoff_failed");
+        blockers_.append("smoke_counter_handoff_failed");
       }
     }
 

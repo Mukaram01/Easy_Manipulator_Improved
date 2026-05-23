@@ -2321,6 +2321,9 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   inspector_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
   inspector_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
   inspector_lines << QString("Scene status: %1").arg(selected_scene_state_.valid ? selected_scene_state_.status : QStringLiteral("(none)"));
+  inspector_lines << QString("Robot: %1").arg(selected_scene_state_.valid ? selected_scene_state_.robot_summary : QStringLiteral("unknown"));
+  inspector_lines << QString("End effector: %1").arg(selected_scene_state_.valid ? selected_scene_state_.end_effector_summary : QStringLiteral("unknown"));
+  inspector_lines << QString("Launch status: %1").arg(selected_scene_state_.valid ? (selected_scene_state_.launchable ? "ready" : "blocked") : QStringLiteral("(none)"));
   if (!state.valid) {
     inspector_lines << "Selected item: (none)";
     inspector_label_->setText(inspector_lines.join("\n"));
@@ -3681,6 +3684,8 @@ void MainWindow::sync_selected_scene_state()
   selected_scene_state_.name = QString::fromStdString(s.scene_name);
   selected_scene_state_.path = QString::fromStdString(s.scene_dir.string());
   selected_scene_state_.status = QString::fromStdString(s.status);
+  selected_scene_state_.robot_summary = QString::fromStdString(s.robot_summary);
+  selected_scene_state_.end_effector_summary = QString::fromStdString(s.gripper_summary);
   selected_scene_state_.launchable = s.has_launch_demo;
 }
 
