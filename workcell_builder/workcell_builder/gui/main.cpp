@@ -132,6 +132,11 @@ private:
     auto * timer = new QTimer(this);
     const qint64 start_ms = QDateTime::currentMSecsSinceEpoch();
     connect(timer, &QTimer::timeout, this, [this, timer, start_ms, timeout_ms]() {
+      if (auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget")) {
+        viewport->update();
+        viewport->repaint();
+        app_->processEvents();
+      }
       if (scene3d_ready()) {
         timer->stop();
         timer->deleteLater();
@@ -199,6 +204,7 @@ private:
     markers["log_ready"] = log_ready;
     markers["screenshot_ready"] = true;
     markers["render_ready"] = render_ready;
+    markers["paint_completed"] = rc.last_paint_completed;
     markers["selected_scene_ready"] = selected_scene_ready;
     markers["selected_item_required"] = false;
     return markers;
@@ -213,6 +219,18 @@ private:
       if (!markers.value(key).toBool(false)) failed.append(key + "=false");
     }
     if (!markers.value("render_ready").toBool(false)) {
+      if (latest_counters_.value("preview_items_count").toInt() <= 0 && latest_counters_.value("hierarchy_child_row_count").toInt() > 0) {
+        return QString("preview_items_not_handed_to_scene_preview_widget");
+      }
+      if (latest_counters_.value("preview_items_count").toInt() > 0 && latest_counters_.value("viewport_received_count").toInt() <= 0) {
+        return QString("scene_preview_items_not_forwarded_to_viewport");
+      }
+      if (latest_counters_.value("viewport_received_count").toInt() > 0 && latest_counters_.value("render_cache_count").toInt() <= 0) {
+        return QString("viewport_render_cache_empty");
+      }
+      if (!markers.value("paint_completed").toBool(false)) {
+        return QString("paint_cycle_not_completed");
+      }
       return QString("Scene3D readiness failed: render_ready=false viewport_received_count=%1 visible_count=%2 rendered_count=%3 render_cache_count=%4 skipped_count=%5")
         .arg(latest_counters_.value("viewport_received_count").toInt())
         .arg(latest_counters_.value("visible_count").toInt())
@@ -305,6 +323,7 @@ private:
       counters["overlay_count"] = rc.overlay_count;
       counters["labels_drawn"] = rc.labels_drawn;
       counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
+      counters["last_paint_completed"] = rc.last_paint_completed;
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -314,6 +333,7 @@ private:
                                   QStringLiteral("overlay_count"), QStringLiteral("labels_drawn"), QStringLiteral("labels_suppressed_overlap")}) {
         counters[key] = 0;
       }
+      counters["last_paint_completed"] = false;
     }
     latest_counters_ = counters;
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
@@ -349,6 +369,10 @@ private:
       root["warnings"] = warnings_;
       root["screenshot_path"] = opts_.screenshot_path;
       root["screenshot_saved"] = screenshot_ok;
+      if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0) {
+        warnings_.append("screenshot_saved_without_render_cache");
+        blockers_.append("screenshot_saved_without_render_cache");
+      }
     }
 
     const bool pass = blockers_.isEmpty();

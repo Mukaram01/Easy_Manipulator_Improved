@@ -226,7 +226,7 @@ void ScenePreviewWidget::set_3d_available(bool available, const QString & reason
   refresh_mode_and_state();
 }
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
-void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->items = preview_items_; emit studio_log_requested(QString("Scene3D diagnostics {preview_items_count=%1, viewport_received_count=%2}").arg(preview_items_.size()).arg(static_cast<Scene3DViewportWidget *>(simple_3d_view_)->items.size())); const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; }); if (!has_selected && !selected_preview_item_id_.isEmpty()) { emit studio_log_requested(QString("Preview selection cleared after refresh (id missing): %1").arg(selected_preview_item_id_)); selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); emit preview_item_selected(QString(), QStringLiteral("unknown")); } else { static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = selected_preview_item_id_; if (!selected_preview_item_id_.isEmpty()) emit studio_log_requested(QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_)); } emit studio_log_requested(preview_status_summary_.isEmpty() ? QString("Preview items loaded: %1.").arg(preview_items_.size()) : preview_status_summary_); fit_fallback_scene_to_items(); refresh_info_chip(); update(); }
+void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_); viewport->ingest_preview_items(preview_items_); emit studio_log_requested(QString("Scene3D diagnostics {preview_items_count=%1, viewport_received_count=%2}").arg(preview_items_.size()).arg(viewport->render_debug_counters().viewport_received_count)); const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; }); if (!has_selected && !selected_preview_item_id_.isEmpty()) { emit studio_log_requested(QString("Preview selection cleared after refresh (id missing): %1").arg(selected_preview_item_id_)); selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); emit preview_item_selected(QString(), QStringLiteral("unknown")); } else { static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = selected_preview_item_id_; if (!selected_preview_item_id_.isEmpty()) emit studio_log_requested(QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_)); } emit studio_log_requested(preview_status_summary_.isEmpty() ? QString("Preview items loaded: %1.").arg(preview_items_.size()) : preview_status_summary_); fit_fallback_scene_to_items(); refresh_info_chip(); update(); }
 void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name){ preview_scene_name_ = scene_name.trimmed().isEmpty() ? "No scene" : scene_name.trimmed(); auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->scene_name = preview_scene_name_; refresh_info_chip(); v->update(); }
 void ScenePreviewWidget::set_preview_status_summary(const QString & summary){ preview_status_summary_ = summary.trimmed(); refresh_info_chip(); }
 void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->task_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
@@ -337,7 +337,7 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   RenderDebugCounters out;
-  out.preview_items_count = counters.preview_items_count;
+  out.preview_items_count = preview_items_.size();
   out.viewport_received_count = counters.viewport_received_count;
   out.render_cache_count = counters.render_cache_count;
   out.visible_count = counters.visible_count;
@@ -355,6 +355,7 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.labels_drawn = counters.labels_drawn;
   out.labels_suppressed_overlap = counters.labels_suppressed_overlap;
   out.hierarchy_child_row_count = counters.hierarchy_child_row_count;
+  out.last_paint_completed = counters.last_paint_completed;
   return out;
 }
 

@@ -189,6 +189,7 @@ public:
     int labels_drawn{ 0 };
     int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
+    bool last_paint_completed{ false };
   };
   RenderDebugCounters render_debug_counters() const;
 

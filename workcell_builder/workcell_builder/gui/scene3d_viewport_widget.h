@@ -73,6 +73,7 @@ public:
   void set_side_view();
   void set_isometric_view();
   void invalidate_mesh_cache();
+  void ingest_preview_items(const QVector<ScenePreviewWidget::PreviewItem> & preview_items);
 
   struct RenderDebugCounters
   {
@@ -94,6 +95,7 @@ public:
     int labels_drawn{ 0 };
     int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
+    bool last_paint_completed{ false };
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
