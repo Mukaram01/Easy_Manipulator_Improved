@@ -60,3 +60,16 @@ TEST(Scene3DRenderRoleClassifier, MeshesModeDoesNotDrawFallbackSolid)
   EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_solid_for_test(missing, ScenePreviewWidget::MeshPreviewMode::Meshes));
   EXPECT_TRUE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(missing, ScenePreviewWidget::MeshPreviewMode::Meshes));
 }
+
+TEST(Scene3DRenderRoleClassifier, AcceptsCanonicalAndLegacyGeneratedUrdfTokens)
+{
+  auto canonical = make_item("canonical");
+  canonical.source_layer = "generated_urdf_visual";
+  canonical.mesh_available = true;
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(canonical), "generated_urdf_mesh");
+
+  auto legacy = make_item("legacy");
+  legacy.active_visual_source = "locked_generated_urdf_visual";
+  legacy.mesh_available = true;
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(legacy), "generated_urdf_mesh");
+}
