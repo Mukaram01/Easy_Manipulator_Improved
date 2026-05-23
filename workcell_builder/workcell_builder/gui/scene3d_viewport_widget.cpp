@@ -817,8 +817,8 @@ void Scene3DViewportWidget::paintGL()
   painter.drawText(QRectF(20.0, 18.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
   painter.drawText(QRectF(20.0, 34.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Scene: %1").arg(scene_name));
-  painter.drawText(QRectF(20.0, 50.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Items %1 • Mesh %2 • Boxes %3 • Missing %4")
+  painter.drawText(QRectF(20.0, 50.0, 420.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Items %1 • Mesh-backed %2 • Primitive fallback %3 • Missing mesh %4")
                      .arg(physical_item_count).arg(mesh_backed_count).arg(wireframe_box_count).arg(placeholder_count));
   painter.drawText(QRectF(20.0, 66.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Overlays %1 • Locked URDF %2 • Mode: %3")
@@ -886,6 +886,13 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     return false;
   }
   if (item_has_explicit_dimensions(it)) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      draw_missing_geometry_marker(it);
+      ++last_render_counters.generated_fallback_count;
+      if (out_placeholder_count) ++(*out_placeholder_count);
+      warn_mesh_fallback_once(it.id, QStringLiteral("mesh-only mode: primitive fallback suppressed"), it.source_path);
+      return false;
+    }
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
     draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#cbd5e1"), 1.4f);
     if (out_wireframe_count) ++(*out_wireframe_count);

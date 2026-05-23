@@ -461,6 +461,59 @@ static QString canonical_scene_path_string(const fs::path & scene_dir)
   return QString::fromStdString((ec ? scene_dir.lexically_normal() : canonical).string());
 }
 
+static QString resolve_visual_mesh_source_path(
+  const QString & raw_path, const QString & package_uri, const fs::path & scene_dir,
+  const QString & workspace_root, QStringList * tried_candidates)
+{
+  const auto add_candidate = [&](const QString & candidate) {
+    if (tried_candidates) tried_candidates->push_back(candidate);
+    const QFileInfo info(candidate);
+    if (!info.exists() || !info.isFile()) return QString();
+    const QString canonical = info.canonicalFilePath();
+    return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+  };
+  auto as_scene_relative = [&](const QString & rel) {
+    return QString::fromStdString((scene_dir / rel.toStdString()).string());
+  };
+
+  const QString trimmed_raw = raw_path.trimmed();
+  if (!trimmed_raw.isEmpty()) {
+    QFileInfo raw_info(trimmed_raw);
+    if (raw_info.isAbsolute()) {
+      const QString resolved = add_candidate(raw_info.absoluteFilePath());
+      if (!resolved.isEmpty()) return resolved;
+    } else {
+      const QString resolved = add_candidate(as_scene_relative(trimmed_raw));
+      if (!resolved.isEmpty()) return resolved;
+    }
+  }
+
+  const QString trimmed_uri = package_uri.trimmed();
+  if (trimmed_uri.startsWith("package://")) {
+    QString package_tail = trimmed_uri.mid(QString("package://").size());
+    const int slash = package_tail.indexOf('/');
+    const QString package_name = (slash >= 0) ? package_tail.left(slash) : package_tail;
+    const QString package_rel = (slash >= 0) ? package_tail.mid(slash + 1) : QString();
+    const QString scene_gen_package = QString::fromStdString((scene_dir / "generated" / package_name.toStdString()).string());
+    for (const QString & root : {
+           scene_gen_package,
+           workspace_root + "/src/easy_manipulation_deployment/assets",
+           workspace_root + "/src/assets",
+           QString("/opt/ros/humble/share/%1").arg(package_name)}) {
+      if (root.trimmed().isEmpty()) continue;
+      const QString resolved = add_candidate(QDir(root).filePath(package_rel));
+      if (!resolved.isEmpty()) return resolved;
+    }
+  } else if (trimmed_uri.startsWith("file://")) {
+    const QString resolved = add_candidate(trimmed_uri.mid(7));
+    if (!resolved.isEmpty()) return resolved;
+  } else if (trimmed_uri.startsWith("/")) {
+    const QString resolved = add_candidate(trimmed_uri);
+    if (!resolved.isEmpty()) return resolved;
+  }
+  return QString();
+}
+
 static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & scene_dir)
 {
   SceneTaskIntentSummary s;
@@ -5525,8 +5578,8 @@ void MainWindow::populate_scene_hierarchy()
           p.locked = true;
           p.editable = false;
           p.selectable = true;
-          p.lock_reason = "URDF visual preview-only item (locked)";
-          p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+          p.lock_reason = "generated URDF visual";
+          p.source_layer = QStringLiteral("generated_urdf_visual");
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
                                                               : QStringLiteral("primitive_fallback");
           p.linked_to_editable_layout_state = false;
@@ -5561,14 +5614,20 @@ void MainWindow::populate_scene_hierarchy()
           const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
           bool mesh_fallback = false;
           if (geometry_type == "mesh") {
+            QStringList tried_candidates;
+            const QString resolved_mesh_path = resolve_visual_mesh_source_path(
+              p.source_path, package_uri, d, detect_workspace_root(), &tried_candidates);
             if (unsupported_format) {
               mesh_fallback = true;
-            } else if (p.source_path.trimmed().isEmpty()) {
-              mesh_fallback = true;
-            } else if (!fs::exists(fs::path(p.source_path.toStdString()))) {
+            } else if (resolved_mesh_path.trimmed().isEmpty()) {
               mesh_fallback = true;
             } else {
-              p.mesh_path = p.source_path;
+              p.mesh_path = resolved_mesh_path;
+              p.source_path = resolved_mesh_path;
+            }
+            if (mesh_fallback && !tried_candidates.isEmpty()) {
+              append_studio_log(QString("URDF visual mesh unresolved for %1: raw=%2 package=%3 tried=[%4]")
+                                  .arg(p.id, p.source_path, package_uri, tried_candidates.join(" | ")));
             }
           } else if (is_primitive) {
             ++non_mesh_geometry_added;
@@ -5582,10 +5641,10 @@ void MainWindow::populate_scene_hierarchy()
             p.mesh_available = false;
             p.has_mesh_metadata = true;
             p.active_visual_source = QStringLiteral("primitive_fallback");
-            p.source_layer = QStringLiteral("locked_generated_urdf_visual");
+            p.source_layer = QStringLiteral("generated_urdf_visual");
             p.editable = false;
             p.selectable = true;
-            p.lock_reason = QStringLiteral("generated_urdf_visual");
+            p.lock_reason = QStringLiteral("generated URDF visual");
             p.warnings << QStringLiteral("Preview warning: URDF visual mesh unavailable; using primitive fallback");
             if (!render_expected) {
               p.warnings << QStringLiteral("Preview warning: xacro-expanded visual kept as generated primitive fallback");
