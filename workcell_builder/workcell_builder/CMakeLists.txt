@@ -351,6 +351,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_studio_layout_editor_test
     test/workcell_studio_layout_editor_test.cpp
     src_workcell_studio_layout_editor.cpp)
+  ament_add_gtest(workcell_mainwindow_rviz_preview_compile_test
+    test/mainwindow_rviz_preview_compile_test.cpp)
   if(TARGET workcell_scene_preview_widget_ui_test)
     target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Widgets Qt5::OpenGL OpenGL::GL)
   endif()
@@ -547,6 +549,16 @@ if(BUILD_TESTING)
     target_include_directories(workcell_studio_layout_editor_test PRIVATE ${Boost_INCLUDE_DIRS} include)
   endif()
 
+  if(TARGET workcell_mainwindow_rviz_preview_compile_test)
+    target_link_libraries(workcell_mainwindow_rviz_preview_compile_test Qt5::Widgets)
+    target_include_directories(workcell_mainwindow_rviz_preview_compile_test
+      PRIVATE
+        ${Boost_INCLUDE_DIRS}
+        include
+        gui
+    )
+  endif()
+
   set(workcell_builder_registered_cpp_tests
     link_deletion_test.cpp
     workcell_directory_inspection_test.cpp
@@ -574,6 +586,7 @@ if(BUILD_TESTING)
     transform_clipboard_utils_test.cpp
     layout_serialization_contract_test.cpp
     workcell_studio_layout_editor_test.cpp
+    mainwindow_rviz_preview_compile_test.cpp
   )
 
   file(GLOB workcell_builder_discovered_cpp_tests RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test ${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp)
