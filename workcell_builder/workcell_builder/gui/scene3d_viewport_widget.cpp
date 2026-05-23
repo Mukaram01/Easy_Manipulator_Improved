@@ -242,14 +242,21 @@ QString normalized_token(const QString & value)
 QString normalized_scene3d_layer_token(const QString & value)
 {
   const QString normalized = normalized_token(value);
-  if (normalized == QStringLiteral("generated_preview") ||
-      normalized == QStringLiteral("generated_urdf_visual") ||
-      normalized == QStringLiteral("locked_generated_urdf")) {
-    return QStringLiteral("locked_generated_urdf_visual");
-  }
+  if (normalized == QStringLiteral("generated_preview")) return QStringLiteral("generated_urdf_visual");
+  if (normalized == QStringLiteral("locked_generated_urdf")) return QStringLiteral("locked_generated_urdf_visual");
   if (normalized == QStringLiteral("legacy_static_fallback")) return QStringLiteral("primitive_fallback");
   if (normalized == QStringLiteral("overlays") || normalized == QStringLiteral("helper_overlay")) return QStringLiteral("overlay");
   return normalized;
+}
+
+bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  if (source_layer == "generated_urdf_visual" || source_layer == "locked_generated_urdf_visual") return true;
+  if (visual_source == "generated_urdf_visual" || visual_source == "locked_generated_urdf_visual") return true;
+  if (it.locked && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive)) return true;
+  return false;
 }
 
 QString clean_label_from_item(const ScenePreviewWidget::PreviewItem & it)
@@ -295,7 +302,8 @@ bool item_is_editable_for_gizmo(const ScenePreviewWidget::PreviewItem & it)
                                  lock_reason.contains("overlay") || lock_reason.contains("helper");
   if (overlay_or_helper) return false;
 
-  const bool generated_robot_visual = source_layer.contains("generated") || source_layer.contains("urdf") ||
+  const bool generated_robot_visual = is_generated_urdf_visual_item(it) ||
+                                      source_layer.contains("generated") || source_layer.contains("urdf") ||
                                       visual_source.contains("generated") || lock_reason.contains("urdf") ||
                                       lock_reason.contains("robot model") || lock_reason.contains("camera generated") ||
                                       lock_reason.contains("tool generated");
@@ -343,11 +351,14 @@ bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool incl
   const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
-  const bool generated_urdf_visual = source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" ||
-                                     is_locked_urdf_item(it);
+  const bool generated_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
   const bool mesh_backed = it.mesh_available || it.has_mesh_metadata || !it.mesh_path.trimmed().isEmpty() || !it.source_path.trimmed().isEmpty();
   const bool explicit_primitive = it.sx > 0.001 && it.sy > 0.001 && it.sz > 0.001;
+  const bool missing_geometry = !mesh_backed && !explicit_primitive;
+  const bool missing_mesh_fallback = missing_geometry && !it.linked_to_editable_layout_state && !generated_urdf_visual;
   if (helper_overlay) return false;
+  if (missing_mesh_fallback) return false;
+  if (generated_urdf_visual && mesh_backed) return true;
   if (generated_urdf_visual) return true;
   if (it.linked_to_editable_layout_state) return true;
   return mesh_backed || explicit_primitive;
@@ -512,7 +523,7 @@ void Scene3DViewportWidget::set_isometric_view()
   update();
 }
 void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -M_PI_2; update(); }
-void Scene3DViewportWidget::set_front_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::set_front_view() { yaw_ = M_PI; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::invalidate_mesh_cache()
 {
@@ -619,7 +630,7 @@ void Scene3DViewportWidget::paintGL()
     if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
     ++visible_item_count;
     unique_visible_ids.insert(it->id);
-    if (is_locked_urdf_item(*it)) ++locked_urdf_count;
+    if (is_generated_urdf_visual_item(*it) || is_locked_urdf_item(*it)) ++locked_urdf_count;
     if (it->linked_to_editable_layout_state) ++editable_layout_count;
     if (is_overlay_visual_role(role)) overlay_items.push_back(it);
     else {
@@ -732,7 +743,7 @@ void Scene3DViewportWidget::paintGL()
       case ScenePreviewWidget::LabelMode::Selected: draw_label = selected; break;
       case ScenePreviewWidget::LabelMode::All: draw_label = true; break;
     }
-    const bool is_urdf_visual = it.locked && !it.editable && it.lock_reason.contains("URDF visual", Qt::CaseInsensitive);
+    const bool is_urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     if (suppress_dense_non_critical_labels && !selected && !is_critical_label_role(role)) draw_label = false;
     if (is_urdf_visual && !selected && effective_label_mode != ScenePreviewWidget::LabelMode::All) draw_label = false;
     if (show_warning_labels && !it.warnings.isEmpty()) {
@@ -881,7 +892,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   // Always try mesh-backed draw first for physical items.
   QColor visual_color = item_color(it);
-  if (source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" || is_locked_urdf_item(it)) {
+  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) {
     visual_color = QColor("#cfd4da");
   }
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
@@ -979,7 +990,7 @@ QString Scene3DViewportWidget::render_role_for_test(const ScenePreviewWidget::Pr
   const QString source_layer = normalized_scene3d_layer_token(item.source_layer);
   const QString visual_source = normalized_scene3d_layer_token(item.active_visual_source);
   if (is_overlay_only_item(item) || source_layer == "overlay" || visual_source == "overlay") return QStringLiteral("helper_overlay");
-  if (source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" || is_locked_urdf_item(item)) {
+  if (is_generated_urdf_visual_item(item) || is_locked_urdf_item(item)) {
     return item.mesh_available ? QStringLiteral("generated_urdf_mesh") : QStringLiteral("generated_urdf_primitive");
   }
   if (item.linked_to_editable_layout_state) return QStringLiteral("physical_layout_item");
