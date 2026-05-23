@@ -1098,6 +1098,17 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
+  if (entry.valid && entry.has_bounds) {
+    const QVector3D span = entry.local_max - entry.local_min;
+    const bool finite_bounds = qIsFinite(entry.local_min.x()) && qIsFinite(entry.local_min.y()) && qIsFinite(entry.local_min.z()) &&
+                               qIsFinite(entry.local_max.x()) && qIsFinite(entry.local_max.y()) && qIsFinite(entry.local_max.z()) &&
+                               qIsFinite(span.x()) && qIsFinite(span.y()) && qIsFinite(span.z());
+    const float max_span = qMax(span.x(), qMax(span.y(), span.z()));
+    if (!finite_bounds || max_span > 100.0f) {
+      entry.valid = false;
+      entry.warning = QStringLiteral("mesh invalid (unreasonable bounds)");
+    }
+  }
   return mesh_cache_.insert(canonical, entry).value();
 }
 
