@@ -105,6 +105,7 @@ public:
                                        int triangle_limit = 100000);
   static bool parse_collada_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                            InternalTriangleMesh & out_mesh, QString & out_error,
+                                           double * out_unit_meter = nullptr,
                                            int triangle_limit = 100000);
   static bool compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max);
   static bool should_attempt_mesh_draw_for_mode_for_test(ScenePreviewWidget::MeshPreviewMode mode,
@@ -188,16 +189,25 @@ private:
     bool valid{ false };
     bool oversized{ false };
     QString warning;
+    QString parser_type;
+    QString parse_status;
+    QString parse_error;
     InternalTriangleMesh mesh;
     bool has_bounds{ false };
     QVector3D local_min;
     QVector3D local_max;
+    QVector3D local_span;
+    double dae_unit_meter{ 1.0 };
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;
   bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const;
   bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
   const MeshCacheEntry & ensure_mesh_cached(const QString & path);
+  bool validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
+                                const MeshCacheEntry & entry,
+                                const QString & mesh_source,
+                                QString & out_reason) const;
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
   double pitch_{ 0.7 };
