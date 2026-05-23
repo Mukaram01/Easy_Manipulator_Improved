@@ -236,7 +236,9 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
 
   const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
   YAML::Node layout_items = yaml_map_key(layout, "items");
-  if (layout_ok && schema_version == "workcell_studio_layout/v1") {
+  const bool schema_current = (schema_version == "workcell_studio_layout/v1");
+  const bool schema_legacy = schema_version.empty() && layout_items.IsSequence();
+  if (layout_ok && (schema_current || schema_legacy)) {
     bool incomplete_placement_metadata = false;
     if (!layout_items.IsDefined() || !layout_items.IsSequence()) {
       if (layout_items.IsDefined()) add_warning("items", "expected sequence; skipping malformed items");
@@ -283,8 +285,12 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         extra.role = read_string_or_warn(yaml_map_key(node, "role"), "items[].role", "preview");
         const auto category = read_string_or_warn(yaml_map_key(node, "category"), "items[].category", "Custom / Imported");
         if (category == "Pick/Place Zones") extra.type = "zone";
-        extra.label = read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", id);
-        extra.source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "layout/workcell_studio_layout.yaml");
+        std::string label = read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", "");
+        if (label.empty()) label = read_string_or_warn(yaml_map_key(node, "name"), "items[].name", id);
+        extra.label = label.empty() ? id : label;
+        std::string source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "");
+        if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", "layout/workcell_studio_layout.yaml");
+        extra.source_file = source_file.empty() ? "layout/workcell_studio_layout.yaml" : source_file;
         extra.provenance = WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
         YAML::Node pose = yaml_map_key(node, "pose");
         if (pose.IsDefined() && pose.IsMap()) {
