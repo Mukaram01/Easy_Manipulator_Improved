@@ -2316,12 +2316,179 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
   refresh_new_cell_checklist();
 }
 
-void MainWindow::generate_scene_package_for_selected_scene(){ if (selected_scene_index_ < 0) return; QString parity_warning; bool severe_parity_mismatch = false; const bool pre_parity_ran = run_canvas_generated_parity_check(CanvasGeneratedParityMode::PreGeneration, &parity_warning, &severe_parity_mismatch); if (pre_parity_ran) { refresh_canvas_generated_parity_ui(); if (!parity_warning.isEmpty()) { append_studio_log("Generate ROS Scene Package pre-generation parity: " + parity_warning); } } generate_yaml_draft_for_selected_scene(); const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const QString scene_dir = QString::fromStdString(sc.scene_dir.string()); const QString scene_name = QString::fromStdString(sc.scene_name); const QString cell_definition_path = QString::fromStdString((sc.scene_dir / "cell_definition.yaml").string()); const QString output_dir = QString::fromStdString(sc.scene_dir.parent_path().string()); if (!QFileInfo::exists(cell_definition_path)) { append_studio_log("Generate ROS Scene Package: Generate YAML first."); return; } bool severe_preflight_failure = false; const QStringList preflight_warnings = generation_asset_support_preflight(sc.scene_dir / "environment_layout.yaml", &severe_preflight_failure); for (const QString & warning : preflight_warnings) { append_studio_log(warning); readiness_warning_details_.append(warning); } if (severe_preflight_failure) { append_studio_log("Generate ROS Scene Package blocked by severe schema/safety preflight failure."); refresh_new_cell_checklist(); return; } QString validate_cell_script; if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) { QProcess validate_process; validate_process.start("python3", QStringList() << validate_cell_script << cell_definition_path); if (!validate_process.waitForFinished(120000)) { append_studio_log("Generate ROS Scene Package: timed out while validating cell definition."); return; } const QString stderr_text = QString::fromUtf8(validate_process.readAllStandardError()).trimmed(); const QString stdout_text = QString::fromUtf8(validate_process.readAllStandardOutput()).trimmed(); if (validate_process.exitCode() != 0) { append_studio_log("Generate ROS Scene Package blocked: cell_definition.yaml validation failed."); const QStringList validator_lines = (stderr_text + "\n" + stdout_text).split('\n', Qt::SkipEmptyParts); bool found_missing_key_error = false; for (const QString & line : validator_lines) { const QString trimmed = line.trimmed(); if (trimmed.contains("Missing required top-level key:")) { append_studio_log("validator: " + trimmed); found_missing_key_error = true; } } if (!found_missing_key_error) { if (!stderr_text.isEmpty()) append_studio_log("validator stderr: " + stderr_text.left(600)); if (!stdout_text.isEmpty()) append_studio_log("validator stdout: " + stdout_text.left(600)); } return; } } if (output_dir.trimmed().isEmpty() || scene_name.trimmed().isEmpty()) { append_studio_log("Generate ROS Scene Package: output directory and package name are required."); return; } QString script; helper_script_exists("generate_workcell_from_cell_definition.py", &script); const auto plan = workcell_builder::build_generate_workcell_command_plan(script, scene_dir, output_dir, scene_name); if (!plan.ready()) { append_studio_log("Generate ROS Scene Package: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(180000)) { append_studio_log("Generate ROS Scene Package: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate ROS Scene Package failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); launch_artifacts_ready_ = false; return; } launch_artifacts_ready_ = true; append_studio_log("Generate ROS Scene Package: " + plan.display_command()); append_studio_log(QString("Generated package location: %1/%2").arg(output_dir, scene_name)); append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name)); append_studio_log("Next: source install/setup.bash"); append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); QString post_warning; bool post_blocked = false; const bool post_parity_ran = run_canvas_generated_parity_check(CanvasGeneratedParityMode::PostGeneration, &post_warning, &post_blocked); if (post_parity_ran) { refresh_canvas_generated_parity_ui(); if (post_blocked) { launch_artifacts_ready_ = false; append_studio_log("Generated package created but Canvas/Generated parity has blockers."); if (!post_warning.isEmpty()) { append_studio_log("Post-generation parity recommendation: " + post_warning); } } else if (!post_warning.isEmpty()) { append_studio_log("Generate ROS Scene Package post-generation parity: " + post_warning); } } refresh_scene_browser_ui(); refresh_scene_builder_selected_scene_ui(); refresh_new_cell_checklist(); }
-void MainWindow::validate_generated_scene_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; if (!helper_script_exists("validate_builder_generated_scene.py", &script)) { append_studio_log("Validate Generated Scene: script missing. Searched: " + helper_script_search_paths("validate_builder_generated_scene.py").join(" | ")); return; } const auto plan = workcell_builder::build_validate_generated_scene_command_plan(script, QString::fromStdString(sc.scene_dir.string())); if (!plan.ready()) { append_studio_log("Validate Generated Scene: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Validate Generated Scene: timed out while waiting for helper script."); return; } validation_stale_ = false; append_studio_log("Validate Generated Scene: " + plan.display_command()); refresh_new_cell_checklist(); }
-void MainWindow::copy_build_launch_commands_for_selected_scene(){ if (!has_selected_scene()) return; const QString block = selected_scene_preview_command_block(); QApplication::clipboard()->setText(block); append_studio_log("Copy Build & Launch Commands"); }
-void MainWindow::open_selected_task_file(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); if (ti.status=="MISSING_TASK_FILE"){ append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | ")); return; } QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file)); }
-void MainWindow::copy_selected_task_summary(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; const auto ti = load_scene_task_intent_summary(sc.scene_dir); QApplication::clipboard()->setText(QString("Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14").arg(QString::fromStdString(sc.scene_name),ti.task_type,ti.pick_source,ti.place_target,ti.reject_target,ti.object_class,ti.grasp_strategy,ti.approach_axis,ti.approach_distance,ti.retreat_axis,ti.retreat_distance,ti.tool_id,ti.perception_mode,ti.status)); append_studio_log("Copy Task Summary"); }
-void MainWindow::preview_offline_plan_for_selected_scene(){ show_studio_page(StudioPage::PlanSimulatePage); refresh_preview_launch_ui(); append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only"); }
+void MainWindow::generate_scene_package_for_selected_scene() {
+  if (selected_scene_index_ < 0) return;
+  QString parity_warning;
+  bool severe_parity_mismatch = false;
+  const bool pre_parity_ran = run_canvas_generated_parity_check(
+    CanvasGeneratedParityMode::PreGeneration, &parity_warning, &severe_parity_mismatch);
+  if (pre_parity_ran) {
+    refresh_canvas_generated_parity_ui();
+    if (!parity_warning.isEmpty()) {
+      append_studio_log("Generate ROS Scene Package pre-generation parity: " + parity_warning);
+    }
+  }
+  generate_yaml_draft_for_selected_scene();
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const QString scene_dir = QString::fromStdString(sc.scene_dir.string());
+  const QString scene_name = QString::fromStdString(sc.scene_name);
+  const QString cell_definition_path = QString::fromStdString((sc.scene_dir / "cell_definition.yaml").string());
+  const QString output_dir = QString::fromStdString(sc.scene_dir.parent_path().string());
+  if (!QFileInfo::exists(cell_definition_path)) {
+    append_studio_log("Generate ROS Scene Package: Generate YAML first.");
+    return;
+  }
+  bool severe_preflight_failure = false;
+  const QStringList preflight_warnings = generation_asset_support_preflight(
+    sc.scene_dir / "environment_layout.yaml", &severe_preflight_failure);
+  for (const QString & warning : preflight_warnings) {
+    append_studio_log(warning);
+    readiness_warning_details_.append(warning);
+  }
+  if (severe_preflight_failure) {
+    append_studio_log("Generate ROS Scene Package blocked by severe schema/safety preflight failure.");
+    refresh_new_cell_checklist();
+    return;
+  }
+  QString validate_cell_script;
+  if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) {
+    QProcess validate_process;
+    validate_process.start("python3", QStringList() << validate_cell_script << cell_definition_path);
+    if (!validate_process.waitForFinished(120000)) {
+      append_studio_log("Generate ROS Scene Package: timed out while validating cell definition.");
+      return;
+    }
+    const QString stderr_text = QString::fromUtf8(validate_process.readAllStandardError()).trimmed();
+    const QString stdout_text = QString::fromUtf8(validate_process.readAllStandardOutput()).trimmed();
+    if (validate_process.exitCode() != 0) {
+      append_studio_log("Generate ROS Scene Package blocked: cell_definition.yaml validation failed.");
+      const QStringList validator_lines = (stderr_text + "\n" + stdout_text).split('\n', Qt::SkipEmptyParts);
+      bool found_missing_key_error = false;
+      for (const QString & line : validator_lines) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.contains("Missing required top-level key:")) {
+          append_studio_log("validator: " + trimmed);
+          found_missing_key_error = true;
+        }
+      }
+      if (!found_missing_key_error) {
+        if (!stderr_text.isEmpty()) append_studio_log("validator stderr: " + stderr_text.left(600));
+        if (!stdout_text.isEmpty()) append_studio_log("validator stdout: " + stdout_text.left(600));
+      }
+      return;
+    }
+  }
+  if (output_dir.trimmed().isEmpty() || scene_name.trimmed().isEmpty()) {
+    append_studio_log("Generate ROS Scene Package: output directory and package name are required.");
+    return;
+  }
+  QString script;
+  helper_script_exists("generate_workcell_from_cell_definition.py", &script);
+  const auto plan = workcell_builder::build_generate_workcell_command_plan(script, scene_dir, output_dir, scene_name);
+  if (!plan.ready()) {
+    append_studio_log("Generate ROS Scene Package: " + plan.missing_fields_message());
+    return;
+  }
+  QProcess process;
+  process.start("python3", QStringList() << plan.script_path << plan.arguments);
+  if (!process.waitForFinished(180000)) {
+    append_studio_log("Generate ROS Scene Package: timed out while waiting for helper script.");
+    return;
+  }
+  const int exit_code = process.exitCode();
+  const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+  const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed();
+  if (exit_code != 0) {
+    append_studio_log(QString("Generate ROS Scene Package failed (exit=%1).").arg(exit_code));
+    if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400));
+    if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
+    launch_artifacts_ready_ = false;
+    return;
+  }
+  launch_artifacts_ready_ = true;
+  append_studio_log("Generate ROS Scene Package: " + plan.display_command());
+  append_studio_log(QString("Generated package location: %1/%2").arg(output_dir, scene_name));
+  append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name));
+  append_studio_log("Next: source install/setup.bash");
+  append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name));
+  if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
+  QString post_warning;
+  bool post_blocked = false;
+  const bool post_parity_ran = run_canvas_generated_parity_check(
+    CanvasGeneratedParityMode::PostGeneration, &post_warning, &post_blocked);
+  if (post_parity_ran) {
+    refresh_canvas_generated_parity_ui();
+    if (post_blocked) {
+      launch_artifacts_ready_ = false;
+      append_studio_log("Generated package created but Canvas/Generated parity has blockers.");
+      if (!post_warning.isEmpty()) {
+        append_studio_log("Post-generation parity recommendation: " + post_warning);
+      }
+    } else if (!post_warning.isEmpty()) {
+      append_studio_log("Generate ROS Scene Package post-generation parity: " + post_warning);
+    }
+  }
+  refresh_scene_browser_ui();
+  refresh_scene_builder_selected_scene_ui();
+  refresh_new_cell_checklist();
+}
+void MainWindow::validate_generated_scene_for_selected_scene() {
+  if (selected_scene_index_ < 0) return;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  QString script;
+  if (!helper_script_exists("validate_builder_generated_scene.py", &script)) {
+    append_studio_log("Validate Generated Scene: script missing. Searched: " +
+      helper_script_search_paths("validate_builder_generated_scene.py").join(" | "));
+    return;
+  }
+  const auto plan = workcell_builder::build_validate_generated_scene_command_plan(
+    script, QString::fromStdString(sc.scene_dir.string()));
+  if (!plan.ready()) {
+    append_studio_log("Validate Generated Scene: " + plan.missing_fields_message());
+    return;
+  }
+  QProcess process;
+  process.start("python3", QStringList() << plan.script_path << plan.arguments);
+  if (!process.waitForFinished(120000)) {
+    append_studio_log("Validate Generated Scene: timed out while waiting for helper script.");
+    return;
+  }
+  validation_stale_ = false;
+  append_studio_log("Validate Generated Scene: " + plan.display_command());
+  refresh_new_cell_checklist();
+}
+void MainWindow::copy_build_launch_commands_for_selected_scene() {
+  if (!has_selected_scene()) return;
+  const QString block = selected_scene_preview_command_block();
+  QApplication::clipboard()->setText(block);
+  append_studio_log("Copy Build & Launch Commands");
+}
+void MainWindow::open_selected_task_file() {
+  if (selected_scene_index_ < 0) return;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const auto ti = load_scene_task_intent_summary(sc.scene_dir);
+  if (ti.status == "MISSING_TASK_FILE") {
+    append_studio_log("Open Task File: missing. Searched: " + ti.searched_paths.join(" | "));
+    return;
+  }
+  QDesktopServices::openUrl(QUrl::fromLocalFile(ti.source_file));
+}
+void MainWindow::copy_selected_task_summary() {
+  if (selected_scene_index_ < 0) return;
+  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  const auto ti = load_scene_task_intent_summary(sc.scene_dir);
+  QApplication::clipboard()->setText(QString(
+    "Scene=%1\nTaskType=%2\nPick=%3\nPlace=%4\nReject=%5\nObjectClass=%6\nGrasp=%7\nApproach=%8/%9\nRetreat=%10/%11\nTool=%12\nPerception=%13\nStatus=%14")
+      .arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.pick_source, ti.place_target,
+        ti.reject_target, ti.object_class, ti.grasp_strategy, ti.approach_axis, ti.approach_distance,
+        ti.retreat_axis, ti.retreat_distance, ti.tool_id, ti.perception_mode, ti.status));
+  append_studio_log("Copy Task Summary");
+}
+void MainWindow::preview_offline_plan_for_selected_scene() {
+  show_studio_page(StudioPage::PlanSimulatePage);
+  refresh_preview_launch_ui();
+  append_studio_log("Preview Offline Plan: Fake Hardware | No Robot Motion | Preview Only");
+}
 MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() const
 {
   SelectedSceneItemState state;
