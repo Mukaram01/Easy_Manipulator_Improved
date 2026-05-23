@@ -156,13 +156,23 @@ bool looks_like_ascii_stl(const QByteArray & bytes)
 
 
 bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
-                         QString & out_error, int triangle_limit)
+                         QString & out_error, double * out_unit_meter, int triangle_limit)
 {
   QXmlStreamReader xml(bytes);
+  if (out_unit_meter) *out_unit_meter = 1.0;
   QVector<float> positions;
   bool in_geometry = false;
   while (!xml.atEnd()) {
     xml.readNext();
+    if (xml.isStartElement() && xml.name() == QStringLiteral("asset")) {
+      while (!(xml.isEndElement() && xml.name() == QStringLiteral("asset")) && !xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement() && xml.name() == QStringLiteral("unit")) {
+          const double meter = xml.attributes().value(QStringLiteral("meter")).toDouble();
+          if (out_unit_meter && meter > 0.0 && qIsFinite(meter)) *out_unit_meter = meter;
+        }
+      }
+    }
     if (xml.isStartElement() && xml.name() == QStringLiteral("geometry")) in_geometry = true;
     if (!in_geometry || !xml.isStartElement()) continue;
     if (xml.name() == QStringLiteral("float_array")) {
@@ -976,11 +986,11 @@ bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, c
 
 bool Scene3DViewportWidget::parse_collada_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                                          InternalTriangleMesh & out_mesh, QString & out_error,
-                                                         int triangle_limit)
+                                                         double * out_unit_meter, int triangle_limit)
 {
   Q_UNUSED(source_hint);
   out_mesh.triangles.clear();
-  return parse_collada_bytes(bytes, out_mesh, out_error, triangle_limit);
+  return parse_collada_bytes(bytes, out_mesh, out_error, out_unit_meter, triangle_limit);
 }
 
 bool Scene3DViewportWidget::compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max)
@@ -1086,34 +1096,58 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   const QString ext = input_info.suffix().toLower();
   QString parse_error;
   if (ext == QStringLiteral("stl")) {
+    entry.parser_type = QStringLiteral("stl");
     entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
   } else if (ext == QStringLiteral("dae")) {
-    entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+    entry.parser_type = QStringLiteral("dae");
+    entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, &entry.dae_unit_meter, kMeshTriangleLimit);
   } else {
+    entry.parser_type = ext;
     entry.valid = false;
     parse_error = QStringLiteral("unsupported mesh format: .%1").arg(ext.isEmpty() ? QStringLiteral("<none>") : ext);
   }
+  entry.parse_error = parse_error;
+  entry.parse_status = entry.valid ? QStringLiteral("ok") : QStringLiteral("error");
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
     entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
   entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
-  if (entry.valid && entry.has_bounds) {
-    const QVector3D span = entry.local_max - entry.local_min;
-    const bool finite_bounds = qIsFinite(entry.local_min.x()) && qIsFinite(entry.local_min.y()) && qIsFinite(entry.local_min.z()) &&
-                               qIsFinite(entry.local_max.x()) && qIsFinite(entry.local_max.y()) && qIsFinite(entry.local_max.z()) &&
-                               qIsFinite(span.x()) && qIsFinite(span.y()) && qIsFinite(span.z());
-    const float max_span = qMax(span.x(), qMax(span.y(), span.z()));
-    if (!finite_bounds || max_span > 100.0f) {
-      entry.valid = false;
-      entry.warning = QStringLiteral("mesh invalid (unreasonable bounds)");
-    }
-  }
+  if (entry.has_bounds) entry.local_span = entry.local_max - entry.local_min;
   return mesh_cache_.insert(canonical, entry).value();
 }
 
 
 
+
+
+bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
+                                                     const MeshCacheEntry & entry,
+                                                     const QString & mesh_source,
+                                                     QString & out_reason) const
+{
+  if (!entry.has_bounds) return true;
+  constexpr double kFinalSpanThresholdMeters = 50.0;
+  const double unit = (entry.parser_type == QStringLiteral("dae") && entry.dae_unit_meter > 0.0 && qIsFinite(entry.dae_unit_meter))
+    ? entry.dae_unit_meter
+    : 1.0;
+  const QVector3D raw_span = entry.local_span;
+  const QVector3D final_span(raw_span.x() * unit * it.mesh_scale_x,
+                             raw_span.y() * unit * it.mesh_scale_y,
+                             raw_span.z() * unit * it.mesh_scale_z);
+  const QVector3D abs_final(qAbs(final_span.x()), qAbs(final_span.y()), qAbs(final_span.z()));
+  const bool finite_final = qIsFinite(abs_final.x()) && qIsFinite(abs_final.y()) && qIsFinite(abs_final.z());
+  const double max_final_span = qMax(abs_final.x(), qMax(abs_final.y(), abs_final.z()));
+  if (!finite_final || max_final_span > kFinalSpanThresholdMeters) {
+    out_reason = QStringLiteral("unreasonable_bounds_final_span item_id=%1 mesh_path=%2 raw_span=[%3,%4,%5] final_span=[%6,%7,%8] threshold_m=%9")
+      .arg(it.id, mesh_source)
+      .arg(raw_span.x(), 0, 'g', 8).arg(raw_span.y(), 0, 'g', 8).arg(raw_span.z(), 0, 'g', 8)
+      .arg(abs_final.x(), 0, 'g', 8).arg(abs_final.y(), 0, 'g', 8).arg(abs_final.z(), 0, 'g', 8)
+      .arg(kFinalSpanThresholdMeters, 0, 'g', 8);
+    return false;
+  }
+  return true;
+}
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
 {
@@ -1144,6 +1178,11 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
   if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
     warn_for_mode(entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning, mesh_source);
+    return false;
+  }
+  QString final_span_reason;
+  if (!validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
+    warn_for_mode(final_span_reason, mesh_source);
     return false;
   }
 
