@@ -4,13 +4,19 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from pathlib import Path
-from typing import Any
 
 from run_generated_cell_acceptance import run_acceptance
 from validate_detected_objects import _load_yaml_or_json
-from workcell_discovery import discover_all
+from workcell_discovery import REPO_ROOT, discover_all
+
+READINESS_MESSAGES = {
+    "SCENE_PACKAGE_DIR_MISSING": "scene package directory missing",
+    "PACKAGE_XML_MISSING": "package.xml missing",
+    "DEMO_LAUNCH_MISSING": "launch/demo.launch.py missing",
+    "WORKSPACE_SETUP_MISSING": "install/setup.bash missing under workspace root",
+    "PACKAGE_NOT_FOUND_BY_ROS2": "package not found by ros2",
+}
 
 
 def _check_topic_exists(topic: str) -> bool:
@@ -32,16 +38,87 @@ def _check_tf_available(target_frame: str, camera_frame: str) -> bool:
     return proc.returncode == 0
 
 
-def _status_rank(status: str) -> int:
-    return {"PASS": 0, "WARN": 1, "FAIL": 2}.get(status, 2)
-
-
 def _set_check(checks: dict[str, dict[str, str]], name: str, status: str, message: str, blockers: list[str], warnings: list[str]) -> None:
     checks[name] = {"status": status, "message": message}
     if status == "FAIL":
-        blockers.append(f"{name}: {message}")
+        blockers.append(message)
     elif status == "WARN":
-        warnings.append(f"{name}: {message}")
+        warnings.append(message)
+
+
+def _resolve_scene_package_path(scene_package: str) -> Path | None:
+    discovered = [s for s in discover_all().get("scenes", []) if s.get("package_name") == scene_package]
+    if not discovered:
+        fallback = REPO_ROOT / "scenes" / scene_package
+        return fallback if fallback.exists() else None
+    installed_first = sorted(discovered, key=lambda s: 0 if s.get("installed") else 1)
+    source = installed_first[0].get("source_path")
+    return Path(source) if isinstance(source, str) and source else None
+
+
+def _workspace_root_for_scene(scene_path: Path | None) -> Path:
+    if scene_path is None:
+        return REPO_ROOT
+    resolved = scene_path.resolve()
+    parts = resolved.parts
+    if "install" in parts:
+        idx = parts.index("install")
+        return Path(*parts[:idx]) if idx > 0 else REPO_ROOT
+    return REPO_ROOT
+
+
+def _run_scene_package_readiness(scene_package: str, checks: dict[str, dict[str, str]], blockers: list[str], warnings: list[str], ros2_probe: bool) -> None:
+    scene_path = _resolve_scene_package_path(scene_package)
+    if scene_path is None or not scene_path.exists():
+        _set_check(checks, "scene_package_dir", "FAIL", READINESS_MESSAGES["SCENE_PACKAGE_DIR_MISSING"], blockers, warnings)
+        _set_check(checks, "scene_package_xml", "FAIL", READINESS_MESSAGES["PACKAGE_XML_MISSING"], blockers, warnings)
+        _set_check(checks, "scene_demo_launch", "FAIL", READINESS_MESSAGES["DEMO_LAUNCH_MISSING"], blockers, warnings)
+        _set_check(checks, "workspace_setup", "FAIL", READINESS_MESSAGES["WORKSPACE_SETUP_MISSING"], blockers, warnings)
+        return
+
+    _set_check(checks, "scene_package_dir", "PASS", "scene package directory exists", blockers, warnings)
+
+    package_xml = scene_path / "package.xml"
+    _set_check(
+        checks,
+        "scene_package_xml",
+        "PASS" if package_xml.exists() else "FAIL",
+        "package.xml exists" if package_xml.exists() else READINESS_MESSAGES["PACKAGE_XML_MISSING"],
+        blockers,
+        warnings,
+    )
+
+    demo_launch = scene_path / "launch" / "demo.launch.py"
+    _set_check(
+        checks,
+        "scene_demo_launch",
+        "PASS" if demo_launch.exists() else "FAIL",
+        "launch/demo.launch.py exists" if demo_launch.exists() else READINESS_MESSAGES["DEMO_LAUNCH_MISSING"],
+        blockers,
+        warnings,
+    )
+
+    workspace_root = _workspace_root_for_scene(scene_path)
+    setup = workspace_root / "install" / "setup.bash"
+    _set_check(
+        checks,
+        "workspace_setup",
+        "PASS" if setup.exists() else "FAIL",
+        "install/setup.bash exists under workspace root" if setup.exists() else READINESS_MESSAGES["WORKSPACE_SETUP_MISSING"],
+        blockers,
+        warnings,
+    )
+
+    if ros2_probe:
+        proc = subprocess.run(["ros2", "pkg", "prefix", scene_package], capture_output=True, text=True, check=False)
+        _set_check(
+            checks,
+            "ros2_pkg_prefix_probe",
+            "PASS" if proc.returncode == 0 else "FAIL",
+            "ros2 pkg prefix resolved package" if proc.returncode == 0 else READINESS_MESSAGES["PACKAGE_NOT_FOUND_BY_ROS2"],
+            blockers,
+            warnings,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--check-tf", action="store_true")
     p.add_argument("--check-ros-topics", action="store_true")
     p.add_argument("--check-runtime", action="store_true")
+    p.add_argument("--check-ros2-package", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -67,11 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     blockers: list[str] = []
     warnings: list[str] = []
 
-    scenes = {s["package_name"] for s in discover_all().get("scenes", [])}
-    if args.scene_package in scenes:
-        _set_check(checks, "scene_discovery", "PASS", "Scene package discovered.", blockers, warnings)
-    else:
-        _set_check(checks, "scene_discovery", "FAIL", f"Scene package '{args.scene_package}' was not discovered.", blockers, warnings)
+    _run_scene_package_readiness(args.scene_package, checks, blockers, warnings, ros2_probe=args.check_ros2_package)
 
     if not args.task_recipe.exists():
         _set_check(checks, "task_recipe", "FAIL", f"Task recipe not found: {args.task_recipe}", blockers, warnings)
@@ -102,19 +176,17 @@ def main(argv: list[str] | None = None) -> int:
         _set_check(checks, "detected_objects", "PASS", "No detected objects file provided (optional).", blockers, warnings)
 
     if args.live:
-        need_topic_check = args.check_ros_topics or True
-        if need_topic_check:
-            camera_topics = [args.camera_rgb_topic, args.camera_depth_topic, args.camera_info_topic, args.pointcloud_topic]
-            missing_camera = [t for t in camera_topics if not _check_topic_exists(t)]
-            if missing_camera:
-                _set_check(checks, "camera_topics", "FAIL", f"Missing required camera topics: {missing_camera}", blockers, warnings)
-            else:
-                _set_check(checks, "camera_topics", "PASS", "All required camera topics are visible.", blockers, warnings)
+        camera_topics = [args.camera_rgb_topic, args.camera_depth_topic, args.camera_info_topic, args.pointcloud_topic]
+        missing_camera = [t for t in camera_topics if not _check_topic_exists(t)]
+        if missing_camera:
+            _set_check(checks, "camera_topics", "FAIL", f"Missing required camera topics: {missing_camera}", blockers, warnings)
+        else:
+            _set_check(checks, "camera_topics", "PASS", "All required camera topics are visible.", blockers, warnings)
 
-            if _check_topic_exists(args.epd_topic):
-                _set_check(checks, "epd_topic", "PASS", "EPD topic is visible.", blockers, warnings)
-            else:
-                _set_check(checks, "epd_topic", "FAIL", f"Missing required EPD topic: {args.epd_topic}", blockers, warnings)
+        if _check_topic_exists(args.epd_topic):
+            _set_check(checks, "epd_topic", "PASS", "EPD topic is visible.", blockers, warnings)
+        else:
+            _set_check(checks, "epd_topic", "FAIL", f"Missing required EPD topic: {args.epd_topic}", blockers, warnings)
 
         if args.check_tf:
             if _check_tf_available(args.target_frame, args.camera_frame):
