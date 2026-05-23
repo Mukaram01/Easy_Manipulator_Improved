@@ -192,6 +192,10 @@ private:
     bool has_bounds{ false };
     QVector3D local_min;
     QVector3D local_max;
+    float collada_unit_scale{ 1.0f };
+    bool has_pre_unit_bounds{ false };
+    QVector3D pre_unit_min;
+    QVector3D pre_unit_max;
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;

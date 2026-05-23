@@ -156,13 +156,24 @@ bool looks_like_ascii_stl(const QByteArray & bytes)
 
 
 bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
-                         QString & out_error, int triangle_limit)
+                         QString & out_error, int triangle_limit,
+                         float * out_unit_scale = nullptr,
+                         QVector3D * out_pre_unit_min = nullptr,
+                         QVector3D * out_pre_unit_max = nullptr,
+                         QVector3D * out_post_unit_min = nullptr,
+                         QVector3D * out_post_unit_max = nullptr)
 {
   QXmlStreamReader xml(bytes);
   QVector<float> positions;
   bool in_geometry = false;
+  float unit_scale = 1.0f;
   while (!xml.atEnd()) {
     xml.readNext();
+    if (xml.isStartElement() && xml.name() == QStringLiteral("unit")) {
+      bool ok = false;
+      const float parsed = xml.attributes().value(QStringLiteral("meter")).toFloat(&ok);
+      if (ok && qIsFinite(parsed) && parsed > 0.0f) unit_scale = parsed;
+    }
     if (xml.isStartElement() && xml.name() == QStringLiteral("geometry")) in_geometry = true;
     if (!in_geometry || !xml.isStartElement()) continue;
     if (xml.name() == QStringLiteral("float_array")) {
@@ -197,9 +208,9 @@ bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::Intern
         const int na=a*3, nb=b*3, nc=c*3;
         if (na+2>=positions.size()||nb+2>=positions.size()||nc+2>=positions.size()) return;
         Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
-        tri.vertices[0]=QVector3D(positions[na],positions[na+1],positions[na+2]);
-        tri.vertices[1]=QVector3D(positions[nb],positions[nb+1],positions[nb+2]);
-        tri.vertices[2]=QVector3D(positions[nc],positions[nc+1],positions[nc+2]);
+        tri.vertices[0]=QVector3D(positions[na],positions[na+1],positions[na+2]) * unit_scale;
+        tri.vertices[1]=QVector3D(positions[nb],positions[nb+1],positions[nb+2]) * unit_scale;
+        tri.vertices[2]=QVector3D(positions[nc],positions[nc+1],positions[nc+2]) * unit_scale;
         tri.normal = QVector3D::crossProduct(tri.vertices[1]-tri.vertices[0], tri.vertices[2]-tri.vertices[0]);
         out_mesh.triangles.push_back(tri);
       };
@@ -218,6 +229,14 @@ bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::Intern
   }
   if (xml.hasError()) { out_error = QStringLiteral("collada parse error: ") + xml.errorString(); return false; }
   if (out_mesh.triangles.isEmpty()) { out_error = QStringLiteral("collada contains no triangles"); return false; }
+  if (out_unit_scale) *out_unit_scale = unit_scale;
+  QVector3D post_min, post_max;
+  if (Scene3DViewportWidget::compute_mesh_bounds_for_test(out_mesh, post_min, post_max)) {
+    if (out_post_unit_min) *out_post_unit_min = post_min;
+    if (out_post_unit_max) *out_post_unit_max = post_max;
+    if (out_pre_unit_min) *out_pre_unit_min = post_min / unit_scale;
+    if (out_pre_unit_max) *out_pre_unit_max = post_max / unit_scale;
+  }
   return true;
 }
 enum class NormalizedRole
@@ -980,7 +999,7 @@ bool Scene3DViewportWidget::parse_collada_bytes_for_test(const QByteArray & byte
 {
   Q_UNUSED(source_hint);
   out_mesh.triangles.clear();
-  return parse_collada_bytes(bytes, out_mesh, out_error, triangle_limit);
+  return parse_collada_bytes(bytes, out_mesh, out_error, triangle_limit, nullptr, nullptr, nullptr, nullptr, nullptr);
 }
 
 bool Scene3DViewportWidget::compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max)
@@ -1088,7 +1107,14 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   if (ext == QStringLiteral("stl")) {
     entry.valid = parse_stl_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
   } else if (ext == QStringLiteral("dae")) {
-    entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
+    entry.valid = parse_collada_bytes(bytes, entry.mesh, parse_error, kMeshTriangleLimit,
+                                      &entry.collada_unit_scale,
+                                      &entry.pre_unit_min,
+                                      &entry.pre_unit_max,
+                                      &entry.local_min,
+                                      &entry.local_max);
+    entry.has_pre_unit_bounds = entry.valid;
+    entry.has_bounds = entry.valid;
   } else {
     entry.valid = false;
     parse_error = QStringLiteral("unsupported mesh format: .%1").arg(ext.isEmpty() ? QStringLiteral("<none>") : ext);
@@ -1097,7 +1123,7 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
     entry.oversized = parse_error.contains("exceeds limit");
     entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
   }
-  entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
+  if (ext != QStringLiteral("dae")) entry.has_bounds = compute_mesh_bounds_for_test(entry.mesh, entry.local_min, entry.local_max);
   if (entry.valid && entry.has_bounds) {
     const QVector3D span = entry.local_max - entry.local_min;
     const bool finite_bounds = qIsFinite(entry.local_min.x()) && qIsFinite(entry.local_min.y()) && qIsFinite(entry.local_min.z()) &&
@@ -1108,6 +1134,23 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
       entry.valid = false;
       entry.warning = QStringLiteral("mesh invalid (unreasonable bounds)");
     }
+  }
+  if (ext == QStringLiteral("dae") && entry.valid) {
+    const QString pre_bounds_text = entry.has_pre_unit_bounds
+      ? QStringLiteral("pre=[(%1,%2,%3)-(%4,%5,%6)]")
+          .arg(entry.pre_unit_min.x(), 0, 'g', 6).arg(entry.pre_unit_min.y(), 0, 'g', 6).arg(entry.pre_unit_min.z(), 0, 'g', 6)
+          .arg(entry.pre_unit_max.x(), 0, 'g', 6).arg(entry.pre_unit_max.y(), 0, 'g', 6).arg(entry.pre_unit_max.z(), 0, 'g', 6)
+      : QStringLiteral("pre=[unavailable]");
+    const QString post_bounds_text = entry.has_bounds
+      ? QStringLiteral("post=[(%1,%2,%3)-(%4,%5,%6)]")
+          .arg(entry.local_min.x(), 0, 'g', 6).arg(entry.local_min.y(), 0, 'g', 6).arg(entry.local_min.z(), 0, 'g', 6)
+          .arg(entry.local_max.x(), 0, 'g', 6).arg(entry.local_max.y(), 0, 'g', 6).arg(entry.local_max.z(), 0, 'g', 6)
+      : QStringLiteral("post=[unavailable]");
+    const QString diag = QStringLiteral("collada unit=%1 %2 %3")
+      .arg(entry.collada_unit_scale, 0, 'g', 6)
+      .arg(pre_bounds_text, post_bounds_text);
+    if (entry.warning.isEmpty()) entry.warning = diag;
+    else entry.warning += QStringLiteral("; ") + diag;
   }
   return mesh_cache_.insert(canonical, entry).value();
 }
