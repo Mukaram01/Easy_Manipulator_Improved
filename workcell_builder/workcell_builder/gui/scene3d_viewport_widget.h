@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QVector3D>
 #include <QJsonObject>
+#include <QJsonArray>
 
 #include <array>
 
@@ -99,6 +100,7 @@ public:
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
+  QJsonArray mesh_diagnostics_export() const;
 
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
                                        InternalTriangleMesh & out_mesh, QString & out_error,
@@ -207,7 +209,9 @@ private:
   bool validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
                                 const MeshCacheEntry & entry,
                                 const QString & mesh_source,
-                                QString & out_reason) const;
+                                QString & out_reason,
+                                QVector3D * out_raw_span = nullptr,
+                                QVector3D * out_final_span = nullptr) const;
   QVector3D orbit_offset_{ 0.0f, 0.0f, 0.0f };
   double yaw_{ -0.9 };
   double pitch_{ 0.7 };

@@ -16,6 +16,7 @@
 #include <QtEndian>
 #include <QMimeData>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QXmlStreamReader>
 #include <cstring>
 #include <QtMath>
@@ -567,6 +568,16 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = false;
+  const QString diagnostics_path = QString::fromUtf8(qgetenv("SCENE3D_MESH_DIAGNOSTICS_JSON"));
+  if (!diagnostics_path.trimmed().isEmpty()) {
+    QFile out_file(diagnostics_path);
+    if (out_file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+      QJsonObject root;
+      root["mesh_diagnostics"] = mesh_diagnostics_export();
+      out_file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+      out_file.close();
+    }
+  }
   update();
 }
 void Scene3DViewportWidget::fit_scene() {
@@ -1124,7 +1135,9 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
 bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
                                                      const MeshCacheEntry & entry,
                                                      const QString & mesh_source,
-                                                     QString & out_reason) const
+                                                     QString & out_reason,
+                                                     QVector3D * out_raw_span,
+                                                     QVector3D * out_final_span) const
 {
   if (!entry.has_bounds) return true;
   constexpr double kFinalSpanThresholdMeters = 50.0;
@@ -1135,6 +1148,8 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
   const QVector3D final_span(raw_span.x() * unit * it.mesh_scale_x,
                              raw_span.y() * unit * it.mesh_scale_y,
                              raw_span.z() * unit * it.mesh_scale_z);
+  if (out_raw_span) *out_raw_span = raw_span;
+  if (out_final_span) *out_final_span = final_span;
   const QVector3D abs_final(qAbs(final_span.x()), qAbs(final_span.y()), qAbs(final_span.z()));
   const bool finite_final = qIsFinite(abs_final.x()) && qIsFinite(abs_final.y()) && qIsFinite(abs_final.z());
   const double max_final_span = qMax(abs_final.x(), qMax(abs_final.y(), abs_final.z()));
@@ -1147,6 +1162,51 @@ bool Scene3DViewportWidget::validate_mesh_final_span(const ScenePreviewWidget::P
     return false;
   }
   return true;
+}
+
+QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
+{
+  QJsonArray out;
+  for (auto it = mesh_cache_.cbegin(); it != mesh_cache_.cend(); ++it) {
+    const QString & canonical_path = it.key();
+    const MeshCacheEntry & e = it.value();
+    QJsonObject row;
+    row["canonical_path"] = canonical_path;
+    row["loaded"] = e.loaded;
+    row["valid"] = e.valid;
+    row["warning"] = e.warning;
+    row["oversized"] = e.oversized;
+    const QString parser = (e.parser_type == "stl" || e.parser_type == "dae") ? e.parser_type : QStringLiteral("unsupported");
+    row["parser_type"] = parser;
+    row["parse_error"] = e.parse_error;
+    row["rejected_reason_code"] = e.parse_status;
+    row["triangle_count"] = static_cast<int>(e.mesh.triangles.size());
+    row["has_bounds"] = e.has_bounds;
+    row["local_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
+    row["local_max"] = QJsonArray{e.local_max.x(), e.local_max.y(), e.local_max.z()};
+    row["span"] = QJsonArray{e.local_span.x(), e.local_span.y(), e.local_span.z()};
+
+    QJsonArray guard_details;
+    for (const auto & item : items) {
+      const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
+      QString canonical_source;
+      if (!try_resolve_canonical_mesh_path(mesh_source, canonical_source)) canonical_source = QFileInfo(mesh_source).absoluteFilePath();
+      if (canonical_source != canonical_path) continue;
+      QVector3D raw_span, final_span;
+      QString reason;
+      const bool accepted = validate_mesh_final_span(item, e, mesh_source, reason, &raw_span, &final_span);
+      QJsonObject gd;
+      gd["item_id"] = item.id;
+      gd["accepted"] = accepted;
+      gd["reason"] = reason;
+      gd["raw_span"] = QJsonArray{raw_span.x(), raw_span.y(), raw_span.z()};
+      gd["final_span"] = QJsonArray{final_span.x(), final_span.y(), final_span.z()};
+      guard_details.append(gd);
+    }
+    row["guard_decision_details"] = guard_details;
+    out.append(row);
+  }
+  return out;
 }
 
 bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWidget::PreviewItem & it, const QColor & color, bool preview_path)
@@ -1176,14 +1236,20 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     return false;
   }
   const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
-  if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
-    warn_for_mode(entry.warning.isEmpty() ? QStringLiteral("mesh unavailable") : entry.warning, mesh_source);
+  auto reject = [&](const QString & code, const QString & detail = QString()) {
+    const QString reason = detail.isEmpty() ? code : QStringLiteral("%1: %2").arg(code, detail);
+    warn_for_mode(reason, mesh_source);
     return false;
+  };
+  if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
+    if (!entry.loaded) return reject(QStringLiteral("REJECT_NOT_LOADED"));
+    if (!entry.valid) return reject(QStringLiteral("REJECT_PARSE_INVALID"), entry.warning);
+    if (entry.oversized) return reject(QStringLiteral("REJECT_OVERSIZED"), entry.warning);
+    return reject(QStringLiteral("REJECT_EMPTY_TRIANGLES"), entry.warning);
   }
   QString final_span_reason;
   if (!validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
-    warn_for_mode(final_span_reason, mesh_source);
-    return false;
+    return reject(QStringLiteral("REJECT_GUARD_FINAL_SPAN"), final_span_reason);
   }
 
   glPushMatrix();
