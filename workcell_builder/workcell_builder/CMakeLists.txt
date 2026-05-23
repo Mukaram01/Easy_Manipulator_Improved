@@ -312,6 +312,9 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene3d_stl_parser_test
     test/scene3d_stl_parser_test.cpp
     gui/scene3d_viewport_widget.cpp)
+  ament_add_gtest(workcell_scene3d_render_role_classifier_test
+    test/scene3d_render_role_classifier_test.cpp
+    gui/scene3d_viewport_widget.cpp)
 
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp

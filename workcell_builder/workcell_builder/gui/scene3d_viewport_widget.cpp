@@ -340,23 +340,17 @@ NormalizedRole classify_item_role(const ScenePreviewWidget::PreviewItem & it)
 bool include_in_fit_bounds(const ScenePreviewWidget::PreviewItem & it, bool include_overlays)
 {
   if (include_overlays) return true;
-  // FIT_PHYSICAL_ONLY_FILTER: keep fit_scene() bounds focused on physical geometry.
-  const NormalizedRole role = classify_item_role(it);
-  switch (role) {
-    case NormalizedRole::SafetyZone:
-    case NormalizedRole::WarningAnchor:
-      return false;  // FIT_EXCLUDE_OVERLAY_ONLY: safety envelope + warning markers.
-    case NormalizedRole::RobotBase:
-    case NormalizedRole::Table:
-    case NormalizedRole::Conveyor:
-    case NormalizedRole::Camera:
-    case NormalizedRole::PickZone:
-    case NormalizedRole::PlaceBin:
-    case NormalizedRole::Object:
-    case NormalizedRole::Generic:
-      return true;
-  }
-  return true;
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
+  const bool generated_urdf_visual = source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" ||
+                                     is_locked_urdf_item(it);
+  const bool mesh_backed = it.mesh_available || it.has_mesh_metadata || !it.mesh_path.trimmed().isEmpty() || !it.source_path.trimmed().isEmpty();
+  const bool explicit_primitive = it.sx > 0.001 && it.sy > 0.001 && it.sz > 0.001;
+  if (helper_overlay) return false;
+  if (generated_urdf_visual) return true;
+  if (it.linked_to_editable_layout_state) return true;
+  return mesh_backed || explicit_primitive;
 }
 
 bool is_overlay_only_item(const ScenePreviewWidget::PreviewItem & it)
@@ -517,8 +511,8 @@ void Scene3DViewportWidget::set_isometric_view()
   distance_ = 6.0;
   update();
 }
-void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -1.35; update(); }
-void Scene3DViewportWidget::set_front_view() { yaw_ = 0.0; pitch_ = 0.0; update(); }
+void Scene3DViewportWidget::set_top_view() { yaw_ = 0.0; pitch_ = -M_PI_2; update(); }
+void Scene3DViewportWidget::set_front_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::set_side_view() { yaw_ = -M_PI_2; pitch_ = 0.0; update(); }
 void Scene3DViewportWidget::invalidate_mesh_cache()
 {
@@ -595,7 +589,10 @@ void Scene3DViewportWidget::paintGL()
 
   draw_ground_grid_pass();
   draw_world_axes_pass();
-  draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.01, QColor(34, 197, 94, 70), true);
+  if (debug_overlays_mode || fit_include_overlays) {
+    draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.01, QColor(34, 197, 94, 26), true);
+    draw_cylinder(-0.2, 0.0, -2.2, reach_overlay.preferred_work_zone_radius_m, 0.005, QColor(34, 197, 94, 110), false);
+  }
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -817,12 +814,12 @@ void Scene3DViewportWidget::paintGL()
   painter.drawText(QRectF(20.0, 18.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter, "View: 3D");
   painter.drawText(QRectF(20.0, 34.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
                    QString("Scene: %1").arg(scene_name));
-  painter.drawText(QRectF(20.0, 50.0, 420.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Items %1 • Mesh-backed %2 • Primitive fallback %3 • Missing mesh %4")
-                     .arg(physical_item_count).arg(mesh_backed_count).arg(wireframe_box_count).arg(placeholder_count));
+  painter.drawText(QRectF(20.0, 50.0, 460.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Generated mesh %1 • URDF primitives %2 • Helpers %3 • Missing mesh %4")
+                     .arg(mesh_backed_count).arg(wireframe_box_count).arg(overlay_count).arg(placeholder_count));
   painter.drawText(QRectF(20.0, 66.0, 344.0, 16.0), Qt::AlignLeft | Qt::AlignVCenter,
-                   QString("Overlays %1 • Locked URDF %2 • Mode: %3")
-                     .arg(overlay_count).arg(locked_urdf_count).arg(gizmo_mode_label()));
+                   QString("Physical %1 • Locked URDF %2 • Fit: %3")
+                     .arg(physical_item_count).arg(locked_urdf_count).arg(fit_include_overlays ? "all_items" : "generated_visuals"));
   if (drag_asset_preview_visible_) {
     const double x = (drag_asset_screen_pos_.x() - width() * 0.5) / 50.0;
     const double y = (height() * 0.6 - drag_asset_screen_pos_.y()) / 50.0;
@@ -871,8 +868,23 @@ QString Scene3DViewportWidget::placeholder_reason_for_item(const ScenePreviewWid
 bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count,
                                                         int * out_mesh_count, int * out_wireframe_count)
 {
+  const QString source_layer = normalized_scene3d_layer_token(it.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(it.active_visual_source);
+  const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
+  if (helper_overlay) {
+    if (item_has_explicit_dimensions(it)) {
+      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 120), 1.2f);
+      if (out_wireframe_count) ++(*out_wireframe_count);
+      return false;
+    }
+    return false;
+  }
   // Always try mesh-backed draw first for physical items.
-  if (draw_mesh_preview_if_available(it, item_color(it), true)) {
+  QColor visual_color = item_color(it);
+  if (source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" || is_locked_urdf_item(it)) {
+    visual_color = QColor("#cfd4da");
+  }
+  if (draw_mesh_preview_if_available(it, visual_color, true)) {
     if (out_mesh_count) ++(*out_mesh_count);
     ++last_render_counters.mesh_rendered_count;
     return true;
@@ -893,8 +905,8 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       warn_mesh_fallback_once(it.id, QStringLiteral("mesh-only mode: primitive fallback suppressed"), it.source_path);
       return false;
     }
-    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#cbd5e1"), 1.4f);
+    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#94a3b8"), 1.2f);
     if (out_wireframe_count) ++(*out_wireframe_count);
     return false;
   }
@@ -928,8 +940,8 @@ bool Scene3DViewportWidget::parse_stl_bytes_for_test(const QByteArray & bytes, c
 }
 
 bool Scene3DViewportWidget::parse_collada_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
-                                                          InternalTriangleMesh & out_mesh, QString & out_error,
-                                                          int triangle_limit)
+                                                         InternalTriangleMesh & out_mesh, QString & out_error,
+                                                         int triangle_limit)
 {
   Q_UNUSED(source_hint);
   out_mesh.triangles.clear();
@@ -960,6 +972,42 @@ bool Scene3DViewportWidget::should_attempt_mesh_draw_for_mode_for_test(ScenePrev
   if (mode == ScenePreviewWidget::MeshPreviewMode::Primitives) return false;
   if (mode == ScenePreviewWidget::MeshPreviewMode::Meshes) return cache_loaded && cache_valid;
   return cache_loaded && cache_valid;
+}
+
+QString Scene3DViewportWidget::render_role_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString source_layer = normalized_scene3d_layer_token(item.source_layer);
+  const QString visual_source = normalized_scene3d_layer_token(item.active_visual_source);
+  if (is_overlay_only_item(item) || source_layer == "overlay" || visual_source == "overlay") return QStringLiteral("helper_overlay");
+  if (source_layer == "locked_generated_urdf_visual" || visual_source == "locked_generated_urdf_visual" || is_locked_urdf_item(item)) {
+    return item.mesh_available ? QStringLiteral("generated_urdf_mesh") : QStringLiteral("generated_urdf_primitive");
+  }
+  if (item.linked_to_editable_layout_state) return QStringLiteral("physical_layout_item");
+  if (!item.mesh_available && item.mesh_path.trimmed().isEmpty() && !item.has_mesh_metadata) return QStringLiteral("missing_mesh_fallback");
+  return QStringLiteral("real_urdf_primitive");
+}
+
+bool Scene3DViewportWidget::should_include_in_default_fit_for_test(const ScenePreviewWidget::PreviewItem & item)
+{
+  return include_in_fit_bounds(item, false);
+}
+
+bool Scene3DViewportWidget::should_draw_as_solid_for_test(const ScenePreviewWidget::PreviewItem & item,
+                                                           ScenePreviewWidget::MeshPreviewMode mode)
+{
+  const QString role = render_role_for_test(item);
+  if (role == "helper_overlay" || role == "missing_mesh_fallback") return false;
+  if (mode == ScenePreviewWidget::MeshPreviewMode::Meshes && !item.mesh_available) return false;
+  return true;
+}
+
+bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreviewWidget::PreviewItem & item,
+                                                               ScenePreviewWidget::MeshPreviewMode mode)
+{
+  Q_UNUSED(mode);
+  const QString role = render_role_for_test(item);
+  return role == "helper_overlay" || role == "missing_mesh_fallback" || role == "generated_urdf_primitive" ||
+         role == "real_urdf_primitive";
 }
 
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const

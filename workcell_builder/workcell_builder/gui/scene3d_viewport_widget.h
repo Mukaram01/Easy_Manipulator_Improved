@@ -109,6 +109,12 @@ public:
   static bool compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max);
   static bool should_attempt_mesh_draw_for_mode_for_test(ScenePreviewWidget::MeshPreviewMode mode,
                                                          bool cache_loaded, bool cache_valid);
+  static QString render_role_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static bool should_include_in_default_fit_for_test(const ScenePreviewWidget::PreviewItem & item);
+  static bool should_draw_as_solid_for_test(const ScenePreviewWidget::PreviewItem & item,
+                                            ScenePreviewWidget::MeshPreviewMode mode);
+  static bool should_draw_as_wireframe_for_test(const ScenePreviewWidget::PreviewItem & item,
+                                                ScenePreviewWidget::MeshPreviewMode mode);
 
 protected:
   void initializeGL() override;
