@@ -493,9 +493,33 @@ private:
       const QString text = preview_chip->text();
       if (text.startsWith("Preview:")) preview_status = text.mid(QString("Preview:").size()).trimmed();
     }
+    const int active_received_count = counters.value("active_viewport_received_count").toInt();
+    const int active_rendered_count = counters.value("active_rendered_count").toInt();
+    const bool has_active_items = (active_received_count > 0 || active_rendered_count > 0);
+    const bool fallback_render_path_active =
+      counters.value("generated_fallback_count").toInt() > 0 ||
+      counters.value("primitive_fallback_count").toInt() > 0 ||
+      counters.value("editable_layout_count").toInt() > 0;
+    const bool has_mesh_or_meaningful_fallback =
+      counters.value("mesh_rendered_count").toInt() > 0 || fallback_render_path_active;
+    const bool has_layout_mesh_warning_with_visible_fallback =
+      counters.value("visible_count").toInt() > 0 && fallback_render_path_active &&
+      (counters.value("placeholder_count").toInt() > 0 ||
+       counters.value("locked_generated_urdf_visual_count").toInt() > 0 ||
+       (counters.value("mesh_backed_count").toInt() > 0 && counters.value("mesh_rendered_count").toInt() <= 0));
+
+    QString derived_preview_status = QStringLiteral("Unavailable");
+    if (has_layout_mesh_warning_with_visible_fallback) {
+      derived_preview_status = QStringLiteral("Warning");
+    } else if (has_mesh_or_meaningful_fallback) {
+      derived_preview_status = fallback_render_path_active ? QStringLiteral("Fallback") : QStringLiteral("Available");
+    } else if (has_active_items) {
+      derived_preview_status = QStringLiteral("Fallback");
+    }
+
     counters["preview_status"] = preview_status;
-    counters["header_preview_status"] = preview_status;
-    counters["workflow_preview_status"] = (counters.value("rendered_count").toInt() > 0 || counters.value("viewport_received_count").toInt() > 0) ? (preview_status.compare("Unavailable", Qt::CaseInsensitive) == 0 ? QString("Fallback") : preview_status) : QString("Missing");
+    counters["header_preview_status"] = derived_preview_status;
+    counters["workflow_preview_status"] = has_active_items ? derived_preview_status : QStringLiteral("Missing");
     latest_counters_ = counters;
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
