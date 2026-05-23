@@ -516,14 +516,75 @@ private:
     counters["inspector_scene_status"] = inspector_scene_status;
     const auto preview_resolution = resolve_active_scene_preview_widget(window_);
     ScenePreviewWidget * active_preview_widget = preview_resolution.selected;
-    const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
+    auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
     auto * viewport = viewport_resolution.selected;
+    const auto has_non_zero_candidate_counter = [](const Scene3DViewportCandidate & candidate) {
+      const auto & rc = candidate.counters;
+      return rc.viewport_received_count > 0 || rc.render_cache_count > 0 || rc.rendered_count > 0 ||
+             rc.visible_count > 0 || rc.last_paint_completed;
+    };
+    QJsonArray viewport_candidates_json;
+    for (const auto & candidate : viewport_resolution.candidates) {
+      QJsonObject candidate_json;
+      candidate_json["object_name"] = candidate.object_name;
+      candidate_json["visible"] = candidate.is_visible;
+      candidate_json["parent_object_name"] = candidate.parent_object_name;
+      candidate_json["viewport_received_count"] = candidate.counters.viewport_received_count;
+      candidate_json["render_cache_count"] = candidate.counters.render_cache_count;
+      candidate_json["rendered_count"] = candidate.counters.rendered_count;
+      candidate_json["visible_count"] = candidate.counters.visible_count;
+      candidate_json["last_paint_completed"] = candidate.counters.last_paint_completed;
+      viewport_candidates_json.append(candidate_json);
+    }
+    root["viewport_candidates"] = viewport_candidates_json;
     counters["scene_preview_widget_found"] = (active_preview_widget != nullptr);
     counters["scene_preview_widget_count"] = preview_resolution.candidates.size();
     counters["scene_preview_widget_object_name"] = active_preview_widget ? active_preview_widget->objectName() : QString();
     counters["scene3d_viewport_widget_found"] = (viewport != nullptr);
     counters["scene3d_viewport_widget_count"] = viewport_resolution.candidates.size();
     counters["scene3d_viewport_widget_object_name"] = viewport ? viewport->objectName() : QString();
+    counters["active_viewport_candidate_index"] = viewport_resolution.selected_index;
+    counters["viewport_counter_source"] = viewport_resolution.source_label;
+    if (viewport_resolution.candidates.isEmpty()) {
+      blockers_.append("scene3d_viewport_widget_not_found");
+    }
+    const bool selected_counters_empty =
+      viewport_resolution.selected_index >= 0 &&
+      viewport_resolution.selected_index < viewport_resolution.candidates.size() &&
+      !has_non_zero_candidate_counter(viewport_resolution.candidates[viewport_resolution.selected_index]);
+    if (selected_counters_empty) {
+      int best_non_zero_idx = -1;
+      int best_non_zero_score = -1;
+      for (int i = 0; i < viewport_resolution.candidates.size(); ++i) {
+        const auto & candidate = viewport_resolution.candidates[i];
+        if (!has_non_zero_candidate_counter(candidate)) {
+          continue;
+        }
+        int score = 0;
+        score += candidate.counters.viewport_received_count;
+        score += candidate.counters.render_cache_count;
+        score += candidate.counters.rendered_count;
+        score += candidate.counters.visible_count;
+        if (candidate.counters.last_paint_completed) {
+          score += 1;
+        }
+        if (score > best_non_zero_score) {
+          best_non_zero_score = score;
+          best_non_zero_idx = i;
+        }
+      }
+      if (best_non_zero_idx >= 0) {
+        viewport_resolution.selected_index = best_non_zero_idx;
+        viewport_resolution.selected = viewport_resolution.candidates[best_non_zero_idx].widget;
+        viewport_resolution.source_label = QStringLiteral("nonzero_candidate_fallback");
+        viewport = viewport_resolution.selected;
+        counters["scene3d_viewport_widget_found"] = (viewport != nullptr);
+        counters["scene3d_viewport_widget_object_name"] = viewport ? viewport->objectName() : QString();
+        counters["active_viewport_candidate_index"] = viewport_resolution.selected_index;
+        counters["viewport_counter_source"] = viewport_resolution.source_label;
+        warnings_.append("active_viewport_selected_from_nonzero_candidate");
+      }
+    }
     const QJsonObject readiness_markers = collect_readiness_markers();
     if (viewport) {
       viewport->update();
@@ -551,7 +612,6 @@ private:
       counters["active_viewport_received_count"] = rc.viewport_received_count;
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
-      counters["viewport_counter_source"] = viewport_resolution.source_label;
       counters["active_viewport_object_name"] = viewport->objectName();
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
@@ -566,7 +626,6 @@ private:
       counters["active_viewport_received_count"] = 0;
       counters["active_rendered_count"] = 0;
       counters["active_render_cache_count"] = 0;
-      counters["viewport_counter_source"] = viewport_resolution.source_label;
       counters["active_viewport_object_name"] = QString();
     }
     auto * preview_chip = window_->findChild<QLabel *>("sceneStatusChip");
