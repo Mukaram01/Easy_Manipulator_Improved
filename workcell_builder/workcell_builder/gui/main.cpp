@@ -29,6 +29,7 @@
 #include <QLabel>
 #include <QTextEdit>
 #include <QImage>
+#include <QRegularExpression>
 #include <QWidget>
 #include <iostream>
 #include <vector>
@@ -56,6 +57,32 @@ QString cli_value(const QStringList & args, const QString & flag)
 }
 
 QJsonObject run_gui_self_test();
+
+
+QJsonObject parse_scene3d_diagnostics_from_log(const QString & log_text)
+{
+  QJsonObject out;
+  const QStringList lines = log_text.split('\n', Qt::SkipEmptyParts);
+  const QRegularExpression rx(QStringLiteral(R"(Scene3D diagnostics\s*\{([^}]*)\})"));
+  for (const QString & raw_line : lines) {
+    const QString line = raw_line.trimmed();
+    const auto match = rx.match(line);
+    if (!match.hasMatch()) continue;
+    const QString payload = match.captured(1);
+    const QStringList pairs = payload.split(',', Qt::SkipEmptyParts);
+    for (const QString & pair_raw : pairs) {
+      const QString pair = pair_raw.trimmed();
+      const int eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const QString key = pair.left(eq).trimmed();
+      const QString value = pair.mid(eq + 1).trimmed();
+      bool ok = false;
+      const int n = value.toInt(&ok);
+      out.insert(key, ok ? QJsonValue(n) : QJsonValue(value));
+    }
+  }
+  return out;
+}
 
 struct Scene3DSmokeOptions
 {
@@ -273,6 +300,7 @@ private:
 
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
     auto * log = window_->findChild<QTextEdit *>("studioHomeLog");
+    const QJsonObject parsed_runtime_diagnostics = parse_scene3d_diagnostics_from_log(log ? log->toPlainText() : QString());
     QJsonObject counters;
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
     int hierarchy_child_rows = 0;
@@ -365,6 +393,52 @@ private:
     counters["preview_status"] = preview_status;
     counters["header_preview_status"] = preview_status;
     counters["workflow_preview_status"] = (counters.value("rendered_count").toInt() > 0 || counters.value("viewport_received_count").toInt() > 0) ? (preview_status.compare("Unavailable", Qt::CaseInsensitive) == 0 ? QString("Fallback") : preview_status) : QString("Missing");
+
+    QJsonArray counter_candidates;
+    {
+      QJsonObject c;
+      c["source"] = QString("active_widget");
+      c["viewport_received_count"] = counters.value("active_viewport_received_count").toInt();
+      c["rendered_count"] = counters.value("active_rendered_count").toInt();
+      c["render_cache_count"] = counters.value("active_render_cache_count").toInt();
+      counter_candidates.append(c);
+    }
+    {
+      QJsonObject c;
+      c["source"] = QString("runtime_log_diagnostics");
+      c["viewport_received_count"] = parsed_runtime_diagnostics.value("viewport_received_count").toInt(0);
+      c["rendered_count"] = parsed_runtime_diagnostics.value("rendered_count").toInt(0);
+      c["render_cache_count"] = parsed_runtime_diagnostics.value("render_cache_count").toInt(0);
+      counter_candidates.append(c);
+    }
+    int selected_candidate_index = 0;
+    QString selected_candidate_source = counter_candidates.at(0).toObject().value("source").toString();
+        const auto active_candidate = counter_candidates.at(0).toObject();
+    const bool active_all_zero = active_candidate.value("viewport_received_count").toInt() <= 0 &&
+                                 active_candidate.value("rendered_count").toInt() <= 0 &&
+                                 active_candidate.value("render_cache_count").toInt() <= 0;
+    if (active_all_zero) {
+      for (int i = 1; i < counter_candidates.size(); ++i) {
+        const auto candidate = counter_candidates.at(i).toObject();
+        if (candidate.value("viewport_received_count").toInt() > 0 ||
+            candidate.value("rendered_count").toInt() > 0 ||
+            candidate.value("render_cache_count").toInt() > 0) {
+          selected_candidate_index = i;
+          selected_candidate_source = candidate.value("source").toString();
+          counters["active_viewport_received_count"] = candidate.value("viewport_received_count").toInt();
+          counters["active_rendered_count"] = candidate.value("rendered_count").toInt();
+          counters["active_render_cache_count"] = candidate.value("render_cache_count").toInt();
+          counters["viewport_counter_source"] = selected_candidate_source;
+          warnings_.append(QString("active_viewport_counter_fallback_selected:%1").arg(selected_candidate_source));
+          break;
+        }
+      }
+    }
+    counters["active_candidate_index"] = selected_candidate_index;
+    counters["active_candidate_source"] = selected_candidate_source;
+    counters["active_candidate_list"] = counter_candidates;
+    counters["runtime_diagnostics"] = parsed_runtime_diagnostics;
+
     latest_counters_ = counters;
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
@@ -376,6 +450,10 @@ private:
       blockers_.append("inspector_scene_state_mismatch");
     }
     if (selected_item_id == "(none)") warnings_.append("no_item_selected_by_default");
+    if (parsed_runtime_diagnostics.value("viewport_received_count").toInt(0) > 0 &&
+        counters.value("active_viewport_received_count").toInt() <= 0) {
+      blockers_.append("active_viewport_counter_handoff_failed");
+    }
     const bool render_ready = readiness_markers.value("render_ready").toBool(false);
     if (render_ready) {
       const int rendered_count = counters.value("rendered_count").toInt();
@@ -386,6 +464,7 @@ private:
     }
     root["readiness_markers"] = readiness_markers;
     root["counters"] = counters;
+    root["runtime_diagnostics"] = parsed_runtime_diagnostics;
     root["warnings"] = warnings_;
     root["blockers"] = blockers_;
 
