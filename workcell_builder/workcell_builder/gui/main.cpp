@@ -289,19 +289,28 @@ private:
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     QString selected_scene_name = "(none)";
     QString selected_item_id = "(none)";
+    QString inspector_scene_display_name = "";
+    QString inspector_scene_path = "";
+    QString inspector_scene_status = "";
+    QString preview_status = "Unavailable";
     bool inspector_no_scene_selected = true;
     if (inspector) {
       const QString text = inspector->text();
       inspector_no_scene_selected = text.contains("No scene selected", Qt::CaseInsensitive);
       const QStringList lines = text.split('\n');
       for (const QString & line : lines) {
-        if (line.startsWith("Scene: ")) selected_scene_name = line.mid(QString("Scene: ").size()).trimmed();
+        if (line.startsWith("Scene: ")) { selected_scene_name = line.mid(QString("Scene: ").size()).trimmed(); inspector_scene_display_name = selected_scene_name; }
+        if (line.startsWith("Scene path: ")) inspector_scene_path = line.mid(QString("Scene path: ").size()).trimmed();
+        if (line.startsWith("Scene status: ")) inspector_scene_status = line.mid(QString("Scene status: ").size()).trimmed();
         if (line.startsWith("Selected item ID: ")) selected_item_id = line.mid(QString("Selected item ID: ").size()).trimmed();
       }
     }
     counters["selected_scene_name"] = selected_scene_name;
     counters["selected_item_id"] = selected_item_id;
     counters["inspector_no_scene_selected"] = inspector_no_scene_selected;
+    counters["inspector_scene_display_name"] = inspector_scene_display_name;
+    counters["inspector_scene_path"] = inspector_scene_path;
+    counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     if (viewport) {
@@ -338,12 +347,23 @@ private:
       }
       counters["last_paint_completed"] = false;
     }
+    auto * preview_chip = window_->findChild<QLabel *>("sceneStatusChip");
+    if (preview_chip) {
+      const QString text = preview_chip->text();
+      if (text.startsWith("Preview:")) preview_status = text.mid(QString("Preview:").size()).trimmed();
+    }
+    counters["preview_status"] = preview_status;
+    counters["workflow_preview_status"] = readiness_markers.value("render_ready").toBool(false) ? QString("Ready") : QString("Fallback");
     latest_counters_ = counters;
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
       blockers_.append("Inspector scene name is empty");
     }
     if (inspector_no_scene_selected) blockers_.append("Inspector remains 'No scene selected'");
+    if (!selected_scene_name.trimmed().isEmpty() && selected_scene_name != "(none)" &&
+        (inspector_scene_display_name.trimmed().isEmpty() || inspector_no_scene_selected)) {
+      blockers_.append("inspector_scene_state_mismatch");
+    }
     if (selected_item_id == "(none)") warnings_.append("no_item_selected_by_default");
     const bool render_ready = readiness_markers.value("render_ready").toBool(false);
     if (render_ready) {
@@ -357,6 +377,12 @@ private:
     root["counters"] = counters;
     root["warnings"] = warnings_;
     root["blockers"] = blockers_;
+
+    if ((counters.value("rendered_count").toInt() > 0 || counters.value("viewport_received_count").toInt() > 0) &&
+        counters.value("preview_status").toString().compare("Unavailable", Qt::CaseInsensitive) == 0) {
+      warnings_.append("preview_status_untruthful");
+      blockers_.append("preview_status_untruthful");
+    }
 
     if (!opts_.screenshot_path.trimmed().isEmpty()) {
       bool screenshot_ok = false;
