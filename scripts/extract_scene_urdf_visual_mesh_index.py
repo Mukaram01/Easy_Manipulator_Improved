@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.1"
+EXTRACTOR_VERSION = "2.2"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 
 
@@ -43,16 +43,24 @@ def xyz_rpy_from_tf(tf):
 def contains_placeholder(v): return bool(PLACEHOLDER_RE.search(json.dumps(v) if isinstance(v,(list,tuple,dict)) else str(v)))
 def sanitize(s): return re.sub(r'[^A-Za-z0-9_]+','_',str(s or 'unnamed')).strip('_') or 'unnamed'
 
-def discover_package_map(scene_dir):
+def discover_package_map(scene_dir, workspace_root=None):
     out={}
     roots=[ROOT,ROOT/'assets',ROOT/'scenes',ROOT/'workcell_builder/workcell_builder/assets',scene_dir]
+    ws = Path(workspace_root) if workspace_root else None
+    if ws:
+        roots += [ws/'install', ws/'src', ws/'src/easy_manipulation_deployment/assets', ws/'src/assets']
+    if Path('/opt/ros/humble/share').exists():
+        roots.append(Path('/opt/ros/humble/share'))
     for r in roots:
         if not r.exists(): continue
         for pkg in r.rglob('package.xml'): out.setdefault(pkg.parent.name,pkg.parent)
     return out
 
-def xacro_env(scene_dir):
+def xacro_env(scene_dir, workspace_root=None):
     rp=[str(ROOT),str(ROOT/'assets'),str(ROOT/'workcell_builder/workcell_builder/assets'),str(ROOT/'scenes')]
+    if workspace_root:
+        ws = Path(workspace_root)
+        rp += [str(ws/'install'), str(ws/'install/share'), str(ws/'src'), str(ws/'src/easy_manipulation_deployment/assets'), str(ws/'src/assets')]
     if Path('/opt/ros/humble/share').exists(): rp.append('/opt/ros/humble/share')
     old=os.environ.get('ROS_PACKAGE_PATH','')
     if old: rp.append(old)
@@ -61,25 +69,50 @@ def xacro_env(scene_dir):
     env['AMENT_PREFIX_PATH']=os.environ.get('AMENT_PREFIX_PATH','')
     return env
 
-def expand_xacro(urdf_path, scene_dir=None, xacro_args=None):
+def discover_xacro_command():
+    if shutil.which('xacro'):
+        return ['xacro'], True, ''
+    if Path('/opt/ros/humble/bin/xacro').exists():
+        return ['/opt/ros/humble/bin/xacro'], True, ''
+    mod = subprocess.run(['python3', '-m', 'xacro', '--help'], capture_output=True, text=True)
+    if mod.returncode == 0:
+        return ['python3', '-m', 'xacro'], True, ''
+    return None, False, "xacro executable unavailable (checked PATH, /opt/ros/humble/bin/xacro, python3 -m xacro)"
+
+def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     scene_dir = scene_dir or Path(urdf_path).parents[1]
     xacro_args = xacro_args or {}
-    if shutil.which('xacro') is None: return None,False,'xacro executable unavailable',None
-    cmd=['xacro',str(urdf_path),'-o',str(scene_dir/'generated'/'expanded_scene_preview.urdf')]
+    xacro_base, xacro_available, reason = discover_xacro_command()
+    if not xacro_available: return None,False,reason,None
+    cmd=xacro_base+[str(urdf_path),'-o',str(scene_dir/'generated'/'expanded_scene_preview.urdf')]
     for k,v in xacro_args.items():
         cmd.append(f'{k}:={v}')
     if any('false' in c and ('fake_hardware' in c or 'use_fake_hardware' in c) for c in cmd):
         return None,True,'unsafe xacro args rejected',cmd
     try:
         (scene_dir/'generated').mkdir(parents=True,exist_ok=True)
-        p=subprocess.run(cmd,capture_output=True,text=True,timeout=45,env=xacro_env(scene_dir))
+        p=subprocess.run(cmd,capture_output=True,text=True,timeout=45,env=xacro_env(scene_dir, workspace_root=workspace_root))
         if p.returncode!=0: return None,True,(p.stderr or p.stdout or 'xacro failed').strip(),cmd
         out=scene_dir/'generated'/'expanded_scene_preview.urdf'
         return out.read_text(errors='ignore'),True,'',cmd
     except Exception as e:
         return None,True,f'xacro expansion failed: {e}',cmd
 
-def extract_from_urdf(xml_text):
+def resolve_mesh_uri(uri, package_map):
+    u = (uri or '').strip()
+    if not u:
+        return '', 'file_not_found'
+    if u.startswith('package://'):
+        rel = u[len('package://'):]
+        pkg, _, tail = rel.partition('/')
+        if pkg not in package_map:
+            return '', 'package_not_found'
+        p = package_map[pkg] / tail
+        return str(p), ('file_not_found' if not p.exists() else '')
+    p = Path(u)
+    return str(p), ('file_not_found' if not p.exists() else '')
+
+def extract_from_urdf(xml_text, package_map):
     root=ET.fromstring(xml_text)
     items=[]
     idx=0
@@ -93,12 +126,17 @@ def extract_from_urdf(xml_text):
             if mesh is None: continue
             vname=visual.attrib.get('name',f'visual_{idx}')
             item_id=f'urdf_visual_{idx}_{sanitize(lname)}_{sanitize(vname)}'
-            items.append({'id':item_id,'link':lname,'visual':vname,'parent_link':'','geometry_type':'mesh','source_path':mesh.attrib.get('filename',''),'resolved':bool(mesh.attrib.get('filename','')),'pose':{'xyz':[0,0,0],'rpy':[0,0,0]},'transform_status':'resolved','warning':''})
+            mesh_uri = mesh.attrib.get('filename','')
+            resolved_path, skip_reason = resolve_mesh_uri(mesh_uri, package_map)
+            origin = next((c for c in list(visual) if c.tag.split('}')[-1]=='origin'), None)
+            pose = {'xyz':parse_vec((origin.attrib.get('xyz') if origin is not None else ''),3,0.0),'rpy':parse_vec((origin.attrib.get('rpy') if origin is not None else ''),3,0.0)}
+            scale = parse_vec(mesh.attrib.get('scale','1 1 1'),3,1.0)
+            items.append({'id':item_id,'link':lname,'visual':vname,'parent_link':'','geometry_type':'mesh','package_uri':mesh_uri if mesh_uri.startswith('package://') else '','source_path':mesh_uri,'resolved_source_path':resolved_path,'resolved':bool(resolved_path and not skip_reason),'pose':pose,'mesh_scale':scale,'transform_status':'resolved','render_expected':not bool(skip_reason),'render_skip_reason':skip_reason,'warning':skip_reason})
             idx+=1
     return items
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--scene'); ap.add_argument('--all',action='store_true'); ap.add_argument('--prefer-xacro-expanded',action='store_true',default=True); ap.add_argument('--fallback-best-effort',action='store_true',default=True); ap.add_argument('--fail-on-unexpanded',action='store_true'); ap.add_argument('--xacro-arg',action='append',default=[]); ap.add_argument('--use-fake-hardware',default='true'); ap.add_argument('--robot-prefix',default=''); ap.add_argument('--tool-prefix',default=''); ap.add_argument('--no-write',action='store_true'); ap.add_argument('--prefer-xacro',action='store_true'); ap.add_argument('--require-xacro',action='store_true')
+    ap=argparse.ArgumentParser(); ap.add_argument('--scene'); ap.add_argument('--all',action='store_true'); ap.add_argument('--prefer-xacro-expanded',action='store_true',default=True); ap.add_argument('--fallback-best-effort',action='store_true',default=True); ap.add_argument('--fail-on-unexpanded',action='store_true'); ap.add_argument('--xacro-arg',action='append',default=[]); ap.add_argument('--use-fake-hardware',default='true'); ap.add_argument('--robot-prefix',default=''); ap.add_argument('--tool-prefix',default=''); ap.add_argument('--no-write',action='store_true'); ap.add_argument('--prefer-xacro',action='store_true'); ap.add_argument('--require-xacro',action='store_true'); ap.add_argument('--workspace-root',default=os.environ.get('WORKSPACE_ROOT',''))
     a=ap.parse_args()
     scenes=[SCENES_ROOT/a.scene] if a.scene else sorted([p for p in SCENES_ROOT.iterdir() if p.is_dir()])
     report={'scene_count':0,'visual_count':0,'resolved':0,'unresolved':0,'xacro_expanded_count':0,'best_effort_count':0,'scenes':[]}
@@ -112,12 +150,12 @@ def main():
                 if k.strip() in ('use_fake_hardware','fake_hardware') and v.strip().lower()=='false':
                     continue
                 xargs[k.strip()]=v.strip()
-        mode='best_effort_recursive'; fallback_reason=''; xacro_avail=shutil.which('xacro') is not None; expanded_path=''
+        mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''
         xacro_cmd=[]
         xml_text=''
         if (a.prefer_xacro or a.prefer_xacro_expanded or a.require_xacro):
             try:
-                xml_text,_,err,xacro_cmd=expand_xacro(urdf_path,scene_dir,xargs)
+                xml_text,_,err,xacro_cmd=expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None))
             except TypeError:
                 out=expand_xacro(urdf_path)
                 if isinstance(out, tuple) and len(out)>=3:
@@ -127,23 +165,30 @@ def main():
             if xml_text:
                 mode='xacro_expanded'; expanded_path='generated/expanded_scene_preview.urdf'
             else:
-                fallback_reason=err
+                fallback_reason=err or missing_reason
+        if a.require_xacro and not xacro_avail:
+            print("xacro executable unavailable (required)")
+            return 2
         if not xml_text:
             xml_text=(urdf_path.read_text(errors='ignore') if urdf_path.exists() else '<robot/>')
-        try: items=extract_from_urdf(xml_text)
+        package_map = discover_package_map(scene_dir, workspace_root=(a.workspace_root or None))
+        try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
         if not items:
             # best-effort regex mesh extraction fallback
             for i,m in enumerate(re.findall(r"<mesh[^>]*filename=[\"']([^\"']+)[\"']", xml_text or '')):
-                items.append({'id':f'urdf_visual_{i}_fallback_link_{i}','link':f'fallback_link_{i}','visual':f'visual_{i}','parent_link':'','geometry_type':'mesh','source_path':m,'resolved':bool(m),'resolved_source_path':m,'original_uri':m,'exists':bool(m),'extension':Path(m).suffix.lower(),'render_expected':True,'render_skip_reason':'','warning':'','repo_relative_source_path':'','scene_relative_source_path':'','asset_relative_source_path':''})
+                rp, rs = resolve_mesh_uri(m, package_map)
+                items.append({'id':f'urdf_visual_{i}_fallback_link_{i}','link':f'fallback_link_{i}','visual':f'visual_{i}','parent_link':'','geometry_type':'mesh','package_uri':m if m.startswith('package://') else '','source_path':m,'resolved':bool(rp and not rs),'resolved_source_path':rp,'original_uri':m,'exists':bool(rp),'extension':Path(m).suffix.lower(),'mesh_scale':[1,1,1],'pose':{'xyz':[0,0,0],'rpy':[0,0,0]},'render_expected':not bool(rs),'render_skip_reason':rs,'warning':rs,'repo_relative_source_path':'','scene_relative_source_path':'','asset_relative_source_path':''})
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
-        safe=bool(items) and (len(unresolved)==0)
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail and mode=='xacro_expanded','source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd}
+        safe=bool(items) and (len(unresolved)==0) and (mode=='xacro_expanded')
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True); idx_path.write_text(json.dumps(payload,indent=2)+'\n')
         report['scene_count']+=1; report['visual_count']+=len(items); report['resolved']+=sum(1 for i in items if i.get('resolved')); report['unresolved']+=sum(1 for i in items if not i.get('resolved')); report['xacro_expanded_count']+=int(mode=='xacro_expanded'); report['best_effort_count']+=int(mode!='xacro_expanded')
-        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':len(items),'primitive_fallback_count':0,'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'primitive_fallback_count':0,'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        if a.require_xacro and mode != 'xacro_expanded':
+            return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')
     if a.fail_on_unexpanded and report['best_effort_count']>0: return 3

@@ -148,6 +148,24 @@ def test_scene_option_and_local_smoke_missing_xacro_graceful():
     assert proc2.returncode in (0, 2)
     assert 'Traceback' not in (proc2.stdout + proc2.stderr)
 
+def test_ur5_2f_index_requires_non_empty_mesh_visuals():
+    script = ROOT / 'scripts' / 'extract_scene_urdf_visual_mesh_index.py'
+    proc = subprocess.run(['python3', str(script), '--scene', 'ur5_2f_test', '--prefer-xacro', '--require-xacro'], capture_output=True, text=True)
+    assert proc.returncode in (0, 2), proc.stderr
+    if proc.returncode == 2:
+        return
+    idx = ROOT / 'scenes' / 'ur5_2f_test' / 'generated' / 'scene_visual_mesh_index.json'
+    assert idx.exists()
+    data = json.loads(idx.read_text())
+    assert data.get('safe_for_preview') is True
+    assert not data.get('fallback_reason')
+    items = data.get('visual_items', [])
+    assert len(items) > 0
+    mesh_items = [i for i in items if i.get('geometry_type') == 'mesh']
+    assert mesh_items
+    assert any((i.get('package_uri') or i.get('source_path')) for i in mesh_items)
+    assert any(Path(i.get('resolved_source_path')).exists() for i in mesh_items if i.get('resolved_source_path'))
+
 
 def test_require_xacro_strict_rejects_best_effort_modes():
     import sys
