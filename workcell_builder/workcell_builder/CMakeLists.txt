@@ -359,6 +359,15 @@ if(BUILD_TESTING)
     target_include_directories(workcell_scene3d_stl_parser_test PRIVATE gui)
   endif()
 
+  if(TARGET workcell_scene3d_render_role_classifier_test)
+    target_link_libraries(workcell_scene3d_render_role_classifier_test
+      Qt5::Widgets
+      Qt5::OpenGL
+      OpenGL::GL
+    )
+    target_include_directories(workcell_scene3d_render_role_classifier_test PRIVATE gui)
+  endif()
+
   if(TARGET workcell_command_builders_test)
     target_link_libraries(workcell_command_builders_test
       Qt5::Core
@@ -548,6 +557,7 @@ if(BUILD_TESTING)
     workspace_validation_test.cpp
     placed_object_preview_writer_test.cpp
     scene3d_stl_parser_test.cpp
+    scene3d_render_role_classifier_test.cpp
     command_builders_test.cpp
     scene_preview_widget_ui_test.cpp
     workcell_studio_canvas_model_mesh_test.cpp
