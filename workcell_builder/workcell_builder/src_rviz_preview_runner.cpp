@@ -20,7 +20,7 @@ bool launch_command_is_safe(const QString & command, QString * reason)
 {
   if (!command.contains("use_fake_hardware:=true") || command.contains("use_fake_hardware:=false")) {
     if (reason) {
-      *reason = "Missing required use_fake_hardware:=true";
+      *reason = "command rejected by fake-hardware safety guard";
     }
     return false;
   }
@@ -29,7 +29,7 @@ bool launch_command_is_safe(const QString & command, QString * reason)
   for (const auto & token : deny) {
     if (command.contains(token)) {
       if (reason) {
-        *reason = "Unsafe launch argument detected: " + token;
+        *reason = "command rejected by fake-hardware safety guard";
       }
       return false;
     }
@@ -48,12 +48,14 @@ PreviewReadinessStatus validate_readiness(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root)
 {
-  if (scene_info.scene_name.empty()) return blocked("No scene selected");
+  if (scene_info.scene_name.empty()) return blocked("selected scene missing");
   if (!boost::filesystem::exists(workspace_root)) return blocked("Workspace root does not exist");
   if (scene_info.status.find("BLOCKED") != std::string::npos) return blocked("BLOCKED acceptance scene");
   if (scene_info.status.find("PREVIEW_ONLY") != std::string::npos) return blocked("PREVIEW_ONLY scenes cannot run");
-  if (!scene_info.has_launch_demo) return blocked("Missing launch/demo.launch.py");
+  if (!scene_info.has_package_xml) return blocked("package.xml missing");
+  if (!scene_info.has_launch_demo) return blocked("launch/demo.launch.py missing");
   if (!scene_info.has_task_intent) return blocked("Missing config/workcell_builder_task_intent.yaml");
+  if (!boost::filesystem::exists(workspace_root / "install" / "setup.bash")) return blocked("install/setup.bash missing under workspace root");
 
   const boost::filesystem::path layout_file = scene_info.scene_dir / "layout" / "workcell_studio_layout.yaml";
   const boost::filesystem::path merge_report = scene_info.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
@@ -97,7 +99,10 @@ PreviewReadinessStatus run(
   if (!err.isEmpty() && stderr_callback) stderr_callback(err);
 
   if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-    return blocked(QString("Preview command failed with exit code %1").arg(process.exitCode()));
+    if (err.contains("Package", Qt::CaseInsensitive) && err.contains("not found", Qt::CaseInsensitive)) {
+      return blocked("package not found by ros2");
+    }
+    return blocked("ros2 launch failed");
   }
 
   PreviewReadinessStatus ok;
