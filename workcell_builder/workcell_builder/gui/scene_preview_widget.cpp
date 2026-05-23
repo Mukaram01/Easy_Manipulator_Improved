@@ -332,6 +332,32 @@ void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel
 
 void ScenePreviewWidget::set_label_mode(LabelMode mode){ Q_UNUSED(mode); auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = LabelMode::Selected; if (labels_selector_) labels_selector_->setCurrentText("Selected"); v->update(); }
 
+ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counters() const
+{
+  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
+  RenderDebugCounters out;
+  out.preview_items_count = counters.preview_items_count;
+  out.viewport_received_count = counters.viewport_received_count;
+  out.render_cache_count = counters.render_cache_count;
+  out.visible_count = counters.visible_count;
+  out.rendered_count = counters.rendered_count;
+  out.skipped_count = counters.skipped_count;
+  out.unique_visible_item_count = counters.unique_visible_item_count;
+  out.mesh_backed_count = counters.mesh_backed_count;
+  out.placeholder_count = counters.placeholder_count;
+  out.overlay_count = counters.overlay_count;
+  out.mesh_rendered_count = counters.mesh_rendered_count;
+  out.generated_fallback_count = counters.generated_fallback_count;
+  out.editable_layout_count = counters.editable_layout_count;
+  out.primitive_fallback_count = counters.primitive_fallback_count;
+  out.locked_generated_urdf_visual_count = counters.locked_generated_urdf_visual_count;
+  out.labels_drawn = counters.labels_drawn;
+  out.labels_suppressed_overlap = counters.labels_suppressed_overlap;
+  out.hierarchy_child_row_count = counters.hierarchy_child_row_count;
+  return out;
+}
+
 int ScenePreviewWidget::total_warning_count() const { int count = 0; for (const auto & item : preview_items_) count += item.warnings.size(); count += overlay_model_.warnings.size() + reachability_overlay_model_.warnings.size() + collision_overlay_model_.warnings.size() + camera_overlay_model_.warnings.size(); for (const auto & det : epd_detections_) count += det.warnings.size(); return count; }
 bool ScenePreviewWidget::task_is_ready() const { return overlay_model_.has_intent_metadata && overlay_model_.pick_source_id != "unknown" && overlay_model_.place_target_id != "unknown"; }
 void ScenePreviewWidget::refresh_info_chip()
