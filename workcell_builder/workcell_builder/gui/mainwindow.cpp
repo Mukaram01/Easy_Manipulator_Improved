@@ -117,6 +117,7 @@
 #include "workcell_studio_id_utils.hpp"
 #include "gui/new_cell_wizard.h"
 #include "include/workcell_builder_command_builders.hpp"
+#include "include/rviz_preview_runner.hpp"
 #include "gui/asset_catalog_discovery.h"
 #include "gui/transform_clipboard_utils.h"
 
