@@ -29,7 +29,7 @@ namespace {
 constexpr int kMeshTriangleLimit = 100000;
 constexpr double kWorkspaceLimitMeters = 1000.0;
 
-QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
+[[maybe_unused]] QString snap_mode_label(Scene3DViewportWidget::SnapMode mode)
 {
   switch (mode) {
     case Scene3DViewportWidget::SnapMode::Off: return "Off";
@@ -452,7 +452,7 @@ double distance_to_polyline_2d(const QPointF & p, const QVector<QPointF> & polyl
   return best;
 }
 
-double wrap_angle_pi(double angle)
+[[maybe_unused]] double wrap_angle_pi(double angle)
 {
   constexpr double kTwoPi = 2.0 * M_PI;
   double wrapped = std::fmod(angle + M_PI, kTwoPi);
