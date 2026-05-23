@@ -84,6 +84,10 @@ public:
 
   explicit MainWindow(const QString & startup_workspace = QString(), const QString & startup_ros_distro = QString(), QWidget * parent = nullptr);
   ~MainWindow();
+  SelectedSceneState active_scene_builder_state() const;
+  ScenePreviewWidget * active_scene_preview_widget() const;
+  Scene3DViewportWidget::RenderDebugCounters active_scene3d_viewport_counters() const;
+  void refresh_scene_builder_state_from_active_scene();
   static bool parse_transform_clipboard_text(
     const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error = nullptr);
 

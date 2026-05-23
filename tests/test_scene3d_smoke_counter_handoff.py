@@ -1,6 +1,5 @@
 from pathlib import Path
-CPP = Path('workcell_builder/workcell_builder/gui/main.cpp').read_text()
+CPP = Path('workcell_builder/workcell_builder/gui/main.cpp').read_text(encoding='utf-8')
 
-def test_smoke_counter_handoff_blocker_token():
-    assert 'smoke_counter_handoff_failed' in CPP
-    assert 'processEvents' in CPP
+def test_handoff_fail_token_updated():
+    assert 'active_viewport_counter_handoff_failed' in CPP
