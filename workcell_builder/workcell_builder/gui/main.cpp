@@ -188,9 +188,10 @@ private:
     const bool inspector_ready = (inspector != nullptr && !inspector_no_scene_selected && selected_scene_ready);
     const bool log_ready = (log != nullptr && log->toPlainText().contains("Scene3D diagnostics"));
     const bool render_ready = viewport != nullptr &&
-      viewport->last_render_counters.received_count > 0 &&
-      viewport->last_render_counters.visible_count > 0 &&
-      viewport->last_render_counters.rendered_count > 0;
+      (viewport->last_render_counters.mesh_rendered_count > 0 ||
+       viewport->last_render_counters.generated_fallback_count > 0 ||
+       viewport->last_render_counters.overlay_count > 0 ||
+       viewport->last_render_counters.labels_drawn > 0);
     markers["hierarchy_ready"] = hierarchy_ready;
     markers["inspector_ready"] = inspector_ready;
     markers["log_ready"] = log_ready;
@@ -205,7 +206,8 @@ private:
   {
     const QJsonObject markers = collect_readiness_markers();
     QStringList failed;
-    for (const QString & key : {"hierarchy_ready", "inspector_ready", "log_ready", "screenshot_ready", "render_ready", "selected_scene_ready"}) {
+    for (const QString key : {QStringLiteral("hierarchy_ready"), QStringLiteral("inspector_ready"), QStringLiteral("log_ready"),
+      QStringLiteral("screenshot_ready"), QStringLiteral("render_ready"), QStringLiteral("selected_scene_ready")}) {
       if (!markers.value(key).toBool(false)) failed.append(key + "=false");
     }
     return failed.isEmpty() ? QString("Scene3D readiness failed") : QString("Scene3D readiness failed: %1").arg(failed.join(", "));
@@ -275,26 +277,35 @@ private:
     const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
     if (viewport) {
-      counters["preview_items_count"] = viewport->last_render_counters.preview_items_count;
-      counters["viewport_received_count"] = viewport->last_render_counters.received_count;
-      counters["render_cache_count"] = viewport->last_render_counters.render_cache_count;
-      counters["rendered_count"] = viewport->last_render_counters.rendered_count;
-      counters["visible_count"] = viewport->last_render_counters.visible_count;
-      counters["skipped_count"] = viewport->last_render_counters.skipped_count;
-      counters["unique_visible_item_count"] = viewport->last_render_counters.unique_visible_item_count;
-      counters["mesh_backed_count"] = viewport->last_render_counters.mesh_backed_count;
-      counters["placeholder_count"] = viewport->last_render_counters.placeholder_count;
-      counters["overlay_count"] = viewport->last_render_counters.overlay_count;
-      counters["mesh_rendered_count"] = viewport->last_render_counters.mesh_rendered_count;
-      counters["generated_fallback_count"] = viewport->last_render_counters.generated_fallback_count;
-      counters["editable_layout_count"] = viewport->last_render_counters.editable_layout_count;
-      counters["primitive_fallback_count"] = viewport->last_render_counters.primitive_fallback_count;
-      counters["locked_generated_urdf_visual_count"] = viewport->last_render_counters.locked_generated_urdf_visual_count;
-      counters["labels_drawn"] = viewport->last_render_counters.labels_drawn;
-      counters["labels_suppressed_overlap"] = viewport->last_render_counters.labels_suppressed_overlap;
+      const auto & rc = viewport->last_render_counters;
+
+      counters["mesh_rendered_count"] = rc.mesh_rendered_count;
+      counters["generated_fallback_count"] = rc.generated_fallback_count;
+      counters["overlay_count"] = rc.overlay_count;
+      counters["labels_drawn"] = rc.labels_drawn;
+      counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
+      counters["hierarchy_child_row_count"] = rc.hierarchy_child_row_count;
+
+      // Backward-compatible JSON fields no longer tracked by RenderDebugCounters.
+      counters["preview_items_count"] = 0;
+      counters["viewport_received_count"] = 0;
+      counters["render_cache_count"] = 0;
+      counters["rendered_count"] = rc.mesh_rendered_count + rc.generated_fallback_count + rc.overlay_count;
+      counters["visible_count"] = 0;
+      counters["skipped_count"] = 0;
+      counters["unique_visible_item_count"] = 0;
+      counters["mesh_backed_count"] = rc.mesh_rendered_count;
+      counters["placeholder_count"] = rc.generated_fallback_count;
+      counters["editable_layout_count"] = 0;
+      counters["primitive_fallback_count"] = rc.generated_fallback_count;
+      counters["locked_generated_urdf_visual_count"] = 0;
     } else {
+      counters["mesh_rendered_count"] = 0;
+      counters["generated_fallback_count"] = 0;
+      counters["overlay_count"] = 0;
       counters["labels_drawn"] = 0;
       counters["labels_suppressed_overlap"] = 0;
+      counters["hierarchy_child_row_count"] = 0;
     }
     if (hierarchy_has_only_headings) blockers_.append("Hierarchy has headings only (no child rows)");
     if (selected_scene_name.trimmed().isEmpty() || selected_scene_name == "(none)" || selected_scene_name == "none") {
