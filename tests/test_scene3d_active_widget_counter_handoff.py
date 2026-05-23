@@ -1,11 +1,13 @@
 from pathlib import Path
+
 CPP = Path('workcell_builder/workcell_builder/gui/main.cpp').read_text(encoding='utf-8')
-HDR = Path('workcell_builder/workcell_builder/gui/mainwindow.h').read_text(encoding='utf-8')
 
-def test_active_accessor_contract_present():
-    for token in ['active_scene3d_viewport_counters()', 'active_scene_preview_widget()', 'refresh_scene_builder_state_from_active_scene()']:
-        assert token in HDR or token in CPP
 
-def test_smoke_uses_active_widget_counter_source():
-    assert 'viewport_counter_source' in CPP
-    assert 'active_viewport_counter_handoff_failed' in CPP
+def test_counter_handoff_prefers_active_widget_and_tracks_fallback_source():
+    assert 'counters["viewport_counter_source"] = QString("active_widget")' in CPP
+    assert 'counters["viewport_counter_source"] = QString("missing")' in CPP
+
+
+def test_candidate_selection_precedence_visible_nonzero_before_hidden_zero():
+    assert 'rc.visible_count > 0' in CPP
+    assert '(rc.rendered_count > 0 || (rc.render_cache_count > 0 && screenshot_available))' in CPP

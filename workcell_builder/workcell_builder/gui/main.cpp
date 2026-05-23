@@ -315,6 +315,11 @@ private:
     counters["inspector_scene_status"] = inspector_scene_status;
     const QJsonObject readiness_markers = collect_readiness_markers();
     auto * viewport = window_->findChild<Scene3DViewportWidget *>("scene3dViewportWidget");
+    QJsonArray viewport_candidates;
+    viewport_candidates.append(QString("scene3dViewportWidget"));
+    viewport_candidates.append(QString("scenePreviewWidget"));
+    counters["viewport_candidates"] = viewport_candidates;
+    counters["active_viewport_candidate_index"] = viewport ? 0 : -1;
     if (viewport) {
       viewport->update();
       viewport->repaint();
