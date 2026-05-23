@@ -44,6 +44,13 @@ QString build_command(const QString & scene_pkg)
   return QString("ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_pkg);
 }
 
+QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root)
+{
+  const QString workspace_setup = QString::fromStdString((workspace_root / "install" / "setup.bash").string());
+  return QString("bash -lc 'source /opt/ros/humble/setup.bash && source %1 && %2'")
+    .arg(workspace_setup, build_command(scene_pkg));
+}
+
 PreviewReadinessStatus validate_readiness(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root)
@@ -77,9 +84,17 @@ PreviewReadinessStatus run(
     return blocked(reason);
   }
 
+  QString shell_command = command;
+  if (shell_command.startsWith("bash -lc ")) {
+    shell_command = shell_command.mid(QString("bash -lc ").size());
+    if (shell_command.size() >= 2 && shell_command.startsWith("'") && shell_command.endsWith("'")) {
+      shell_command = shell_command.mid(1, shell_command.size() - 2);
+    }
+  }
+
   QProcess process;
   process.setProgram("/bin/bash");
-  process.setArguments({"-lc", command});
+  process.setArguments({"-lc", shell_command});
   process.start();
   if (!process.waitForStarted()) {
     return blocked("Failed to start preview process");
@@ -112,7 +127,7 @@ PreviewReadinessStatus dry_run(
 {
   const PreviewReadinessStatus readiness = validate_readiness(scene_info, workspace_root);
   if (!readiness.ready) return readiness;
-  const QString generated = build_command(QString::fromStdString(scene_info.scene_name));
+  const QString generated = build_shell_command(QString::fromStdString(scene_info.scene_name), workspace_root);
   if (command) {
     *command = generated;
   }

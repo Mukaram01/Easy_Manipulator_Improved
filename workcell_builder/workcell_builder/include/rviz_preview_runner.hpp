@@ -20,6 +20,7 @@ struct PreviewReadinessStatus
 };
 
 QString build_command(const QString & scene_pkg);
+QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 PreviewReadinessStatus validate_readiness(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root);
