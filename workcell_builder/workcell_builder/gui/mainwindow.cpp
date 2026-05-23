@@ -5595,10 +5595,30 @@ void MainWindow::populate_scene_hierarchy()
           p.roll = workcell_builder::yaml_seq_index(rpy,0).as<double>(0.0);
           p.pitch = workcell_builder::yaml_seq_index(rpy,1).as<double>(0.0);
           p.yaw = workcell_builder::yaml_seq_index(rpy,2).as<double>(0.0);
-          const YAML::Node scale = workcell_builder::yaml_map_key(v, "scale");
-          p.sx = workcell_builder::yaml_seq_index(scale,0).as<double>(0.25);
-          p.sy = workcell_builder::yaml_seq_index(scale,1).as<double>(0.25);
-          p.sz = workcell_builder::yaml_seq_index(scale,2).as<double>(0.25);
+          const YAML::Node scale = workcell_builder::yaml_map_key(v, "mesh_scale");
+          p.mesh_scale_x = workcell_builder::yaml_seq_index(scale,0).as<double>(1.0);
+          p.mesh_scale_y = workcell_builder::yaml_seq_index(scale,1).as<double>(1.0);
+          p.mesh_scale_z = workcell_builder::yaml_seq_index(scale,2).as<double>(1.0);
+          p.sx = 0.25;
+          p.sy = 0.25;
+          p.sz = 0.25;
+          if (geometry_type == "box") {
+            const YAML::Node size = workcell_builder::yaml_map_key(v, "size");
+            p.sx = workcell_builder::yaml_seq_index(size,0).as<double>(0.25);
+            p.sy = workcell_builder::yaml_seq_index(size,1).as<double>(0.25);
+            p.sz = workcell_builder::yaml_seq_index(size,2).as<double>(0.25);
+          } else if (geometry_type == "cylinder") {
+            const double radius = workcell_builder::yaml_map_key(v, "radius").as<double>(0.1);
+            const double length = workcell_builder::yaml_map_key(v, "length").as<double>(0.2);
+            p.sx = radius * 2.0;
+            p.sy = radius * 2.0;
+            p.sz = length;
+          } else if (geometry_type == "sphere") {
+            const double radius = workcell_builder::yaml_map_key(v, "radius").as<double>(0.1);
+            p.sx = radius * 2.0;
+            p.sy = radius * 2.0;
+            p.sz = radius * 2.0;
+          }
           const QString lower_name = (p.display_name + " " + p.id + " " + p.role).toLower();
           if (p.sx <= 0.001 || p.sy <= 0.001 || p.sz <= 0.001 || (p.sx == 0.25 && p.sy == 0.25 && p.sz == 0.25)) {
             if (lower_name.contains("base")) { p.sx = 0.45; p.sy = 0.45; p.sz = 0.22; }
