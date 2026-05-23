@@ -3990,12 +3990,29 @@ void MainWindow::refresh_scene_builder_view_chips()
 {
   bool preview_available = false;
   bool launch_ready = false;
+  QString preview_chip_status = QStringLiteral("Unavailable");
   if (has_selected_scene()) {
     const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
     preview_available = s.has_static_preview_svg || s.has_static_preview_html || s.has_smoke_report_json;
     launch_ready = s.has_launch_demo && s.has_package_xml;
+    if (scene_preview_widget_) {
+      const auto counters = scene_preview_widget_->render_debug_counters();
+      const int rendered = counters.rendered_count;
+      const int mesh_count = counters.mesh_rendered_count;
+      const int generated_fallback_count = counters.generated_fallback_count;
+      const int primitive_fallback_count = counters.primitive_fallback_count;
+      if (rendered <= 0) {
+        preview_chip_status = QStringLiteral("Unavailable");
+      } else if (mesh_count > 0) {
+        preview_chip_status = QStringLiteral("Available");
+      } else if (generated_fallback_count > 0 || primitive_fallback_count > 0) {
+        preview_chip_status = QStringLiteral("Fallback");
+      } else {
+        preview_chip_status = QStringLiteral("Warning");
+      }
+    }
   }
-  if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_available ? "Available" : "Unavailable"));
+  if (scene_builder_preview_chip_) scene_builder_preview_chip_->setText(QString("Preview: %1").arg(preview_chip_status));
   if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch: %1").arg(launch_ready ? "Ready" : "Missing"));
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
@@ -5512,6 +5529,17 @@ void MainWindow::populate_scene_hierarchy()
           p.sx = workcell_builder::yaml_seq_index(scale,0).as<double>(0.25);
           p.sy = workcell_builder::yaml_seq_index(scale,1).as<double>(0.25);
           p.sz = workcell_builder::yaml_seq_index(scale,2).as<double>(0.25);
+          const QString lower_name = (p.display_name + " " + p.id + " " + p.role).toLower();
+          if (p.sx <= 0.001 || p.sy <= 0.001 || p.sz <= 0.001 || (p.sx == 0.25 && p.sy == 0.25 && p.sz == 0.25)) {
+            if (lower_name.contains("base")) { p.sx = 0.45; p.sy = 0.45; p.sz = 0.22; }
+            else if (lower_name.contains("shoulder") || lower_name.contains("upper_arm") || lower_name.contains("forearm")) { p.sx = 0.14; p.sy = 0.14; p.sz = 0.52; }
+            else if (lower_name.contains("wrist")) { p.sx = 0.10; p.sy = 0.10; p.sz = 0.18; }
+            else if (lower_name.contains("flange") || lower_name.contains("tool0") || lower_name.contains("tool")) { p.sx = 0.07; p.sy = 0.07; p.sz = 0.12; }
+            else if (lower_name.contains("gripper") || lower_name.contains("end_effector")) { p.sx = 0.12; p.sy = 0.09; p.sz = 0.16; }
+            else if (lower_name.contains("camera")) { p.sx = 0.09; p.sy = 0.07; p.sz = 0.07; }
+            else if (lower_name.contains("table") || lower_name.contains("workbench")) { p.sx = 1.2; p.sy = 0.8; p.sz = 0.08; }
+            else { p.sx = 0.08; p.sy = 0.08; p.sz = 0.08; }
+          }
           const bool resolved = workcell_builder::yaml_map_key(v, "resolved").as<bool>(false);
           const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
           bool mesh_fallback = false;
