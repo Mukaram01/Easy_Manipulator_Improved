@@ -13,7 +13,78 @@ def _safe_scene_dir(root:Path,name:str)->Path:
 
 def _run(cmd:list[str]):
  p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,(p.stdout+'\n'+p.stderr).strip()
-CELL_TMPL='''schema_version: cell_definition/v1\ncell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\n  safe_joint_state: []\n  home_named_target: home\nend_effector:\n  id: robotiq_2f\nenvironment:\n  layout: environment_layout.yaml\ntask:\n  type: pick_place\n  pick:\n    source: pick_zone\n  place:\n    destination: place_bin\n  destinations:\n    - id: place_bin\n      frame: world\n      pose_xyz: [0.65, -0.25, 0.75]\n      pose_rpy: [0.0, 0.0, 0.0]\nassets:\n  - id: table_support\n    kind: table\n  - id: pick_zone\n    kind: pick_zone\n  - id: place_bin\n    kind: bin\ncommissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  demo_template_id: scratch_ur5_2f_acceptance\n'''
+CELL_TMPL='''schema_version: cell_definition/v1
+cell:
+  id: {scene}
+  name: {scene}
+  description: Scratch acceptance cell definition
+robot:
+  model: ur5
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
+  safe_joint_state: []
+end_effector:
+  id: robotiq_2f
+  type: finger
+  brand: robotiq
+  grasp_frame: tool0
+  allowed_touch_links: [left_inner_finger, right_inner_finger]
+camera:
+  id: realsense_d435i
+  type: depth_camera
+  frame: camera_depth_optical_frame
+environment:
+  frame: world
+  layout: environment_layout.yaml
+  support_surfaces:
+    - id: table_main
+      type: table
+      frame: world
+      pose_xyz: [0.0, 0.0, 0.0]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [1.0, 1.0, 0.05]
+objects:
+  - id: pick_part
+    class: part
+    shape: box
+    color: unknown
+    material: plastic
+    frame: world
+    dimensions: [0.05, 0.05, 0.05]
+    pose_xyz: [0.45, 0.0, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+  - id: place_bin
+    class: bin
+    shape: box
+    color: blue
+    material: plastic
+    frame: world
+    dimensions: [0.20, 0.20, 0.12]
+    pose_xyz: [0.65, -0.25, 0.06]
+    pose_rpy: [0.0, 0.0, 0.0]
+task:
+  id: scratch_pick_place
+  type: pick_place
+  source_object: pick_part
+  destinations:
+    - id: place_bin
+      frame: world
+      pose_xyz: [0.65, -0.25, 0.12]
+      pose_rpy: [0.0, 0.0, 0.0]
+  rules:
+    - id: default_place
+      when:
+        always: true
+      destination: place_bin
+commissioning:
+  self_test_enabled: true
+  export_bundle: true
+  require_operator_review: true
+  fake_hardware_default: true
+  demo_template_id: scratch_ur5_2f_acceptance
+'''
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
