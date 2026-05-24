@@ -252,6 +252,26 @@ enum SceneTreeRoles {
 };
 enum AssetCatalogRoles { CatalogRoleIndex = Qt::UserRole, CatalogRolePlaceable = Qt::UserRole + 10, CatalogRoleSourcePath = Qt::UserRole + 11 };
 
+
+
+QString canonical_skip_reason_key(const QString & reason)
+{
+  const QString token = reason.trimmed().toLower().replace('-', '_').replace(' ', '_');
+  if (token.isEmpty()) return QStringLiteral("parse_error");
+  if (token == QStringLiteral("missing_mesh_source_path") || token == QStringLiteral("missing_source_path")) return QStringLiteral("missing_source_path");
+  if (token == QStringLiteral("file_not_found")) return QStringLiteral("file_not_found");
+  if (token == QStringLiteral("unsupported_format") || token == QStringLiteral("unsupported_extension")) return QStringLiteral("unsupported_format");
+  if (token == QStringLiteral("parse_error") || token == QStringLiteral("invalid_yaml_item") || token == QStringLiteral("missing_id")) return QStringLiteral("parse_error");
+  if (token == QStringLiteral("oversized_mesh")) return QStringLiteral("oversized_mesh");
+  if (token == QStringLiteral("unsafe_for_preview")) return QStringLiteral("unsafe_for_preview");
+  if (token == QStringLiteral("zero_triangle_mesh")) return QStringLiteral("zero_triangle_mesh");
+  if (token == QStringLiteral("hidden_by_filter")) return QStringLiteral("hidden_by_filter");
+  if (token == QStringLiteral("invalid_pose")) return QStringLiteral("invalid_pose");
+  if (token == QStringLiteral("invalid_scale")) return QStringLiteral("invalid_scale");
+  if (token == QStringLiteral("duplicate_id")) return QStringLiteral("duplicate_id");
+  if (token == QStringLiteral("unknown_role_no_fallback") || token == QStringLiteral("unknown_geometry")) return QStringLiteral("unknown_role_no_fallback");
+  return QStringLiteral("parse_error");
+}
 QString canonical_scene3d_token(const QString & value)
 {
   const QString normalized = value.trimmed().toLower().replace('-', '_').replace(' ', '_');
@@ -5786,14 +5806,11 @@ void MainWindow::populate_scene_hierarchy()
   }
   int visual_index_loaded_count = 0;
   int visual_preview_added_count = 0;
-  int skipped_missing_mesh_source_path = 0;
-  int skipped_file_not_found = 0;
-  int skipped_render_expected_false = 0;
-  int skipped_duplicate_id = 0;
-  int skipped_invalid_pose = 0;
-  int skipped_unsupported_format = 0;
-  int skipped_zero_triangle_mesh = 0;
-  int skipped_unknown_geometry = 0;
+  QMap<QString, int> skip_reason_counts;
+  auto add_skip_reason = [&](const QString & reason) {
+    const QString key = canonical_skip_reason_key(reason);
+    skip_reason_counts[key] = skip_reason_counts.value(key, 0) + 1;
+  };
   int non_mesh_geometry_added = 0;
   int non_mesh_geometry_unsupported = 0;
   int package_uri_resolved_by_loader = 0;
@@ -5824,17 +5841,17 @@ void MainWindow::populate_scene_hierarchy()
       if (visual_items && visual_items.IsSequence()) {
         for (const auto &v : visual_items) {
           if (!v.IsMap()) {
-            ++skipped_other;
+            ++skipped_other; add_skip_reason(QStringLiteral("parse_error"));
             continue;
           }
           ++visual_index_loaded_count;
           const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "id"));
           if (id.isEmpty()) {
-            ++skipped_other;
+            ++skipped_other; add_skip_reason(QStringLiteral("parse_error"));
             continue;
           }
           if (preview_ids.contains(id)) {
-            ++skipped_duplicate_id;
+            add_skip_reason(QStringLiteral("duplicate_id"));
             continue;
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
@@ -5850,13 +5867,13 @@ void MainWindow::populate_scene_hierarchy()
             !QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "link")).trimmed().isEmpty() &&
             xyz && rpy && xyz.IsSequence() && rpy.IsSequence() && xyz.size() >= 3 && rpy.size() >= 3;
           if (!render_expected && !has_visual_metadata) {
-            ++skipped_render_expected_false;
+            add_skip_reason(QStringLiteral("unsafe_for_preview"));
             continue;
           }
           const bool unsupported_format = workcell_builder::yaml_map_key(v, "unsupported_format").as<bool>(false);
           const int triangle_count = workcell_builder::yaml_map_key(v, "triangle_count").as<int>(-1);
           if (triangle_count == 0) {
-            ++skipped_zero_triangle_mesh;
+            add_skip_reason(QStringLiteral("zero_triangle_mesh"));
             continue;
           }
           ScenePreviewWidget::PreviewItem p;
@@ -5923,7 +5940,7 @@ void MainWindow::populate_scene_hierarchy()
           p.editable = false;
           p.selectable = true;
           if (!xyz || !rpy || !xyz.IsSequence() || !rpy.IsSequence() || xyz.size() < 3 || rpy.size() < 3) {
-            ++skipped_invalid_pose;
+            add_skip_reason(QStringLiteral("invalid_pose"));
             continue;
           }
           p.x = workcell_builder::yaml_seq_index(xyz,0).as<double>(0.0);
@@ -6004,7 +6021,7 @@ void MainWindow::populate_scene_hierarchy()
           } else if (is_primitive) {
             ++non_mesh_geometry_added;
           } else {
-            ++skipped_unknown_geometry;
+            add_skip_reason(QStringLiteral("unknown_role_no_fallback"));
             ++non_mesh_geometry_unsupported;
             continue;
           }
@@ -6035,39 +6052,26 @@ void MainWindow::populate_scene_hierarchy()
             p.has_mesh_metadata = true;
           }
           if (unresolved_package_uri) ++unresolved_package_uri_count;
-          if (unresolved_package_uri && !is_primitive) ++skipped_missing_mesh_source_path;
+          if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
           preview_items.push_back(p);
           ++visual_preview_added_count;
           preview_ids.insert(id);
           if (include_preview_item_in_hierarchy(p)) add_tree_node(p);
         }
       }
-      const int visual_skipped_total =
-        skipped_missing_mesh_source_path +
-        skipped_file_not_found +
-        skipped_render_expected_false +
-        skipped_duplicate_id +
-        skipped_invalid_pose +
-        skipped_unsupported_format +
-        skipped_zero_triangle_mesh +
-        skipped_other;
+      int visual_skipped_total = 0;
+      for (auto it = skip_reason_counts.cbegin(); it != skip_reason_counts.cend(); ++it) visual_skipped_total += it.value();
       append_studio_log(QString("Visual mesh index loaded from: %1").arg(QString::fromStdString(urdf_visual_index.string())));
       append_studio_log(QString("Visual mesh index safe_for_preview: %1").arg(visual_index_safe_for_preview ? "true" : "false"));
       append_studio_log(QString("Visual mesh index extraction_mode: %1").arg(visual_index_extraction_mode));
       append_studio_log(QString("Visual mesh index loaded: %1 visual items").arg(visual_index_loaded_count));
       append_studio_log(QString("Mesh items: %1, primitive items: %2, unknown items: %3").arg(mesh_item_count).arg(primitive_item_count).arg(unknown_item_count));
       append_studio_log(QString("Visual mesh preview items added: %1 / %2").arg(visual_preview_added_count).arg(visual_index_loaded_count));
-      append_studio_log(
-        QString("Skipped visual items: missing_mesh_source_path=%1 file_not_found=%2 render_expected_false=%3 duplicate_id=%4 invalid_pose=%5 unsupported_format=%6 zero_triangle_mesh=%7 unknown_geometry=%8 other=%9")
-        .arg(skipped_missing_mesh_source_path)
-        .arg(skipped_file_not_found)
-        .arg(skipped_render_expected_false)
-        .arg(skipped_duplicate_id)
-        .arg(skipped_invalid_pose)
-        .arg(skipped_unsupported_format)
-        .arg(skipped_zero_triangle_mesh)
-        .arg(skipped_unknown_geometry)
-        .arg(skipped_other));
+      QStringList skip_reason_tokens;
+      for (auto it = skip_reason_counts.cbegin(); it != skip_reason_counts.cend(); ++it) {
+        skip_reason_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
+      }
+      append_studio_log(QString("Skipped visual items (canonical): %1").arg(skip_reason_tokens.join(' ')));
       append_studio_log(QString("Loader fallbacks: package_uri_resolved_by_loader=%1 source_path_from_resolved_path=%2 non_mesh_geometry_added=%3 non_mesh_geometry_unsupported=%4")
         .arg(package_uri_resolved_by_loader).arg(source_path_from_resolved_path).arg(non_mesh_geometry_added).arg(non_mesh_geometry_unsupported));
       append_studio_log(QString("Resolved source path diagnostics: stale_resolved_source_path=%1 package_uri_resolved_after_stale=%2")
@@ -6081,17 +6085,10 @@ void MainWindow::populate_scene_hierarchy()
           .arg(visual_skipped_total));
       }
       visual_diagnostics_summary =
-        QString("Visuals: added %1/%2 • skipped msrc=%3 nf=%4 render=%5 dup=%6 pose=%7 fmt=%8 tri0=%9 other=%10")
+        QString("Visuals: added %1/%2 • skipped=%3")
         .arg(visual_preview_added_count)
         .arg(visual_index_loaded_count)
-        .arg(skipped_missing_mesh_source_path)
-        .arg(skipped_file_not_found)
-        .arg(skipped_render_expected_false)
-        .arg(skipped_duplicate_id)
-        .arg(skipped_invalid_pose)
-        .arg(skipped_unsupported_format)
-        .arg(skipped_zero_triangle_mesh)
-        .arg(skipped_other);
+        .arg(visual_skipped_total);
       if (visual_index_safe_for_preview && visual_preview_added_count == 0) {
         append_studio_log("Visual mesh index safe but no preview items were ingested");
       }
@@ -6274,12 +6271,38 @@ void MainWindow::populate_scene_hierarchy()
     .arg(scene3d_fallback_count)
     .arg(scene3d_missing_count)
     .arg(scene3d_locked_count);
-  const int missing_mesh_count = skipped_missing_mesh_source_path + skipped_file_not_found + skipped_zero_triangle_mesh;
+  const int missing_mesh_count = skip_reason_counts.value(QStringLiteral("missing_source_path"), 0) +
+                                 skip_reason_counts.value(QStringLiteral("file_not_found"), 0) +
+                                 skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
   const QString scene3d_warning_buckets = QString("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4")
     .arg(missing_mesh_count)
     .arg(unresolved_package_uri_count)
-    .arg(skipped_unsupported_format)
+    .arg(skip_reason_counts.value(QStringLiteral("unsupported_format"), 0))
     .arg(stale_or_absolute_only_mesh_index_count);
+  const int scene_visible_count = all_scene_preview_items_.size();
+  const int scene_received_count = preview_items.size();
+  const int scene_rendered_count = scene_visible_count;
+  const int scene_selectable_count = std::count_if(preview_items.cbegin(), preview_items.cend(), [](const ScenePreviewWidget::PreviewItem & p){ return p.selectable; });
+  const int scene_mesh_rendered = scene3d_mesh_count;
+  const int scene_fallback_rendered = scene3d_fallback_count;
+  const int scene_locked_rendered = scene3d_locked_count;
+  const int scene_skipped = visual_index_loaded_count - visual_preview_added_count;
+  append_studio_log(QString("Scene3D canvas: scene=%1 received=%2 cached=%3 visible=%4 rendered=%5 selectable=%6 mesh=%7 fallback=%8 locked=%9 skipped=%10")
+    .arg(QString::fromStdString(s.scene_name))
+    .arg(scene_received_count)
+    .arg(preview_items.size())
+    .arg(scene_visible_count)
+    .arg(scene_rendered_count)
+    .arg(scene_selectable_count)
+    .arg(scene_mesh_rendered)
+    .arg(scene_fallback_rendered)
+    .arg(scene_locked_rendered)
+    .arg(scene_skipped));
+  if (!skip_reason_counts.isEmpty()) {
+    QStringList top_reason_tokens;
+    for (auto it = skip_reason_counts.cbegin(); it != skip_reason_counts.cend(); ++it) top_reason_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
+    append_studio_log(QString("Scene3D canvas skip reasons: %1").arg(top_reason_tokens.join(' ')));
+  }
   const QString preview_provenance_line = preview_provenance_summary_.isEmpty()
     ? QString("Preview fallback: 0 items loaded from scene metadata.")
     : preview_provenance_summary_;
