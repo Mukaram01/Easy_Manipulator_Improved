@@ -250,10 +250,26 @@ def main() -> int:
 
     if args.output.exists():
         app_status="UNKNOWN"
+        payload: dict[str, Any] = {}
         try:
-            app_status=json.loads(args.output.read_text(encoding="utf-8")).get("status","UNKNOWN")
+            payload=json.loads(args.output.read_text(encoding="utf-8"))
+            app_status=payload.get("status","UNKNOWN")
         except Exception:
-            pass
+            payload = {}
+        if args.scene_path:
+            expected_scene_path = str(args.scene_path.resolve())
+            counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
+            actual_scene_path = str(counters.get("inspector_scene_path") or counters.get("selected_scene_path") or "").strip()
+            if Path(actual_scene_path).as_posix() != Path(expected_scene_path).as_posix():
+                blockers = list(payload.get("blockers") or [])
+                blockers.append("explicit_scene_path_not_loaded")
+                payload["status"] = "FAIL"
+                payload["expected_scene_path"] = expected_scene_path
+                payload["actual_scene_path"] = actual_scene_path
+                payload["blockers"] = blockers
+                _write_json(args.output, payload)
+                print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
+                return 1
         print(f"status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))

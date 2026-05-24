@@ -243,3 +243,17 @@ def test_runtime_acceptance_default_filter_zero_visible_is_blocker(tmp_path):
     assert result["default_filter_visibility_evidence"]["pass_mode"] == "failed"
     assert "scene3d_default_filter_hid_all_renderable_candidates" in result["blockers"]
     assert result["secondary_checks"]["layer_toggles_not_default_hide_all"] is False
+
+def test_runtime_acceptance_markdown_handles_missing_secondary_checks(tmp_path):
+    out_json = tmp_path / 'acceptance.json'
+    out_md = tmp_path / 'acceptance.md'
+    subprocess.run([
+        'python3',
+        str(ROOT / 'scripts' / 'validate_scene3d_runtime_acceptance.py'),
+        '--scene', 'definitely_missing_scene',
+        '--json', str(out_json),
+        '--markdown', str(out_md),
+    ], check=False)
+    assert out_md.exists()
+    text = out_md.read_text(encoding='utf-8')
+    assert 'missing_secondary_checks' in text

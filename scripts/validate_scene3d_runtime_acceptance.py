@@ -386,6 +386,7 @@ def main() -> int:
                     "default_filter_visibility_evidence": {},
                     "runtime_evidence": {"valid": False, "skipped": True},
                     "secondary_checks": {},
+                    "warnings": ["missing_secondary_checks"],
                     "pass": False,
                 }
             )
@@ -462,7 +463,10 @@ def main() -> int:
         for k, v in r.get("default_filter_visibility_evidence", {}).items():
             lines.append(f"- {k}: {v}")
         lines.append("### Secondary diagnostics")
-        for k, v in r["secondary_checks"].items():
+        sec = r.get("secondary_checks") if isinstance(r.get("secondary_checks"), dict) else {}
+        if not isinstance(r.get("secondary_checks"), dict):
+            lines.append("- warning: missing_secondary_checks")
+        for k, v in sec.items():
             if isinstance(v, bool):
                 lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
             else:

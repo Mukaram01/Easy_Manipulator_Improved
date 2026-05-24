@@ -904,18 +904,36 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
   return true;
 }
 
-bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, QStringList * blockers, QJsonObject * diagnostics)
+bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const QString & explicit_scene_path, QStringList * blockers, QJsonObject * diagnostics)
 {
   auto add_blocker = [&](const QString & b) {
     if (blockers) blockers->append(b);
   };
-  if (diagnostics) diagnostics->insert("requested_scene_name", scene_name);
+  if (diagnostics) { diagnostics->insert("requested_scene_name", scene_name); diagnostics->insert("explicit_scene_path_used", false); }
   sync_selected_scene_state();
   int scene_idx = -1;
-  for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
-    if (QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name).trimmed() == scene_name.trimmed()) {
-      scene_idx = i;
-      break;
+  if (diagnostics) diagnostics->insert("requested_explicit_scene_path", explicit_scene_path);
+  if (!explicit_scene_path.trimmed().isEmpty()) {
+    const fs::path explicit_dir = fs::path(explicit_scene_path.toStdString());
+    const fs::path canonical_explicit = fs::weakly_canonical(explicit_dir);
+    int explicit_idx = -1;
+    for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
+      const fs::path candidate = fs::weakly_canonical(scene_browser_result_.scenes[static_cast<size_t>(i)].scene_dir);
+      if (candidate == canonical_explicit) { explicit_idx = i; break; }
+    }
+    if (explicit_idx < 0) {
+      add_blocker(QString("explicit_scene_path_not_found:%1").arg(explicit_scene_path));
+      return false;
+    }
+    scene_idx = explicit_idx;
+    if (diagnostics) diagnostics->insert("explicit_scene_path_used", true);
+  }
+  if (scene_idx < 0) {
+    for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
+      if (QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name).trimmed() == scene_name.trimmed()) {
+        scene_idx = i;
+        break;
+      }
     }
   }
   if (scene_idx < 0) {
@@ -1002,6 +1020,7 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, QStrin
   if (diagnostics) {
     const fs::path d = scene_browser_result_.scenes[static_cast<size_t>(scene_idx)].scene_dir;
     diagnostics->insert("resolved_scene_path", QString::fromStdString(d.string()));
+    diagnostics->insert("source_path_root", QString::fromStdString(d.string()));
     diagnostics->insert("source_layout_item_count", fs::exists(d / "layout" / "workcell_studio_layout.yaml") ? 1 : 0);
     diagnostics->insert("source_mesh_index_item_count", fs::exists(d / "generated" / "scene_visual_mesh_index.json") ? 1 : 0);
     diagnostics->insert("source_generated_layout_item_count", fs::exists(d / "layout" / "workcell_studio_layout.generated.yaml") ? 1 : 0);

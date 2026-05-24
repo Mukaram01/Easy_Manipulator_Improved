@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 
 import pytest
@@ -115,3 +116,27 @@ def test_gui_smoke_accepts_scene_path(monkeypatch, tmp_path: Path):
     child = " ".join(calls[0])
     assert "--scene-path" in child
 
+
+def test_gui_smoke_fails_if_explicit_scene_path_not_loaded(monkeypatch, tmp_path: Path):
+    out = tmp_path / 'smoke.json'
+    shot = tmp_path / 'smoke.png'
+    pkg = tmp_path / 'generated_scene'
+    pkg.mkdir(parents=True, exist_ok=True)
+    for rel in ['package.xml', 'scene_manifest.yaml', 'cell_definition.yaml', 'launch/demo.launch.py']:
+        p = pkg / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('x', encoding='utf-8')
+
+    def fake_run(cmd, **kwargs):
+        out.write_text('{"status":"PASS","counters":{"inspector_scene_path":"/wrong/path"}}', encoding='utf-8')
+        return type('P', (), {'returncode': 0, 'stdout': '', 'stderr': ''})()
+
+    monkeypatch.setattr(smoke.subprocess, 'run', fake_run)
+    monkeypatch.setattr(smoke, 'resolve_repo_root', lambda explicit_repo_root=None: tmp_path)
+    monkeypatch.setattr(smoke, 'resolve_workspace_root', lambda repo_root, explicit_workspace_root=None: tmp_path)
+    monkeypatch.setattr(smoke, 'resolve_workcell_builder_executable', lambda workspace_root: Path('/bin/true'))
+    monkeypatch.setattr(smoke.sys, 'argv', ['prog', '--scene-path', str(pkg), '--output', str(out), '--screenshot', str(shot), '--timeout-sec', '1'])
+    assert smoke.main() == 1
+    payload = json.loads(out.read_text(encoding='utf-8'))
+    assert payload['status'] == 'FAIL'
+    assert 'explicit_scene_path_not_loaded' in payload['blockers']
