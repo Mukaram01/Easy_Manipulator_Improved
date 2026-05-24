@@ -388,7 +388,8 @@ private:
       const auto preview_resolution = resolve_active_scene_preview_widget(window_);
       ScenePreviewWidget * active_preview_widget = preview_resolution.selected;
       const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
-      if (auto * viewport = viewport_resolution.selected) {
+      auto * viewport = viewport_resolution.selected;
+      if (viewport) {
         viewport->update();
         viewport->repaint();
         app_->processEvents();
