@@ -393,6 +393,10 @@ private:
         viewport->repaint();
         app_->processEvents();
       }
+      qInfo() << "Scene3D smoke render-ready: received=" << (viewport ? viewport->render_debug_counters().viewport_received_count : 0)
+              << "rendered=" << (viewport ? viewport->render_debug_counters().rendered_count : 0)
+              << "selectable=" << (viewport ? qMax(0, viewport->render_debug_counters().visible_count - viewport->render_debug_counters().overlay_count) : 0)
+              << "hierarchy=" << (viewport ? viewport->render_debug_counters().hierarchy_child_row_count : 0);
       if (scene3d_ready()) {
         timer->stop();
         timer->deleteLater();
@@ -455,7 +459,8 @@ private:
     const bool paint_completed = paint_cycle_completed(rc, screenshot_saved);
     const bool render_ready =
       rc.viewport_received_count > 0 &&
-      rc.visible_count > 0 &&
+      rc.rendered_count > 0 &&
+      rc.hierarchy_child_row_count > 0 &&
       paint_completed;
     markers["hierarchy_ready"] = hierarchy_ready;
     markers["inspector_ready"] = inspector_ready;
@@ -555,6 +560,7 @@ private:
       hierarchy_has_only_headings = (tree->topLevelItemCount() > 0 && hierarchy_child_rows == 0);
     }
     counters["hierarchy_child_row_count"] = hierarchy_child_rows;
+    counters["hierarchy_rows_count"] = hierarchy_child_rows;
     counters["hierarchy_has_only_headings"] = hierarchy_has_only_headings;
     counters["log_line_count"] = log_text.split('\n', Qt::SkipEmptyParts).size();
     counters["log_has_scene3d_diagnostics"] = log_text.contains("Scene3D diagnostics");
@@ -683,6 +689,8 @@ private:
       counters["primitive_fallback_count"] = rc.primitive_fallback_count;
       counters["locked_generated_urdf_visual_count"] = rc.locked_generated_urdf_visual_count;
       counters["overlay_count"] = rc.overlay_count;
+      counters["selectable_count"] = qMax(0, rc.visible_count - rc.overlay_count);
+      counters["hierarchy_rows_count"] = rc.hierarchy_child_row_count;
       counters["labels_drawn"] = rc.labels_drawn;
       counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
       counters["last_paint_completed"] = rc.last_paint_completed;
@@ -714,6 +722,8 @@ private:
       if (text.startsWith("Preview:")) preview_status = text.mid(QString("Preview:").size()).trimmed();
     }
     const int active_received_count = counters.value("active_viewport_received_count").toInt();
+    const int active_selectable_count = counters.value("selectable_count").toInt();
+    const int active_hierarchy_rows = counters.value("hierarchy_rows_count").toInt();
     const int active_rendered_count = counters.value("active_rendered_count").toInt();
     const bool has_active_items = (active_received_count > 0 || active_rendered_count > 0);
     if (parsed_runtime_diagnostics_total > 0 && !has_active_items) {
@@ -805,6 +815,10 @@ private:
         warnings_.append("active_viewport_counter_handoff_failed");
         blockers_.append("active_viewport_counter_handoff_failed");
       }
+    }
+    if (active_received_count > 0 &&
+        (active_rendered_count <= 0 || active_selectable_count <= 0 || active_hierarchy_rows <= 0)) {
+      blockers_.append("scene3d_runtime_not_rendered_after_candidate_ingestion");
     }
 
     const bool pass = blockers_.isEmpty();
