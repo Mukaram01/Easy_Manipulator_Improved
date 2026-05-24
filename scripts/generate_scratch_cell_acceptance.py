@@ -12,7 +12,7 @@ def _safe_scene_dir(root:Path,name:str)->Path:
  return d
 
 def _run(cmd:list[str]):
- p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,(p.stdout+'\n'+p.stderr).strip()
+ p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,p.stdout,p.stderr
 CELL_TMPL='''schema_version: cell_definition/v1
 cell:
   id: {scene}
@@ -88,7 +88,7 @@ commissioning:
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','schema_preflight':{}}
+ r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','failure_summary':'','schema_preflight':{},'generator':{}}
  if not re.fullmatch(r'[a-z][a-z0-9_]*', a.scene_name): r['blockers'].append(get_message('INVALID_SCENE_NAME'))
  try: a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
@@ -96,7 +96,8 @@ def main():
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
  cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
  preflight_cmd=[sys.executable,str(SCRIPTS/'validate_cell_definition.py'),str(cell),'--json']
- preflight_rc,preflight_out=_run(preflight_cmd)
+ preflight_rc,preflight_stdout,preflight_stderr=_run(preflight_cmd)
+ preflight_out=(preflight_stdout+'\n'+preflight_stderr).strip()
  preflight_json={}
  try:
   preflight_json=json.loads(preflight_out)
@@ -118,8 +119,17 @@ def main():
   out=json.dumps(r,indent=2)
   if a.json_out: a.json_out.parent.mkdir(parents=True,exist_ok=True); a.json_out.write_text(out+'\n',encoding='utf-8')
   print(out); return 1
- rc,out=_run([sys.executable,str(SCRIPTS/'generate_workcell_from_cell_definition.py'),str(cell),'--output-dir',str(a.output_root),'--package-name',sd.name,'--force'])
- if rc!=0: r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail=out.splitlines()[-1] if out else 'Generator failed.'))
+ generator_cmd=[sys.executable,str(SCRIPTS/'generate_workcell_from_cell_definition.py'),str(cell),'--output-dir',str(a.output_root),'--package-name',sd.name,'--force']
+ rc,generator_stdout,generator_stderr=_run(generator_cmd)
+ generator_stdout_tail='\n'.join(generator_stdout.splitlines()[-120:])
+ generator_stderr_tail='\n'.join(generator_stderr.splitlines()[-120:])
+ r['generator']={'command':' '.join(generator_cmd),'returncode':rc,'stdout_tail':generator_stdout_tail,'stderr_tail':generator_stderr_tail}
+ if rc!=0:
+  summary=(generator_stderr or generator_stdout).splitlines()[-1] if (generator_stderr or generator_stdout) else 'Generator failed.'
+  r['failure_step']='generation'
+  r['failure_summary']=f'generation failed (rc={rc}): {summary}'
+  r['generator']['failure_summary']=r['failure_summary']
+  r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail=f"{summary} (see JSON: generator.returncode/stdout_tail/stderr_tail/failure_summary)"))
  for rel,txt in [('environment_layout.yaml','schema_version: environment_layout/v1\nassets: []\n'),('config/workcell_builder_task_intent.yaml','task:\n  type: pick_place\n'),('environment.yaml',f'scene_name: {sd.name}\n')]:
   p=sd/rel; p.parent.mkdir(parents=True,exist_ok=True)
   if not p.exists(): p.write_text(txt,encoding='utf-8')
