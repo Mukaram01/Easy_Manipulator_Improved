@@ -30,7 +30,7 @@ def test_generated_canvas_acceptance_exports_artifacts(monkeypatch, tmp_path: Pa
         if "run_workcell_builder_scene3d_gui_smoke.py" in cmd_s:
             smoke_json = Path(cmd[cmd.index("--output") + 1])
             smoke_png = Path(cmd[cmd.index("--screenshot") + 1])
-            smoke_json.write_text(json.dumps({"counters": {"visible_count": 1, "rendered_count": 1, "selectable_count": 1, "hierarchy_rows": 1}}), encoding="utf-8")
+            smoke_json.write_text(json.dumps({"counters": {"assembled_preview_item_count": 1, "filtered_visible_candidate_count": 1, "forwarded_to_viewport_count": 1, "viewport_received_count": 1, "rendered_count": 1, "selectable_count": 1, "hierarchy_rows": 1}}), encoding="utf-8")
             smoke_png.write_bytes(b"png")
             return 0, "ok", ""
         if "validate_scene3d_runtime_acceptance.py" in cmd_s:
@@ -49,5 +49,11 @@ def test_generated_canvas_acceptance_exports_artifacts(monkeypatch, tmp_path: Pa
     assert rc == 0
     artifact = json.loads((out_dir / f"{scene_name}_acceptance.json").read_text(encoding="utf-8"))
     assert artifact["status"] == "PASS"
-    assert artifact["key_counts"]["visible"] > 0
+    assert artifact["key_counts"]["assembled_preview_item_count"] > 0
+    assert artifact["key_counts"]["filtered_visible_candidate_count"] > 0
+    assert artifact["key_counts"]["forwarded_to_viewport_count"] > 0
+    assert artifact["key_counts"]["viewport_received_count"] > 0
+    assert artifact["key_counts"]["rendered_count"] > 0
+    assert artifact["key_counts"]["selectable_count"] > 0
+    assert artifact["key_counts"]["hierarchy_rows_count"] > 0
     assert Path(artifact["gui_smoke"]["screenshot"]).stat().st_size > 0
