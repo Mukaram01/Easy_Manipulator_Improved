@@ -270,3 +270,13 @@ def test_regression_audit_does_not_point_to_stale_existing_folder(tmp_path, monk
     assert payload["scene_dir"].endswith(f"{scene_name}_1")
     assert Path(seen["audit_scene_dir"]) == Path(payload["scene_dir"])
     assert Path(seen["audit_scene_dir"]) != stale_scene
+
+
+def test_required_contract_files_remain_strict_for_scratch_generation():
+    required = set(target.REQUIRED)
+    assert "package.xml" in required
+    assert "CMakeLists.txt" in required
+    assert "scene_manifest.yaml" in required
+    assert "environment_layout.yaml" in required
+    assert "launch/demo.launch.py" in required
+    assert "cell_definition.yaml" in required
