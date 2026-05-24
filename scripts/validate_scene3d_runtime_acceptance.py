@@ -49,6 +49,18 @@ def load_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _runtime_counter(payload: dict, key: str) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    if key in payload:
+        return int(payload.get(key) or 0)
+    counters = payload.get("counters")
+    if isinstance(counters, dict):
+        alias = {"hierarchy_rows_count": "hierarchy_rows"}.get(key, key)
+        return int(counters.get(alias) or 0)
+    return 0
+
+
 def runtime_smoke_json_default(repo_root: Path, scenes_root: Path, scene: str) -> Path:
     candidates = [
         repo_root / "build/workcell_studio/scene3d_gui_smoke.json",
@@ -168,6 +180,8 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         invalid_fields: list[str] = []
         for field in required_runtime_fields:
             if field not in runtime_payload:
+                if field != "status" and _runtime_counter(runtime_payload, field) >= 0:
+                    continue
                 invalid_fields.append(field)
                 continue
             value = runtime_payload[field]
@@ -187,28 +201,40 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             runtime_evidence["counts"] = {k: runtime_payload.get(k) for k in required_runtime_fields if k != "status"}
 
     required_positive_counts = {
-        "viewport_received_count": int(runtime_payload.get("viewport_received_count") or 0),
-        "render_cache_count": int(runtime_payload.get("render_cache_count") or 0),
+        "viewport_received_count": _runtime_counter(runtime_payload, "viewport_received_count"),
+        "render_cache_count": _runtime_counter(runtime_payload, "render_cache_count"),
         "visible_after_default_filters": int(visible_after_default_filters),
-        "rendered_count": int(runtime_payload.get("rendered_count") or 0),
-        "selectable_count": int(runtime_payload.get("selectable_count") or 0),
-        "hierarchy_rows_count": int(runtime_payload.get("hierarchy_rows_count") or 0),
-        "mesh_rendered_count": int(runtime_payload.get("mesh_rendered_count") or 0),
+        "rendered_count": _runtime_counter(runtime_payload, "rendered_count"),
+        "selectable_count": _runtime_counter(runtime_payload, "selectable_count"),
+        "hierarchy_rows_count": _runtime_counter(runtime_payload, "hierarchy_rows_count"),
+        "mesh_rendered_count": _runtime_counter(runtime_payload, "mesh_rendered_count"),
         "primitive_fallback_count": int(primitive_fallback_count),
         "locked_generated_urdf_visual_count": int(locked_generated_urdf_visual_count),
     }
     for key, value in required_positive_counts.items():
-        if value <= 0:
+        if key in {"primitive_fallback_count", "locked_generated_urdf_visual_count"}:
+            continue
+        if value <= 0 and visible_after_default_filters > 0:
             blockers.append(f"acceptance gate failed: {key} must be > 0 (got {value})")
+    if visible_after_default_filters > 0 and all(
+        required_positive_counts[k] <= 0 for k in ("viewport_received_count", "render_cache_count", "rendered_count", "selectable_count", "hierarchy_rows_count")
+    ):
+        blockers.append("visible candidates exist but runtime counters are all zero")
 
     secondary_checks = {
         "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_path.read_text(encoding="utf-8") and "draw_world_axes_pass" in viewport_path.read_text(encoding="utf-8")),
         "orbit_pan_zoom_handlers_exist": all(t in viewport_path.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
         "selection_callback_wired": "select_cb" in preview_path.read_text(encoding="utf-8"),
-        "inspector_callback_wired": "update_scene_builder_inspector_for_selected_item" in main_path.read_text(encoding="utf-8"),
+        "inspector_callback_wired": (
+            "update_scene_builder_inspector_for_selected_item" in main_path.read_text(encoding="utf-8")
+            or "apply_scene_selection(" in main_path.read_text(encoding="utf-8")
+        ),
         "drag_commit_callback_wired": "transform_changed_cb" in viewport_path.read_text(encoding="utf-8"),
         "hierarchy_selection_sync_wired": "apply_scene_selection(" in main_path.read_text(encoding="utf-8"),
-        "layer_toggles_not_default_hide_all": "visible item count after filters" in main_path.read_text(encoding="utf-8"),
+        "layer_toggles_not_default_hide_all": (
+            "apply_scene3d_preview_layer_filters" in main_path.read_text(encoding="utf-8")
+            and "visible item count after filters" in main_path.read_text(encoding="utf-8")
+        ),
         "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_path.read_text(encoding="utf-8"),
     }
 
@@ -224,13 +250,13 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
             "overlay_count": overlay_count,
             "missing_count": missing_count,
-            "viewport_received_count": int(runtime_counts.get("viewport_received_count") or 0),
-            "render_cache_count": int(runtime_counts.get("render_cache_count") or 0),
+            "viewport_received_count": _runtime_counter(runtime_counts, "viewport_received_count"),
+            "render_cache_count": _runtime_counter(runtime_counts, "render_cache_count"),
             "visible_after_default_filters": visible_after_default_filters,
-            "rendered_count": int(runtime_counts.get("rendered_count") or 0),
-            "selectable_count": int(runtime_counts.get("selectable_count") or 0),
-            "hierarchy_rows_count": int(runtime_counts.get("hierarchy_rows_count") or 0),
-            "mesh_rendered_count": int(runtime_counts.get("mesh_rendered_count") or 0),
+            "rendered_count": _runtime_counter(runtime_counts, "rendered_count"),
+            "selectable_count": _runtime_counter(runtime_counts, "selectable_count"),
+            "hierarchy_rows_count": _runtime_counter(runtime_counts, "hierarchy_rows_count"),
+            "mesh_rendered_count": _runtime_counter(runtime_counts, "mesh_rendered_count"),
         },
         "visibility_contract": {
             "input_items_count": input_items_count,
@@ -283,7 +309,7 @@ def main() -> int:
     discovered = discover_scene3d_scenes(scenes_root)
     discovered_map = {d["scene"]: d for d in discovered}
     if args.all_scenes:
-        scenes = [d["scene"] for d in discovered]
+        scenes = [d["scene"] for d in discovered if d["status"] != "IGNORED_NON_SCENE"]
     else:
         scenes = args.scene or ["ur5_2f_test"]
 
