@@ -172,3 +172,13 @@ def test_audit_failure_recorded_not_crashed(tmp_path, monkeypatch):
 def test_cell_template_yaml_has_top_level_objects():
     doc = yaml.safe_load(target.CELL_TMPL.format(scene="demo"))
     assert "objects" in doc
+
+
+def test_required_contract_files_include_core_package_contract():
+    required = set(target.REQUIRED)
+    assert "package.xml" in required
+    assert "CMakeLists.txt" in required
+    assert "scene_manifest.yaml" in required
+    assert "environment_layout.yaml" in required
+    assert "launch/demo.launch.py" in required
+    assert "cell_definition.yaml" in required

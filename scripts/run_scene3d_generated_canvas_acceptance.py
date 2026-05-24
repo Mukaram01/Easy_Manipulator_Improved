@@ -117,13 +117,17 @@ def main() -> int:
     required_outputs = [
         "scene_manifest.yaml",
         "environment_layout.yaml",
-        "config/scene3d_mesh_index.json",
-        "urdf/scene.urdf.xacro",
         "launch/demo.launch.py",
         "package.xml",
         "CMakeLists.txt",
+        "cell_definition.yaml",
+    ]
+    optional_geometry_outputs = [
+        "config/scene3d_mesh_index.json",
+        "urdf/scene.urdf.xacro",
     ]
     missing_outputs = [r for r in required_outputs if not (scene_dir / r).exists()]
+    missing_optional_geometry_outputs = [r for r in optional_geometry_outputs if not (scene_dir / r).exists()]
 
     smoke_json = out_dir / f"scene3d_gui_smoke_{args.scene_name}.json"
     smoke_png = out_dir / f"scene3d_gui_smoke_{args.scene_name}.png"
@@ -224,6 +228,13 @@ def main() -> int:
             if not failing_step:
                 failing_step = "runtime_acceptance"
                 failing_command = " ".join(runtime_cmd)
+    if missing_optional_geometry_outputs and any(v <= 0 for v in key_counts.values()):
+        blockers.append(
+            "optional geometry outputs missing while runtime/render counters do not prove primitive/layout fallback path"
+        )
+        if not failing_step:
+            failing_step = "runtime_acceptance"
+            failing_command = " ".join(runtime_cmd)
 
     artifact = {
         "schema": "scene3d_generated_canvas_acceptance/v1",
@@ -237,7 +248,9 @@ def main() -> int:
         },
         "generation": generation_payload,
         "required_outputs": required_outputs,
+        "optional_geometry_outputs": optional_geometry_outputs,
         "missing_outputs": missing_outputs,
+        "missing_optional_geometry_outputs": missing_optional_geometry_outputs,
         "gui_smoke": {
             "returncode": smoke_rc,
             "json": str(smoke_json),
