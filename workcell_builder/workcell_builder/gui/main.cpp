@@ -269,8 +269,9 @@ QJsonObject parse_latest_scene3d_diagnostics(const QString & log_text)
   const QStringList lines = log_text.split('\n');
   QRegularExpression count_re(QStringLiteral("([A-Za-z_][A-Za-z0-9_]*)\\s*[:=]\\s*(-?\\d+)"));
   for (int i = lines.size() - 1; i >= 0; --i) {
-    const QString line = lines[i];
-    if (!line.contains(QStringLiteral("Scene3D diagnostics"), Qt::CaseInsensitive)) {
+    const QString line = lines[i].trimmed();
+    if (!(line.contains(QStringLiteral("Scene3D diagnostics"), Qt::CaseInsensitive) ||
+          line.contains(QStringLiteral("Scene3D canvas:"), Qt::CaseInsensitive))) {
       continue;
     }
     QJsonObject counts;
@@ -279,10 +280,22 @@ QJsonObject parse_latest_scene3d_diagnostics(const QString & log_text)
       const auto m = it.next();
       counts[m.captured(1)] = m.captured(2).toInt();
     }
-    parsed["line"] = line.trimmed();
+    parsed["line"] = line;
     parsed["line_index"] = i;
     parsed["counts"] = counts;
     parsed["parsed_count"] = counts.size();
+    if (i + 1 < lines.size()) {
+      const QString next = lines[i + 1].trimmed();
+      if (next.contains(QStringLiteral("Scene3D canvas skip reasons:"), Qt::CaseInsensitive)) {
+        QJsonObject reasons;
+        auto reason_it = count_re.globalMatch(next);
+        while (reason_it.hasNext()) {
+          const auto m = reason_it.next();
+          reasons[m.captured(1)] = m.captured(2).toInt();
+        }
+        parsed["skip_reason_counts"] = reasons;
+      }
+    }
     break;
   }
   return parsed;
@@ -547,6 +560,7 @@ private:
     counters["log_has_scene3d_diagnostics"] = log_text.contains("Scene3D diagnostics");
     counters["runtime_scene3d_diagnostics_total"] = parsed_runtime_diagnostics_total;
     counters["runtime_scene3d_diagnostics_counts"] = parsed_runtime_diagnostics_counts;
+    counters["runtime_scene3d_skip_reason_counts"] = parsed_runtime_diagnostics.value("skip_reason_counts").toObject();
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     QString selected_scene_name = "(none)";
     QString selected_item_id = "(none)";
