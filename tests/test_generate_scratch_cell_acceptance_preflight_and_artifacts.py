@@ -29,7 +29,7 @@ def test_generated_scratch_schema_preflight_zero_errors_and_generation_attempt(t
         if "generate_workcell_from_cell_definition.py" in cmd_s:
             scene_name = cmd[cmd.index("--package-name") + 1]
             scene_dir = (tmp_path / "out" / scene_name)
-            for rel in ("scene_manifest.yaml", "config/scene3d_mesh_index.json", "urdf/scene.urdf.xacro", "launch/demo.launch.py", "package.xml", "CMakeLists.txt"):
+            for rel in ("scene_manifest.yaml", "config/scene3d_mesh_index.json", "urdf/scene.urdf.xacro", "launch/demo.launch.py", "package.xml", "CMakeLists.txt", "cell_definition.yaml"):
                 p = scene_dir / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text("x", encoding="utf-8")
@@ -46,7 +46,7 @@ def test_generated_scratch_schema_preflight_zero_errors_and_generation_attempt(t
     assert payload["schema_preflight"]["schema_blockers"] == []
     assert payload["schema_preflight"]["validator_returncode"] == 0
     assert "validate_cell_definition.py" in payload["schema_preflight"]["validator_command"]
-    assert payload["schema_preflight"]["cell_definition_path"].endswith("cell_definition.yaml")
+    assert payload["schema_preflight"]["cell_definition_path"].endswith(".cell_definition.input.yaml")
     assert "objects" in payload["schema_preflight"]["cell_definition_top_level_keys"]
     assert payload["schema_preflight"]["object_count"] > 0
     assert payload["schema_preflight"]["next_failed_step"] == "generation"
@@ -172,3 +172,35 @@ def test_audit_failure_recorded_not_crashed(tmp_path, monkeypatch):
 def test_cell_template_yaml_has_top_level_objects():
     doc = yaml.safe_load(target.CELL_TMPL.format(scene="demo"))
     assert "objects" in doc
+
+
+def test_generated_package_contains_core_files_before_file_output_audit(tmp_path, monkeypatch):
+    report = tmp_path / "acceptance.json"
+    monkeypatch.setattr(target.sys, "argv", ["prog", "--scene-name", "scratchcorefiles", "--output-root", str(tmp_path / "out"), "--json-out", str(report)])
+    seen = {"cell_input_path": None}
+
+    def fake_run(cmd):
+        cmd_s = " ".join(cmd)
+        if "validate_cell_definition.py" in cmd_s:
+            seen["cell_input_path"] = Path(cmd[2])
+            return 0, json.dumps({"errors": [], "warnings": []}), ""
+        if "generate_workcell_from_cell_definition.py" in cmd_s:
+            scene_name = cmd[cmd.index("--package-name") + 1]
+            scene_dir = tmp_path / "out" / scene_name
+            for rel in target.REQUIRED:
+                p = scene_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("x", encoding="utf-8")
+            return 0, "ok", ""
+        if "audit_new_cell_file_outputs.py" in cmd_s:
+            scene_dir = Path(cmd[cmd.index("--scene-dir") + 1])
+            assert (scene_dir / "cell_definition.yaml").exists()
+            assert (scene_dir / "launch" / "demo.launch.py").exists()
+            return 0, "ok", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    rc = target.main()
+    assert rc == 0
+    assert seen["cell_input_path"] is not None
+    assert seen["cell_input_path"].name.endswith(".cell_definition.input.yaml")

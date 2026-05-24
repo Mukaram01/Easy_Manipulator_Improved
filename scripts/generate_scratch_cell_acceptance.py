@@ -100,7 +100,9 @@ def main():
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
- cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ cell_input=a.output_root/f'.{sd.name}.cell_definition.input.yaml'
+ cell_input.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ cell=cell_input
  cell_text=cell.read_text(encoding='utf-8')
  cell_sha256=hashlib.sha256(cell_text.encode('utf-8')).hexdigest()
  cell_doc=yaml.safe_load(cell_text) if cell_text.strip() else {}
