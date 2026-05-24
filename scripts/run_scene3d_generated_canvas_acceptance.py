@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, subprocess, sys
+import argparse, json, subprocess, sys, uuid
 from pathlib import Path
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,9 @@ def main() -> int:
     generated_root.mkdir(parents=True, exist_ok=True)
 
     acceptance_json = out_dir / f"{args.scene_name}_generation.json"
+    if acceptance_json.exists():
+        acceptance_json.unlink()
+    run_id = str(uuid.uuid4())
     generation_cmd = [
         sys.executable,
         str(repo_root / "scripts" / "generate_scratch_cell_acceptance.py"),
@@ -45,6 +48,8 @@ def main() -> int:
         str(generated_root),
         "--json-out",
         str(acceptance_json),
+        "--run-id",
+        run_id,
     ]
     rc, so, se = _run(generation_cmd, repo_root)
     if rc != 0:
@@ -55,9 +60,11 @@ def main() -> int:
         schema_preflight: dict = {}
         generated_files: list[str] = []
         missing_files: list[str] = []
+        stale_or_missing = True
         if acceptance_json.exists():
             try:
                 generation_payload = _json(acceptance_json)
+                stale_or_missing = generation_payload.get("run_id") != run_id
                 step = str(generation_payload.get("failure_step") or generation_payload.get("next_failed_step") or "generation")
                 blockers = list(generation_payload.get("blockers", []))
                 failure_summary = str(generation_payload.get("failure_summary") or failure_summary)
@@ -66,14 +73,20 @@ def main() -> int:
                 missing_files = list(generation_payload.get("missing_files", []))
             except Exception:
                 pass
+        if stale_or_missing:
+            blockers = [*blockers, "generation_report_missing_or_stale"]
         print(json.dumps({
             "status": "FAIL",
-            "step": step,
+            "step": "generation" if stale_or_missing else step,
             "command": " ".join(generation_cmd),
+            "returncode": rc,
             "failure_summary": failure_summary,
             "blockers": blockers,
+            "generation_json_path": str(acceptance_json),
+            "generation_json_exists": acceptance_json.exists(),
+            "generation_json_run_id_matches": (generation_payload.get("run_id") == run_id) if generation_payload else False,
             "schema_preflight": {
-                "validator_command": schema_preflight.get("command", ""),
+                "validator_command": schema_preflight.get("validator_command", schema_preflight.get("command", "")),
                 "schema_blockers": schema_preflight.get("schema_blockers", []),
                 "next_failed_step": schema_preflight.get("next_failed_step", step),
             },
@@ -85,6 +98,20 @@ def main() -> int:
         return rc
 
     generation_payload = _json(acceptance_json)
+    if generation_payload.get("run_id") != run_id:
+        print(json.dumps({
+            "status": "FAIL",
+            "step": "generation",
+            "command": " ".join(generation_cmd),
+            "returncode": rc,
+            "blockers": ["generation_report_missing_or_stale"],
+            "generation_json_path": str(acceptance_json),
+            "generation_json_exists": acceptance_json.exists(),
+            "generation_json_run_id_matches": False,
+            "stdout_tail": _tail(so),
+            "stderr_tail": _tail(se),
+        }, indent=2))
+        return 1
     scene_dir = Path(generation_payload["scene_dir"]).resolve()
 
     required_outputs = [

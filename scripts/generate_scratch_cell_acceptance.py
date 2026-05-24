@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, subprocess, sys, re
+import argparse, json, subprocess, sys, re, hashlib
+from datetime import datetime, timezone
 from pathlib import Path
+import yaml
 from workcell_studio_error_messages import get_message
 REPO_ROOT=Path(__file__).resolve().parents[1]; SCRIPTS=REPO_ROOT/'scripts'; DEFAULT_SCENE='scratch_ur5_2f_acceptance'
 REQUIRED=['environment.yaml','environment_layout.yaml','config/workcell_builder_task_intent.yaml','cell_definition.yaml','scene_manifest.yaml','package.xml','CMakeLists.txt','launch/demo.launch.py']
@@ -90,14 +92,21 @@ commissioning:
 '''
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','failure_summary':'','next_failed_step':'generation','schema_preflight':{},'generator':{}}
+ ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); ap.add_argument('--run-id',default=''); a=ap.parse_args()
+ run_id=a.run_id or datetime.now(timezone.utc).isoformat()
+ r={'run_id':run_id,'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','failure_summary':'','next_failed_step':'generation','schema_preflight':{},'generator':{},'file_output_audit':{}}
  if not re.fullmatch(r'[a-z][a-z0-9_]*', a.scene_name): r['blockers'].append(get_message('INVALID_SCENE_NAME'))
  try: a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
  cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ cell_text=cell.read_text(encoding='utf-8')
+ cell_sha256=hashlib.sha256(cell_text.encode('utf-8')).hexdigest()
+ cell_doc=yaml.safe_load(cell_text) if cell_text.strip() else {}
+ top_level_keys=sorted(list(cell_doc.keys())) if isinstance(cell_doc,dict) else []
+ objects=cell_doc.get('objects',[]) if isinstance(cell_doc,dict) else []
+ task_destinations=((cell_doc.get('task') or {}).get('destinations') or []) if isinstance(cell_doc,dict) else []
  preflight_cmd=[sys.executable,str(SCRIPTS/'validate_cell_definition.py'),str(cell),'--json']
  preflight_rc,preflight_stdout,preflight_stderr=_run(preflight_cmd)
  preflight_out=(preflight_stdout+'\n'+preflight_stderr).strip()
@@ -109,8 +118,13 @@ def main():
  preflight_errors=list(preflight_json.get('errors',[])) if isinstance(preflight_json,dict) else []
  preflight_warnings=list(preflight_json.get('warnings',[])) if isinstance(preflight_json,dict) else []
  r['schema_preflight']={
-  'command':' '.join(preflight_cmd),
-  'returncode':preflight_rc,
+  'validator_command':' '.join(preflight_cmd),
+  'validator_returncode':preflight_rc,
+  'cell_definition_path':str(cell.resolve()),
+  'cell_definition_sha256':cell_sha256,
+  'cell_definition_top_level_keys':top_level_keys,
+  'object_count':len(objects) if isinstance(objects,list) else 0,
+  'task_destination_count':len(task_destinations) if isinstance(task_destinations,list) else 0,
   'stdout_stderr':preflight_out,
   'stdout_stderr_tail':'\n'.join(preflight_out.splitlines()[-120:]),
   'schema_blockers':preflight_errors,
@@ -147,7 +161,12 @@ def main():
  if 'use_fake_hardware:=false' in r['launch_command']: r['blockers'].append(get_message('MISSING_FAKE_HARDWARE_ARG', detail='Unsafe launch command includes use_fake_hardware:=false'))
  if not list(REPO_ROOT.rglob('*ur5*')): r['warnings'].append(get_message('VALIDATION_BLOCKED', title='Missing UR5 assets', detail='Repository search did not find ur5 tokens.'))
  if not (list(REPO_ROOT.rglob('*robotiq*2f*'))+list(REPO_ROOT.rglob('*2f_85*'))): r['warnings'].append(get_message('VALIDATION_BLOCKED', title='Missing Robotiq 2F assets', detail='Repository search did not find robotiq 2f tokens.'))
- _rc,_out=_run([sys.executable,str(SCRIPTS/'audit_new_cell_file_outputs.py'),'--scene-dir',str(sd),'--scene-name',sd.name,'--json-out',str(sd/'file_output_audit.json')])
+ audit_cmd=[sys.executable,str(SCRIPTS/'audit_new_cell_file_outputs.py'),'--scene-dir',str(sd),'--scene-name',sd.name,'--json-out',str(sd/'file_output_audit.json')]
+ audit_rc,audit_stdout,audit_stderr=_run(audit_cmd)
+ r['file_output_audit']={'command':' '.join(audit_cmd),'returncode':audit_rc,'stdout_tail':'\n'.join(audit_stdout.splitlines()[-120:]),'stderr_tail':'\n'.join(audit_stderr.splitlines()[-120:])}
+ if audit_rc!=0:
+  r['blockers'].append(f'file_output_audit failed (rc={audit_rc})')
+  r['next_failed_step']='file_output_audit'
  r['validation_status']='PASS' if not r['blockers'] and not r['missing_files'] else 'BLOCKED'; r['ready_for_plan_simulate']=r['validation_status']=='PASS'
  out=json.dumps(r,indent=2)
  if a.json_out: a.json_out.parent.mkdir(parents=True,exist_ok=True); a.json_out.write_text(out+'\n',encoding='utf-8')
