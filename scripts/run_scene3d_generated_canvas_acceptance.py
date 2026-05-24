@@ -51,15 +51,37 @@ def main() -> int:
         step = "generation"
         blockers: list[str] = []
         failure_summary = "generation command failed"
+        generation_payload: dict = {}
+        schema_preflight: dict = {}
+        generated_files: list[str] = []
+        missing_files: list[str] = []
         if acceptance_json.exists():
             try:
                 generation_payload = _json(acceptance_json)
-                step = str(generation_payload.get("failure_step") or "generation")
+                step = str(generation_payload.get("failure_step") or generation_payload.get("next_failed_step") or "generation")
                 blockers = list(generation_payload.get("blockers", []))
                 failure_summary = str(generation_payload.get("failure_summary") or failure_summary)
+                schema_preflight = generation_payload.get("schema_preflight", {}) if isinstance(generation_payload.get("schema_preflight"), dict) else {}
+                generated_files = list(generation_payload.get("generated_files", []))
+                missing_files = list(generation_payload.get("missing_files", []))
             except Exception:
                 pass
-        print(json.dumps({"status": "FAIL", "step": step, "command": " ".join(generation_cmd), "failure_summary": failure_summary, "blockers": blockers, "stdout_tail": _tail(so), "stderr_tail": _tail(se)}, indent=2))
+        print(json.dumps({
+            "status": "FAIL",
+            "step": step,
+            "command": " ".join(generation_cmd),
+            "failure_summary": failure_summary,
+            "blockers": blockers,
+            "schema_preflight": {
+                "validator_command": schema_preflight.get("command", ""),
+                "schema_blockers": schema_preflight.get("schema_blockers", []),
+                "next_failed_step": schema_preflight.get("next_failed_step", step),
+            },
+            "generated_file_list": generated_files or schema_preflight.get("generated_file_list", []),
+            "missing_package_files": missing_files or schema_preflight.get("missing_package_files", []),
+            "stdout_tail": _tail(so),
+            "stderr_tail": _tail(se)
+        }, indent=2))
         return rc
 
     generation_payload = _json(acceptance_json)

@@ -35,6 +35,7 @@ camera:
   id: realsense_d435i
   type: depth_camera
   frame: camera_depth_optical_frame
+  capability: sensor/depth_camera/realsense_d435i
 environment:
   frame: world
   layout: environment_layout.yaml
@@ -47,6 +48,7 @@ environment:
       dimensions: [1.0, 1.0, 0.05]
 objects:
   - id: pick_part
+    role: pick
     class: part
     shape: box
     color: unknown
@@ -56,6 +58,7 @@ objects:
     pose_xyz: [0.45, 0.0, 0.08]
     pose_rpy: [0.0, 0.0, 0.0]
   - id: place_bin
+    role: destination
     class: bin
     shape: box
     color: blue
@@ -88,7 +91,7 @@ commissioning:
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','failure_summary':'','schema_preflight':{},'generator':{}}
+ r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','failure_summary':'','next_failed_step':'generation','schema_preflight':{},'generator':{}}
  if not re.fullmatch(r'[a-z][a-z0-9_]*', a.scene_name): r['blockers'].append(get_message('INVALID_SCENE_NAME'))
  try: a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
@@ -112,9 +115,13 @@ def main():
   'stdout_stderr_tail':'\n'.join(preflight_out.splitlines()[-120:]),
   'schema_blockers':preflight_errors,
   'warnings':preflight_warnings,
+  'generated_file_list': [str(p.relative_to(sd)) for p in sorted(sd.rglob('*')) if p.is_file()],
+  'missing_package_files': [],
+  'next_failed_step': 'generation',
  }
  if preflight_rc!=0 or preflight_errors:
   r['failure_step']='schema_preflight'
+  r['next_failed_step']='schema_preflight'
   r['blockers'].extend([f"schema_preflight: {e}" for e in preflight_errors] or ['schema_preflight: validator returned non-zero exit code'])
   out=json.dumps(r,indent=2)
   if a.json_out: a.json_out.parent.mkdir(parents=True,exist_ok=True); a.json_out.write_text(out+'\n',encoding='utf-8')
@@ -135,6 +142,7 @@ def main():
   if not p.exists(): p.write_text(txt,encoding='utf-8')
  r['launch_command']=f'ros2 launch {sd.name} demo.launch.py use_fake_hardware:=true launch_rviz:=true'; r['build_command']=f'colcon build --symlink-install --packages-select {sd.name}'
  for rel in REQUIRED: (r['generated_files'] if (sd/rel).exists() else r['missing_files']).append(rel)
+ r['schema_preflight']['missing_package_files']=list(r['missing_files'])
  if 'launch/demo.launch.py' in r['missing_files']: r['blockers'].append(get_message('MISSING_DEMO_LAUNCH'))
  if 'use_fake_hardware:=false' in r['launch_command']: r['blockers'].append(get_message('MISSING_FAKE_HARDWARE_ARG', detail='Unsafe launch command includes use_fake_hardware:=false'))
  if not list(REPO_ROOT.rglob('*ur5*')): r['warnings'].append(get_message('VALIDATION_BLOCKED', title='Missing UR5 assets', detail='Repository search did not find ur5 tokens.'))
