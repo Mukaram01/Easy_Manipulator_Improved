@@ -18,6 +18,7 @@ from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_pat
 ensure_repo_root_on_sys_path(__file__)
 
 from scripts.scene_root_resolver import resolve_scene_root
+from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
 SCHEMA = "workcell_studio_scene3d_runtime_acceptance/v1"
 CANONICAL_LAYERS = {"editable_layout", "mesh_preview", "locked_generated_urdf_visual", "primitive_fallback", "overlay"}
@@ -185,6 +186,21 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             runtime_evidence["status"] = runtime_payload.get("status")
             runtime_evidence["counts"] = {k: runtime_payload.get(k) for k in required_runtime_fields if k != "status"}
 
+    required_positive_counts = {
+        "viewport_received_count": int(runtime_payload.get("viewport_received_count") or 0),
+        "render_cache_count": int(runtime_payload.get("render_cache_count") or 0),
+        "visible_after_default_filters": int(visible_after_default_filters),
+        "rendered_count": int(runtime_payload.get("rendered_count") or 0),
+        "selectable_count": int(runtime_payload.get("selectable_count") or 0),
+        "hierarchy_rows_count": int(runtime_payload.get("hierarchy_rows_count") or 0),
+        "mesh_rendered_count": int(runtime_payload.get("mesh_rendered_count") or 0),
+        "primitive_fallback_count": int(primitive_fallback_count),
+        "locked_generated_urdf_visual_count": int(locked_generated_urdf_visual_count),
+    }
+    for key, value in required_positive_counts.items():
+        if value <= 0:
+            blockers.append(f"acceptance gate failed: {key} must be > 0 (got {value})")
+
     secondary_checks = {
         "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_path.read_text(encoding="utf-8") and "draw_world_axes_pass" in viewport_path.read_text(encoding="utf-8")),
         "orbit_pan_zoom_handlers_exist": all(t in viewport_path.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
@@ -196,6 +212,7 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_path.read_text(encoding="utf-8"),
     }
 
+    runtime_counts = runtime_payload if isinstance(runtime_payload, dict) else {}
     return {
         "scene": scene,
         "scene_path": str(sdir),
@@ -207,6 +224,13 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
             "overlay_count": overlay_count,
             "missing_count": missing_count,
+            "viewport_received_count": int(runtime_counts.get("viewport_received_count") or 0),
+            "render_cache_count": int(runtime_counts.get("render_cache_count") or 0),
+            "visible_after_default_filters": visible_after_default_filters,
+            "rendered_count": int(runtime_counts.get("rendered_count") or 0),
+            "selectable_count": int(runtime_counts.get("selectable_count") or 0),
+            "hierarchy_rows_count": int(runtime_counts.get("hierarchy_rows_count") or 0),
+            "mesh_rendered_count": int(runtime_counts.get("mesh_rendered_count") or 0),
         },
         "visibility_contract": {
             "input_items_count": input_items_count,
@@ -229,6 +253,7 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         "source_layer_counts": source_layer_counts,
         "runtime_evidence": runtime_evidence,
         "secondary_checks": secondary_checks,
+        "status": "PASS" if not blockers else "FAIL",
         "pass": not blockers,
     }
 
@@ -236,6 +261,7 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", action="append", default=[])
+    ap.add_argument("--all-scenes", action="store_true", help="evaluate all discovered scenes")
     ap.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[1]))
     ap.add_argument("--workspace-root", default=None)
     ap.add_argument("--workcell-builder-executable", "--executable", default=None)
@@ -254,25 +280,58 @@ def main() -> int:
     if not scenes_root.exists():
         ap.error(f"scenes root does not exist: {scenes_root}")
 
-    scenes = args.scene or ["ur5_2f_test"]
-    if scenes_root.exists():
-        maybe = sorted(p.name for p in scenes_root.iterdir() if p.is_dir() and "new_cell" in p.name)
-        if maybe:
-            scenes.append(maybe[0])
+    discovered = discover_scene3d_scenes(scenes_root)
+    discovered_map = {d["scene"]: d for d in discovered}
+    if args.all_scenes:
+        scenes = [d["scene"] for d in discovered]
+    else:
+        scenes = args.scene or ["ur5_2f_test"]
 
     unique_scenes: list[str] = []
     for s in scenes:
         if s not in unique_scenes:
             unique_scenes.append(s)
 
-    results = [evaluate_scene(repo_root, scenes_root, main_path, preview_path, viewport_path, s, args.smoke_json) for s in unique_scenes]
+    results = []
+    skipped_reason_histogram: dict[str, int] = {}
+    for s in unique_scenes:
+        discovery = discovered_map.get(s)
+        if discovery and discovery["status"] in {"BLOCKED", "LEGACY_INCOMPLETE"}:
+            reasons = discovery.get("blockers") or [f"scene discovery status: {discovery['status']}"]
+            for reason in reasons:
+                skipped_reason_histogram[reason] = skipped_reason_histogram.get(reason, 0) + 1
+            results.append(
+                {
+                    "scene": s,
+                    "scene_path": discovery["scene_path"],
+                    "detected_files": discovery["detected_files"],
+                    "source_layers_found": discovery["source_layers_found"],
+                    "status": discovery["status"],
+                    "blockers": reasons,
+                    "counts": {},
+                    "visibility_contract": {},
+                    "layers": {},
+                    "sources": {},
+                    "runtime_evidence": {"valid": False, "skipped": True},
+                    "secondary_checks": {},
+                    "pass": False,
+                }
+            )
+            continue
+        evaluated = evaluate_scene(repo_root, scenes_root, main_path, preview_path, viewport_path, s, args.smoke_json)
+        if discovery:
+            evaluated["detected_files"] = discovery["detected_files"]
+            evaluated["source_layers_found"] = discovery["source_layers_found"]
+        results.append(evaluated)
     blockers = [f"{r['scene']}: {b}" for r in results for b in r.get("blockers", [])]
 
     payload = {
         "schema": SCHEMA,
         "repo_root": str(repo_root),
         "scenes_root": str(scenes_root),
+        "discovered_scenes": discovered,
         "scenes": results,
+        "skipped_reason_histogram": skipped_reason_histogram,
         "blockers": blockers,
         "pass": not blockers,
     }
@@ -288,10 +347,24 @@ def main() -> int:
             lines.append(f"- FAIL: {b}")
     else:
         lines.append("- none")
+    lines.append("")
+    lines.append("## Skipped reason histogram")
+    if skipped_reason_histogram:
+        for reason, count in sorted(skipped_reason_histogram.items()):
+            lines.append(f"- {reason}: {count}")
+    else:
+        lines.append("- none")
 
     for r in results:
         lines.append("")
         lines.append(f"## {r['scene']}")
+        lines.append(f"### Status: {r.get('status', 'FAIL')}")
+        if r.get("detected_files") is not None:
+            lines.append("### Detected files")
+            for k, v in r["detected_files"].items():
+                lines.append(f"- {k}: {v}")
+        if r.get("source_layers_found") is not None:
+            lines.append(f"### Source layers found: {r['source_layers_found']}")
         lines.append("### Counts")
         for k, v in r["counts"].items():
             lines.append(f"- {k}: {v}")
