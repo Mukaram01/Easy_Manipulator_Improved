@@ -52,6 +52,13 @@ def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
+
+
+def _scene_package_markers_ok(scene_dir: Path) -> tuple[bool, list[str]]:
+    required = ["package.xml", "scene_manifest.yaml", "cell_definition.yaml", "launch/demo.launch.py"]
+    missing = [name for name in required if not (scene_dir / name).is_file()]
+    return (not missing), missing
+
 def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     scenes_root = resolve_scene_root(repo_root)
@@ -83,8 +90,6 @@ def main() -> int:
 
     if args.all_scenes and args.scene:
         raise SystemExit("Choose only one of --scene or --all-scenes")
-    if args.scene and args.scene_path:
-        raise SystemExit("Choose only one of --scene or --scene-path")
     if not args.all_scenes and not args.scene and not args.scene_path and not args.new_cell_recommended_layout_smoke:
         raise SystemExit("Provide one of --scene, --scene-path, --all-scenes, or --new-cell-recommended-layout-smoke")
     if args.all_scenes and args.output is not None:
@@ -178,6 +183,23 @@ def main() -> int:
             md += [f"- {r['scene']}: {r.get('ignore_reason', 'ignored')}" for r in ignored_non_scenes]
         (out_dir / "scene3d_gui_smoke_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
         return 1 if totals["FAIL"] or totals["BLOCKED"] else 0
+
+    if args.scene_path:
+        sp = args.scene_path.resolve()
+        ok, missing = _scene_package_markers_ok(sp)
+        if not ok:
+            fail_payload = {
+                "schema": EXPECTED_SCHEMA,
+                "status": "FAIL",
+                "scene": args.scene or sp.name,
+                "scene_path": str(sp),
+                "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
+                "warnings": [],
+            }
+            _write_json(args.output, fail_payload)
+            print("status=FAIL smoke_status=SCENE_PATH_INVALID")
+            return 1
+        args.scene_path = sp
 
     cmd = build_cmd(exe, args)
     cmd, xwarn = with_xvfb(cmd, args.xvfb)

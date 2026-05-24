@@ -45,7 +45,10 @@ def load_yaml(path: Path) -> dict:
 
 
 def load_json(path: Path) -> dict:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
     return data if isinstance(data, dict) else {}
 
 
@@ -306,6 +309,7 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "preview_metadata": str(preview_metadata_path) if preview_metadata_path.exists() else None,
             "generated_layout": str(urdf_generated_layout_path) if urdf_generated_layout_path.exists() else None,
             "overlay_files": [str(p) for p in overlay_sources if p.exists()],
+            "smoke_json": str(smoke_path),
         },
         "source_layer_counts": source_layer_counts,
         "runtime_evidence": runtime_evidence,
@@ -449,7 +453,10 @@ def main() -> int:
         for k, v in r["sources"].items():
             lines.append(f"- {k}: {v}")
         lines.append("### Runtime smoke evidence")
-        for k, v in r.get("runtime_evidence", {}).items():
+        runtime_evidence = r.get("runtime_evidence", {}) if isinstance(r.get("runtime_evidence", {}), dict) else {}
+        if not runtime_evidence:
+            runtime_evidence = {"valid": False, "error": "runtime_evidence_missing", "smoke_json": r.get("sources", {}).get("smoke_json")}
+        for k, v in runtime_evidence.items():
             lines.append(f"- {k}: {v}")
         lines.append("### Default-filter visibility evidence")
         for k, v in r.get("default_filter_visibility_evidence", {}).items():

@@ -176,6 +176,7 @@ def main() -> int:
 
     smoke_payload = _json(smoke_json) if smoke_json.exists() else {}
     runtime_payload = _json(runtime_json) if runtime_json.exists() else {}
+    smoke_status = str(smoke_payload.get("status", "UNKNOWN")).upper() if isinstance(smoke_payload, dict) else "UNKNOWN"
     smoke_counters = smoke_payload.get("counters", {}) if isinstance(smoke_payload, dict) else {}
     runtime_counters = runtime_payload.get("counters", {}) if isinstance(runtime_payload, dict) else {}
 
@@ -207,8 +208,8 @@ def main() -> int:
     failing_command = ""
     if missing_outputs:
         blockers.append(f"missing generated outputs: {', '.join(missing_outputs)}")
-    if smoke_rc != 0:
-        blockers.append("gui smoke command failed")
+    if smoke_rc != 0 or smoke_status not in {"PASS", "OK"}:
+        blockers.append("gui smoke failed")
         if not failing_step:
             failing_step = "gui_smoke"
             failing_command = " ".join(smoke_cmd)
