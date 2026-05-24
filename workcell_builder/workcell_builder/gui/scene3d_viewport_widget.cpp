@@ -755,6 +755,14 @@ void Scene3DViewportWidget::paintGL()
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
+  if (visible_item_count == 0) {
+    painter.setPen(QColor("#f8fafc"));
+    painter.drawText(rect(), Qt::AlignCenter,
+      "Scene3D empty state\nNo visible candidate visuals.\nCheck preview layer visibility and scene source files.");
+    if (status_message_cb) {
+      status_message_cb("Scene3D blocker: no visible candidate visuals after ingestion and layer filtering.");
+    }
+  }
   const auto compact_role = [](const QString & role) {
     const QString r = role.trimmed().toLower();
     if (r.contains("pick")) return QStringLiteral("Pick");
