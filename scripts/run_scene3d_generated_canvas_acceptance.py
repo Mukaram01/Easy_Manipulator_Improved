@@ -45,7 +45,16 @@ def main() -> int:
     ]
     rc, so, se = _run(generation_cmd, repo_root)
     if rc != 0:
-        print(json.dumps({"status": "FAIL", "step": "generation", "stdout": so, "stderr": se}, indent=2))
+        step = "generation"
+        blockers: list[str] = []
+        if acceptance_json.exists():
+            try:
+                generation_payload = _json(acceptance_json)
+                step = str(generation_payload.get("failure_step") or "generation")
+                blockers = list(generation_payload.get("blockers", []))
+            except Exception:
+                pass
+        print(json.dumps({"status": "FAIL", "step": step, "blockers": blockers, "stdout": so, "stderr": se}, indent=2))
         return rc
 
     generation_payload = _json(acceptance_json)

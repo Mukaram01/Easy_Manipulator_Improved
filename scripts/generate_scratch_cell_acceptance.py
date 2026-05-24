@@ -88,13 +88,36 @@ commissioning:
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False}
+ r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'failure_step':'generation','schema_preflight':{}}
  if not re.fullmatch(r'[a-z][a-z0-9_]*', a.scene_name): r['blockers'].append(get_message('INVALID_SCENE_NAME'))
  try: a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
  cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ preflight_cmd=[sys.executable,str(SCRIPTS/'validate_cell_definition.py'),str(cell),'--json']
+ preflight_rc,preflight_out=_run(preflight_cmd)
+ preflight_json={}
+ try:
+  preflight_json=json.loads(preflight_out)
+ except json.JSONDecodeError:
+  preflight_json={}
+ preflight_errors=list(preflight_json.get('errors',[])) if isinstance(preflight_json,dict) else []
+ preflight_warnings=list(preflight_json.get('warnings',[])) if isinstance(preflight_json,dict) else []
+ r['schema_preflight']={
+  'command':' '.join(preflight_cmd),
+  'returncode':preflight_rc,
+  'stdout_stderr':preflight_out,
+  'stdout_stderr_tail':'\n'.join(preflight_out.splitlines()[-120:]),
+  'schema_blockers':preflight_errors,
+  'warnings':preflight_warnings,
+ }
+ if preflight_rc!=0 or preflight_errors:
+  r['failure_step']='schema_preflight'
+  r['blockers'].extend([f"schema_preflight: {e}" for e in preflight_errors] or ['schema_preflight: validator returned non-zero exit code'])
+  out=json.dumps(r,indent=2)
+  if a.json_out: a.json_out.parent.mkdir(parents=True,exist_ok=True); a.json_out.write_text(out+'\n',encoding='utf-8')
+  print(out); return 1
  rc,out=_run([sys.executable,str(SCRIPTS/'generate_workcell_from_cell_definition.py'),str(cell),'--output-dir',str(a.output_root),'--package-name',sd.name,'--force'])
  if rc!=0: r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail=out.splitlines()[-1] if out else 'Generator failed.'))
  for rel,txt in [('environment_layout.yaml','schema_version: environment_layout/v1\nassets: []\n'),('config/workcell_builder_task_intent.yaml','task:\n  type: pick_place\n'),('environment.yaml',f'scene_name: {sd.name}\n')]:
