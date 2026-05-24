@@ -104,11 +104,17 @@ def main() -> int:
 
     smoke_payload = _json(smoke_json) if smoke_json.exists() else {}
     counters = smoke_payload.get("counters", {}) if isinstance(smoke_payload, dict) else {}
+    def _count(key: str, nested_alias: str | None = None) -> int:
+        if isinstance(smoke_payload, dict) and key in smoke_payload:
+            return int(smoke_payload.get(key) or 0)
+        if isinstance(counters, dict):
+            return int(counters.get(nested_alias or key) or 0)
+        return 0
     key_counts = {
-        "visible": int(counters.get("visible_count", 0) or 0),
-        "rendered": int(counters.get("rendered_count", 0) or 0),
-        "selectable": int(counters.get("selectable_count", 0) or 0),
-        "hierarchy_rows": int(counters.get("hierarchy_rows", 0) or 0),
+        "visible": _count("visible_count"),
+        "rendered": _count("rendered_count"),
+        "selectable": _count("selectable_count"),
+        "hierarchy_rows": _count("hierarchy_rows_count", "hierarchy_rows"),
     }
 
     blockers: list[str] = []

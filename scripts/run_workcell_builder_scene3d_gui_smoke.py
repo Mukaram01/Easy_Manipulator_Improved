@@ -10,7 +10,8 @@ if str(_REPO_ROOT) not in sys.path:
 from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
 ensure_repo_root_on_sys_path(__file__)
 from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
-from scripts.workcell_discovery import discover_scene_packages
+from scripts.scene_root_resolver import resolve_scene_root
+from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 
@@ -49,21 +50,16 @@ def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-def _discover_scene_targets() -> list[dict[str, Any]]:
+def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for rec in discover_scene_packages():
-        warnings = list(rec.warnings or [])
-        launch_ok = (Path(rec.source_path) / "launch").is_dir()
-        status = "PASS" if launch_ok and not warnings else ("LEGACY_INCOMPLETE" if warnings else "BLOCKED")
-        blockers = [] if launch_ok else ["missing_launch_directory"]
+    scenes_root = resolve_scene_root(repo_root)
+    for rec in discover_scene3d_scenes(scenes_root):
         rows.append({
-            "scene": rec.package_name,
-            "scene_path": rec.source_path,
-            "installed": rec.installed,
-            "generated": rec.generated,
-            "discovery_warnings": warnings,
-            "scene_status": status,
-            "blockers": blockers,
+            "scene": rec["scene"],
+            "scene_path": rec["scene_path"],
+            "scene_status": rec["status"],
+            "blockers": list(rec.get("blockers") or []),
+            "ignore_reason": rec.get("ignore_reason"),
         })
     return sorted(rows, key=lambda x: x["scene"])
 
@@ -95,10 +91,19 @@ def main() -> int:
 
     if args.all_scenes:
         out_dir = args.output_dir.resolve()
-        scenes = _discover_scene_targets()
+        scenes = _discover_scene_targets(repo_root)
         per_scene: list[dict[str, Any]] = []
         totals = {"PASS": 0, "FAIL": 0, "BLOCKED": 0, "LEGACY_INCOMPLETE": 0}
+        ignored_non_scenes: list[dict[str, Any]] = []
+        legacy_incomplete: list[dict[str, Any]] = []
         for item in scenes:
+            if item["scene_status"] == "IGNORED_NON_SCENE":
+                ignored_non_scenes.append(item)
+                continue
+            if item["scene_status"] == "LEGACY_INCOMPLETE":
+                legacy_incomplete.append(item)
+                totals["LEGACY_INCOMPLETE"] += 1
+                continue
             scene_name = item["scene"]
             scene_json = out_dir / f"scene3d_gui_smoke_{scene_name}.json"
             scene_png = out_dir / f"scene3d_gui_smoke_{scene_name}.png"
@@ -121,9 +126,6 @@ def main() -> int:
             result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
             blockers = list(payload.get("blockers", [])) if isinstance(payload.get("blockers"), list) else []
             blockers.extend(item.get("blockers", []))
-            if item["scene_status"] == "LEGACY_INCOMPLETE":
-                result_status = "LEGACY_INCOMPLETE" if result_status != "PASS" else "PASS"
-                blockers.extend(item.get("discovery_warnings", []))
             if item["scene_status"] == "BLOCKED":
                 result_status = "BLOCKED"
             totals[result_status] = totals.get(result_status, 0) + 1
@@ -140,11 +142,28 @@ def main() -> int:
                 payload["scene_level_status"] = result_status
                 payload["scene_level_blockers"] = blockers
                 _write_json(scene_json, payload)
-        summary = {"schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene}
+        summary = {
+            "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene,
+            "supported_scene_count": len(per_scene),
+            "legacy_incomplete_count": len(legacy_incomplete),
+            "ignored_non_scene_count": len(ignored_non_scenes),
+            "legacy_incomplete_scenes": legacy_incomplete,
+            "ignored_non_scene_folders": ignored_non_scenes,
+        }
         _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
-        md = ["# Scene3D GUI Smoke Summary", "", f"- PASS: {totals['PASS']}", f"- FAIL: {totals['FAIL']}", f"- BLOCKED: {totals['BLOCKED']}", f"- LEGACY_INCOMPLETE: {totals['LEGACY_INCOMPLETE']}", "", "| Scene | Status | Return code | JSON | PNG |", "|---|---|---:|---|---|"]
+        md = ["# Scene3D GUI Smoke Summary", "",
+              f"- supported_scene_count: {len(per_scene)}",
+              f"- PASS: {totals['PASS']}", f"- FAIL: {totals['FAIL']}", f"- BLOCKED: {totals['BLOCKED']}",
+              f"- legacy_incomplete_count: {len(legacy_incomplete)}", f"- ignored_non_scene_count: {len(ignored_non_scenes)}",
+              "", "| Scene | Status | Return code | JSON | PNG |", "|---|---|---:|---|---|"]
         for r in per_scene:
             md.append(f"| {r['scene']} | {r['status']} | {r['returncode']} | `{r['smoke_json']}` | `{r['smoke_png']}` |")
+        if legacy_incomplete:
+            md += ["", "## Legacy incomplete scenes"]
+            md += [f"- {r['scene']}: {', '.join(r.get('blockers') or ['legacy incomplete'])}" for r in legacy_incomplete]
+        if ignored_non_scenes:
+            md += ["", "## Ignored non-scene folders"]
+            md += [f"- {r['scene']}: {r.get('ignore_reason', 'ignored')}" for r in ignored_non_scenes]
         (out_dir / "scene3d_gui_smoke_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
         return 1 if totals["FAIL"] or totals["BLOCKED"] else 0
 
