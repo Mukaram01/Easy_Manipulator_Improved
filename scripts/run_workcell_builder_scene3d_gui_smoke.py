@@ -72,7 +72,7 @@ def main() -> int:
     ap.add_argument("--all-scenes", action="store_true")
     ap.add_argument("--output-dir", type=Path, default=None)
     ap.add_argument("--new-cell-recommended-layout-smoke", action="store_true")
-    ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--output", type=Path, default=None)
     ap.add_argument("--screenshot", type=Path, default=None)
     ap.add_argument("--timeout-sec", type=float, default=30.0)
     ap.add_argument("--xvfb", action="store_true")
@@ -82,8 +82,14 @@ def main() -> int:
         raise SystemExit("Choose only one of --scene or --all-scenes")
     if not args.all_scenes and not args.scene and not args.new_cell_recommended_layout_smoke:
         raise SystemExit("Provide one of --scene, --all-scenes, or --new-cell-recommended-layout-smoke")
+    if args.all_scenes and args.output is not None:
+        raise SystemExit("--output is only valid for single-scene mode")
+    if args.all_scenes and args.new_cell_recommended_layout_smoke:
+        raise SystemExit("--new-cell-recommended-layout-smoke cannot be combined with --all-scenes")
     if args.all_scenes and args.output_dir is None:
         raise SystemExit("--output-dir is required with --all-scenes")
+    if not args.all_scenes and args.output is None:
+        raise SystemExit("--output is required unless --all-scenes is used")
 
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
@@ -113,6 +119,7 @@ def main() -> int:
             ]
             if exe:
                 cmd += ["--executable", str(exe)]
+            cmd += ["--timeout-sec", str(args.timeout_sec)]
             if args.xvfb:
                 cmd.append("--xvfb")
             proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
