@@ -217,6 +217,8 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             self.assertTrue((package_dir / "CMakeLists.txt").is_file())
             self.assertTrue((package_dir / "scene_manifest.yaml").is_file())
             self.assertTrue((package_dir / "README.md").is_file())
+            self.assertTrue((package_dir / "cell_definition.yaml").is_file())
+            self.assertTrue((package_dir / "launch" / "demo.launch.py").is_file())
 
             parsed_manifest, _, _ = scene_contract_validator._read_manifest(str(package_dir / "scene_manifest.yaml"))
             self.assertIn("self_test", parsed_manifest)
@@ -508,6 +510,25 @@ class WorkcellPackageGenerationTests(unittest.TestCase):
             env_payload, _, _ = scene_contract_validator._read_manifest(str(gen / "generated_environment_objects.yaml"))
             self.assertTrue(any(a.get("asset_id") == "lidar_unsupported" for a in env_payload.get("unsupported_assets", [])))
             self.assertGreater(len(env_payload.get("tracked_assets", [])), 0)
+
+    def test_generated_package_includes_cell_definition_and_demo_launch_args(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            fixture = FIXTURES / "cell_definition_ur5_suction_sorting.yaml"
+            rc = workcell_generator.generate_package(
+                cell_definition_path=fixture,
+                output_dir=tmp_path,
+                package_name="generated_launch_contract",
+                force=False,
+                dry_run=False,
+            )
+            self.assertEqual(rc, 0)
+            package_dir = tmp_path / "generated_launch_contract"
+            self.assertEqual((package_dir / "cell_definition.yaml").read_text(encoding="utf-8"), fixture.read_text(encoding="utf-8"))
+            launch_text = (package_dir / "launch" / "demo.launch.py").read_text(encoding="utf-8")
+            for token in ["generate_launch_description", "DeclareLaunchArgument", "use_fake_hardware", "launch_rviz", "default_value=\"true\""]:
+                self.assertIn(token, launch_text)
+
 
 
 class CellDefinitionWizardTests(unittest.TestCase):
