@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse, json, os, shlex, shutil, subprocess, sys, time
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -9,6 +10,7 @@ if str(_REPO_ROOT) not in sys.path:
 from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
 ensure_repo_root_on_sys_path(__file__)
 from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
+from scripts.workcell_discovery import discover_scene_packages
 
 EXPECTED_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 
@@ -47,12 +49,32 @@ def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
+def _discover_scene_targets() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for rec in discover_scene_packages():
+        warnings = list(rec.warnings or [])
+        launch_ok = (Path(rec.source_path) / "launch").is_dir()
+        status = "PASS" if launch_ok and not warnings else ("LEGACY_INCOMPLETE" if warnings else "BLOCKED")
+        blockers = [] if launch_ok else ["missing_launch_directory"]
+        rows.append({
+            "scene": rec.package_name,
+            "scene_path": rec.source_path,
+            "installed": rec.installed,
+            "generated": rec.generated,
+            "discovery_warnings": warnings,
+            "scene_status": status,
+            "blockers": blockers,
+        })
+    return sorted(rows, key=lambda x: x["scene"])
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root", type=Path, default=_REPO_ROOT)
     ap.add_argument("--workspace-root", type=Path, default=_REPO_ROOT)
     ap.add_argument("--executable", type=Path, default=None)
     ap.add_argument("--scene", default=None)
+    ap.add_argument("--all-scenes", action="store_true")
+    ap.add_argument("--output-dir", type=Path, default=None)
     ap.add_argument("--new-cell-recommended-layout-smoke", action="store_true")
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--screenshot", type=Path, default=None)
@@ -60,9 +82,72 @@ def main() -> int:
     ap.add_argument("--xvfb", action="store_true")
     args = ap.parse_args()
 
+    if args.all_scenes and args.scene:
+        raise SystemExit("Choose only one of --scene or --all-scenes")
+    if not args.all_scenes and not args.scene and not args.new_cell_recommended_layout_smoke:
+        raise SystemExit("Provide one of --scene, --all-scenes, or --new-cell-recommended-layout-smoke")
+    if args.all_scenes and args.output_dir is None:
+        raise SystemExit("--output-dir is required with --all-scenes")
+
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
     exe = args.executable or resolve_workcell_builder_executable(workspace_root)
+
+    if args.all_scenes:
+        out_dir = args.output_dir.resolve()
+        scenes = _discover_scene_targets()
+        per_scene: list[dict[str, Any]] = []
+        totals = {"PASS": 0, "FAIL": 0, "BLOCKED": 0, "LEGACY_INCOMPLETE": 0}
+        for item in scenes:
+            scene_name = item["scene"]
+            scene_json = out_dir / f"scene3d_gui_smoke_{scene_name}.json"
+            scene_png = out_dir / f"scene3d_gui_smoke_{scene_name}.png"
+            cmd = [
+                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root), "--workspace-root", str(workspace_root),
+                "--scene", scene_name, "--output", str(scene_json), "--screenshot", str(scene_png),
+            ]
+            if exe:
+                cmd += ["--executable", str(exe)]
+            if args.xvfb:
+                cmd.append("--xvfb")
+            proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+            payload: dict[str, Any] = {}
+            if scene_json.exists():
+                try:
+                    payload = json.loads(scene_json.read_text(encoding="utf-8"))
+                except Exception:
+                    payload = {}
+            smoke_status = str(payload.get("status", "FAIL")).upper()
+            result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            blockers = list(payload.get("blockers", [])) if isinstance(payload.get("blockers"), list) else []
+            blockers.extend(item.get("blockers", []))
+            if item["scene_status"] == "LEGACY_INCOMPLETE":
+                result_status = "LEGACY_INCOMPLETE" if result_status != "PASS" else "PASS"
+                blockers.extend(item.get("discovery_warnings", []))
+            if item["scene_status"] == "BLOCKED":
+                result_status = "BLOCKED"
+            totals[result_status] = totals.get(result_status, 0) + 1
+            per_scene.append({
+                "scene": scene_name,
+                "status": result_status,
+                "returncode": proc.returncode,
+                "smoke_json": str(scene_json),
+                "smoke_png": str(scene_png),
+                "scene_metadata": item,
+                "blockers": blockers,
+            })
+            if payload:
+                payload["scene_level_status"] = result_status
+                payload["scene_level_blockers"] = blockers
+                _write_json(scene_json, payload)
+        summary = {"schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene}
+        _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
+        md = ["# Scene3D GUI Smoke Summary", "", f"- PASS: {totals['PASS']}", f"- FAIL: {totals['FAIL']}", f"- BLOCKED: {totals['BLOCKED']}", f"- LEGACY_INCOMPLETE: {totals['LEGACY_INCOMPLETE']}", "", "| Scene | Status | Return code | JSON | PNG |", "|---|---|---:|---|---|"]
+        for r in per_scene:
+            md.append(f"| {r['scene']} | {r['status']} | {r['returncode']} | `{r['smoke_json']}` | `{r['smoke_png']}` |")
+        (out_dir / "scene3d_gui_smoke_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+        return 1 if totals["FAIL"] or totals["BLOCKED"] else 0
+
     cmd = build_cmd(exe, args)
     cmd, xwarn = with_xvfb(cmd, args.xvfb)
 
