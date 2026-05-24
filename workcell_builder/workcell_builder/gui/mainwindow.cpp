@@ -929,6 +929,61 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, QStrin
   }
   QApplication::processEvents(QEventLoop::AllEvents, 250);
   populate_scene_hierarchy();
+  const bool has_renderable_editable_mesh_or_primitive = [&]() {
+      for (const auto & item : all_scene_preview_items_) {
+        const QString source_layer = item.source_layer.trimmed().toLower();
+        const QString active_visual_source = item.active_visual_source.trimmed().toLower();
+        if (source_layer == QStringLiteral("editable_layout")) return true;
+        if (active_visual_source == QStringLiteral("mesh_preview")) return true;
+        if (source_layer == QStringLiteral("primitive_fallback") || active_visual_source == QStringLiteral("primitive_fallback")) return true;
+      }
+      return false;
+    }();
+  if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(true);
+  if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(true);
+  if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(true);
+  if (preview_layer_overlays_helpers_box_) preview_layer_overlays_helpers_box_->setChecked(
+      blockers == nullptr || blockers->isEmpty());
+  if (preview_layer_generated_urdf_visual_box_) {
+    preview_layer_generated_urdf_visual_box_->setChecked(!has_renderable_editable_mesh_or_primitive);
+  }
+
+  const auto count_visible_for_layers = [&](const QSet<QString> & enabled_layers) {
+      int count = 0;
+      for (const auto & item : all_scene_preview_items_) {
+        if (workcell_builder::include_preview_item_for_scene3d(item, enabled_layers)) {
+          ++count;
+        }
+      }
+      return count;
+    };
+  const QSet<QString> normal_enabled_layers = {
+    preview_layer_editable_layout_box_ && preview_layer_editable_layout_box_->isChecked() ? "editable_layout" : "",
+    preview_layer_generated_urdf_visual_box_ && preview_layer_generated_urdf_visual_box_->isChecked() ? "locked_generated_urdf_visual" : "",
+    preview_layer_mesh_preview_box_ && preview_layer_mesh_preview_box_->isChecked() ? "mesh_preview" : "",
+    preview_layer_primitive_fallback_box_ && preview_layer_primitive_fallback_box_->isChecked() ? "primitive_fallback" : "",
+    preview_layer_overlays_helpers_box_ && preview_layer_overlays_helpers_box_->isChecked() ? "overlay" : "",
+    preview_layer_warnings_missing_assets_box_ && preview_layer_warnings_missing_assets_box_->isChecked() ? "warning" : ""
+  };
+  int visible_count = count_visible_for_layers(normal_enabled_layers);
+  if (visible_count == 0 && !all_scene_preview_items_.isEmpty()) {
+    const QSet<QString> fallback_enabled_layers = {
+      "editable_layout",
+      "mesh_preview",
+      "primitive_fallback",
+      "locked_generated_urdf_visual"
+    };
+    visible_count = count_visible_for_layers(fallback_enabled_layers);
+    if (visible_count > 0) {
+      append_studio_log("default_filter_fallback_kept_renderable_items_visible");
+      if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(true);
+      if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(true);
+      if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(true);
+      if (preview_layer_generated_urdf_visual_box_) preview_layer_generated_urdf_visual_box_->setChecked(true);
+    } else {
+      add_blocker("scene3d_default_filter_hid_all_renderable_candidates");
+    }
+  }
   apply_scene3d_preview_layer_filters(false);
   if (scene_preview_widget_) {
     scene_preview_widget_->show();
