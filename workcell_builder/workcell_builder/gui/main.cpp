@@ -336,6 +336,7 @@ private:
   QJsonArray blockers_;
   QDateTime start_time_;
   QJsonObject latest_counters_;
+  int render_ready_attempts_{0};
 
   void step_begin()
   {
@@ -385,19 +386,29 @@ private:
     auto * timer = new QTimer(this);
     const qint64 start_ms = QDateTime::currentMSecsSinceEpoch();
     connect(timer, &QTimer::timeout, this, [this, timer, start_ms, timeout_ms]() {
+      ++render_ready_attempts_;
       const auto preview_resolution = resolve_active_scene_preview_widget(window_);
       ScenePreviewWidget * active_preview_widget = preview_resolution.selected;
       const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
       auto * viewport = viewport_resolution.selected;
+      auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
+      int hierarchy_rows = 0;
+      if (tree) {
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+          if (auto * top = tree->topLevelItem(i)) hierarchy_rows += top->childCount();
+        }
+      }
       if (viewport) {
+        viewport->show();
         viewport->update();
         viewport->repaint();
         app_->processEvents();
       }
-      qInfo() << "Scene3D smoke render-ready: received=" << (viewport ? viewport->render_debug_counters().viewport_received_count : 0)
+      qInfo() << "Scene3D smoke render-ready: scene=" << opts_.scene_name
+              << "received=" << (viewport ? viewport->render_debug_counters().viewport_received_count : 0)
               << "rendered=" << (viewport ? viewport->render_debug_counters().rendered_count : 0)
               << "selectable=" << (viewport ? qMax(0, viewport->render_debug_counters().visible_count - viewport->render_debug_counters().overlay_count) : 0)
-              << "hierarchy=" << (viewport ? viewport->render_debug_counters().hierarchy_child_row_count : 0);
+              << "hierarchy=" << hierarchy_rows;
       if (scene3d_ready()) {
         timer->stop();
         timer->deleteLater();
@@ -461,6 +472,7 @@ private:
     const bool render_ready =
       rc.viewport_received_count > 0 &&
       rc.rendered_count > 0 &&
+      qMax(0, rc.visible_count - rc.overlay_count) > 0 &&
       rc.hierarchy_child_row_count > 0 &&
       paint_completed;
     markers["hierarchy_ready"] = hierarchy_ready;
@@ -488,6 +500,11 @@ private:
       }
       if (latest_counters_.value("preview_items_count").toInt() > 0 && latest_counters_.value("viewport_received_count").toInt() <= 0) {
         return QString("scene_preview_items_not_forwarded_to_viewport");
+      }
+      if (latest_counters_.value("preview_items_count").toInt() > 0 &&
+          latest_counters_.value("viewport_received_count").toInt() > 0 &&
+          latest_counters_.value("rendered_count").toInt() <= 0) {
+        return QString("scene3d_runtime_not_rendered_after_candidate_ingestion");
       }
       if (latest_counters_.value("viewport_received_count").toInt() > 0 && latest_counters_.value("render_cache_count").toInt() <= 0) {
         return QString("viewport_render_cache_empty");
@@ -701,6 +718,10 @@ private:
       counters["active_rendered_count"] = rc.rendered_count;
       counters["active_render_cache_count"] = rc.render_cache_count;
       counters["active_viewport_object_name"] = viewport->objectName();
+      qInfo() << "Scene3D smoke viewport ingest: scene=" << opts_.scene_name
+              << "viewport_items=" << rc.viewport_received_count;
+      qInfo() << "Scene3D smoke hierarchy ingest: scene=" << opts_.scene_name
+              << "hierarchy_rows=" << rc.hierarchy_child_row_count;
     } else {
       for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
@@ -723,6 +744,14 @@ private:
       if (text.startsWith("Preview:")) preview_status = text.mid(QString("Preview:").size()).trimmed();
     }
     const int active_received_count = counters.value("active_viewport_received_count").toInt();
+    counters["render_ready_attempts"] = render_ready_attempts_;
+    counters["static_candidate_count"] = counters.value("preview_items_count").toInt();
+    counters["filtered_visible_candidate_count"] = counters.value("visible_count").toInt();
+    counters["viewport_items_after_ingest"] = counters.value("viewport_received_count").toInt();
+    counters["hierarchy_rows_after_ingest"] = counters.value("hierarchy_rows_count").toInt();
+    qInfo() << "Scene3D smoke load: scene=" << opts_.scene_name
+            << "static_candidates=" << counters.value("static_candidate_count").toInt()
+            << "filtered=" << counters.value("filtered_visible_candidate_count").toInt();
     const int active_selectable_count = counters.value("selectable_count").toInt();
     const int active_hierarchy_rows = counters.value("hierarchy_rows_count").toInt();
     const int active_rendered_count = counters.value("active_rendered_count").toInt();

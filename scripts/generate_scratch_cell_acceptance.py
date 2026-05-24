@@ -13,7 +13,7 @@ def _safe_scene_dir(root:Path,name:str)->Path:
 
 def _run(cmd:list[str]):
  p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,(p.stdout+'\n'+p.stderr).strip()
-CELL_TMPL='''cell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\nend_effector:\n  id: robotiq_2f\nenvironment:\n  layout: environment_layout.yaml\ntask:\n  type: pick_place\n  pick:\n    source: pick_zone\n  place:\n    destination: place_bin\n  destinations:\n    - id: place_bin\n      frame: world\n      pose:\n        xyz: [0.65, -0.25, 0.75]\n        rpy: [0.0, 0.0, 0.0]\nassets:\n  - id: table_support\n    kind: table\n  - id: pick_zone\n    kind: pick_zone\n  - id: place_bin\n    kind: bin\n'''
+CELL_TMPL='''cell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\nend_effector:\n  id: robotiq_2f\nenvironment:\n  layout: environment_layout.yaml\ntask:\n  type: pick_place\n  pick:\n    source: pick_zone\n  place:\n    destination: place_bin\n  destinations:\n    - id: place_bin\n      frame: world\n      pose_xyz: [0.65, -0.25, 0.75]\n      pose_rpy: [0.0, 0.0, 0.0]\nassets:\n  - id: table_support\n    kind: table\n  - id: pick_zone\n    kind: pick_zone\n  - id: place_bin\n    kind: bin\n'''
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
