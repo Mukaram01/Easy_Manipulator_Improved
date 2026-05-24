@@ -87,6 +87,7 @@ public:
   ScenePreviewWidget * active_scene_preview_widget() const;
   bool load_scene_for_scene3d_smoke(const QString & scene_name, QStringList * blockers = nullptr, QJsonObject * diagnostics = nullptr);
   void refresh_scene_builder_state_from_active_scene();
+  QJsonObject scene3d_filter_diagnostics() const;
   static bool parse_transform_clipboard_text(
     const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error = nullptr);
 
@@ -525,6 +526,7 @@ private:
   QCheckBox * preview_layer_overlays_helpers_box_{ nullptr };
   QCheckBox * preview_layer_warnings_missing_assets_box_{ nullptr };
   QVector<ScenePreviewWidget::PreviewItem> all_scene_preview_items_;
+  QJsonObject scene3d_filter_diagnostics_;
   QLabel * layout_state_label_{ nullptr };
   QPushButton * undo_layout_button_{ nullptr };
   QPushButton * redo_layout_button_{ nullptr };

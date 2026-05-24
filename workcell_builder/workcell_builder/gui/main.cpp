@@ -548,6 +548,7 @@ private:
     root["scene"] = opts_.scene_name;
     root["new_cell_recommended_layout_smoke"] = opts_.new_cell_recommended_layout_smoke;
     root["scene_load_diagnostics"] = scene_load_diagnostics_;
+    root["filter_diagnostics"] = window_->scene3d_filter_diagnostics();
     root["duration_ms"] = start_time_.msecsTo(QDateTime::currentDateTimeUtc());
 
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");

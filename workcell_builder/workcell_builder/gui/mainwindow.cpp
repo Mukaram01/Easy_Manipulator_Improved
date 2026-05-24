@@ -5503,6 +5503,11 @@ QString MainWindow::selected_catalog_item_path() const
   return asset_catalog_tree_->currentItem()->data(0, CatalogRoleSourcePath).toString();
 }
 
+QJsonObject MainWindow::scene3d_filter_diagnostics() const
+{
+  return scene3d_filter_diagnostics_;
+}
+
 void MainWindow::on_asset_filter_changed(int)
 {
   const QString selected = asset_filter_combo_ ? asset_filter_combo_->currentText() : "All";
@@ -5532,6 +5537,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     return;
   }
   QVector<ScenePreviewWidget::PreviewItem> filtered_items;
+  QJsonObject diagnostics;
+  QJsonObject hidden_reason_counts_json;
+  QJsonArray hidden_item_summaries_json;
+  QMap<QString, int> hidden_reason_counts;
   const QSet<QString> enabled_layers = {
     preview_layer_editable_layout_box_ && preview_layer_editable_layout_box_->isChecked() ? "editable_layout" : "",
     preview_layer_generated_urdf_visual_box_ && preview_layer_generated_urdf_visual_box_->isChecked() ? "locked_generated_urdf_visual" : "",
@@ -5540,9 +5549,58 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     preview_layer_overlays_helpers_box_ && preview_layer_overlays_helpers_box_->isChecked() ? "overlay" : "",
     preview_layer_warnings_missing_assets_box_ && preview_layer_warnings_missing_assets_box_->isChecked() ? "warning" : ""
   };
+  auto token = [](QString s) { return s.trimmed().toLower(); };
+  auto hidden_reason_for_item = [&](const ScenePreviewWidget::PreviewItem & item) {
+    const QString source_layer = token(item.source_layer);
+    const QString visual_source = token(item.active_visual_source);
+    const QString role = token(item.role);
+    const QString category = token(item.category);
+    const QString combined = role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
+    const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
+    const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
+
+    if (source_layer == "editable_layout" && !enabled_layers.contains("editable_layout")) return QString("layer_disabled:editable_layout");
+    if ((source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") &&
+      !enabled_layers.contains("locked_generated_urdf_visual"))
+    {
+      return QString("layer_disabled:locked_generated_urdf_visual");
+    }
+    if (source_layer == "primitive_fallback" && !enabled_layers.contains("primitive_fallback")) return QString("layer_disabled:primitive_fallback");
+    if (visual_source == "mesh_preview" && !enabled_layers.contains("mesh_preview")) return QString("layer_disabled:mesh_preview");
+    if (is_overlay_or_helper && !enabled_layers.contains("overlay")) return QString("layer_disabled:overlay");
+    if (is_warning_or_missing && !enabled_layers.contains("warning")) return QString("layer_disabled:warning");
+    return QString("hidden_by_unknown_filter");
+  };
   for (const auto & p : all_scene_preview_items_) {
-    if (workcell_builder::include_preview_item_for_scene3d(p, enabled_layers)) filtered_items.push_back(p);
+    if (workcell_builder::include_preview_item_for_scene3d(p, enabled_layers)) {
+      filtered_items.push_back(p);
+      continue;
+    }
+    const QString hidden_reason = hidden_reason_for_item(p);
+    hidden_reason_counts[hidden_reason] += 1;
+    if (hidden_item_summaries_json.size() < 20) {
+      QJsonObject summary;
+      summary["id"] = p.id;
+      summary["label"] = p.display_name;
+      summary["role/category"] = QString("%1/%2").arg(p.role, p.category);
+      summary["source_layer"] = p.source_layer;
+      summary["active_visual_source"] = p.active_visual_source;
+      summary["renderable"] = p.mesh_available || p.has_mesh_metadata || p.source_layer.trimmed().compare("primitive_fallback", Qt::CaseInsensitive) == 0;
+      summary["safe_for_preview"] = p.mesh_load_warning.trimmed().isEmpty() && !p.status.contains("error", Qt::CaseInsensitive);
+      summary["hidden_reason"] = hidden_reason;
+      if (!p.mesh_path.trimmed().isEmpty()) summary["mesh_path"] = p.mesh_path;
+      hidden_item_summaries_json.append(summary);
+    }
   }
+  for (auto it = hidden_reason_counts.constBegin(); it != hidden_reason_counts.constEnd(); ++it) {
+    hidden_reason_counts_json[it.key()] = it.value();
+  }
+  diagnostics["filter_input_count"] = all_scene_preview_items_.size();
+  diagnostics["filter_visible_count"] = filtered_items.size();
+  diagnostics["filter_hidden_count"] = qMax(0, all_scene_preview_items_.size() - filtered_items.size());
+  diagnostics["hidden_by_filter_reason_counts"] = hidden_reason_counts_json;
+  diagnostics["hidden_item_summaries"] = hidden_item_summaries_json;
+  scene3d_filter_diagnostics_ = diagnostics;
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     auto looks_renderable = [](const ScenePreviewWidget::PreviewItem & p) {
       const QString combined =
@@ -5572,6 +5630,10 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
       .arg(all_scene_preview_items_.size())
       .arg(filtered_items.size()));
+  append_studio_log(
+    QString("Scene3D diagnostics: visible item count after filters=%1/%2")
+      .arg(filtered_items.size())
+      .arg(all_scene_preview_items_.size()));
   if (log_change) {
     append_studio_log(
       QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
