@@ -108,18 +108,31 @@ def main() -> int:
     runtime_rc, runtime_so, runtime_se = _run(runtime_cmd, repo_root)
 
     smoke_payload = _json(smoke_json) if smoke_json.exists() else {}
-    counters = smoke_payload.get("counters", {}) if isinstance(smoke_payload, dict) else {}
-    def _count(key: str, nested_alias: str | None = None) -> int:
-        if isinstance(smoke_payload, dict) and key in smoke_payload:
-            return int(smoke_payload.get(key) or 0)
-        if isinstance(counters, dict):
-            return int(counters.get(nested_alias or key) or 0)
+    runtime_payload = _json(runtime_json) if runtime_json.exists() else {}
+    smoke_counters = smoke_payload.get("counters", {}) if isinstance(smoke_payload, dict) else {}
+    runtime_counters = runtime_payload.get("counters", {}) if isinstance(runtime_payload, dict) else {}
+
+    def _count(primary_key: str, *aliases: str) -> int:
+        candidate_keys = (primary_key, *aliases)
+        for payload, nested in ((smoke_payload, smoke_counters), (runtime_payload, runtime_counters)):
+            if isinstance(payload, dict):
+                for key in candidate_keys:
+                    if key in payload:
+                        return int(payload.get(key) or 0)
+            if isinstance(nested, dict):
+                for key in candidate_keys:
+                    if key in nested:
+                        return int(nested.get(key) or 0)
         return 0
+
     key_counts = {
-        "visible": _count("visible_count"),
-        "rendered": _count("rendered_count"),
-        "selectable": _count("selectable_count"),
-        "hierarchy_rows": _count("hierarchy_rows_count", "hierarchy_rows"),
+        "assembled_preview_item_count": _count("assembled_preview_item_count"),
+        "filtered_visible_candidate_count": _count("filtered_visible_candidate_count"),
+        "forwarded_to_viewport_count": _count("forwarded_to_viewport_count"),
+        "viewport_received_count": _count("viewport_received_count"),
+        "rendered_count": _count("rendered_count"),
+        "selectable_count": _count("selectable_count"),
+        "hierarchy_rows_count": _count("hierarchy_rows_count", "hierarchy_rows"),
     }
 
     blockers: list[str] = []
@@ -133,7 +146,7 @@ def main() -> int:
         blockers.append("runtime acceptance validation failed")
     for k, v in key_counts.items():
         if v <= 0:
-            blockers.append(f"runtime counter not > 0: {k}={v}")
+            blockers.append(f"runtime counter must be > 0: {k}={v}")
 
     artifact = {
         "schema": "scene3d_generated_canvas_acceptance/v1",
