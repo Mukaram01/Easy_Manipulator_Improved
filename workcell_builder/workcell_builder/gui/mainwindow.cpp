@@ -5489,6 +5489,27 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     if (workcell_builder::include_preview_item_for_scene3d(p, enabled_layers)) filtered_items.push_back(p);
   }
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
+    auto looks_renderable = [](const ScenePreviewWidget::PreviewItem & p) {
+      const QString combined =
+        (p.role + "|" + p.category + "|" + p.status + "|" + p.warnings.join("|") + "|" + p.mesh_load_warning).toLower();
+      const bool helper_or_overlay =
+        combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
+      const bool warning_or_missing =
+        combined.contains("warning") || combined.contains("missing") || combined.contains("unsafe") ||
+        combined.contains("unrenderable");
+      return !helper_or_overlay && !warning_or_missing;
+    };
+    QVector<ScenePreviewWidget::PreviewItem> restored_renderable;
+    restored_renderable.reserve(all_scene_preview_items_.size());
+    for (const auto & p : all_scene_preview_items_) {
+      if (looks_renderable(p)) restored_renderable.push_back(p);
+    }
+    if (!restored_renderable.isEmpty()) {
+      filtered_items = restored_renderable;
+      append_studio_log("Scene3D warning: default_filter_fallback_kept_renderable_items_visible");
+    }
+  }
+  if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
