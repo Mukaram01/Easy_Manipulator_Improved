@@ -78,7 +78,7 @@ def test_generated_canvas_acceptance_accepts_repo_root_and_forwards_timeout(monk
             gen_json.write_text('{"scene_dir": "%s"}' % scene_dir, encoding="utf-8")
             return 0, "", ""
         if "run_workcell_builder_scene3d_gui_smoke.py" in cmd_s:
-            Path(cmd[cmd.index("--output") + 1]).write_text('{"counters":{"visible_count":1,"rendered_count":1,"selectable_count":1,"hierarchy_rows":1}}', encoding="utf-8")
+            Path(cmd[cmd.index("--output") + 1]).write_text('{"counters":{"assembled_preview_item_count":1,"filtered_visible_candidate_count":1,"forwarded_to_viewport_count":1,"viewport_received_count":1,"rendered_count":1,"selectable_count":1,"hierarchy_rows":1}}', encoding="utf-8")
             Path(cmd[cmd.index("--screenshot") + 1]).write_bytes(b"png")
             return 0, "", ""
         if "validate_scene3d_runtime_acceptance.py" in cmd_s:
