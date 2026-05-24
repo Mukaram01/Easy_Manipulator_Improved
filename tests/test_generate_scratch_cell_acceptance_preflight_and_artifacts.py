@@ -172,3 +172,101 @@ def test_audit_failure_recorded_not_crashed(tmp_path, monkeypatch):
 def test_cell_template_yaml_has_top_level_objects():
     doc = yaml.safe_load(target.CELL_TMPL.format(scene="demo"))
     assert "objects" in doc
+
+
+def test_audit_uses_resolved_scene_dir_and_expected_semantic_tokens(tmp_path, monkeypatch):
+    report = tmp_path / "acceptance.json"
+    output_root = tmp_path / "out"
+    scene_name = "scratchtruth"
+    monkeypatch.setattr(
+        target.sys,
+        "argv",
+        ["prog", "--scene-name", scene_name, "--output-root", str(output_root), "--json-out", str(report)],
+    )
+
+    seen = {"audit_scene_dir": None}
+
+    def fake_run(cmd):
+        cmd_s = " ".join(cmd)
+        if "validate_cell_definition.py" in cmd_s:
+            return 0, json.dumps({"errors": [], "warnings": []}), ""
+        if "generate_workcell_from_cell_definition.py" in cmd_s:
+            package_name = cmd[cmd.index("--package-name") + 1]
+            scene_dir = output_root / package_name
+            (scene_dir / "launch").mkdir(parents=True, exist_ok=True)
+            for rel in target.REQUIRED:
+                p = scene_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if rel == "cell_definition.yaml":
+                    p.write_text(target.CELL_TMPL.format(scene=package_name), encoding="utf-8")
+                elif rel == "launch/demo.launch.py":
+                    p.write_text("launch_rviz:=true\nuse_fake_hardware:=true\n", encoding="utf-8")
+                else:
+                    p.write_text("x", encoding="utf-8")
+            return 0, "ok", ""
+        if "audit_new_cell_file_outputs.py" in cmd_s:
+            seen["audit_scene_dir"] = cmd[cmd.index("--scene-dir") + 1]
+            return 0, "ok", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    rc = target.main()
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    scene_dir = Path(payload["scene_dir"])
+
+    assert rc == 0
+    assert Path(seen["audit_scene_dir"]) == scene_dir
+    audited_cell = scene_dir / "cell_definition.yaml"
+    audited_launch = scene_dir / "launch" / "demo.launch.py"
+    assert audited_cell.resolve() == scene_dir.resolve() / "cell_definition.yaml"
+    assert audited_launch.resolve() == scene_dir.resolve() / "launch" / "demo.launch.py"
+    cell_text = audited_cell.read_text(encoding="utf-8")
+    launch_text = audited_launch.read_text(encoding="utf-8")
+    assert "ur5" in cell_text
+    assert "robotiq" in cell_text
+    assert "launch_rviz" in launch_text
+    assert "use_fake_hardware" in launch_text
+
+
+def test_regression_audit_does_not_point_to_stale_existing_folder(tmp_path, monkeypatch):
+    output_root = tmp_path / "out"
+    scene_name = "scratchstale"
+    stale_scene = output_root / scene_name
+    stale_scene.mkdir(parents=True, exist_ok=True)
+    (stale_scene / "cell_definition.yaml").write_text("schema_version: cell_definition/v1\nrobot:\n  model: stale\n", encoding="utf-8")
+    (stale_scene / "launch").mkdir(parents=True, exist_ok=True)
+    (stale_scene / "launch" / "demo.launch.py").write_text("launch_rviz:=false\n", encoding="utf-8")
+
+    report = tmp_path / "acceptance.json"
+    monkeypatch.setattr(
+        target.sys,
+        "argv",
+        ["prog", "--scene-name", scene_name, "--output-root", str(output_root), "--json-out", str(report)],
+    )
+
+    seen = {"audit_scene_dir": None}
+
+    def fake_run(cmd):
+        cmd_s = " ".join(cmd)
+        if "validate_cell_definition.py" in cmd_s:
+            return 0, json.dumps({"errors": [], "warnings": []}), ""
+        if "generate_workcell_from_cell_definition.py" in cmd_s:
+            package_name = cmd[cmd.index("--package-name") + 1]
+            scene_dir = output_root / package_name
+            for rel in target.REQUIRED:
+                p = scene_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("x", encoding="utf-8")
+            return 0, "ok", ""
+        if "audit_new_cell_file_outputs.py" in cmd_s:
+            seen["audit_scene_dir"] = cmd[cmd.index("--scene-dir") + 1]
+            return 0, "ok", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    target.main()
+    payload = json.loads(report.read_text(encoding="utf-8"))
+
+    assert payload["scene_dir"].endswith(f"{scene_name}_1")
+    assert Path(seen["audit_scene_dir"]) == Path(payload["scene_dir"])
+    assert Path(seen["audit_scene_dir"]) != stale_scene
