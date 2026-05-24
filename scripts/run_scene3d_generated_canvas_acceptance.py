@@ -3,7 +3,8 @@ from __future__ import annotations
 import argparse, json, subprocess, sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = DEFAULT_REPO_ROOT
 
 
 def _run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
@@ -19,11 +20,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene-name", default="scene3d_generated_canvas_acceptance")
     ap.add_argument("--output-dir", default="build/workcell_studio/local_validation")
+    ap.add_argument("--repo-root", default=str(DEFAULT_REPO_ROOT))
     ap.add_argument("--workspace-root", default=None)
     ap.add_argument("--workcell-builder-executable", "--executable", dest="executable", default=None)
+    ap.add_argument("--timeout-sec", type=float, default=30)
     args = ap.parse_args()
 
-    out_dir = (REPO_ROOT / args.output_dir).resolve()
+    repo_root = Path(args.repo_root).resolve()
+    out_dir = (repo_root / args.output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     generated_root = out_dir / "generated_scenes"
     generated_root.mkdir(parents=True, exist_ok=True)
@@ -31,7 +35,7 @@ def main() -> int:
     acceptance_json = out_dir / f"{args.scene_name}_generation.json"
     generation_cmd = [
         sys.executable,
-        str(REPO_ROOT / "scripts" / "generate_scratch_cell_acceptance.py"),
+        str(repo_root / "scripts" / "generate_scratch_cell_acceptance.py"),
         "--scene-name",
         args.scene_name,
         "--output-root",
@@ -39,7 +43,7 @@ def main() -> int:
         "--json-out",
         str(acceptance_json),
     ]
-    rc, so, se = _run(generation_cmd, REPO_ROOT)
+    rc, so, se = _run(generation_cmd, repo_root)
     if rc != 0:
         print(json.dumps({"status": "FAIL", "step": "generation", "stdout": so, "stderr": se}, indent=2))
         return rc
@@ -62,11 +66,11 @@ def main() -> int:
     smoke_png = out_dir / f"scene3d_gui_smoke_{args.scene_name}.png"
     smoke_cmd = [
         sys.executable,
-        str(REPO_ROOT / "scripts" / "run_workcell_builder_scene3d_gui_smoke.py"),
+        str(repo_root / "scripts" / "run_workcell_builder_scene3d_gui_smoke.py"),
         "--repo-root",
-        str(REPO_ROOT),
+        str(repo_root),
         "--workspace-root",
-        str(Path(args.workspace_root).resolve() if args.workspace_root else REPO_ROOT),
+        str(Path(args.workspace_root).resolve() if args.workspace_root else repo_root),
         "--scene",
         args.scene_name,
         "--output",
@@ -76,17 +80,18 @@ def main() -> int:
     ]
     if args.executable:
         smoke_cmd.extend(["--executable", str(Path(args.executable).resolve())])
-    smoke_rc, smoke_so, smoke_se = _run(smoke_cmd, REPO_ROOT)
+    smoke_cmd.extend(["--timeout-sec", str(args.timeout_sec)])
+    smoke_rc, smoke_so, smoke_se = _run(smoke_cmd, repo_root)
 
     runtime_json = out_dir / f"scene3d_runtime_acceptance_{args.scene_name}.json"
     runtime_md = out_dir / f"scene3d_runtime_acceptance_{args.scene_name}.md"
     runtime_cmd = [
         sys.executable,
-        str(REPO_ROOT / "scripts" / "validate_scene3d_runtime_acceptance.py"),
+        str(repo_root / "scripts" / "validate_scene3d_runtime_acceptance.py"),
         "--scene",
         args.scene_name,
         "--repo-root",
-        str(REPO_ROOT),
+        str(repo_root),
         "--output-dir",
         str(out_dir),
         "--json",
@@ -100,7 +105,7 @@ def main() -> int:
         runtime_cmd.extend(["--workspace-root", str(Path(args.workspace_root).resolve())])
     if args.executable:
         runtime_cmd.extend(["--workcell-builder-executable", str(Path(args.executable).resolve())])
-    runtime_rc, runtime_so, runtime_se = _run(runtime_cmd, REPO_ROOT)
+    runtime_rc, runtime_so, runtime_se = _run(runtime_cmd, repo_root)
 
     smoke_payload = _json(smoke_json) if smoke_json.exists() else {}
     counters = smoke_payload.get("counters", {}) if isinstance(smoke_payload, dict) else {}

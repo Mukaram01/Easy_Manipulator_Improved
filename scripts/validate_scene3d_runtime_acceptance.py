@@ -295,6 +295,7 @@ def main() -> int:
     ap.add_argument("--json", default=None)
     ap.add_argument("--markdown", default=None)
     ap.add_argument("--smoke-json", default=None, help="path to GUI smoke evidence JSON (workcell_studio_scene3d_gui_smoke/v1)")
+    ap.add_argument("--smoke-dir", default=None, help="directory containing per-scene smoke JSONs named scene3d_gui_smoke_<scene>.json")
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -308,6 +309,8 @@ def main() -> int:
 
     discovered = discover_scene3d_scenes(scenes_root)
     discovered_map = {d["scene"]: d for d in discovered}
+    if args.all_scenes and args.smoke_json:
+        ap.error("--smoke-json is only valid for single-scene mode; use --smoke-dir with --all-scenes")
     if args.all_scenes:
         scenes = [d["scene"] for d in discovered if d["status"] != "IGNORED_NON_SCENE"]
     else:
@@ -344,7 +347,10 @@ def main() -> int:
                 }
             )
             continue
-        evaluated = evaluate_scene(repo_root, scenes_root, main_path, preview_path, viewport_path, s, args.smoke_json)
+        smoke_json_path = args.smoke_json
+        if args.all_scenes and args.smoke_dir:
+            smoke_json_path = str(Path(args.smoke_dir) / f"scene3d_gui_smoke_{s}.json")
+        evaluated = evaluate_scene(repo_root, scenes_root, main_path, preview_path, viewport_path, s, smoke_json_path)
         if discovery:
             evaluated["detected_files"] = discovery["detected_files"]
             evaluated["source_layers_found"] = discovery["source_layers_found"]
