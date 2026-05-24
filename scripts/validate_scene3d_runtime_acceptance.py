@@ -65,6 +65,15 @@ def _runtime_counter(payload: dict, key: str) -> int:
     return 0
 
 
+def _runtime_warnings(payload: dict) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        return []
+    return [str(w).strip() for w in warnings if str(w).strip()]
+
+
 def runtime_smoke_json_default(repo_root: Path, scenes_root: Path, scene: str) -> Path:
     candidates = [
         repo_root / "build/workcell_studio/scene3d_gui_smoke.json",
@@ -95,6 +104,7 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             },
             "layers": {},
             "sources": {},
+            "default_filter_visibility_evidence": {},
             "pass": False,
         }
 
@@ -227,6 +237,21 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
     ):
         blockers.append("visible candidates exist but runtime counters are all zero")
 
+    assembled_preview_item_count = _runtime_counter(runtime_payload, "assembled_preview_item_count")
+    filtered_visible_candidate_count = _runtime_counter(runtime_payload, "filtered_visible_candidate_count")
+    smoke_warnings = set(_runtime_warnings(runtime_payload))
+    fallback_warning = "default_filter_fallback_kept_renderable_items_visible"
+    fallback_engaged = fallback_warning in smoke_warnings
+    default_filter_pass_mode = "not_required"
+    if assembled_preview_item_count > 0:
+        if filtered_visible_candidate_count > 0 and not fallback_engaged:
+            default_filter_pass_mode = "default_pass"
+        elif filtered_visible_candidate_count > 0 and fallback_engaged:
+            default_filter_pass_mode = "fallback_pass"
+        else:
+            default_filter_pass_mode = "failed"
+            blockers.append("scene3d_default_filter_hid_all_renderable_candidates")
+
     secondary_checks = {
         "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_path.read_text(encoding="utf-8") and "draw_world_axes_pass" in viewport_path.read_text(encoding="utf-8")),
         "orbit_pan_zoom_handlers_exist": all(t in viewport_path.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
@@ -237,10 +262,8 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         ),
         "drag_commit_callback_wired": "transform_changed_cb" in viewport_path.read_text(encoding="utf-8"),
         "hierarchy_selection_sync_wired": "apply_scene_selection(" in main_path.read_text(encoding="utf-8"),
-        "layer_toggles_not_default_hide_all": (
-            "apply_scene3d_preview_layer_filters" in main_path.read_text(encoding="utf-8")
-            and "visible item count after filters" in main_path.read_text(encoding="utf-8")
-        ),
+        "layer_toggles_not_default_hide_all": default_filter_pass_mode in {"default_pass", "fallback_pass", "not_required"},
+        "layer_toggles_default_filter_pass_mode": default_filter_pass_mode,
         "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_path.read_text(encoding="utf-8"),
     }
 
@@ -263,6 +286,8 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "selectable_count": _runtime_counter(runtime_counts, "selectable_count"),
             "hierarchy_rows_count": _runtime_counter(runtime_counts, "hierarchy_rows_count"),
             "mesh_rendered_count": _runtime_counter(runtime_counts, "mesh_rendered_count"),
+            "assembled_preview_item_count": assembled_preview_item_count,
+            "filtered_visible_candidate_count": filtered_visible_candidate_count,
         },
         "visibility_contract": {
             "input_items_count": input_items_count,
@@ -284,6 +309,13 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         },
         "source_layer_counts": source_layer_counts,
         "runtime_evidence": runtime_evidence,
+        "default_filter_visibility_evidence": {
+            "assembled_preview_item_count": assembled_preview_item_count,
+            "filtered_visible_candidate_count": filtered_visible_candidate_count,
+            "fallback_warning_present": fallback_engaged,
+            "fallback_warning_token": fallback_warning,
+            "pass_mode": default_filter_pass_mode,
+        },
         "secondary_checks": secondary_checks,
         "status": "PASS" if not blockers else "FAIL",
         "pass": not blockers,
@@ -347,6 +379,7 @@ def main() -> int:
                     "visibility_contract": {},
                     "layers": {},
                     "sources": {},
+                    "default_filter_visibility_evidence": {},
                     "runtime_evidence": {"valid": False, "skipped": True},
                     "secondary_checks": {},
                     "pass": False,
@@ -418,9 +451,15 @@ def main() -> int:
         lines.append("### Runtime smoke evidence")
         for k, v in r["runtime_evidence"].items():
             lines.append(f"- {k}: {v}")
+        lines.append("### Default-filter visibility evidence")
+        for k, v in r.get("default_filter_visibility_evidence", {}).items():
+            lines.append(f"- {k}: {v}")
         lines.append("### Secondary diagnostics")
         for k, v in r["secondary_checks"].items():
-            lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
+            if isinstance(v, bool):
+                lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
+            else:
+                lines.append(f"- {k}: {v}")
 
     out_md = Path(args.markdown) if args.markdown else repo_root / "build/workcell_studio/scene3d_runtime_acceptance.md"
     out_md.parent.mkdir(parents=True, exist_ok=True)
