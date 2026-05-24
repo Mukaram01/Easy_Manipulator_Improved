@@ -15,6 +15,9 @@ def _run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
 def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
+def _tail(text: str, lines: int = 20) -> str:
+    return "\n".join(text.splitlines()[-lines:])
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -47,14 +50,16 @@ def main() -> int:
     if rc != 0:
         step = "generation"
         blockers: list[str] = []
+        failure_summary = "generation command failed"
         if acceptance_json.exists():
             try:
                 generation_payload = _json(acceptance_json)
                 step = str(generation_payload.get("failure_step") or "generation")
                 blockers = list(generation_payload.get("blockers", []))
+                failure_summary = str(generation_payload.get("failure_summary") or failure_summary)
             except Exception:
                 pass
-        print(json.dumps({"status": "FAIL", "step": step, "blockers": blockers, "stdout": so, "stderr": se}, indent=2))
+        print(json.dumps({"status": "FAIL", "step": step, "command": " ".join(generation_cmd), "failure_summary": failure_summary, "blockers": blockers, "stdout_tail": _tail(so), "stderr_tail": _tail(se)}, indent=2))
         return rc
 
     generation_payload = _json(acceptance_json)
@@ -145,17 +150,31 @@ def main() -> int:
     }
 
     blockers: list[str] = []
+    failing_step = ""
+    failing_command = ""
     if missing_outputs:
         blockers.append(f"missing generated outputs: {', '.join(missing_outputs)}")
     if smoke_rc != 0:
         blockers.append("gui smoke command failed")
+        if not failing_step:
+            failing_step = "gui_smoke"
+            failing_command = " ".join(smoke_cmd)
     if not smoke_png.exists() or smoke_png.stat().st_size <= 0:
         blockers.append("gui smoke screenshot missing or empty")
+        if not failing_step:
+            failing_step = "gui_smoke"
+            failing_command = " ".join(smoke_cmd)
     if runtime_rc != 0:
         blockers.append("runtime acceptance validation failed")
+        if not failing_step:
+            failing_step = "runtime_acceptance"
+            failing_command = " ".join(runtime_cmd)
     for k, v in key_counts.items():
         if v <= 0:
             blockers.append(f"runtime counter must be > 0: {k}={v}")
+            if not failing_step:
+                failing_step = "runtime_acceptance"
+                failing_command = " ".join(runtime_cmd)
 
     artifact = {
         "schema": "scene3d_generated_canvas_acceptance/v1",
@@ -175,11 +194,13 @@ def main() -> int:
             "json": str(smoke_json),
             "screenshot": str(smoke_png),
             "screenshot_size": smoke_png.stat().st_size if smoke_png.exists() else 0,
-            "stdout_tail": "\n".join(so.splitlines()[-20:]),
-            "stderr_tail": "\n".join(se.splitlines()[-20:]),
+            "stdout_tail": "\n".join(smoke_so.splitlines()[-20:]),
+            "stderr_tail": "\n".join(smoke_se.splitlines()[-20:]),
         },
         "runtime_acceptance": {"returncode": runtime_rc, "json": str(runtime_json), "markdown": str(runtime_md), "stdout_tail": "\n".join(runtime_so.splitlines()[-20:]), "stderr_tail": "\n".join(runtime_se.splitlines()[-20:])},
         "key_counts": key_counts,
+        "failing_step": failing_step,
+        "failing_command": failing_command,
         "blockers": blockers,
     }
     out_json = out_dir / f"{args.scene_name}_acceptance.json"
@@ -201,6 +222,10 @@ def main() -> int:
             "",
             "## Blockers",
             *([f"- {b}" for b in blockers] or ["- none"]),
+            "",
+            "## Failure diagnostics",
+            (f"- failing_step: `{failing_step}`" if failing_step else "- failing_step: none"),
+            (f"- failing_command: `{failing_command}`" if failing_command else "- failing_command: none"),
             "",
             "## Artifacts",
             f"- `{out_json}`",
