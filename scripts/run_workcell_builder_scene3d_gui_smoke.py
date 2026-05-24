@@ -32,6 +32,8 @@ def build_cmd(exe: Path | str, args: argparse.Namespace) -> list[str]:
         cmd.append("--new-cell-recommended-layout-smoke")
     elif args.scene:
         cmd += ["--scene", args.scene]
+    if args.scene_path:
+        cmd += ["--scene-path", str(args.scene_path)]
     cmd += ["--smoke-output", str(args.output)]
     if args.screenshot:
         cmd += ["--smoke-screenshot", str(args.screenshot)]
@@ -70,6 +72,7 @@ def main() -> int:
     ap.add_argument("--executable", type=Path, default=None)
     ap.add_argument("--scene", default=None)
     ap.add_argument("--all-scenes", action="store_true")
+    ap.add_argument("--scene-path", type=Path, default=None)
     ap.add_argument("--output-dir", type=Path, default=None)
     ap.add_argument("--new-cell-recommended-layout-smoke", action="store_true")
     ap.add_argument("--output", type=Path, default=None)
@@ -80,8 +83,10 @@ def main() -> int:
 
     if args.all_scenes and args.scene:
         raise SystemExit("Choose only one of --scene or --all-scenes")
-    if not args.all_scenes and not args.scene and not args.new_cell_recommended_layout_smoke:
-        raise SystemExit("Provide one of --scene, --all-scenes, or --new-cell-recommended-layout-smoke")
+    if args.scene and args.scene_path:
+        raise SystemExit("Choose only one of --scene or --scene-path")
+    if not args.all_scenes and not args.scene and not args.scene_path and not args.new_cell_recommended_layout_smoke:
+        raise SystemExit("Provide one of --scene, --scene-path, --all-scenes, or --new-cell-recommended-layout-smoke")
     if args.all_scenes and args.output is not None:
         raise SystemExit("--output is only valid for single-scene mode")
     if args.all_scenes and args.new_cell_recommended_layout_smoke:
@@ -181,7 +186,8 @@ def main() -> int:
     stderr_log = args.output.with_suffix(args.output.suffix + ".stderr.log")
     diag = {
         "schema": EXPECTED_SCHEMA,
-        "scene": args.scene,
+        "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+        "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
         "workspace_root": str(workspace_root),
         "executable": str(exe),

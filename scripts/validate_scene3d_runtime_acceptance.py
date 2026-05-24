@@ -449,7 +449,7 @@ def main() -> int:
         for k, v in r["sources"].items():
             lines.append(f"- {k}: {v}")
         lines.append("### Runtime smoke evidence")
-        for k, v in r["runtime_evidence"].items():
+        for k, v in r.get("runtime_evidence", {}).items():
             lines.append(f"- {k}: {v}")
         lines.append("### Default-filter visibility evidence")
         for k, v in r.get("default_filter_visibility_evidence", {}).items():

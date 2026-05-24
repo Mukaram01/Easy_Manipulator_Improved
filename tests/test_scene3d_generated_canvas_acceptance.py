@@ -59,7 +59,7 @@ def test_generated_canvas_acceptance_exports_artifacts(monkeypatch, tmp_path: Pa
     assert artifact["key_counts"]["rendered_count"] > 0
     assert artifact["key_counts"]["selectable_count"] > 0
     assert artifact["key_counts"]["hierarchy_rows_count"] > 0
-    assert Path(artifact["gui_smoke"]["screenshot"]).stat().st_size > 0
+    assert artifact["gui_smoke"]["screenshot_size_bytes"] > 0
 
 
 def test_generated_canvas_acceptance_allows_optional_geometry_when_runtime_counters_pass(monkeypatch, tmp_path: Path):

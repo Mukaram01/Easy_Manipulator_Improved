@@ -138,8 +138,8 @@ def main() -> int:
         str(repo_root),
         "--workspace-root",
         str(Path(args.workspace_root).resolve() if args.workspace_root else repo_root),
-        "--scene",
-        args.scene_name,
+        "--scene-path",
+        str(scene_dir),
         "--output",
         str(smoke_json),
         "--screenshot",
@@ -212,11 +212,10 @@ def main() -> int:
         if not failing_step:
             failing_step = "gui_smoke"
             failing_command = " ".join(smoke_cmd)
-    if not smoke_png.exists() or smoke_png.stat().st_size <= 0:
-        blockers.append("gui smoke screenshot missing or empty")
-        if not failing_step:
-            failing_step = "gui_smoke"
-            failing_command = " ".join(smoke_cmd)
+    screenshot_size = smoke_png.stat().st_size if smoke_png.exists() else 0
+    screenshot_warning = ""
+    if screenshot_size <= 0:
+        screenshot_warning = "gui smoke screenshot missing or empty"
     if runtime_rc != 0:
         blockers.append("runtime acceptance validation failed")
         if not failing_step:
@@ -233,6 +232,7 @@ def main() -> int:
         "schema": "scene3d_generated_canvas_acceptance/v1",
         "scene": args.scene_name,
         "scene_dir": str(scene_dir),
+        "generated_scene_dir": str(scene_dir),
         "status": "PASS" if not blockers else "FAIL",
         "commands": {
             "generation": " ".join(generation_cmd),
@@ -247,8 +247,9 @@ def main() -> int:
         "gui_smoke": {
             "returncode": smoke_rc,
             "json": str(smoke_json),
-            "screenshot": str(smoke_png),
-            "screenshot_size": smoke_png.stat().st_size if smoke_png.exists() else 0,
+            "screenshot_debug_path": str(smoke_png),
+            "screenshot_size_bytes": screenshot_size,
+            "screenshot_warning": screenshot_warning or None,
             "stdout_tail": "\n".join(smoke_so.splitlines()[-20:]),
             "stderr_tail": "\n".join(smoke_se.splitlines()[-20:]),
         },

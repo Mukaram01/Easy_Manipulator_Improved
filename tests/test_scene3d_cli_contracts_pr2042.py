@@ -94,3 +94,24 @@ def test_generated_canvas_acceptance_accepts_repo_root_and_forwards_timeout(monk
     smoke_call = next(cmd for cmd, _ in calls if "run_workcell_builder_scene3d_gui_smoke.py" in " ".join(cmd))
     assert "--timeout-sec" in smoke_call
     assert smoke_call[smoke_call.index("--timeout-sec") + 1] == "45.0"
+    assert "--scene-path" in smoke_call
+
+
+def test_gui_smoke_accepts_scene_path(monkeypatch, tmp_path: Path):
+    out = tmp_path / "smoke.json"
+    shot = tmp_path / "smoke.png"
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(smoke.subprocess, "run", fake_run)
+    monkeypatch.setattr(smoke, "resolve_repo_root", lambda explicit_repo_root=None: tmp_path)
+    monkeypatch.setattr(smoke, "resolve_workspace_root", lambda repo_root, explicit_workspace_root=None: tmp_path)
+    monkeypatch.setattr(smoke, "resolve_workcell_builder_executable", lambda workspace_root: Path("/bin/true"))
+    monkeypatch.setattr(smoke.sys, "argv", ["prog", "--scene-path", str(tmp_path), "--output", str(out), "--screenshot", str(shot), "--timeout-sec", "1"])
+    assert smoke.main() == 1
+    child = " ".join(calls[0])
+    assert "--scene-path" in child
+
