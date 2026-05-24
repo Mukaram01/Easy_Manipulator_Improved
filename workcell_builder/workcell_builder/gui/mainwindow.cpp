@@ -904,6 +904,66 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
   return true;
 }
 
+bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, QStringList * blockers, QJsonObject * diagnostics)
+{
+  auto add_blocker = [&](const QString & b) {
+    if (blockers) blockers->append(b);
+  };
+  if (diagnostics) diagnostics->insert("requested_scene_name", scene_name);
+  sync_selected_scene_state();
+  int scene_idx = -1;
+  for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
+    if (QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name).trimmed() == scene_name.trimmed()) {
+      scene_idx = i;
+      break;
+    }
+  }
+  if (scene_idx < 0) {
+    add_blocker(QString("scene_not_found:%1").arg(scene_name));
+    return false;
+  }
+  select_scene_by_row(scene_idx);
+  if (!open_scene_builder_for_selected_scene(QStringLiteral("Scene3D smoke deterministic load"))) {
+    add_blocker("open_scene_builder_for_selected_scene_failed");
+    return false;
+  }
+  QApplication::processEvents(QEventLoop::AllEvents, 250);
+  populate_scene_hierarchy();
+  apply_scene3d_preview_layer_filters(false);
+  if (scene_preview_widget_) {
+    scene_preview_widget_->show();
+    scene_preview_widget_->raise();
+    scene_preview_widget_->update();
+    if (auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>()) {
+      if (viewport->objectName().trimmed().isEmpty()) viewport->setObjectName("scene3dViewportWidget");
+      viewport->show();
+      viewport->resize(qMax(viewport->width(), 400), qMax(viewport->height(), 300));
+      viewport->fit_scene();
+      viewport->update();
+      viewport->repaint();
+    }
+  }
+  QApplication::processEvents(QEventLoop::AllEvents, 250);
+  if (diagnostics) {
+    const fs::path d = scene_browser_result_.scenes[static_cast<size_t>(scene_idx)].scene_dir;
+    diagnostics->insert("resolved_scene_path", QString::fromStdString(d.string()));
+    diagnostics->insert("source_layout_item_count", fs::exists(d / "layout" / "workcell_studio_layout.yaml") ? 1 : 0);
+    diagnostics->insert("source_mesh_index_item_count", fs::exists(d / "generated" / "scene_visual_mesh_index.json") ? 1 : 0);
+    diagnostics->insert("source_generated_layout_item_count", fs::exists(d / "layout" / "workcell_studio_layout.generated.yaml") ? 1 : 0);
+    diagnostics->insert("source_preview_metadata_item_count", fs::exists(d / "generated" / "scene_preview_metadata.json") ? 1 : 0);
+    diagnostics->insert("assembled_preview_item_count", all_scene_preview_items_.size());
+  }
+  if (all_scene_preview_items_.isEmpty()) {
+    add_blocker("scene3d_candidate_assembly_failed");
+    add_blocker("checked:layout/workcell_studio_layout.yaml");
+    add_blocker("checked:generated/scene_visual_mesh_index.json");
+    add_blocker("checked:layout/workcell_studio_layout.generated.yaml");
+    add_blocker("checked:generated/scene_preview_metadata.json");
+    return false;
+  }
+  return true;
+}
+
 void MainWindow::open_new_scene_creation_flow()
 {
   const QString workspace_root = detect_workspace_root();
