@@ -56,8 +56,12 @@ def _runtime_counter(payload: dict, key: str) -> int:
         return int(payload.get(key) or 0)
     counters = payload.get("counters")
     if isinstance(counters, dict):
-        alias = {"hierarchy_rows_count": "hierarchy_rows"}.get(key, key)
-        return int(counters.get(alias) or 0)
+        if key == "hierarchy_rows_count":
+            for alias in ("hierarchy_rows_count", "hierarchy_rows", "hierarchy_child_row_count"):
+                if alias in counters:
+                    return int(counters.get(alias) or 0)
+            return 0
+        return int(counters.get(key) or 0)
     return 0
 
 
@@ -193,12 +197,14 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
                     invalid_fields.append(field)
         if invalid_fields:
             blockers.append(f"runtime smoke evidence missing/invalid fields: {', '.join(invalid_fields)}")
-        elif runtime_payload.get("status") not in {"ok", "pass", "passed"}:
-            blockers.append(f"runtime smoke evidence status is not passing: {runtime_payload.get('status')!r}")
         else:
-            runtime_evidence["valid"] = True
-            runtime_evidence["status"] = runtime_payload.get("status")
-            runtime_evidence["counts"] = {k: runtime_payload.get(k) for k in required_runtime_fields if k != "status"}
+            status_value = str(runtime_payload.get("status") or "").strip().upper()
+            if status_value not in {"PASS", "OK"}:
+                blockers.append(f"runtime smoke evidence status is not passing: {runtime_payload.get('status')!r}")
+            else:
+                runtime_evidence["valid"] = True
+                runtime_evidence["status"] = runtime_payload.get("status")
+                runtime_evidence["counts"] = {k: _runtime_counter(runtime_payload, k) for k in required_runtime_fields if k != "status"}
 
     required_positive_counts = {
         "viewport_received_count": _runtime_counter(runtime_payload, "viewport_received_count"),
