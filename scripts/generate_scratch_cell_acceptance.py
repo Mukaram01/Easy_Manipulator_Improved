@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, subprocess, sys, re, hashlib
+import argparse, json, subprocess, sys, re, hashlib, shutil
 from datetime import datetime, timezone
 from pathlib import Path
 import yaml
@@ -100,7 +100,8 @@ def main():
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
- cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ cell_tmp=a.output_root/f".{sd.name}.cell_definition.yaml"; cell_tmp.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
+ cell=cell_tmp
  cell_text=cell.read_text(encoding='utf-8')
  cell_sha256=hashlib.sha256(cell_text.encode('utf-8')).hexdigest()
  cell_doc=yaml.safe_load(cell_text) if cell_text.strip() else {}
@@ -145,6 +146,8 @@ def main():
  generator_stdout_tail='\n'.join(generator_stdout.splitlines()[-120:])
  generator_stderr_tail='\n'.join(generator_stderr.splitlines()[-120:])
  r['generator']={'command':' '.join(generator_cmd),'returncode':rc,'stdout_tail':generator_stdout_tail,'stderr_tail':generator_stderr_tail}
+ if rc==0 and not (sd/'cell_definition.yaml').exists() and cell.exists():
+  shutil.copy2(cell, sd/'cell_definition.yaml')
  if rc!=0:
   summary=(generator_stderr or generator_stdout).splitlines()[-1] if (generator_stderr or generator_stdout) else 'Generator failed.'
   r['failure_step']='generation'

@@ -280,3 +280,37 @@ def test_required_contract_files_remain_strict_for_scratch_generation():
     assert "environment_layout.yaml" in required
     assert "launch/demo.launch.py" in required
     assert "cell_definition.yaml" in required
+
+
+def test_regression_generated_package_has_required_files_before_file_output_audit(tmp_path, monkeypatch):
+    report = tmp_path / "acceptance.json"
+    output_root = tmp_path / "out"
+    scene_name = "scratchauditguard"
+    monkeypatch.setattr(
+        target.sys,
+        "argv",
+        ["prog", "--scene-name", scene_name, "--output-root", str(output_root), "--json-out", str(report)],
+    )
+
+    def fake_run(cmd):
+        cmd_s = " ".join(cmd)
+        if "validate_cell_definition.py" in cmd_s:
+            return 0, json.dumps({"errors": [], "warnings": []}), ""
+        if "generate_workcell_from_cell_definition.py" in cmd_s:
+            package_name = cmd[cmd.index("--package-name") + 1]
+            scene_dir = output_root / package_name
+            for rel in target.REQUIRED:
+                p = scene_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("x", encoding="utf-8")
+            return 0, "ok", ""
+        if "audit_new_cell_file_outputs.py" in cmd_s:
+            scene_dir = Path(cmd[cmd.index("--scene-dir") + 1])
+            assert (scene_dir / "cell_definition.yaml").exists()
+            assert (scene_dir / "launch" / "demo.launch.py").exists()
+            return 0, "ok", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    rc = target.main()
+    assert rc == 0
