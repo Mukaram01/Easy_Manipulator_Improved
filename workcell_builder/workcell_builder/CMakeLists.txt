@@ -60,6 +60,8 @@ add_executable(workcell_builder
     gui/scene_preview_widget.h
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_viewport_widget.h
+    gui/scene3d_candidate_assembly.cpp
+    gui/scene3d_candidate_assembly.h
     src_scene3d_visual_backend.cpp
     include/scene3d_visual_backend.hpp
 
