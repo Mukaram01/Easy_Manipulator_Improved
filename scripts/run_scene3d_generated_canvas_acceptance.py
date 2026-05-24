@@ -117,13 +117,17 @@ def main() -> int:
     required_outputs = [
         "scene_manifest.yaml",
         "environment_layout.yaml",
-        "config/scene3d_mesh_index.json",
-        "urdf/scene.urdf.xacro",
         "launch/demo.launch.py",
         "package.xml",
         "CMakeLists.txt",
+        "cell_definition.yaml",
+    ]
+    optional_generated_outputs = [
+        "config/scene3d_mesh_index.json",
+        "urdf/scene.urdf.xacro",
     ]
     missing_outputs = [r for r in required_outputs if not (scene_dir / r).exists()]
+    missing_optional_outputs = [r for r in optional_generated_outputs if not (scene_dir / r).exists()]
 
     smoke_json = out_dir / f"scene3d_gui_smoke_{args.scene_name}.json"
     smoke_png = out_dir / f"scene3d_gui_smoke_{args.scene_name}.png"
@@ -237,7 +241,9 @@ def main() -> int:
         },
         "generation": generation_payload,
         "required_outputs": required_outputs,
+        "optional_generated_outputs": optional_generated_outputs,
         "missing_outputs": missing_outputs,
+        "missing_optional_outputs": missing_optional_outputs,
         "gui_smoke": {
             "returncode": smoke_rc,
             "json": str(smoke_json),
