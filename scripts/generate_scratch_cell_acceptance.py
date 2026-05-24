@@ -12,20 +12,27 @@ def _safe_scene_dir(root:Path,name:str)->Path:
  return d
 
 def _run(cmd:list[str]):
- p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,(p.stdout+'\n'+p.stderr).strip()
+ p=subprocess.run(cmd,capture_output=True,text=True,check=False); return p.returncode,p.stdout,p.stderr
 CELL_TMPL='''schema_version: cell_definition/v1\ncell:\n  id: {scene}\n  name: {scene}\nrobot:\n  model: ur5\n  safe_joint_state: []\n  home_named_target: home\nend_effector:\n  id: robotiq_2f\nenvironment:\n  layout: environment_layout.yaml\ntask:\n  type: pick_place\n  pick:\n    source: pick_zone\n  place:\n    destination: place_bin\n  destinations:\n    - id: place_bin\n      frame: world\n      pose_xyz: [0.65, -0.25, 0.75]\n      pose_rpy: [0.0, 0.0, 0.0]\nassets:\n  - id: table_support\n    kind: table\n  - id: pick_zone\n    kind: pick_zone\n  - id: place_bin\n    kind: bin\ncommissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  demo_template_id: scratch_ur5_2f_acceptance\n'''
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--scene-name',default=DEFAULT_SCENE); ap.add_argument('--output-root',type=Path,default=Path('/tmp/workcell_studio_scratch_acceptance')); ap.add_argument('--json-out',type=Path); a=ap.parse_args()
- r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False}
+ generator_cmd=[sys.executable,str(SCRIPTS/'generate_workcell_from_cell_definition.py'),'','--output-dir',str(a.output_root),'--package-name','','--force']
+ r={'scene_name':a.scene_name,'scene_dir':'','messages_format':'standard_v1','generated_files':[],'missing_files':[],'validation_status':'BLOCKED','blockers':[],'warnings':[],'build_command':'','source_command':'source install/setup.bash','launch_command':'','ready_for_plan_simulate':False,'generator_command':'','generator_failure':{}}
  if not re.fullmatch(r'[a-z][a-z0-9_]*', a.scene_name): r['blockers'].append(get_message('INVALID_SCENE_NAME'))
  try: a.output_root.mkdir(parents=True,exist_ok=True)
  except Exception as exc: r['blockers'].append(get_message('MISSING_WORKSPACE',detail=f'invalid output root: {a.output_root} ({exc})')); print(json.dumps(r,indent=2)); return 1
  sd=_safe_scene_dir(a.output_root,a.scene_name); sd.mkdir(parents=True,exist_ok=True); r['scene_dir']=str(sd)
  if sd.name!=a.scene_name: r['warnings'].append(get_message('SCENE_ALREADY_EXISTS',detail=f'Scene already existed; using {sd.name}'))
  cell=sd/'cell_definition.yaml'; cell.write_text(CELL_TMPL.format(scene=sd.name),encoding='utf-8')
- rc,out=_run([sys.executable,str(SCRIPTS/'generate_workcell_from_cell_definition.py'),str(cell),'--output-dir',str(a.output_root),'--package-name',sd.name,'--force'])
- if rc!=0: r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail=out.splitlines()[-1] if out else 'Generator failed.'))
+ generator_cmd[2]=str(cell); generator_cmd[7]=sd.name
+ r['generator_command']=' '.join(generator_cmd)
+ rc,so,se=_run(generator_cmd)
+ if rc!=0:
+  combined_lines=(so+'\n'+se).splitlines()
+  summary=combined_lines[-1] if combined_lines else 'Generator failed.'
+  r['generator_failure']={'returncode':rc,'stdout_tail':'\n'.join(so.splitlines()[-20:]),'stderr_tail':'\n'.join(se.splitlines()[-20:]),'summary':summary}
+  r['blockers'].append(get_message('VALIDATION_BLOCKED',title='Generate Scene Package failed',detail='See generator_failure.{returncode,summary,stdout_tail,stderr_tail} and generator_command in this JSON payload.'))
  for rel,txt in [('environment_layout.yaml','schema_version: environment_layout/v1\nassets: []\n'),('config/workcell_builder_task_intent.yaml','task:\n  type: pick_place\n'),('environment.yaml',f'scene_name: {sd.name}\n')]:
   p=sd/rel; p.parent.mkdir(parents=True,exist_ok=True)
   if not p.exists(): p.write_text(txt,encoding='utf-8')
