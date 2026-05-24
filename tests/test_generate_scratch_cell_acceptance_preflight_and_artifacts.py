@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -34,7 +35,7 @@ def test_generated_scratch_schema_preflight_zero_errors_and_generation_attempt(t
                 p.write_text("x", encoding="utf-8")
             return 0, "ok", ""
         if "audit_new_cell_file_outputs.py" in cmd_s:
-            return 0, "ok"
+            return 0, "ok", ""
         raise AssertionError(cmd)
 
     monkeypatch.setattr(target, "_run", fake_run)
@@ -43,8 +44,11 @@ def test_generated_scratch_schema_preflight_zero_errors_and_generation_attempt(t
 
     assert rc == 0
     assert payload["schema_preflight"]["schema_blockers"] == []
-    assert payload["schema_preflight"]["returncode"] == 0
-    assert "validate_cell_definition.py" in payload["schema_preflight"]["command"]
+    assert payload["schema_preflight"]["validator_returncode"] == 0
+    assert "validate_cell_definition.py" in payload["schema_preflight"]["validator_command"]
+    assert payload["schema_preflight"]["cell_definition_path"].endswith("cell_definition.yaml")
+    assert "objects" in payload["schema_preflight"]["cell_definition_top_level_keys"]
+    assert payload["schema_preflight"]["object_count"] > 0
     assert payload["schema_preflight"]["next_failed_step"] == "generation"
     assert any("generate_workcell_from_cell_definition.py" in c for c in calls)
     assert "generate_workcell_from_cell_definition.py" in payload["generator"]["command"]
@@ -89,7 +93,7 @@ def test_acceptance_artifact_records_package_generation_command(tmp_path, monkey
                 p.write_text("x", encoding="utf-8")
             return 0, "ok", ""
         if "audit_new_cell_file_outputs.py" in cmd_s:
-            return 0, "ok"
+            return 0, "ok", ""
         raise AssertionError(cmd)
 
     monkeypatch.setattr(target, "_run", fake_run)
@@ -126,7 +130,7 @@ def test_generated_file_and_missing_file_lists_recorded(tmp_path, monkeypatch):
                 p.write_text('x', encoding='utf-8')
             return 0, 'ok', ''
         if 'audit_new_cell_file_outputs.py' in cmd_s:
-            return 0, 'ok'
+            return 0, 'ok', ''
         raise AssertionError(cmd)
 
     monkeypatch.setattr(target, '_run', fake_run)
@@ -135,3 +139,36 @@ def test_generated_file_and_missing_file_lists_recorded(tmp_path, monkeypatch):
     assert isinstance(payload['generated_files'], list)
     assert isinstance(payload['missing_files'], list)
     assert payload['schema_preflight']['missing_package_files'] == payload['missing_files']
+
+
+def test_audit_failure_recorded_not_crashed(tmp_path, monkeypatch):
+    report = tmp_path / "acceptance.json"
+    monkeypatch.setattr(target.sys, "argv", ["prog", "--scene-name", "scratchauditfail", "--output-root", str(tmp_path / "out"), "--json-out", str(report)])
+
+    def fake_run(cmd):
+        cmd_s = " ".join(cmd)
+        if "validate_cell_definition.py" in cmd_s:
+            return 0, json.dumps({"errors": [], "warnings": []}), ""
+        if "generate_workcell_from_cell_definition.py" in cmd_s:
+            scene_name = cmd[cmd.index("--package-name") + 1]
+            scene_dir = (tmp_path / "out" / scene_name)
+            for rel in target.REQUIRED:
+                p = scene_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("x", encoding="utf-8")
+            return 0, "ok", ""
+        if "audit_new_cell_file_outputs.py" in cmd_s:
+            return 9, "", "audit fail"
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    rc = target.main()
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert rc == 1
+    assert payload["file_output_audit"]["returncode"] == 9
+    assert payload["next_failed_step"] == "file_output_audit"
+
+
+def test_cell_template_yaml_has_top_level_objects():
+    doc = yaml.safe_load(target.CELL_TMPL.format(scene="demo"))
+    assert "objects" in doc

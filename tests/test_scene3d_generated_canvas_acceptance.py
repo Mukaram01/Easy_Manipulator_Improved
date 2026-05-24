@@ -25,7 +25,7 @@ def test_generated_canvas_acceptance_exports_artifacts(monkeypatch, tmp_path: Pa
             (scene_dir / "CMakeLists.txt").write_text("x", encoding="utf-8")
             gen_json = Path(cmd[cmd.index("--json-out") + 1])
             gen_json.parent.mkdir(parents=True, exist_ok=True)
-            gen_json.write_text(json.dumps({"scene_dir": str(scene_dir)}), encoding="utf-8")
+            gen_json.write_text(json.dumps({"scene_dir": str(scene_dir), "run_id": cmd[cmd.index("--run-id") + 1]}), encoding="utf-8")
             return 0, "ok", ""
         if "run_workcell_builder_scene3d_gui_smoke.py" in cmd_s:
             smoke_json = Path(cmd[cmd.index("--output") + 1])
@@ -72,10 +72,11 @@ def test_generated_canvas_acceptance_failure_reports_schema_blockers(monkeypatch
                 'failure_summary': 'schema invalid',
                 'blockers': ['schema_preflight: Missing required top-level key: objects', 'schema_preflight: Missing required top-level key: commissioning'],
                 'schema_preflight': {
-                    'command': 'python3 scripts/validate_cell_definition.py /tmp/cell.yaml --json',
+                    'validator_command': 'python3 scripts/validate_cell_definition.py /tmp/cell.yaml --json',
                     'schema_blockers': ['Missing required top-level key: objects', 'Missing required top-level key: commissioning'],
                     'next_failed_step': 'schema_preflight'
                 },
+                'run_id': cmd[cmd.index("--run-id") + 1],
                 'generated_files': ['cell_definition.yaml'],
                 'missing_files': ['scene_manifest.yaml', 'package.xml', 'CMakeLists.txt', 'launch/demo.launch.py']
             }), encoding='utf-8')
@@ -86,3 +87,39 @@ def test_generated_canvas_acceptance_failure_reports_schema_blockers(monkeypatch
     monkeypatch.setattr(target.sys, 'argv', ['prog', '--output-dir', str(out_dir), '--scene-name', scene_name])
     rc = target.main()
     assert rc == 1
+
+
+def test_generation_crash_reports_missing_or_stale(monkeypatch, tmp_path: Path, capsys):
+    out_dir = tmp_path / "out"
+
+    def fake_run(cmd, cwd):
+        if "generate_scratch_cell_acceptance.py" in " ".join(cmd):
+            return 2, "", "traceback"
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    monkeypatch.setattr(target.sys, "argv", ["prog", "--output-dir", str(out_dir)])
+    rc = target.main()
+    assert rc == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert "generation_report_missing_or_stale" in payload["blockers"]
+    assert payload["step"] == "generation"
+
+
+def test_stale_generation_json_not_reused(monkeypatch, tmp_path: Path, capsys):
+    out_dir = tmp_path / "out"
+
+    def fake_run(cmd, cwd):
+        if "generate_scratch_cell_acceptance.py" in " ".join(cmd):
+            gen_json = Path(cmd[cmd.index("--json-out") + 1])
+            gen_json.parent.mkdir(parents=True, exist_ok=True)
+            gen_json.write_text(json.dumps({"scene_dir": str(out_dir / "x"), "run_id": "old-run"}), encoding="utf-8")
+            return 0, "ok", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(target, "_run", fake_run)
+    monkeypatch.setattr(target.sys, "argv", ["prog", "--output-dir", str(out_dir)])
+    rc = target.main()
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["blockers"] == ["generation_report_missing_or_stale"]
