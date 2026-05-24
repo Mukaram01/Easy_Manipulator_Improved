@@ -91,3 +91,56 @@ def test_runtime_acceptance_preview_warn_done_semantics_for_fixture_scenes(tmp_p
         assert scene['counts']['editable_layout_count'] > 0
         # Preview can still be considered done for visuals even with warning/blocker metadata.
         assert scene['visibility_contract']['visible_after_default_filters'] > 0
+
+
+def test_runtime_acceptance_accepts_pass_status_and_hierarchy_counter_aliases(tmp_path):
+    smoke = tmp_path / "smoke.json"
+    smoke.write_text(json.dumps({
+        "schema": "workcell_studio_scene3d_gui_smoke/v1",
+        "status": "PASS",
+        "counters": {
+            "viewport_received_count": 10,
+            "render_cache_count": 10,
+            "rendered_count": 10,
+            "selectable_count": 10,
+            "hierarchy_rows_count": 10,
+            "mesh_rendered_count": 8
+        }
+    }), encoding="utf-8")
+    out_json = tmp_path / "acceptance.json"
+    subprocess.run([
+        "python3",
+        str(ROOT / "scripts" / "validate_scene3d_runtime_acceptance.py"),
+        "--scene", "ur5_2f_test",
+        "--smoke-json", str(smoke),
+        "--json", str(out_json),
+    ], check=False)
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    scene = payload["scenes"][0]
+    assert "runtime smoke evidence status is not passing" not in "\n".join(scene["blockers"])
+    assert scene["counts"]["hierarchy_rows_count"] == 10
+
+
+def test_runtime_acceptance_reads_hierarchy_child_row_count_alias(tmp_path):
+    smoke = tmp_path / "smoke_alias.json"
+    smoke.write_text(json.dumps({
+        "schema": "workcell_studio_scene3d_gui_smoke/v1",
+        "status": "OK",
+        "counters": {
+            "viewport_received_count": 4,
+            "render_cache_count": 4,
+            "rendered_count": 4,
+            "selectable_count": 4,
+            "hierarchy_child_row_count": 7
+        }
+    }), encoding="utf-8")
+    out_json = tmp_path / "acceptance_alias.json"
+    subprocess.run([
+        "python3",
+        str(ROOT / "scripts" / "validate_scene3d_runtime_acceptance.py"),
+        "--scene", "ur5_2f_test",
+        "--smoke-json", str(smoke),
+        "--json", str(out_json),
+    ], check=False)
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    assert payload["scenes"][0]["counts"]["hierarchy_rows_count"] == 7
