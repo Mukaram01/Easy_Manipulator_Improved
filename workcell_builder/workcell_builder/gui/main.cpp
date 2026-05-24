@@ -336,6 +336,7 @@ private:
   QJsonArray blockers_;
   QDateTime start_time_;
   QJsonObject latest_counters_;
+  QJsonObject scene_load_diagnostics_;
   int render_ready_attempts_{0};
 
   void step_begin()
@@ -351,25 +352,13 @@ private:
       return;
     }
     if (!opts_.scene_name.trimmed().isEmpty()) {
-      auto * table = window_->findChild<QTableWidget *>("studioHomeSceneTable");
-      if (table == nullptr) {
-        blockers_.append("Scene table not found");
-      } else {
-        bool found = false;
-        for (int row = 0; row < table->rowCount(); ++row) {
-          auto * item = table->item(row, 0);
-          if (item && item->text().trimmed() == opts_.scene_name.trimmed()) {
-            table->selectRow(row);
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          blockers_.append(QString("Requested scene not found: %1").arg(opts_.scene_name));
-        }
+      QStringList load_blockers;
+      if (!window_->load_scene_for_scene3d_smoke(opts_.scene_name, &load_blockers, &scene_load_diagnostics_)) {
+        for (const auto & b : load_blockers) blockers_.append(b);
       }
+    } else {
+      trigger_by_text("Open Selected Scene");
     }
-    trigger_by_text("Open Selected Scene");
     QTimer::singleShot(300, this, &Scene3DSmokeRunner::step_wait_scene3d_ready);
   }
 
@@ -558,6 +547,7 @@ private:
     root["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     root["scene"] = opts_.scene_name;
     root["new_cell_recommended_layout_smoke"] = opts_.new_cell_recommended_layout_smoke;
+    root["scene_load_diagnostics"] = scene_load_diagnostics_;
     root["duration_ms"] = start_time_.msecsTo(QDateTime::currentDateTimeUtc());
 
     auto * tree = window_->findChild<QTreeWidget *>("studioSceneHierarchyTree");
@@ -745,7 +735,14 @@ private:
     }
     const int active_received_count = counters.value("active_viewport_received_count").toInt();
     counters["render_ready_attempts"] = render_ready_attempts_;
-    counters["static_candidate_count"] = counters.value("preview_items_count").toInt();
+    counters["source_layout_item_count"] = scene_load_diagnostics_.value("source_layout_item_count").toInt();
+    counters["source_mesh_index_item_count"] = scene_load_diagnostics_.value("source_mesh_index_item_count").toInt();
+    counters["source_generated_layout_item_count"] = scene_load_diagnostics_.value("source_generated_layout_item_count").toInt();
+    counters["source_preview_metadata_item_count"] = scene_load_diagnostics_.value("source_preview_metadata_item_count").toInt();
+    counters["assembled_preview_item_count"] = scene_load_diagnostics_.value("assembled_preview_item_count").toInt(counters.value("preview_items_count").toInt());
+    counters["forwarded_to_preview_widget_count"] = counters.value("preview_items_count").toInt();
+    counters["forwarded_to_viewport_count"] = counters.value("viewport_received_count").toInt();
+    counters["static_candidate_count"] = counters.value("assembled_preview_item_count").toInt();
     counters["filtered_visible_candidate_count"] = counters.value("visible_count").toInt();
     counters["viewport_items_after_ingest"] = counters.value("viewport_received_count").toInt();
     counters["hierarchy_rows_after_ingest"] = counters.value("hierarchy_rows_count").toInt();
