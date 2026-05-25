@@ -314,6 +314,7 @@ struct Scene3DSmokeOptions
 {
   bool enabled{ false };
   QString scene_name;
+  QString scene_path;
   QString smoke_output;
   QString screenshot_path;
   bool exit_after_smoke{ false };
@@ -351,9 +352,9 @@ private:
       QTimer::singleShot(300, this, &Scene3DSmokeRunner::step_trigger_recommended_layout);
       return;
     }
-    if (!opts_.scene_name.trimmed().isEmpty()) {
+    if (!opts_.scene_path.trimmed().isEmpty() || !opts_.scene_name.trimmed().isEmpty()) {
       QStringList load_blockers;
-      if (!window_->load_scene_for_scene3d_smoke(opts_.scene_name, &load_blockers, &scene_load_diagnostics_)) {
+      if (!window_->load_scene_for_scene3d_smoke(opts_.scene_name, opts_.scene_path, &load_blockers, &scene_load_diagnostics_)) {
         for (const auto & b : load_blockers) blockers_.append(b);
       }
     } else {
@@ -546,6 +547,7 @@ private:
     root["schema"] = "workcell_studio_scene3d_gui_smoke/v1";
     root["timestamp"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     root["scene"] = opts_.scene_name;
+    root["requested_scene_path"] = opts_.scene_path;
     root["new_cell_recommended_layout_smoke"] = opts_.new_cell_recommended_layout_smoke;
     root["scene_load_diagnostics"] = scene_load_diagnostics_;
     root["filter_diagnostics"] = window_->scene3d_filter_diagnostics();
@@ -975,6 +977,7 @@ int main(int argc, char * argv[])
   Scene3DSmokeOptions smoke_opts;
   smoke_opts.enabled = has_cli_flag(args, "--scene3d-smoke");
   smoke_opts.scene_name = cli_value(args, "--scene");
+  smoke_opts.scene_path = cli_value(args, "--scene-path");
   smoke_opts.smoke_output = cli_value(args, "--smoke-output");
   smoke_opts.screenshot_path = cli_value(args, "--smoke-screenshot");
   smoke_opts.exit_after_smoke = has_cli_flag(args, "--exit-after-smoke");
