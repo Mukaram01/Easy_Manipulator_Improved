@@ -69,6 +69,7 @@ public:
 
   void reset_view();
   void fit_scene();
+  void fit_robot();
   void focus_selected();
   void set_top_view();
   void set_front_view();
@@ -154,6 +155,7 @@ private:
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
   bool scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const;
+  bool robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const;
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
   bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
@@ -231,4 +233,8 @@ private:
   QString drag_asset_drop_status_;
   QPoint drag_asset_screen_pos_;
   QJsonObject drag_asset_payload_;
+  QString last_camera_fit_target_{ "scene" };
+  bool has_robot_aabb_diag_{ false };
+  QVector3D last_robot_aabb_min_;
+  QVector3D last_robot_aabb_max_;
 };

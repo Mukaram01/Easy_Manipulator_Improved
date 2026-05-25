@@ -205,6 +205,7 @@ private slots:
   void on_mode_changed(int index);
   void on_reset_view_clicked();
   void on_fit_scene_clicked();
+  void on_fit_robot_clicked();
   void on_focus_selected_clicked();
   void on_fit_overlays_clicked();
   void on_clear_selection_clicked();

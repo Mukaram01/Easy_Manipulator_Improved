@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include "gui/scene3d_viewport_widget.h"
 #include <QFileDialog>
 #include <QAction>
 #include <QCoreApplication>
@@ -1510,6 +1511,7 @@ void MainWindow::setup_studio_shell()
   auto * right_action = camera_view_menu->addAction("Right");
   auto * front_action = camera_view_menu->addAction("Front");
   auto * fit_button = camera_view_menu->addAction("Fit Cell");
+  auto * fit_robot_button = camera_view_menu->addAction("Fit Robot");
   auto * reset_button = camera_view_menu->addAction("Reset View");
   auto * zoom_in = camera_view_menu->addAction("Zoom In");
   auto * zoom_out = camera_view_menu->addAction("Zoom Out");
@@ -2064,6 +2066,12 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(copy_source_cmd, &QPushButton::clicked, this, [this](){ QApplication::clipboard()->setText("source install/setup.bash"); });
   connect(open_logs_cmd, &QPushButton::clicked, this, [this](){ open_diagnostics_folder(); });
   connect(fit_button, &QAction::triggered, this, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
+  connect(fit_robot_button, &QAction::triggered, this, [this](){
+    if (!scene_preview_widget_) return;
+    auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
+    if (!viewport) return;
+    viewport->fit_robot();
+  });
   connect(reset_button, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
   connect(zoom_in, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
   connect(zoom_out, &QAction::triggered, this, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
