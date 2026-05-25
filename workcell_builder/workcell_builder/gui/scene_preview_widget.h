@@ -60,6 +60,16 @@ public:
     QString resolved_source_path_original;
     QString package_uri;
     QString source_path_resolution_outcome;
+    double base_pose_x{ 0.0 }, base_pose_y{ 0.0 }, base_pose_z{ 0.0 };
+    double base_pose_roll{ 0.0 }, base_pose_pitch{ 0.0 }, base_pose_yaw{ 0.0 };
+    double chain_pose_x{ 0.0 }, chain_pose_y{ 0.0 }, chain_pose_z{ 0.0 };
+    double chain_pose_roll{ 0.0 }, chain_pose_pitch{ 0.0 }, chain_pose_yaw{ 0.0 };
+    double visual_origin_x{ 0.0 }, visual_origin_y{ 0.0 }, visual_origin_z{ 0.0 };
+    double visual_origin_roll{ 0.0 }, visual_origin_pitch{ 0.0 }, visual_origin_yaw{ 0.0 };
+    bool transform_chain_applied{ false };
+    bool visual_origin_applied{ false };
+    QString robot_base_frame;
+    QString robot_world_pose;
   };
   struct CameraOverlayModel
   {
