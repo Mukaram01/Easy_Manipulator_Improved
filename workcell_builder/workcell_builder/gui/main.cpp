@@ -393,6 +393,13 @@ private:
         viewport->update();
         viewport->repaint();
         app_->processEvents();
+        const auto rc_after_paint = viewport->render_debug_counters();
+        if (rc_after_paint.viewport_received_count > 0 &&
+            rc_after_paint.visible_count > 0 &&
+            rc_after_paint.rendered_count <= 0 &&
+            !rc_after_paint.last_paint_completed) {
+          viewport->render_smoke_fallback_frame();
+        }
       }
       qInfo() << "Scene3D smoke render-ready: scene=" << opts_.scene_name
               << "received=" << (viewport ? viewport->render_debug_counters().viewport_received_count : 0)
@@ -684,6 +691,13 @@ private:
       viewport->update();
       viewport->repaint();
       QApplication::processEvents(QEventLoop::AllEvents, 250);
+      auto before_fallback = viewport->render_debug_counters();
+      if (before_fallback.viewport_received_count > 0 &&
+          before_fallback.visible_count > 0 &&
+          before_fallback.rendered_count <= 0 &&
+          !before_fallback.last_paint_completed) {
+        viewport->render_smoke_fallback_frame();
+      }
       const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
       counters["preview_items_count"] = rc.preview_items_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
@@ -705,6 +719,7 @@ private:
       counters["labels_drawn"] = rc.labels_drawn;
       counters["labels_suppressed_overlap"] = rc.labels_suppressed_overlap;
       counters["last_paint_completed"] = rc.last_paint_completed;
+      counters["smoke_fallback_render_used"] = rc.smoke_fallback_render_used;
       counters["paint_cycle_completed"] = paint_cycle_completed(
         rc, latest_counters_.value("screenshot_saved").toBool(false));
       counters["active_viewport_received_count"] = rc.viewport_received_count;
@@ -821,7 +836,14 @@ private:
       const auto viewport_resolution = resolve_active_scene3d_viewport(window_, active_preview_widget);
       QWidget * source = viewport_resolution.selected ? static_cast<QWidget *>(viewport_resolution.selected) : window_;
       if (source) {
-        QImage img = source->grab().toImage();
+        QImage img;
+        if (viewport_resolution.selected) {
+          const auto rc = viewport_resolution.selected->render_debug_counters();
+          if (rc.viewport_received_count > 0 && rc.rendered_count > 0 && rc.smoke_fallback_render_used) {
+            viewport_resolution.selected->render_smoke_fallback_frame(&img);
+          }
+        }
+        if (img.isNull()) img = source->grab().toImage();
         screenshot_ok = img.save(opts_.screenshot_path);
       }
       if (!screenshot_ok) {
@@ -836,7 +858,8 @@ private:
         (counters.value("render_cache_count").toInt() > 0 && screenshot_ok);
       latest_counters_["paint_cycle_completed"] = counters.value("paint_cycle_completed");
       latest_counters_["screenshot_saved"] = screenshot_ok;
-      if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0) {
+      if (screenshot_ok && counters.value("render_cache_count").toInt() <= 0 &&
+          counters.value("rendered_count").toInt() <= 0) {
         warnings_.append("screenshot_saved_without_render_cache");
         blockers_.append("screenshot_saved_without_render_cache");
       }

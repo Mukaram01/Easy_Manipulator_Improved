@@ -40,13 +40,17 @@ def build_cmd(exe: Path | str, args: argparse.Namespace) -> list[str]:
     cmd.append("--exit-after-smoke")
     return cmd
 
-def with_xvfb(cmd: list[str], use_xvfb: bool) -> tuple[list[str], list[str]]:
+def with_xvfb(cmd: list[str], use_xvfb: bool) -> tuple[list[str], list[str], dict[str, str]]:
     if not use_xvfb:
-        return cmd, []
+        return cmd, [], {}
     xvfb_run = shutil.which("xvfb-run")
     if xvfb_run:
-        return [xvfb_run, "-a"] + cmd, []
-    return cmd, ["xvfb_requested_but_unavailable"]
+        return [xvfb_run, "-a"] + cmd, [], {}
+    return cmd, ["xvfb_requested_but_unavailable_using_qt_offscreen"], {
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_OPENGL": "software",
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+    }
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +108,24 @@ def main() -> int:
     repo_root = resolve_repo_root(explicit_repo_root=args.repo_root)
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
     exe = args.executable or resolve_workcell_builder_executable(workspace_root)
+    if exe is None and not args.all_scenes:
+        searched = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+        fail_payload = {
+            "schema": EXPECTED_SCHEMA,
+            "status": "FAIL",
+            "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+            "repo_root": str(repo_root),
+            "workspace_root": str(workspace_root),
+            "executable": None,
+            "searched_paths": searched,
+            "blockers": ["unable_to_resolve_workcell_builder_executable"],
+            "warnings": [],
+            "screenshot_available": False,
+        }
+        _write_json(args.output, fail_payload)
+        print("status=FAIL smoke_status=MISSING_EXECUTABLE")
+        print("searched_paths=" + " | ".join(searched))
+        return 1
 
     if args.all_scenes:
         out_dir = args.output_dir.resolve()
@@ -202,10 +224,16 @@ def main() -> int:
         args.scene_path = sp
 
     cmd = build_cmd(exe, args)
-    cmd, xwarn = with_xvfb(cmd, args.xvfb)
+    cmd, xwarn, extra_env = with_xvfb(cmd, args.xvfb)
 
     stdout_log = args.output.with_suffix(args.output.suffix + ".stdout.log")
     stderr_log = args.output.with_suffix(args.output.suffix + ".stderr.log")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    for stale_path in [args.output, stdout_log, stderr_log, args.screenshot]:
+        if stale_path and stale_path.exists():
+            stale_path.unlink()
+    child_env = os.environ.copy()
+    child_env.update(extra_env)
     diag = {
         "schema": EXPECTED_SCHEMA,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
@@ -215,7 +243,7 @@ def main() -> int:
         "executable": str(exe),
         "child_command": " ".join(shlex.quote(x) for x in cmd),
         "cwd": str(repo_root),
-        "env": {k: os.environ.get(k, "") for k in ["DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "XDG_SESSION_TYPE"]},
+        "env": {k: child_env.get(k, "") for k in ["DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "QT_OPENGL", "LIBGL_ALWAYS_SOFTWARE", "XDG_SESSION_TYPE"]},
         "timeout_sec": args.timeout_sec,
         "stdout_log_path": str(stdout_log),
         "stderr_log_path": str(stderr_log),
@@ -227,13 +255,17 @@ def main() -> int:
     stdout = ""
     stderr = ""
     try:
-        proc = subprocess.run(cmd, cwd=repo_root, text=True, capture_output=True, timeout=max(0.1, args.timeout_sec), check=False)
+        proc = subprocess.run(cmd, cwd=repo_root, env=child_env, text=True, capture_output=True, timeout=max(0.1, args.timeout_sec), check=False)
         rc = proc.returncode
         stdout, stderr = proc.stdout or "", proc.stderr or ""
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         rc = -1
         stdout, stderr = exc.stdout or "", exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
 
     stdout_log.parent.mkdir(parents=True, exist_ok=True)
     stdout_log.write_text(stdout, encoding="utf-8")

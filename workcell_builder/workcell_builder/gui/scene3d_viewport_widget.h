@@ -14,6 +14,7 @@
 
 #include <functional>
 
+class QImage;
 
 class Scene3DViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -97,9 +98,11 @@ public:
     int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
     bool last_paint_completed{ false };
+    bool smoke_fallback_render_used{ false };
   };
   RenderDebugCounters last_render_counters;
   RenderDebugCounters render_debug_counters() const;
+  bool render_smoke_fallback_frame(QImage * out_image = nullptr);
   QJsonArray mesh_diagnostics_export() const;
 
   static bool parse_stl_bytes_for_test(const QByteArray & bytes, const QString & source_hint,

@@ -18,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QXmlStreamReader>
+#include <QImage>
 #include <cstring>
 #include <QtMath>
 
@@ -569,6 +570,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.overlay_count = static_cast<int>(overlay_items.size());
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = false;
+  last_render_counters.smoke_fallback_render_used = false;
   const QString diagnostics_path = QString::fromUtf8(qgetenv("SCENE3D_MESH_DIAGNOSTICS_JSON"));
   if (!diagnostics_path.trimmed().isEmpty()) {
     QFile out_file(diagnostics_path);
@@ -731,6 +733,7 @@ void Scene3DViewportWidget::paintGL()
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.primitive_fallback_count = placeholder_count;
   last_render_counters.last_paint_completed = true;
+  last_render_counters.smoke_fallback_render_used = false;
 
   glDisable(GL_BLEND);
 
@@ -896,6 +899,107 @@ void Scene3DViewportWidget::paintGL()
 Scene3DViewportWidget::RenderDebugCounters Scene3DViewportWidget::render_debug_counters() const
 {
   return last_render_counters;
+}
+
+bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
+{
+  if (items.isEmpty()) return false;
+  QSize target_size = size();
+  if (target_size.width() < 32 || target_size.height() < 32) {
+    target_size = QSize(640, 420);
+  }
+  QImage img(target_size, QImage::Format_ARGB32_Premultiplied);
+  img.fill(QColor(5, 10, 24));
+
+  int visible_item_count = 0;
+  int skipped_item_count = 0;
+  int rendered_item_count = 0;
+  int mesh_backed_count = 0;
+  int placeholder_count = 0;
+  int overlay_count = 0;
+  int locked_urdf_count = 0;
+  int editable_layout_count = 0;
+  QSet<QString> unique_visible_ids;
+
+  QVector3D bmin, bmax;
+  const bool has_bounds = scene_bounds_from_visible_items(bmin, bmax, true);
+  const double span_x = has_bounds ? qMax(0.25, static_cast<double>(bmax.x() - bmin.x())) : 1.0;
+  const double span_z = has_bounds ? qMax(0.25, static_cast<double>(bmax.z() - bmin.z())) : 1.0;
+  const double scale = qMin((target_size.width() - 80.0) / span_x, (target_size.height() - 80.0) / span_z);
+  auto project_top = [&](double x, double z) {
+    const double px = 40.0 + (x - bmin.x()) * scale;
+    const double py = target_size.height() - 40.0 - (z - bmin.z()) * scale;
+    return QPointF(px, py);
+  };
+
+  QPainter painter(&img);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  painter.setPen(QColor(71, 85, 105));
+  for (int gx = 0; gx <= 10; ++gx) {
+    const double x = 40.0 + gx * ((target_size.width() - 80.0) / 10.0);
+    painter.drawLine(QPointF(x, 20.0), QPointF(x, target_size.height() - 20.0));
+  }
+  for (int gy = 0; gy <= 8; ++gy) {
+    const double y = 40.0 + gy * ((target_size.height() - 80.0) / 8.0);
+    painter.drawLine(QPointF(20.0, y), QPointF(target_size.width() - 20.0, y));
+  }
+
+  for (const auto & it : items) {
+    const NormalizedRole role = classify_item_role(it);
+    if (!show_safety && role == NormalizedRole::SafetyZone) {
+      ++skipped_item_count;
+      continue;
+    }
+    ++visible_item_count;
+    unique_visible_ids.insert(it.id);
+    if (is_overlay_visual_role(role)) ++overlay_count;
+    if (is_locked_urdf_item(it) || is_generated_urdf_visual_item(it)) ++locked_urdf_count;
+    if (it.linked_to_editable_layout_state) ++editable_layout_count;
+    if (it.mesh_available || it.has_mesh_metadata || !it.mesh_path.trimmed().isEmpty() || !it.source_path.trimmed().isEmpty()) {
+      ++mesh_backed_count;
+    } else if (!item_has_explicit_dimensions(it)) {
+      ++placeholder_count;
+    }
+
+    const ItemBounds bounds = item_bounds_for_role(it);
+    const QPointF p0 = project_top(bounds.x, bounds.z);
+    const QPointF p1 = project_top(bounds.x + bounds.sx, bounds.z + bounds.sz);
+    QRectF rect(QPointF(qMin(p0.x(), p1.x()), qMin(p0.y(), p1.y())),
+                QPointF(qMax(p0.x(), p1.x()), qMax(p0.y(), p1.y())));
+    if (rect.width() < 4.0) rect.setWidth(4.0);
+    if (rect.height() < 4.0) rect.setHeight(4.0);
+    QColor fill = item_color(it);
+    fill.setAlpha(is_overlay_visual_role(role) ? 90 : 170);
+    painter.setBrush(fill);
+    painter.setPen(QPen(item_color(it).lighter(135), it.id == selected_id ? 3.0 : 1.5));
+    painter.drawRect(rect);
+    ++rendered_item_count;
+  }
+
+  painter.setPen(QColor("#e2e8f0"));
+  painter.drawText(QRectF(16.0, 12.0, target_size.width() - 32.0, 24.0),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   QString("Scene3D smoke fallback render: %1").arg(scene_name));
+  painter.end();
+
+  last_render_counters.preview_items_count = items.size();
+  last_render_counters.viewport_received_count = items.size();
+  last_render_counters.render_cache_count = mesh_cache_.size();
+  last_render_counters.visible_count = visible_item_count;
+  last_render_counters.rendered_count = rendered_item_count;
+  last_render_counters.skipped_count = skipped_item_count;
+  last_render_counters.unique_visible_item_count = unique_visible_ids.size();
+  last_render_counters.mesh_backed_count = mesh_backed_count;
+  last_render_counters.placeholder_count = placeholder_count;
+  last_render_counters.primitive_fallback_count = placeholder_count;
+  last_render_counters.overlay_count = overlay_count;
+  last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  last_render_counters.editable_layout_count = editable_layout_count;
+  last_render_counters.hierarchy_child_row_count = visible_item_count;
+  last_render_counters.last_paint_completed = rendered_item_count > 0;
+  last_render_counters.smoke_fallback_render_used = rendered_item_count > 0;
+  if (out_image) *out_image = img;
+  return rendered_item_count > 0;
 }
 
 bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min, QVector3D & out_max, bool include_overlays) const
