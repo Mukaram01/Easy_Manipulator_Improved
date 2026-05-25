@@ -6,9 +6,54 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <fstream>
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
+
+namespace {
+
+void write_layout_merge_fallback_report(
+  const fs::path& scene_dir,
+  const std::vector<std::string>& warnings,
+  const std::vector<std::string>& blockers,
+  bool layout_applied)
+{
+  boost::system::error_code ec;
+  fs::create_directories(scene_dir / "generated", ec);
+  const fs::path report = scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  const fs::path summary = scene_dir / "generated" / "workcell_studio_layout_merge_summary.txt";
+
+  QJsonObject root;
+  root.insert("layout_applied", layout_applied);
+  root.insert("generated_from_saved_layout", layout_applied);
+  QJsonArray warning_json;
+  for (const auto& w : warnings) warning_json.push_back(QString::fromStdString(w));
+  root.insert("warnings", warning_json);
+  QJsonArray blocker_json;
+  for (const auto& b : blockers) blocker_json.push_back(QString::fromStdString(b));
+  root.insert("blockers", blocker_json);
+  root.insert("merge_mode", "fallback");
+  root.insert("layout_merge_fallback_used", true);
+
+  QFile report_file(QString::fromStdString(report.string()));
+  if (report_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    report_file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    report_file.write("\n");
+  }
+
+  std::ofstream summary_out(summary.string());
+  if (summary_out.is_open()) {
+    summary_out << "layout_applied=" << (layout_applied ? "true" : "false") << "\n";
+    summary_out << "generated_from_saved_layout=" << (layout_applied ? "true" : "false") << "\n";
+    summary_out << "layout_merge_fallback_used=true\n";
+    for (const auto& w : warnings) summary_out << "warning=" << w << "\n";
+    for (const auto& b : blockers) summary_out << "blocker=" << b << "\n";
+  }
+}
+
+}  // namespace
+
 LayoutMergeResult merge_workcell_studio_layout(const fs::path& scene_dir)
 {
   LayoutMergeResult out;
@@ -22,7 +67,22 @@ LayoutMergeResult merge_workcell_studio_layout(const fs::path& scene_dir)
   const fs::path repo_root = scene_dir.parent_path().parent_path();
   const fs::path script_path = repo_root / "scripts" / "workcell_studio_layout_merge.py";
   if (!fs::exists(script_path)) {
-    out.blockers.push_back("Layout merge script missing: scripts/workcell_studio_layout_merge.py");
+    const std::vector<fs::path> required_authoring_files{
+      scene_dir / "environment.yaml",
+      scene_dir / "environment_layout.yaml",
+      scene_dir / "layout" / "workcell_studio_layout.yaml",
+      scene_dir / "cell_definition.yaml"
+    };
+    for (const auto& required_file : required_authoring_files) {
+      if (!fs::exists(required_file)) {
+        out.blockers.push_back("Missing required authoring file: " + required_file.filename().string());
+      }
+    }
+    out.warnings.push_back("layout_merge_fallback_used");
+    write_layout_merge_fallback_report(scene_dir, out.warnings, out.blockers, out.layout_applied);
+    out.report_path = (scene_dir / "generated" / "workcell_studio_layout_merge_report.json").string();
+    out.summary_path = (scene_dir / "generated" / "workcell_studio_layout_merge_summary.txt").string();
+    out.status = out.blockers.empty();
     return out;
   }
 
