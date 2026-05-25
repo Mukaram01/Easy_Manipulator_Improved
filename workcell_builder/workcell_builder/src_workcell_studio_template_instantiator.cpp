@@ -46,7 +46,7 @@ std::string generated_scene_xacro(const std::string & scene_name, const std::str
     "    <origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>\n"
     "  </joint>\n"
     "\n"
-    "  <!-- selected_robot_metadata: ") + robot_id + " -->\n"
+    "  <!-- selected_robot_metadata: " + robot_id + " -->\n"
     "  <!-- selected_end_effector_metadata: " + end_effector_id + " -->\n"
     "  <!-- missing end-effector xacro -> placeholder visual only -->\n"
     "\n"
