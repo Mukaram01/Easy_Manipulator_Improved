@@ -4924,7 +4924,7 @@ void MainWindow::save_layout_changes()
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
-  const fs::path scene_dir = layout_path.parent_path().parent_path();
+  const fs::path scene_dir = layout_path.parent_path();
   const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
