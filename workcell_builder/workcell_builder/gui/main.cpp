@@ -567,6 +567,10 @@ private:
     const QJsonObject parsed_runtime_diagnostics_counts = parsed_runtime_diagnostics.value("counts").toObject();
     const int parsed_runtime_diagnostics_total = sum_json_object_int_values(parsed_runtime_diagnostics_counts);
     QJsonObject counters;
+    const QJsonObject filter_diagnostics = window_->scene3d_filter_diagnostics();
+    auto copy_filter_counter = [&](const QString & key) {
+      if (filter_diagnostics.contains(key)) counters[key] = filter_diagnostics.value(key);
+    };
     counters["hierarchy_top_level_count"] = tree ? tree->topLevelItemCount() : 0;
     int hierarchy_child_rows = 0;
     bool hierarchy_has_only_headings = false;
@@ -585,6 +589,17 @@ private:
     counters["runtime_scene3d_diagnostics_total"] = parsed_runtime_diagnostics_total;
     counters["runtime_scene3d_diagnostics_counts"] = parsed_runtime_diagnostics_counts;
     counters["runtime_scene3d_skip_reason_counts"] = parsed_runtime_diagnostics.value("skip_reason_counts").toObject();
+    copy_filter_counter("robot_visual_count");
+    copy_filter_counter("robot_mesh_loaded_count");
+    copy_filter_counter("robot_mesh_missing_count");
+    copy_filter_counter("robot_aabb_min");
+    copy_filter_counter("robot_aabb_max");
+    copy_filter_counter("robot_world_pose");
+    copy_filter_counter("robot_base_frame");
+    copy_filter_counter("transform_chain_applied_count");
+    copy_filter_counter("visual_origin_applied_count");
+    copy_filter_counter("camera_fit_target");
+    copy_filter_counter("robot_pose_source");
     auto * inspector = window_->findChild<QLabel *>("sceneBuilderInspectorLabel");
     QString selected_scene_name = "(none)";
     QString selected_item_id = "(none)";

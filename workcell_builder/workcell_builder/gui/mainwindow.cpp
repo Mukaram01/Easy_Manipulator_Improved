@@ -5614,11 +5614,78 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
   for (auto it = hidden_reason_counts.constBegin(); it != hidden_reason_counts.constEnd(); ++it) {
     hidden_reason_counts_json[it.key()] = it.value();
   }
+  auto is_robot_item = [&](const ScenePreviewWidget::PreviewItem & item) {
+    const QString combined = token(item.role) + "|" + token(item.category) + "|" + token(item.display_name) + "|" + token(item.id);
+    return combined.contains("robot") || combined.contains("urdf") || combined.contains("manipulator");
+  };
+  QJsonArray robot_world_pose;
+  QString robot_base_frame;
+  QString robot_pose_source;
+  int robot_visual_count = 0;
+  int robot_mesh_loaded_count = 0;
+  int robot_mesh_missing_count = 0;
+  int transform_chain_applied_count = 0;
+  int visual_origin_applied_count = 0;
+  bool robot_bounds_initialized = false;
+  QVector3D robot_aabb_min;
+  QVector3D robot_aabb_max;
+  for (const auto & p : all_scene_preview_items_) {
+    if (!is_robot_item(p)) {
+      continue;
+    }
+    ++robot_visual_count;
+    if (p.mesh_available || p.has_mesh_metadata) {
+      ++robot_mesh_loaded_count;
+    } else {
+      ++robot_mesh_missing_count;
+    }
+    if (p.has_origin_offset) {
+      ++visual_origin_applied_count;
+    }
+    if (p.has_origin_offset || qAbs(p.mesh_r) > 1e-9 || qAbs(p.mesh_p) > 1e-9 || qAbs(p.mesh_y) > 1e-9) {
+      ++transform_chain_applied_count;
+    }
+    const QVector3D half_span(qMax(0.0, p.sx) * 0.5f, qMax(0.0, p.sy) * 0.5f, qMax(0.0, p.sz) * 0.5f);
+    const QVector3D item_min(p.x - half_span.x(), p.y - half_span.y(), p.z - half_span.z());
+    const QVector3D item_max(p.x + half_span.x(), p.y + half_span.y(), p.z + half_span.z());
+    if (!robot_bounds_initialized) {
+      robot_aabb_min = item_min;
+      robot_aabb_max = item_max;
+      robot_bounds_initialized = true;
+      robot_world_pose = QJsonArray{p.x, p.y, p.z, p.roll, p.pitch, p.yaw};
+      robot_base_frame = p.frame_id;
+      robot_pose_source = p.source_path;
+    } else {
+      robot_aabb_min.setX(qMin(robot_aabb_min.x(), item_min.x()));
+      robot_aabb_min.setY(qMin(robot_aabb_min.y(), item_min.y()));
+      robot_aabb_min.setZ(qMin(robot_aabb_min.z(), item_min.z()));
+      robot_aabb_max.setX(qMax(robot_aabb_max.x(), item_max.x()));
+      robot_aabb_max.setY(qMax(robot_aabb_max.y(), item_max.y()));
+      robot_aabb_max.setZ(qMax(robot_aabb_max.z(), item_max.z()));
+    }
+  }
+
   diagnostics["filter_input_count"] = all_scene_preview_items_.size();
   diagnostics["filter_visible_count"] = filtered_items.size();
   diagnostics["filter_hidden_count"] = qMax(0, all_scene_preview_items_.size() - filtered_items.size());
   diagnostics["hidden_by_filter_reason_counts"] = hidden_reason_counts_json;
   diagnostics["hidden_item_summaries"] = hidden_item_summaries_json;
+  diagnostics["robot_visual_count"] = robot_visual_count;
+  diagnostics["robot_mesh_loaded_count"] = robot_mesh_loaded_count;
+  diagnostics["robot_mesh_missing_count"] = robot_mesh_missing_count;
+  diagnostics["transform_chain_applied_count"] = transform_chain_applied_count;
+  diagnostics["visual_origin_applied_count"] = visual_origin_applied_count;
+  diagnostics["camera_fit_target"] = QString("robot_aabb");
+  diagnostics["robot_pose_source"] = robot_pose_source;
+  diagnostics["robot_base_frame"] = robot_base_frame;
+  diagnostics["robot_world_pose"] = robot_world_pose;
+  if (robot_bounds_initialized) {
+    diagnostics["robot_aabb_min"] = QJsonArray{robot_aabb_min.x(), robot_aabb_min.y(), robot_aabb_min.z()};
+    diagnostics["robot_aabb_max"] = QJsonArray{robot_aabb_max.x(), robot_aabb_max.y(), robot_aabb_max.z()};
+  } else {
+    diagnostics["robot_aabb_min"] = QJsonArray();
+    diagnostics["robot_aabb_max"] = QJsonArray();
+  }
   scene3d_filter_diagnostics_ = diagnostics;
   if (filtered_items.isEmpty() && !all_scene_preview_items_.isEmpty()) {
     auto looks_renderable = [](const ScenePreviewWidget::PreviewItem & p) {
