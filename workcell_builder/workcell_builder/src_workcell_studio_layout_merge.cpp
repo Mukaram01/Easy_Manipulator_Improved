@@ -35,6 +35,8 @@ void write_layout_merge_fallback_report(
   root.insert("blockers", blocker_json);
   root.insert("merge_mode", "fallback");
   root.insert("layout_merge_fallback_used", true);
+  root.insert("layout_merge_status", blockers.empty() ? "WARN" : "BLOCKED");
+  root.insert("layout_merge_warning", "missing script fallback used");
 
   QFile report_file(QString::fromStdString(report.string()));
   if (report_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -67,18 +69,18 @@ LayoutMergeResult merge_workcell_studio_layout(const fs::path& scene_dir)
   const fs::path repo_root = scene_dir.parent_path().parent_path();
   const fs::path script_path = repo_root / "scripts" / "workcell_studio_layout_merge.py";
   if (!fs::exists(script_path)) {
-    const std::vector<fs::path> required_authoring_files{
-      scene_dir / "environment.yaml",
-      scene_dir / "environment_layout.yaml",
-      scene_dir / "layout" / "workcell_studio_layout.yaml",
-      scene_dir / "cell_definition.yaml"
+    const std::vector<std::pair<fs::path, std::string>> required_authoring_files{
+      {scene_dir / "environment.yaml", "Missing required authoring file: environment.yaml. Next action: click Save Layout."},
+      {scene_dir / "environment_layout.yaml", "Missing required authoring file: environment_layout.yaml. Next action: click Save Layout."},
+      {scene_dir / "layout" / "workcell_studio_layout.yaml", "Missing required authoring file: layout/workcell_studio_layout.yaml. Next action: click Save Layout."},
+      {scene_dir / "cell_definition.yaml", "Missing required authoring file: cell_definition.yaml. Next action: click Generate YAML."}
     };
     for (const auto& required_file : required_authoring_files) {
-      if (!fs::exists(required_file)) {
-        out.blockers.push_back("Missing required authoring file: " + required_file.filename().string());
+      if (!fs::exists(required_file.first)) {
+        out.blockers.push_back(required_file.second);
       }
     }
-    out.warnings.push_back("layout_merge_fallback_used");
+    out.warnings.push_back("missing script fallback used");
     write_layout_merge_fallback_report(scene_dir, out.warnings, out.blockers, out.layout_applied);
     out.report_path = (scene_dir / "generated" / "workcell_studio_layout_merge_report.json").string();
     out.summary_path = (scene_dir / "generated" / "workcell_studio_layout_merge_summary.txt").string();

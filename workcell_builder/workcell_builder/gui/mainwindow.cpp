@@ -2251,7 +2251,11 @@ void MainWindow::build_studio_header_actions()
   action_workspace_open_scene_builder_ = new QAction("Open Scene Builder", this);
   connect(action_workspace_open_scene_builder_, &QAction::triggered, this, [this]() { open_scene_builder_for_selected_scene("Header Scenes/Open"); });
   action_generate_package_ = new QAction("Generate Scene Package", this);
-  connect(action_generate_package_, &QAction::triggered, this, [this]() { append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name())); run_layout_merge_for_selected_scene(true); });
+  connect(action_generate_package_, &QAction::triggered, this, [this]() {
+    append_studio_log(QString("Generate Scene Package: requested for scene '%1'.").arg(selected_scene_name()));
+    run_layout_merge_for_selected_scene(true);
+    generate_scene_package_for_selected_scene();
+  });
   action_generate_yaml_ = new QAction("Generate YAML", this);
   connect(action_generate_yaml_, &QAction::triggered, this, &MainWindow::generate_yaml_draft_for_selected_scene);
   action_generate_task_intent_ = new QAction("Generate/Update Task Intent", this);
