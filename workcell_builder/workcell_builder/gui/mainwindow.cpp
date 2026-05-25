@@ -1828,6 +1828,27 @@ void MainWindow::setup_studio_shell()
   inspector_copy_transform_button_ = new QPushButton("Copy Transform", scene_builder); transform_actions->addWidget(inspector_copy_transform_button_);
   inspector_paste_transform_button_ = new QPushButton("Paste Transform", scene_builder); transform_actions->addWidget(inspector_paste_transform_button_);
   selection_tab_layout->addLayout(transform_actions);
+  auto * robot_pose_group = new QGroupBox("Robot Base Pose", scene_builder);
+  robot_pose_group->setObjectName("studioCard");
+  auto * robot_pose_layout = new QVBoxLayout(robot_pose_group);
+  robot_pose_source_label_ = new QLabel("robot_pose_source: blocked", robot_pose_group);
+  robot_pose_layout->addWidget(robot_pose_source_label_);
+  robot_pose_message_label_ = new QLabel("Select robot base to edit pose.", robot_pose_group);
+  robot_pose_message_label_->setWordWrap(true);
+  robot_pose_layout->addWidget(robot_pose_message_label_);
+  auto * robot_pose_grid = new QGridLayout();
+  robot_base_x_ = new QDoubleSpinBox(robot_pose_group); robot_base_x_->setPrefix("x "); robot_pose_grid->addWidget(robot_base_x_, 0, 0);
+  robot_base_y_ = new QDoubleSpinBox(robot_pose_group); robot_base_y_->setPrefix("y "); robot_pose_grid->addWidget(robot_base_y_, 0, 1);
+  robot_base_z_ = new QDoubleSpinBox(robot_pose_group); robot_base_z_->setPrefix("z "); robot_pose_grid->addWidget(robot_base_z_, 0, 2);
+  robot_base_roll_ = new QDoubleSpinBox(robot_pose_group); robot_base_roll_->setPrefix("r "); robot_pose_grid->addWidget(robot_base_roll_, 1, 0);
+  robot_base_pitch_ = new QDoubleSpinBox(robot_pose_group); robot_base_pitch_->setPrefix("p "); robot_pose_grid->addWidget(robot_base_pitch_, 1, 1);
+  robot_base_yaw_ = new QDoubleSpinBox(robot_pose_group); robot_base_yaw_->setPrefix("yaw "); robot_pose_grid->addWidget(robot_base_yaw_, 1, 2);
+  robot_pose_layout->addLayout(robot_pose_grid);
+  auto * robot_pose_actions = new QHBoxLayout();
+  robot_base_apply_button_ = new QPushButton("Apply", robot_pose_group); robot_pose_actions->addWidget(robot_base_apply_button_);
+  robot_base_reset_button_ = new QPushButton("Reset", robot_pose_group); robot_pose_actions->addWidget(robot_base_reset_button_);
+  robot_pose_layout->addLayout(robot_pose_actions);
+  selection_tab_layout->addWidget(robot_pose_group);
   inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
   scene_builder_studio_log_ = new QPlainTextEdit(logs_tab);
   scene_builder_studio_log_->setReadOnly(true);
@@ -2097,9 +2118,12 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(inspector_revert_button_, &QPushButton::clicked, this, &MainWindow::revert_selection_transform_editor);
   connect(inspector_copy_transform_button_, &QPushButton::clicked, this, &MainWindow::copy_selection_transform_to_clipboard);
   connect(inspector_paste_transform_button_, &QPushButton::clicked, this, &MainWindow::paste_selection_transform_from_clipboard);
+  connect(robot_base_apply_button_, &QPushButton::clicked, this, &MainWindow::apply_robot_base_pose_from_inspector);
+  connect(robot_base_reset_button_, &QPushButton::clicked, this, &MainWindow::reset_robot_base_pose_from_snapshot);
   inspector_x_->setToolTip("X position in metres"); inspector_y_->setToolTip("Y position in metres"); inspector_z_->setToolTip("Z position in metres");
   inspector_roll_->setToolTip("Roll in radians"); inspector_pitch_->setToolTip("Pitch in radians"); inspector_yaw_->setToolTip("Yaw in radians");
   inspector_dim_x_->setToolTip("Dimension X in metres"); inspector_dim_y_->setToolTip("Dimension Y in metres"); inspector_dim_z_->setToolTip("Dimension Z in metres");
+  refresh_robot_base_pose_inspector();
   connect(save_layout_button_, &QPushButton::clicked, this, &MainWindow::save_layout_changes);
   connect(create_starter_layout_button_, &QPushButton::clicked, this, &MainWindow::create_starter_layout_from_preview);
   connect(select_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); });
@@ -5160,6 +5184,79 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
   if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
   if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
   inspector_update_guard_ = false;
+  refresh_robot_base_pose_inspector();
+}
+
+QGraphicsItem * MainWindow::find_authoring_robot_base_item() const
+{
+  if (!digital_twin_scene_) return nullptr;
+  for (auto * item : digital_twin_scene_->items()) {
+    if (item->data(RoleType).toString() == "robot_base" && !item->data(RoleLocked).toBool()) return item;
+  }
+  return nullptr;
+}
+
+void MainWindow::refresh_robot_base_pose_inspector()
+{
+  if (!robot_pose_source_label_ || !robot_base_apply_button_) return;
+  QGraphicsItem * selected = (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) ? digital_twin_scene_->selectedItems().front() : nullptr;
+  const bool selected_generated = selected && selected->data(RoleLocked).toBool() && selected->data(RoleType).toString() == "robot_base";
+  QGraphicsItem * authoring_robot = find_authoring_robot_base_item();
+  robot_base_pose_source_ = authoring_robot ? "cell_definition" : "blocked";
+  if (authoring_robot && authoring_robot->data(RoleSource).toString().contains("environment.yaml")) robot_base_pose_source_ = "environment.yaml";
+  robot_pose_source_label_->setText(QString("robot_pose_source: %1").arg(robot_base_pose_source_));
+  const bool editable = (authoring_robot != nullptr) && !selected_generated;
+  if (selected_generated && robot_pose_message_label_) robot_pose_message_label_->setText("Edit robot base via authoring model");
+  else if (robot_pose_message_label_) robot_pose_message_label_->setText(editable ? "Robot base pose edits target authoring model." : "Robot base authoring pose unavailable.");
+  robot_base_update_guard_ = true;
+  if (authoring_robot) {
+    robot_base_x_->setValue(authoring_robot->pos().x() / 100.0);
+    robot_base_y_->setValue(authoring_robot->pos().y() / 100.0);
+    robot_base_z_->setValue(authoring_robot->data(RolePoseZ).toDouble());
+    robot_base_roll_->setValue(authoring_robot->data(RoleRoll).toDouble());
+    robot_base_pitch_->setValue(authoring_robot->data(RolePitch).toDouble());
+    robot_base_yaw_->setValue(authoring_robot->data(RoleYaw).toDouble());
+    if (!robot_base_snapshot_valid_) {
+      robot_base_snapshot_x_ = robot_base_x_->value(); robot_base_snapshot_y_ = robot_base_y_->value(); robot_base_snapshot_z_ = robot_base_z_->value();
+      robot_base_snapshot_roll_ = robot_base_roll_->value(); robot_base_snapshot_pitch_ = robot_base_pitch_->value(); robot_base_snapshot_yaw_ = robot_base_yaw_->value();
+      robot_base_snapshot_valid_ = true;
+    }
+  }
+  robot_base_update_guard_ = false;
+  for (auto * sb : {robot_base_x_, robot_base_y_, robot_base_z_, robot_base_roll_, robot_base_pitch_, robot_base_yaw_}) sb->setReadOnly(!editable);
+  robot_base_apply_button_->setEnabled(editable);
+  robot_base_reset_button_->setEnabled(editable && robot_base_snapshot_valid_);
+}
+
+void MainWindow::apply_robot_base_pose_from_inspector()
+{
+  if (robot_base_update_guard_) return;
+  auto * authoring_robot = find_authoring_robot_base_item();
+  if (!authoring_robot) { append_studio_log("robot_base_apply blocked: authoring robot base not available"); return; }
+  authoring_robot->setPos(robot_base_x_->value() * 100.0, robot_base_y_->value() * 100.0);
+  authoring_robot->setData(RolePoseZ, robot_base_z_->value());
+  authoring_robot->setData(RoleRoll, robot_base_roll_->value());
+  authoring_robot->setData(RolePitch, robot_base_pitch_->value());
+  authoring_robot->setData(RoleYaw, robot_base_yaw_->value());
+  append_studio_log(QString("robot_pose_source diagnostic: %1").arg(robot_base_pose_source_));
+  append_studio_log(QString("robot_base_pose applied: x=%1 y=%2 z=%3 roll=%4 pitch=%5 yaw=%6")
+    .arg(robot_base_x_->value()).arg(robot_base_y_->value()).arg(robot_base_z_->value())
+    .arg(robot_base_roll_->value()).arg(robot_base_pitch_->value()).arg(robot_base_yaw_->value()));
+  mark_layout_dirty("Robot Base Pose Apply");
+  rebuild_digital_twin_canvas();
+}
+
+void MainWindow::reset_robot_base_pose_from_snapshot()
+{
+  if (!robot_base_snapshot_valid_) return;
+  robot_base_x_->setValue(robot_base_snapshot_x_);
+  robot_base_y_->setValue(robot_base_snapshot_y_);
+  robot_base_z_->setValue(robot_base_snapshot_z_);
+  robot_base_roll_->setValue(robot_base_snapshot_roll_);
+  robot_base_pitch_->setValue(robot_base_snapshot_pitch_);
+  robot_base_yaw_->setValue(robot_base_snapshot_yaw_);
+  append_studio_log("robot_base_pose reset: restored from persisted authoring source snapshot");
+  apply_robot_base_pose_from_inspector();
 }
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
