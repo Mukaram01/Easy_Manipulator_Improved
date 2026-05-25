@@ -576,6 +576,11 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     QFile out_file(diagnostics_path);
     if (out_file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
       QJsonObject root;
+      root["camera_fit_target"] = last_camera_fit_target_;
+      if (has_robot_aabb_diag_) {
+        root["robot_aabb_min"] = QJsonArray{last_robot_aabb_min_.x(), last_robot_aabb_min_.y(), last_robot_aabb_min_.z()};
+        root["robot_aabb_max"] = QJsonArray{last_robot_aabb_max_.x(), last_robot_aabb_max_.y(), last_robot_aabb_max_.z()};
+      }
       root["mesh_diagnostics"] = mesh_diagnostics_export();
       out_file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
       out_file.close();
@@ -618,6 +623,29 @@ void Scene3DViewportWidget::fit_scene() {
   distance_ = qBound(min_distance_, fit_distance, max_distance_);
   pitch_ = qBound(0.28, pitch_, 0.9);
   orbit_offset_.setY(orbit_offset_.y() + static_cast<float>(qMax(0.10, radius * 0.05)));
+  last_camera_fit_target_ = QStringLiteral("scene");
+  has_robot_aabb_diag_ = false;
+  update();
+}
+void Scene3DViewportWidget::fit_robot()
+{
+  QVector3D bmin, bmax;
+  if (!robot_bounds_from_rendered_visuals(bmin, bmax)) {
+    fit_scene();
+    return;
+  }
+  orbit_offset_ = (bmin + bmax) * 0.5f;
+  const QVector3D ext = bmax - bmin;
+  const double radius = qMax(0.2, 0.5 * qSqrt(ext.x() * ext.x() + ext.y() * ext.y() + ext.z() * ext.z()));
+  scene_radius_ = radius;
+  const double fov = qDegreesToRadians(50.0);
+  const double fit_distance = (radius / qTan(fov * 0.5)) * 1.05;
+  distance_ = qBound(min_distance_, fit_distance, max_distance_);
+  pitch_ = qBound(0.28, pitch_, 0.9);
+  last_camera_fit_target_ = QStringLiteral("robot");
+  has_robot_aabb_diag_ = true;
+  last_robot_aabb_min_ = bmin;
+  last_robot_aabb_max_ = bmax;
   update();
 }
 void Scene3DViewportWidget::focus_selected() {
@@ -1020,6 +1048,29 @@ bool Scene3DViewportWidget::scene_bounds_from_visible_items(QVector3D & out_min,
     out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
   }
   return has_fittable_item;
+}
+
+bool Scene3DViewportWidget::robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const
+{
+  out_min = QVector3D(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+  out_max = QVector3D(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+  bool has_robot_visual = false;
+  for (const auto & it : items) {
+    const bool urdf_visual = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+    const bool robot_base_marker = classify_item_role(it) == NormalizedRole::RobotBase && it.linked_to_editable_layout_state;
+    if (!urdf_visual && !robot_base_marker) continue;
+    if (is_overlay_only_item(it)) continue;
+    ItemBounds bounds{};
+    if (!mesh_world_bounds_for_item(it, bounds)) bounds = { it.x, it.y, it.z, it.sx, it.sy, it.sz };
+    out_min.setX(std::min(out_min.x(), static_cast<float>(bounds.x)));
+    out_min.setY(std::min(out_min.y(), static_cast<float>(bounds.y)));
+    out_min.setZ(std::min(out_min.z(), static_cast<float>(bounds.z)));
+    out_max.setX(std::max(out_max.x(), static_cast<float>(bounds.x + bounds.sx)));
+    out_max.setY(std::max(out_max.y(), static_cast<float>(bounds.y + bounds.sy)));
+    out_max.setZ(std::max(out_max.z(), static_cast<float>(bounds.z + bounds.sz)));
+    has_robot_visual = true;
+  }
+  return has_robot_visual;
 }
 
 bool Scene3DViewportWidget::item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const
@@ -1602,9 +1653,11 @@ void Scene3DViewportWidget::camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & 
     static_cast<float>(qSin(pitch_)),
     cp * static_cast<float>(qCos(yaw_)));
   const QVector3D eye = orbit_offset_ - (forward * clamped_distance);
-  const float far_plane = qMax(100.0f, clamped_distance + static_cast<float>(scene_radius_ * 6.0));
+  const float radius = static_cast<float>(qMax(0.2, scene_radius_));
+  const float near_plane = qMax(0.01f, qMin(0.2f, radius * 0.05f));
+  const float far_plane = qMax(clamped_distance + (radius * 8.0f), radius * 20.0f);
   out_proj.setToIdentity();
-  out_proj.perspective(50.0f, aspect, 0.05f, far_plane);
+  out_proj.perspective(50.0f, aspect, near_plane, far_plane);
   out_view.setToIdentity();
   out_view.lookAt(eye, orbit_offset_, QVector3D(0.0f, 1.0f, 0.0f));
 }

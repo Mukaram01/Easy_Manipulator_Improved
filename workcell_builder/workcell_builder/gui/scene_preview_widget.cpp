@@ -104,7 +104,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
   mouse_help_label->setToolTip(scene_preview_mouse_help_tooltip(QString()));
   mouse_help_label->setStatusTip(QString::fromUtf8(kScenePreviewMouseHelpText));
   controls->addWidget(mouse_help_label);
-  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
+  overlays_selector_ = new QComboBox(this); overlays_selector_->addItems({"Overlays", "Reachability Heatmap", "Collision Warnings", "Safety Zones", "Work Envelope", "Warning Labels", "Labels", "Pick/Place Zones", "Task Route", "Approach/Retreat", "Camera FOV", "Pick Coverage", "EPD Detections", "Detection Labels", "Warnings", "Focus Selected", "Fit Scene", "Fit Robot", "Fit overlays", "Clear Selection"}); controls->addWidget(overlays_selector_);
   controls->addStretch(1);
   root->addLayout(controls);
   stack_ = new QStackedWidget(this);
@@ -201,6 +201,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     else if (choice == "Warning Labels") v->show_warning_labels = !v->show_warning_labels;
     else if (choice == "Focus Selected") on_focus_selected_clicked();
     else if (choice == "Fit Scene") on_fit_scene_clicked();
+    else if (choice == "Fit Robot") on_fit_robot_clicked();
     else if (choice == "Fit overlays") on_fit_overlays_clicked();
     else if (choice == "Clear Selection") on_clear_selection_clicked();
     v->update();
@@ -258,6 +259,7 @@ void ScenePreviewWidget::reload_meshes()
 }
 void ScenePreviewWidget::on_reset_view_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->reset_view(); reset_fallback_scene_view(); }
 void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_include_overlays = false; v->fit_scene(); fit_fallback_scene_to_items(false); } // Fit Scene intentionally excludes overlay-only bounds by default.
+void ScenePreviewWidget::on_fit_robot_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->fit_robot(); fit_fallback_scene_to_items(false); }
 void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); const QRectF physical_bounds = rendered_items_bounds_2d(false); const QRectF overlay_bounds = rendered_items_bounds_2d(true); maybe_warn_overlay_fit_dominance(this, physical_bounds, overlay_bounds); v->fit_include_overlays = true; v->fit_scene(); fit_fallback_scene_to_items(true); v->fit_include_overlays = false; } // Fit overlays includes overlay bounds for explicit overlay-focused framing.
 void ScenePreviewWidget::on_focus_selected_clicked(){ static_cast<Scene3DViewportWidget *>(simple_3d_view_)->focus_selected(); }
 void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id.clear(); simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
