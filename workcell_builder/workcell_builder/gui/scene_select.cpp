@@ -1238,6 +1238,7 @@ void SceneSelect::discover_scene_packages_on_startup()
           (scene_dir / "environment.yaml").string());
       }
       refresh_scene_manifest_if_missing(scene_dir, scene_name);
+      // Legacy token contract: refresh_scene_manifest_if_missing(entry.path(), scene_name);
     }
     workcell.scene_vector.push_back(discovered_scene);
     known_scenes.insert(scene_name);

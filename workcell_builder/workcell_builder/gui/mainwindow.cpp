@@ -1404,7 +1404,7 @@ void MainWindow::setup_studio_shell()
   controls->setObjectName("scene_builder_top_controls_row");
   controls->setContentsMargins(0, 0, 0, 0);
   controls->setSpacing(8);
-  canvas_mode_label_ = new QLabel("Mode: Select · 3D Layout Preview", scene_builder); controls->addWidget(canvas_mode_label_);
+  canvas_mode_label_ = new QLabel("Mode: Select · Native Scene3D Preview — experimental, not RViz-equivalent", scene_builder); controls->addWidget(canvas_mode_label_);
   // Scene canvas entrypoint: keep this same center-panel surface and swap rendering internals through ScenePreviewWidget.
   // ScenePreviewWidget consumes preview items produced from:
   //   1) editable layout metadata (layout/workcell_studio_layout.yaml)
@@ -4597,7 +4597,7 @@ void MainWindow::refresh_scene_builder_view_chips()
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
-    const QString view_label = scene_builder_is_3d_view_ ? "3D Layout Preview" : "2D Layout (Fallback)";
+    const QString view_label = scene_builder_is_3d_view_ ? "Native Scene3D Preview — experimental, not RViz-equivalent" : "2D Layout Draft";
     const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
     canvas_mode_label_->setText(base_mode + " · " + view_label);
   }
@@ -6969,7 +6969,15 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const fs::path dir = s.scene_dir;
   const auto has = [&](const char * rel){ return fs::exists(dir / rel); };
   const bool yaml_ready = has("cell_definition.yaml");
+  const bool scene_manifest_ready = has("scene_manifest.yaml");
   const bool launch_ready = has("launch/demo.launch.py");
+  const bool package_xml_ready = has("package.xml");
+  const bool cmake_ready = has("CMakeLists.txt");
+  const bool environment_yaml_ready = has("environment.yaml");
+  const bool environment_layout_ready = has("environment_layout.yaml");
+  const bool studio_layout_ready = has("layout/workcell_studio_layout.yaml");
+  const bool scene_xacro_ready = has("urdf/scene.urdf.xacro") || s.has_scene_urdf_xacro;
+  const bool placeholder_launch_only = launch_ready && !scene_xacro_ready;
   const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
   const bool scene_selected = has_selected_scene();
   const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
@@ -7036,7 +7044,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     {"scene_selected", scene_selected},
     {"editable_layout", editable_layout_ready},
     {"layout_saved", layout_saved_},
-    {"yaml_definition", yaml_ready},
+    {"yaml_definition", yaml_ready && scene_manifest_ready},
     {"scene_package", launch_artifacts_ready_},
     {"validation", validation_gate_ready},
     {"fake_hardware_preview", fake_hardware_ready},
@@ -7053,22 +7061,25 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
     "Create/edit and save layout to persist edits before YAML generation.");
   steps.push_back(compute_scene_workflow_step(
-    "Layout",
-    editable_layout_ready && layout_saved_, "Editable layout exists and is saved.",
+    "Save Layout",
+    editable_layout_ready && layout_saved_ && environment_yaml_ready && environment_layout_ready && studio_layout_ready,
+    "Saved: environment_layout.yaml, layout/workcell_studio_layout.yaml, environment.yaml are present.",
     layout_missing_detail,
     {}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction));
   steps.push_back(compute_scene_workflow_step(
-    "YAML",
-    yaml_ready, "cell_definition.yaml exists.",
-    "Generate YAML definition from current layout.",
+    "Generate YAML",
+    yaml_ready && scene_manifest_ready, "Ready: cell_definition.yaml and scene_manifest.yaml are present.",
+    "Missing/Blocked: Generate YAML to create cell_definition.yaml and scene_manifest.yaml (task/workcell_builder_task_intent.yaml is optional).",
     {}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Package",
-    launch_artifacts_ready_, "Launch/package artifacts are present.",
-    "Generate scene package to create launch and package metadata.",
+    "Generate Scene Package",
+    package_xml_ready && cmake_ready && launch_ready, "Ready: package.xml, CMakeLists.txt, and launch/demo.launch.py are present.",
+    placeholder_launch_only ?
+      "Partial: Placeholder launch only — not RViz truth preview ready." :
+      "Blocked: Generate Scene Package to create package.xml, CMakeLists.txt, launch/demo.launch.py, and real scene URDF/Xacro.",
     {}, gates));
   steps.push_back(compute_scene_workflow_step(
-    "Validation",
+    "Validate",
     validation_gate_ready, has_warnings ? "Validation completed with warnings." : "Validation checks passed.",
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
@@ -7094,11 +7105,13 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     preview_status = SceneWorkflowStepStatus::NeedsAction;
   }
   SceneWorkflowStep preview_step;
-  preview_step.label = "Preview";
+  preview_step.label = "RViz Truth Preview";
   preview_step.status = preview_status;
   preview_step.detail = (preview_status == SceneWorkflowStepStatus::Done ? preview_ready_detail :
     QString("%1 Runtime counters: received=%2 visible=%3 rendered=%4; classified layers: editable=%5 generated=%6 fallback=%7 other=%8.")
-      .arg(preview_missing_detail)
+      .arg((placeholder_launch_only ?
+        QString("Blocked: Placeholder launch only — not RViz truth preview ready. Generate real scene URDF/RViz launch is not implemented for this scene yet.") :
+        preview_missing_detail))
       .arg(preview_received_count)
       .arg(preview_visible_count)
       .arg(preview_rendered_count)
