@@ -68,6 +68,8 @@ public:
     double visual_origin_roll{ 0.0 }, visual_origin_pitch{ 0.0 }, visual_origin_yaw{ 0.0 };
     bool transform_chain_applied{ false };
     bool visual_origin_applied{ false };
+    bool robot_candidate{ false };
+    QString robot_classification_source;
     QString robot_base_frame;
     QString robot_world_pose;
   };
