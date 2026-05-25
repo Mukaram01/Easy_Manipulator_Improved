@@ -394,6 +394,82 @@ def save_environment_layout(path: str | Path, data: dict[str, Any]) -> None:
         p.write_text(_to_yaml(data) + "\n", encoding="utf-8")
 
 
+def _coerce_pose_xyz_rpy(payload: dict[str, Any], context: str) -> dict[str, list[float]]:
+    if not isinstance(payload, dict):
+        raise ValueError(f"{context} must be a mapping with xyz/rpy lists")
+    xyz = payload.get("xyz")
+    rpy = payload.get("rpy")
+    if not isinstance(xyz, list) or len(xyz) != 3:
+        raise ValueError(f"{context}.xyz must be a list of 3 numbers")
+    if not isinstance(rpy, list) or len(rpy) != 3:
+        raise ValueError(f"{context}.rpy must be a list of 3 numbers")
+    try:
+        return {"xyz": [float(x) for x in xyz], "rpy": [float(r) for r in rpy]}
+    except Exception as exc:
+        raise ValueError(f"{context} xyz/rpy must contain only numbers: {exc}") from exc
+
+
+def resolve_robot_base_pose_authoring_target(scene_package: str | Path) -> dict[str, Any]:
+    scene = Path(scene_package)
+    env_path = scene / "environment.yaml"
+    cell_path = scene / "generated" / "cell_definition.yaml"
+    if env_path.exists():
+        env = _load_yaml_file(env_path)
+        robot = env.get("robot") if isinstance(env.get("robot"), dict) else {}
+        mount = robot.get("robot_mount") if isinstance(robot.get("robot_mount"), dict) else {}
+        if isinstance(mount.get("pose"), dict) or isinstance(robot.get("base_pose"), dict):
+            return {"status": "ok", "target": "environment_yaml", "path": str(env_path)}
+    if cell_path.exists():
+        payload = _load_yaml_file(cell_path)
+        robot = payload.get("robot") if isinstance(payload.get("robot"), dict) else {}
+        if isinstance(robot.get("pose"), dict):
+            return {"status": "ok", "target": "cell_definition", "path": str(cell_path)}
+    return {
+        "status": "blocked",
+        "robot_pose_source": "blocked:no_authoring_target",
+        "diagnostic": "No supported robot base pose authoring target found (environment.yaml robot.robot_mount.pose/base_pose or generated/cell_definition.yaml robot.pose).",
+    }
+
+
+def read_robot_base_pose(scene_package: str | Path) -> dict[str, Any]:
+    target = resolve_robot_base_pose_authoring_target(scene_package)
+    if target.get("status") != "ok":
+        return target
+    path = Path(str(target["path"]))
+    data = _load_yaml_file(path)
+    if target["target"] == "environment_yaml":
+        robot = data.get("robot") if isinstance(data.get("robot"), dict) else {}
+        mount = robot.get("robot_mount") if isinstance(robot.get("robot_mount"), dict) else {}
+        raw_pose = mount.get("pose") if isinstance(mount.get("pose"), dict) else robot.get("base_pose")
+        pose = _coerce_pose_xyz_rpy(raw_pose if isinstance(raw_pose, dict) else {}, "environment.yaml robot base pose")
+    else:
+        robot = data.get("robot") if isinstance(data.get("robot"), dict) else {}
+        pose = _coerce_pose_xyz_rpy(robot.get("pose") if isinstance(robot.get("pose"), dict) else {}, "cell_definition.yaml robot.pose")
+    return {"status": "ok", "target": target["target"], "path": str(path), "pose": pose}
+
+
+def write_robot_base_pose(scene_package: str | Path, pose: dict[str, Any]) -> dict[str, Any]:
+    target = resolve_robot_base_pose_authoring_target(scene_package)
+    if target.get("status") != "ok":
+        return target
+    normalized = _coerce_pose_xyz_rpy(pose, "robot base pose")
+    path = Path(str(target["path"]))
+    payload = _load_yaml_file(path)
+    if target["target"] == "environment_yaml":
+        robot = payload.get("robot") if isinstance(payload.get("robot"), dict) else {}
+        mount = robot.get("robot_mount") if isinstance(robot.get("robot_mount"), dict) else {}
+        mount["pose"] = normalized
+        robot["robot_mount"] = mount
+        payload["robot"] = robot
+    else:
+        robot = payload.get("robot") if isinstance(payload.get("robot"), dict) else {}
+        robot["pose"] = normalized
+        payload["robot"] = robot
+    # Generated URDF previews are intentionally read-only and never edited directly.
+    save_environment_layout(path, payload)
+    return {"status": "ok", "target": target["target"], "path": str(path), "pose": normalized, "robot_pose_source": target["target"]}
+
+
 def list_environment_targets(layout_or_path: dict[str, Any] | str | Path) -> list[dict[str, Any]]:
     payload = layout_or_path if isinstance(layout_or_path, dict) else load_environment_layout(layout_or_path)
     zones = payload.get("zones") if isinstance(payload, dict) else []
