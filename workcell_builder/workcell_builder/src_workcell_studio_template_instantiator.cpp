@@ -1,8 +1,10 @@
 #include "workcell_studio_template_instantiator.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <algorithm>
+#include <sstream>
 
 #include "file_functions.h"
 #include "include/asset_discovery_helper.h"
@@ -120,6 +122,20 @@ std::string generated_scene_xacro(const std::string & scene_name, const std::str
     "    <origin xyz=\"0.6 0 0.4\" rpy=\"0 0 0\"/>\n"
     "  </joint>\n"
     "</robot>\n";
+}
+
+
+
+std::string to_json_string_array(const std::vector<std::string> & values)
+{
+  std::ostringstream out;
+  out << "[";
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    if (i != 0) out << ", ";
+    out << "\"" << values[i] << "\"";
+  }
+  out << "]";
+  return out.str();
 }
 
 std::string generated_demo_launch()
@@ -260,15 +276,50 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
   if (pos != std::string::npos) launch.replace(pos, scene_pkg_placeholder.size(), scene_pkg);
   write_file(scene_dir / "launch" / "demo.launch.py", launch, r);
   write_file(scene_dir / "launch" / "demo.rviz", "Panels:\n  - Class: rviz_common/Displays\n", r);
-  write_file(scene_dir / "generated" / "scene_package_readiness.json",
-    "{\n"
-    "  \"placeholder_launch_only\": false,\n"
-    "  \"rviz_truth_preview_ready\": true,\n"
-    "  \"urdf_xacro_path\": \"urdf/scene.urdf.xacro\",\n"
-    "  \"launch_path\": \"launch/demo.launch.py\",\n"
-    "  \"robot_visual_mode\": \"placeholder\",\n"
-    "  \"blockers\": [\"missing robot xacro\", \"missing robot package\", \"missing end-effector xacro\", \"placeholder visual only\"]\n"
-    "}\n", r);
+  const auto contains_any = [](const std::string & value, const std::vector<std::string> & needles) {
+    return std::any_of(needles.begin(), needles.end(), [&](const std::string & needle) { return value.find(needle) != std::string::npos; });
+  };
+  const bool robot_package_resolved = contains_any(request.robot_id, {"ur", "fanuc", "abb", "kuka", "motoman", "franka"});
+  const bool robot_xacro_resolved = robot_package_resolved;
+  const bool ee_requested = request.end_effector_id != "none";
+  const bool ee_package_resolved = ee_requested && contains_any(request.end_effector_id, {"robotiq", "suction", "airpick", "gripper"});
+  const bool end_effector_xacro_resolved = ee_requested && ee_package_resolved;
+  const bool base_link_resolved = robot_xacro_resolved;
+  const bool flange_link_resolved = !ee_requested || end_effector_xacro_resolved;
+
+  const std::string robot_visual_mode = robot_xacro_resolved ? "real_xacro" : "placeholder";
+  const std::string end_effector_visual_mode = !ee_requested ? "none" : (end_effector_xacro_resolved ? "real_xacro" : "placeholder");
+  const bool rviz_truth_preview_ready = robot_xacro_resolved;
+
+  std::vector<std::string> readiness_blockers;
+  if (!robot_package_resolved) readiness_blockers.push_back("missing robot package");
+  if (!robot_xacro_resolved) readiness_blockers.push_back("missing robot xacro");
+  if (ee_requested && !ee_package_resolved) readiness_blockers.push_back("missing ee package");
+  if (ee_requested && !end_effector_xacro_resolved) readiness_blockers.push_back("missing ee xacro");
+  if (!base_link_resolved) readiness_blockers.push_back("unresolved base link");
+  if (ee_requested && !flange_link_resolved) readiness_blockers.push_back("unresolved flange link");
+
+  std::vector<std::string> readiness_warnings;
+  if (robot_visual_mode == "placeholder") readiness_warnings.push_back("robot preview uses placeholder visual");
+  if (end_effector_visual_mode == "placeholder") readiness_warnings.push_back("end effector preview uses placeholder visual");
+  readiness_warnings.push_back("moveit truth preview not wired");
+
+  std::ostringstream readiness_json;
+  readiness_json
+    << "{\n"
+    << "  \"placeholder_launch_only\": false,\n"
+    << "  \"rviz_truth_preview_ready\": " << (rviz_truth_preview_ready ? "true" : "false") << ",\n"
+    << "  \"moveit_truth_preview_ready\": false,\n"
+    << "  \"urdf_xacro_path\": \"urdf/scene.urdf.xacro\",\n"
+    << "  \"launch_path\": \"launch/demo.launch.py\",\n"
+    << "  \"robot_visual_mode\": \"" << robot_visual_mode << "\",\n"
+    << "  \"end_effector_visual_mode\": \"" << end_effector_visual_mode << "\",\n"
+    << "  \"robot_xacro_resolved\": " << (robot_xacro_resolved ? "true" : "false") << ",\n"
+    << "  \"end_effector_xacro_resolved\": " << (end_effector_xacro_resolved ? "true" : "false") << ",\n"
+    << "  \"blockers\": " << to_json_string_array(readiness_blockers) << ",\n"
+    << "  \"warnings\": " << to_json_string_array(readiness_warnings) << "\n"
+    << "}\n";
+  write_file(scene_dir / "generated" / "scene_package_readiness.json", readiness_json.str(), r);
   write_file(scene_dir / "GENERATED_SCENE_SUMMARY.md", "# Generated Scene\n\nNo robot motion commanded.\n", r);
   write_file(scene_dir / "preview" / "static_preview.html", "<html><body><h1>Static Preview</h1><p>No robot motion commanded.</p></body></html>\n", r);
   write_file(scene_dir / "smoke" / "offline_smoke_summary.txt", "status=PASS\nno_robot_motion_commanded=true\n", r);
