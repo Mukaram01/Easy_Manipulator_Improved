@@ -2,12 +2,73 @@
 
 #include <cctype>
 #include <fstream>
+#include <algorithm>
 
 #include "file_functions.h"
+#include "include/asset_discovery_helper.h"
 
 namespace fs = boost::filesystem;
 namespace workcell_builder {
 namespace {
+
+std::string normalize_asset_id(const std::string & raw)
+{
+  std::string out;
+  out.reserve(raw.size());
+  for (const char c : raw) {
+    if (std::isalnum(static_cast<unsigned char>(c))) {
+      out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+  }
+  return out;
+}
+
+bool contains_token(const std::string & haystack, const std::string & needle)
+{
+  return !needle.empty() && haystack.find(needle) != std::string::npos;
+}
+
+std::vector<std::string> alias_tokens_for_id(const std::string & raw_id)
+{
+  const std::string norm = normalize_asset_id(raw_id);
+  std::vector<std::string> tokens;
+  if (!norm.empty()) tokens.push_back(norm);
+  if (contains_token(norm, "ur5")) {
+    tokens.push_back("ur5");
+    tokens.push_back("universalrobotur5");
+    tokens.push_back("universalrobot");
+  }
+  if (contains_token(norm, "ur10")) tokens.push_back("ur10");
+  if (contains_token(norm, "ur3")) tokens.push_back("ur3");
+  if (contains_token(norm, "robotiq") || contains_token(norm, "2f85") || contains_token(norm, "2f")) {
+    tokens.push_back("robotiq");
+    tokens.push_back("2f85");
+  }
+  if (contains_token(norm, "airpick") || contains_token(norm, "suction") || contains_token(norm, "vacuum")) {
+    tokens.push_back("airpick");
+    tokens.push_back("suction");
+    tokens.push_back("vacuum");
+  }
+  std::sort(tokens.begin(), tokens.end());
+  tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
+  return tokens;
+}
+
+const AssetCandidate * map_selected_to_discovered(
+  const std::string & selected_id, const std::vector<AssetCandidate> & candidates)
+{
+  const auto tokens = alias_tokens_for_id(selected_id);
+  for (const auto & candidate : candidates) {
+    const std::string key = normalize_asset_id(
+      candidate.label + " " + candidate.description_package + " " + candidate.moveit_config_package);
+    for (const auto & token : tokens) {
+      if (contains_token(key, token)) {
+        return &candidate;
+      }
+    }
+  }
+  return nullptr;
+}
 
 std::string sanitize(const std::string & raw)
 {
@@ -109,8 +170,36 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
   r.created_files.push_back((scene_dir / "package.xml").string());
   r.created_files.push_back((scene_dir / "CMakeLists.txt").string());
 
-  const bool suction = request.end_effector_id.find("suction") != std::string::npos || request.end_effector_id.find("airpick") != std::string::npos;
-  const bool preview_only = request.robot_id.find("ur5") == std::string::npos;
+  const std::string workspace_root = request.scene_root.parent_path().parent_path().string();
+  const std::string repo_root = request.scene_root.parent_path().string();
+  const AssetDiscoveryReport discovery = discover_workcell_assets(workspace_root, repo_root);
+  const AssetCandidate * robot_entry = map_selected_to_discovered(request.robot_id, discovery.robots);
+  const AssetCandidate * tool_entry = map_selected_to_discovered(request.end_effector_id, discovery.end_effectors);
+
+  if (!robot_entry) {
+    r.warnings.push_back(
+      "Selected robot id '" + request.robot_id +
+      "' could not be mapped to discovered robot assets (case/alias normalized).");
+    r.warnings.push_back(
+      "Next action: open Asset Picker, select a discovered robot package, then regenerate scene package.");
+  }
+  if (!tool_entry) {
+    r.warnings.push_back(
+      "Selected tool id '" + request.end_effector_id +
+      "' could not be mapped to discovered end-effector assets (case/alias normalized).");
+    r.warnings.push_back(
+      "Next action: open Asset Picker, select a discovered end-effector package, then regenerate scene package.");
+  }
+
+  const std::string resolved_robot_model = robot_entry ? robot_entry->label : request.robot_id;
+  const std::string resolved_tool_model = tool_entry ? tool_entry->label : request.end_effector_id;
+  const std::string resolved_tool_type = tool_entry ? tool_entry->inferred_type : "unknown";
+  const std::string normalized_tool = normalize_asset_id(request.end_effector_id);
+  const bool suction =
+    resolved_tool_type == "suction" || contains_token(normalized_tool, "suction") ||
+    contains_token(normalized_tool, "airpick");
+  const std::string normalized_robot = normalize_asset_id(request.robot_id);
+  const bool preview_only = !(contains_token(normalized_robot, "ur5") || (robot_entry && contains_token(normalize_asset_id(robot_entry->label), "ur5")));
   const std::string grasp = suction ? "suction_top" : "finger_top";
   const std::string task_type = request.template_id.find("inspection") != std::string::npos ? "inspection_preview" : "pick_place";
 
@@ -120,17 +209,17 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
     "workcell_studio:\n"
     "  robot:\n"
     "    family: unknown\n"
-    "    model: " + request.robot_id + "\n"
+    "    model: " + resolved_robot_model + "\n"
     "    base: base_link\n"
     "    tip: tool0\n"
     "    planning_group: manipulator\n"
     "    readiness: PREVIEW_ONLY\n"
     "  tool:\n"
     "    family: unknown\n"
-    "    model: " + request.end_effector_id + "\n"
+    "    model: " + resolved_tool_model + "\n"
     "    attach: tool0\n"
     "    tcp: tcp_link\n"
-    "    type: unknown\n"
+    "    type: " + resolved_tool_type + "\n"
     "    mount_pose:\n"
     "      xyz: [0.0, 0.0, 0.0]\n"
     "      rpy: [-1.5708, -1.5708, 0.0]\n"
@@ -163,7 +252,7 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
   write_file(scene_dir / "config" / "workcell_builder_task_intent.yaml",
     "schema: workcell_builder_task_intent/v1\nsafety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n  allow_moveit_execution: true\n  allow_rviz_motion: true\n  allow_real_hardware_motion: false\n  real_robot_locked: true\n",
     r);
-  write_file(scene_dir / "urdf" / "scene.urdf.xacro", generated_scene_xacro(scene_dir.filename().string(), request.robot_id, request.end_effector_id), r);
+  write_file(scene_dir / "urdf" / "scene.urdf.xacro", generated_scene_xacro(scene_dir.filename().string(), resolved_robot_model, resolved_tool_model), r);
   std::string launch = generated_demo_launch();
   const std::string scene_pkg_placeholder = "scene_name";
   const std::string scene_pkg = scene_dir.filename().string();
@@ -188,6 +277,22 @@ WorkcellStudioTemplateInstantiationResult instantiate_workcell_studio_template(c
 
   r.status = r.blockers.empty() ? (preview_only ? "PREVIEW_ONLY" : "READY") : "BLOCKED";
   r.success = r.blockers.empty();
+  if (robot_entry) {
+    r.next_commands.push_back(
+      "Resolver priority seeded from discovered robot package: " + robot_entry->description_package +
+      (robot_entry->urdf_or_xacro.empty() ? std::string("") : (" (xacro hint: " + robot_entry->urdf_or_xacro + ")")));
+  } else {
+    r.next_commands.push_back(
+      "Resolver fallback active for robot selection; next action: map robot id to a discovered catalog entry.");
+  }
+  if (tool_entry) {
+    r.next_commands.push_back(
+      "Resolver priority seeded from discovered tool package: " + tool_entry->description_package +
+      (tool_entry->urdf_or_xacro.empty() ? std::string("") : (" (xacro hint: " + tool_entry->urdf_or_xacro + ")")));
+  } else {
+    r.next_commands.push_back(
+      "Resolver fallback active for tool selection; next action: map tool id to a discovered catalog entry.");
+  }
   r.next_commands.push_back("colcon build --symlink-install --packages-select " + scene_dir.filename().string());
   r.next_commands.push_back("ros2 launch " + scene_dir.filename().string() + " demo.launch.py use_fake_hardware:=true");
   return r;
