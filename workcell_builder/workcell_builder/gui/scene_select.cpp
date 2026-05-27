@@ -1345,9 +1345,9 @@ void SceneSelect::update_new_scene_lifecycle_and_canvas(const boost::filesystem:
   (void)scene_dir;
   refresh_scenes(static_cast<int>(workcell.scene_vector.size()) - 1, true);
   on_refresh_status_button_clicked();
-  const int index = ui->scene_list->currentIndex();
-  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
-    const auto name = workcell.scene_vector[index].name;
+  const int current_index = ui_->scene_list->currentIndex();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[current_index].name;
     const auto it = all_scenes_readiness_.by_scene.find(name);
     if (it != all_scenes_readiness_.by_scene.end()) {
       const auto & r = it->second;
@@ -2191,9 +2191,9 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
   }
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
   on_refresh_status_button_clicked();
-  const int index = ui->scene_list->currentIndex();
-  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
-    const auto name = workcell.scene_vector[index].name;
+  const int current_index = ui_->scene_list->currentIndex();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[current_index].name;
     const auto it = all_scenes_readiness_.by_scene.find(name);
     if (it != all_scenes_readiness_.by_scene.end()) {
       const auto & r = it->second;
@@ -3406,9 +3406,9 @@ void SceneSelect::on_validate_scene_button_clicked()
     }
   }
   on_refresh_status_button_clicked();
-  const int index = ui->scene_list->currentIndex();
-  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
-    const auto name = workcell.scene_vector[index].name;
+  const int current_index = ui_->scene_list->currentIndex();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[current_index].name;
     const auto it = all_scenes_readiness_.by_scene.find(name);
     if (it != all_scenes_readiness_.by_scene.end()) {
       const auto & r = it->second;
