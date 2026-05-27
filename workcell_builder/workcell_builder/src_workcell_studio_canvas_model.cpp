@@ -496,8 +496,12 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
   YAML::Node root(YAML::NodeType::Map);
   root["schema_version"] = "workcell_studio_layout/v1";
   root["scene_name"] = model.scene_name;
+  root["empty_layout_marker"] = false;
   YAML::Node items(YAML::NodeType::Sequence);
   for (const auto & preview_item : model.items) {
+    if (preview_item.locked) continue;
+    const bool safe_provenance = preview_item.provenance != WorkcellStudioItemProvenance::StaticFallbackPreview;
+    if (!safe_provenance) continue;
     YAML::Node item(YAML::NodeType::Map);
     item["id"] = preview_item.id;
     item["type"] = preview_item.type;
@@ -518,10 +522,10 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
     mesh["source"] = preview_item.source_file;
     item["mesh"] = mesh;
     item["source"] = preview_item.source_file;
-    item["editable"] = !preview_item.locked;
+    item["editable"] = true;
+    item["locked"] = false;
     items.push_back(item);
   }
   root["items"] = items;
   return root;
-}
 }
