@@ -1793,6 +1793,11 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
   }
   ui->scene_list->blockSignals(oldState);
 }
+int SceneSelect::current_scene_index() const
+{
+  return ui->scene_list->currentIndex();
+}
+
 void SceneSelect::on_delete_scene_clicked()
 {
   configure_startup_fallback_paths();
@@ -1803,10 +1808,11 @@ void SceneSelect::on_delete_scene_clicked()
   replace_window.exec();
 
   if (replace_window.decision) {  // user allows for scene folder deletion
-    if (ui->scene_list->currentIndex() >= 0) {
+    const int current_index = current_scene_index();
+    if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
       bool oldState = ui->scene_list->blockSignals(true);
-      delete_folder(scenes_path, workcell.scene_vector[ui->scene_list->currentIndex()].name);
-      workcell.scene_vector.erase(workcell.scene_vector.begin() + ui->scene_list->currentIndex());
+      delete_folder(scenes_path, workcell.scene_vector[current_index].name);
+      workcell.scene_vector.erase(workcell.scene_vector.begin() + current_index);
       if (workcell.scene_vector.size() > 0) {
         refresh_scenes(0, false);
       } else {
@@ -1821,8 +1827,9 @@ void SceneSelect::on_delete_scene_clicked()
 void SceneSelect::on_edit_scene_clicked()
 {
   configure_startup_fallback_paths();
-  if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
-    Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int current_index = current_scene_index();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {  // Make sure that there are scenes to select
+    Scene curr_scene = workcell.scene_vector[current_index];
     std::string open_status;
     if (!open_existing_scene(scene_dir_for_current_selection(), &curr_scene, &open_status)) {
       append_error(open_status);
@@ -1840,7 +1847,7 @@ void SceneSelect::on_edit_scene_clicked()
     scene_window.exec();
     if (scene_window.success) {
       if (CheckSceneEqual(scene_window.scene, curr_scene)) {
-        refresh_scenes(ui->scene_list->currentIndex(), false);
+        refresh_scenes(current_index, false);
       } else {  // Scene was edited
         const fs::path scene_yaml_path = scenes_path / scene_window.scene.name;
         if (boost::filesystem::exists(scene_yaml_path)) {     // Scene name nvr change
@@ -1873,13 +1880,13 @@ void SceneSelect::on_edit_scene_clicked()
             return;
           }
         }
-        workcell.scene_vector[ui->scene_list->currentIndex()] = scene_window.scene;
+        workcell.scene_vector[current_index] = scene_window.scene;
         append_success("Scene edits were applied and persisted to environment.yaml.");
-        refresh_scenes(ui->scene_list->currentIndex(), false);
+        refresh_scenes(current_index, false);
         refresh_canvas_from_scene(scene_window.scene);
       }
     } else {
-      refresh_scenes(ui->scene_list->currentIndex(), false);
+      refresh_scenes(current_index, false);
     }
   } else {
     append_error("No scene selected to edit.");
@@ -1924,7 +1931,11 @@ bool SceneSelect::save_scene(Scene scene, const fs::path & scene_dir, std::strin
 
 void SceneSelect::refresh_canvas_from_scene(const Scene & scene)
 {
-  workcell.scene_vector[ui->scene_list->currentIndex()] = scene;
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    return;
+  }
+  workcell.scene_vector[current_index] = scene;
   refresh_preview_status();
 }
 
@@ -1959,10 +1970,11 @@ bool SceneSelect::regenerate_scene(const fs::path & scene_dir, const std::string
 void SceneSelect::on_generate_yaml_clicked()
 {
   configure_startup_fallback_paths();
-  if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
+  const int current_index = current_scene_index();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {  // Make sure that there are scenes to select
     const fs::path scene_yaml_path =
-      scenes_path / workcell.scene_vector[ui->scene_list->currentIndex()].name;
-    Scene target_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+      scenes_path / workcell.scene_vector[current_index].name;
+    Scene target_scene = workcell.scene_vector[current_index];
     if (!target_scene.loaded) {  // No scene currently loaded
       if (check_yaml()) {    // If yaml file is in folder,
                              // it might get replaced by new scene configuration
@@ -2032,8 +2044,9 @@ bool SceneSelect::check_scene(bool strict)
 
   if (has_yaml) {
     Scene curr_scene;
-    if (ui->scene_list->currentIndex() >= 0) {
-      curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+    const int current_index = current_scene_index();
+    if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+      curr_scene = workcell.scene_vector[current_index];
       if (!curr_scene.loaded) {
         load_scene_from_yaml(&curr_scene);
       }
@@ -2146,8 +2159,9 @@ bool SceneSelect::check_files(bool strict)
     }
     return false;
   }
-  if (ui->scene_list->currentIndex() >= 0) {
-    Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int current_index = current_scene_index();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {
+    Scene curr_scene = workcell.scene_vector[current_index];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
         append_error("Scene status: unable to load scene metadata from environment.yaml.");
@@ -2193,8 +2207,9 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
 void SceneSelect::on_generate_files_clicked()
 {
   configure_startup_fallback_paths();
-  if (ui->scene_list->currentIndex() >= 0) {  // Make sure that there are scenes to select
-    Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int current_index = current_scene_index();
+  if (current_index >= 0 && current_index < static_cast<int>(workcell.scene_vector.size())) {  // Make sure that there are scenes to select
+    Scene curr_scene = workcell.scene_vector[current_index];
     if (!curr_scene.loaded) {
       if (!load_scene_from_yaml(&curr_scene)) {
         append_error("environment.yaml missing. Click Generate YAML files for scene first.");
@@ -2539,7 +2554,7 @@ bool SceneSelect::load_scene_from_yaml(Scene * input_scene)
 
 fs::path SceneSelect::scene_dir_for_current_selection() const
 {
-  const int current_index = ui->scene_list->currentIndex();
+  const int current_index = current_scene_index();
   if (current_index < 0 ||
     current_index >= static_cast<int>(workcell.scene_vector.size()))
   {
@@ -3005,7 +3020,7 @@ void SceneSelect::refresh_validation_dashboard_table(const workcell_builder::Val
 
 void SceneSelect::on_back_clicked()
 {
-  int current_index = ui->scene_list->currentIndex();
+  const int current_index = current_scene_index();
   if (current_index < 0 || workcell.scene_vector.empty() ||
     current_index >= static_cast<int>(workcell.scene_vector.size()))
   {
@@ -3055,7 +3070,12 @@ void SceneSelect::on_validate_cell_clicked()
 {
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) { append_error("No scene selected."); return; }
-  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    append_error("No scene selected.");
+    return;
+  }
+  Scene curr_scene = workcell.scene_vector[current_index];
   if (!curr_scene.loaded) { load_scene_from_yaml(&curr_scene); }
   bool blocked = false;
   latest_dashboard_result_ = workcell_builder::collect_validation_dashboard_results(curr_scene, scene_dir);
@@ -3097,7 +3117,7 @@ void SceneSelect::refresh_preview_status()
     {"Bins", true}, {"Conveyors", true}, {"Cameras", true}, {"Pick/place zones", true},
     {"Camera ROI/FOV", true}, {"Warnings/blockers", true}, {"Labels", true}};
   static std::string selected_item_id;
-  const int idx = ui->scene_list->currentIndex();
+  const int idx = current_scene_index();
   if (idx < 0 || idx >= static_cast<int>(workcell.scene_vector.size())) {
     auto * empty_scene = new QGraphicsScene(ui->visual_layout_canvas);
     empty_scene->addText("No scene selected. Create or open a scene, then apply a template layout.");
@@ -3156,7 +3176,12 @@ void SceneSelect::export_preview_layout()
   const fs::path scene_dir = scene_dir_for_current_selection();
   if (scene_dir.empty()) { append_error("No scene selected."); return; }
   fs::create_directories(scene_dir / "preview");
-  Scene curr_scene = workcell.scene_vector[ui->scene_list->currentIndex()];
+  const int current_index = current_scene_index();
+  if (current_index < 0 || current_index >= static_cast<int>(workcell.scene_vector.size())) {
+    append_error("No scene selected.");
+    return;
+  }
+  Scene curr_scene = workcell.scene_vector[current_index];
   auto items = build_layout_preview_items(curr_scene, selected_template_);
   QJsonObject root; root["scene_name"] = QString::fromStdString(curr_scene.name); root["template_name"] = selected_template_; root["fake_hardware_first"] = true; root["no_runtime_motion"] = true;
   QJsonArray arr; for (const auto & it : items){ QJsonObject o; o["id"]=it.id; o["display_name"]=it.name; o["type"]=it.type; o["x"]=it.x; o["y"]=it.y; o["width"]=it.width; o["height"]=it.height; o["radius"]=it.radius; o["yaw"]=it.yaw; o["status"]=it.status; o["source"]=it.source; o["role"]=it.role; o["warnings"]=it.warning; arr.append(o);} root["preview_items"]=arr;
@@ -3412,7 +3437,12 @@ void SceneSelect::on_open_conveyor_sorting_run_console_button_clicked()
     return;
   }
 
-  const QString scenario_name = ui->scene_list->itemText(ui->scene_list->currentIndex());
+  const int current_index = current_scene_index();
+  if (current_index < 0) {
+    append_warning("No scene selected. Select a scene before opening the run console.");
+    return;
+  }
+  const QString scenario_name = ui->scene_list->itemText(current_index);
   ConveyorSortingRunConsole dialog(std::filesystem::path(scene_dir.string()), scenario_name, this);
   dialog.exec();
 }
@@ -3489,5 +3519,5 @@ void SceneSelect::on_run_all_scenes_readiness_clicked()
   all_scenes_readiness_ = workcell_builder::load_latest_all_scenes_readiness_report(workcell_path, &readiness_err);
   if (!readiness_err.empty()) append_warning(readiness_err);
   if (!all_scenes_readiness_.report_path.empty()) append_info("Latest all-scenes readiness report: " + all_scenes_readiness_.report_path);
-  refresh_scenes(ui->scene_list->currentIndex(), false);
+  refresh_scenes(current_scene_index(), false);
 }
