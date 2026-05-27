@@ -500,6 +500,34 @@ static QString canonical_scene_path_string(const fs::path & scene_dir)
   const fs::path canonical = fs::weakly_canonical(scene_dir, ec);
   return QString::fromStdString((ec ? scene_dir.lexically_normal() : canonical).string());
 }
+enum class LayoutStateModel {
+  NO_LAYOUT_FILE,
+  EMPTY_LAYOUT,
+  EDITABLE_LAYOUT_PRESENT,
+  PREVIEW_ONLY_AVAILABLE,
+  PREVIEW_UNAVAILABLE,
+  PATH_MISMATCH,
+  INVALID_LAYOUT_YAML
+};
+
+static LayoutStateModel derive_layout_state_model(const fs::path & scene_dir, const workcell_builder::WorkcellStudioCanvasModel & model, bool path_match)
+{
+  if (!path_match) return LayoutStateModel::PATH_MISMATCH;
+  const fs::path layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  if (!fs::exists(layout)) {
+    return model.items.empty() ? LayoutStateModel::PREVIEW_UNAVAILABLE : LayoutStateModel::NO_LAYOUT_FILE;
+  }
+  try {
+    const YAML::Node node = YAML::LoadFile(layout.string());
+    const YAML::Node items = workcell_builder::yaml_map_key(node, "items");
+    if (!items || !items.IsSequence() || items.size() == 0) {
+      return model.items.empty() ? LayoutStateModel::EMPTY_LAYOUT : LayoutStateModel::PREVIEW_ONLY_AVAILABLE;
+    }
+    return LayoutStateModel::EDITABLE_LAYOUT_PRESENT;
+  } catch (const YAML::Exception &) {
+    return LayoutStateModel::INVALID_LAYOUT_YAML;
+  }
+}
 
 
 static QMap<QString, QString> discover_visual_mesh_package_map(const fs::path & scene_dir, const QString & workspace_root)
@@ -5069,6 +5097,10 @@ void MainWindow::save_layout_changes()
   workcell_out.close();
   append_studio_log(QString("Save Layout: wrote editable layout items to %1")
     .arg(QString::fromStdString(workcell_layout_path.string())));
+  if (items.size() == 0) {
+    append_studio_log("Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
+    QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
+  }
 
   YAML::Node environment(YAML::NodeType::Map);
   environment["scene_name"] = scene_name;
@@ -5110,7 +5142,7 @@ void MainWindow::create_starter_layout_from_preview()
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
   if (model.items.empty()) {
     append_studio_log("Create Starter Layout failed: preview items count is 0.");
-    QMessageBox::warning(this, "Create Starter Layout", "No preview items found; cannot generate starter layout.");
+    QMessageBox::warning(this, "Create Starter Layout", "Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
     return;
   }
   const fs::path layout_dir = s.scene_dir / "layout";
@@ -5150,7 +5182,14 @@ void MainWindow::create_starter_layout_from_preview()
     append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
     return;
   }
-  append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(model.items.size()).arg(QString::fromStdString(layout_file.string())));
+  const YAML::Node generated_items = workcell_builder::yaml_map_key(layout, "items");
+  const int generated_count = (generated_items && generated_items.IsSequence()) ? static_cast<int>(generated_items.size()) : 0;
+  if (generated_count == 0) {
+    append_studio_log("Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
+    QMessageBox::warning(this, "Create Starter Layout", "Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
+    return;
+  }
+  append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(generated_count).arg(QString::fromStdString(layout_file.string())));
   append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
   rebuild_digital_twin_canvas();
   refresh_scene_builder_left_explorer();
@@ -7059,17 +7098,27 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   steps.push_back(compute_scene_workflow_step(
     "Scene",
     scene_selected, "A scene is selected.", "Select or create a scene first.", {}, gates));
-  const QString layout_missing_detail = preview_runtime_ready && classified_editable_count == 0 ?
-    "Create editable layout from preview to continue editing." :
-    (preview_only_scene ?
-    "Legacy preview-only scene detected. Create editable layout from preview to continue editing." :
-    "Create/edit and save layout to persist edits before YAML generation.");
+  const bool canonical_path_match = (canonical_scene_path_string(dir) == canonical_scene_path_string(fs::path(selected_scene_path().toStdString())));
+  const LayoutStateModel layout_state = derive_layout_state_model(dir, canvas_model, canonical_path_match);
+  QString layout_ready_detail = "Saved: environment_layout.yaml, layout/workcell_studio_layout.yaml, environment.yaml are present.";
+  QString layout_missing_detail = "Create/edit and save layout to persist edits before YAML generation.";
+  SceneWorkflowStepStatus layout_status = SceneWorkflowStepStatus::NeedsAction;
+  bool layout_ready = false;
+  switch (layout_state) {
+    case LayoutStateModel::NO_LAYOUT_FILE: layout_missing_detail = "Save Layout Needed: no layout file"; break;
+    case LayoutStateModel::EMPTY_LAYOUT: layout_missing_detail = "Save Layout Needed: no editable items"; break;
+    case LayoutStateModel::PREVIEW_ONLY_AVAILABLE: layout_missing_detail = "Save Layout Needed: no editable items"; break;
+    case LayoutStateModel::PREVIEW_UNAVAILABLE: layout_missing_detail = "Save Layout Needed: no editable items"; break;
+    case LayoutStateModel::PATH_MISMATCH: layout_missing_detail = "Save Layout Blocked: scene path mismatch"; layout_status = SceneWorkflowStepStatus::Blocked; break;
+    case LayoutStateModel::INVALID_LAYOUT_YAML: layout_missing_detail = "Save Layout Needed: invalid layout YAML"; layout_status = SceneWorkflowStepStatus::Warning; break;
+    case LayoutStateModel::EDITABLE_LAYOUT_PRESENT: layout_ready = layout_saved_ && environment_yaml_ready && environment_layout_ready && studio_layout_ready; layout_status = layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction; break;
+  }
   steps.push_back(compute_scene_workflow_step(
     "Save Layout",
-    editable_layout_ready && layout_saved_ && environment_yaml_ready && environment_layout_ready && studio_layout_ready,
-    "Saved: environment_layout.yaml, layout/workcell_studio_layout.yaml, environment.yaml are present.",
+    layout_ready,
+    layout_ready_detail,
     layout_missing_detail,
-    {}, gates, (editable_layout_ready && layout_saved_) ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction));
+    {}, gates, layout_status));
   steps.push_back(compute_scene_workflow_step(
     "Generate YAML",
     yaml_ready && scene_manifest_ready, "Ready: cell_definition.yaml and scene_manifest.yaml are present.",

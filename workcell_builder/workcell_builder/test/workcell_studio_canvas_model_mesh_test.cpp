@@ -121,3 +121,47 @@ TEST(WorkcellStudioCanvasMesh, LegacyMeshShapesNeverThrowAndFallbackSafely)
     });
   }
 }
+
+TEST(WorkcellStudioCanvasMesh, CountEditableLayoutEntriesTreatsEmptyAsZero)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_layout_count_empty";
+  fs::remove_all(root);
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: workcell_studio_layout/v1\nitems: []\n");
+  EXPECT_EQ(workcell_builder::count_editable_layout_entries(root), 0u);
+}
+
+TEST(WorkcellStudioCanvasMesh, CountEditableLayoutEntriesWithOneEditable)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_layout_count_one";
+  fs::remove_all(root);
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: workcell_studio_layout/v1\nitems:\n- id: a\n  editable: true\n");
+  EXPECT_EQ(workcell_builder::count_editable_layout_entries(root), 1u);
+}
+
+TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutFiltersLockedAndFallbackPreviewItems)
+{
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+  workcell_builder::WorkcellStudioCanvasItem safe;
+  safe.id = "safe_item";
+  safe.type = "object";
+  safe.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+  safe.locked = false;
+  model.items.push_back(safe);
+
+  workcell_builder::WorkcellStudioCanvasItem locked = safe;
+  locked.id = "locked_item";
+  locked.locked = true;
+  model.items.push_back(locked);
+
+  workcell_builder::WorkcellStudioCanvasItem fallback = safe;
+  fallback.id = "fallback_item";
+  fallback.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
+  model.items.push_back(fallback);
+
+  const YAML::Node layout = workcell_builder::build_starter_layout_entries_from_preview(model);
+  const YAML::Node items = layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
+}
