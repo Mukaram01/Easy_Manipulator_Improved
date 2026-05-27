@@ -187,6 +187,7 @@ private:
   QListWidget * scenario_template_catalog_ = nullptr;
   QString selected_template_;
   QString last_status_message_;
+  int current_scene_index() const;
   void initialize_template_catalog();
   void initialize_demo_mode_catalog();
   void refresh_demo_mode_catalog();
