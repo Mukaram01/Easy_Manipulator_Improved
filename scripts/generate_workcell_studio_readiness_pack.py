@@ -237,6 +237,50 @@ def main()->int:
     else: results['smoke_launch_status']='SKIPPED'
     rc,pr=step('planning_readiness',[sys.executable,str(SCRIPT_DIR/'check_planning_scene_readiness.py'),'--scene-package',str(scene),'--output-dir',str(paths['read']),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--json']+(['--task-recipe',str(recipe)] if recipe.exists() else [])+(['--plan-preview-request',str(req)] if req.exists() else [])+(['--plan-preview-session',str(session)] if session.exists() else [])+(['--strict'] if a.strict else []))
     art['planning_scene_readiness_report']=str(paths['read']/'planning_scene_readiness_report.json'); results['planning_scene_readiness']='PASS' if rc==0 else 'WARN'
+    build_launch_readiness_report_path = scene / 'generated' / 'guided_generated_scene_build_readiness_report.json'
+    build_launch_cmd = [
+        sys.executable, str(SCRIPT_DIR / 'validate_guided_generated_scene_build_readiness.py'),
+        '--repo-root', str(Path.cwd()),
+        '--workspace-root', str(Path.cwd()),
+        '--scene', str(scene),
+        '--json',
+    ]
+    if not a.validate:
+        build_launch_cmd.append('--skip-build')
+    if not (a.smoke_dry_run or a.smoke_execute):
+        build_launch_cmd.append('--skip-launch-smoke')
+    build_launch_status = 'WARN'
+    build_launch_warnings: list[str] = []
+    build_launch_blockers: list[str] = []
+    build_launch_payload: dict[str, Any] = {}
+    try:
+        rc, build_launch_payload = step('build_launch_readiness', build_launch_cmd)
+        if isinstance(build_launch_payload, dict):
+            build_launch_status = str(build_launch_payload.get('status') or build_launch_payload.get('result') or ('PASS' if rc == 0 else 'WARN')).upper()
+            build_launch_warnings = build_launch_payload.get('warnings') if isinstance(build_launch_payload.get('warnings'), list) else []
+            build_launch_blockers = build_launch_payload.get('blockers') if isinstance(build_launch_payload.get('blockers'), list) else []
+        else:
+            build_launch_status = 'FAIL'
+            build_launch_blockers = ['Build/launch readiness validator returned a non-object payload.']
+    except Exception as exc:
+        build_launch_status = 'FAIL'
+        build_launch_blockers = [f'Build/launch readiness invocation error: {exc}']
+    results['build_launch_readiness'] = build_launch_status
+    if build_launch_warnings:
+        summary['warnings'].extend(str(w) for w in build_launch_warnings)
+    if build_launch_blockers:
+        summary['blockers'].extend(str(b) for b in build_launch_blockers)
+    build_launch_artifacts = {
+        'validator_report': str(build_launch_readiness_report_path),
+        'planning_scene_readiness_report': str(paths['read'] / 'planning_scene_readiness_report.json'),
+        'fake_hardware_smoke_launch_report': str(paths['smoke'] / 'fake_hardware_smoke_launch_report.json'),
+    }
+    build_launch_readiness_section = {
+        'status': build_launch_status,
+        'blockers': build_launch_blockers,
+        'warnings': build_launch_warnings,
+        'artifact_paths': build_launch_artifacts,
+    }
     if pr_warnings:
         summary['warnings'].extend(pr_warnings)
     if pr_blockers:
@@ -274,7 +318,7 @@ def main()->int:
         }),
     }
 
-    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section,'perception_bridge':perception_bridge_section,'plan_preview_handoff':plan_preview_handoff_section}
+    manifest={'schema':'workcell_studio_readiness_pack/v1','source':{'scene_package':str(scene),'project_name':a.project_name,'created_at':datetime.now(timezone.utc).isoformat()},'artifacts':art,'results':results,'safety':safety,'summary':summary,'perception':perception_section,'perception_bridge':perception_bridge_section,'plan_preview_handoff':plan_preview_handoff_section, 'build_launch_readiness': build_launch_readiness_section}
     (out/'logs'/'command_outputs.json').write_text(json.dumps(logs,indent=2)+"\n",encoding='utf-8')
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
 
@@ -288,6 +332,10 @@ def main()->int:
             results['readiness_dashboard_status']='PASS' if rc==0 else 'WARN'
     manifest['artifacts']=art
     (out/'readiness_pack_manifest.json').write_text(json.dumps(manifest,indent=2)+"\n",encoding='utf-8')
+    scene_readiness_path = scene / 'generated' / 'scene_package_readiness.json'
+    scene_readiness = _read_json(scene_readiness_path)
+    scene_readiness['build_launch_readiness'] = build_launch_readiness_section
+    scene_readiness_path.write_text(json.dumps(scene_readiness, indent=2) + "\n", encoding='utf-8')
     (out/'readiness_pack_summary.md').write_text(f"# Workcell Studio Readiness Pack\n\n- Final readiness: **{results['final_readiness']}**\n- Classification: `{results.get('classification','unknown')}`\n- Dashboard: `{art.get('readiness_dashboard','(disabled)')}`\n",encoding='utf-8')
     if a.json: print(json.dumps({'result':results['final_readiness'],'manifest':str(out/'readiness_pack_manifest.json')},indent=2))
     return 0 if results['final_readiness']!='FAIL' or a.continue_on_error else 2
