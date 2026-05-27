@@ -137,6 +137,7 @@ add_executable(workcell_builder
     src_validation_dashboard_model.cpp
     src_offline_smoke_check_model.cpp
     src_workcell_scene_status.cpp
+    src_supported_scene_readiness_loader.cpp
     src_workcell_studio_scene_browser.cpp
     src_workcell_camera_model.cpp
     src_workcell_zone_model.cpp
@@ -260,6 +261,7 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_scene_status_test
     test/workcell_scene_status_test.cpp
     src_workcell_scene_status.cpp
+    src_supported_scene_readiness_loader.cpp
     src_workcell_studio_scene_browser.cpp
     src_workcell_warning_once.cpp
     src_conveyor_pick_preview.cpp

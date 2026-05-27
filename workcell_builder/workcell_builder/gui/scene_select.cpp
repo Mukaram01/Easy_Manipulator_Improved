@@ -105,6 +105,7 @@
 #include "workcell_scene_bundle.hpp"
 #include "conveyor_pick_preview.hpp"
 #include "offline_readiness_overlay.hpp"
+#include "supported_scene_readiness_loader.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -161,6 +162,15 @@ protected:
   }
 };
 
+
+
+std::string scene_support_level_for(const std::vector<workcell_builder::SupportedSceneRegistryEntry> & entries, const std::string & name){
+  for (const auto & e : entries) if (e.name == name) return e.support_level;
+  return "supported";
+}
+std::string scene_readiness_for(const workcell_builder::AllScenesReadinessData & data, const std::string & name){
+  const auto it = data.by_scene.find(name); return it==data.by_scene.end()?"UNKNOWN":it->second.readiness_status;
+}
 
 [[maybe_unused]] static const char * kCanvasWorkspaceUxTokens =
   "mouse wheel zoom | middle mouse pan | right-drag pan | left-click select | "
@@ -1099,6 +1109,12 @@ void SceneSelect::configure_startup_fallback_paths()
 
 void SceneSelect::show_invalid_workcell_error(const std::string & error_message)
 {
+  std::string registry_err;
+  supported_scene_registry_ = workcell_builder::load_supported_scene_registry(workcell_path, &registry_err);
+  std::string readiness_err;
+  all_scenes_readiness_ = workcell_builder::load_latest_all_scenes_readiness_report(workcell_path, &readiness_err);
+  if (!registry_err.empty()) append_warning(registry_err);
+  if (!readiness_err.empty()) append_info(readiness_err);
   bool oldState = ui->scene_list->blockSignals(true);
   ui->scene_list->clear();
   ui->scene_list->setDisabled(true);
@@ -1329,6 +1345,19 @@ void SceneSelect::update_new_scene_lifecycle_and_canvas(const boost::filesystem:
   (void)scene_dir;
   refresh_scenes(static_cast<int>(workcell.scene_vector.size()) - 1, true);
   on_refresh_status_button_clicked();
+  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[index].name;
+    const auto it = all_scenes_readiness_.by_scene.find(name);
+    if (it != all_scenes_readiness_.by_scene.end()) {
+      const auto & r = it->second;
+      append_info("Supported scene readiness for " + name + ": " + r.readiness_status);
+      append_info("required_files_status=" + r.required_files_status + ", static_validation_status=" + r.static_validation_status + ", guided_build_launch_readiness=" + r.guided_build_launch_readiness + ", fake_hardware_launch_readiness=" + r.fake_hardware_launch_readiness);
+      if (!r.blockers_summary.empty()) append_warning("Blockers: " + r.blockers_summary);
+      if (!all_scenes_readiness_.report_path.empty()) append_info("Latest all-scenes readiness report: " + all_scenes_readiness_.report_path);
+    } else {
+      append_info("Supported scene readiness: UNKNOWN (no all-scenes readiness entry found).");
+    }
+  }
   refresh_preview_status();
 }
 
@@ -1743,7 +1772,9 @@ void SceneSelect::refresh_scenes(int latest_scene, bool scaffold_only_status)
         load_scene_from_yaml(&scene_value);
       }
       const SceneUiStatus status = compute_scene_status_label(scene_value, scenes_path / workcell.scene_vector[scene].name);
-      const std::string label = workcell.scene_vector[scene].name + " [" + scene_status_label(status) + "]";
+      const std::string support = scene_support_level_for(supported_scene_registry_, workcell.scene_vector[scene].name);
+      const std::string readiness_chip = scene_readiness_for(all_scenes_readiness_, workcell.scene_vector[scene].name);
+      const std::string label = workcell.scene_vector[scene].name + " [" + scene_status_label(status) + "] [" + support + "] [" + readiness_chip + "]";
       ui->scene_list->addItem(QString::fromStdString(label));
     }
     ui->scene_list->setCurrentIndex(latest_scene);     // Display the latest scene the user created
@@ -2145,6 +2176,19 @@ void SceneSelect::on_scene_list_currentIndexChanged(int index)
   }
   refresh_scene_status(index != scaffold_scene_index_, "Scene Selection Changed");
   on_refresh_status_button_clicked();
+  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[index].name;
+    const auto it = all_scenes_readiness_.by_scene.find(name);
+    if (it != all_scenes_readiness_.by_scene.end()) {
+      const auto & r = it->second;
+      append_info("Supported scene readiness for " + name + ": " + r.readiness_status);
+      append_info("required_files_status=" + r.required_files_status + ", static_validation_status=" + r.static_validation_status + ", guided_build_launch_readiness=" + r.guided_build_launch_readiness + ", fake_hardware_launch_readiness=" + r.fake_hardware_launch_readiness);
+      if (!r.blockers_summary.empty()) append_warning("Blockers: " + r.blockers_summary);
+      if (!all_scenes_readiness_.report_path.empty()) append_info("Latest all-scenes readiness report: " + all_scenes_readiness_.report_path);
+    } else {
+      append_info("Supported scene readiness: UNKNOWN (no all-scenes readiness entry found).");
+    }
+  }
 }
 void SceneSelect::on_generate_files_clicked()
 {
@@ -3335,6 +3379,19 @@ void SceneSelect::on_validate_scene_button_clicked()
     }
   }
   on_refresh_status_button_clicked();
+  if (index >= 0 && index < static_cast<int>(workcell.scene_vector.size())) {
+    const auto name = workcell.scene_vector[index].name;
+    const auto it = all_scenes_readiness_.by_scene.find(name);
+    if (it != all_scenes_readiness_.by_scene.end()) {
+      const auto & r = it->second;
+      append_info("Supported scene readiness for " + name + ": " + r.readiness_status);
+      append_info("required_files_status=" + r.required_files_status + ", static_validation_status=" + r.static_validation_status + ", guided_build_launch_readiness=" + r.guided_build_launch_readiness + ", fake_hardware_launch_readiness=" + r.fake_hardware_launch_readiness);
+      if (!r.blockers_summary.empty()) append_warning("Blockers: " + r.blockers_summary);
+      if (!all_scenes_readiness_.report_path.empty()) append_info("Latest all-scenes readiness report: " + all_scenes_readiness_.report_path);
+    } else {
+      append_info("Supported scene readiness: UNKNOWN (no all-scenes readiness entry found).");
+    }
+  }
 }
 
 void SceneSelect::on_copy_build_command_button_clicked()
@@ -3418,4 +3475,19 @@ void SceneSelect::on_repair_scene_yaml_clicked()
     append_warning("Repair Scene YAML skipped: " + summary);
   }
   refresh_scene_status(true, "Repair Scene YAML");
+}
+
+
+void SceneSelect::on_run_all_scenes_readiness_clicked()
+{
+  const std::string cmd = "python3 scripts/validate_supported_scenes_readiness.py --repo-root "" + workcell_path.string() + "" --workspace-root "" + fs::path(workcell_path).parent_path().string() + "" --json --skip-build --skip-launch-smoke";
+  append_info("Run All-Scenes Readiness: " + cmd);
+  const int rc = std::system(cmd.c_str());
+  if (rc != 0) { append_error("Run All-Scenes Readiness failed with exit code " + std::to_string(rc)); return; }
+  append_success("Run All-Scenes Readiness completed.");
+  std::string readiness_err;
+  all_scenes_readiness_ = workcell_builder::load_latest_all_scenes_readiness_report(workcell_path, &readiness_err);
+  if (!readiness_err.empty()) append_warning(readiness_err);
+  if (!all_scenes_readiness_.report_path.empty()) append_info("Latest all-scenes readiness report: " + all_scenes_readiness_.report_path);
+  refresh_scenes(ui->scene_list->currentIndex(), false);
 }

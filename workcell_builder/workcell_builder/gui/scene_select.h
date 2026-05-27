@@ -66,6 +66,7 @@ struct TaskGraspEditorState
 #include "validation_dashboard_model.hpp"
 #include "workcell_scene_status.hpp"
 #include "offline_smoke_check_model.hpp"
+#include "supported_scene_readiness_loader.hpp"
 
 namespace Ui
 {
@@ -147,6 +148,7 @@ private slots:
   void on_open_smoke_report_clicked();
   void on_export_smoke_report_clicked();
   void on_copy_smoke_summary_clicked();
+  void on_run_all_scenes_readiness_clicked();
 
 private:
   enum class MessageLevel { Info, Warning, Error, Success };
@@ -208,6 +210,8 @@ private:
   std::string selected_canvas_item_id_;
   std::string selected_canvas_item_type_;
   workcell_builder::OfflineSmokeCheckResult latest_offline_smoke_result_;
+  std::vector<workcell_builder::SupportedSceneRegistryEntry> supported_scene_registry_;
+  workcell_builder::AllScenesReadinessData all_scenes_readiness_;
 };
 
 #endif  // EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__SCENE_SELECT_H_
