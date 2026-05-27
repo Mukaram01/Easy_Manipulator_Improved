@@ -1,0 +1,73 @@
+scenes:
+  - scene_name: ur5_2f_test
+    scene_path: scenes/ur5_2f_test
+    enabled: true
+    support_level: canonical
+    robot: ur5
+    end_effector: robotiq_2f
+    expected_package_name: ur5_2f_test
+    expected_files: &required_files
+      - package.xml
+      - CMakeLists.txt
+      - environment.yaml
+      - cell_definition.yaml
+      - launch/demo.launch.py
+      - urdf/scene.urdf.xacro
+    allow_skip_build: false
+    allow_skip_launch_smoke: false
+    known_blockers: []
+  - scene_name: ur5_3f_test
+    scene_path: scenes/ur5_3f_test
+    enabled: true
+    support_level: supported
+    robot: ur5
+    end_effector: robotiq_3f
+    expected_package_name: ur5_3f_test
+    expected_files: *required_files
+    allow_skip_build: false
+    allow_skip_launch_smoke: false
+    known_blockers: []
+  - scene_name: ur3_suction_test
+    scene_path: scenes/ur3_suction_test
+    enabled: true
+    support_level: supported
+    robot: ur3
+    end_effector: suction
+    expected_package_name: ur3_suction_test
+    expected_files: *required_files
+    allow_skip_build: false
+    allow_skip_launch_smoke: false
+    known_blockers: []
+  - scene_name: ur10_2f_test
+    scene_path: scenes/ur10_2f_test
+    enabled: true
+    support_level: supported
+    robot: ur10
+    end_effector: robotiq_2f
+    expected_package_name: ur10_2f_test
+    expected_files: *required_files
+    allow_skip_build: false
+    allow_skip_launch_smoke: false
+    known_blockers: []
+  - scene_name: ur5_airpick4_test
+    scene_path: scenes/ur5_airpick4_test
+    enabled: true
+    support_level: supported
+    robot: ur5
+    end_effector: airpick4
+    expected_package_name: ur5_airpick4_test
+    expected_files: *required_files
+    allow_skip_build: false
+    allow_skip_launch_smoke: false
+    known_blockers: []
+  - scene_name: suction_test
+    scene_path: scenes/suction_test
+    enabled: true
+    support_level: experimental
+    robot: ur5
+    end_effector: suction
+    expected_package_name: suction_test
+    expected_files: *required_files
+    allow_skip_build: true
+    allow_skip_launch_smoke: true
+    known_blockers: []
