@@ -138,13 +138,16 @@ TEST(WorkcellStudioCanvasMesh, CountEditableLayoutEntriesWithOneEditable)
   EXPECT_EQ(workcell_builder::count_editable_layout_entries(root), 1u);
 }
 
-TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutFiltersLockedAndFallbackPreviewItems)
+TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutReportsEachSkipCategoryAndEditableItems)
 {
   workcell_builder::WorkcellStudioCanvasModel model;
   model.scene_name = "demo";
   workcell_builder::WorkcellStudioCanvasItem safe;
   safe.id = "safe_item";
   safe.type = "object";
+  safe.source_file = "environment.yaml";
+  safe.has_mesh_metadata = true;
+  safe.mesh_path = "assets/environment_objects/safe_item/meshes/visual/safe_item.stl";
   safe.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
   safe.locked = false;
   model.items.push_back(safe);
@@ -159,9 +162,63 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutFiltersLockedAndFallbackPreview
   fallback.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
   model.items.push_back(fallback);
 
+  workcell_builder::WorkcellStudioCanvasItem unsafe = safe;
+  unsafe.id = "unsafe_item";
+  unsafe.has_mesh_metadata = false;
+  unsafe.mesh_path.clear();
+  unsafe.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
+  model.items.push_back(unsafe);
+
+  const auto result = workcell_builder::build_starter_layout_result_from_preview(model);
+  EXPECT_EQ(result.total_preview_items, 4u);
+  EXPECT_EQ(result.skipped_locked_items, 1u);
+  EXPECT_EQ(result.skipped_static_fallback_items, 1u);
+  EXPECT_EQ(result.skipped_unsafe_or_missing_metadata_items, 1u);
+  EXPECT_EQ(result.editable_items_created, 1u);
+  const YAML::Node items = result.layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
+  EXPECT_EQ(items[0]["mesh"]["path"].as<std::string>(), safe.mesh_path);
+}
+
+TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutEntriesWrapperReturnsEditableLayout)
+{
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+  workcell_builder::WorkcellStudioCanvasItem safe;
+  safe.id = "safe_item";
+  safe.type = "object";
+  safe.source_file = "environment.yaml";
+  safe.has_mesh_metadata = true;
+  safe.mesh_path = "assets/environment_objects/safe_item/meshes/visual/safe_item.stl";
+  model.items.push_back(safe);
+
   const YAML::Node layout = workcell_builder::build_starter_layout_entries_from_preview(model);
   const YAML::Node items = layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 1u);
   EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
+}
+
+TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSkipsPreviewItemsWithWarningMetadata)
+{
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+  workcell_builder::WorkcellStudioCanvasItem warned;
+  warned.id = "warned_item";
+  warned.type = "object";
+  warned.source_file = "environment.yaml";
+  warned.has_mesh_metadata = true;
+  warned.mesh_path = "assets/environment_objects/warned_item/meshes/visual/warned_item.stl";
+  warned.warnings.push_back("metadata warning");
+  model.items.push_back(warned);
+
+  const auto result = workcell_builder::build_starter_layout_result_from_preview(model);
+  EXPECT_EQ(result.total_preview_items, 1u);
+  EXPECT_EQ(result.skipped_unsafe_or_missing_metadata_items, 1u);
+  EXPECT_EQ(result.editable_items_created, 0u);
+  const YAML::Node items = result.layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  EXPECT_EQ(items.size(), 0u);
 }

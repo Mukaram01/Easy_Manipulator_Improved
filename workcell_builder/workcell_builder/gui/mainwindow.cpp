@@ -5140,9 +5140,21 @@ void MainWindow::create_starter_layout_from_preview()
   if (!has_selected_scene()) return;
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
-  if (model.items.empty()) {
-    append_studio_log("Create Starter Layout failed: preview items count is 0.");
-    QMessageBox::warning(this, "Create Starter Layout", "Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
+  const auto starter_layout_result = workcell_builder::build_starter_layout_result_from_preview(model);
+  const auto starter_layout_counts_message = [&starter_layout_result]() {
+    return QString("Cannot create editable layout from preview: no preview geometry or safe metadata found. "
+                   "total preview items=%1; skipped locked items=%2; skipped static fallback items=%3; "
+                   "skipped unsafe/missing metadata items=%4; editable items created=%5.")
+      .arg(static_cast<qulonglong>(starter_layout_result.total_preview_items))
+      .arg(static_cast<qulonglong>(starter_layout_result.skipped_locked_items))
+      .arg(static_cast<qulonglong>(starter_layout_result.skipped_static_fallback_items))
+      .arg(static_cast<qulonglong>(starter_layout_result.skipped_unsafe_or_missing_metadata_items))
+      .arg(static_cast<qulonglong>(starter_layout_result.editable_items_created));
+  };
+  if (starter_layout_result.editable_items_created == 0) {
+    const QString message = starter_layout_counts_message();
+    append_studio_log(QString("Create Starter Layout failed: %1").arg(message));
+    QMessageBox::warning(this, "Create Starter Layout", message);
     return;
   }
   const fs::path layout_dir = s.scene_dir / "layout";
@@ -5170,7 +5182,7 @@ void MainWindow::create_starter_layout_from_preview()
     }
     append_studio_log(QString("Create Starter Layout: backup created at %1").arg(QString::fromStdString(backup.string())));
   }
-  const YAML::Node layout = workcell_builder::build_starter_layout_entries_from_preview(model);
+  const YAML::Node layout = starter_layout_result.layout;
   std::ofstream out(layout_file.string());
   if (!out.good()) {
     append_studio_log("Create Starter Layout failed: unable to open output file for write.");
@@ -5182,13 +5194,7 @@ void MainWindow::create_starter_layout_from_preview()
     append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
     return;
   }
-  const YAML::Node generated_items = workcell_builder::yaml_map_key(layout, "items");
-  const int generated_count = (generated_items && generated_items.IsSequence()) ? static_cast<int>(generated_items.size()) : 0;
-  if (generated_count == 0) {
-    append_studio_log("Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
-    QMessageBox::warning(this, "Create Starter Layout", "Cannot create editable layout from preview: no preview geometry or safe metadata found. Generate Scene Package first or add layout items manually.");
-    return;
-  }
+  const auto generated_count = static_cast<int>(starter_layout_result.editable_items_created);
   append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(generated_count).arg(QString::fromStdString(layout_file.string())));
   append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
   rebuild_digital_twin_canvas();

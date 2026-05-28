@@ -16,6 +16,12 @@ struct YamlLoadStatus
   std::string reason;
 };
 
+
+static bool yaml_node_defined(const YAML::Node & node)
+{
+  try { return node.IsDefined(); } catch (...) { return false; }
+}
+
 static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
 {
   YamlLoadStatus status;
@@ -42,7 +48,7 @@ static YamlLoadStatus read_yaml(const fs::path & p, YAML::Node * out)
 
 static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string> * out)
 {
-  if (!node.IsScalar()) return;
+  if (!yaml_node_defined(node) || !node.IsScalar()) return;
   const std::string text = node.as<std::string>("");
   if (text.empty()) return;
   if (text.rfind("package://", 0) == 0 || text.find(".stl") != std::string::npos || text.find("meshes/") != std::string::npos) out->push_back(text);
@@ -50,7 +56,7 @@ static void add_mesh_candidate(const YAML::Node & node, std::vector<std::string>
 
 static bool mesh_node_disabled(const YAML::Node & node)
 {
-  if (!node || !node.IsScalar()) return false;
+  if (!yaml_node_defined(node) || !node.IsScalar()) return false;
   std::string value;
   if (!yaml_read_string(node, &value)) return false;
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
@@ -69,7 +75,7 @@ static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, c
   std::vector<std::string> out;
   const auto scan_fields = [&out](const YAML::Node & n) {
     const YAML::Node mesh = yaml_map_key(n, "mesh");
-    if (mesh && mesh.IsMap()) add_mesh_candidate(optional_scalar(mesh, "path"), &out);
+    if (yaml_node_defined(mesh) && mesh.IsMap()) add_mesh_candidate(optional_scalar(mesh, "path"), &out);
     else add_mesh_candidate(mesh, &out);
     add_mesh_candidate(optional_scalar(n, "mesh_path"), &out);
     add_mesh_candidate(yaml_map_key(n, "visual_mesh"), &out);
@@ -80,7 +86,7 @@ static std::vector<std::string> gather_mesh_candidates(const YAML::Node & env, c
   };
   scan_fields(env);
   scan_fields(manifest);
-  if (layout_items.IsSequence()) {
+  if (yaml_node_defined(layout_items) && layout_items.IsSequence()) {
     for (const auto & node : layout_items) {
       if (!node.IsMap()) continue;
       if (yaml_map_value_or_empty(node, "id") != item_id) continue;
@@ -396,11 +402,11 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       m.warnings.push_back(item.mesh_load_warning);
     }
 
-    if (layout_items.IsSequence()) {
+    if (yaml_node_defined(layout_items) && layout_items.IsSequence()) {
       for (const auto & node : layout_items) {
         if (!node.IsMap() || yaml_map_value_or_empty(node, "id") != item.id) continue;
         const YAML::Node mesh = yaml_map_key(node, "mesh");
-        if (!mesh || mesh.IsNull() || mesh_node_disabled(mesh)) {
+        if (!yaml_node_defined(mesh) || mesh.IsNull() || mesh_node_disabled(mesh)) {
           item.mesh_available = false;
           item.mesh_path.clear();
           item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
@@ -416,19 +422,19 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
             item.mesh_path = resolved_path.generic_string();
           }
           const YAML::Node scale = yaml_map_key(mesh, "scale");
-          if (scale.IsSequence()) {
+          if (yaml_node_defined(scale) && scale.IsSequence()) {
             item.mesh_scale_x = read_double_or_warn(yaml_seq_index(scale, 0), "items[].mesh.scale[0]", item.mesh_scale_x);
             item.mesh_scale_y = read_double_or_warn(yaml_seq_index(scale, 1), "items[].mesh.scale[1]", item.mesh_scale_y);
             item.mesh_scale_z = read_double_or_warn(yaml_seq_index(scale, 2), "items[].mesh.scale[2]", item.mesh_scale_z);
           }
           const YAML::Node rpy = yaml_map_key(mesh, "rpy");
-          if (rpy.IsSequence()) {
+          if (yaml_node_defined(rpy) && rpy.IsSequence()) {
             item.mesh_r = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].mesh.rpy[0]", item.mesh_r);
             item.mesh_p = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].mesh.rpy[1]", item.mesh_p);
             item.mesh_y = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].mesh.rpy[2]", item.mesh_y);
           }
           const YAML::Node origin = yaml_map_key(mesh, "origin_offset");
-          if (origin.IsSequence()) {
+          if (yaml_node_defined(origin) && origin.IsSequence()) {
             item.has_origin_offset = true;
             item.origin_offset_x = read_double_or_warn(yaml_seq_index(origin, 0), "items[].mesh.origin_offset[0]", item.origin_offset_x);
             item.origin_offset_y = read_double_or_warn(yaml_seq_index(origin, 1), "items[].mesh.origin_offset[1]", item.origin_offset_y);
@@ -472,10 +478,10 @@ std::size_t count_editable_layout_entries(const fs::path & scene_dir)
   const std::string schema_version = yaml_map_value_or_empty(layout, "schema_version");
   if (schema_version != "workcell_studio_layout/v1") return 0;
   const YAML::Node items = yaml_map_key(layout, "items");
-  if (!items || !items.IsSequence()) return 0;
+  if (!yaml_node_defined(items) || !items.IsSequence()) return 0;
   std::size_t count = 0;
   for (const auto & node : items) {
-    if (!node || !node.IsMap()) continue;
+    if (!yaml_node_defined(node) || !node.IsMap()) continue;
     bool editable = true;
     if (yaml_read_bool(yaml_map_key(node, "editable"), &editable)) {
       if (editable) ++count;
@@ -491,17 +497,36 @@ std::size_t count_editable_layout_entries(const fs::path & scene_dir)
   return count;
 }
 
-YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model)
+static bool starter_preview_item_has_safe_metadata(const WorkcellStudioCanvasItem & preview_item)
 {
+  if (preview_item.id.empty() || preview_item.type.empty() || preview_item.source_file.empty()) return false;
+  if (!preview_item.has_mesh_metadata || preview_item.mesh_path.empty()) return false;
+  if (!preview_item.mesh_load_warning.empty() || !preview_item.alignment_warning.empty()) return false;
+  return preview_item.warnings.empty();
+}
+
+WorkcellStudioStarterLayoutResult build_starter_layout_result_from_preview(const WorkcellStudioCanvasModel & model)
+{
+  WorkcellStudioStarterLayoutResult result;
   YAML::Node root(YAML::NodeType::Map);
   root["schema_version"] = "workcell_studio_layout/v1";
   root["scene_name"] = model.scene_name;
   root["empty_layout_marker"] = false;
   YAML::Node items(YAML::NodeType::Sequence);
   for (const auto & preview_item : model.items) {
-    if (preview_item.locked) continue;
-    const bool safe_provenance = preview_item.provenance != WorkcellStudioItemProvenance::StaticFallbackPreview;
-    if (!safe_provenance) continue;
+    ++result.total_preview_items;
+    if (preview_item.locked) {
+      ++result.skipped_locked_items;
+      continue;
+    }
+    if (preview_item.provenance == WorkcellStudioItemProvenance::StaticFallbackPreview) {
+      ++result.skipped_static_fallback_items;
+      continue;
+    }
+    if (!starter_preview_item_has_safe_metadata(preview_item)) {
+      ++result.skipped_unsafe_or_missing_metadata_items;
+      continue;
+    }
     YAML::Node item(YAML::NodeType::Map);
     item["id"] = preview_item.id;
     item["type"] = preview_item.type;
@@ -518,16 +543,23 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
     item["dimensions"].push_back(preview_item.depth);
     item["dimensions"].push_back(preview_item.height);
     YAML::Node mesh(YAML::NodeType::Map);
-    mesh["path"] = preview_item.mesh_path.empty() ? preview_item.source_file : preview_item.mesh_path;
+    mesh["path"] = preview_item.mesh_path;
     mesh["source"] = preview_item.source_file;
     item["mesh"] = mesh;
     item["source"] = preview_item.source_file;
     item["editable"] = true;
     item["locked"] = false;
     items.push_back(item);
+    ++result.editable_items_created;
   }
   root["items"] = items;
-  return root;
+  result.layout = root;
+  return result;
+}
+
+YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model)
+{
+  return build_starter_layout_result_from_preview(model).layout;
 }
 
 }  // namespace workcell_builder
