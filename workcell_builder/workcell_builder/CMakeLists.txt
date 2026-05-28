@@ -401,6 +401,8 @@ if(BUILD_TESTING)
   if(TARGET workcell_studio_canvas_model_mesh_test)
     target_link_libraries(workcell_studio_canvas_model_mesh_test yaml-cpp ${Boost_LIBRARIES})
     target_include_directories(workcell_studio_canvas_model_mesh_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+    target_compile_definitions(workcell_studio_canvas_model_mesh_test PRIVATE
+      WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
   endif()
 
   if(TARGET workcell_new_cell_wizard_test)
