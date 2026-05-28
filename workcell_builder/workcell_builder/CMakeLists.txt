@@ -151,6 +151,7 @@ add_executable(workcell_builder
     src_workcell_studio_template_instantiator.cpp
     src_workcell_studio_canvas_model.cpp
     src_workcell_studio_layout_editor.cpp
+    src_workcell_layout_readiness.cpp
     src_workcell_studio_layout_merge.cpp
     src_workcell_studio_id_utils.cpp
     src_workcell_warning_once.cpp
@@ -341,6 +342,10 @@ if(BUILD_TESTING)
     test/workcell_studio_canvas_model_mesh_test.cpp
     src_workcell_studio_canvas_model.cpp
     src_workcell_warning_once.cpp
+    src_workcell_yaml_utils.cpp)
+  ament_add_gtest(workcell_layout_readiness_test
+    test/workcell_layout_readiness_test.cpp
+    src_workcell_layout_readiness.cpp
     src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_asset_catalog_discovery_test
     test/asset_catalog_discovery_test.cpp
@@ -553,6 +558,11 @@ if(BUILD_TESTING)
     target_include_directories(workcell_studio_layout_editor_test PRIVATE ${Boost_INCLUDE_DIRS} include)
   endif()
 
+  if(TARGET workcell_layout_readiness_test)
+    target_link_libraries(workcell_layout_readiness_test yaml-cpp ${Boost_LIBRARIES})
+    target_include_directories(workcell_layout_readiness_test PRIVATE ${Boost_INCLUDE_DIRS} include)
+  endif()
+
   if(TARGET workcell_mainwindow_rviz_preview_compile_test)
     target_link_libraries(workcell_mainwindow_rviz_preview_compile_test Qt5::Widgets)
     target_include_directories(workcell_mainwindow_rviz_preview_compile_test
@@ -586,6 +596,7 @@ if(BUILD_TESTING)
     command_builders_test.cpp
     scene_preview_widget_ui_test.cpp
     workcell_studio_canvas_model_mesh_test.cpp
+    workcell_layout_readiness_test.cpp
     asset_catalog_discovery_test.cpp
     transform_clipboard_utils_test.cpp
     layout_serialization_contract_test.cpp

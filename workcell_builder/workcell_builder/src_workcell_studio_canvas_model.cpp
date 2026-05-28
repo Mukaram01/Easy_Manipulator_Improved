@@ -476,17 +476,19 @@ std::size_t count_editable_layout_entries(const fs::path & scene_dir)
   std::size_t count = 0;
   for (const auto & node : items) {
     if (!node || !node.IsMap()) continue;
-    bool editable = true;
+    bool locked = false;
+    if (yaml_read_bool(yaml_map_key(node, "locked"), &locked) && locked) continue;
+
+    bool editable = false;
     if (yaml_read_bool(yaml_map_key(node, "editable"), &editable)) {
       if (editable) ++count;
       continue;
     }
-    bool locked = false;
-    if (yaml_read_bool(yaml_map_key(node, "locked"), &locked)) {
-      if (!locked) ++count;
-      continue;
+
+    if (!yaml_map_key(node, "editable").IsDefined()) {
+      if (!yaml_map_key(node, "locked").IsDefined()) ++count;
+      else if (yaml_read_bool(yaml_map_key(node, "locked"), &locked) && !locked) ++count;
     }
-    ++count;
   }
   return count;
 }
