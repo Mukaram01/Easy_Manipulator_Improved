@@ -124,6 +124,34 @@ bool emit_perception_contract_warning_once(const fs::path & scene_dir, const std
   return false;
 }
 
+fs::path derive_ros_workspace_root(const fs::path & selected_workcell_path)
+{
+  const fs::path normalized = selected_workcell_path.lexically_normal();
+
+  // Common source checkout layout: <workspace>/src/easy_manipulation_deployment.
+  if (normalized.filename() == "easy_manipulation_deployment" &&
+    normalized.parent_path().filename() == "src")
+  {
+    return normalized.parent_path().parent_path();
+  }
+
+  // Workspace source folder selected directly: <workspace>/src.
+  if (normalized.filename() == "src") {
+    return normalized.parent_path();
+  }
+
+  // Workspace root selected directly: it owns the usual src/install/build siblings.
+  if (fs::exists(normalized / "src") ||
+    fs::exists(normalized / "install") ||
+    fs::exists(normalized / "build"))
+  {
+    return normalized;
+  }
+
+  // Preserve the legacy parent-path behavior for non-standard layouts.
+  return normalized.parent_path();
+}
+
 class InteractiveCanvasView : public QGraphicsView
 {
 public:
@@ -3513,7 +3541,8 @@ void SceneSelect::on_repair_scene_yaml_clicked()
 
 void SceneSelect::on_run_all_scenes_readiness_clicked()
 {
-  const std::string cmd = "python3 scripts/validate_supported_scenes_readiness.py --repo-root "" + workcell_path.string() + "" --workspace-root "" + fs::path(workcell_path).parent_path().string() + "" --json --skip-build --skip-launch-smoke";
+  const fs::path workspace_root = derive_ros_workspace_root(workcell_path);
+  const std::string cmd = "python3 scripts/validate_supported_scenes_readiness.py --repo-root "" + workcell_path.string() + "" --workspace-root "" + workspace_root.string() + "" --json --skip-build --skip-launch-smoke";
   append_info("Run All-Scenes Readiness: " + cmd);
   const int rc = std::system(cmd.c_str());
   if (rc != 0) { append_error("Run All-Scenes Readiness failed with exit code " + std::to_string(rc)); return; }

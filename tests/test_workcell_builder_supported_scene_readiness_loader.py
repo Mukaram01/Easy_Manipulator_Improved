@@ -31,3 +31,25 @@ def test_scene_select_shows_blocker_text_and_report_path_and_run_action():
     assert 'Blockers: ' in cpp
     assert 'Latest all-scenes readiness report:' in cpp
     assert '--skip-build --skip-launch-smoke' in cpp
+
+
+def test_scene_select_derives_workspace_root_from_repo_checkout_for_readiness_command():
+    cpp = Path('workcell_builder/workcell_builder/gui/scene_select.cpp').read_text(encoding='utf-8')
+    assert 'derive_ros_workspace_root(workcell_path)' in cpp
+    assert 'normalized.filename() == "easy_manipulation_deployment"' in cpp
+    assert 'normalized.parent_path().filename() == "src"' in cpp
+    assert 'return normalized.parent_path().parent_path();' in cpp
+    readiness_fn = cpp.split('void SceneSelect::on_run_all_scenes_readiness_clicked()', 1)[1]
+    readiness_fn = readiness_fn.split('void SceneSelect::', 1)[0]
+    assert 'fs::path(workcell_path).parent_path().string()' not in readiness_fn
+    assert '--workspace-root "" + workspace_root.string()' in readiness_fn
+
+    repo_root = Path('/home/user/workcell_ws/src/easy_manipulation_deployment')
+    expected_workspace_root = repo_root.parent.parent
+    simulated_command = (
+        'python3 scripts/validate_supported_scenes_readiness.py '
+        f'--repo-root {repo_root} --workspace-root {expected_workspace_root} '
+        '--json --skip-build --skip-launch-smoke'
+    )
+    assert '--workspace-root /home/user/workcell_ws ' in simulated_command
+    assert '--workspace-root /home/user/workcell_ws/src ' not in simulated_command
