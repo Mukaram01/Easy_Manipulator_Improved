@@ -96,6 +96,7 @@
 #include <array>
 #include <cstdlib>
 #include <cmath>
+#include <exception>
 #include <ctime>
 #include <fstream>
 #include <functional>
@@ -525,6 +526,10 @@ static LayoutStateModel derive_layout_state_model(const fs::path & scene_dir, co
     }
     return LayoutStateModel::EDITABLE_LAYOUT_PRESENT;
   } catch (const YAML::Exception &) {
+    return LayoutStateModel::INVALID_LAYOUT_YAML;
+  } catch (const std::exception &) {
+    return LayoutStateModel::INVALID_LAYOUT_YAML;
+  } catch (...) {
     return LayoutStateModel::INVALID_LAYOUT_YAML;
   }
 }
