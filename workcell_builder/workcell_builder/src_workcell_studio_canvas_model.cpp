@@ -491,17 +491,39 @@ std::size_t count_editable_layout_entries(const fs::path & scene_dir)
   return count;
 }
 
-YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model)
+static bool has_safe_starter_layout_metadata(const WorkcellStudioCanvasItem & preview_item)
 {
+  if (!preview_item.has_mesh_metadata) return false;
+  if (preview_item.mesh_path.empty()) return false;
+  if (preview_item.source_file.empty()) return false;
+  if (!preview_item.mesh_load_warning.empty()) return false;
+  if (!preview_item.alignment_warning.empty()) return false;
+  if (!preview_item.warnings.empty()) return false;
+  return true;
+}
+
+WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model)
+{
+  WorkcellStudioStarterLayoutSummary summary;
+  summary.total_preview_items = model.items.size();
+
   YAML::Node root(YAML::NodeType::Map);
   root["schema_version"] = "workcell_studio_layout/v1";
   root["scene_name"] = model.scene_name;
-  root["empty_layout_marker"] = false;
   YAML::Node items(YAML::NodeType::Sequence);
   for (const auto & preview_item : model.items) {
-    if (preview_item.locked) continue;
-    const bool safe_provenance = preview_item.provenance != WorkcellStudioItemProvenance::StaticFallbackPreview;
-    if (!safe_provenance) continue;
+    if (preview_item.locked) {
+      ++summary.skipped_locked_items;
+      continue;
+    }
+    if (preview_item.provenance == WorkcellStudioItemProvenance::StaticFallbackPreview) {
+      ++summary.skipped_static_fallback_items;
+      continue;
+    }
+    if (!has_safe_starter_layout_metadata(preview_item)) {
+      ++summary.skipped_unsafe_or_missing_metadata_items;
+      continue;
+    }
     YAML::Node item(YAML::NodeType::Map);
     item["id"] = preview_item.id;
     item["type"] = preview_item.type;
@@ -518,16 +540,19 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
     item["dimensions"].push_back(preview_item.depth);
     item["dimensions"].push_back(preview_item.height);
     YAML::Node mesh(YAML::NodeType::Map);
-    mesh["path"] = preview_item.mesh_path.empty() ? preview_item.source_file : preview_item.mesh_path;
+    mesh["path"] = preview_item.mesh_path;
     mesh["source"] = preview_item.source_file;
     item["mesh"] = mesh;
     item["source"] = preview_item.source_file;
     item["editable"] = true;
     item["locked"] = false;
     items.push_back(item);
+    ++summary.editable_items_created;
   }
+  root["empty_layout_marker"] = summary.editable_items_created == 0;
   root["items"] = items;
-  return root;
+  summary.layout = root;
+  return summary;
 }
 
 }  // namespace workcell_builder
