@@ -70,3 +70,34 @@ def test_create_editable_layout_recommended_action_handler_tokens():
         "RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview" in block
         for block in create_editable_action_blocks
     )
+
+
+def test_save_layout_success_refreshes_workflow_rail_and_scene_chips_after_writes():
+    source = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
+    save_match = re.search(
+        r"void MainWindow::save_layout_changes\(\)\n\{(?P<body>.*?)\n\}\n\nvoid MainWindow::create_starter_layout_from_preview",
+        source,
+        re.DOTALL,
+    )
+    assert save_match is not None
+    body = save_match.group("body")
+
+    write_layout_pos = body.find('"layout" / "workcell_studio_layout.yaml"')
+    close_layout_pos = body.find("workcell_out.close();", write_layout_pos)
+    write_environment_pos = body.find('"environment.yaml"')
+    close_environment_pos = body.find("env_out.close();", write_environment_pos)
+    refresh_browser_pos = body.find("refresh_scene_browser_ui();")
+    refresh_workflow_pos = body.find("refresh_scene_workflow_rail();")
+    refresh_chips_pos = body.find("refresh_scene_builder_view_chips();")
+
+    assert write_layout_pos != -1
+    assert close_layout_pos != -1
+    assert write_environment_pos != -1
+    assert close_environment_pos != -1
+    assert refresh_browser_pos != -1
+    assert refresh_workflow_pos != -1
+    assert refresh_chips_pos != -1
+    assert write_layout_pos < close_layout_pos < write_environment_pos
+    assert write_environment_pos < close_environment_pos < refresh_browser_pos
+    assert refresh_browser_pos < refresh_workflow_pos < refresh_chips_pos
