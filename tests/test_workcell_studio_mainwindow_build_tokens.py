@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def test_mainwindow_build_regression_tokens():
@@ -34,3 +35,38 @@ def test_mainwindow_build_regression_tokens():
     assert "entry.warning)" not in text
     assert "entry.warning;" not in text
     assert "entry.warnings" in text
+
+
+def test_create_editable_layout_recommended_action_handler_tokens():
+    header = Path("workcell_builder/workcell_builder/gui/mainwindow.h").read_text(encoding="utf-8")
+    source = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+
+    enum_match = re.search(
+        r"enum class RecommendedWorkflowActionHandler \{(?P<body>.*?)\n  \};",
+        header,
+        re.DOTALL,
+    )
+    assert enum_match is not None
+    assert "CreateEditableLayoutFromPreview" in enum_match.group("body")
+
+    trigger_match = re.search(
+        r"case RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview:\s*"
+        r"create_starter_layout_from_preview\(\);\s*"
+        r"return;",
+        source,
+        re.DOTALL,
+    )
+    assert trigger_match is not None
+
+    create_editable_action_blocks = re.findall(
+        r"add_action\(\s*"
+        r"\"create_editable_layout_from_preview\"\s*,\s*"
+        r"\"Create editable layout from preview\"(?P<body>.*?)\);",
+        source,
+        re.DOTALL,
+    )
+    assert create_editable_action_blocks
+    assert all(
+        "RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview" in block
+        for block in create_editable_action_blocks
+    )
