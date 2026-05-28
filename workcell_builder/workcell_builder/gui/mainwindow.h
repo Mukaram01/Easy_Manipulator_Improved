@@ -177,6 +177,7 @@ private:
   enum class RecommendedWorkflowActionHandler {
     OpenOrCreateScene,
     AddAsset,
+    CreateEditableLayoutFromPreview,
     SaveLayout,
     GenerateYaml,
     ValidateScene,

@@ -7274,7 +7274,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
   if (editable_layout_item_count_ == 0 && preview_fallback_item_count_ > 0) {
     add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
       "Create editable layout from preview",
-      RecommendedWorkflowActionHandler::SaveLayout);
+      RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview);
     add_action("generate_yaml", "Generate YAML", false, "Create an editable layout first.", "YAML generation requires editable layout content.", RecommendedWorkflowActionHandler::GenerateYaml);
     return actions;
   }
@@ -7297,7 +7297,7 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
     if (legacy_preview_only_scene) {
       add_action("create_editable_layout_from_preview", "Create editable layout from preview", true, QString(),
         "Create editable layout from preview",
-        RecommendedWorkflowActionHandler::AddAsset);
+        RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview);
       add_action("add_asset", "Add asset", false, "Convert preview-only scene first.", "After conversion, add assets to finalize layout.", RecommendedWorkflowActionHandler::AddAsset);
       return actions;
     }
@@ -7365,6 +7365,9 @@ void MainWindow::trigger_recommended_workflow_action(RecommendedWorkflowActionHa
       return;
     case RecommendedWorkflowActionHandler::AddAsset:
       open_add_asset_dialog();
+      return;
+    case RecommendedWorkflowActionHandler::CreateEditableLayoutFromPreview:
+      create_starter_layout_from_preview();
       return;
     case RecommendedWorkflowActionHandler::SaveLayout:
       save_layout_changes();
