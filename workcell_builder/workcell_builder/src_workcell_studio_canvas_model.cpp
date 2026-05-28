@@ -529,3 +529,5 @@ YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasM
   root["items"] = items;
   return root;
 }
+
+}  // namespace workcell_builder
