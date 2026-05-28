@@ -5133,6 +5133,8 @@ void MainWindow::save_layout_changes()
     append_studio_log("Save Layout: no selected stable item id to reselect.");
   }
   refresh_scene_browser_ui();
+  refresh_scene_workflow_rail();
+  refresh_scene_builder_view_chips();
 }
 
 void MainWindow::create_starter_layout_from_preview()
