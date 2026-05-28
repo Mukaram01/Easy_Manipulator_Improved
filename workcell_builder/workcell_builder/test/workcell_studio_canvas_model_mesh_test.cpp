@@ -180,13 +180,16 @@ TEST(WorkcellStudioCanvasMesh, CountEditableLayoutEntriesWithOneEditable)
   EXPECT_EQ(workcell_builder::count_editable_layout_entries(root), 1u);
 }
 
-TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutFiltersLockedAndFallbackPreviewItems)
+TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems)
 {
   workcell_builder::WorkcellStudioCanvasModel model;
   model.scene_name = "demo";
   workcell_builder::WorkcellStudioCanvasItem safe;
   safe.id = "safe_item";
   safe.type = "object";
+  safe.source_file = "layout/workcell_studio_layout.yaml";
+  safe.mesh_path = "meshes/visual/safe_item.stl";
+  safe.has_mesh_metadata = true;
   safe.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
   safe.locked = false;
   model.items.push_back(safe);
@@ -201,11 +204,34 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutFiltersLockedAndFallbackPreview
   fallback.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
   model.items.push_back(fallback);
 
-  const YAML::Node layout = workcell_builder::build_starter_layout_entries_from_preview(model);
-  const YAML::Node items = layout["items"];
+  workcell_builder::WorkcellStudioCanvasItem missing_metadata = safe;
+  missing_metadata.id = "missing_metadata_item";
+  missing_metadata.has_mesh_metadata = false;
+  model.items.push_back(missing_metadata);
+
+  workcell_builder::WorkcellStudioCanvasItem unsafe_warning = safe;
+  unsafe_warning.id = "unsafe_warning_item";
+  unsafe_warning.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
+  model.items.push_back(unsafe_warning);
+
+  workcell_builder::WorkcellStudioCanvasItem warning_metadata = safe;
+  warning_metadata.id = "warning_metadata_item";
+  warning_metadata.warnings.push_back("malformed metadata warning");
+  model.items.push_back(warning_metadata);
+
+  const auto summary = workcell_builder::build_starter_layout_entries_from_preview(model);
+  EXPECT_EQ(summary.total_preview_items, 6u);
+  EXPECT_EQ(summary.skipped_locked_items, 1u);
+  EXPECT_EQ(summary.skipped_static_fallback_items, 1u);
+  EXPECT_EQ(summary.skipped_unsafe_or_missing_metadata_items, 3u);
+  EXPECT_EQ(summary.editable_items_created, 1u);
+
+  EXPECT_FALSE(summary.layout["empty_layout_marker"].as<bool>());
+  const YAML::Node items = summary.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 1u);
   EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
+  EXPECT_EQ(items[0]["mesh"]["path"].as<std::string>(), "meshes/visual/safe_item.stl");
 }
 
 
@@ -235,22 +261,17 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
   ASSERT_TRUE(before_layout["items"] && before_layout["items"].IsSequence());
 
   const auto valid_model = workcell_builder::build_workcell_studio_canvas_model(copied_scene, scene_name);
-  std::set<std::string> safe_unlocked_preview_ids;
   std::set<std::string> locked_preview_ids;
   for (const auto & item : valid_model.items) {
-    if (item.locked) {
-      locked_preview_ids.insert(item.id);
-      continue;
-    }
-    if (item.provenance != workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview) {
-      safe_unlocked_preview_ids.insert(item.id);
-    }
+    if (item.locked) locked_preview_ids.insert(item.id);
   }
-  ASSERT_FALSE(safe_unlocked_preview_ids.empty()) << "scene should expose at least one safe/unlocked preview item";
   ASSERT_FALSE(locked_preview_ids.empty()) << "scene should expose locked generated preview items";
 
-  const YAML::Node starter_layout = workcell_builder::build_starter_layout_entries_from_preview(valid_model);
-  write_yaml_file(editable_layout_path, starter_layout);
+  const auto starter_layout_summary = workcell_builder::build_starter_layout_entries_from_preview(valid_model);
+  EXPECT_EQ(starter_layout_summary.total_preview_items, valid_model.items.size());
+  EXPECT_GT(starter_layout_summary.skipped_unsafe_or_missing_metadata_items, 0u)
+    << "legacy preview items without explicit safe mesh metadata should be skipped";
+  write_yaml_file(editable_layout_path, starter_layout_summary.layout);
 
   const YAML::Node after_layout = load_yaml_file(editable_layout_path);
   ASSERT_TRUE(after_layout && after_layout.IsMap());
@@ -259,19 +280,7 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
   ASSERT_TRUE(after_layout["items"] && after_layout["items"].IsSequence());
 
   const std::set<std::string> after_editable_ids = editable_item_ids(after_layout);
-  if (safe_unlocked_preview_ids.count("table") > 0) {
-    EXPECT_EQ(after_editable_ids.count("table"), 1u)
-      << "starter layout should include the expected safe/unlocked table preview item as editable";
-  } else {
-    bool wrote_expected_safe_editable = false;
-    for (const auto & id : safe_unlocked_preview_ids) {
-      if (after_editable_ids.count(id) > 0) {
-        wrote_expected_safe_editable = true;
-        break;
-      }
-    }
-    EXPECT_TRUE(wrote_expected_safe_editable) << "starter layout should include an editable safe/unlocked preview item";
-  }
+  EXPECT_EQ(after_editable_ids.size(), starter_layout_summary.editable_items_created);
   for (const auto & id : locked_preview_ids) {
     EXPECT_EQ(after_editable_ids.count(id), 0u) << "locked generated preview item was written editable: " << id;
   }
@@ -292,8 +301,10 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
     }
   }
   ASSERT_FALSE(static_fallback_ids.empty()) << "missing layout should force static fallback-only preview metadata";
-  const YAML::Node fallback_starter_layout = workcell_builder::build_starter_layout_entries_from_preview(fallback_model);
-  write_yaml_file(fallback_layout_path, fallback_starter_layout);
+  const auto fallback_starter_layout_summary = workcell_builder::build_starter_layout_entries_from_preview(fallback_model);
+  EXPECT_EQ(fallback_starter_layout_summary.editable_items_created, 0u);
+  EXPECT_TRUE(fallback_starter_layout_summary.layout["empty_layout_marker"].as<bool>());
+  write_yaml_file(fallback_layout_path, fallback_starter_layout_summary.layout);
   const YAML::Node fallback_after_layout = load_yaml_file(fallback_layout_path);
   const std::set<std::string> fallback_after_editable_ids = editable_item_ids(fallback_after_layout);
   for (const auto & id : static_fallback_ids) {

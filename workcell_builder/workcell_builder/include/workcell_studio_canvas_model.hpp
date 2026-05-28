@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/filesystem.hpp>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <yaml-cpp/yaml.h>
@@ -50,7 +51,18 @@ struct WorkcellStudioCanvasModel {
   WorkcellStudioProvenanceStatus provenance_status;
   std::vector<std::string> warnings; std::vector<WorkcellStudioCanvasItem> items;
 };
+
+struct WorkcellStudioStarterLayoutSummary
+{
+  std::size_t total_preview_items{0};
+  std::size_t skipped_locked_items{0};
+  std::size_t skipped_static_fallback_items{0};
+  std::size_t skipped_unsafe_or_missing_metadata_items{0};
+  std::size_t editable_items_created{0};
+  YAML::Node layout;
+};
+
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
-YAML::Node build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
+WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
 }
