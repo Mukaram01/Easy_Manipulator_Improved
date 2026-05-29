@@ -16,7 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog
+from supported_scene_catalog import SupportedSceneEntry, default_catalog_path, load_supported_scene_catalog
 
 WARNING_CATEGORIES = ("metadata", "preview", "generation", "launch_simulation", "runtime_smoke")
 READINESS_DIMENSIONS = (
@@ -32,7 +32,8 @@ PASS = "PASS"
 WARN = "WARN"
 FAIL = "FAIL"
 SKIP = "SKIP"
-VALID_STATUSES = {PASS, WARN, FAIL, SKIP}
+BLOCKED = "BLOCKED"
+VALID_STATUSES = {PASS, WARN, FAIL, SKIP, BLOCKED}
 
 REQUIRED_FILES = {
     "scene_manifest": "scene_manifest.yaml",
@@ -62,6 +63,9 @@ class ReadinessDimension:
 @dataclass
 class SceneAudit:
     scene_name: str
+    support_level: str
+    catalog_status: str
+    known_blocker: str
     status: str
     files: dict[str, bool]
     optional_files: dict[str, bool]
@@ -196,6 +200,16 @@ def parse_args() -> argparse.Namespace:
         default=Path("build/workcell_studio/rviz_moveit_simulation_launch_report.json"),
         help="Path to rviz/moveit simulation launch report JSON.",
     )
+    parser.add_argument(
+        "--include-experimental",
+        action="store_true",
+        help="Audit scenes marked support_level: experimental. By default they are reported as SKIP without filesystem validation.",
+    )
+    parser.add_argument(
+        "--regenerate-missing-mesh-indexes",
+        action="store_true",
+        help="Regenerate missing generated/scene_visual_mesh_index.json files during audit. Disabled by default to avoid mutating the repository.",
+    )
     return parser.parse_args()
 
 
@@ -230,6 +244,10 @@ def audit_scene(
     scene_dir: Path,
     simulation_results_by_scene: dict[str, dict[str, Any]] | None = None,
     simulation_report_error: str | None = None,
+    support_level: str = "ad_hoc",
+    catalog_status: str = "ad_hoc",
+    known_blocker: str = "",
+    regenerate_missing_mesh_indexes: bool = False,
 ) -> SceneAudit:
     files = {k: (scene_dir / rel).exists() for k, rel in REQUIRED_FILES.items()}
     optional = {k: (scene_dir / rel).exists() for k, rel in OPTIONAL_FILES.items()}
@@ -259,12 +277,17 @@ def audit_scene(
         warning_groups["preview"].append("preview readiness degraded by layout metadata issues")
 
     generated_index = (scene_dir / "generated" / "scene_visual_mesh_index.json").exists()
-    regen_status = "not_needed" if generated_index else "attempted"
+    regen_status = "not_needed" if generated_index else "skipped_missing_regeneration_disabled"
     regen_reason = ""
-    if not generated_index:
+    if not generated_index and regenerate_missing_mesh_indexes:
+        regen_status = "attempted"
         regen_status, regen_reason = _run_extract_for_scene(repo_root, scene_dir.name)
         if regen_status != "ok":
             blockers.append(f"visual mesh index regeneration failed: {regen_reason}")
+    elif not generated_index:
+        blockers.append(
+            "generated mesh index missing; rerun with --regenerate-missing-mesh-indexes to recreate it"
+        )
 
     renderable_items, mesh_index_status = _read_mesh_index(scene_dir)
     if mesh_index_status != "ok":
@@ -405,6 +428,9 @@ def audit_scene(
 
     return SceneAudit(
         scene_name=scene_dir.name,
+        support_level=support_level,
+        catalog_status=catalog_status,
+        known_blocker=known_blocker,
         status=status,
         files=files,
         optional_files=optional,
@@ -422,6 +448,88 @@ def audit_scene(
     )
 
 
+def _empty_readiness(status: str, reason: str) -> dict[str, ReadinessDimension]:
+    return {dim: _dim(status, [reason]) for dim in READINESS_DIMENSIONS}
+
+
+def _catalog_only_audit(
+    entry: SupportedSceneEntry,
+    scene_dir: Path,
+    status: str,
+    reason: str,
+) -> SceneAudit:
+    warning_groups: dict[str, list[str]] = {k: [] for k in WARNING_CATEGORIES}
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if status == BLOCKED:
+        blockers.append(reason)
+    else:
+        warning_groups["generation"].append(reason)
+        warnings.append(reason)
+
+    return SceneAudit(
+        scene_name=entry.scene_name,
+        support_level=entry.support_level,
+        catalog_status=entry.status,
+        known_blocker=entry.known_blocker,
+        status=status,
+        files={k: False for k in REQUIRED_FILES},
+        optional_files={k: False for k in OPTIONAL_FILES},
+        generated_mesh_index_present=False,
+        mesh_index_regeneration_status="not_attempted_catalog_only",
+        mesh_index_renderable_items=0,
+        preview_readiness_status="blocked" if status == BLOCKED else "skipped",
+        generated_artifacts_present={
+            "generated_environment_assets": False,
+            "generated_layout": False,
+            "task_recipe": False,
+            "task_intent": False,
+        },
+        fake_hardware_smoke_command_available=False,
+        fake_hardware_smoke_command=entry.fake_hardware_launch_command,
+        blockers=blockers,
+        warnings=warnings,
+        warning_groups=warning_groups,
+        readiness=_empty_readiness(status, reason),
+    )
+
+
+def audit_catalog_entry(
+    repo_root: Path,
+    entry: SupportedSceneEntry,
+    *,
+    include_experimental: bool,
+    regenerate_missing_mesh_indexes: bool,
+    simulation_results_by_scene: dict[str, dict[str, Any]] | None = None,
+    simulation_report_error: str | None = None,
+) -> SceneAudit:
+    scene_dir = (repo_root / entry.scene_path).resolve()
+    support_level = entry.support_level.strip().lower()
+    catalog_status = entry.status.strip().lower()
+
+    if catalog_status == "blocked":
+        reason = entry.known_blocker or "catalog marks scene as blocked without a known_blocker"
+        return _catalog_only_audit(entry, scene_dir, BLOCKED, reason)
+
+    if support_level == "experimental" and not include_experimental:
+        reason = "experimental scene skipped by default; rerun with --include-experimental to audit it"
+        return _catalog_only_audit(entry, scene_dir, SKIP, reason)
+
+    audit = audit_scene(
+        repo_root,
+        scene_dir,
+        simulation_results_by_scene=simulation_results_by_scene,
+        simulation_report_error=simulation_report_error,
+        support_level=entry.support_level,
+        catalog_status=entry.status,
+        known_blocker=entry.known_blocker,
+        regenerate_missing_mesh_indexes=regenerate_missing_mesh_indexes,
+    )
+    audit.scene_name = entry.scene_name
+    audit.fake_hardware_smoke_command = entry.fake_hardware_launch_command
+    return audit
+
+
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
@@ -433,23 +541,25 @@ def main() -> int:
         for error in catalog_errors:
             print(f"- {error}")
         return 2
-    scene_dirs = sorted((repo_root / entry.scene_path).resolve() for entry in catalog_entries if entry.enabled)
+    enabled_entries = sorted((entry for entry in catalog_entries if entry.enabled), key=lambda e: e.scene_name)
 
     simulation_results_by_scene, simulation_report_error = _load_simulation_launch_report(repo_root, args.simulation_launch_report)
 
     audits = [
-        audit_scene(
+        audit_catalog_entry(
             repo_root,
-            scene_dir,
+            entry,
+            include_experimental=args.include_experimental,
+            regenerate_missing_mesh_indexes=args.regenerate_missing_mesh_indexes,
             simulation_results_by_scene=simulation_results_by_scene,
             simulation_report_error=simulation_report_error,
         )
-        for scene_dir in scene_dirs
+        for entry in enabled_entries
     ]
 
-    counts = {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
+    counts = {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0, BLOCKED: 0}
     readiness_counts = {
-        dim: {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0}
+        dim: {PASS: 0, WARN: 0, FAIL: 0, SKIP: 0, BLOCKED: 0}
         for dim in READINESS_DIMENSIONS
     }
     for audit in audits:
@@ -474,14 +584,14 @@ def main() -> int:
     output_path = output_dir / "all_scene_reproducibility_report.json"
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    print("Scene | Status | Required | Renderable | Preview | Blockers")
-    print("-|-|-|-|-|-")
+    print("Scene | Support | Catalog | Status | Required | Renderable | Preview | Blockers")
+    print("-|-|-|-|-|-|-|-")
     for a in audits:
         req_ok = sum(1 for v in a.files.values() if v)
         blocker_text = a.blockers[0] if a.blockers else "-"
-        print(f"{a.scene_name} | {a.status} | {req_ok}/{len(a.files)} | {a.mesh_index_renderable_items} | {a.preview_readiness_status} | {blocker_text}")
+        print(f"{a.scene_name} | {a.support_level} | {a.catalog_status} | {a.status} | {req_ok}/{len(a.files)} | {a.mesh_index_renderable_items} | {a.preview_readiness_status} | {blocker_text}")
 
-    print(f"\nSummary PASS={counts[PASS]} WARN={counts[WARN]} FAIL={counts[FAIL]} SKIP={counts[SKIP]}")
+    print(f"\nSummary PASS={counts[PASS]} WARN={counts[WARN]} FAIL={counts[FAIL]} SKIP={counts[SKIP]} BLOCKED={counts[BLOCKED]}")
     print(f"JSON report: {output_path}")
     return 0
 
