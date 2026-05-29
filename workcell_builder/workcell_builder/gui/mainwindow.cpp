@@ -5225,6 +5225,7 @@ void MainWindow::create_starter_layout_from_preview()
   append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
   rebuild_digital_twin_canvas();
   refresh_scene_builder_left_explorer();
+  refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
   refresh_canvas_generated_parity_ui();
   refresh_scene_workflow_rail();
