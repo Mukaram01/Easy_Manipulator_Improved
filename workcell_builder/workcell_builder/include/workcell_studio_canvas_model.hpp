@@ -62,6 +62,20 @@ struct WorkcellStudioStarterLayoutSummary
   YAML::Node layout;
 };
 
+struct WorkcellStudioEditableLayoutBootstrapResult
+{
+  std::string source_used;
+  std::size_t editable_items_created{0};
+  std::size_t skipped_locked_items{0};
+  std::size_t skipped_static_fallback_items{0};
+  std::size_t skipped_unsafe_or_missing_metadata_items{0};
+  std::vector<std::string> blockers;
+  YAML::Node layout;
+  boost::filesystem::path expected_output_dir;
+  boost::filesystem::path expected_output_file;
+  bool expected_output_dir_exists{false};
+  bool expected_output_file_exists{false};
+};
 
 struct WorkcellStudioEditableLayoutInspection
 {
@@ -77,4 +91,8 @@ WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boo
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
 bool is_save_layout_workflow_ready(const boost::filesystem::path & scene_dir);
 WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
+WorkcellStudioEditableLayoutBootstrapResult bootstrap_editable_layout_from_scene_sources(
+  const boost::filesystem::path & scene_dir,
+  const std::string & scene_name,
+  const WorkcellStudioCanvasModel & preview_model);
 }
