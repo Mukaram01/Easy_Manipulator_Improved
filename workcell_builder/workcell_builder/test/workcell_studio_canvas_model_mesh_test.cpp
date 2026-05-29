@@ -314,3 +314,89 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
   fs::remove_all(temp_root);
 #endif
 }
+
+TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEmptyEditableLayout)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_save_layout_empty_ready";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems: []\n");
+  write_file(root / "environment_layout.yaml", "schema_version: environment_layout/v1\nitems: []\n");
+  write_file(root / "environment.yaml", "environment: {}\n");
+
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+  EXPECT_TRUE(inspection.exists);
+  EXPECT_TRUE(inspection.valid);
+  EXPECT_TRUE(inspection.has_items_sequence);
+  EXPECT_EQ(inspection.total_item_entries, 0u);
+  EXPECT_EQ(inspection.editable_item_count, 0u);
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsLockedOnlyAndFallbackOnlyLayout)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_save_layout_locked_ready";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: locked_table\n"
+    "    editable: true\n"
+    "    locked: true\n"
+    "  - id: explicitly_not_editable\n"
+    "    editable: false\n"
+    "  - id: fallback_table\n"
+    "    source_layer: primitive_fallback\n");
+  write_file(root / "environment_layout.yaml", "schema_version: environment_layout/v1\nitems: []\n");
+  write_file(root / "environment.yaml", "environment: {}\n");
+
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+  EXPECT_EQ(inspection.total_item_entries, 3u);
+  EXPECT_EQ(inspection.editable_item_count, 0u);
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEditableLayoutWithMissingEnvironmentFiles)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_save_layout_missing_env_ready";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: editable_table\n"
+    "    editable: true\n");
+
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+  EXPECT_EQ(inspection.editable_item_count, 1u);
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessAcceptsEditableLayoutWithRequiredEnvironmentFiles)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_save_layout_complete_ready";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: legacy_absent_flags_table\n"
+    "  - id: legacy_unlocked_table\n"
+    "    locked: false\n"
+    "  - id: explicit_editable_zone\n"
+    "    editable: true\n");
+  write_file(root / "environment_layout.yaml", "schema_version: environment_layout/v1\nitems: []\n");
+  write_file(root / "environment.yaml", "environment: {}\n");
+
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+  EXPECT_TRUE(inspection.valid);
+  EXPECT_EQ(inspection.total_item_entries, 3u);
+  EXPECT_EQ(inspection.editable_item_count, 3u);
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+}

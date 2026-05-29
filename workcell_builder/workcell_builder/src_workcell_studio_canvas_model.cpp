@@ -2,6 +2,8 @@
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <set>
 #include <yaml-cpp/yaml.h>
 
@@ -465,30 +467,76 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   return fallback;
 }
 
-std::size_t count_editable_layout_entries(const fs::path & scene_dir)
+static std::string lower_scalar_or_empty(const YAML::Node & node)
 {
+  std::string value;
+  if (!yaml_read_string(node, &value)) return "";
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+static bool layout_item_is_fallback_preview_entry(const YAML::Node & node)
+{
+  const std::array<std::string, 5> marker_keys = {"source_layer", "source_file", "source_path", "provenance", "preview_source"};
+  for (const auto & key : marker_keys) {
+    const std::string value = lower_scalar_or_empty(yaml_map_key(node, key));
+    if (value.find("fallback") != std::string::npos || value.find("static_preview") != std::string::npos) return true;
+  }
+  return false;
+}
+
+static bool layout_item_is_effectively_editable(const YAML::Node & node)
+{
+  if (!node || !node.IsMap()) return false;
+
+  bool locked = false;
+  const YAML::Node locked_node = yaml_map_key(node, "locked");
+  if (yaml_read_bool(locked_node, &locked) && locked) return false;
+  if (locked_node.IsDefined() && !yaml_read_bool(locked_node, &locked)) return false;
+
+  bool editable = false;
+  const YAML::Node editable_node = yaml_map_key(node, "editable");
+  if (yaml_read_bool(editable_node, &editable)) return editable;
+  if (editable_node.IsDefined()) return false;
+
+  if (layout_item_is_fallback_preview_entry(node)) return false;
+  return true;
+}
+
+WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const fs::path & scene_dir)
+{
+  WorkcellStudioEditableLayoutInspection out;
+  const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  out.exists = fs::exists(layout_path);
   YAML::Node layout;
-  if (!read_yaml(scene_dir / "layout" / "workcell_studio_layout.yaml", &layout).loaded) return 0;
+  if (!read_yaml(layout_path, &layout).loaded) return out;
   const std::string schema_version = yaml_map_value_or_empty(layout, "schema_version");
-  if (schema_version != "workcell_studio_layout/v1") return 0;
   const YAML::Node items = yaml_map_key(layout, "items");
-  if (!items || !items.IsSequence()) return 0;
-  std::size_t count = 0;
+  const bool schema_current = (schema_version == "workcell_studio_layout/v1");
+  const bool schema_legacy = schema_version.empty() && items.IsSequence();
+  if (!schema_current && !schema_legacy) return out;
+  out.valid = true;
+  if (!items || !items.IsSequence()) return out;
+  out.has_items_sequence = true;
   for (const auto & node : items) {
     if (!node || !node.IsMap()) continue;
-    bool editable = true;
-    if (yaml_read_bool(yaml_map_key(node, "editable"), &editable)) {
-      if (editable) ++count;
-      continue;
-    }
-    bool locked = false;
-    if (yaml_read_bool(yaml_map_key(node, "locked"), &locked)) {
-      if (!locked) ++count;
-      continue;
-    }
-    ++count;
+    ++out.total_item_entries;
+    if (layout_item_is_effectively_editable(node)) ++out.editable_item_count;
   }
-  return count;
+  return out;
+}
+
+std::size_t count_editable_layout_entries(const fs::path & scene_dir)
+{
+  return inspect_editable_layout_entries(scene_dir).editable_item_count;
+}
+
+bool is_save_layout_workflow_ready(const fs::path & scene_dir)
+{
+  const WorkcellStudioEditableLayoutInspection layout = inspect_editable_layout_entries(scene_dir);
+  return layout.exists && layout.valid && layout.editable_item_count > 0 &&
+    fs::exists(scene_dir / "environment_layout.yaml") &&
+    fs::exists(scene_dir / "environment.yaml");
 }
 
 static bool has_safe_starter_layout_metadata(const WorkcellStudioCanvasItem & preview_item)

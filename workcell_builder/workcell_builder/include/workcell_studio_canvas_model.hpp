@@ -62,7 +62,19 @@ struct WorkcellStudioStarterLayoutSummary
   YAML::Node layout;
 };
 
+
+struct WorkcellStudioEditableLayoutInspection
+{
+  bool exists{false};
+  bool valid{false};
+  bool has_items_sequence{false};
+  std::size_t total_item_entries{0};
+  std::size_t editable_item_count{0};
+};
+
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
+WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boost::filesystem::path & scene_dir);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
+bool is_save_layout_workflow_ready(const boost::filesystem::path & scene_dir);
 WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
 }

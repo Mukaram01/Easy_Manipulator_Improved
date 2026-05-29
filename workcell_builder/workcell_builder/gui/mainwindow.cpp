@@ -519,20 +519,12 @@ static LayoutStateModel derive_layout_state_model(const fs::path & scene_dir, co
   if (!fs::exists(layout)) {
     return model.items.empty() ? LayoutStateModel::PREVIEW_UNAVAILABLE : LayoutStateModel::NO_LAYOUT_FILE;
   }
-  try {
-    const YAML::Node node = YAML::LoadFile(layout.string());
-    const YAML::Node items = workcell_builder::yaml_map_key(node, "items");
-    if (!items || !items.IsSequence() || items.size() == 0) {
-      return model.items.empty() ? LayoutStateModel::EMPTY_LAYOUT : LayoutStateModel::PREVIEW_ONLY_AVAILABLE;
-    }
-    return LayoutStateModel::EDITABLE_LAYOUT_PRESENT;
-  } catch (const YAML::Exception &) {
-    return LayoutStateModel::INVALID_LAYOUT_YAML;
-  } catch (const std::exception &) {
-    return LayoutStateModel::INVALID_LAYOUT_YAML;
-  } catch (...) {
-    return LayoutStateModel::INVALID_LAYOUT_YAML;
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(scene_dir);
+  if (!inspection.valid) return LayoutStateModel::INVALID_LAYOUT_YAML;
+  if (!inspection.has_items_sequence || inspection.total_item_entries == 0 || inspection.editable_item_count == 0) {
+    return model.items.empty() ? LayoutStateModel::EMPTY_LAYOUT : LayoutStateModel::PREVIEW_ONLY_AVAILABLE;
   }
+  return LayoutStateModel::EDITABLE_LAYOUT_PRESENT;
 }
 
 
@@ -7038,12 +7030,13 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool environment_yaml_ready = has("environment.yaml");
   const bool environment_layout_ready = has("environment_layout.yaml");
   const bool studio_layout_ready = has("layout/workcell_studio_layout.yaml");
+  const auto editable_layout_inspection = workcell_builder::inspect_editable_layout_entries(dir);
   const bool scene_xacro_ready = has("urdf/scene.urdf.xacro") || s.has_scene_urdf_xacro;
   const bool placeholder_launch_only = launch_ready && !scene_xacro_ready;
   const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
   const bool scene_selected = has_selected_scene();
   const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
-  const bool editable_layout_ready = !canvas_model.items.empty();
+  const bool editable_layout_ready = editable_layout_inspection.valid && editable_layout_inspection.editable_item_count > 0;
   const bool has_warnings = !readiness_warning_details_.isEmpty();
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
@@ -7130,7 +7123,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     case LayoutStateModel::PREVIEW_UNAVAILABLE: layout_missing_detail = "Save Layout Needed: no editable items"; break;
     case LayoutStateModel::PATH_MISMATCH: layout_missing_detail = "Save Layout Blocked: scene path mismatch"; layout_status = SceneWorkflowStepStatus::Blocked; break;
     case LayoutStateModel::INVALID_LAYOUT_YAML: layout_missing_detail = "Save Layout Needed: invalid layout YAML"; layout_status = SceneWorkflowStepStatus::Warning; break;
-    case LayoutStateModel::EDITABLE_LAYOUT_PRESENT: layout_ready = layout_saved_ && environment_yaml_ready && environment_layout_ready && studio_layout_ready; layout_status = layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction; break;
+    case LayoutStateModel::EDITABLE_LAYOUT_PRESENT: layout_ready = workcell_builder::is_save_layout_workflow_ready(dir); layout_status = layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction; break;
   }
   steps.push_back(compute_scene_workflow_step(
     "Save Layout",
