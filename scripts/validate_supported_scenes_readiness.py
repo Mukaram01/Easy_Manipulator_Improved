@@ -47,17 +47,122 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
     return cmd, proc.returncode, payload
 
 
+def _mesh_index_failure(issue_code: str, message: str, index_path: Path, **extra: object) -> dict:
+    result = {
+        "status": "FAIL",
+        "issue_code": issue_code,
+        "message": message,
+        "index_path": str(index_path),
+        "item_key": None,
+        "item_count": 0,
+        "renderable_item_count": 0,
+        "malformed_item_count": 0,
+    }
+    result.update(extra)
+    return result
+
+
+def _validate_mesh_index(scene_path: Path) -> dict:
+    index_path = scene_path / "generated" / "scene_visual_mesh_index.json"
+    if not index_path.exists():
+        return _mesh_index_failure(
+            "missing_file",
+            "Missing generated/scene_visual_mesh_index.json; regenerate the scene visual mesh index before treating the scene as supported.",
+            index_path,
+        )
+
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return _mesh_index_failure(
+            "invalid_json",
+            f"generated/scene_visual_mesh_index.json is not valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}.",
+            index_path,
+        )
+
+    if not isinstance(payload, dict):
+        return _mesh_index_failure(
+            "json_root_not_object",
+            "generated/scene_visual_mesh_index.json must contain a JSON object at the root.",
+            index_path,
+        )
+
+    if "visual_items" in payload:
+        item_key = "visual_items"
+    elif "items" in payload:
+        item_key = "items"
+    else:
+        return _mesh_index_failure(
+            "missing_items_and_visual_items",
+            "generated/scene_visual_mesh_index.json must contain either an 'items' or 'visual_items' list.",
+            index_path,
+        )
+
+    items = payload.get(item_key)
+    if not isinstance(items, list):
+        return _mesh_index_failure(
+            "malformed_item_entries",
+            f"generated/scene_visual_mesh_index.json field '{item_key}' must be a list of item objects.",
+            index_path,
+            item_key=item_key,
+        )
+
+    malformed: list[str] = []
+    renderable_count = 0
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            malformed.append(f"{item_key}[{idx}] is not an object")
+            continue
+        if "render_expected" in item and not isinstance(item.get("render_expected"), bool):
+            malformed.append(f"{item_key}[{idx}].render_expected is not a boolean")
+            continue
+        if item.get("render_expected") is True:
+            renderable_count += 1
+
+    if malformed:
+        return _mesh_index_failure(
+            "malformed_item_entries",
+            "Malformed mesh-index item entries: " + "; ".join(malformed[:5]),
+            index_path,
+            item_key=item_key,
+            item_count=len(items),
+            renderable_item_count=renderable_count,
+            malformed_item_count=len(malformed),
+            malformed_items=malformed,
+        )
+
+    if renderable_count == 0:
+        return _mesh_index_failure(
+            "no_renderable_items",
+            f"generated/scene_visual_mesh_index.json contains {len(items)} {item_key} entries but none are marked render_expected=true.",
+            index_path,
+            item_key=item_key,
+            item_count=len(items),
+        )
+
+    return {
+        "status": "PASS",
+        "issue_code": None,
+        "message": f"Mesh index has {renderable_count} renderable item(s).",
+        "index_path": str(index_path),
+        "item_key": item_key,
+        "item_count": len(items),
+        "renderable_item_count": renderable_count,
+        "malformed_item_count": 0,
+    }
+
+
 def _build_markdown(report: dict) -> str:
     lines = [
         "# Workcell Studio All Scenes Readiness Report",
         "",
-        "Scene | Support Level | Static | Build | Fake Launch | Status | Blocker",
-        "--- | --- | --- | --- | --- | --- | ---",
+        "Scene | Support Level | Static | Mesh Index | Build | Fake Launch | Status | Blocker",
+        "--- | --- | --- | --- | --- | --- | --- | ---",
     ]
     for row in report["per_scene"]:
         blockers = "; ".join(row.get("blockers", [])) or "-"
         lines.append(
-            f"{row['scene_name']} | {row['support_level']} | {row['static_validation']['status']} | {row['build']['status']} | {row['launch_smoke']['status']} | {row['status']} | {blockers}"
+            f"{row['scene_name']} | {row['support_level']} | {row['static_validation']['status']} | {row.get('mesh_index_validation', {}).get('status', 'SKIPPED')} | {row['build']['status']} | {row['launch_smoke']['status']} | {row['status']} | {blockers}"
         )
     lines.append("")
     return "\n".join(lines)
@@ -141,6 +246,7 @@ def main() -> int:
             "guided_build_launch_readiness": {"status": "SKIPPED"},
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
+            "mesh_index_validation": {"status": "SKIPPED"},
             "blockers": [],
             "warnings": [],
             "commands_run": [],
@@ -170,9 +276,22 @@ def main() -> int:
 
         missing = [rel for rel in required if not (scene_dir / rel).exists()]
         row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
+        mesh_index_validation = _validate_mesh_index(scene_dir)
+        row["mesh_index_validation"] = mesh_index_validation
+        mesh_issue_code = mesh_index_validation.get("issue_code")
+        if mesh_issue_code:
+            issue = f"mesh_index_validation: {mesh_issue_code}"
+            if catalog_entry.status == "supported":
+                row["blockers"].append(issue)
+            else:
+                row["warnings"].append(issue)
         if missing:
             row["status"] = "FAIL"
             row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            report["per_scene"].append(row)
+            continue
+        if catalog_entry.status == "supported" and mesh_index_validation["status"] != "PASS":
+            row["status"] = "FAIL"
             report["per_scene"].append(row)
             continue
 

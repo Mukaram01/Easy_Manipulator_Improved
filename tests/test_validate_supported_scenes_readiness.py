@@ -132,3 +132,85 @@ def test_default_catalog_declares_required_contract_fields():
         assert entry["scene_name"] in entry["validation_command"]
         assert entry["build_package_name"] in entry["build_command"]
         assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
+
+
+def test_missing_mesh_index_reports_mesh_validation_issue(tmp_path: Path):
+    scene = tmp_path / "scenes/missing_mesh"
+    _write_scene(scene, "missing_mesh")
+    (scene / "generated/scene_visual_mesh_index.json").unlink()
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("missing_mesh", "scenes/missing_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index_validation"]["status"] == "FAIL"
+    assert row["mesh_index_validation"]["issue_code"] == "missing_file"
+    assert "mesh_index_validation: missing_file" in row["blockers"]
+
+
+def test_malformed_mesh_index_item_entries_block_supported_scene(tmp_path: Path):
+    scene = tmp_path / "scenes/malformed_mesh"
+    _write_scene(scene, "malformed_mesh")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"visual_items": [{"render_expected": True}, "not-an-object"]}),
+        encoding="utf-8",
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("malformed_mesh", "scenes/malformed_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index_validation"]["status"] == "FAIL"
+    assert row["mesh_index_validation"]["issue_code"] == "malformed_item_entries"
+    assert row["mesh_index_validation"]["malformed_item_count"] == 1
+    assert "mesh_index_validation: malformed_item_entries" in row["blockers"]
+
+
+def test_zero_renderable_mesh_index_blocks_supported_scene(tmp_path: Path):
+    scene = tmp_path / "scenes/zero_mesh"
+    _write_scene(scene, "zero_mesh")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"visual_items": [{"render_expected": False}]}),
+        encoding="utf-8",
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("zero_mesh", "scenes/zero_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index_validation"]["status"] == "FAIL"
+    assert row["mesh_index_validation"]["issue_code"] == "no_renderable_items"
+    assert row["mesh_index_validation"]["renderable_item_count"] == 0
+    assert "mesh_index_validation: no_renderable_items" in row["blockers"]
+
+
+def test_blocked_catalog_scene_keeps_known_blocker_and_reports_mesh_issue(tmp_path: Path):
+    scene = tmp_path / "scenes/blocked_mesh"
+    _write_scene(scene, "blocked_mesh")
+    (scene / "generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"visual_items": []}),
+        encoding="utf-8",
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "blocked_mesh",
+            "scenes/blocked_mesh",
+            status="blocked",
+            known_blocker="waiting on upstream asset export",
+        )
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["known_blocker"] == "waiting on upstream asset export"
+    assert row["mesh_index_validation"]["issue_code"] == "no_renderable_items"
+    assert "mesh_index_validation: no_renderable_items" in row["warnings"]
+    assert "mesh_index_validation: no_renderable_items" not in row["blockers"]
