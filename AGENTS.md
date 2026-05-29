@@ -328,6 +328,8 @@ The core 3-month path should remain RViz/MoveIt-first.
 
 ## Testing and validation commands
 
+The example commands below use `/home/user/workcell_ws` as the expected ROS workspace layout. Before running them, Codex should confirm the actual checkout and workspace path for the current container or machine, then map the example path accordingly. In this container, the repository checkout is `/workspace/Easy_Manipulator_Improved`; use that path directly for static repo inspection, and use a sourced ROS workspace only for commands that build, source `install/setup.bash`, run `ros2`, or launch RViz/MoveIt.
+
 For builder changes, run at minimum:
 
 ```bash
