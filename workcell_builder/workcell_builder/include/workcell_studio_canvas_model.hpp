@@ -99,6 +99,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesy
 WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boost::filesystem::path & scene_dir);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
 bool is_save_layout_workflow_ready(const boost::filesystem::path & scene_dir);
+WorkcellStudioStarterLayoutSummary bootstrap_editable_layout_from_trusted_canonical_yaml(const boost::filesystem::path & scene_dir, const std::string & scene_name);
 WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
 WorkcellStudioEditableLayoutBootstrapResult bootstrap_editable_layout_from_scene_sources(
   const boost::filesystem::path & scene_dir,

@@ -181,6 +181,130 @@ TEST(WorkcellStudioCanvasMesh, CountEditableLayoutEntriesWithOneEditable)
   EXPECT_EQ(workcell_builder::count_editable_layout_entries(root), 1u);
 }
 
+
+TEST(WorkcellStudioCanvasMesh, BootstrapFromEnvironmentCreatesEditableLayoutWithoutExistingLayout)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_no_layout";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml",
+    "schema_version: workcell_scene/v1\n"
+    "scene:\n  id: demo\n"
+    "placed_objects:\n"
+    "  - id: table_main\n"
+    "    type: table\n"
+    "    mesh: meshes/visual/table_main.stl\n"
+    "    pose:\n"
+    "      xyz: [0.25, -0.5, 0.75]\n"
+    "      rpy: [0.1, 0.2, 0.3]\n"
+    "    size: {width: 1.0, depth: 0.6, height: 0.2}\n");
+  ASSERT_FALSE(fs::exists(root / "layout" / "workcell_studio_layout.yaml"));
+
+  const auto summary = workcell_builder::bootstrap_editable_layout_from_trusted_canonical_yaml(root, "demo");
+  EXPECT_EQ(summary.total_preview_items, 1u);
+  EXPECT_EQ(summary.editable_items_created, 1u);
+  ASSERT_TRUE(summary.layout["items"] && summary.layout["items"].IsSequence());
+  ASSERT_EQ(summary.layout["items"].size(), 1u);
+  EXPECT_EQ(summary.layout["items"][0]["id"].as<std::string>(), "table_main");
+  EXPECT_TRUE(summary.layout["items"][0]["editable"].as<bool>());
+  EXPECT_FALSE(summary.layout["items"][0]["locked"].as<bool>());
+}
+
+TEST(WorkcellStudioCanvasMesh, LockedOnlyLayoutBecomesReadyAfterCanonicalBootstrapWrite)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_locked_only";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: locked_table\n"
+    "    editable: true\n"
+    "    locked: true\n");
+  write_file(root / "environment_layout.yaml", "schema_version: environment_layout/v1\nitems: []\n");
+  write_file(root / "environment.yaml",
+    "schema_version: workcell_scene/v1\n"
+    "placed_objects:\n"
+    "  - id: canonical_table\n"
+    "    type: table\n"
+    "    pose:\n"
+    "      xyz: [1.0, 2.0, 3.0]\n"
+    "      rpy: [0.0, 0.1, 0.2]\n");
+
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+  const auto summary = workcell_builder::bootstrap_editable_layout_from_trusted_canonical_yaml(root, "demo");
+  ASSERT_EQ(summary.editable_items_created, 1u);
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", summary.layout);
+
+  const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+  EXPECT_EQ(inspection.editable_item_count, 1u);
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapSaveReloadPreservesIdsAndPose)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_save_reload_pose";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml",
+    "schema_version: workcell_scene/v1\n"
+    "placed_objects:\n"
+    "  - id: precise_fixture\n"
+    "    type: fixture\n"
+    "    mesh: meshes/visual/precise_fixture.stl\n"
+    "    pose:\n"
+    "      xyz: [0.125, -0.25, 0.375]\n"
+    "      rpy: [1.0, -0.5, 0.25]\n");
+
+  const auto summary = workcell_builder::bootstrap_editable_layout_from_trusted_canonical_yaml(root, "demo");
+  ASSERT_EQ(summary.editable_items_created, 1u);
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", summary.layout);
+
+  const auto reloaded = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  bool found = false;
+  for (const auto & item : reloaded.items) {
+    if (item.id != "precise_fixture") continue;
+    found = true;
+    EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::EditableLayout);
+    EXPECT_DOUBLE_EQ(item.x, 0.125);
+    EXPECT_DOUBLE_EQ(item.y, -0.25);
+    EXPECT_DOUBLE_EQ(item.z, 0.375);
+    EXPECT_DOUBLE_EQ(item.roll, 1.0);
+    EXPECT_DOUBLE_EQ(item.pitch, -0.5);
+    EXPECT_DOUBLE_EQ(item.yaw, 0.25);
+  }
+  EXPECT_TRUE(found);
+
+  const YAML::Node saved = load_yaml_file(root / "layout" / "workcell_studio_layout.yaml");
+  ASSERT_TRUE(saved["items"] && saved["items"].IsSequence());
+  ASSERT_EQ(saved["items"].size(), 1u);
+  EXPECT_EQ(saved["items"][0]["id"].as<std::string>(), "precise_fixture");
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["xyz"][0].as<double>(), 0.125);
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["xyz"][1].as<double>(), -0.25);
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["xyz"][2].as<double>(), 0.375);
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["rpy"][0].as<double>(), 1.0);
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["rpy"][1].as<double>(), -0.5);
+  EXPECT_DOUBLE_EQ(saved["items"][0]["pose"]["rpy"][2].as<double>(), 0.25);
+}
+
+TEST(WorkcellStudioCanvasMesh, InvalidLayoutYamlInspectionIsInvalidAndDoesNotThrow)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_invalid_layout_no_throw";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: [oops\nitems: [\n");
+  EXPECT_NO_THROW({
+    const auto inspection = workcell_builder::inspect_editable_layout_entries(root);
+    EXPECT_TRUE(inspection.exists);
+    EXPECT_FALSE(inspection.valid);
+    EXPECT_EQ(inspection.editable_item_count, 0u);
+  });
+}
+
 TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems)
 {
   workcell_builder::WorkcellStudioCanvasModel model;
