@@ -132,3 +132,77 @@ def test_default_catalog_declares_required_contract_fields():
         assert entry["scene_name"] in entry["validation_command"]
         assert entry["build_package_name"] in entry["build_command"]
         assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
+
+
+def test_catalog_blocked_scene_reports_known_blocker_without_guided_validator(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/blocked_scene", "blocked_scene")
+    reg = tmp_path / "registry.yaml"
+    blocker = "tracked upstream MoveIt config issue"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_scene", "scenes/blocked_scene", status="blocked", known_blocker=blocker),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["blocker"] == blocker
+    assert row["known_blocker"] == blocker
+    assert row["blockers"][0] == blocker
+    assert row["static_validation"] == {"status": "PASS", "missing_files": []}
+    assert row["guided_build_launch_readiness"] == {"status": "BLOCKED", "blockers": [blocker]}
+    assert row["commands_run"] == []
+
+
+def test_catalog_blocked_scene_keeps_static_missing_file_details(tmp_path: Path):
+    (tmp_path / "scenes/blocked_missing_files").mkdir(parents=True)
+    reg = tmp_path / "registry.yaml"
+    blocker = "intentionally parked until generated assets are restored"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_missing_files", "scenes/blocked_missing_files", status="blocked", known_blocker=blocker),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["blocker"] == blocker
+    assert row["known_blocker"] == blocker
+    assert row["static_validation"]["status"] == "FAIL"
+    assert "environment.yaml" in row["static_validation"]["missing_files"]
+    assert "missing_required_file: environment.yaml" in row["blockers"]
+    assert row["commands_run"] == []
+
+
+def test_supported_scene_with_stale_known_blocker_is_catalog_error(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("stale_blocker", "scenes/stale_blocker", status="supported", known_blocker="old fixed issue"),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    assert payload["summary"]["blocked"] == 1
+    assert "stale_blocker: known_blocker must be empty when status is supported" in payload["catalog_errors"]
+
+
+def test_blocked_scene_without_known_blocker_is_catalog_error(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_without_reason", "scenes/blocked_without_reason", status="blocked", known_blocker=""),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    assert payload["summary"]["blocked"] == 1
+    assert "blocked_without_reason: known_blocker must be non-empty when status is blocked" in payload["catalog_errors"]
+
+
+def test_unknown_catalog_status_and_support_level_are_catalog_errors(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("bad_catalog_values", "scenes/bad_catalog_values", status="parked", support_level="beta"),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    assert payload["summary"]["blocked"] == 1
+    assert "bad_catalog_values: unknown status 'parked'; accepted values: blocked, disabled, supported" in payload["catalog_errors"]
+    assert "bad_catalog_values: unknown support_level 'beta'; accepted values: experimental, supported" in payload["catalog_errors"]

@@ -128,6 +128,8 @@ def main() -> int:
             "support_level": support_level,
             "catalog_status": catalog_entry.status,
             "known_blocker": catalog_entry.known_blocker,
+            "blocker": "",
+            "validation_result": "SKIPPED",
             "status": "SKIPPED",
             "package_name": catalog_entry.package_name,
             "build_package_name": catalog_entry.build_package_name,
@@ -147,15 +149,40 @@ def main() -> int:
             "artifact_paths": {},
         }
 
-        if not enabled:
+        if not enabled or catalog_entry.status == "disabled":
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
+            row["validation_result"] = "SKIPPED"
+            row["blocker"] = "scene_disabled_in_catalog"
             row["blockers"].append("scene_disabled_in_catalog")
             report["per_scene"].append(row)
             continue
+
+        if catalog_entry.status == "blocked":
+            report["scenes_checked"].append(scene_name)
+            missing = required
+            if scene_dir.exists():
+                missing = [rel for rel in required if not (scene_dir / rel).exists()]
+                row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
+            else:
+                row["static_validation"] = {"status": "BLOCKED", "missing_files": missing}
+
+            row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
+            row["blocker"] = catalog_entry.known_blocker
+            row["known_blocker"] = catalog_entry.known_blocker
+            row["guided_build_launch_readiness"] = {"status": "BLOCKED", "blockers": [catalog_entry.known_blocker]}
+            row["blockers"].append(catalog_entry.known_blocker)
+            if not scene_dir.exists():
+                row["blockers"].append(f"scene_path_missing: {scene_dir}")
+            row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            report["per_scene"].append(row)
+            continue
+
         if support_level == "experimental" and not args.include_experimental:
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
+            row["validation_result"] = "SKIPPED"
             row["warnings"].append("experimental_scene_skipped_without_include_experimental")
             report["per_scene"].append(row)
             continue
@@ -163,6 +190,7 @@ def main() -> int:
         report["scenes_checked"].append(scene_name)
         if not scene_dir.exists():
             row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
             row["static_validation"] = {"status": "BLOCKED", "missing_files": required}
             row["blockers"].append(f"scene_path_missing: {scene_dir}")
             report["per_scene"].append(row)
@@ -172,6 +200,7 @@ def main() -> int:
         row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
         if missing:
             row["status"] = "FAIL"
+            row["validation_result"] = "FAIL"
             row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
             report["per_scene"].append(row)
             continue
@@ -188,8 +217,10 @@ def main() -> int:
 
         if guided_status in {"PASS", "PASS_WITH_WARNINGS", "FAIL", "BLOCKED"}:
             row["status"] = guided_status
+            row["validation_result"] = guided_status
         else:
             row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
             row["blockers"].append(f"unknown_guided_status: {guided_status}")
 
         report["per_scene"].append(row)
