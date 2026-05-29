@@ -5,18 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-KNOWN_SCENES = {
-    "suction_test",
-    "ur5_2f_test",
-    "ur5_3f_test",
-    "ur5_2f_builder_pick_place_demo",
-    "ur5_2f_sorting_test",
-    "ur3_suction_test",
-    "ur10_2f_test",
-    "ur5_airpick4_test",
-}
-
-
 def test_validator_emits_per_scene_report_and_contract_keys():
     repo_root = Path(__file__).resolve().parents[1]
     script = repo_root / "scripts" / "validate_all_workcell_studio_scenes.py"
@@ -32,8 +20,13 @@ def test_validator_emits_per_scene_report_and_contract_keys():
     scenes = payload.get("scenes")
     assert isinstance(scenes, list) and scenes
 
+    import yaml
+
+    catalog = yaml.safe_load((repo_root / "scenes" / "supported_scenes.yaml").read_text(encoding="utf-8"))
+    expected_names = {entry["scene_name"] for entry in catalog["scenes"] if entry.get("enabled", True)}
     names = {s.get("scene_name") for s in scenes}
-    assert KNOWN_SCENES.issubset(names)
+    assert expected_names == names
+    assert payload.get("supported_scene_catalog", "").endswith("scenes/supported_scenes.yaml")
 
     expected_keys = {
         "scene_name",

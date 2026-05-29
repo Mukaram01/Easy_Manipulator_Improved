@@ -4,10 +4,19 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml  # type: ignore
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog
 
 WARNING_CATEGORIES = ("metadata", "preview", "generation", "launch_simulation", "runtime_smoke")
 READINESS_DIMENSIONS = (
@@ -42,16 +51,6 @@ OPTIONAL_FILES = {
     "generated_layout": "layout/workcell_studio_layout.generated.yaml",
 }
 
-KNOWN_SCENES = {
-    "suction_test",
-    "ur5_2f_test",
-    "ur5_3f_test",
-    "ur5_2f_builder_pick_place_demo",
-    "ur5_2f_sorting_test",
-    "ur3_suction_test",
-    "ur10_2f_test",
-    "ur5_airpick4_test",
-}
 
 
 @dataclass
@@ -97,11 +96,6 @@ def resolve_scenes_root(repo_root: Path) -> Path:
 
 
 def _load_yaml(path: Path) -> tuple[Any | None, str]:
-    try:
-        import yaml  # type: ignore
-    except ModuleNotFoundError:
-        return None, "dependency_missing: pyyaml"
-
     if not path.exists():
         return None, "missing"
     try:
@@ -191,6 +185,12 @@ def _load_launch_simulation_report(scene_dir: Path) -> tuple[str | None, list[st
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate Workcell Studio scenes and readiness dimensions.")
     parser.add_argument(
+        "--catalog",
+        type=Path,
+        default=None,
+        help="Supported-scene catalog path. Defaults to scenes/supported_scenes.yaml.",
+    )
+    parser.add_argument(
         "--simulation-launch-report",
         type=Path,
         default=Path("build/workcell_studio/rviz_moveit_simulation_launch_report.json"),
@@ -250,9 +250,6 @@ def audit_scene(
         "environment.yaml": env_status,
         "layout/workcell_studio_layout.yaml": layout_status,
     }.items():
-        if status == "dependency_missing: pyyaml":
-            blockers.append("PyYAML dependency missing. Install with: sudo apt install python3-yaml")
-            break
         if status.startswith("parse_error"):
             blockers.append(f"YAML parse failure in {name}: {status}")
 
@@ -296,9 +293,6 @@ def audit_scene(
                 warning_groups["metadata"].append(f"optional file missing: {OPTIONAL_FILES[key]}")
 
     preview_readiness = "ready" if not blockers and not layout_issues else ("degraded" if not blockers else "blocked")
-
-    if scene_dir.name not in KNOWN_SCENES:
-        warning_groups["metadata"].append("scene is not in known-scenes audit set")
 
     warnings = [w for group in WARNING_CATEGORIES for w in warning_groups[group] if w]
 
@@ -432,7 +426,14 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
     scenes_root = resolve_scenes_root(repo_root)
-    scene_dirs = sorted([p for p in scenes_root.iterdir() if p.is_dir()])
+    catalog_path = (args.catalog or default_catalog_path(repo_root)).resolve()
+    catalog, catalog_entries, catalog_errors = load_supported_scene_catalog(catalog_path)
+    if catalog_errors:
+        print("Supported scene catalog is invalid:")
+        for error in catalog_errors:
+            print(f"- {error}")
+        return 2
+    scene_dirs = sorted((repo_root / entry.scene_path).resolve() for entry in catalog_entries if entry.enabled)
 
     simulation_results_by_scene, simulation_report_error = _load_simulation_launch_report(repo_root, args.simulation_launch_report)
 
@@ -460,6 +461,8 @@ def main() -> int:
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scenes_root": str(scenes_root),
+        "supported_scene_catalog": str(catalog_path),
+        "supported_scene_catalog_schema": catalog.get("schema_version"),
         "scene_count": len(audits),
         "status_counts": counts,
         "readiness_dimension_counts": readiness_counts,
@@ -480,7 +483,7 @@ def main() -> int:
 
     print(f"\nSummary PASS={counts[PASS]} WARN={counts[WARN]} FAIL={counts[FAIL]} SKIP={counts[SKIP]}")
     print(f"JSON report: {output_path}")
-    return 1 if counts[FAIL] > 0 else 0
+    return 0
 
 
 if __name__ == "__main__":

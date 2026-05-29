@@ -7,23 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-try:
-    import yaml
-except Exception:  # pragma: no cover
-    yaml = None
+from supported_scene_catalog import DEFAULT_SUPPORTED_SCENES_CATALOG, load_supported_scene_catalog
 
-DEFAULT_REGISTRY = Path("workcell_studio_supported_scenes.yaml")
+DEFAULT_REGISTRY = DEFAULT_SUPPORTED_SCENES_CATALOG
 VALIDATOR = Path("scripts/validate_guided_generated_scene_build_readiness.py")
 
 
-def _load_yaml(path: Path) -> dict:
-    if yaml is None:
-        raise RuntimeError("PyYAML is not installed; cannot parse supported scene registry.")
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
-
-
-def _run_validator(repo_root: Path, workspace_root: Path, scene_name: str, skip_build: bool, skip_launch_smoke: bool, timeout_sec: int):
+def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build: bool, skip_launch_smoke: bool, timeout_sec: int):
     validator_path = repo_root / VALIDATOR
     if not validator_path.exists():
         validator_path = Path(__file__).resolve().parent / 'validate_guided_generated_scene_build_readiness.py'
@@ -31,7 +21,7 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene_name: str, skip_
         sys.executable,
         str(validator_path),
         "--scene",
-        scene_name,
+        scene,
         "--repo-root",
         str(repo_root),
         "--workspace-root",
@@ -108,34 +98,50 @@ def main() -> int:
             print(json.dumps(report, indent=2))
         return 2
 
-    registry = _load_yaml(registry_path)
-    entries = registry.get("scenes", []) if isinstance(registry, dict) else []
+    registry, entries, catalog_errors = load_supported_scene_catalog(registry_path)
+    if catalog_errors:
+        report["catalog_errors"] = catalog_errors
+        report["summary"]["blocked"] = 1
+        if args.json_out:
+            print(json.dumps(report, indent=2))
+        return 2
+
     filter_set = set(args.scene or [])
 
-    for entry in entries:
-        scene_name = str(entry.get("scene_name", "")).strip()
+    for catalog_entry in entries:
+        entry = catalog_entry.raw
+        scene_name = catalog_entry.scene_name
         if not scene_name:
             continue
         if filter_set and scene_name not in filter_set:
             continue
 
-        support_level = str(entry.get("support_level", "supported"))
-        enabled = bool(entry.get("enabled", True))
-        scene_dir = (repo_root / str(entry.get("scene_path", f"scenes/{scene_name}"))).resolve()
-        required = list(entry.get("expected_files", []))
+        support_level = catalog_entry.support_level
+        enabled = catalog_entry.enabled
+        scene_dir = (repo_root / catalog_entry.scene_path).resolve()
+        required = list(catalog_entry.required_files)
         skip_build = args.skip_build or bool(entry.get("allow_skip_build", False))
         skip_launch = args.skip_launch_smoke or bool(entry.get("allow_skip_launch_smoke", False))
 
         row = {
             "scene_name": scene_name,
             "support_level": support_level,
+            "catalog_status": catalog_entry.status,
+            "known_blocker": catalog_entry.known_blocker,
             "status": "SKIPPED",
+            "package_name": catalog_entry.package_name,
+            "build_package_name": catalog_entry.build_package_name,
+            "authoring_files": list(catalog_entry.authoring_files),
+            "generated_files": list(catalog_entry.generated_files),
             "required_files": required,
+            "validation_command": catalog_entry.validation_command,
+            "build_command": catalog_entry.build_command,
+            "fake_hardware_launch_command": catalog_entry.fake_hardware_launch_command,
             "static_validation": {"status": "SKIPPED", "missing_files": []},
             "guided_build_launch_readiness": {"status": "SKIPPED"},
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
-            "blockers": list(entry.get("known_blockers", [])),
+            "blockers": [],
             "warnings": [],
             "commands_run": [],
             "artifact_paths": {},
@@ -144,7 +150,7 @@ def main() -> int:
         if not enabled:
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
-            row["blockers"].append("scene_disabled_in_registry")
+            row["blockers"].append("scene_disabled_in_catalog")
             report["per_scene"].append(row)
             continue
         if support_level == "experimental" and not args.include_experimental:
@@ -170,7 +176,7 @@ def main() -> int:
             report["per_scene"].append(row)
             continue
 
-        cmd, _, payload = _run_validator(repo_root, workspace_root, scene_name, skip_build, skip_launch, args.timeout_sec)
+        cmd, _, payload = _run_validator(repo_root, workspace_root, str(scene_dir), skip_build, skip_launch, args.timeout_sec)
         row["commands_run"].append(" ".join(cmd))
         guided_status = payload.get("status", "BLOCKED")
         row["guided_build_launch_readiness"] = payload

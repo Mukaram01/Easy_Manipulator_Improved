@@ -7,6 +7,34 @@ from pathlib import Path
 
 import yaml
 
+SCHEMA = "workcell_studio_supported_scenes/v1"
+AUTHORING = ["environment.yaml", "layout/workcell_studio_layout.yaml"]
+GENERATED = ["cell_definition.yaml", "launch/demo.launch.py", "urdf/scene.urdf.xacro", "generated/scene_visual_mesh_index.json"]
+
+
+def _entry(name: str, scene_path: str | None = None, **overrides):
+    package = overrides.pop("package_name", name)
+    entry = {
+        "scene_name": name,
+        "package_name": package,
+        "scene_path": scene_path or f"scenes/{name}",
+        "support_level": "supported",
+        "status": "supported",
+        "known_blocker": "",
+        "authoring_files": AUTHORING,
+        "generated_files": GENERATED,
+        "validation_command": f"python3 scripts/validate_builder_generated_scene.py scenes/{name} --json",
+        "build_package_name": package,
+        "build_command": f"colcon build --symlink-install --packages-select {package}",
+        "fake_hardware_launch_command": f"ros2 launch {package} demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def _catalog(entries):
+    return {"schema_version": SCHEMA, "scenes": entries}
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "validate_supported_scenes_readiness.py"
 
@@ -25,6 +53,7 @@ def _write_scene(scene_dir: Path, name: str) -> None:
     (scene_dir / "layout/workcell_studio_layout.yaml").write_text("layout: ok\n", encoding="utf-8")
     (scene_dir / "generated").mkdir(exist_ok=True)
     (scene_dir / "generated/scene_package_readiness.json").write_text(json.dumps({"package_name": name}), encoding="utf-8")
+    (scene_dir / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"items": [{"render_expected": True}]}), encoding="utf-8")
 
 
 def _run(tmp_path: Path, registry: Path, extra: list[str] | None = None) -> dict:
@@ -37,17 +66,17 @@ def _run(tmp_path: Path, registry: Path, extra: list[str] | None = None) -> dict
 def test_disabled_and_experimental_skipped(tmp_path: Path):
     _write_scene(tmp_path / "scenes/ok_scene", "ok_scene")
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump({"scenes": [
-        {"scene_name": "disabled_scene", "scene_path": "scenes/disabled_scene", "enabled": False, "support_level": "supported", "expected_files": ["package.xml"]},
-        {"scene_name": "exp_scene", "scene_path": "scenes/ok_scene", "enabled": True, "support_level": "experimental", "expected_files": ["package.xml"]},
-    ]}), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("disabled_scene", "scenes/disabled_scene", enabled=False),
+        _entry("exp_scene", "scenes/ok_scene", support_level="experimental"),
+    ])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     assert payload["summary"]["skipped"] == 2
 
 
 def test_missing_scene_is_blocked(tmp_path: Path):
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump({"scenes": [{"scene_name": "missing", "scene_path": "scenes/missing", "enabled": True, "support_level": "supported", "expected_files": ["package.xml"]}]}), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([_entry("missing", "scenes/missing")])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     assert payload["per_scene"][0]["status"] == "BLOCKED"
 
@@ -55,16 +84,16 @@ def test_missing_scene_is_blocked(tmp_path: Path):
 def test_missing_required_file_is_fail(tmp_path: Path):
     (tmp_path / "scenes/a").mkdir(parents=True)
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump({"scenes": [{"scene_name": "a", "scene_path": "scenes/a", "enabled": True, "support_level": "supported", "expected_files": ["package.xml"]}]}), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([_entry("a", "scenes/a")])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     assert payload["per_scene"][0]["status"] == "FAIL"
-    assert "missing_required_file: package.xml" in payload["per_scene"][0]["blockers"]
+    assert "missing_required_file: environment.yaml" in payload["per_scene"][0]["blockers"]
 
 
 def test_experimental_included_with_flag(tmp_path: Path):
     _write_scene(tmp_path / "scenes/exp", "exp")
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump({"scenes": [{"scene_name": "exp", "scene_path": "scenes/exp", "enabled": True, "support_level": "experimental", "expected_files": ["package.xml", "CMakeLists.txt", "environment.yaml", "cell_definition.yaml", "launch/demo.launch.py", "urdf/scene.urdf.xacro", "generated/scene_package_readiness.json"]}]}), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([_entry("exp", "scenes/exp", support_level="experimental")])), encoding="utf-8")
     payload = _run(tmp_path, reg, ["--include-experimental"])
     assert payload["per_scene"][0]["status"] in {"PASS", "PASS_WITH_WARNINGS"}
 
@@ -72,10 +101,34 @@ def test_experimental_included_with_flag(tmp_path: Path):
 def test_summary_counts(tmp_path: Path):
     _write_scene(tmp_path / "scenes/pass_scene", "pass_scene")
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump({"scenes": [
-        {"scene_name": "pass_scene", "scene_path": "scenes/pass_scene", "enabled": True, "support_level": "supported", "expected_files": ["package.xml", "CMakeLists.txt", "environment.yaml", "cell_definition.yaml", "launch/demo.launch.py", "urdf/scene.urdf.xacro", "generated/scene_package_readiness.json"]},
-        {"scene_name": "missing_scene", "scene_path": "scenes/missing_scene", "enabled": True, "support_level": "supported", "expected_files": ["package.xml"]},
-        {"scene_name": "disabled_scene", "scene_path": "scenes/disabled_scene", "enabled": False, "support_level": "supported", "expected_files": ["package.xml"]},
-    ]}), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("pass_scene", "scenes/pass_scene"),
+        _entry("missing_scene", "scenes/missing_scene"),
+        _entry("disabled_scene", "scenes/disabled_scene", enabled=False),
+    ])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     assert payload["summary"] == {"total": 3, "pass": 1, "fail": 0, "blocked": 1, "warnings": 1, "skipped": 1}
+
+
+def test_default_catalog_declares_required_contract_fields():
+    catalog = yaml.safe_load((ROOT / "scenes" / "supported_scenes.yaml").read_text(encoding="utf-8"))
+    assert catalog["schema_version"] == SCHEMA
+    assert catalog.get("source_of_truth") is True
+    entries = catalog.get("scenes")
+    assert isinstance(entries, list) and entries
+    required = {
+        "scene_name",
+        "package_name",
+        "authoring_files",
+        "generated_files",
+        "validation_command",
+        "build_package_name",
+        "fake_hardware_launch_command",
+        "status",
+        "known_blocker",
+    }
+    for entry in entries:
+        assert required.issubset(entry), entry
+        assert entry["scene_name"] in entry["validation_command"]
+        assert entry["build_package_name"] in entry["build_command"]
+        assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
