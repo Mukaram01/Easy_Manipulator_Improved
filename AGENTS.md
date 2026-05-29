@@ -388,6 +388,8 @@ If a script does not exist or a scene is missing, do not invent success. Report 
 
 Use small incremental PRs.
 
+For normal development PR tasks, create or use a branch named like `codex/<short-task-name>` unless the user explicitly requests no branch or no PR for that task.
+
 Each PR should:
 
 - target one repo only unless explicitly required
