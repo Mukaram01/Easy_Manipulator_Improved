@@ -62,6 +62,20 @@ struct WorkcellStudioStarterLayoutSummary
   YAML::Node layout;
 };
 
+struct WorkcellStudioEditableLayoutBootstrapResult
+{
+  std::string source_used;
+  std::size_t editable_items_created{0};
+  std::size_t skipped_locked_items{0};
+  std::size_t skipped_static_fallback_items{0};
+  std::size_t skipped_unsafe_or_missing_metadata_items{0};
+  std::vector<std::string> blockers;
+  YAML::Node layout;
+  boost::filesystem::path expected_output_dir;
+  boost::filesystem::path expected_output_file;
+  bool expected_output_dir_exists{false};
+  bool expected_output_file_exists{false};
+};
 
 struct WorkcellStudioEditableLayoutInspection
 {
@@ -72,10 +86,25 @@ struct WorkcellStudioEditableLayoutInspection
   std::size_t editable_item_count{0};
 };
 
+struct WorkcellStudioEnvironmentLayoutBootstrapResult
+{
+  bool ok{false};
+  bool wrote{false};
+  bool created{false};
+  std::size_t placed_assets_written{0};
+  std::string error;
+};
+
 WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const boost::filesystem::path & scene_dir, const std::string & scene_name);
 WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const boost::filesystem::path & scene_dir);
 std::size_t count_editable_layout_entries(const boost::filesystem::path & scene_dir);
 bool is_save_layout_workflow_ready(const boost::filesystem::path & scene_dir);
 WorkcellStudioStarterLayoutSummary bootstrap_editable_layout_from_trusted_canonical_yaml(const boost::filesystem::path & scene_dir, const std::string & scene_name);
 WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(const WorkcellStudioCanvasModel & model);
+WorkcellStudioEditableLayoutBootstrapResult bootstrap_editable_layout_from_scene_sources(
+  const boost::filesystem::path & scene_dir,
+  const std::string & scene_name,
+  const WorkcellStudioCanvasModel & preview_model);
+WorkcellStudioEnvironmentLayoutBootstrapResult bootstrap_environment_layout_from_editable_layout(
+  const boost::filesystem::path & scene_dir, const std::string & scene_name, const YAML::Node & editable_layout);
 }

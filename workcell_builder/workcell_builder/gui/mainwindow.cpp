@@ -5207,6 +5207,21 @@ void MainWindow::create_starter_layout_from_preview()
   }
   const int generated_count = static_cast<int>(starter_layout_summary.editable_items_created);
   append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(generated_count).arg(QString::fromStdString(layout_file.string())));
+  const auto environment_bootstrap = workcell_builder::bootstrap_environment_layout_from_editable_layout(
+    s.scene_dir, s.scene_name, layout);
+  if (!environment_bootstrap.ok) {
+    append_studio_log(QString("Use Recommended Layout: environment_layout.yaml bootstrap failed (%1).")
+      .arg(QString::fromStdString(environment_bootstrap.error)));
+    QMessageBox::warning(this, "Create Starter Layout",
+      QString("Editable layout was written, but environment_layout.yaml could not be bootstrapped:\n%1")
+        .arg(QString::fromStdString(environment_bootstrap.error)));
+  } else if (environment_bootstrap.wrote) {
+    append_studio_log(QString("Use Recommended Layout: wrote %1 editable/placeable item(s) to %2")
+      .arg(static_cast<int>(environment_bootstrap.placed_assets_written))
+      .arg(QString::fromStdString((s.scene_dir / "environment_layout.yaml").string())));
+  } else {
+    append_studio_log("Use Recommended Layout: environment_layout.yaml already contained the bootstrapped editable/placeable item set.");
+  }
   append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
   rebuild_digital_twin_canvas();
   refresh_scene_builder_left_explorer();

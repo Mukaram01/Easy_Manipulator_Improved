@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <boost/filesystem.hpp>
+#include <algorithm>
 #include <fstream>
 #include <set>
 
@@ -439,6 +440,125 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
 #endif
 }
 
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEnvironmentLayoutFromEditableLayoutCreatesAndMirrorsPlaceableFields)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_env_layout_missing";
+  fs::remove_all(root);
+  fs::create_directories(root / "layout");
+
+  YAML::Node editable(YAML::NodeType::Map);
+  editable["schema_version"] = "workcell_studio_layout/v1";
+  editable["scene_name"] = "bootstrap_scene";
+  YAML::Node item(YAML::NodeType::Map);
+  item["id"] = "editable_table";
+  item["type"] = "table";
+  item["category"] = "support_surface";
+  item["pose"]["xyz"].push_back(1.0);
+  item["pose"]["xyz"].push_back(2.0);
+  item["pose"]["xyz"].push_back(3.0);
+  item["pose"]["rpy"].push_back(0.1);
+  item["pose"]["rpy"].push_back(0.2);
+  item["pose"]["rpy"].push_back(0.3);
+  item["dimensions"].push_back(0.4);
+  item["dimensions"].push_back(0.5);
+  item["dimensions"].push_back(0.6);
+  item["source"] = "generated/environment_assets.yaml";
+  item["editable"] = true;
+  item["locked"] = false;
+  item["mesh"]["path"] = "meshes/visual/table.stl";
+  editable["items"].push_back(item);
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", editable);
+  write_file(root / "environment.yaml", "environment: {}\n");
+
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+  const auto result = workcell_builder::bootstrap_environment_layout_from_editable_layout(root, "bootstrap_scene", editable);
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_TRUE(result.created);
+  EXPECT_TRUE(result.wrote);
+  EXPECT_EQ(result.placed_assets_written, 1u);
+
+  const YAML::Node env = load_yaml_file(root / "environment_layout.yaml");
+  ASSERT_EQ(env["schema_version"].as<std::string>(), "environment_layout/v1");
+  ASSERT_EQ(env["scene_name"].as<std::string>(), "bootstrap_scene");
+  ASSERT_TRUE(env["placed_assets"] && env["placed_assets"].IsSequence());
+  ASSERT_EQ(env["placed_assets"].size(), 1u);
+  const YAML::Node placed = env["placed_assets"][0];
+  EXPECT_EQ(placed["id"].as<std::string>(), item["id"].as<std::string>());
+  EXPECT_EQ(YAML::Dump(placed["pose"]["xyz"]), YAML::Dump(item["pose"]["xyz"]));
+  EXPECT_EQ(YAML::Dump(placed["pose"]["rpy"]), YAML::Dump(item["pose"]["rpy"]));
+  EXPECT_EQ(YAML::Dump(placed["dimensions"]), YAML::Dump(item["dimensions"]));
+  EXPECT_EQ(placed["source"].as<std::string>(), item["source"].as<std::string>());
+  EXPECT_TRUE(placed["editable"].as<bool>());
+  EXPECT_FALSE(placed["locked"].as<bool>());
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEnvironmentLayoutPreservesUnrelatedExistingFields)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_env_layout_preserve";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  YAML::Node editable(YAML::NodeType::Map);
+  editable["schema_version"] = "workcell_studio_layout/v1";
+  YAML::Node item(YAML::NodeType::Map);
+  item["id"] = "shared_asset";
+  item["type"] = "fixture";
+  item["category"] = "fixture";
+  item["pose"]["xyz"].push_back(7.0);
+  item["pose"]["xyz"].push_back(8.0);
+  item["pose"]["xyz"].push_back(9.0);
+  item["pose"]["rpy"].push_back(0.7);
+  item["pose"]["rpy"].push_back(0.8);
+  item["pose"]["rpy"].push_back(0.9);
+  item["dimensions"].push_back(1.1);
+  item["dimensions"].push_back(1.2);
+  item["dimensions"].push_back(1.3);
+  item["source"] = "layout/workcell_studio_layout.yaml";
+  item["editable"] = true;
+  item["locked"] = false;
+  editable["items"].push_back(item);
+
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "scene_name: existing_scene\n"
+    "custom_top_level: keep_me\n"
+    "placed_assets:\n"
+    "  - id: unrelated_asset\n"
+    "    custom: untouched\n"
+    "  - id: shared_asset\n"
+    "    custom_existing: preserved\n"
+    "    pose:\n"
+    "      xyz: [0, 0, 0]\n"
+    "      frame: keep_frame\n");
+
+  const auto result = workcell_builder::bootstrap_environment_layout_from_editable_layout(root, "new_scene", editable);
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_FALSE(result.created);
+  EXPECT_TRUE(result.wrote);
+
+  const YAML::Node env = load_yaml_file(root / "environment_layout.yaml");
+  EXPECT_EQ(env["scene_name"].as<std::string>(), "existing_scene");
+  EXPECT_EQ(env["custom_top_level"].as<std::string>(), "keep_me");
+  ASSERT_EQ(env["placed_assets"].size(), 2u);
+  EXPECT_EQ(env["placed_assets"][0]["id"].as<std::string>(), "unrelated_asset");
+  EXPECT_EQ(env["placed_assets"][0]["custom"].as<std::string>(), "untouched");
+  const YAML::Node shared = env["placed_assets"][1];
+  EXPECT_EQ(shared["custom_existing"].as<std::string>(), "preserved");
+  EXPECT_EQ(shared["pose"]["frame"].as<std::string>(), "keep_frame");
+  EXPECT_EQ(YAML::Dump(shared["pose"]["xyz"]), YAML::Dump(item["pose"]["xyz"]));
+  EXPECT_EQ(YAML::Dump(shared["pose"]["rpy"]), YAML::Dump(item["pose"]["rpy"]));
+  EXPECT_EQ(YAML::Dump(shared["dimensions"]), YAML::Dump(item["dimensions"]));
+  EXPECT_EQ(shared["source"].as<std::string>(), item["source"].as<std::string>());
+  EXPECT_TRUE(shared["editable"].as<bool>());
+  EXPECT_FALSE(shared["locked"].as<bool>());
+
+  fs::remove_all(root);
+}
+
 TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEmptyEditableLayout)
 {
   const fs::path root = fs::temp_directory_path() / "wc_save_layout_empty_ready";
@@ -523,4 +643,120 @@ TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessAcceptsEditableLayoutWithRequi
   EXPECT_EQ(inspection.total_item_entries, 3u);
   EXPECT_EQ(inspection.editable_item_count, 3u);
   EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutUsesSceneSourcePriority)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_priority";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: existing_editable\n"
+    "    type: table\n"
+    "    editable: true\n"
+    "    locked: false\n"
+    "  - id: existing_locked\n"
+    "    type: table\n"
+    "    editable: true\n"
+    "    locked: true\n");
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "assets:\n"
+    "  - id: env_layout_asset\n"
+    "    type: bin\n"
+    "    pose: {xyz: [1, 2, 3], rpy: [0, 0, 0]}\n");
+  write_file(root / "environment.yaml",
+    "placed_objects:\n"
+    "  - id: env_object\n"
+    "    type: box\n");
+  write_file(root / "cell_definition.yaml",
+    "assets:\n"
+    "  - id: cell_asset\n"
+    "    type: fixture\n");
+
+  workcell_builder::WorkcellStudioCanvasModel preview;
+  preview.scene_name = "wc_bootstrap_priority";
+  workcell_builder::WorkcellStudioCanvasItem preview_item;
+  preview_item.id = "preview_safe";
+  preview_item.type = "object";
+  preview_item.source_file = "layout/workcell_studio_layout.yaml";
+  preview_item.has_mesh_metadata = true;
+  preview_item.mesh_path = "assets/mesh.stl";
+  preview.items.push_back(preview_item);
+
+  const auto result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_priority", preview);
+  EXPECT_EQ(result.source_used, "layout/workcell_studio_layout.yaml");
+  EXPECT_EQ(result.editable_items_created, 1u);
+  EXPECT_EQ(result.skipped_locked_items, 1u);
+  ASSERT_TRUE(result.layout["items"] && result.layout["items"].IsSequence());
+  ASSERT_EQ(result.layout["items"].size(), 1u);
+  EXPECT_EQ(result.layout["items"][0]["id"].as<std::string>(), "existing_editable");
+  EXPECT_TRUE(result.expected_output_file == root / "layout" / "workcell_studio_layout.yaml");
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutFallsBackThroughSourcesAndReportsPreviewBlockers)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_fallbacks";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "assets:\n"
+    "  - id: env_layout_asset\n"
+    "    type: bin\n"
+    "    placeable: true\n"
+    "    pose: {xyz: [1, 2, 3], rpy: [0, 0, 0]}\n");
+  write_file(root / "environment.yaml", "placed_objects: [{id: env_object, type: box}]\n");
+  write_file(root / "cell_definition.yaml", "assets: [{id: cell_asset, type: fixture}]\n");
+
+  workcell_builder::WorkcellStudioCanvasModel preview;
+  preview.scene_name = "wc_bootstrap_fallbacks";
+  const auto env_layout_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_EQ(env_layout_result.source_used, "environment_layout.yaml");
+  ASSERT_EQ(env_layout_result.layout["items"].size(), 1u);
+  EXPECT_EQ(env_layout_result.layout["items"][0]["id"].as<std::string>(), "env_layout_asset");
+
+  fs::remove(root / "environment_layout.yaml");
+  const auto env_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_EQ(env_result.source_used, "environment.yaml");
+  EXPECT_NE(std::find(env_result.blockers.begin(), env_result.blockers.end(), "no environment_layout.yaml"), env_result.blockers.end());
+
+  fs::remove(root / "environment.yaml");
+  const auto cell_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_EQ(cell_result.source_used, "cell_definition.yaml");
+  EXPECT_NE(std::find(cell_result.blockers.begin(), cell_result.blockers.end(), "no environment.yaml"), cell_result.blockers.end());
+
+  fs::remove(root / "cell_definition.yaml");
+  workcell_builder::WorkcellStudioCanvasItem locked_item;
+  locked_item.id = "locked_preview";
+  locked_item.type = "object";
+  locked_item.locked = true;
+  preview.items = {locked_item};
+  const auto locked_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_EQ(locked_result.editable_items_created, 0u);
+  EXPECT_NE(std::find(locked_result.blockers.begin(), locked_result.blockers.end(), "no cell_definition.yaml"), locked_result.blockers.end());
+  EXPECT_NE(std::find(locked_result.blockers.begin(), locked_result.blockers.end(), "preview locked-only"), locked_result.blockers.end());
+
+  workcell_builder::WorkcellStudioCanvasItem fallback_item;
+  fallback_item.id = "fallback_preview";
+  fallback_item.type = "object";
+  fallback_item.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
+  preview.items = {fallback_item};
+  const auto fallback_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_NE(std::find(fallback_result.blockers.begin(), fallback_result.blockers.end(), "preview fallback-only"), fallback_result.blockers.end());
+
+  workcell_builder::WorkcellStudioCanvasItem unsafe_item;
+  unsafe_item.id = "unsafe_preview";
+  unsafe_item.type = "object";
+  preview.items = {unsafe_item};
+  const auto unsafe_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "wc_bootstrap_fallbacks", preview);
+  EXPECT_NE(std::find(unsafe_result.blockers.begin(), unsafe_result.blockers.end(), "unsafe/missing mesh metadata"), unsafe_result.blockers.end());
+
+  fs::remove_all(root);
 }
