@@ -4,7 +4,9 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <fstream>
 #include <set>
+#include <vector>
 #include <yaml-cpp/yaml.h>
 
 namespace fs = boost::filesystem;
@@ -503,6 +505,63 @@ static bool layout_item_is_effectively_editable(const YAML::Node & node)
   return true;
 }
 
+
+static YAML::Node ensure_map_child(YAML::Node parent, const char * key)
+{
+  if (!parent[key] || !parent[key].IsMap()) parent[key] = YAML::Node(YAML::NodeType::Map);
+  return parent[key];
+}
+
+static YAML::Node ensure_sequence_child(YAML::Node parent, const char * key)
+{
+  if (!parent[key] || !parent[key].IsSequence()) parent[key] = YAML::Node(YAML::NodeType::Sequence);
+  return parent[key];
+}
+
+static bool yaml_nodes_equal(const YAML::Node & lhs, const YAML::Node & rhs)
+{
+  return YAML::Dump(lhs) == YAML::Dump(rhs);
+}
+
+static bool layout_item_has_bootstrap_placeable_fields(const YAML::Node & item)
+{
+  if (!item || !item.IsMap()) return false;
+  if (yaml_map_value_or_empty(item, "id").empty()) return false;
+  const YAML::Node pose = yaml_map_key(item, "pose");
+  const YAML::Node xyz = yaml_map_key(pose, "xyz");
+  const YAML::Node rpy = yaml_map_key(pose, "rpy");
+  const YAML::Node dimensions = yaml_map_key(item, "dimensions");
+  if (!pose || !pose.IsMap() || !xyz || !xyz.IsSequence() || xyz.size() < 3) return false;
+  if (!rpy || !rpy.IsSequence() || rpy.size() < 3) return false;
+  if (!dimensions || !dimensions.IsSequence() || dimensions.size() < 3) return false;
+  if (yaml_map_value_or_empty(item, "source").empty()) return false;
+  bool editable = false;
+  bool locked = true;
+  if (!yaml_read_bool(yaml_map_key(item, "editable"), &editable) || !editable) return false;
+  if (!yaml_read_bool(yaml_map_key(item, "locked"), &locked) || locked) return false;
+  return layout_item_is_effectively_editable(item);
+}
+
+static YAML::Node bootstrap_environment_asset_from_layout_item(const YAML::Node & existing, const YAML::Node & layout_item)
+{
+  YAML::Node out = (existing && existing.IsMap()) ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
+  out["id"] = yaml_map_key(layout_item, "id");
+  const YAML::Node type = yaml_map_key(layout_item, "type");
+  if (type.IsDefined()) out["type"] = type;
+  const YAML::Node category = yaml_map_key(layout_item, "category");
+  if (category.IsDefined()) out["category"] = category;
+  YAML::Node pose = ensure_map_child(out, "pose");
+  pose["xyz"] = YAML::Clone(yaml_map_key(yaml_map_key(layout_item, "pose"), "xyz"));
+  pose["rpy"] = YAML::Clone(yaml_map_key(yaml_map_key(layout_item, "pose"), "rpy"));
+  out["dimensions"] = YAML::Clone(yaml_map_key(layout_item, "dimensions"));
+  out["source"] = yaml_map_key(layout_item, "source");
+  out["editable"] = yaml_map_key(layout_item, "editable");
+  out["locked"] = yaml_map_key(layout_item, "locked");
+  const YAML::Node mesh = yaml_map_key(layout_item, "mesh");
+  if (mesh.IsDefined()) out["mesh"] = YAML::Clone(mesh);
+  return out;
+}
+
 WorkcellStudioEditableLayoutInspection inspect_editable_layout_entries(const fs::path & scene_dir)
 {
   WorkcellStudioEditableLayoutInspection out;
@@ -537,6 +596,101 @@ bool is_save_layout_workflow_ready(const fs::path & scene_dir)
   return layout.exists && layout.valid && layout.editable_item_count > 0 &&
     fs::exists(scene_dir / "environment_layout.yaml") &&
     fs::exists(scene_dir / "environment.yaml");
+}
+
+
+WorkcellStudioEnvironmentLayoutBootstrapResult bootstrap_environment_layout_from_editable_layout(
+  const fs::path & scene_dir, const std::string & scene_name, const YAML::Node & editable_layout)
+{
+  WorkcellStudioEnvironmentLayoutBootstrapResult result;
+  const YAML::Node layout_items = yaml_map_key(editable_layout, "items");
+  if (!layout_items || !layout_items.IsSequence()) {
+    result.error = "editable layout has no items sequence";
+    return result;
+  }
+
+  YAML::Node env_root(YAML::NodeType::Map);
+  const fs::path env_layout_path = scene_dir / "environment_layout.yaml";
+  result.created = !fs::exists(env_layout_path);
+  if (!result.created) {
+    try {
+      env_root = YAML::LoadFile(env_layout_path.string());
+    } catch (const std::exception & e) {
+      result.error = std::string("failed to parse environment_layout.yaml: ") + e.what();
+      return result;
+    }
+    if (!env_root || !env_root.IsMap()) env_root = YAML::Node(YAML::NodeType::Map);
+  }
+
+  YAML::Node before = YAML::Clone(env_root);
+  env_root["schema_version"] = "environment_layout/v1";
+  if (!env_root["scene_name"] || !env_root["scene_name"].IsScalar()) env_root["scene_name"] = scene_name;
+
+  YAML::Node placed_assets = ensure_sequence_child(env_root, "placed_assets");
+
+  std::set<std::string> layout_ids;
+  std::vector<std::string> layout_id_order;
+  YAML::Node bootstrap_by_id(YAML::NodeType::Map);
+  for (const auto & layout_item : layout_items) {
+    if (!layout_item_has_bootstrap_placeable_fields(layout_item)) continue;
+    const std::string id = yaml_map_value_or_empty(layout_item, "id");
+    if (layout_ids.insert(id).second) layout_id_order.push_back(id);
+    bootstrap_by_id[id] = layout_item;
+  }
+  if (layout_ids.empty()) {
+    result.error = "editable layout has no bootstrappable editable/placeable items";
+    return result;
+  }
+
+  YAML::Node updated_placed_assets(YAML::NodeType::Sequence);
+  std::set<std::string> emitted_ids;
+  for (std::size_t i = 0; i < placed_assets.size(); ++i) {
+    const YAML::Node existing = placed_assets[i];
+    if (!existing || !existing.IsMap()) {
+      updated_placed_assets.push_back(existing);
+      continue;
+    }
+    const std::string id = yaml_map_value_or_empty(existing, "id");
+    if (!id.empty() && layout_ids.count(id) != 0) {
+      updated_placed_assets.push_back(bootstrap_environment_asset_from_layout_item(existing, bootstrap_by_id[id]));
+      emitted_ids.insert(id);
+    } else {
+      updated_placed_assets.push_back(existing);
+    }
+  }
+  for (const auto & id : layout_id_order) {
+    if (emitted_ids.count(id) != 0) continue;
+    updated_placed_assets.push_back(bootstrap_environment_asset_from_layout_item(YAML::Node(), bootstrap_by_id[id]));
+  }
+  env_root["placed_assets"] = updated_placed_assets;
+  result.placed_assets_written = layout_ids.size();
+
+  if (!result.created && yaml_nodes_equal(before, env_root)) {
+    result.ok = true;
+    result.wrote = false;
+    return result;
+  }
+
+  boost::system::error_code ec;
+  fs::create_directories(scene_dir, ec);
+  if (ec) {
+    result.error = std::string("failed to create scene directory: ") + ec.message();
+    return result;
+  }
+  std::ofstream out(env_layout_path.string());
+  if (!out.good()) {
+    result.error = "failed to open environment_layout.yaml for write";
+    return result;
+  }
+  out << env_root << "\n";
+  out.close();
+  if (!out.good()) {
+    result.error = "failed to write environment_layout.yaml";
+    return result;
+  }
+  result.ok = true;
+  result.wrote = true;
+  return result;
 }
 
 static bool has_safe_starter_layout_metadata(const WorkcellStudioCanvasItem & preview_item)
