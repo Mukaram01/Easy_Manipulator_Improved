@@ -4368,15 +4368,25 @@ void MainWindow::refresh_create_starter_layout_action()
     return;
   }
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const auto layout_inspection = workcell_builder::inspect_editable_layout_entries(s.scene_dir);
+  const bool lacks_editable_layout_content = layout_inspection.editable_item_count == 0U;
+  const bool has_trusted_yaml_source =
+    fs::exists(s.scene_dir / "layout" / "workcell_studio_layout.yaml") ||
+    fs::exists(s.scene_dir / "environment_layout.yaml") ||
+    fs::exists(s.scene_dir / "environment.yaml") ||
+    fs::exists(s.scene_dir / "cell_definition.yaml");
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
   const std::size_t preview_count = model.items.size();
-  const std::size_t editable_layout_count = workcell_builder::count_editable_layout_entries(s.scene_dir);
-  const bool show_action = (editable_layout_count == 0U) && (preview_count > 0U);
+  const bool has_any_trusted_bootstrap_source = has_trusted_yaml_source || preview_count > 0U;
+  const bool show_action = lacks_editable_layout_content && has_any_trusted_bootstrap_source;
   create_starter_layout_button_->setVisible(show_action);
   create_starter_layout_button_->setToolTip(show_action ?
-    QString("Create layout/workcell_studio_layout.yaml from %1 preview items").arg(preview_count) :
-    QString("Hidden unless editable layout count is 0 and preview items count is > 0 (current: editable=%1 preview=%2)")
-      .arg(editable_layout_count).arg(preview_count));
+    QString("Create layout/workcell_studio_layout.yaml from trusted scene bootstrap sources") :
+    QString("Hidden unless editable layout count is 0 and a trusted bootstrap source may exist "
+            "(current: editable=%1 preview=%2 yaml_source=%3)")
+      .arg(layout_inspection.editable_item_count)
+      .arg(preview_count)
+      .arg(has_trusted_yaml_source ? "yes" : "no"));
 }
 
 void MainWindow::populate_scene_files_tab()
@@ -5146,30 +5156,39 @@ void MainWindow::create_starter_layout_from_preview()
 {
   if (!has_selected_scene()) return;
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const auto starter_layout_summary = workcell_builder::bootstrap_editable_layout_from_trusted_canonical_yaml(s.scene_dir, s.scene_name);
-  const auto starter_layout_counts_message = [&starter_layout_summary]() {
+  const auto preview_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const auto bootstrap_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(
+    s.scene_dir, s.scene_name, preview_model);
+  const auto bootstrap_counts_message = [&bootstrap_result]() {
     const auto count_text = [](std::size_t count) { return QString::fromStdString(std::to_string(count)); };
-    return QString("Cannot create editable layout from preview: no preview geometry or safe metadata found. "
-                   "Generate Scene Package first or add layout items manually.\n\n"
-                   "total preview items: %1\n"
-                   "skipped locked items: %2\n"
-                   "skipped static fallback items: %3\n"
-                   "skipped unsafe/missing metadata items: %4\n"
-                   "editable items created: %5")
-      .arg(count_text(starter_layout_summary.total_preview_items))
-      .arg(count_text(starter_layout_summary.skipped_locked_items))
-      .arg(count_text(starter_layout_summary.skipped_static_fallback_items))
-      .arg(count_text(starter_layout_summary.skipped_unsafe_or_missing_metadata_items))
-      .arg(count_text(starter_layout_summary.editable_items_created));
+    QStringList blockers;
+    for (const auto & blocker : bootstrap_result.blockers) {
+      blockers.push_back(QString::fromStdString(blocker));
+    }
+    const QString blocker_text = blockers.isEmpty() ? QStringLiteral("none reported") : blockers.join("\n- ");
+    return QString("Cannot create editable layout from trusted bootstrap sources. "
+                   "Generate Scene Package first, fix the listed blockers, or add layout items manually.\n\n"
+                   "source used: %1\n"
+                   "editable items created: %2\n"
+                   "skipped locked items: %3\n"
+                   "skipped static fallback items: %4\n"
+                   "skipped unsafe/missing metadata items: %5\n"
+                   "blockers:\n- %6")
+      .arg(bootstrap_result.source_used.empty() ? QStringLiteral("<none>") : QString::fromStdString(bootstrap_result.source_used))
+      .arg(count_text(bootstrap_result.editable_items_created))
+      .arg(count_text(bootstrap_result.skipped_locked_items))
+      .arg(count_text(bootstrap_result.skipped_static_fallback_items))
+      .arg(count_text(bootstrap_result.skipped_unsafe_or_missing_metadata_items))
+      .arg(blocker_text);
   };
-  if (starter_layout_summary.editable_items_created == 0) {
-    const QString message = starter_layout_counts_message();
+  if (bootstrap_result.editable_items_created == 0) {
+    const QString message = bootstrap_counts_message();
     append_studio_log(QString("Create Starter Layout failed: %1").arg(message));
     QMessageBox::warning(this, "Create Starter Layout", message);
     return;
   }
-  const fs::path layout_dir = s.scene_dir / "layout";
-  const fs::path layout_file = layout_dir / "workcell_studio_layout.yaml";
+  const fs::path layout_dir = bootstrap_result.expected_output_dir;
+  const fs::path layout_file = bootstrap_result.expected_output_file;
   boost::system::error_code ec;
   fs::create_directories(layout_dir, ec);
   if (ec) {
@@ -5178,7 +5197,7 @@ void MainWindow::create_starter_layout_from_preview()
   }
   if (fs::exists(layout_file)) {
     const auto response = QMessageBox::question(this, "Overwrite Existing Layout",
-      "layout/workcell_studio_layout.yaml already exists. Overwrite with starter layout from preview metadata?");
+      "layout/workcell_studio_layout.yaml already exists. Overwrite with recommended layout from trusted bootstrap sources?");
     if (response != QMessageBox::Yes) {
       append_studio_log("Create Starter Layout cancelled by user.");
       return;
@@ -5193,7 +5212,7 @@ void MainWindow::create_starter_layout_from_preview()
     }
     append_studio_log(QString("Create Starter Layout: backup created at %1").arg(QString::fromStdString(backup.string())));
   }
-  const YAML::Node layout = starter_layout_summary.layout;
+  const YAML::Node layout = bootstrap_result.layout;
   std::ofstream out(layout_file.string());
   if (!out.good()) {
     append_studio_log("Create Starter Layout failed: unable to open output file for write.");
@@ -5205,7 +5224,13 @@ void MainWindow::create_starter_layout_from_preview()
     append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
     return;
   }
-  const int generated_count = static_cast<int>(starter_layout_summary.editable_items_created);
+  append_studio_log(QString("Use Recommended Layout: source=%1 editable=%2 skipped_locked=%3 skipped_static_fallback=%4 skipped_unsafe_metadata=%5")
+    .arg(QString::fromStdString(bootstrap_result.source_used))
+    .arg(static_cast<int>(bootstrap_result.editable_items_created))
+    .arg(static_cast<int>(bootstrap_result.skipped_locked_items))
+    .arg(static_cast<int>(bootstrap_result.skipped_static_fallback_items))
+    .arg(static_cast<int>(bootstrap_result.skipped_unsafe_or_missing_metadata_items)));
+  const int generated_count = static_cast<int>(bootstrap_result.editable_items_created);
   append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(generated_count).arg(QString::fromStdString(layout_file.string())));
   const auto environment_bootstrap = workcell_builder::bootstrap_environment_layout_from_editable_layout(
     s.scene_dir, s.scene_name, layout);
@@ -5222,7 +5247,7 @@ void MainWindow::create_starter_layout_from_preview()
   } else {
     append_studio_log("Use Recommended Layout: environment_layout.yaml already contained the bootstrapped editable/placeable item set.");
   }
-  append_studio_log("Use Recommended Layout: added recommended editable layout items from current preview metadata.");
+  append_studio_log("Use Recommended Layout: added recommended editable layout items from trusted scene bootstrap sources.");
   rebuild_digital_twin_canvas();
   refresh_scene_builder_left_explorer();
   refresh_scene_builder_selected_scene_ui();
