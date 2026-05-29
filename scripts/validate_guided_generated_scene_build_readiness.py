@@ -9,10 +9,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-try:
-    import yaml
-except Exception:  # pragma: no cover
-    yaml = None
+import yaml
 
 REQUIRED_FILES = [
     "package.xml",
@@ -22,13 +19,10 @@ REQUIRED_FILES = [
     "layout/workcell_studio_layout.yaml",
     "launch/demo.launch.py",
     "urdf/scene.urdf.xacro",
-    "generated/scene_package_readiness.json",
 ]
 
 
 def load_yaml(path: Path) -> dict:
-    if yaml is None:
-        raise RuntimeError("PyYAML is not installed; cannot parse YAML metadata.")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return data if isinstance(data, dict) else {}
 
@@ -56,16 +50,20 @@ def resolve_scene(scene_arg: str, repo_root: Path) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scene", required=True)
-    ap.add_argument("--workspace-root", type=Path, required=True)
-    ap.add_argument("--repo-root", type=Path, required=True)
+    scene_group = ap.add_mutually_exclusive_group(required=True)
+    scene_group.add_argument("--scene")
+    scene_group.add_argument("--scene-dir")
+    ap.add_argument("--workspace-root", type=Path, default=Path.cwd())
+    ap.add_argument("--repo-root", type=Path, default=Path.cwd())
     ap.add_argument("--json", action="store_true", dest="json_out")
     ap.add_argument("--skip-build", action="store_true")
     ap.add_argument("--skip-launch-smoke", action="store_true")
     ap.add_argument("--timeout-sec", type=int, default=30)
     args = ap.parse_args()
 
-    scene_dir = resolve_scene(args.scene, args.repo_root)
+    repo_root = args.repo_root.resolve() if args.repo_root else Path.cwd()
+    scene_dir = Path(args.scene_dir).resolve() if args.scene_dir else resolve_scene(args.scene, repo_root)
+    args.repo_root = repo_root
     report = {
         "scene": str(scene_dir),
         "package_name": "",
@@ -179,7 +177,7 @@ def main() -> int:
                 report["warnings"].append(f"Local mesh path not found: {mesh_path}")
 
         cell = scene_dir / "cell_definition.yaml"
-        if cell.is_file() and yaml is not None:
+        if cell.is_file():
             try:
                 cd = load_yaml(cell)
                 for sec in ("robot", "end_effector", "environment"):

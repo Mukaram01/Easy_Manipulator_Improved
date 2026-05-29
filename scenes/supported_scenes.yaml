@@ -1,0 +1,129 @@
+schema_version: workcell_studio_supported_scenes/v1
+catalog_name: Workcell Studio supported scene catalog
+owner: Workcell Studio / Easy Manipulation Deployment
+source_of_truth: true
+description: >-
+  Machine-readable contract for scene packages that Workcell Studio treats as
+  supported reproducibility targets. All all-scenes readiness and
+  reproducibility tools should consume this file instead of hardcoding scene
+  names.
+required_entry_fields:
+  - scene_name
+  - package_name
+  - authoring_files
+  - generated_files
+  - validation_command
+  - build_package_name
+  - fake_hardware_launch_command
+  - status
+  - known_blocker
+update_policy: >-
+  When adding, renaming, disabling, or removing a supported scene, update this
+  catalog in the same PR as the scene change and re-run the catalog-backed
+  all-scenes validators. Use known_blocker: "" when there is no known blocker.
+common_authoring_files: &common_authoring_files
+  - environment.yaml
+  - layout/workcell_studio_layout.yaml
+common_generated_files: &common_generated_files
+  - cell_definition.yaml
+  - scene_manifest.yaml
+  - urdf/scene.urdf.xacro
+  - launch/demo.launch.py
+  - generated/scene_visual_mesh_index.json
+scenes:
+  - scene_name: suction_test
+    package_name: suction_test
+    scene_path: scenes/suction_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
+    build_package_name: suction_test
+    build_command: colcon build --symlink-install --packages-select suction_test
+    fake_hardware_launch_command: ros2 launch suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur10_2f_test
+    package_name: ur10_2f_test
+    scene_path: scenes/ur10_2f_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
+    build_package_name: ur10_2f_test
+    build_command: colcon build --symlink-install --packages-select ur10_2f_test
+    fake_hardware_launch_command: ros2 launch ur10_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur3_suction_test
+    package_name: ur3_suction_test
+    scene_path: scenes/ur3_suction_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
+    build_package_name: ur3_suction_test
+    build_command: colcon build --symlink-install --packages-select ur3_suction_test
+    fake_hardware_launch_command: ros2 launch ur3_suction_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur5_2f_builder_pick_place_demo
+    package_name: ur5_2f_builder_pick_place_demo
+    scene_path: scenes/ur5_2f_builder_pick_place_demo
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_builder_pick_place_demo --json
+    build_package_name: ur5_2f_builder_pick_place_demo
+    build_command: colcon build --symlink-install --packages-select ur5_2f_builder_pick_place_demo
+    fake_hardware_launch_command: ros2 launch ur5_2f_builder_pick_place_demo demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur5_2f_sorting_test
+    package_name: ur5_2f_sorting_test
+    scene_path: scenes/ur5_2f_sorting_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_sorting_test --json
+    build_package_name: ur5_2f_sorting_test
+    build_command: colcon build --symlink-install --packages-select ur5_2f_sorting_test
+    fake_hardware_launch_command: ros2 launch ur5_2f_sorting_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur5_2f_test
+    package_name: ur5_2f_test
+    scene_path: scenes/ur5_2f_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
+    build_package_name: ur5_2f_test
+    build_command: colcon build --symlink-install --packages-select ur5_2f_test
+    fake_hardware_launch_command: ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur5_3f_test
+    package_name: ur5_3f_test
+    scene_path: scenes/ur5_3f_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
+    build_package_name: ur5_3f_test
+    build_command: colcon build --symlink-install --packages-select ur5_3f_test
+    fake_hardware_launch_command: ros2 launch ur5_3f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
+  - scene_name: ur5_airpick4_test
+    package_name: ur5_airpick4_test
+    scene_path: scenes/ur5_airpick4_test
+    support_level: supported
+    status: supported
+    known_blocker: ""
+    authoring_files: *common_authoring_files
+    generated_files: *common_generated_files
+    validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json
+    build_package_name: ur5_airpick4_test
+    build_command: colcon build --symlink-install --packages-select ur5_airpick4_test
+    fake_hardware_launch_command: ros2 launch ur5_airpick4_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
