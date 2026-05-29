@@ -132,3 +132,34 @@ def test_default_catalog_declares_required_contract_fields():
         assert entry["scene_name"] in entry["validation_command"]
         assert entry["build_package_name"] in entry["build_command"]
         assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
+
+
+def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/bad_mesh", "bad_mesh")
+    (tmp_path / "scenes/bad_mesh/generated/scene_visual_mesh_index.json").write_text("{not-json", encoding="utf-8")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("bad_mesh", "scenes/bad_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index"]["status"] == "FAIL"
+    assert any("mesh_index_contract_malformed: generated/scene_visual_mesh_index.json" in b for b in row["blockers"])
+
+
+def test_empty_mesh_index_reports_clear_contract_failure(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/empty_mesh", "empty_mesh")
+    (tmp_path / "scenes/empty_mesh/generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"visual_items": []}), encoding="utf-8"
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("empty_mesh", "scenes/empty_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index"]["status"] == "FAIL"
+    assert row["mesh_index"]["renderable_items"] == 0
+    assert "mesh_index_contract_empty: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]

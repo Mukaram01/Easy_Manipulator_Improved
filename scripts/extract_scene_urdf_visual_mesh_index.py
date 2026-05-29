@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, os, re, shutil, subprocess, math
+import argparse, json, os, re, shutil, subprocess, math, collections
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -196,7 +196,18 @@ def main():
                 k,v=ent.split('=',1); xargs[k.strip()]=v.strip()
         mode='best_effort_recursive'; fallback_reason=''; _,xacro_avail,missing_reason=discover_xacro_command(); expanded_path=''; xacro_cmd=[]; xml_text=''
         if (a.prefer_xacro or a.prefer_xacro_expanded or a.require_xacro):
-            xml_text,_,err,xacro_cmd=expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None))
+            try:
+                expanded_result = expand_xacro(urdf_path,scene_dir,xargs,workspace_root=(a.workspace_root or None))
+            except TypeError:
+                expanded_result = expand_xacro(urdf_path)
+            if isinstance(expanded_result, tuple) and len(expanded_result) >= 4:
+                xml_text,_,err,xacro_cmd=expanded_result[:4]
+            elif isinstance(expanded_result, tuple) and len(expanded_result) == 3:
+                xml_text,mode_hint,err=expanded_result; xacro_cmd=[]
+                if isinstance(err, list): err='; '.join(str(e) for e in err)
+                if mode_hint and not xml_text: mode=str(mode_hint)
+            else:
+                xml_text,err,xacro_cmd='', 'xacro expansion failed: unexpected extractor result', []
             if xml_text: mode='xacro_expanded'; expanded_path='generated/expanded_scene_preview.urdf'
             else: fallback_reason=err or missing_reason
         if a.require_xacro and not xacro_avail:
@@ -207,7 +218,13 @@ def main():
         except Exception: items=[]
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
         safe=bool(items) and (len(unresolved)==0) and (mode=='xacro_expanded')
-        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
+        mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
+        transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
+        renderable_count=sum(1 for i in items if i.get('render_expected', True))
+        renderable_mesh_count=sum(1 for i in items if i.get('geometry_type')=='mesh' and i.get('render_expected', True))
+        source_mtime=urdf_path.stat().st_mtime if urdf_path.exists() else None
+        has_transform_collapse_warning=bool(items) and len({tuple((i.get('pose') or {}).get('xyz') or []) for i in items}) <= 1 and len(items) > 1
+        payload={'scene_name':scene_dir.name,'visual_count':len(items),'resolved':sum(1 for i in items if i.get('resolved')),'unresolved':sum(1 for i in items if not i.get('resolved')),'generated_at':datetime.now(timezone.utc).isoformat(),'extractor_version':EXTRACTOR_VERSION,'extraction_mode':mode,'xacro_available':xacro_avail,'source_urdf_xacro_path':str(urdf_path),'source_mtime':source_mtime,'source_expanded_urdf_path':expanded_path,'fallback_reason':fallback_reason,'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'has_transform_collapse_warning':has_transform_collapse_warning,'candidate_mesh_count':len(items),'emitted_visual_count':len(items),'transform_status_counts':transform_status_counts,'mesh_format_counts':mesh_format_counts,'renderable_mesh_count':renderable_mesh_count,'renderable_item_count':renderable_count,'stale_index':False,'stale_reasons':[],'visual_items':items,'xacro_command':xacro_cmd,'package_resolution_diagnostics':package_diagnostics}
         idx_path=scene_dir/'generated/scene_visual_mesh_index.json'
         if not a.no_write:
             idx_path.parent.mkdir(parents=True,exist_ok=True)
@@ -218,6 +235,13 @@ def main():
         report['unresolved']+=sum(1 for i in items if not i.get('resolved'))
         report['xacro_expanded_count']+=int(mode=='xacro_expanded')
         report['best_effort_count']+=int(mode!='xacro_expanded')
+        report.setdefault('mesh_format_counts', {})
+        for ext,count in mesh_format_counts.items(): report['mesh_format_counts'][ext]=report['mesh_format_counts'].get(ext,0)+count
+        report['renderable_mesh_count']=report.get('renderable_mesh_count',0)+renderable_mesh_count
+        report['renderable_item_count']=report.get('renderable_item_count',0)+renderable_count
+        report['candidate_mesh_count']=report.get('candidate_mesh_count',0)+len(items)
+        report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
+        report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
         report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'primitive_fallback_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere')),'stale_index':False,'status':'PASS' if safe else 'WARN'})
         if a.require_xacro and mode != 'xacro_expanded': return 2
     (ROOT/'build').mkdir(exist_ok=True)

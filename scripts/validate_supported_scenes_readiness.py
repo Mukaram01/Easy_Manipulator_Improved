@@ -47,6 +47,57 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
     return cmd, proc.returncode, payload
 
 
+
+
+def _check_mesh_index_contract(scene_dir: Path) -> dict:
+    rel_path = "generated/scene_visual_mesh_index.json"
+    index_path = scene_dir / rel_path
+    result = {
+        "path": rel_path,
+        "status": "PASS",
+        "renderable_items": 0,
+        "total_items": 0,
+        "blockers": [],
+    }
+    if not index_path.exists():
+        result["status"] = "FAIL"
+        result["blockers"].append(f"mesh_index_contract_missing: {rel_path}")
+        return result
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        result["status"] = "FAIL"
+        result["blockers"].append(
+            f"mesh_index_contract_malformed: {rel_path} is not valid JSON ({exc.__class__.__name__}: {exc})"
+        )
+        return result
+
+    if not isinstance(payload, dict):
+        result["status"] = "FAIL"
+        result["blockers"].append(f"mesh_index_contract_invalid: {rel_path} root must be a JSON object")
+        return result
+
+    items = payload.get("visual_items")
+    if not isinstance(items, list):
+        items = payload.get("items")
+    if not isinstance(items, list):
+        result["status"] = "FAIL"
+        result["blockers"].append(
+            f"mesh_index_contract_invalid: {rel_path} must contain visual_items or items as a list"
+        )
+        return result
+
+    renderable_items = sum(1 for item in items if isinstance(item, dict) and item.get("render_expected", True))
+    result["total_items"] = len(items)
+    result["renderable_items"] = renderable_items
+    if renderable_items <= 0:
+        result["status"] = "FAIL"
+        result["blockers"].append(
+            f"mesh_index_contract_empty: {rel_path} contains 0 renderable items"
+        )
+    return result
+
+
 def _build_markdown(report: dict) -> str:
     lines = [
         "# Workcell Studio All Scenes Readiness Report",
@@ -141,6 +192,7 @@ def main() -> int:
             "guided_build_launch_readiness": {"status": "SKIPPED"},
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
+            "mesh_index": {"status": "SKIPPED"},
             "blockers": [],
             "warnings": [],
             "commands_run": [],
@@ -173,6 +225,25 @@ def main() -> int:
         if missing:
             row["status"] = "FAIL"
             row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            report["per_scene"].append(row)
+            continue
+
+        mesh_index = _check_mesh_index_contract(scene_dir)
+        row["mesh_index"] = mesh_index
+        if mesh_index["status"] != "PASS":
+            row["blockers"].extend(mesh_index.get("blockers", []))
+
+        if str(catalog_entry.status).lower() == "blocked":
+            row["status"] = "BLOCKED"
+            if catalog_entry.known_blocker:
+                row["blockers"].append(f"catalog_known_blocker: {catalog_entry.known_blocker}")
+            elif not row["blockers"]:
+                row["blockers"].append("catalog_status_blocked_without_known_blocker")
+            report["per_scene"].append(row)
+            continue
+
+        if mesh_index["status"] != "PASS":
+            row["status"] = "FAIL"
             report["per_scene"].append(row)
             continue
 
