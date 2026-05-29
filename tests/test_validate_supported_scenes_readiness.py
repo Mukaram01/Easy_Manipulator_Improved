@@ -63,6 +63,18 @@ def _run(tmp_path: Path, registry: Path, extra: list[str] | None = None) -> dict
     return json.loads(run.stdout)
 
 
+def _row_by_scene(payload: dict, scene_name: str) -> dict:
+    rows = {row["scene_name"]: row for row in payload["per_scene"]}
+    return rows[scene_name]
+
+
+def _assert_readiness_fields(row: dict) -> None:
+    assert "blocker" in row
+    assert "missing_authoring_files" in row
+    assert "missing_generated_files" in row
+    assert "validation_result" in row
+
+
 def test_disabled_and_experimental_skipped(tmp_path: Path):
     _write_scene(tmp_path / "scenes/ok_scene", "ok_scene")
     reg = tmp_path / "registry.yaml"
@@ -73,21 +85,52 @@ def test_disabled_and_experimental_skipped(tmp_path: Path):
     payload = _run(tmp_path, reg)
     assert payload["summary"]["skipped"] == 2
 
+    disabled = _row_by_scene(payload, "disabled_scene")
+    _assert_readiness_fields(disabled)
+    assert disabled["status"] == "SKIPPED"
+    assert disabled["validation_result"] == "SKIPPED"
+    assert disabled["blocker"] == "scene_disabled_in_catalog"
+    assert disabled["missing_authoring_files"] == AUTHORING
+    assert disabled["missing_generated_files"] == GENERATED
+
+    experimental = _row_by_scene(payload, "exp_scene")
+    _assert_readiness_fields(experimental)
+    assert experimental["status"] == "SKIPPED"
+    assert experimental["validation_result"] == "SKIPPED"
+    assert experimental["blocker"] == ""
+    assert experimental["missing_authoring_files"] == []
+    assert experimental["missing_generated_files"] == []
+
 
 def test_missing_scene_is_blocked(tmp_path: Path):
     reg = tmp_path / "registry.yaml"
     reg.write_text(yaml.safe_dump(_catalog([_entry("missing", "scenes/missing")])), encoding="utf-8")
     payload = _run(tmp_path, reg)
-    assert payload["per_scene"][0]["status"] == "BLOCKED"
+    row = payload["per_scene"][0]
+    _assert_readiness_fields(row)
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["blocker"].startswith("scene_path_missing:")
+    assert row["missing_authoring_files"] == AUTHORING
+    assert row["missing_generated_files"] == GENERATED
 
 
 def test_missing_required_file_is_fail(tmp_path: Path):
-    (tmp_path / "scenes/a").mkdir(parents=True)
+    scene_dir = tmp_path / "scenes/a"
+    _write_scene(scene_dir, "a")
+    (scene_dir / "environment.yaml").unlink()
+    (scene_dir / "generated/scene_visual_mesh_index.json").unlink()
     reg = tmp_path / "registry.yaml"
     reg.write_text(yaml.safe_dump(_catalog([_entry("a", "scenes/a")])), encoding="utf-8")
     payload = _run(tmp_path, reg)
-    assert payload["per_scene"][0]["status"] == "FAIL"
-    assert "missing_required_file: environment.yaml" in payload["per_scene"][0]["blockers"]
+    row = payload["per_scene"][0]
+    _assert_readiness_fields(row)
+    assert row["status"] == "FAIL"
+    assert row["validation_result"] == "FAIL"
+    assert row["missing_authoring_files"] == ["environment.yaml"]
+    assert row["missing_generated_files"] == ["generated/scene_visual_mesh_index.json"]
+    assert row["blocker"] == "missing_required_file: environment.yaml; missing_required_file: generated/scene_visual_mesh_index.json"
+    assert "missing_required_file: environment.yaml" in row["blockers"]
 
 
 def test_experimental_included_with_flag(tmp_path: Path):
@@ -95,7 +138,28 @@ def test_experimental_included_with_flag(tmp_path: Path):
     reg = tmp_path / "registry.yaml"
     reg.write_text(yaml.safe_dump(_catalog([_entry("exp", "scenes/exp", support_level="experimental")])), encoding="utf-8")
     payload = _run(tmp_path, reg, ["--include-experimental"])
-    assert payload["per_scene"][0]["status"] in {"PASS", "PASS_WITH_WARNINGS"}
+    row = payload["per_scene"][0]
+    _assert_readiness_fields(row)
+    assert row["status"] in {"PASS", "PASS_WITH_WARNINGS"}
+    assert row["validation_result"] == row["guided_build_launch_readiness"]["status"]
+    assert row["missing_authoring_files"] == []
+    assert row["missing_generated_files"] == []
+
+
+def test_catalog_blocked_scene_uses_known_blocker(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/blocked", "blocked")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked", "scenes/blocked", status="blocked", known_blocker="awaiting generated launch repair"),
+    ])), encoding="utf-8")
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    _assert_readiness_fields(row)
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["blocker"] == "awaiting generated launch repair"
+    assert row["missing_authoring_files"] == []
+    assert row["missing_generated_files"] == []
 
 
 def test_summary_counts(tmp_path: Path):
