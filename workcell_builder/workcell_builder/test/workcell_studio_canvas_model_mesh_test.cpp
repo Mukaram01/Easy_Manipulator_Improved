@@ -316,6 +316,125 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
 #endif
 }
 
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEnvironmentLayoutFromEditableLayoutCreatesAndMirrorsPlaceableFields)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_env_layout_missing";
+  fs::remove_all(root);
+  fs::create_directories(root / "layout");
+
+  YAML::Node editable(YAML::NodeType::Map);
+  editable["schema_version"] = "workcell_studio_layout/v1";
+  editable["scene_name"] = "bootstrap_scene";
+  YAML::Node item(YAML::NodeType::Map);
+  item["id"] = "editable_table";
+  item["type"] = "table";
+  item["category"] = "support_surface";
+  item["pose"]["xyz"].push_back(1.0);
+  item["pose"]["xyz"].push_back(2.0);
+  item["pose"]["xyz"].push_back(3.0);
+  item["pose"]["rpy"].push_back(0.1);
+  item["pose"]["rpy"].push_back(0.2);
+  item["pose"]["rpy"].push_back(0.3);
+  item["dimensions"].push_back(0.4);
+  item["dimensions"].push_back(0.5);
+  item["dimensions"].push_back(0.6);
+  item["source"] = "generated/environment_assets.yaml";
+  item["editable"] = true;
+  item["locked"] = false;
+  item["mesh"]["path"] = "meshes/visual/table.stl";
+  editable["items"].push_back(item);
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", editable);
+  write_file(root / "environment.yaml", "environment: {}\n");
+
+  EXPECT_FALSE(workcell_builder::is_save_layout_workflow_ready(root));
+  const auto result = workcell_builder::bootstrap_environment_layout_from_editable_layout(root, "bootstrap_scene", editable);
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_TRUE(result.created);
+  EXPECT_TRUE(result.wrote);
+  EXPECT_EQ(result.placed_assets_written, 1u);
+
+  const YAML::Node env = load_yaml_file(root / "environment_layout.yaml");
+  ASSERT_EQ(env["schema_version"].as<std::string>(), "environment_layout/v1");
+  ASSERT_EQ(env["scene_name"].as<std::string>(), "bootstrap_scene");
+  ASSERT_TRUE(env["placed_assets"] && env["placed_assets"].IsSequence());
+  ASSERT_EQ(env["placed_assets"].size(), 1u);
+  const YAML::Node placed = env["placed_assets"][0];
+  EXPECT_EQ(placed["id"].as<std::string>(), item["id"].as<std::string>());
+  EXPECT_EQ(YAML::Dump(placed["pose"]["xyz"]), YAML::Dump(item["pose"]["xyz"]));
+  EXPECT_EQ(YAML::Dump(placed["pose"]["rpy"]), YAML::Dump(item["pose"]["rpy"]));
+  EXPECT_EQ(YAML::Dump(placed["dimensions"]), YAML::Dump(item["dimensions"]));
+  EXPECT_EQ(placed["source"].as<std::string>(), item["source"].as<std::string>());
+  EXPECT_TRUE(placed["editable"].as<bool>());
+  EXPECT_FALSE(placed["locked"].as<bool>());
+  EXPECT_TRUE(workcell_builder::is_save_layout_workflow_ready(root));
+
+  fs::remove_all(root);
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapEnvironmentLayoutPreservesUnrelatedExistingFields)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_env_layout_preserve";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  YAML::Node editable(YAML::NodeType::Map);
+  editable["schema_version"] = "workcell_studio_layout/v1";
+  YAML::Node item(YAML::NodeType::Map);
+  item["id"] = "shared_asset";
+  item["type"] = "fixture";
+  item["category"] = "fixture";
+  item["pose"]["xyz"].push_back(7.0);
+  item["pose"]["xyz"].push_back(8.0);
+  item["pose"]["xyz"].push_back(9.0);
+  item["pose"]["rpy"].push_back(0.7);
+  item["pose"]["rpy"].push_back(0.8);
+  item["pose"]["rpy"].push_back(0.9);
+  item["dimensions"].push_back(1.1);
+  item["dimensions"].push_back(1.2);
+  item["dimensions"].push_back(1.3);
+  item["source"] = "layout/workcell_studio_layout.yaml";
+  item["editable"] = true;
+  item["locked"] = false;
+  editable["items"].push_back(item);
+
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "scene_name: existing_scene\n"
+    "custom_top_level: keep_me\n"
+    "placed_assets:\n"
+    "  - id: unrelated_asset\n"
+    "    custom: untouched\n"
+    "  - id: shared_asset\n"
+    "    custom_existing: preserved\n"
+    "    pose:\n"
+    "      xyz: [0, 0, 0]\n"
+    "      frame: keep_frame\n");
+
+  const auto result = workcell_builder::bootstrap_environment_layout_from_editable_layout(root, "new_scene", editable);
+  EXPECT_TRUE(result.ok) << result.error;
+  EXPECT_FALSE(result.created);
+  EXPECT_TRUE(result.wrote);
+
+  const YAML::Node env = load_yaml_file(root / "environment_layout.yaml");
+  EXPECT_EQ(env["scene_name"].as<std::string>(), "existing_scene");
+  EXPECT_EQ(env["custom_top_level"].as<std::string>(), "keep_me");
+  ASSERT_EQ(env["placed_assets"].size(), 2u);
+  EXPECT_EQ(env["placed_assets"][0]["id"].as<std::string>(), "unrelated_asset");
+  EXPECT_EQ(env["placed_assets"][0]["custom"].as<std::string>(), "untouched");
+  const YAML::Node shared = env["placed_assets"][1];
+  EXPECT_EQ(shared["custom_existing"].as<std::string>(), "preserved");
+  EXPECT_EQ(shared["pose"]["frame"].as<std::string>(), "keep_frame");
+  EXPECT_EQ(YAML::Dump(shared["pose"]["xyz"]), YAML::Dump(item["pose"]["xyz"]));
+  EXPECT_EQ(YAML::Dump(shared["pose"]["rpy"]), YAML::Dump(item["pose"]["rpy"]));
+  EXPECT_EQ(YAML::Dump(shared["dimensions"]), YAML::Dump(item["dimensions"]));
+  EXPECT_EQ(shared["source"].as<std::string>(), item["source"].as<std::string>());
+  EXPECT_TRUE(shared["editable"].as<bool>());
+  EXPECT_FALSE(shared["locked"].as<bool>());
+
+  fs::remove_all(root);
+}
+
 TEST(WorkcellStudioCanvasMesh, SaveLayoutReadinessRejectsEmptyEditableLayout)
 {
   const fs::path root = fs::temp_directory_path() / "wc_save_layout_empty_ready";
