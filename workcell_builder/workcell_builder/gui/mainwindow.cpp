@@ -519,10 +519,17 @@ static LayoutStateModel derive_layout_state_model(const fs::path & scene_dir, co
   if (!fs::exists(layout)) {
     return model.items.empty() ? LayoutStateModel::PREVIEW_UNAVAILABLE : LayoutStateModel::NO_LAYOUT_FILE;
   }
-  const auto inspection = workcell_builder::inspect_editable_layout_entries(scene_dir);
-  if (!inspection.valid) return LayoutStateModel::INVALID_LAYOUT_YAML;
-  if (!inspection.has_items_sequence || inspection.total_item_entries == 0 || inspection.editable_item_count == 0) {
-    return model.items.empty() ? LayoutStateModel::EMPTY_LAYOUT : LayoutStateModel::PREVIEW_ONLY_AVAILABLE;
+  try {
+    (void)YAML::LoadFile(layout.string());
+    const auto inspection = workcell_builder::inspect_editable_layout_entries(scene_dir);
+    if (!inspection.valid) return LayoutStateModel::INVALID_LAYOUT_YAML;
+    if (!inspection.has_items_sequence || inspection.total_item_entries == 0 || inspection.editable_item_count == 0) {
+      return model.items.empty() ? LayoutStateModel::EMPTY_LAYOUT : LayoutStateModel::PREVIEW_ONLY_AVAILABLE;
+    }
+  } catch (const YAML::Exception &) {
+    return LayoutStateModel::INVALID_LAYOUT_YAML;
+  } catch (const std::exception &) {
+    return LayoutStateModel::INVALID_LAYOUT_YAML;
   }
   return LayoutStateModel::EDITABLE_LAYOUT_PRESENT;
 }
@@ -5139,8 +5146,7 @@ void MainWindow::create_starter_layout_from_preview()
 {
   if (!has_selected_scene()) return;
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
-  const auto starter_layout_summary = workcell_builder::build_starter_layout_entries_from_preview(model);
+  const auto starter_layout_summary = workcell_builder::bootstrap_editable_layout_from_trusted_canonical_yaml(s.scene_dir, s.scene_name);
   const auto starter_layout_counts_message = [&starter_layout_summary]() {
     const auto count_text = [](std::size_t count) { return QString::fromStdString(std::to_string(count)); };
     return QString("Cannot create editable layout from preview: no preview geometry or safe metadata found. "
