@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from supported_scene_catalog import DEFAULT_SUPPORTED_SCENES_CATALOG, load_supported_scene_catalog
@@ -45,6 +47,36 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
     if not isinstance(payload, dict):
         payload = {"status": "BLOCKED", "blockers": ["validator_output_not_object"], "warnings": []}
     return cmd, proc.returncode, payload
+
+
+def _read_package_xml_name(scene_dir: Path) -> tuple[str | None, str | None]:
+    package_xml = scene_dir / "package.xml"
+    if not package_xml.exists():
+        return None, "package.xml missing"
+    try:
+        root = ET.fromstring(package_xml.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return None, f"package.xml unreadable: {exc.__class__.__name__}: {exc}"
+    name = root.findtext("name")
+    if not name or not name.strip():
+        return None, "package.xml missing <name>"
+    return name.strip(), None
+
+
+def _read_cmake_project_name(scene_dir: Path) -> tuple[str | None, str | None]:
+    cmake = scene_dir / "CMakeLists.txt"
+    if not cmake.exists():
+        return None, "CMakeLists.txt missing"
+    text = cmake.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"(?im)^\s*project\s*\(\s*([^\s\)]+)", text)
+    if not match:
+        return None, "CMakeLists.txt missing project(...)"
+    return match.group(1).strip(), None
+
+
+def _catalog_declares_blocked(status: str, known_blocker: str) -> bool:
+    normalized = status.strip().lower().replace("-", "_")
+    return bool(known_blocker.strip()) or normalized in {"blocked", "known_blocked", "unsupported", "disabled"}
 
 
 def _build_markdown(report: dict) -> str:
@@ -169,10 +201,46 @@ def main() -> int:
             continue
 
         missing = [rel for rel in required if not (scene_dir / rel).exists()]
-        row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
-        if missing:
-            row["status"] = "FAIL"
+        static_errors: list[str] = []
+
+        package_xml_name, package_xml_error = _read_package_xml_name(scene_dir)
+        if package_xml_error:
+            static_errors.append(package_xml_error)
+        else:
+            if package_xml_name != catalog_entry.package_name:
+                static_errors.append(
+                    f"package_name mismatch: catalog package_name={catalog_entry.package_name!r} package.xml name={package_xml_name!r}"
+                )
+            if package_xml_name != catalog_entry.build_package_name:
+                static_errors.append(
+                    f"build_package_name mismatch: catalog build_package_name={catalog_entry.build_package_name!r} package.xml name={package_xml_name!r}"
+                )
+
+        cmake_project_name, cmake_project_error = _read_cmake_project_name(scene_dir)
+        if cmake_project_error:
+            static_errors.append(cmake_project_error)
+        elif package_xml_name and cmake_project_name != package_xml_name:
+            static_errors.append(
+                f"CMake project mismatch: CMakeLists.txt project={cmake_project_name!r} package.xml name={package_xml_name!r}"
+            )
+
+        is_catalog_blocked = _catalog_declares_blocked(catalog_entry.status, catalog_entry.known_blocker)
+        if is_catalog_blocked and catalog_entry.known_blocker:
+            row["blockers"].append(f"known_blocker: {catalog_entry.known_blocker}")
+
+        row["static_validation"] = {
+            "status": "PASS" if not missing and not static_errors else "FAIL",
+            "missing_files": missing,
+            "package_xml_name": package_xml_name,
+            "cmake_project_name": cmake_project_name,
+            "errors": static_errors,
+        }
+        if missing or static_errors or is_catalog_blocked:
             row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            row["blockers"].extend(static_errors)
+            row["status"] = "BLOCKED" if is_catalog_blocked else "FAIL"
+            if missing and not catalog_entry.known_blocker and not is_catalog_blocked:
+                row["blockers"].append("catalog known_blocker is empty for a supported scene with missing required files")
             report["per_scene"].append(row)
             continue
 

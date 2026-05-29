@@ -9,105 +9,147 @@ import yaml
 
 SCHEMA = "workcell_studio_supported_scenes/v1"
 AUTHORING = ["environment.yaml", "layout/workcell_studio_layout.yaml"]
-GENERATED = ["cell_definition.yaml", "launch/demo.launch.py", "urdf/scene.urdf.xacro", "generated/scene_visual_mesh_index.json"]
-
-
-def _entry(name: str, scene_path: str | None = None, **overrides):
-    package = overrides.pop("package_name", name)
-    entry = {
-        "scene_name": name,
-        "package_name": package,
-        "scene_path": scene_path or f"scenes/{name}",
-        "support_level": "supported",
-        "status": "supported",
-        "known_blocker": "",
-        "authoring_files": AUTHORING,
-        "generated_files": GENERATED,
-        "validation_command": f"python3 scripts/validate_builder_generated_scene.py scenes/{name} --json",
-        "build_package_name": package,
-        "build_command": f"colcon build --symlink-install --packages-select {package}",
-        "fake_hardware_launch_command": f"ros2 launch {package} demo.launch.py use_fake_hardware:=true launch_rviz:=true",
-    }
-    entry.update(overrides)
-    return entry
-
-
-def _catalog(entries):
-    return {"schema_version": SCHEMA, "scenes": entries}
+GENERATED = ["cell_definition.yaml", "scene_manifest.yaml", "urdf/scene.urdf.xacro", "launch/demo.launch.py", "generated/scene_visual_mesh_index.json"]
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "validate_supported_scenes_readiness.py"
 
 
-def _write_scene(scene_dir: Path, name: str) -> None:
-    scene_dir.mkdir(parents=True, exist_ok=True)
-    (scene_dir / "package.xml").write_text(f"<package><name>{name}</name></package>\n", encoding="utf-8")
-    (scene_dir / "CMakeLists.txt").write_text(f"project({name})\nament_package()\n", encoding="utf-8")
-    (scene_dir / "environment.yaml").write_text("name: env\n", encoding="utf-8")
-    (scene_dir / "cell_definition.yaml").write_text("robot: ur5\nend_effector: suction\nenvironment: demo\n", encoding="utf-8")
-    (scene_dir / "launch").mkdir(exist_ok=True)
-    (scene_dir / "launch/demo.launch.py").write_text("use_fake_hardware launch_rviz robot_state_publisher rviz xacro\n", encoding="utf-8")
-    (scene_dir / "urdf").mkdir(exist_ok=True)
-    (scene_dir / "urdf/scene.urdf.xacro").write_text("<robot name='x'></robot>\n", encoding="utf-8")
-    (scene_dir / "layout").mkdir(exist_ok=True)
-    (scene_dir / "layout/workcell_studio_layout.yaml").write_text("layout: ok\n", encoding="utf-8")
-    (scene_dir / "generated").mkdir(exist_ok=True)
-    (scene_dir / "generated/scene_package_readiness.json").write_text(json.dumps({"package_name": name}), encoding="utf-8")
-    (scene_dir / "generated/scene_visual_mesh_index.json").write_text(json.dumps({"items": [{"render_expected": True}]}), encoding="utf-8")
-
-
 def _run(tmp_path: Path, registry: Path, extra: list[str] | None = None) -> dict:
-    cmd = [sys.executable, str(SCRIPT), "--repo-root", str(tmp_path), "--workspace-root", str(tmp_path), "--registry", str(registry), "--json", "--skip-build", "--skip-launch-smoke"]
+    cmd = [
+        sys.executable,
+        str(SCRIPT),
+        "--repo-root",
+        str(tmp_path),
+        "--workspace-root",
+        str(tmp_path),
+        "--registry",
+        str(registry),
+        "--json",
+        "--skip-build",
+        "--skip-launch-smoke",
+    ]
     cmd.extend(extra or [])
     run = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return json.loads(run.stdout)
 
 
-def test_disabled_and_experimental_skipped(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/ok_scene", "ok_scene")
-    reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([
-        _entry("disabled_scene", "scenes/disabled_scene", enabled=False),
-        _entry("exp_scene", "scenes/ok_scene", support_level="experimental"),
-    ])), encoding="utf-8")
+def test_disabled_and_experimental_skipped(tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog):
+    make_minimal_scene(tmp_path / "scenes/ok_scene", scene_name="ok_scene")
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [
+            make_supported_scene_entry("disabled_scene", scene_path="scenes/disabled_scene", enabled=False),
+            make_supported_scene_entry("exp_scene", scene_path="scenes/ok_scene", support_level="experimental", package_name="ok_scene"),
+        ],
+    )
     payload = _run(tmp_path, reg)
     assert payload["summary"]["skipped"] == 2
 
 
-def test_missing_scene_is_blocked(tmp_path: Path):
-    reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("missing", "scenes/missing")])), encoding="utf-8")
+def test_missing_scene_is_blocked(tmp_path: Path, make_supported_scene_entry, write_scene_catalog):
+    reg = write_scene_catalog(tmp_path / "registry.yaml", [make_supported_scene_entry("missing", scene_path="scenes/missing")])
     payload = _run(tmp_path, reg)
     assert payload["per_scene"][0]["status"] == "BLOCKED"
 
 
-def test_missing_required_file_is_fail(tmp_path: Path):
-    (tmp_path / "scenes/a").mkdir(parents=True)
-    reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("a", "scenes/a")])), encoding="utf-8")
+def test_supported_scene_with_missing_required_file_and_empty_known_blocker_fails_clearly(
+    tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog
+):
+    make_minimal_scene(
+        tmp_path / "scenes/a",
+        scene_name="a",
+        missing_authoring_files=["environment.yaml"],
+    )
+    reg = write_scene_catalog(tmp_path / "registry.yaml", [make_supported_scene_entry("a", scene_path="scenes/a", known_blocker="")])
     payload = _run(tmp_path, reg)
-    assert payload["per_scene"][0]["status"] == "FAIL"
-    assert "missing_required_file: environment.yaml" in payload["per_scene"][0]["blockers"]
+    row = payload["per_scene"][0]
+    assert row["status"] == "FAIL"
+    assert "missing_required_file: environment.yaml" in row["blockers"]
+    assert "catalog known_blocker is empty for a supported scene with missing required files" in row["blockers"]
 
 
-def test_experimental_included_with_flag(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/exp", "exp")
-    reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("exp", "scenes/exp", support_level="experimental")])), encoding="utf-8")
+def test_blocked_scene_reports_known_blocker(tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog):
+    make_minimal_scene(tmp_path / "scenes/blocked", scene_name="blocked", missing_generated_files=["launch/demo.launch.py"])
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [
+            make_supported_scene_entry(
+                "blocked",
+                scene_path="scenes/blocked",
+                status="blocked",
+                known_blocker="waiting on generated launch migration",
+            )
+        ],
+    )
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    assert row["status"] == "BLOCKED"
+    assert row["known_blocker"] == "waiting on generated launch migration"
+    assert "known_blocker: waiting on generated launch migration" in row["blockers"]
+
+
+def test_fake_hardware_launch_command_requires_fake_hardware_true(tmp_path: Path, make_supported_scene_entry, write_scene_catalog):
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [
+            make_supported_scene_entry(
+                "unsafe_scene",
+                fake_hardware_launch_command="ros2 launch unsafe_scene demo.launch.py launch_rviz:=true",
+            )
+        ],
+    )
+    payload = _run(tmp_path, reg)
+    assert payload["summary"]["blocked"] == 1
+    assert "unsafe_scene: fake_hardware_launch_command must explicitly set use_fake_hardware:=true" in payload["catalog_errors"]
+
+
+def test_package_and_build_names_must_match_package_xml(
+    tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog
+):
+    make_minimal_scene(tmp_path / "scenes/pkg_mismatch", scene_name="pkg_mismatch", package_xml_name="actual_pkg")
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [make_supported_scene_entry("pkg_mismatch", scene_path="scenes/pkg_mismatch", package_name="catalog_pkg", build_package_name="catalog_pkg")],
+    )
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    assert row["status"] == "FAIL"
+    assert "package_name mismatch: catalog package_name='catalog_pkg' package.xml name='actual_pkg'" in row["blockers"]
+    assert "build_package_name mismatch: catalog build_package_name='catalog_pkg' package.xml name='actual_pkg'" in row["blockers"]
+
+
+def test_cmake_project_name_must_match_package_xml(tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog):
+    make_minimal_scene(tmp_path / "scenes/cmake_mismatch", scene_name="cmake_mismatch", cmake_project_name="wrong_project")
+    reg = write_scene_catalog(tmp_path / "registry.yaml", [make_supported_scene_entry("cmake_mismatch", scene_path="scenes/cmake_mismatch")])
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+    assert row["status"] == "FAIL"
+    assert "CMake project mismatch: CMakeLists.txt project='wrong_project' package.xml name='cmake_mismatch'" in row["blockers"]
+
+
+def test_experimental_included_with_flag(tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog):
+    make_minimal_scene(tmp_path / "scenes/exp", scene_name="exp")
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [make_supported_scene_entry("exp", scene_path="scenes/exp", support_level="experimental")],
+    )
     payload = _run(tmp_path, reg, ["--include-experimental"])
     assert payload["per_scene"][0]["status"] in {"PASS", "PASS_WITH_WARNINGS"}
 
 
-def test_summary_counts(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/pass_scene", "pass_scene")
-    reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([
-        _entry("pass_scene", "scenes/pass_scene"),
-        _entry("missing_scene", "scenes/missing_scene"),
-        _entry("disabled_scene", "scenes/disabled_scene", enabled=False),
-    ])), encoding="utf-8")
+def test_summary_counts(tmp_path: Path, make_minimal_scene, make_supported_scene_entry, write_scene_catalog):
+    make_minimal_scene(tmp_path / "scenes/pass_scene", scene_name="pass_scene")
+    reg = write_scene_catalog(
+        tmp_path / "registry.yaml",
+        [
+            make_supported_scene_entry("pass_scene", scene_path="scenes/pass_scene"),
+            make_supported_scene_entry("missing_scene", scene_path="scenes/missing_scene"),
+            make_supported_scene_entry("disabled_scene", scene_path="scenes/disabled_scene", enabled=False),
+        ],
+    )
     payload = _run(tmp_path, reg)
-    assert payload["summary"] == {"total": 3, "pass": 1, "fail": 0, "blocked": 1, "warnings": 1, "skipped": 1}
+    assert payload["summary"] == {"total": 3, "pass": 1, "fail": 0, "blocked": 1, "warnings": 0, "skipped": 1}
 
 
 def test_default_catalog_declares_required_contract_fields():

@@ -98,3 +98,36 @@ def test_moveit_launch_readiness_uses_synthetic_launch_report_statuses(tmp_path)
     assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s1", "PASS")).readiness["moveit_launch_readiness"].status == "PASS"
     assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s2", "WARN")).readiness["moveit_launch_readiness"].status == "WARN"
     assert audit_scene(repo_root=Path(__file__).resolve().parents[1], scene_dir=_mk_scene("s3", "FAIL")).readiness["moveit_launch_readiness"].status == "FAIL"
+
+
+def test_mesh_index_missing_malformed_and_non_renderable_are_clear(tmp_path, make_minimal_scene):
+    from scripts.validate_all_workcell_studio_scenes import audit_scene
+
+    repo_root = tmp_path / "repo_without_extract_script"
+    repo_root.mkdir()
+    missing = make_minimal_scene(
+        tmp_path / "missing_mesh_index",
+        missing_generated_files=["generated/scene_visual_mesh_index.json"],
+    )
+    malformed = make_minimal_scene(tmp_path / "malformed_mesh_index", mesh_index_payload="{not-json")
+    non_renderable = make_minimal_scene(
+        tmp_path / "non_renderable_mesh_index",
+        mesh_index_payload={"items": [{"id": "hidden", "render_expected": False}]},
+    )
+
+    missing_audit = audit_scene(repo_root=repo_root, scene_dir=missing)
+    malformed_audit = audit_scene(repo_root=repo_root, scene_dir=malformed)
+    non_renderable_audit = audit_scene(repo_root=repo_root, scene_dir=non_renderable)
+
+    assert missing_audit.status == "FAIL"
+    assert any("visual mesh index regeneration failed: extractor script missing" == blocker for blocker in missing_audit.blockers)
+    assert "generated mesh index unreadable: missing" in missing_audit.blockers
+    assert missing_audit.readiness["preview_readiness"].status == "FAIL"
+
+    assert malformed_audit.status == "FAIL"
+    assert any("generated mesh index unreadable: error: JSONDecodeError" in blocker for blocker in malformed_audit.blockers)
+    assert malformed_audit.readiness["preview_readiness"].status == "FAIL"
+
+    assert non_renderable_audit.status == "FAIL"
+    assert "generated mesh index has no renderable items" in non_renderable_audit.blockers
+    assert non_renderable_audit.readiness["preview_readiness"].status == "FAIL"
