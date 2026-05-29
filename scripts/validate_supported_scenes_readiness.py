@@ -3,14 +3,99 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from supported_scene_catalog import DEFAULT_SUPPORTED_SCENES_CATALOG, load_supported_scene_catalog
 
 DEFAULT_REGISTRY = DEFAULT_SUPPORTED_SCENES_CATALOG
 VALIDATOR = Path("scripts/validate_guided_generated_scene_build_readiness.py")
+
+
+def _parse_package_xml_name(scene_path: Path) -> tuple[str | None, list[str]]:
+    """Return the ROS package name declared by scene_path/package.xml."""
+    package_xml = scene_path / "package.xml"
+    if not package_xml.exists():
+        return None, [f"package_xml_missing: {package_xml}"]
+    if not package_xml.is_file():
+        return None, [f"package_xml_not_file: {package_xml}"]
+    try:
+        root = ET.parse(package_xml).getroot()
+    except ET.ParseError as exc:
+        return None, [f"package_xml_malformed: {exc}"]
+    name_node = root.find("name")
+    package_name = (name_node.text or "").strip() if name_node is not None else ""
+    if not package_name:
+        return None, ["package_xml_missing_name"]
+    return package_name, []
+
+
+def _build_command_package_selection(build_command: str) -> list[str]:
+    try:
+        tokens = shlex.split(build_command)
+    except ValueError:
+        return []
+
+    selected: list[str] = []
+    for idx, token in enumerate(tokens):
+        if token == "--packages-select":
+            for value in tokens[idx + 1 :]:
+                if value.startswith("-"):
+                    break
+                selected.append(value)
+            break
+        if token.startswith("--packages-select="):
+            selected.append(token.split("=", 1)[1])
+            break
+    return selected
+
+
+def _fake_hardware_launch_package(fake_hardware_launch_command: str) -> str | None:
+    try:
+        tokens = shlex.split(fake_hardware_launch_command)
+    except ValueError:
+        return None
+
+    for idx in range(len(tokens) - 2):
+        if tokens[idx] == "ros2" and tokens[idx + 1] == "launch":
+            return tokens[idx + 2]
+    return None
+
+
+def _catalog_contract_mismatches(catalog_entry, scene_dir: Path) -> tuple[str | None, list[str]]:
+    package_xml_name, package_xml_errors = _parse_package_xml_name(scene_dir)
+    mismatches = list(package_xml_errors)
+
+    if package_xml_name:
+        if catalog_entry.package_name != package_xml_name:
+            mismatches.append(
+                "catalog_package_name_mismatch: "
+                f"catalog package_name '{catalog_entry.package_name}' != package.xml <name> '{package_xml_name}'"
+            )
+        if catalog_entry.build_package_name != package_xml_name:
+            mismatches.append(
+                "build_package_name_mismatch: "
+                f"catalog build_package_name '{catalog_entry.build_package_name}' != package.xml <name> '{package_xml_name}'"
+            )
+
+    build_selection = _build_command_package_selection(catalog_entry.build_command)
+    if build_selection != [catalog_entry.build_package_name]:
+        mismatches.append(
+            "build_command_package_selection_mismatch: "
+            f"build_command --packages-select {build_selection or '<missing>'} != build_package_name '{catalog_entry.build_package_name}'"
+        )
+
+    launch_package = _fake_hardware_launch_package(catalog_entry.fake_hardware_launch_command)
+    if launch_package != catalog_entry.package_name:
+        mismatches.append(
+            "fake_hardware_launch_package_mismatch: "
+            f"fake_hardware_launch_command package '{launch_package or '<missing>'}' != package_name '{catalog_entry.package_name}'"
+        )
+
+    return package_xml_name, mismatches
 
 
 def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build: bool, skip_launch_smoke: bool, timeout_sec: int):
@@ -131,6 +216,7 @@ def main() -> int:
             "status": "SKIPPED",
             "package_name": catalog_entry.package_name,
             "build_package_name": catalog_entry.build_package_name,
+            "package_xml_name": None,
             "authoring_files": list(catalog_entry.authoring_files),
             "generated_files": list(catalog_entry.generated_files),
             "required_files": required,
@@ -145,6 +231,7 @@ def main() -> int:
             "warnings": [],
             "commands_run": [],
             "artifact_paths": {},
+            "catalog_contract": {"status": "SKIPPED", "mismatches": []},
         }
 
         if not enabled:
@@ -164,15 +251,43 @@ def main() -> int:
         if not scene_dir.exists():
             row["status"] = "BLOCKED"
             row["static_validation"] = {"status": "BLOCKED", "missing_files": required}
-            row["blockers"].append(f"scene_path_missing: {scene_dir}")
+            if catalog_entry.status == "blocked":
+                row["blockers"].append(catalog_entry.known_blocker or "scene_marked_blocked_in_catalog")
+            else:
+                row["blockers"].append(f"scene_path_missing: {scene_dir}")
             report["per_scene"].append(row)
             continue
+
+        package_xml_name, catalog_mismatches = _catalog_contract_mismatches(catalog_entry, scene_dir)
+        row["package_xml_name"] = package_xml_name
+        row["catalog_contract"] = {
+            "status": "FAIL" if catalog_mismatches else "PASS",
+            "mismatches": catalog_mismatches,
+        }
 
         missing = [rel for rel in required if not (scene_dir / rel).exists()]
         row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
         if missing:
-            row["status"] = "FAIL"
-            row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            if catalog_entry.status == "blocked":
+                row["status"] = "BLOCKED"
+                row["blockers"].append(catalog_entry.known_blocker or "scene_marked_blocked_in_catalog")
+            else:
+                row["status"] = "FAIL"
+                row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+                if catalog_entry.status == "supported":
+                    row["blockers"].extend(catalog_mismatches)
+            report["per_scene"].append(row)
+            continue
+
+        if catalog_entry.status == "blocked":
+            row["status"] = "BLOCKED"
+            row["blockers"].append(catalog_entry.known_blocker or "scene_marked_blocked_in_catalog")
+            report["per_scene"].append(row)
+            continue
+
+        if catalog_entry.status == "supported" and catalog_mismatches:
+            row["status"] = "BLOCKED"
+            row["blockers"].extend(catalog_mismatches)
             report["per_scene"].append(row)
             continue
 

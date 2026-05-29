@@ -102,8 +102,6 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
         fake_hardware_launch_command = str(raw.get("fake_hardware_launch_command", "")).strip()
         enabled = bool(raw.get("enabled", True))
 
-        if package_name != build_package_name:
-            errors.append(f"{scene_name}: package_name and build_package_name should match unless intentionally documented")
         if not authoring_files:
             errors.append(f"{scene_name}: authoring_files must list at least one file")
         if not generated_files:

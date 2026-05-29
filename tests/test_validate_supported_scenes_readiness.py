@@ -132,3 +132,78 @@ def test_default_catalog_declares_required_contract_fields():
         assert entry["scene_name"] in entry["validation_command"]
         assert entry["build_package_name"] in entry["build_command"]
         assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
+
+
+def test_package_xml_name_mismatch_is_supported_scene_blocker(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/pkg_mismatch", "actual_pkg")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("pkg_mismatch", "scenes/pkg_mismatch")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["package_xml_name"] == "actual_pkg"
+    assert row["catalog_contract"]["status"] == "FAIL"
+    assert any("catalog_package_name_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_build_package_name_mismatch_is_supported_scene_blocker(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/build_pkg_mismatch", "build_pkg_mismatch")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "build_pkg_mismatch",
+            "scenes/build_pkg_mismatch",
+            build_package_name="wrong_build_pkg",
+            build_command="colcon build --symlink-install --packages-select wrong_build_pkg",
+        )
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["package_xml_name"] == "build_pkg_mismatch"
+    assert any("build_package_name_mismatch" in blocker for blocker in row["blockers"])
+    assert row["catalog_contract"]["mismatches"] == row["blockers"]
+
+
+def test_fake_hardware_launch_package_mismatch_is_supported_scene_blocker(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/launch_pkg_mismatch", "launch_pkg_mismatch")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "launch_pkg_mismatch",
+            "scenes/launch_pkg_mismatch",
+            fake_hardware_launch_command="ros2 launch wrong_launch_pkg demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        )
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["catalog_contract"]["status"] == "FAIL"
+    assert any("fake_hardware_launch_package_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_catalog_blocked_scene_reports_contract_mismatch_without_replacing_known_blocker(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/blocked_pkg_mismatch", "actual_blocked_pkg")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "blocked_pkg_mismatch",
+            "scenes/blocked_pkg_mismatch",
+            status="blocked",
+            known_blocker="waiting for upstream mesh assets",
+        )
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["blockers"] == ["waiting for upstream mesh assets"]
+    assert row["catalog_contract"]["status"] == "FAIL"
+    assert any("catalog_package_name_mismatch" in mismatch for mismatch in row["catalog_contract"]["mismatches"])
