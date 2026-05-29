@@ -60,10 +60,11 @@ std::string yaml_named_or_scalar(const YAML::Node & node, const char * key)
   if (!node || key == nullptr) return "";
   if (node.IsScalar()) return yaml_scalar_or_empty(node);
   if (node.IsMap()) {
-    const std::string direct = yaml_scalar_or_empty(node[key]);
+    YAML::Node child;
+    try { child = node[key]; } catch (...) { return ""; }
+    const std::string direct = yaml_scalar_or_empty(child);
     if (!direct.empty()) return direct;
-    const YAML::Node nested = node[key];
-    if (nested.IsMap()) return yaml_map_value_or_empty(nested, "name");
+    if (child && child.IsMap()) return yaml_map_value_or_empty(child, "name");
   }
   return "";
 }
@@ -88,14 +89,21 @@ bool yaml_read_bool(const YAML::Node & node, bool * out)
 
 YAML::Node yaml_map_key(const YAML::Node & node, const char * key)
 {
-  if (!node.IsDefined() || !node.IsMap() || key == nullptr) return YAML::Node();
-  try { return node[key]; } catch (...) { return YAML::Node(); }
+  if (key == nullptr) return YAML::Node(YAML::NodeType::Undefined);
+  try {
+    if (!node.IsDefined() || !node.IsMap()) return YAML::Node(YAML::NodeType::Undefined);
+    const YAML::Node child = node[key];
+    return child ? child : YAML::Node(YAML::NodeType::Undefined);
+  } catch (...) { return YAML::Node(YAML::NodeType::Undefined); }
 }
 
 YAML::Node yaml_seq_index(const YAML::Node & node, std::size_t index)
 {
-  if (!node.IsDefined() || !node.IsSequence() || index >= node.size()) return YAML::Node();
-  return node[index];
+  try {
+    if (!node.IsDefined() || !node.IsSequence() || index >= node.size()) return YAML::Node(YAML::NodeType::Undefined);
+    const YAML::Node child = node[index];
+    return child ? child : YAML::Node(YAML::NodeType::Undefined);
+  } catch (...) { return YAML::Node(YAML::NodeType::Undefined); }
 }
 
 YAML::Node get_map(const YAML::Node & node, const char * key)
