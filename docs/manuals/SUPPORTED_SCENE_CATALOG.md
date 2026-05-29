@@ -31,6 +31,47 @@ Every `scenes[]` entry must define these fields:
 | `build_command` | Explicit package build command. |
 | `fake_hardware_launch_command` | Explicit safe launch command. It must include `use_fake_hardware:=true`. |
 
+## Local validation workflow
+
+Run these commands from the repository root to check the catalog-backed local readiness path:
+
+```bash
+python3 scripts/validate_supported_scenes_readiness.py --repo-root . --workspace-root . --skip-build --skip-launch-smoke --json
+```
+
+```bash
+python3 scripts/validate_all_workcell_studio_scenes.py
+```
+
+```bash
+scripts/check_all_scenes.sh
+```
+
+The readiness command above intentionally skips ROS package builds and launch smoke tests for fast local checks. Full fake-hardware launch validation must still keep fake hardware explicit with `use_fake_hardware:=true`; do not make real hardware the default path.
+
+## Status semantics
+
+- `support_level: supported` and `status: supported` are the default quality-gate targets for supported-scene readiness.
+- `status: blocked` remains in the catalog for scenes that are intended to be supported but currently cannot pass readiness; every blocked scene must include a concrete `known_blocker`.
+- `support_level: experimental` is opt-in and is not part of the default supported-scene gate.
+- `disabled` scenes are skipped and must not be used to hide broken supported scenes.
+
+## Required readiness JSON fields
+
+Readiness JSON emitted by catalog-backed validation must include these fields for each scene result:
+
+| Field | Purpose |
+| --- | --- |
+| `scene_name` | Scene/package name reported from the catalog entry. |
+| `status` | Catalog status used by the readiness gate, such as `supported`, `blocked`, or `disabled`. |
+| `support_level` | Support tier used to decide default versus opt-in validation scope. |
+| `blocker` | Normalized blocker text for readiness output; it should reflect `known_blocker` when the scene is blocked. |
+| `missing_authoring_files` | Required authoring/editor files from the catalog that were not found. |
+| `missing_generated_files` | Required generated scene/package files from the catalog that were not found. |
+| `validation_result` | Result from the explicit scene validation command. |
+| `build_command` | Package build command associated with the scene. |
+| `fake_hardware_launch_command` | Safe simulation launch command; it must keep `use_fake_hardware:=true` explicit. |
+
 ## Update rules for future Codex tasks
 
 When adding, removing, renaming, or intentionally disabling a supported scene:
@@ -48,12 +89,7 @@ When adding, removing, renaming, or intentionally disabling a supported scene:
 Default supported-scene readiness:
 
 ```bash
-python3 scripts/validate_supported_scenes_readiness.py \
-  --repo-root . \
-  --workspace-root /home/user/workcell_ws \
-  --skip-build \
-  --skip-launch-smoke \
-  --json
+python3 scripts/validate_supported_scenes_readiness.py --repo-root . --workspace-root . --skip-build --skip-launch-smoke --json
 ```
 
 All-scenes reproducibility report:
