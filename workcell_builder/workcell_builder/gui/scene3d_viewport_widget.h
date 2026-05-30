@@ -199,6 +199,12 @@ private:
     QString parser_type;
     QString parse_status;
     QString parse_error;
+    QString load_failure_reason;
+    QString requested_path;
+    QString package_uri;
+    QString resolved_source_path_original;
+    QString source_path_resolution_outcome;
+    bool resolved_source_path_stale{ false };
     InternalTriangleMesh mesh;
     bool has_bounds{ false };
     QVector3D local_min;
@@ -212,9 +218,11 @@ private:
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;
-  bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const;
+  bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
+                                       const ScenePreviewWidget::PreviewItem * item = nullptr,
+                                       QString * out_failure_reason = nullptr) const;
   bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
-  const MeshCacheEntry & ensure_mesh_cached(const QString & path);
+  const MeshCacheEntry & ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item, const QString & path);
   bool validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
                                 const MeshCacheEntry & entry,
                                 const QString & mesh_source,

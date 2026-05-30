@@ -82,6 +82,30 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
          !item.source_path.trimmed().isEmpty();
 }
 
+bool is_package_uri_string(const QString & path)
+{
+  return path.trimmed().startsWith(QStringLiteral("package://"));
+}
+
+QString mesh_load_failure_reason_for_item(const QString & path, const ScenePreviewWidget::PreviewItem * item)
+{
+  const QString trimmed_path = path.trimmed();
+  if (is_package_uri_string(trimmed_path)) return QStringLiteral("package_uri_unresolved");
+  if (item) {
+    const QString package_uri = item->package_uri.trimmed();
+    const QString outcome = item->source_path_resolution_outcome.trimmed().toLower();
+    const bool package_uri_resolution_failed =
+      is_package_uri_string(package_uri) &&
+      (!item->resolved_source_path_stale ||
+       outcome.contains(QStringLiteral("unresolved_after_package_uri_attempt")) ||
+       outcome.contains(QStringLiteral("package_uri_unresolved")) ||
+       outcome.contains(QStringLiteral("unresolved_package_uri")));
+    if (package_uri_resolution_failed) return QStringLiteral("package_uri_unresolved");
+    if (item->resolved_source_path_stale) return QStringLiteral("stale_path");
+  }
+  return QStringLiteral("file_not_found");
+}
+
 bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                      QString & out_error, int triangle_limit)
 {
@@ -1260,12 +1284,19 @@ bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreview
          role == "real_urdf_primitive";
 }
 
-bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const
+bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
+                                                               const ScenePreviewWidget::PreviewItem * item,
+                                                               QString * out_failure_reason) const
 {
+  if (out_failure_reason) out_failure_reason->clear();
   QFileInfo info(path);
-  if (!info.exists() || !info.isFile()) return false;
+  if (!info.exists() || !info.isFile()) {
+    if (out_failure_reason) *out_failure_reason = mesh_load_failure_reason_for_item(path, item);
+    return false;
+  }
   out_canonical = info.canonicalFilePath();
   if (out_canonical.isEmpty()) out_canonical = info.absoluteFilePath();
+  if (out_canonical.isEmpty() && out_failure_reason) *out_failure_reason = mesh_load_failure_reason_for_item(path, item);
   return !out_canonical.isEmpty();
 }
 
@@ -1278,18 +1309,29 @@ bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, con
   return true;
 }
 
-const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const QString & path)
+const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item,
+                                                                                           const QString & path)
 {
   const QFileInfo input_info(path);
   QString canonical;
-  if (!try_resolve_canonical_mesh_path(path, canonical)) canonical = input_info.absoluteFilePath();
+  QString load_failure_reason;
+  if (!try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason)) canonical = input_info.absoluteFilePath();
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
   entry.loaded = true;
+  entry.requested_path = path;
+  entry.package_uri = item.package_uri;
+  entry.resolved_source_path_original = item.resolved_source_path_original;
+  entry.source_path_resolution_outcome = item.source_path_resolution_outcome;
+  entry.resolved_source_path_stale = item.resolved_source_path_stale;
+  entry.load_failure_reason = load_failure_reason;
   if (!input_info.exists() || !input_info.isFile()) {
     entry.valid = false;
-    entry.warning = QStringLiteral("mesh missing on disk");
+    if (entry.load_failure_reason.trimmed().isEmpty()) {
+      entry.load_failure_reason = mesh_load_failure_reason_for_item(path, &item);
+    }
+    entry.warning = QStringLiteral("mesh missing on disk (reason: %1)").arg(entry.load_failure_reason);
     return mesh_cache_.insert(canonical, entry).value();
   }
   QFile file(canonical);
@@ -1375,6 +1417,12 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["loaded"] = e.loaded;
     row["valid"] = e.valid;
     row["warning"] = e.warning;
+    row["load_failure_reason"] = e.load_failure_reason;
+    row["requested_path"] = e.requested_path;
+    row["package_uri"] = e.package_uri;
+    row["resolved_source_path_stale"] = e.resolved_source_path_stale;
+    row["resolved_source_path_original"] = e.resolved_source_path_original;
+    row["source_path_resolution_outcome"] = e.source_path_resolution_outcome;
     row["oversized"] = e.oversized;
     const QString parser = (e.parser_type == "stl" || e.parser_type == "dae") ? e.parser_type : QStringLiteral("unsupported");
     row["parser_type"] = parser;
@@ -1398,7 +1446,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     for (const auto & item : items) {
       const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
       QString canonical_source;
-      if (!try_resolve_canonical_mesh_path(mesh_source, canonical_source)) canonical_source = QFileInfo(mesh_source).absoluteFilePath();
+      if (!try_resolve_canonical_mesh_path(mesh_source, canonical_source, &item)) canonical_source = QFileInfo(mesh_source).absoluteFilePath();
       if (canonical_source != canonical_path) continue;
       QVector3D raw_span, final_span;
       QString reason;
@@ -1443,7 +1491,7 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     warn_for_mode(QStringLiteral("mesh source missing"), mesh_source);
     return false;
   }
-  const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
+  const MeshCacheEntry & entry = ensure_mesh_cached(it, mesh_source);
   auto reject = [&](const QString & code, const QString & detail = QString()) {
     const QString reason = detail.isEmpty() ? code : QStringLiteral("%1: %2").arg(code, detail);
     warn_for_mode(reason, mesh_source);
@@ -1738,7 +1786,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
 {
   const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
   if (mesh_source.trimmed().isEmpty()) return false;
-  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(mesh_source);
+  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(item, mesh_source);
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
   QMatrix4x4 transform;
