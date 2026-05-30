@@ -779,6 +779,8 @@ WorkcellStudioStarterLayoutSummary bootstrap_editable_layout_from_trusted_canoni
   root["items"] = items;
   summary.layout = root;
   return summary;
+}
+
 WorkcellStudioEnvironmentLayoutBootstrapResult bootstrap_environment_layout_from_editable_layout(
   const fs::path & scene_dir, const std::string & scene_name, const YAML::Node & editable_layout)
 {
