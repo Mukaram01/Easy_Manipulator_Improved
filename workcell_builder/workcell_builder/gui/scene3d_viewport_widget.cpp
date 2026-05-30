@@ -552,6 +552,9 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   items = preview_items;
   int visible_item_count = 0;
   int skipped_item_count = 0;
+  int mesh_backed_count = 0;
+  int locked_urdf_count = 0;
+  int editable_layout_count = 0;
   QSet<QString> unique_visible_ids;
   std::vector<const ScenePreviewWidget::PreviewItem *> overlay_items;
   for (const auto & it : items) {
@@ -559,6 +562,9 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     if (!show_safety && role == NormalizedRole::SafetyZone) { ++skipped_item_count; continue; }
     ++visible_item_count;
     unique_visible_ids.insert(it.id);
+    if (it.mesh_available || !it.mesh_path.trimmed().isEmpty()) ++mesh_backed_count;
+    if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) ++locked_urdf_count;
+    if (it.linked_to_editable_layout_state) ++editable_layout_count;
     if (is_overlay_visual_role(role)) overlay_items.push_back(&it);
   }
   last_render_counters.preview_items_count = items.size();
@@ -567,7 +573,11 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
   last_render_counters.visible_count = visible_item_count;
   last_render_counters.skipped_count = skipped_item_count;
   last_render_counters.unique_visible_item_count = unique_visible_ids.size();
+  last_render_counters.mesh_backed_count = mesh_backed_count;
+  last_render_counters.mesh_rendered_count = mesh_backed_count;
   last_render_counters.overlay_count = static_cast<int>(overlay_items.size());
+  last_render_counters.locked_generated_urdf_visual_count = locked_urdf_count;
+  last_render_counters.editable_layout_count = editable_layout_count;
   last_render_counters.hierarchy_child_row_count = visible_item_count;
   last_render_counters.last_paint_completed = false;
   last_render_counters.smoke_fallback_render_used = false;
@@ -758,6 +768,7 @@ void Scene3DViewportWidget::paintGL()
   draw_item_batch(physical_items, true);
   last_render_counters.rendered_count = rendered_item_count;
   last_render_counters.mesh_backed_count = mesh_backed_count;
+  last_render_counters.mesh_rendered_count = mesh_backed_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.primitive_fallback_count = placeholder_count;
   last_render_counters.last_paint_completed = true;
@@ -1018,6 +1029,7 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
   last_render_counters.skipped_count = skipped_item_count;
   last_render_counters.unique_visible_item_count = unique_visible_ids.size();
   last_render_counters.mesh_backed_count = mesh_backed_count;
+  last_render_counters.mesh_rendered_count = mesh_backed_count;
   last_render_counters.placeholder_count = placeholder_count;
   last_render_counters.primitive_fallback_count = placeholder_count;
   last_render_counters.overlay_count = overlay_count;

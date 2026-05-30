@@ -30,16 +30,14 @@ bool include_preview_item_for_scene3d(
 Scene3DLayerVisibilityDefaults compute_scene3d_default_layer_visibility(
   const QVector<ScenePreviewWidget::PreviewItem> & all_items)
 {
-  bool has_editable = false, has_mesh = false, has_primitive = false;
-  for (const auto & item : all_items) {
-    const QString source_layer = token(item.source_layer);
-    const QString visual_source = token(item.active_visual_source);
-    if (source_layer == "editable_layout") has_editable = true;
-    if (visual_source == "mesh_preview") has_mesh = true;
-    if (source_layer == "primitive_fallback" || visual_source == "primitive_fallback") has_primitive = true;
-  }
+  Q_UNUSED(all_items);
   Scene3DLayerVisibilityDefaults out;
-  out.locked_generated_urdf_visual = !(has_editable || has_mesh || has_primitive);
+  // Generated/locked URDF visuals are part of the full Scene3D payload, not a
+  // mutually exclusive fallback. Keep them visible by default so opening a
+  // scene with editable layout rows plus mesh-index rows commits the combined
+  // payload to the viewport instead of leaving the render loop on the initial
+  // editable-only subset.
+  out.locked_generated_urdf_visual = true;
   return out;
 }
 
