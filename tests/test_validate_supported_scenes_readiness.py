@@ -117,18 +117,21 @@ def test_missing_scene_is_blocked(tmp_path: Path):
     assert row["missing_generated_files"] == GENERATED
 
 
-def test_missing_required_file_is_fail(tmp_path: Path):
-    scene_dir = tmp_path / "scenes/a"
-    _write_scene(scene_dir, "a")
-    (scene_dir / "environment.yaml").unlink()
-    (scene_dir / "generated/scene_visual_mesh_index.json").unlink()
+def test_supported_scene_with_missing_required_files_and_empty_blocker_fails_clearly(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_missing_required",
+        missing_authoring_files=["environment.yaml"],
+        missing_generated_files=["generated/scene_visual_mesh_index.json"],
+        known_blocker="",
+    )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("a", "scenes/a")])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
     _assert_readiness_fields(row)
     assert row["status"] == "FAIL"
     assert row["validation_result"] == "FAIL"
+    assert row["known_blocker"] == ""
     assert row["missing_authoring_files"] == ["environment.yaml"]
     assert row["missing_generated_files"] == ["generated/scene_visual_mesh_index.json"]
     assert row["blocker"].startswith("missing_required_file: environment.yaml; missing_required_file: generated/scene_visual_mesh_index.json")
@@ -148,12 +151,14 @@ def test_experimental_included_with_flag(tmp_path: Path):
     assert row["missing_generated_files"] == []
 
 
-def test_catalog_blocked_scene_uses_known_blocker(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/blocked", "blocked")
+def test_blocked_scene_reports_known_blocker(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_blocked",
+        catalog_status="blocked",
+        known_blocker="awaiting generated launch repair",
+    )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([
-        _entry("blocked", "scenes/blocked", status="blocked", known_blocker="awaiting generated launch repair"),
-    ])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
     _assert_readiness_fields(row)
@@ -221,6 +226,23 @@ def test_catalog_rejects_blocked_scene_without_known_blocker(tmp_path: Path):
     )
 
 
+def test_catalog_rejects_fake_hardware_launch_command_without_fake_hardware_true(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_unsafe_launch",
+        fake_hardware_launch_command="ros2 launch fixture_unsafe_launch demo.launch.py launch_rviz:=true",
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+
+    assert payload["summary"]["blocked"] == 1
+    assert payload["per_scene"] == []
+    assert any(
+        "fixture_unsafe_launch: fake_hardware_launch_command must explicitly set use_fake_hardware:=true" in error
+        for error in payload["catalog_errors"]
+    )
+
 def test_catalog_rejects_unknown_status_and_support_level(tmp_path: Path):
     reg = tmp_path / "registry.yaml"
     reg.write_text(yaml.safe_dump(_catalog([
@@ -276,11 +298,10 @@ def test_default_catalog_declares_required_contract_fields():
         assert "use_fake_hardware:=true" in entry["fake_hardware_launch_command"]
 
 
-def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/bad_mesh", "bad_mesh")
-    (tmp_path / "scenes/bad_mesh/generated/scene_visual_mesh_index.json").write_text("{not-json", encoding="utf-8")
+def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory("fixture_bad_mesh", mesh_index_payload="{not-json")
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("bad_mesh", "scenes/bad_mesh")])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
@@ -290,13 +311,10 @@ def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path):
     assert any("mesh_index_validation_invalid_json: generated/scene_visual_mesh_index.json" in b for b in row["blockers"])
 
 
-def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/empty_mesh", "empty_mesh")
-    (tmp_path / "scenes/empty_mesh/generated/scene_visual_mesh_index.json").write_text(
-        json.dumps({"visual_items": []}), encoding="utf-8"
-    )
+def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory("fixture_empty_mesh", mesh_index_payload={"visual_items": []})
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("empty_mesh", "scenes/empty_mesh")])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
@@ -307,11 +325,13 @@ def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Pat
     assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
 
 
-def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/missing_mesh", "missing_mesh")
-    (tmp_path / "scenes/missing_mesh/generated/scene_visual_mesh_index.json").unlink()
+def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_missing_mesh",
+        missing_generated_files=["generated/scene_visual_mesh_index.json"],
+    )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("missing_mesh", "scenes/missing_mesh")])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
@@ -321,13 +341,13 @@ def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path):
     assert "mesh_index_validation_missing_file: generated/scene_visual_mesh_index.json" in row["blockers"]
 
 
-def test_malformed_mesh_index_item_entries_are_blockers(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/malformed_items", "malformed_items")
-    (tmp_path / "scenes/malformed_items/generated/scene_visual_mesh_index.json").write_text(
-        json.dumps({"items": [{"render_expected": True}, "not-an-object"]}), encoding="utf-8"
+def test_malformed_mesh_index_item_entries_are_blockers(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_malformed_items",
+        mesh_index_payload={"items": [{"render_expected": True}, "not-an-object"]},
     )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([_entry("malformed_items", "scenes/malformed_items")])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
@@ -357,19 +377,17 @@ def test_blocked_scene_preserves_known_blocker_and_reports_mesh_issue(tmp_path: 
     assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
 
 
-def test_package_xml_name_mismatch_blocks_supported_scene(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/pkg_mismatch", "actual_package")
+def test_package_xml_name_mismatch_blocks_supported_scene(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_pkg_mismatch",
+        package_xml_name="actual_package",
+        package_name="catalog_package",
+        build_package_name="actual_package",
+        build_command="colcon build --symlink-install --packages-select actual_package",
+        fake_hardware_launch_command="ros2 launch catalog_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+    )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([
-        _entry(
-            "pkg_mismatch",
-            "scenes/pkg_mismatch",
-            package_name="catalog_package",
-            build_package_name="actual_package",
-            build_command="colcon build --symlink-install --packages-select actual_package",
-            fake_hardware_launch_command="ros2 launch catalog_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
-        ),
-    ])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
@@ -381,19 +399,17 @@ def test_package_xml_name_mismatch_blocks_supported_scene(tmp_path: Path):
     assert any("catalog_package_name_mismatch" in blocker for blocker in row["blockers"])
 
 
-def test_build_package_name_mismatch_blocks_supported_scene(tmp_path: Path):
-    _write_scene(tmp_path / "scenes/build_pkg_mismatch", "actual_package")
+def test_build_package_name_mismatch_blocks_supported_scene(tmp_path: Path, minimal_scene_factory):
+    _, entry = minimal_scene_factory(
+        "fixture_build_pkg_mismatch",
+        package_xml_name="actual_package",
+        package_name="actual_package",
+        build_package_name="stale_build_package",
+        build_command="colcon build --symlink-install --packages-select stale_build_package",
+        fake_hardware_launch_command="ros2 launch actual_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+    )
     reg = tmp_path / "registry.yaml"
-    reg.write_text(yaml.safe_dump(_catalog([
-        _entry(
-            "build_pkg_mismatch",
-            "scenes/build_pkg_mismatch",
-            package_name="actual_package",
-            build_package_name="stale_build_package",
-            build_command="colcon build --symlink-install --packages-select stale_build_package",
-            fake_hardware_launch_command="ros2 launch actual_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
-        ),
-    ])), encoding="utf-8")
+    reg.write_text(yaml.safe_dump(_catalog([entry])), encoding="utf-8")
 
     payload = _run(tmp_path, reg)
     row = payload["per_scene"][0]
