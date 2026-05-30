@@ -4890,6 +4890,12 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     refresh_selected_scene_item_labels(selected_item_state_);
   }
   const auto selected_state = current_selected_scene_item();
+  const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
+  const QString selected_source_layer_for_log = selected_state.source_layer.isEmpty() ? QStringLiteral("unknown") : selected_state.source_layer;
+  append_studio_log(QString("Scene3D selection changed: scene=%1 id=%2 editable=%3 locked=%4 source_layer=%5")
+    .arg(selected_scene_name_for_log, selected_id,
+      selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false",
+      selected_source_layer_for_log));
   append_studio_log(QString("Selected item: %1 (%2) type=%3 source=%4 editable=%5 locked=%6")
     .arg(selected_id, selected_role, selected_state.role_or_category, selected_state.source_path,
       selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false"));
@@ -5120,8 +5126,18 @@ void MainWindow::save_layout_changes()
   std::ofstream workcell_out(workcell_layout_path.string());
   workcell_out << workcell_layout;
   workcell_out.close();
+  if (!workcell_out.good()) {
+    append_studio_log(QString("Save Layout failed: write error while saving editable layout YAML to %1")
+      .arg(QString::fromStdString(workcell_layout_path.string())));
+    return;
+  }
   append_studio_log(QString("Save Layout: wrote editable layout items to %1")
     .arg(QString::fromStdString(workcell_layout_path.string())));
+  if (!stable_selected_id_before_refresh.isEmpty()) {
+    append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
+      .arg(QString::fromStdString(scene_name), stable_selected_id_before_refresh,
+        QString::fromStdString(workcell_layout_path.string())));
+  }
   if (items.size() == 0) {
     append_studio_log("Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
     QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
@@ -5395,7 +5411,45 @@ void MainWindow::reset_robot_base_pose_from_snapshot()
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
 
-void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); if (i->data(RoleLocked).toBool()) { append_studio_log(QString("Locked/generated item edit rejected: %1").arg(i->data(RoleId).toString())); return; } QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); i->setData(RoleWidth, inspector_dim_x_->value()); i->setData(RoleDepth, inspector_dim_y_->value()); i->setData(RoleHeight, inspector_dim_z_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose/Dimensions Edit"); append_studio_log(QString("item updated: %1 type=%2 source=%3 editable=%4 locked=%5").arg(i->data(RoleId).toString(), i->data(RoleType).toString(), i->data(RoleSource).toString(), i->data(RoleLocked).toBool() ? "false":"true", i->data(RoleLocked).toBool() ? "true":"false")); refresh_selection_transform_editor_from_item(i); if (scene_preview_widget_) scene_preview_widget_->update(); }
+void MainWindow::apply_inspector_pose_to_item()
+{
+  if (inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;
+
+  auto * i = digital_twin_scene_->selectedItems().front();
+  const QString item_id = i->data(RoleId).toString();
+  if (i->data(RoleLocked).toBool()) {
+    append_studio_log(QString("Locked/generated item edit rejected: %1").arg(item_id));
+    return;
+  }
+
+  QPointF old = i->pos();
+  i->setPos(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
+  i->setData(RolePoseZ, inspector_z_->value());
+  i->setData(RoleRoll, inspector_roll_->value());
+  i->setData(RolePitch, inspector_pitch_->value());
+  i->setData(RoleYaw, inspector_yaw_->value());
+  i->setData(RoleWidth, inspector_dim_x_->value());
+  i->setData(RoleDepth, inspector_dim_y_->value());
+  i->setData(RoleHeight, inspector_dim_z_->value());
+  undo_stack_.push_back({"pose_edit", item_id, old, i->pos(), false, false});
+  redo_stack_.clear();
+  mark_layout_dirty("Inspector Pose/Dimensions Edit");
+
+  const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
+  append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 xyz=[%3,%4,%5] rpy=[%6,%7,%8] dirty=true")
+    .arg(selected_scene_name_for_log, item_id)
+    .arg(inspector_x_->value(), 0, 'g', 17)
+    .arg(inspector_y_->value(), 0, 'g', 17)
+    .arg(inspector_z_->value(), 0, 'g', 17)
+    .arg(inspector_roll_->value(), 0, 'g', 17)
+    .arg(inspector_pitch_->value(), 0, 'g', 17)
+    .arg(inspector_yaw_->value(), 0, 'g', 17));
+  append_studio_log(QString("item updated: %1 type=%2 source=%3 editable=%4 locked=%5")
+    .arg(item_id, i->data(RoleType).toString(), i->data(RoleSource).toString(),
+      i->data(RoleLocked).toBool() ? "false" : "true", i->data(RoleLocked).toBool() ? "true" : "false"));
+  refresh_selection_transform_editor_from_item(i);
+  if (scene_preview_widget_) scene_preview_widget_->update();
+}
 
 void MainWindow::revert_selection_transform_editor()
 {
