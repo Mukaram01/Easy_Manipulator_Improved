@@ -1,0 +1,34 @@
+{
+  "schema_version": "workcell_studio_visual_mesh_index/v1",
+  "scene_name": "synthetic_scene3d_selection_fixture",
+  "safe_for_preview": true,
+  "extraction_mode": "synthetic_fixture",
+  "visual_items": [
+    {
+      "id": "generated_locked_robot_visual",
+      "link": "synthetic_robot_base_link",
+      "category": "URDF Visual",
+      "geometry_type": "mesh",
+      "render_expected": true,
+      "resolved": true,
+      "source_path": "meshes/generated_locked_robot_visual.stl",
+      "resolved_path": "meshes/generated_locked_robot_visual.stl",
+      "resolved_source_path": "meshes/generated_locked_robot_visual.stl",
+      "package_uri": "package://synthetic_scene3d_selection_fixture/meshes/generated_locked_robot_visual.stl",
+      "pose": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+      "world_pose": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+      "visual_origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+      "mesh_scale": [1.0, 1.0, 1.0],
+      "chain_status": "ok",
+      "triangle_count": 12
+    }
+  ],
+  "items": [
+    {
+      "id": "generated_locked_robot_visual",
+      "source_layer": "locked_generated_urdf_visual",
+      "editable": false,
+      "locked": true
+    }
+  ]
+}
