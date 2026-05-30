@@ -8,6 +8,9 @@ import yaml  # type: ignore
 
 DEFAULT_SUPPORTED_SCENES_CATALOG = Path("scenes/supported_scenes.yaml")
 CATALOG_SCHEMA_VERSION = "workcell_studio_supported_scenes/v1"
+ACCEPTED_CATALOG_STATUSES = frozenset({"supported", "blocked", "disabled"})
+ACCEPTED_SUPPORT_LEVELS = frozenset({"supported", "experimental"})
+
 REQUIRED_SCENE_FIELDS = (
     "scene_name",
     "package_name",
@@ -102,6 +105,16 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
         fake_hardware_launch_command = str(raw.get("fake_hardware_launch_command", "")).strip()
         enabled = bool(raw.get("enabled", True))
 
+        if status not in ACCEPTED_CATALOG_STATUSES:
+            accepted = ", ".join(sorted(ACCEPTED_CATALOG_STATUSES))
+            errors.append(f"{scene_name}: status must be one of [{accepted}]; got {status!r}")
+        if support_level not in ACCEPTED_SUPPORT_LEVELS:
+            accepted = ", ".join(sorted(ACCEPTED_SUPPORT_LEVELS))
+            errors.append(f"{scene_name}: support_level must be one of [{accepted}]; got {support_level!r}")
+        if status == "blocked" and not known_blocker:
+            errors.append(f"{scene_name}: known_blocker must be non-empty when status is 'blocked'")
+        if status == "supported" and known_blocker:
+            errors.append(f"{scene_name}: known_blocker must be empty when status is 'supported'")
         if package_name != build_package_name:
             errors.append(f"{scene_name}: package_name and build_package_name should match unless intentionally documented")
         if not authoring_files:

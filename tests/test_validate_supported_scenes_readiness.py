@@ -163,6 +163,82 @@ def test_catalog_blocked_scene_uses_known_blocker(tmp_path: Path):
     assert row["missing_generated_files"] == []
 
 
+def test_catalog_blocked_scene_reports_catalog_blocker_and_skips_guided_validator(tmp_path: Path):
+    scene_dir = tmp_path / "scenes/blocked_static"
+    _write_scene(scene_dir, "blocked_static")
+    (scene_dir / "environment.yaml").unlink()
+    known_blocker = "awaiting scene regeneration after robot-tool metadata repair"
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_static", "scenes/blocked_static", status="blocked", known_blocker=known_blocker),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["known_blocker"] == known_blocker
+    assert row["blocker"] == known_blocker
+    assert row["blockers"] == [known_blocker]
+    assert row["static_validation"] == {"status": "FAIL", "missing_files": ["environment.yaml"]}
+    assert row["missing_authoring_files"] == ["environment.yaml"]
+    assert row["commands_run"] == []
+    assert row["guided_build_launch_readiness"] == {"status": "SKIPPED"}
+    assert row["mesh_index_validation"]["status"] == "PASS"
+
+
+def test_catalog_rejects_supported_scene_with_stale_known_blocker(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("stale", "scenes/stale", status="supported", known_blocker="old blocker should be cleared"),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+
+    assert payload["summary"]["blocked"] == 1
+    assert payload["per_scene"] == []
+    assert "catalog_errors" in payload
+    assert any(
+        "stale: known_blocker must be empty when status is 'supported'" in error
+        for error in payload["catalog_errors"]
+    )
+
+
+def test_catalog_rejects_blocked_scene_without_known_blocker(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_without_reason", "scenes/blocked_without_reason", status="blocked", known_blocker=""),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+
+    assert payload["summary"]["blocked"] == 1
+    assert any(
+        "blocked_without_reason: known_blocker must be non-empty when status is 'blocked'" in error
+        for error in payload["catalog_errors"]
+    )
+
+
+def test_catalog_rejects_unknown_status_and_support_level(tmp_path: Path):
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("unknown_contract", "scenes/unknown_contract", status="needs_triage", support_level="beta"),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+
+    assert payload["summary"]["blocked"] == 1
+    assert any(
+        "unknown_contract: status must be one of [blocked, disabled, supported]; got 'needs_triage'" in error
+        for error in payload["catalog_errors"]
+    )
+    assert any(
+        "unknown_contract: support_level must be one of [experimental, supported]; got 'beta'" in error
+        for error in payload["catalog_errors"]
+    )
+
+
 def test_summary_counts(tmp_path: Path):
     _write_scene(tmp_path / "scenes/pass_scene", "pass_scene")
     reg = tmp_path / "registry.yaml"
