@@ -46,9 +46,6 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
         payload = {"status": "BLOCKED", "blockers": ["validator_output_not_object"], "warnings": []}
     return cmd, proc.returncode, payload
 
-
-
-
 def _check_mesh_index_contract(scene_dir: Path) -> dict:
     rel_path = "generated/scene_visual_mesh_index.json"
     index_path = scene_dir / rel_path
@@ -96,7 +93,8 @@ def _check_mesh_index_contract(scene_dir: Path) -> dict:
             f"mesh_index_contract_empty: {rel_path} contains 0 renderable items"
         )
     return result
-
+def _join_blockers(blockers: list[str]) -> str:
+    return "; ".join(str(blocker) for blocker in blockers if str(blocker).strip())
 
 def _build_markdown(report: dict) -> str:
     lines = [
@@ -106,9 +104,9 @@ def _build_markdown(report: dict) -> str:
         "--- | --- | --- | --- | --- | --- | ---",
     ]
     for row in report["per_scene"]:
-        blockers = "; ".join(row.get("blockers", [])) or "-"
+        blocker = row.get("blocker") or _join_blockers(row.get("blockers", [])) or "-"
         lines.append(
-            f"{row['scene_name']} | {row['support_level']} | {row['static_validation']['status']} | {row['build']['status']} | {row['launch_smoke']['status']} | {row['status']} | {blockers}"
+            f"{row['scene_name']} | {row['support_level']} | {row['static_validation']['status']} | {row['build']['status']} | {row['launch_smoke']['status']} | {row['status']} | {blocker}"
         )
     lines.append("")
     return "\n".join(lines)
@@ -174,12 +172,20 @@ def main() -> int:
         skip_build = args.skip_build or bool(entry.get("allow_skip_build", False))
         skip_launch = args.skip_launch_smoke or bool(entry.get("allow_skip_launch_smoke", False))
 
+        missing_authoring_files = [rel for rel in catalog_entry.authoring_files if not (scene_dir / rel).exists()]
+        missing_generated_files = [rel for rel in catalog_entry.generated_files if not (scene_dir / rel).exists()]
+        missing_required_files = [*missing_authoring_files, *missing_generated_files]
+
         row = {
             "scene_name": scene_name,
             "support_level": support_level,
             "catalog_status": catalog_entry.status,
             "known_blocker": catalog_entry.known_blocker,
             "status": "SKIPPED",
+            "blocker": "",
+            "missing_authoring_files": missing_authoring_files,
+            "missing_generated_files": missing_generated_files,
+            "validation_result": "SKIPPED",
             "package_name": catalog_entry.package_name,
             "build_package_name": catalog_entry.build_package_name,
             "authoring_files": list(catalog_entry.authoring_files),
@@ -202,29 +208,43 @@ def main() -> int:
         if not enabled:
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
+            row["validation_result"] = "SKIPPED"
             row["blockers"].append("scene_disabled_in_catalog")
+            row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue
         if support_level == "experimental" and not args.include_experimental:
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
+            row["validation_result"] = "SKIPPED"
             row["warnings"].append("experimental_scene_skipped_without_include_experimental")
+            report["per_scene"].append(row)
+            continue
+        if catalog_entry.status.lower() == "blocked":
+            report["scenes_checked"].append(scene_name)
+            row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
+            row["blocker"] = catalog_entry.known_blocker or "scene_blocked_in_catalog"
+            row["blockers"].append(row["blocker"])
             report["per_scene"].append(row)
             continue
 
         report["scenes_checked"].append(scene_name)
         if not scene_dir.exists():
             row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
             row["static_validation"] = {"status": "BLOCKED", "missing_files": required}
             row["blockers"].append(f"scene_path_missing: {scene_dir}")
+            row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue
 
-        missing = [rel for rel in required if not (scene_dir / rel).exists()]
-        row["static_validation"] = {"status": "PASS" if not missing else "FAIL", "missing_files": missing}
-        if missing:
+        row["static_validation"] = {"status": "PASS" if not missing_required_files else "FAIL", "missing_files": missing_required_files}
+        if missing_required_files:
             row["status"] = "FAIL"
-            row["blockers"].extend([f"missing_required_file: {m}" for m in missing])
+            row["validation_result"] = "FAIL"
+            row["blockers"].extend([f"missing_required_file: {m}" for m in missing_required_files])
+            row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue
 
@@ -250,6 +270,7 @@ def main() -> int:
         cmd, _, payload = _run_validator(repo_root, workspace_root, str(scene_dir), skip_build, skip_launch, args.timeout_sec)
         row["commands_run"].append(" ".join(cmd))
         guided_status = payload.get("status", "BLOCKED")
+        row["validation_result"] = guided_status
         row["guided_build_launch_readiness"] = payload
         row["build"] = payload.get("build", {"status": "SKIPPED"})
         row["launch_smoke"] = payload.get("launch_smoke", {"status": "SKIPPED"})
@@ -263,6 +284,7 @@ def main() -> int:
             row["status"] = "BLOCKED"
             row["blockers"].append(f"unknown_guided_status: {guided_status}")
 
+        row["blocker"] = _join_blockers(row["blockers"])
         report["per_scene"].append(row)
 
     for row in report["per_scene"]:
