@@ -1,0 +1,13 @@
+schema_version: workcell_scene/v1
+scene:
+  id: synthetic_scene3d_selection_fixture
+robot:
+  name: synthetic_fixture_robot
+tool:
+  name: synthetic_fixture_tool
+placed_objects:
+  - id: editable_fixture_plate
+    type: fixture
+    pose:
+      xyz: [0.25, -0.10, 0.05]
+      rpy: [0.0, 0.0, 0.1]
