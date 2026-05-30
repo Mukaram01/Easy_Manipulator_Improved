@@ -793,14 +793,27 @@ private:
     const bool fallback_render_path_active =
       counters.value("generated_fallback_count").toInt() > 0 ||
       counters.value("primitive_fallback_count").toInt() > 0 ||
-      counters.value("editable_layout_count").toInt() > 0;
+      counters.value("editable_layout_count").toInt() > 0 ||
+      counters.value("smoke_fallback_render_used").toBool(false);
+    const bool paint_completed = counters.value("last_paint_completed").toBool(false);
+    const bool has_mesh_payload_pending_paint =
+      !paint_completed && counters.value("mesh_backed_count").toInt() > 0;
     const bool has_mesh_or_meaningful_fallback =
-      counters.value("mesh_rendered_count").toInt() > 0 || fallback_render_path_active;
+      counters.value("mesh_rendered_count").toInt() > 0 ||
+      has_mesh_payload_pending_paint ||
+      fallback_render_path_active;
+    const bool smoke_fallback_render_used =
+      counters.value("smoke_fallback_render_used").toBool(false);
+    const bool mesh_payload_failed_after_paint =
+      paint_completed &&
+      !smoke_fallback_render_used &&
+      counters.value("mesh_backed_count").toInt() > 0 &&
+      counters.value("mesh_rendered_count").toInt() <= 0;
     const bool has_layout_mesh_warning_with_visible_fallback =
       counters.value("visible_count").toInt() > 0 && fallback_render_path_active &&
       (counters.value("placeholder_count").toInt() > 0 ||
        counters.value("locked_generated_urdf_visual_count").toInt() > 0 ||
-       (counters.value("mesh_backed_count").toInt() > 0 && counters.value("mesh_rendered_count").toInt() <= 0));
+       mesh_payload_failed_after_paint);
 
     QString derived_preview_status = QStringLiteral("Unavailable");
     if (has_layout_mesh_warning_with_visible_fallback) {

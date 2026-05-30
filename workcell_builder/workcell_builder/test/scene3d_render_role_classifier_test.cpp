@@ -1,8 +1,20 @@
 #include <gtest/gtest.h>
 
+#include <QApplication>
+
 #include "../gui/scene3d_viewport_widget.h"
 
 namespace {
+QApplication * ensure_app()
+{
+  qputenv("QT_QPA_PLATFORM", "offscreen");
+  if (QApplication::instance()) return qobject_cast<QApplication *>(QApplication::instance());
+  static int argc = 0;
+  static char * argv[] = { nullptr };
+  static QApplication app(argc, argv);
+  return &app;
+}
+
 ScenePreviewWidget::PreviewItem make_item(const QString & id)
 {
   ScenePreviewWidget::PreviewItem it;
@@ -72,4 +84,23 @@ TEST(Scene3DRenderRoleClassifier, AcceptsCanonicalAndLegacyGeneratedUrdfTokens)
   legacy.active_visual_source = "locked_generated_urdf_visual";
   legacy.mesh_available = true;
   EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(legacy), "generated_urdf_mesh");
+}
+
+TEST(Scene3DRenderRoleClassifier, IngestCountsMetadataSourcePathMeshHandoff)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+
+  ScenePreviewWidget::PreviewItem metadata_only = make_item("metadata_source_only");
+  metadata_only.mesh_available = false;
+  metadata_only.mesh_path.clear();
+  metadata_only.has_mesh_metadata = true;
+  metadata_only.source_path = "package://workcell_builder/meshes/metadata_only.stl";
+
+  Scene3DViewportWidget viewport;
+  viewport.ingest_preview_items(QVector<ScenePreviewWidget::PreviewItem>{metadata_only});
+
+  const auto counters = viewport.render_debug_counters();
+  EXPECT_GT(counters.mesh_backed_count, 0);
+  EXPECT_EQ(counters.mesh_rendered_count, 0);
+  EXPECT_FALSE(counters.last_paint_completed);
 }
