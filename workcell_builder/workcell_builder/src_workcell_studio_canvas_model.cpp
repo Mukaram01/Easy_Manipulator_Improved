@@ -813,11 +813,12 @@ WorkcellStudioEnvironmentLayoutBootstrapResult bootstrap_environment_layout_from
   std::set<std::string> layout_ids;
   std::vector<std::string> layout_id_order;
   YAML::Node bootstrap_by_id(YAML::NodeType::Map);
-  for (const auto & layout_item : layout_items) {
+  for (YAML::const_iterator it = layout_items.begin(); it != layout_items.end(); ++it) {
+    const YAML::Node layout_item = *it;
     if (!layout_item_has_bootstrap_placeable_fields(layout_item)) continue;
     const std::string id = yaml_map_value_or_empty(layout_item, "id");
     if (layout_ids.insert(id).second) layout_id_order.push_back(id);
-    bootstrap_by_id[id] = layout_item;
+    bootstrap_by_id[id] = YAML::Clone(layout_item);
   }
   if (layout_ids.empty()) {
     result.error = "editable layout has no bootstrappable editable/placeable items";
