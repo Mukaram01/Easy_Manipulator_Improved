@@ -46,53 +46,99 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
         payload = {"status": "BLOCKED", "blockers": ["validator_output_not_object"], "warnings": []}
     return cmd, proc.returncode, payload
 
-def _check_mesh_index_contract(scene_dir: Path) -> dict:
-    rel_path = "generated/scene_visual_mesh_index.json"
-    index_path = scene_dir / rel_path
+MESH_INDEX_REL_PATH = "generated/scene_visual_mesh_index.json"
+
+
+def _mesh_index_result(status: str, blocker: str | None = None) -> dict:
     result = {
-        "path": rel_path,
-        "status": "PASS",
+        "path": MESH_INDEX_REL_PATH,
+        "status": status,
         "renderable_items": 0,
         "total_items": 0,
+        "malformed_items": [],
+        "items_key": "",
         "blockers": [],
     }
+    if blocker:
+        result["blockers"].append(blocker)
+    return result
+
+
+def _check_mesh_index_contract(scene_dir: Path) -> dict:
+    """Validate the generated Scene3D visual mesh index contract for a scene."""
+    index_path = scene_dir / MESH_INDEX_REL_PATH
     if not index_path.exists():
-        result["status"] = "FAIL"
-        result["blockers"].append(f"mesh_index_contract_missing: {rel_path}")
-        return result
+        return _mesh_index_result(
+            "MISSING_FILE",
+            f"mesh_index_validation_missing_file: {MESH_INDEX_REL_PATH}",
+        )
+
     try:
         payload = json.loads(index_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        result["status"] = "FAIL"
-        result["blockers"].append(
-            f"mesh_index_contract_malformed: {rel_path} is not valid JSON ({exc.__class__.__name__}: {exc})"
+    except json.JSONDecodeError as exc:
+        return _mesh_index_result(
+            "INVALID_JSON",
+            f"mesh_index_validation_invalid_json: {MESH_INDEX_REL_PATH} ({exc.msg} at line {exc.lineno}, column {exc.colno})",
         )
-        return result
 
     if not isinstance(payload, dict):
-        result["status"] = "FAIL"
-        result["blockers"].append(f"mesh_index_contract_invalid: {rel_path} root must be a JSON object")
-        return result
-
-    items = payload.get("visual_items")
-    if not isinstance(items, list):
-        items = payload.get("items")
-    if not isinstance(items, list):
-        result["status"] = "FAIL"
-        result["blockers"].append(
-            f"mesh_index_contract_invalid: {rel_path} must contain visual_items or items as a list"
+        return _mesh_index_result(
+            "ROOT_NOT_OBJECT",
+            f"mesh_index_validation_root_not_object: {MESH_INDEX_REL_PATH} root must be a JSON object",
         )
-        return result
 
-    renderable_items = sum(1 for item in items if isinstance(item, dict) and item.get("render_expected", True))
+    has_visual_items = "visual_items" in payload
+    has_items = "items" in payload
+    if not has_visual_items and not has_items:
+        return _mesh_index_result(
+            "MISSING_ITEMS",
+            f"mesh_index_validation_missing_items: {MESH_INDEX_REL_PATH} must define items or visual_items",
+        )
+
+    items_key = "visual_items" if isinstance(payload.get("visual_items"), list) else "items"
+    items = payload.get(items_key)
+    if not isinstance(items, list):
+        return _mesh_index_result(
+            "MALFORMED_ITEMS",
+            f"mesh_index_validation_malformed_items: {MESH_INDEX_REL_PATH} items/visual_items must be a list",
+        )
+
+    result = _mesh_index_result("PASS")
+    result["items_key"] = items_key
     result["total_items"] = len(items)
+
+    malformed_items: list[dict] = []
+    renderable_items = 0
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            malformed_items.append({"index": index, "reason": "item_not_object"})
+            continue
+        render_expected = item.get("render_expected", True)
+        if not isinstance(render_expected, bool):
+            malformed_items.append({"index": index, "reason": "render_expected_not_bool"})
+            continue
+        if render_expected:
+            renderable_items += 1
+
     result["renderable_items"] = renderable_items
-    if renderable_items <= 0:
-        result["status"] = "FAIL"
+    result["malformed_items"] = malformed_items
+
+    if malformed_items:
+        result["status"] = "MALFORMED_ITEMS"
         result["blockers"].append(
-            f"mesh_index_contract_empty: {rel_path} contains 0 renderable items"
+            f"mesh_index_validation_malformed_items: {MESH_INDEX_REL_PATH} contains {len(malformed_items)} malformed item entries"
         )
+        return result
+
+    if renderable_items <= 0:
+        result["status"] = "NO_RENDERABLE_ITEMS"
+        result["blockers"].append(
+            f"mesh_index_validation_no_renderable_items: {MESH_INDEX_REL_PATH} contains 0 renderable items"
+        )
+
     return result
+
+
 def _join_blockers(blockers: list[str]) -> str:
     return "; ".join(str(blocker) for blocker in blockers if str(blocker).strip())
 
@@ -198,6 +244,7 @@ def main() -> int:
             "guided_build_launch_readiness": {"status": "SKIPPED"},
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
+            "mesh_index_validation": {"status": "SKIPPED"},
             "mesh_index": {"status": "SKIPPED"},
             "blockers": [],
             "warnings": [],
@@ -220,15 +267,6 @@ def main() -> int:
             row["warnings"].append("experimental_scene_skipped_without_include_experimental")
             report["per_scene"].append(row)
             continue
-        if catalog_entry.status.lower() == "blocked":
-            report["scenes_checked"].append(scene_name)
-            row["status"] = "BLOCKED"
-            row["validation_result"] = "BLOCKED"
-            row["blocker"] = catalog_entry.known_blocker or "scene_blocked_in_catalog"
-            row["blockers"].append(row["blocker"])
-            report["per_scene"].append(row)
-            continue
-
         report["scenes_checked"].append(scene_name)
         if not scene_dir.exists():
             row["status"] = "BLOCKED"
@@ -240,30 +278,34 @@ def main() -> int:
             continue
 
         row["static_validation"] = {"status": "PASS" if not missing_required_files else "FAIL", "missing_files": missing_required_files}
-        if missing_required_files:
-            row["status"] = "FAIL"
-            row["validation_result"] = "FAIL"
-            row["blockers"].extend([f"missing_required_file: {m}" for m in missing_required_files])
-            row["blocker"] = _join_blockers(row["blockers"])
-            report["per_scene"].append(row)
-            continue
 
         mesh_index = _check_mesh_index_contract(scene_dir)
+        row["mesh_index_validation"] = mesh_index
         row["mesh_index"] = mesh_index
         if mesh_index["status"] != "PASS":
             row["blockers"].extend(mesh_index.get("blockers", []))
 
         if str(catalog_entry.status).lower() == "blocked":
             row["status"] = "BLOCKED"
-            if catalog_entry.known_blocker:
-                row["blockers"].append(f"catalog_known_blocker: {catalog_entry.known_blocker}")
-            elif not row["blockers"]:
-                row["blockers"].append("catalog_status_blocked_without_known_blocker")
+            row["validation_result"] = "BLOCKED"
+            catalog_blocker = catalog_entry.known_blocker or "scene_blocked_in_catalog"
+            row["blockers"].insert(0, catalog_blocker)
+            row["blocker"] = _join_blockers(row["blockers"])
+            report["per_scene"].append(row)
+            continue
+
+        if missing_required_files:
+            row["status"] = "FAIL"
+            row["validation_result"] = "FAIL"
+            row["blockers"] = [f"missing_required_file: {m}" for m in missing_required_files] + row["blockers"]
+            row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue
 
         if mesh_index["status"] != "PASS":
             row["status"] = "FAIL"
+            row["validation_result"] = "FAIL"
+            row["blocker"] = _join_blockers(row["blockers"])
             report["per_scene"].append(row)
             continue
 
