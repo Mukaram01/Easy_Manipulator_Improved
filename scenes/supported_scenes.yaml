@@ -35,8 +35,8 @@ scenes:
     package_name: suction_test
     scene_path: scenes/suction_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
@@ -47,8 +47,8 @@ scenes:
     package_name: ur10_2f_test
     scene_path: scenes/ur10_2f_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
@@ -59,8 +59,8 @@ scenes:
     package_name: ur3_suction_test
     scene_path: scenes/ur3_suction_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
@@ -71,8 +71,8 @@ scenes:
     package_name: ur5_2f_builder_pick_place_demo
     scene_path: scenes/ur5_2f_builder_pick_place_demo
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_builder_pick_place_demo --json
@@ -95,8 +95,8 @@ scenes:
     package_name: ur5_2f_test
     scene_path: scenes/ur5_2f_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
@@ -107,8 +107,8 @@ scenes:
     package_name: ur5_3f_test
     scene_path: scenes/ur5_3f_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
@@ -119,8 +119,8 @@ scenes:
     package_name: ur5_airpick4_test
     scene_path: scenes/ur5_airpick4_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json

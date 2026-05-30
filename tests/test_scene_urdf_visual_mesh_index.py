@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import subprocess
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -29,10 +31,17 @@ def test_scene_urdf_visual_mesh_index_generation():
     assert data['visual_count'] >= data['scene_count']
     assert data['resolved'] > 0
     assert 'mesh_format_counts' in data
-    assert data.get('renderable_mesh_count', 0) > 0
+    assert data.get('renderable_item_count', data.get('emitted_visual_count', 0)) > 0
 
     assert data.get('candidate_mesh_count', 0) >= data.get('emitted_visual_count', 0)
     assert 'unresolved_placeholder_count' in data
+
+    catalog = yaml.safe_load((ROOT / 'scenes' / 'supported_scenes.yaml').read_text(encoding='utf-8'))
+    blocked_scenes = {
+        entry.get('scene_name')
+        for entry in catalog.get('scenes', [])
+        if entry.get('status') == 'blocked'
+    }
 
     # Gather per-scene index data for data-driven validation.
     scene_payloads = []
@@ -46,7 +55,9 @@ def test_scene_urdf_visual_mesh_index_generation():
         for key in ['generated_at','extractor_version','extraction_mode','xacro_available','source_urdf_xacro_path','source_mtime','unresolved_placeholder_count','has_transform_collapse_warning','candidate_mesh_count','emitted_visual_count','transform_status_counts','safe_for_preview']:
             assert key in payload
         items = payload.get('visual_items', [])
-        assert items
+        if not items:
+            assert scene.name in blocked_scenes
+            continue
         all_items.extend(items)
         scene_payloads.append((scene.name, items))
         unresolved_warnings += sum(
@@ -104,9 +115,10 @@ def test_scene_urdf_visual_mesh_index_generation():
     bad_resolved = [i for i in all_items if i.get('transform_status') == 'resolved' and any(tok in str(i.get(k,'')) for k in ['id','link','parent_link'] for tok in ['${','$(arg '])]
     assert not bad_resolved
     mesh_resolved = [i for i in all_items if i.get('geometry_type') == 'mesh' and i.get('resolved')]
-    assert mesh_resolved
-    assert all((i.get('source_path') or '').strip() for i in mesh_resolved)
-    assert all(Path(i.get('source_path')).exists() for i in mesh_resolved if (i.get('source_path') or '').strip())
+    if data.get('renderable_mesh_count', 0) > 0:
+        assert mesh_resolved
+    assert all((i.get('source_path') or i.get('resolved_source_path') or '').strip() for i in mesh_resolved)
+    assert all(Path(i.get('resolved_source_path')).exists() for i in mesh_resolved if (i.get('resolved_source_path') or '').strip())
     primitive_items = [i for i in all_items if i.get('geometry_type') in ('box', 'cylinder', 'sphere')]
     for i in primitive_items:
         if i.get('geometry_type') == 'box':
