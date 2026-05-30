@@ -786,24 +786,26 @@ void Scene3DViewportWidget::paintGL()
 
   glDisable(GL_BLEND);
 
-  qDebug() << "Scene3D runtime render: received=" << received_item_count
-           << "visible=" << visible_item_count
-           << "rendered=" << rendered_item_count
-           << "skipped=" << skipped_item_count
-           << "mesh_backed=" << mesh_backed_count
-           << "placeholder=" << placeholder_count
-           << "overlay=" << overlay_count
-           << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
-           << "generated_fallback_count=" << last_render_counters.generated_fallback_count
-           << "labels_drawn=" << last_render_counters.labels_drawn
-           << "labels_suppressed_overlap=" << last_render_counters.labels_suppressed_overlap
-           << "hierarchy_child_row_count=" << last_render_counters.hierarchy_child_row_count;
-  qDebug() << kPaintGLCacheOnlyGuard;
-  qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
-           << ", render_cache_count=" << mesh_cache_.size()
-           << ", rendered_count=" << rendered_item_count
-           << ", skipped_count=" << skipped_item_count
-           << "}";
+  if (debug_overlays_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) {
+    qDebug() << "Scene3D runtime render: received=" << received_item_count
+             << "visible=" << visible_item_count
+             << "rendered=" << rendered_item_count
+             << "skipped=" << skipped_item_count
+             << "mesh_backed=" << mesh_backed_count
+             << "placeholder=" << placeholder_count
+             << "overlay=" << overlay_count
+             << "mesh_rendered_count=" << last_render_counters.mesh_rendered_count
+             << "generated_fallback_count=" << last_render_counters.generated_fallback_count
+             << "labels_drawn=" << last_render_counters.labels_drawn
+             << "labels_suppressed_overlap=" << last_render_counters.labels_suppressed_overlap
+             << "hierarchy_child_row_count=" << last_render_counters.hierarchy_child_row_count;
+    qDebug() << kPaintGLCacheOnlyGuard;
+    qDebug() << "Scene3D diagnostics {viewport_received_count=" << received_item_count
+             << ", render_cache_count=" << mesh_cache_.size()
+             << ", rendered_count=" << rendered_item_count
+             << ", skipped_count=" << skipped_item_count
+             << "}";
+  }
 
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1144,7 +1146,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     draw_missing_geometry_marker(it);
     if (out_placeholder_count) ++(*out_placeholder_count);
     ++last_render_counters.generated_fallback_count;
-    if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("missing geometry"), it.source_path);
+    if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_MISSING_GEOMETRY: no mesh metadata or explicit primitive dimensions"), it.source_path);
     return false;
   }
   if (item_has_explicit_dimensions(it)) {
@@ -1152,7 +1154,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
       if (out_placeholder_count) ++(*out_placeholder_count);
-      warn_mesh_fallback_once(it.id, QStringLiteral("mesh-only mode: primitive fallback suppressed"), it.source_path);
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: primitive fallback available but disabled"), it.source_path);
       return false;
     }
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
@@ -1271,10 +1273,18 @@ bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path
 
 bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path)
 {
-  const QString key = QStringLiteral("%1|%2|%3").arg(item_id, reason, path);
+  const QString scene_key = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
+  const QString path_key = path.trimmed().isEmpty() ? QStringLiteral("<none>") : path.trimmed();
+  const QString key = QStringLiteral("%1|%2|%3|%4").arg(scene_key, item_id, reason, path_key);
   if (warned_mesh_fallbacks_.contains(key)) return false;
   warned_mesh_fallbacks_.insert(key);
-  qWarning().noquote() << QStringLiteral("Mesh preview fallback for %1: %2").arg(item_id, reason);
+  const QString reason_code = reason.section(QLatin1Char(':'), 0, 0).trimmed();
+  qWarning().noquote() << QStringLiteral("Scene3D render fallback: scene=%1 item=%2 reason_code=%3 detail=%4 path=%5")
+                            .arg(scene_key,
+                                 item_id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item_id.trimmed(),
+                                 reason_code.isEmpty() ? QStringLiteral("REJECT_UNKNOWN") : reason_code,
+                                 reason,
+                                 path_key);
   return true;
 }
 
@@ -1430,17 +1440,17 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     // explicit branch kept for static mesh-preview contract checks
   }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
-    if (meshes_only_mode) warn_mesh_fallback_once(it.id, reason, path);
+    if (meshes_only_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) warn_mesh_fallback_once(it.id, reason, path);
   };
 
   if (!it.has_mesh_metadata) {
-    warn_for_mode(QStringLiteral("mesh metadata missing"), it.source_path);
+    warn_for_mode(QStringLiteral("REJECT_MESH_METADATA_MISSING: mesh metadata missing"), it.source_path);
     return false;
   }
 
   const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
   if (mesh_source.trimmed().isEmpty()) {
-    warn_for_mode(QStringLiteral("mesh source missing"), mesh_source);
+    warn_for_mode(QStringLiteral("REJECT_MESH_SOURCE_MISSING: mesh source missing"), mesh_source);
     return false;
   }
   const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
