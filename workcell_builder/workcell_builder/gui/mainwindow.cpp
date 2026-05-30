@@ -996,23 +996,14 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const 
   }
   QApplication::processEvents(QEventLoop::AllEvents, 250);
   populate_scene_hierarchy();
-  const bool has_renderable_editable_mesh_or_primitive = [&]() {
-      for (const auto & item : all_scene_preview_items_) {
-        const QString source_layer = item.source_layer.trimmed().toLower();
-        const QString active_visual_source = item.active_visual_source.trimmed().toLower();
-        if (source_layer == QStringLiteral("editable_layout")) return true;
-        if (active_visual_source == QStringLiteral("mesh_preview")) return true;
-        if (source_layer == QStringLiteral("primitive_fallback") || active_visual_source == QStringLiteral("primitive_fallback")) return true;
-      }
-      return false;
-    }();
-  if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(true);
-  if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(true);
-  if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(true);
+  const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility(all_scene_preview_items_);
+  if (preview_layer_editable_layout_box_) preview_layer_editable_layout_box_->setChecked(defaults.editable_layout);
+  if (preview_layer_mesh_preview_box_) preview_layer_mesh_preview_box_->setChecked(defaults.mesh_preview);
+  if (preview_layer_primitive_fallback_box_) preview_layer_primitive_fallback_box_->setChecked(defaults.primitive_fallback);
   if (preview_layer_overlays_helpers_box_) preview_layer_overlays_helpers_box_->setChecked(
       blockers == nullptr || blockers->isEmpty());
   if (preview_layer_generated_urdf_visual_box_) {
-    preview_layer_generated_urdf_visual_box_->setChecked(!has_renderable_editable_mesh_or_primitive);
+    preview_layer_generated_urdf_visual_box_->setChecked(defaults.locked_generated_urdf_visual);
   }
 
   const auto count_visible_for_layers = [&](const QSet<QString> & enabled_layers) {
