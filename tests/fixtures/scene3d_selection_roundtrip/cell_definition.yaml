@@ -1,0 +1,9 @@
+schema_version: workcell_cell_definition/v1
+scene_name: synthetic_scene3d_selection_fixture
+assets:
+  - id: editable_fixture_plate
+    type: fixture
+    source: layout/workcell_studio_layout.yaml
+robot:
+  id: synthetic_fixture_robot
+  use_fake_hardware: true

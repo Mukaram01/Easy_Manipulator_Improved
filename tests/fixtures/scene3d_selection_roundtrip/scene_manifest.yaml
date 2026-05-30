@@ -1,0 +1,11 @@
+schema_version: workcell_scene_manifest/v1
+scene_name: synthetic_scene3d_selection_fixture
+template_name: synthetic_scene3d_selection_roundtrip
+files:
+  environment: environment.yaml
+  layout: layout/workcell_studio_layout.yaml
+  cell_definition: cell_definition.yaml
+  visual_mesh_index: generated/scene_visual_mesh_index.json
+safety:
+  fake_hardware_first: true
+  runtime_execution_enabled: false

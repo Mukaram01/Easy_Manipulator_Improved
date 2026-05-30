@@ -183,6 +183,7 @@ public:
   void set_label_mode(LabelMode mode);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
+  const PreviewItem * preview_item_by_id(const QString & id) const;
   MeshPreviewMode mesh_preview_mode() const;
   void reload_meshes();
   struct RenderDebugCounters

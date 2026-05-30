@@ -2803,6 +2803,55 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.valid = !state.id.isEmpty();
     return state.valid;
   };
+  const auto fill_from_preview = [&](const ScenePreviewWidget::PreviewItem * item) {
+    if (!item) return false;
+    state.id = item->id.trimmed();
+    state.display_name = item->display_name.trimmed();
+    state.role_or_category = item->role.trimmed();
+    if (state.role_or_category.isEmpty()) state.role_or_category = item->category.trimmed();
+    state.source_path = item->source_path.trimmed();
+    state.source_layer = item->source_layer.trimmed();
+    state.active_visual_source = item->active_visual_source.trimmed();
+    state.editable = item->editable && !item->locked;
+    state.locked = item->locked || !item->editable;
+    state.lock_reason = item->lock_reason.trimmed();
+    state.linked_to_editable_layout_state = item->linked_to_editable_layout_state;
+    state.visual_backing_status = item->mesh_available ? QStringLiteral("mesh") : QStringLiteral("primitive_fallback");
+    if (!item->mesh_load_warning.trimmed().isEmpty()) state.visual_backing_status = item->mesh_load_warning.trimmed();
+    state.generated_visual = item->locked || item->active_visual_source.trimmed() == QStringLiteral("locked_generated_urdf_visual");
+    state.item_type_classification = item->category.trimmed();
+    state.camera_id = item->camera_id.trimmed();
+    state.frame_id = item->frame_id.trimmed();
+    state.detection_label = item->detection_label.trimmed();
+    state.confidence = item->confidence;
+    state.tracking_id = item->tracking_id.trimmed();
+    state.snapshot_source_file = item->snapshot_source_file.trimmed();
+    state.alignment_warning = item->alignment_warning.trimmed();
+    state.pose_available = true;
+    state.pose_x = item->x;
+    state.pose_y = item->y;
+    state.pose_z = item->z;
+    state.roll = item->roll;
+    state.pitch = item->pitch;
+    state.yaw = item->yaw;
+    state.pose_text = QStringLiteral("xyz=(%1, %2, %3) rpy=(%4, %5, %6)")
+      .arg(item->x, 0, 'f', 3)
+      .arg(item->y, 0, 'f', 3)
+      .arg(item->z, 0, 'f', 3)
+      .arg(item->roll, 0, 'f', 3)
+      .arg(item->pitch, 0, 'f', 3)
+      .arg(item->yaw, 0, 'f', 3);
+    state.valid = !state.id.isEmpty();
+    return state.valid;
+  };
+  const auto find_preview_item_by_id = [&](const QString & id) -> const ScenePreviewWidget::PreviewItem * {
+    const QString stable_id = id.trimmed();
+    if (stable_id.isEmpty()) return nullptr;
+    for (const auto & item : all_scene_preview_items_) {
+      if (item.id.trimmed() == stable_id) return &item;
+    }
+    return scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(stable_id) : nullptr;
+  };
   const auto find_tree_item_by_id = [&](const QString & id) -> QTreeWidgetItem * {
     if (!scene_hierarchy_tree_ || id.trimmed().isEmpty()) return nullptr;
     for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
@@ -2831,11 +2880,16 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (fill_from_tree(tree_item)) return state;
     auto * canvas_item = find_canvas_item_by_id(selected_id);
     if (fill_from_canvas(canvas_item, selected_id)) return state;
+    if (fill_from_preview(find_preview_item_by_id(selected_id))) return state;
     return {};
   }
   if (scene_hierarchy_tree_ && fill_from_tree(scene_hierarchy_tree_->currentItem())) return state;
   if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty() &&
     fill_from_canvas(digital_twin_scene_->selectedItems().front())) return state;
+  if (scene_preview_widget_) {
+    const QString preview_selected_id = scene_preview_widget_->selected_preview_item_id().trimmed();
+    if (fill_from_preview(find_preview_item_by_id(preview_selected_id))) return state;
+  }
   return {};
 }
 
@@ -4872,7 +4926,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   QGraphicsItem * matched_canvas_item = nullptr;
   if (digital_twin_scene_) {
     for (auto * gi : digital_twin_scene_->items()) {
-      if (gi->data(RoleId).toString().trimmed() == selected_id) {
+      if (gi && gi->data(RoleId).toString().trimmed() == selected_id) {
         matched_canvas_item = gi;
         break;
       }
@@ -4884,15 +4938,26 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
       if (auto * rect = qgraphicsitem_cast<QGraphicsRectItem *>(matched_canvas_item)) {
         rect->setPen(QPen(QColor("#f8fafc"), 3));
       }
+    } else {
+      digital_twin_scene_->clearSelection();
     }
   }
 
+  const auto find_preview_item_by_id = [&](const QString & stable_id) -> const ScenePreviewWidget::PreviewItem * {
+    const QString trimmed_id = stable_id.trimmed();
+    if (trimmed_id.isEmpty()) return nullptr;
+    for (const auto & item : all_scene_preview_items_) {
+      if (item.id.trimmed() == trimmed_id) return &item;
+    }
+    return scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(trimmed_id) : nullptr;
+  };
+  const ScenePreviewWidget::PreviewItem * matched_preview_item = find_preview_item_by_id(selected_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
   selection_update_guard_ = false;
 
-  const bool selection_resolved = matched_tree_item || matched_canvas_item;
+  const bool selection_resolved = matched_tree_item || matched_canvas_item || matched_preview_item;
   if (!selection_resolved) {
-    append_studio_log(QString("Selection id missing after refresh, clearing atomically: %1").arg(selected_id));
+    append_studio_log(QString("Selection id absent from active scene payload after refresh, clearing atomically: %1").arg(selected_id));
     apply_scene_selection(QString(), selected_role, true, false);
     return;
   }
@@ -4902,8 +4967,33 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   } else {
     sync_selected_item_state();
     refresh_selected_scene_item_labels(selected_item_state_);
+    if (selected_item_state_.valid) {
+      inspector_update_guard_ = true;
+      if (inspector_x_) inspector_x_->setValue(selected_item_state_.pose_x);
+      if (inspector_y_) inspector_y_->setValue(selected_item_state_.pose_y);
+      if (inspector_z_) inspector_z_->setValue(selected_item_state_.pose_z);
+      if (inspector_roll_) inspector_roll_->setValue(selected_item_state_.roll);
+      if (inspector_pitch_) inspector_pitch_->setValue(selected_item_state_.pitch);
+      if (inspector_yaw_) inspector_yaw_->setValue(selected_item_state_.yaw);
+      for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
+        if (sb) sb->setReadOnly(true);
+      }
+      for (auto * sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
+        if (sb) sb->setReadOnly(true);
+      }
+      if (inspector_apply_button_) inspector_apply_button_->setEnabled(false);
+      if (inspector_revert_button_) inspector_revert_button_->setEnabled(false);
+      if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(false);
+      inspector_update_guard_ = false;
+    }
   }
   const auto selected_state = current_selected_scene_item();
+  const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
+  const QString selected_source_layer_for_log = selected_state.source_layer.isEmpty() ? QStringLiteral("unknown") : selected_state.source_layer;
+  append_studio_log(QString("Scene3D selection changed: scene=%1 id=%2 editable=%3 locked=%4 source_layer=%5")
+    .arg(selected_scene_name_for_log, selected_id,
+      selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false",
+      selected_source_layer_for_log));
   append_studio_log(QString("Selected item: %1 (%2) type=%3 source=%4 editable=%5 locked=%6")
     .arg(selected_id, selected_role, selected_state.role_or_category, selected_state.source_path,
       selected_state.editable ? "true" : "false", selected_state.locked ? "true" : "false"));
@@ -5558,7 +5648,45 @@ void MainWindow::reset_robot_base_pose_from_snapshot()
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
 
-void MainWindow::apply_inspector_pose_to_item(){ if(inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return; auto *i=digital_twin_scene_->selectedItems().front(); if (i->data(RoleLocked).toBool()) { append_studio_log(QString("Locked/generated item edit rejected: %1").arg(i->data(RoleId).toString())); return; } QPointF old=i->pos(); i->setPos(inspector_x_->value()*100.0, inspector_y_->value()*100.0); i->setData(RolePoseZ, inspector_z_->value()); i->setData(RoleRoll, inspector_roll_->value()); i->setData(RolePitch, inspector_pitch_->value()); i->setData(RoleYaw, inspector_yaw_->value()); i->setData(RoleWidth, inspector_dim_x_->value()); i->setData(RoleDepth, inspector_dim_y_->value()); i->setData(RoleHeight, inspector_dim_z_->value()); undo_stack_.push_back({"pose_edit", i->data(RoleId).toString(), old, i->pos(), false, false}); redo_stack_.clear(); mark_layout_dirty("Inspector Pose/Dimensions Edit"); append_studio_log(QString("item updated: %1 type=%2 source=%3 editable=%4 locked=%5").arg(i->data(RoleId).toString(), i->data(RoleType).toString(), i->data(RoleSource).toString(), i->data(RoleLocked).toBool() ? "false":"true", i->data(RoleLocked).toBool() ? "true":"false")); refresh_selection_transform_editor_from_item(i); if (scene_preview_widget_) scene_preview_widget_->update(); }
+void MainWindow::apply_inspector_pose_to_item()
+{
+  if (inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;
+
+  auto * i = digital_twin_scene_->selectedItems().front();
+  const QString item_id = i->data(RoleId).toString();
+  if (i->data(RoleLocked).toBool()) {
+    append_studio_log(QString("Locked/generated item edit rejected: %1").arg(item_id));
+    return;
+  }
+
+  QPointF old = i->pos();
+  i->setPos(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
+  i->setData(RolePoseZ, inspector_z_->value());
+  i->setData(RoleRoll, inspector_roll_->value());
+  i->setData(RolePitch, inspector_pitch_->value());
+  i->setData(RoleYaw, inspector_yaw_->value());
+  i->setData(RoleWidth, inspector_dim_x_->value());
+  i->setData(RoleDepth, inspector_dim_y_->value());
+  i->setData(RoleHeight, inspector_dim_z_->value());
+  undo_stack_.push_back({"pose_edit", item_id, old, i->pos(), false, false});
+  redo_stack_.clear();
+  mark_layout_dirty("Inspector Pose/Dimensions Edit");
+
+  const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
+  append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 xyz=[%3,%4,%5] rpy=[%6,%7,%8] dirty=true")
+    .arg(selected_scene_name_for_log, item_id)
+    .arg(inspector_x_->value(), 0, 'g', 17)
+    .arg(inspector_y_->value(), 0, 'g', 17)
+    .arg(inspector_z_->value(), 0, 'g', 17)
+    .arg(inspector_roll_->value(), 0, 'g', 17)
+    .arg(inspector_pitch_->value(), 0, 'g', 17)
+    .arg(inspector_yaw_->value(), 0, 'g', 17));
+  append_studio_log(QString("item updated: %1 type=%2 source=%3 editable=%4 locked=%5")
+    .arg(item_id, i->data(RoleType).toString(), i->data(RoleSource).toString(),
+      i->data(RoleLocked).toBool() ? "false" : "true", i->data(RoleLocked).toBool() ? "true" : "false"));
+  refresh_selection_transform_editor_from_item(i);
+  if (scene_preview_widget_) scene_preview_widget_->update();
+}
 
 void MainWindow::revert_selection_transform_editor()
 {
