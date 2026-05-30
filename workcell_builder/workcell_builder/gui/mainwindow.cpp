@@ -2785,9 +2785,10 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.source_path = item->data(RoleSource).toString().trimmed();
     state.locked = item->data(RoleLocked).toBool();
     state.editable = !state.locked;
-    state.source_layer = QStringLiteral("canvas");
+    state.source_layer = item->data(RoleSourceLayer).toString().trimmed();
+    if (state.source_layer.isEmpty()) state.source_layer = QStringLiteral("canvas");
     state.active_visual_source = item->data(RoleGeneratedPlaceholder).toBool() ? QStringLiteral("primitive_fallback") : QStringLiteral("mesh_preview");
-    state.linked_to_editable_layout_state = state.editable;
+    state.linked_to_editable_layout_state = state.editable && state.source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0;
     state.visual_backing_status = item->data(RoleGeneratedPlaceholder).toBool() ? QStringLiteral("primitive") : QStringLiteral("mesh");
     state.generated_visual = item->data(RoleGeneratedPlaceholder).toBool();
     state.item_type_classification = item->data(RoleType).toString().trimmed();
@@ -2799,6 +2800,9 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.roll = item->data(RoleRoll).toDouble();
     state.pitch = item->data(RolePitch).toDouble();
     state.yaw = item->data(RoleYaw).toDouble();
+    state.dim_x = item->data(RoleWidth).toDouble();
+    state.dim_y = item->data(RoleDepth).toDouble();
+    state.dim_z = item->data(RoleHeight).toDouble();
     state.pose_text = item->data(RolePoseText).toString().trimmed();
     state.valid = !state.id.isEmpty();
     return state.valid;
@@ -2834,6 +2838,9 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.roll = item->roll;
     state.pitch = item->pitch;
     state.yaw = item->yaw;
+    state.dim_x = item->sx;
+    state.dim_y = item->sy;
+    state.dim_z = item->sz;
     state.pose_text = QStringLiteral("xyz=(%1, %2, %3) rpy=(%4, %5, %6)")
       .arg(item->x, 0, 'f', 3)
       .arg(item->y, 0, 'f', 3)
@@ -2891,6 +2898,96 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (fill_from_preview(find_preview_item_by_id(preview_selected_id))) return state;
   }
   return {};
+}
+
+
+QGraphicsItem * MainWindow::find_canvas_item_by_stable_id(const QString & id) const
+{
+  const QString stable_id = id.trimmed();
+  if (!digital_twin_scene_ || stable_id.isEmpty()) return nullptr;
+  for (auto * item : digital_twin_scene_->items()) {
+    if (item && item->data(RoleId).toString().trimmed() == stable_id) return item;
+  }
+  return nullptr;
+}
+
+MainWindow::EditableLayoutSelectionTarget MainWindow::resolve_selected_editable_layout_target() const
+{
+  EditableLayoutSelectionTarget target;
+  const QString stable_id = current_selected_scene_item_id_.trimmed();
+  if (stable_id.isEmpty()) {
+    target.blocker = QStringLiteral("No stable scene item id is selected.");
+    return target;
+  }
+
+  target.state = current_selected_scene_item();
+  if (!target.state.valid || target.state.id.trimmed() != stable_id) {
+    target.blocker = QStringLiteral("Selected stable id '%1' is not present in the active scene hierarchy, Scene3D payload, or canvas fallback.").arg(stable_id);
+    return target;
+  }
+
+  target.fallback_item = find_canvas_item_by_stable_id(stable_id);
+
+  const auto supplement_from_preview = [&]() {
+    for (const auto & item : all_scene_preview_items_) {
+      if (item.id.trimmed() != stable_id) continue;
+      if (target.state.source_path.isEmpty()) target.state.source_path = item.source_path.trimmed();
+      if (target.state.source_layer.isEmpty() || target.state.source_layer == QStringLiteral("canvas")) target.state.source_layer = item.source_layer.trimmed();
+      if (target.state.active_visual_source.isEmpty()) target.state.active_visual_source = item.active_visual_source.trimmed();
+      target.state.linked_to_editable_layout_state = item.linked_to_editable_layout_state;
+      target.state.editable = item.editable && !item.locked;
+      target.state.locked = item.locked || !item.editable;
+      if (target.state.dim_x <= 0.0) target.state.dim_x = item.sx;
+      if (target.state.dim_y <= 0.0) target.state.dim_y = item.sy;
+      if (target.state.dim_z <= 0.0) target.state.dim_z = item.sz;
+      if (target.state.lock_reason.isEmpty()) target.state.lock_reason = item.lock_reason.trimmed();
+      return;
+    }
+    if (scene_preview_widget_) {
+      if (const auto * item = scene_preview_widget_->preview_item_by_id(stable_id)) {
+        if (target.state.source_path.isEmpty()) target.state.source_path = item->source_path.trimmed();
+        if (target.state.source_layer.isEmpty() || target.state.source_layer == QStringLiteral("canvas")) target.state.source_layer = item->source_layer.trimmed();
+        if (target.state.active_visual_source.isEmpty()) target.state.active_visual_source = item->active_visual_source.trimmed();
+        target.state.linked_to_editable_layout_state = item->linked_to_editable_layout_state;
+        target.state.editable = item->editable && !item->locked;
+        target.state.locked = item->locked || !item->editable;
+        if (target.state.dim_x <= 0.0) target.state.dim_x = item->sx;
+        if (target.state.dim_y <= 0.0) target.state.dim_y = item->sy;
+        if (target.state.dim_z <= 0.0) target.state.dim_z = item->sz;
+        if (target.state.lock_reason.isEmpty()) target.state.lock_reason = item->lock_reason.trimmed();
+      }
+    }
+  };
+  supplement_from_preview();
+
+  const QString source_layer = target.state.source_layer.trimmed();
+  const QString active_visual_source = target.state.active_visual_source.trimmed();
+  const bool generated_or_preview_only = target.state.locked || !target.state.editable ||
+    target.state.generated_visual ||
+    source_layer.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    source_layer.compare(QStringLiteral("generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    source_layer.compare(QStringLiteral("primitive_fallback"), Qt::CaseInsensitive) == 0 ||
+    active_visual_source.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0;
+  if (generated_or_preview_only) {
+    const QString reason = target.state.lock_reason.isEmpty() ? QStringLiteral("generated, locked, or preview-only item") : target.state.lock_reason;
+    target.blocker = QStringLiteral("Selection '%1' is not editable because it is %2 (source_layer=%3, active_visual_source=%4). Use or create an editable layout record first.")
+      .arg(stable_id, reason, source_layer.isEmpty() ? QStringLiteral("unknown") : source_layer,
+        active_visual_source.isEmpty() ? QStringLiteral("unknown") : active_visual_source);
+    return target;
+  }
+  if (!target.state.linked_to_editable_layout_state && source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) != 0) {
+    target.blocker = QStringLiteral("Selection '%1' is not linked to editable layout state (source_layer=%2). Use Recommended Layout/Add to Canvas before editing generated preview data.")
+      .arg(stable_id, source_layer.isEmpty() ? QStringLiteral("unknown") : source_layer);
+    return target;
+  }
+  target.source_path = target.state.source_path.trimmed();
+  if (target.source_path.isEmpty()) {
+    target.blocker = QStringLiteral("Editable selection '%1' has no source path for its layout record; refusing to edit anonymous preview state.").arg(stable_id);
+    return target;
+  }
+
+  target.ok = true;
+  return target;
 }
 
 void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState & state)
@@ -4967,25 +5064,7 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   } else {
     sync_selected_item_state();
     refresh_selected_scene_item_labels(selected_item_state_);
-    if (selected_item_state_.valid) {
-      inspector_update_guard_ = true;
-      if (inspector_x_) inspector_x_->setValue(selected_item_state_.pose_x);
-      if (inspector_y_) inspector_y_->setValue(selected_item_state_.pose_y);
-      if (inspector_z_) inspector_z_->setValue(selected_item_state_.pose_z);
-      if (inspector_roll_) inspector_roll_->setValue(selected_item_state_.roll);
-      if (inspector_pitch_) inspector_pitch_->setValue(selected_item_state_.pitch);
-      if (inspector_yaw_) inspector_yaw_->setValue(selected_item_state_.yaw);
-      for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
-        if (sb) sb->setReadOnly(true);
-      }
-      for (auto * sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
-        if (sb) sb->setReadOnly(true);
-      }
-      if (inspector_apply_button_) inspector_apply_button_->setEnabled(false);
-      if (inspector_revert_button_) inspector_revert_button_->setEnabled(false);
-      if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(false);
-      inspector_update_guard_ = false;
-    }
+    refresh_selection_transform_editor_from_state(selected_item_state_);
   }
   const auto selected_state = current_selected_scene_item();
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
@@ -5187,7 +5266,9 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 
 void MainWindow::save_layout_changes(){
   QString selected_preview_id;
-  if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
+  if (!current_selected_scene_item_id_.trimmed().isEmpty()) {
+    selected_preview_id = current_selected_scene_item_id_.trimmed();
+  } else if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
     selected_preview_id = scene_hierarchy_tree_->currentItem()->data(0, TreeRoleId).toString();
   } else if (digital_twin_scene_ && !digital_twin_scene_->selectedItems().isEmpty()) {
     selected_preview_id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString();
@@ -5554,13 +5635,40 @@ bool MainWindow::parse_transform_clipboard_text(
 void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * item)
 {
   if (!item) return;
-  const bool locked = item->data(RoleLocked).toBool();
+  SelectedSceneItemState state;
+  state.valid = true;
+  state.id = item->data(RoleId).toString().trimmed();
+  state.source_layer = item->data(RoleSourceLayer).toString().trimmed();
+  state.editable = !item->data(RoleLocked).toBool();
+  state.locked = item->data(RoleLocked).toBool();
+  state.linked_to_editable_layout_state = state.editable && state.source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0;
+  state.pose_available = true;
+  state.pose_x = item->pos().x() / 100.0;
+  state.pose_y = item->pos().y() / 100.0;
+  state.pose_z = item->data(RolePoseZ).toDouble();
+  state.roll = item->data(RoleRoll).toDouble();
+  state.pitch = item->data(RolePitch).toDouble();
+  state.yaw = item->data(RoleYaw).toDouble();
+  state.dim_x = item->data(RoleWidth).toDouble();
+  state.dim_y = item->data(RoleDepth).toDouble();
+  state.dim_z = item->data(RoleHeight).toDouble();
+  refresh_selection_transform_editor_from_state(state);
+}
+
+void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSceneItemState & state)
+{
+  if (!state.valid || !state.pose_available) return;
+  const bool locked = state.locked || !state.editable || !state.linked_to_editable_layout_state;
   inspector_update_guard_ = true;
-  inspector_x_->setValue(item->pos().x() / 100.0); inspector_y_->setValue(item->pos().y() / 100.0); inspector_z_->setValue(item->data(RolePoseZ).toDouble());
-  inspector_roll_->setValue(item->data(RoleRoll).toDouble()); inspector_pitch_->setValue(item->data(RolePitch).toDouble()); inspector_yaw_->setValue(item->data(RoleYaw).toDouble());
-  inspector_dim_x_->setValue(item->data(RoleWidth).toDouble());
-  inspector_dim_y_->setValue(item->data(RoleDepth).toDouble());
-  inspector_dim_z_->setValue(item->data(RoleHeight).toDouble());
+  if (inspector_x_) inspector_x_->setValue(state.pose_x);
+  if (inspector_y_) inspector_y_->setValue(state.pose_y);
+  if (inspector_z_) inspector_z_->setValue(state.pose_z);
+  if (inspector_roll_) inspector_roll_->setValue(state.roll);
+  if (inspector_pitch_) inspector_pitch_->setValue(state.pitch);
+  if (inspector_yaw_) inspector_yaw_->setValue(state.yaw);
+  if (inspector_dim_x_) inspector_dim_x_->setValue(state.dim_x);
+  if (inspector_dim_y_) inspector_dim_y_->setValue(state.dim_y);
+  if (inspector_dim_z_) inspector_dim_z_->setValue(state.dim_z);
   for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
     if (sb) sb->setReadOnly(locked);
   }
@@ -5568,7 +5676,7 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
     if (sb) sb->setReadOnly(locked);
   }
   if (inspector_apply_button_) inspector_apply_button_->setEnabled(!locked);
-  if (inspector_revert_button_) inspector_revert_button_->setEnabled(!locked);
+  if (inspector_revert_button_) inspector_revert_button_->setEnabled(true);
   if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
   inspector_update_guard_ = false;
   refresh_robot_base_pose_inspector();
@@ -5650,48 +5758,75 @@ void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_
 
 void MainWindow::apply_inspector_pose_to_item()
 {
-  if (inspector_update_guard_ || !digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;
+  if (inspector_update_guard_) return;
 
-  auto * i = digital_twin_scene_->selectedItems().front();
-  const QString item_id = i->data(RoleId).toString();
-  if (i->data(RoleLocked).toBool()) {
-    append_studio_log(QString("Locked/generated item edit rejected: %1").arg(item_id));
+  const auto target = resolve_selected_editable_layout_target();
+  if (!target.ok) {
+    append_studio_log(QString("Inspector transform edit blocked: %1").arg(target.blocker));
     return;
   }
 
-  QPointF old = i->pos();
-  i->setPos(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
-  i->setData(RolePoseZ, inspector_z_->value());
-  i->setData(RoleRoll, inspector_roll_->value());
-  i->setData(RolePitch, inspector_pitch_->value());
-  i->setData(RoleYaw, inspector_yaw_->value());
-  i->setData(RoleWidth, inspector_dim_x_->value());
-  i->setData(RoleDepth, inspector_dim_y_->value());
-  i->setData(RoleHeight, inspector_dim_z_->value());
-  undo_stack_.push_back({"pose_edit", item_id, old, i->pos(), false, false});
+  QGraphicsItem * i = target.fallback_item;
+  const QString item_id = target.state.id.trimmed();
+  const QPointF old(target.state.pose_x * 100.0, target.state.pose_y * 100.0);
+  const QPointF updated(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
+
+  if (i) {
+    i->setPos(updated);
+    i->setData(RolePoseZ, inspector_z_->value());
+    i->setData(RoleRoll, inspector_roll_->value());
+    i->setData(RolePitch, inspector_pitch_->value());
+    i->setData(RoleYaw, inspector_yaw_->value());
+    i->setData(RoleWidth, inspector_dim_x_->value());
+    i->setData(RoleDepth, inspector_dim_y_->value());
+    i->setData(RoleHeight, inspector_dim_z_->value());
+  }
+
+  SelectedSceneItemState refreshed_state = target.state;
+  refreshed_state.pose_available = true;
+  refreshed_state.pose_x = inspector_x_->value();
+  refreshed_state.pose_y = inspector_y_->value();
+  refreshed_state.pose_z = inspector_z_->value();
+  refreshed_state.roll = inspector_roll_->value();
+  refreshed_state.pitch = inspector_pitch_->value();
+  refreshed_state.yaw = inspector_yaw_->value();
+  refreshed_state.dim_x = inspector_dim_x_->value();
+  refreshed_state.dim_y = inspector_dim_y_->value();
+  refreshed_state.dim_z = inspector_dim_z_->value();
+  refreshed_state.editable = true;
+  refreshed_state.locked = false;
+  refreshed_state.linked_to_editable_layout_state = true;
+  selected_item_state_ = refreshed_state;
+
+  undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false});
   redo_stack_.clear();
   mark_layout_dirty("Inspector Pose/Dimensions Edit");
 
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
-  append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 xyz=[%3,%4,%5] rpy=[%6,%7,%8] dirty=true")
-    .arg(selected_scene_name_for_log, item_id)
+  append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 source=%3 xyz=[%4,%5,%6] rpy=[%7,%8,%9] dirty=true")
+    .arg(selected_scene_name_for_log, item_id, target.source_path)
     .arg(inspector_x_->value(), 0, 'g', 17)
     .arg(inspector_y_->value(), 0, 'g', 17)
     .arg(inspector_z_->value(), 0, 'g', 17)
     .arg(inspector_roll_->value(), 0, 'g', 17)
     .arg(inspector_pitch_->value(), 0, 'g', 17)
     .arg(inspector_yaw_->value(), 0, 'g', 17));
-  append_studio_log(QString("item updated: %1 type=%2 source=%3 editable=%4 locked=%5")
-    .arg(item_id, i->data(RoleType).toString(), i->data(RoleSource).toString(),
-      i->data(RoleLocked).toBool() ? "false" : "true", i->data(RoleLocked).toBool() ? "true" : "false"));
-  refresh_selection_transform_editor_from_item(i);
+  append_studio_log(QString("item updated: %1 source=%2 editable=true locked=false fallback_view_refreshed=%3")
+    .arg(item_id, target.source_path, i ? QStringLiteral("true") : QStringLiteral("false")));
+  refresh_selection_transform_editor_from_state(refreshed_state);
+  refresh_selected_scene_item_labels(refreshed_state);
   if (scene_preview_widget_) scene_preview_widget_->update();
 }
 
 void MainWindow::revert_selection_transform_editor()
 {
-  if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) return;
-  refresh_selection_transform_editor_from_item(digital_twin_scene_->selectedItems().front());
+  const auto state = current_selected_scene_item();
+  if (!state.valid) return;
+  if (auto * item = find_canvas_item_by_stable_id(state.id)) {
+    refresh_selection_transform_editor_from_item(item);
+  } else {
+    refresh_selection_transform_editor_from_state(state);
+  }
 }
 
 void MainWindow::copy_selection_transform_to_clipboard()
