@@ -2164,7 +2164,9 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
       preview_layer_mesh_preview_box_, preview_layer_primitive_fallback_box_,
       preview_layer_overlays_helpers_box_, preview_layer_warnings_missing_assets_box_})
   {
-    connect(box, &QCheckBox::toggled, this, [this](bool) { apply_scene3d_preview_layer_filters(true); });
+    if (box) {
+      connect(box, &QCheckBox::toggled, this, [this](bool) { apply_scene3d_preview_layer_filters(true); });
+    }
   }
   connect(duplicate_layout_button_, &QPushButton::clicked, this, &MainWindow::duplicate_selected_item);
   connect(delete_layout_button_, &QPushButton::clicked, this, &MainWindow::delete_selected_item);
@@ -2186,22 +2188,38 @@ connect(run_demo, &QPushButton::clicked, this, [this](){ append_studio_log("Demo
   connect(place_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Place); });
   connect(move_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Move); });
   connect(inspect_mode_button, &QPushButton::clicked, this, [this](){ set_canvas_interaction_mode(CanvasInteractionMode::Inspect); });
-  connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
-  connect(snap_action, &QAction::toggled, snap_to_grid_box_, &QCheckBox::setChecked);
-  connect(snap_to_grid_box_, &QCheckBox::toggled, snap_action, &QAction::setChecked);
-  connect(fine_move_action, &QAction::toggled, fine_move_mode_box_, &QCheckBox::setChecked);
-  connect(fine_move_mode_box_, &QCheckBox::toggled, fine_move_action, &QAction::setChecked);
-  connect(unlock_action, &QAction::toggled, unlock_robot_base_box_, &QCheckBox::setChecked);
-  connect(unlock_robot_base_box_, &QCheckBox::toggled, unlock_action, &QAction::setChecked);
-  connect(minimap_action, &QAction::toggled, show_minimap_box_, &QCheckBox::setChecked);
-  connect(show_minimap_box_, &QCheckBox::toggled, minimap_action, &QAction::setChecked);
-  connect(show_minimap_box_, &QCheckBox::toggled, this, [this](bool on){
-    minimap_requested_visible_ = on;
-    refresh_minimap_card();
-  });
+  if (snap_to_grid_box_) {
+    connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  }
+  if (snap_action && snap_to_grid_box_) {
+    connect(snap_action, &QAction::toggled, snap_to_grid_box_, &QCheckBox::setChecked);
+    connect(snap_to_grid_box_, &QCheckBox::toggled, snap_action, &QAction::setChecked);
+  }
+  if (fine_move_action && fine_move_mode_box_) {
+    connect(fine_move_action, &QAction::toggled, fine_move_mode_box_, &QCheckBox::setChecked);
+    connect(fine_move_mode_box_, &QCheckBox::toggled, fine_move_action, &QAction::setChecked);
+  }
+  if (unlock_action && unlock_robot_base_box_) {
+    connect(unlock_action, &QAction::toggled, unlock_robot_base_box_, &QCheckBox::setChecked);
+    connect(unlock_robot_base_box_, &QCheckBox::toggled, unlock_action, &QAction::setChecked);
+  }
+  if (minimap_action && show_minimap_box_) {
+    connect(minimap_action, &QAction::toggled, show_minimap_box_, &QCheckBox::setChecked);
+    connect(show_minimap_box_, &QCheckBox::toggled, minimap_action, &QAction::setChecked);
+  }
+  if (show_minimap_box_) {
+    connect(show_minimap_box_, &QCheckBox::toggled, this, [this](bool on){
+      minimap_requested_visible_ = on;
+      refresh_minimap_card();
+    });
+  }
   connect(digital_twin_canvas_->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int){ refresh_minimap_card(); });
   connect(digital_twin_canvas_->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int){ refresh_minimap_card(); });
-  for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+  for (auto * box : {show_reach_overlay_box_, show_camera_fov_overlay_box_, show_pick_place_overlay_box_, show_trajectory_overlay_box_}) {
+    if (box) {
+      connect(box, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
+    }
+  }
   auto * del_sc = new QShortcut(QKeySequence(Qt::Key_Delete), scene_builder); connect(del_sc,&QShortcut::activated,this,&MainWindow::delete_selected_item);
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
   auto * undo_sc = new QShortcut(QKeySequence::Undo, scene_builder); connect(undo_sc, &QShortcut::activated, this, &MainWindow::undo_layout_edit);
@@ -6777,6 +6795,17 @@ void MainWindow::populate_scene_hierarchy()
     scene_preview_widget_->set_preview_scene_name(selected_scene_state_.name);
     scene_preview_widget_->set_preview_status_summary(preview_provenance_summary_);
     apply_scene3d_preview_layer_filters(false);
+
+    const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
+    append_studio_log(QString(
+      "Scene3D full payload committed: scene=%1 editable=%2 preview=%3 total=%4 visible=%5 mesh=%6 locked=%7")
+      .arg(selected_scene_state_.name)
+      .arg(scene3d_full_payload_counters.editable_layout_count)
+      .arg(qMax(0, scene3d_full_payload_counters.viewport_received_count - scene3d_full_payload_counters.editable_layout_count))
+      .arg(scene3d_full_payload_counters.viewport_received_count)
+      .arg(scene3d_full_payload_counters.visible_count)
+      .arg(scene3d_full_payload_counters.mesh_backed_count)
+      .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
   }
   preview_warning_details_ = preview_warning_details;
 
