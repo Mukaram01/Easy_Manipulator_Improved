@@ -248,7 +248,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
@@ -4566,6 +4566,20 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, is_preview_placeholder);
     item->setData(RoleWarning, QString::fromStdString(entry.warnings.empty() ? std::string() : entry.warnings.front()));
     item->setData(RolePoseText, QString("x=%1 y=%2 z=%3 r=%4 p=%5 y=%6").arg(entry.x).arg(entry.y).arg(entry.z).arg(entry.roll).arg(entry.pitch).arg(entry.yaw));
+    QString source_layer = QStringLiteral("locked_generated_urdf_visual");
+    switch (entry.provenance) {
+      case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
+        source_layer = QStringLiteral("editable_layout");
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview:
+        source_layer = QStringLiteral("primitive_fallback");
+        break;
+      case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+      default:
+        source_layer = QStringLiteral("locked_generated_urdf_visual");
+        break;
+    }
+    item->setData(RoleSourceLayer, source_layer);
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
     digital_twin_scene_->addItem(item);
@@ -4940,10 +4954,51 @@ static QStringList generation_asset_support_preflight(const fs::path & layout_pa
   return warnings;
 }
 
+static bool is_safe_scene_relative_path(const fs::path & candidate)
+{
+  if (candidate.empty() || candidate.is_absolute()) return false;
+  for (const auto & part : candidate) {
+    if (part.string() == "..") return false;
+  }
+  return true;
+}
+
+static fs::path manifest_declared_layout_path(const fs::path & scene_dir)
+{
+  const fs::path manifest_path = scene_dir / "scene_manifest.yaml";
+  if (!fs::exists(manifest_path)) return {};
+  try {
+    const YAML::Node manifest = YAML::LoadFile(manifest_path.string());
+    const YAML::Node files = workcell_builder::yaml_map_key(manifest, "files");
+    std::string declared;
+    if (files && files.IsMap()) {
+      declared = workcell_builder::yaml_map_value_or_empty(files, "layout");
+      if (declared.empty()) declared = workcell_builder::yaml_map_value_or_empty(files, "editable_layout");
+      if (declared.empty()) declared = workcell_builder::yaml_map_value_or_empty(files, "workcell_studio_layout");
+    }
+    if (declared.empty()) declared = workcell_builder::yaml_map_value_or_empty(manifest, "layout");
+    const fs::path relative(declared);
+    if (!is_safe_scene_relative_path(relative)) return {};
+    return scene_dir / relative;
+  } catch (const YAML::Exception &) {
+    return {};
+  } catch (const std::exception &) {
+    return {};
+  }
+}
+
 static fs::path selected_scene_environment_layout_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
 {
   if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
-  return browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir / "environment_layout.yaml";
+  const fs::path scene_dir = browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir;
+  const fs::path standard_workcell_layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path legacy_environment_layout = scene_dir / "environment_layout.yaml";
+  const fs::path manifest_layout = manifest_declared_layout_path(scene_dir);
+
+  if (!manifest_layout.empty()) return manifest_layout;
+  if (fs::exists(standard_workcell_layout)) return standard_workcell_layout;
+  if (fs::exists(legacy_environment_layout)) return legacy_environment_layout;
+  return standard_workcell_layout;
 }
 
 static YAML::Node minimal_environment_layout(const std::string & scene_name)
@@ -4969,8 +5024,78 @@ static YAML::Node ensure_map_node(YAML::Node parent, const char * key)
   return parent[key];
 }
 
-void MainWindow::save_layout_changes()
+
+static YAML::Node yaml_sequence_from3(double a, double b, double c)
 {
+  YAML::Node seq(YAML::NodeType::Sequence);
+  seq.push_back(a);
+  seq.push_back(b);
+  seq.push_back(c);
+  return seq;
+}
+
+static void write_pose_preserving_existing_shape(YAML::Node item, double x, double y, double z, double roll, double pitch, double yaw)
+{
+  YAML::Node pose = ensure_map_node(item, "pose");
+  const bool scalar_xyz = pose["x"] || pose["y"] || pose["z"];
+  const bool scalar_rpy = pose["roll"] || pose["pitch"] || pose["yaw"];
+  if (scalar_xyz && !pose["xyz"]) {
+    pose["x"] = x;
+    pose["y"] = y;
+    pose["z"] = z;
+  } else {
+    pose["xyz"] = yaml_sequence_from3(x, y, z);
+  }
+  if (scalar_rpy && !pose["rpy"]) {
+    pose["roll"] = roll;
+    pose["pitch"] = pitch;
+    pose["yaw"] = yaw;
+  } else {
+    pose["rpy"] = yaml_sequence_from3(roll, pitch, yaw);
+  }
+}
+
+static void write_dimensions_preserving_existing_shape(YAML::Node item, double width, double depth, double height)
+{
+  YAML::Node size = item["size"];
+  if (size && size.IsMap() && !item["dimensions"]) {
+    size["width"] = width;
+    size["depth"] = depth;
+    size["height"] = height;
+    return;
+  }
+  item["dimensions"] = yaml_sequence_from3(width, depth, height);
+}
+
+static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML::Node & existing)
+{
+  YAML::Node item = (existing && existing.IsMap()) ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
+  item["id"] = gi->data(RoleId).toString().toStdString();
+  if (!gi->data(RoleDisplayName).toString().trimmed().isEmpty()) item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
+  if (!gi->data(RoleCategory).toString().trimmed().isEmpty()) item["category"] = gi->data(RoleCategory).toString().toStdString();
+  if (!gi->data(RoleType).toString().trimmed().isEmpty()) item["type"] = gi->data(RoleType).toString().toStdString();
+  if (!gi->data(RoleRole).toString().trimmed().isEmpty()) item["role"] = gi->data(RoleRole).toString().toStdString();
+  if (!gi->data(RoleSource).toString().trimmed().isEmpty()) item["source_path"] = gi->data(RoleSource).toString().toStdString();
+  if (!gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) item["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
+  item["editable"] = true;
+  item["locked"] = false;
+  write_pose_preserving_existing_shape(item,
+    gi->pos().x() / 100.0, gi->pos().y() / 100.0, gi->data(RolePoseZ).toDouble(),
+    gi->data(RoleRoll).toDouble(), gi->data(RolePitch).toDouble(), gi->data(RoleYaw).toDouble());
+  write_dimensions_preserving_existing_shape(
+    item, gi->data(RoleWidth).toDouble(), gi->data(RoleDepth).toDouble(), gi->data(RoleHeight).toDouble());
+  if (!gi->data(RoleSource).toString().trimmed().isEmpty() || !gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) {
+    YAML::Node mesh = ensure_map_node(item, "mesh");
+    if (!gi->data(RoleSource).toString().trimmed().isEmpty()) mesh["path"] = gi->data(RoleSource).toString().toStdString();
+    if (!gi->data(RoleSourcePackage).toString().trimmed().isEmpty()) mesh["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
+  }
+  YAML::Node meta = ensure_map_node(item, "metadata");
+  meta["serialization_contract"] =
+    "editable layout item only; locked/generated preview items are not written by inspector save";
+  return item;
+}
+
+void MainWindow::save_layout_changes(){
   QString selected_preview_id;
   if (scene_hierarchy_tree_ && scene_hierarchy_tree_->currentItem()) {
     selected_preview_id = scene_hierarchy_tree_->currentItem()->data(0, TreeRoleId).toString();
@@ -4981,7 +5106,8 @@ void MainWindow::save_layout_changes()
   if (!digital_twin_scene_) return;
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
-  const fs::path scene_dir = layout_path.parent_path();
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
+  const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
   const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
@@ -5013,26 +5139,38 @@ void MainWindow::save_layout_changes()
     boost::system::error_code ec;
     fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
-      append_studio_log(QString("Malformed environment_layout.yaml detected; backup failed (%1). Save aborted.").arg(QString::fromStdString(ec.message())));
-      QMessageBox::warning(this, "Save Layout", "Malformed environment_layout.yaml backup failed. Not overwriting.");
+      append_studio_log(QString("Malformed layout YAML detected at %1; backup failed (%2). Save aborted.")
+        .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message())));
+      QMessageBox::warning(this, "Save Layout", "Malformed layout YAML backup failed. Not overwriting.");
       return;
     }
-    append_studio_log(QString("Malformed environment_layout.yaml backed up to %1").arg(QString::fromStdString(backup.string())));
+    append_studio_log(QString("Malformed layout YAML backed up to %1").arg(QString::fromStdString(backup.string())));
     root = YAML::Node();
   }
+  const bool target_is_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
+    layout_path.parent_path().filename().string() == "layout";
   if (!root || !root.IsMap()) {
-    root = minimal_environment_layout(scene_name);
+    if (target_is_workcell_layout) {
+      root = YAML::Node(YAML::NodeType::Map);
+      root["schema_version"] = "workcell_studio_layout/v1";
+      root["schema"] = "workcell_studio_layout/v1";
+      root["items"] = YAML::Node(YAML::NodeType::Sequence);
+    } else {
+      root = minimal_environment_layout(scene_name);
+    }
   }
-  // Ownership boundary: the canvas placement serializer only owns and mutates:
-  // - schema_version (required environment_layout/v1 metadata)
-  // - placed_assets (asset placement list)
-  // All other top-level and nested fields are preserved exactly as loaded.
-  root["schema_version"] = "environment_layout/v1";
+  if (target_is_workcell_layout) {
+    root["schema_version"] = "workcell_studio_layout/v1";
+    if (!root["schema"] || !root["schema"].IsScalar()) root["schema"] = "workcell_studio_layout/v1";
+  } else if (!root["schema_version"] || !root["schema_version"].IsScalar()) {
+    root["schema_version"] = "environment_layout/v1";
+  }
   if (!root["scene_name"] || !root["scene_name"].IsScalar()) {
     root["scene_name"] = scene_name;
   }
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-  const fs::path layout_backup = layout_path.parent_path() / ("environment_layout." + backup_stamp.toStdString() + ".bak.yaml");
+  const fs::path layout_backup = layout_path.parent_path() /
+    (layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
   if (existing_layout_file) {
     boost::system::error_code ec;
     fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
@@ -5043,59 +5181,101 @@ void MainWindow::save_layout_changes()
         .arg(QString::fromStdString(ec.message())));
     }
   }
-  YAML::Node placed = ensure_sequence_of_maps(root, "placed_assets");
-  YAML::Node existing_by_id(YAML::NodeType::Map);
-  for (std::size_t i = 0; i < placed.size(); ++i) {
-    const YAML::Node existing = placed[i];
-    if (!existing || !existing.IsMap()) continue;
-    const std::string existing_id = workcell_builder::yaml_map_value_or_empty(existing, "id");
-    if (!existing_id.empty()) existing_by_id[existing_id] = existing;
-  }
-  YAML::Node updated_placed(YAML::NodeType::Sequence);
+  std::vector<QGraphicsItem *> editable_canvas_items;
   for (auto * gi : digital_twin_scene_->items()) {
-    if (gi->data(RoleRole).toString() != "asset") continue;
+    const QString item_id = gi->data(RoleId).toString().trimmed();
+    if (item_id.isEmpty()) continue;
     if (gi->data(RoleLocked).toBool()) continue;
-    const std::string item_id = gi->data(RoleId).toString().toStdString();
-    if (!workcell_builder::workcell_studio_is_valid_id(item_id)) {
-      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(QString::fromStdString(item_id)));
-      append_studio_log(QString("Save blocked: invalid id '%1'").arg(QString::fromStdString(item_id)));
+    const QString source_layer = gi->data(RoleSourceLayer).toString().trimmed();
+    if (source_layer != QStringLiteral("editable_layout")) continue;
+    const std::string item_id_std = item_id.toStdString();
+    if (!workcell_builder::workcell_studio_is_valid_id(item_id_std)) {
+      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(item_id));
+      append_studio_log(QString("Save blocked: invalid id '%1'").arg(item_id));
       return;
     }
-    YAML::Node item = existing_by_id[item_id] ? YAML::Clone(existing_by_id[item_id]) : YAML::Node(YAML::NodeType::Map);
-    item["id"] = item_id;
-    item["display_name"] = gi->data(RoleDisplayName).toString().toStdString();
-    item["category"] = gi->data(RoleCategory).toString().toStdString();
-    item["type"] = gi->data(RoleType).toString().toStdString();
-    item["source_path"] = gi->data(RoleSource).toString().toStdString();
-    item["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
-    item["editable"] = !gi->data(RoleLocked).toBool();
-    item["locked"] = gi->data(RoleLocked).toBool();
-
-    YAML::Node pose = ensure_map_node(item, "pose");
-    pose["x"] = gi->pos().x() / 100.0; pose["y"] = gi->pos().y() / 100.0; pose["z"] = gi->data(RolePoseZ).toDouble();
-    pose["roll"] = gi->data(RoleRoll).toDouble(); pose["pitch"] = gi->data(RolePitch).toDouble(); pose["yaw"] = gi->data(RoleYaw).toDouble();
-    pose["xyz"] = YAML::Load("[]");
-    pose["xyz"].push_back(pose["x"]); pose["xyz"].push_back(pose["y"]); pose["xyz"].push_back(pose["z"]);
-    pose["rpy"] = YAML::Load("[]");
-    pose["rpy"].push_back(pose["roll"]); pose["rpy"].push_back(pose["pitch"]); pose["rpy"].push_back(pose["yaw"]);
-
-    item["dimensions"] = YAML::Load("[]");
-    item["dimensions"].push_back(gi->data(RoleWidth).toDouble());
-    item["dimensions"].push_back(gi->data(RoleDepth).toDouble());
-    item["dimensions"].push_back(gi->data(RoleHeight).toDouble());
-
-    YAML::Node mesh = ensure_map_node(item, "mesh");
-    mesh["path"] = gi->data(RoleSource).toString().toStdString();
-    mesh["source_package"] = gi->data(RoleSourcePackage).toString().toStdString();
-
-    YAML::Node meta = ensure_map_node(item, "metadata");
-    meta["preview_only"] = true;
-    meta["serialization_contract"] =
-      "id, display_name, type/category, pose.xyz, pose.rpy, dimensions, mesh metadata, editable/locked";
-    updated_placed.push_back(item);
-    append_studio_log(QString("Saved layout item %1 to environment_layout.yaml").arg(gi->data(RoleId).toString()));
+    editable_canvas_items.push_back(gi);
   }
-  root["placed_assets"] = updated_placed;
+
+  auto existing_items_by_id = [](const YAML::Node & sequence) {
+    YAML::Node out(YAML::NodeType::Map);
+    if (!sequence || !sequence.IsSequence()) return out;
+    for (std::size_t i = 0; i < sequence.size(); ++i) {
+      const YAML::Node existing = sequence[i];
+      if (!existing || !existing.IsMap()) continue;
+      const std::string existing_id = workcell_builder::yaml_map_value_or_empty(existing, "id");
+      if (!existing_id.empty()) out[existing_id] = existing;
+    }
+    return out;
+  };
+
+  const bool saving_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
+    workcell_builder::yaml_map_value_or_empty(root, "schema_version") == "workcell_studio_layout/v1" ||
+    (root["items"] && root["items"].IsSequence() && layout_path.parent_path().filename().string() == "layout");
+  const bool saving_placed_assets_layout = !saving_workcell_layout && root["placed_assets"] && root["placed_assets"].IsSequence();
+
+  YAML::Node updated_placed(YAML::NodeType::Sequence);
+  if (saving_workcell_layout || saving_placed_assets_layout) {
+    const char * item_key = saving_workcell_layout ? "items" : "placed_assets";
+    YAML::Node existing_by_id = existing_items_by_id(root[item_key]);
+    for (auto * gi : editable_canvas_items) {
+      const std::string item_id = gi->data(RoleId).toString().toStdString();
+      YAML::Node item = serialized_editable_canvas_item(gi, existing_by_id[item_id]);
+      if (saving_workcell_layout && !item["source"]) item["source"] = "layout/workcell_studio_layout.yaml";
+      updated_placed.push_back(item);
+      append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
+        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(layout_path.string())));
+    }
+    root[item_key] = updated_placed;
+    if (saving_workcell_layout) {
+      root["schema_version"] = "workcell_studio_layout/v1";
+      root["schema"] = "workcell_studio_layout/v1";
+    }
+  } else {
+    QMap<QString, QGraphicsItem *> editable_by_id;
+    for (auto * gi : editable_canvas_items) editable_by_id.insert(gi->data(RoleId).toString().trimmed(), gi);
+    QSet<QString> saved_ids;
+    const QStringList legacy_sequence_keys = {"items", "assets", "objects", "zones", "targets"};
+    for (const QString & key_q : legacy_sequence_keys) {
+      const std::string key = key_q.toStdString();
+      YAML::Node seq = root[key];
+      if (!seq || !seq.IsSequence()) continue;
+      for (std::size_t i = 0; i < seq.size(); ++i) {
+        YAML::Node node = seq[i];
+        if (!node || !node.IsMap()) continue;
+        const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(node, "id")).trimmed();
+        if (id.isEmpty() || !editable_by_id.contains(id)) continue;
+        seq[i] = serialized_editable_canvas_item(editable_by_id.value(id), node);
+        saved_ids.insert(id);
+        updated_placed.push_back(seq[i]);
+        append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+      }
+    }
+    YAML::Node camera = root["camera"];
+    if (camera && camera.IsMap()) {
+      const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(camera, "id")).trimmed();
+      if (!id.isEmpty() && editable_by_id.contains(id)) {
+        root["camera"] = serialized_editable_canvas_item(editable_by_id.value(id), camera);
+        saved_ids.insert(id);
+        updated_placed.push_back(root["camera"]);
+        append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+      }
+    }
+    YAML::Node placed_assets = ensure_sequence_of_maps(root, "placed_assets");
+    YAML::Node existing_by_id = existing_items_by_id(placed_assets);
+    for (auto * gi : editable_canvas_items) {
+      const QString id = gi->data(RoleId).toString().trimmed();
+      if (saved_ids.contains(id)) continue;
+      YAML::Node item = serialized_editable_canvas_item(gi, existing_by_id[id.toStdString()]);
+      placed_assets.push_back(item);
+      updated_placed.push_back(item);
+      append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
+        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+    }
+  }
+
   std::ofstream out(layout_path.string());
   out << root;
   out.close();
@@ -5105,24 +5285,7 @@ void MainWindow::save_layout_changes()
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
   append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
-  const fs::path workcell_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
-  YAML::Node workcell_layout(YAML::NodeType::Map);
-  workcell_layout["schema_version"] = "workcell_studio_layout/v1";
-  workcell_layout["schema"] = "workcell_studio_layout/v1";
-  workcell_layout["scene_name"] = scene_name;
-  YAML::Node items(YAML::NodeType::Sequence);
-  for (const auto & node : updated_placed) {
-    YAML::Node item = YAML::Clone(node);
-    item["source"] = "existing_new_cell_flow";
-    items.push_back(item);
-  }
-  workcell_layout["items"] = items;
-  std::ofstream workcell_out(workcell_layout_path.string());
-  workcell_out << workcell_layout;
-  workcell_out.close();
-  append_studio_log(QString("Save Layout: wrote editable layout items to %1")
-    .arg(QString::fromStdString(workcell_layout_path.string())));
-  if (items.size() == 0) {
+  if (updated_placed.size() == 0) {
     append_studio_log("Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
     QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
   }
@@ -5685,6 +5848,7 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
   item->setData(RoleWidth, 0.35); item->setData(RoleDepth, 0.35); item->setData(RoleHeight, 0.35);
   item->setData(RoleImported, source_path.endsWith(".stl", Qt::CaseInsensitive) || source_path.endsWith(".urdf", Qt::CaseInsensitive));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
+  item->setData(RoleSourceLayer, QStringLiteral("editable_layout"));
   item->setData(RoleLocked, false);
   QStringList warnings;
   if (source_path.trimmed().isEmpty()) warnings << "missing dimensions/source metadata";
