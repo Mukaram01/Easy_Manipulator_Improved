@@ -1659,8 +1659,54 @@ void Scene3DViewportWidget::draw_box_outline(double cx, double cy, double cz, do
   glEnd();
   glEnable(GL_CULL_FACE);
 }
-void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent)
-{ glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.25f : 1.0f); glBegin(GL_TRIANGLE_FAN); glVertex3f(cx, cy, cz); for (int i = 0; i <= 32; ++i) { const double a = 2.0 * M_PI * i / 32.0; glVertex3f(cx + radius * qCos(a), cy, cz + radius * qSin(a)); } glEnd(); Q_UNUSED(height); }
+void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent, int segment_count)
+{
+  const int segments = qMax(3, segment_count);
+  const double safe_radius = qMax(0.0, radius);
+  const double y_bottom = cy;
+  const double y_top = cy + height;
+
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+
+  // Side wall. The cylinder is Y-up to match the viewport's box helper, where
+  // the height axis starts at cy and extends by the supplied height argument.
+  glBegin(GL_QUADS);
+  for (int i = 0; i < segments; ++i) {
+    const double a0 = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    const double a1 = 2.0 * M_PI * static_cast<double>(i + 1) / static_cast<double>(segments);
+    const double x0 = cx + safe_radius * qCos(a0);
+    const double z0 = cz + safe_radius * qSin(a0);
+    const double x1 = cx + safe_radius * qCos(a1);
+    const double z1 = cz + safe_radius * qSin(a1);
+    glVertex3f(static_cast<GLfloat>(x0), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(z0));
+    glVertex3f(static_cast<GLfloat>(x0), static_cast<GLfloat>(y_top), static_cast<GLfloat>(z0));
+    glVertex3f(static_cast<GLfloat>(x1), static_cast<GLfloat>(y_top), static_cast<GLfloat>(z1));
+    glVertex3f(static_cast<GLfloat>(x1), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(z1));
+  }
+  glEnd();
+
+  // Bottom cap.
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3f(static_cast<GLfloat>(cx), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(cz));
+  for (int i = 0; i <= segments; ++i) {
+    const double a = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    glVertex3f(static_cast<GLfloat>(cx + safe_radius * qCos(a)),
+               static_cast<GLfloat>(y_bottom),
+               static_cast<GLfloat>(cz + safe_radius * qSin(a)));
+  }
+  glEnd();
+
+  // Top cap.
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3f(static_cast<GLfloat>(cx), static_cast<GLfloat>(y_top), static_cast<GLfloat>(cz));
+  for (int i = segments; i >= 0; --i) {
+    const double a = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    glVertex3f(static_cast<GLfloat>(cx + safe_radius * qCos(a)),
+               static_cast<GLfloat>(y_top),
+               static_cast<GLfloat>(cz + safe_radius * qSin(a)));
+  }
+  glEnd();
+}
 void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
 {
   const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);

@@ -150,7 +150,8 @@ private:
   void camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const;
   void draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent = false);
   void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
-  void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
+  void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color,
+                     bool translucent = false, int segment_count = 32);
   void draw_frustum(const QColor & color, bool translucent = true);
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
