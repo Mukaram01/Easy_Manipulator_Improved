@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from supported_scene_catalog import DEFAULT_SUPPORTED_SCENES_CATALOG, load_supported_scene_catalog
@@ -47,6 +49,98 @@ def _run_validator(repo_root: Path, workspace_root: Path, scene: str, skip_build
     return cmd, proc.returncode, payload
 
 MESH_INDEX_REL_PATH = "generated/scene_visual_mesh_index.json"
+
+
+def _parse_package_xml_name(scene_dir: Path) -> tuple[str | None, str | None]:
+    """Return the ROS package name declared by <scene_dir>/package.xml."""
+    package_xml = scene_dir / "package.xml"
+    if not package_xml.exists():
+        return None, "package_xml_missing: package.xml"
+    try:
+        root = ET.parse(package_xml).getroot()
+    except ET.ParseError as exc:
+        return None, f"package_xml_invalid_xml: package.xml ({exc})"
+    name_element = root.find("name")
+    if name_element is None or not (name_element.text or "").strip():
+        return None, "package_xml_missing_name: package.xml <name> must be non-empty"
+    return name_element.text.strip(), None
+
+
+def _extract_colcon_packages_select(command: str) -> list[str]:
+    """Extract package names passed to colcon build --packages-select."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return []
+    try:
+        option_index = tokens.index("--packages-select")
+    except ValueError:
+        return []
+    selected: list[str] = []
+    for token in tokens[option_index + 1:]:
+        if token.startswith("-"):
+            break
+        selected.extend(part for part in token.split(",") if part)
+    return selected
+
+
+def _extract_ros2_launch_package(command: str) -> str | None:
+    """Extract the package argument from a ros2 launch command."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    for index in range(len(tokens) - 2):
+        if tokens[index] == "ros2" and tokens[index + 1] == "launch":
+            return tokens[index + 2]
+    try:
+        launch_index = tokens.index("launch")
+    except ValueError:
+        return None
+    if launch_index + 1 < len(tokens):
+        return tokens[launch_index + 1]
+    return None
+
+
+def _check_package_contract(catalog_entry, scene_dir: Path) -> dict:
+    """Validate catalog package names and commands against package.xml."""
+    package_xml_name, package_xml_error = _parse_package_xml_name(scene_dir)
+    build_command_packages = _extract_colcon_packages_select(catalog_entry.build_command)
+    fake_launch_package = _extract_ros2_launch_package(catalog_entry.fake_hardware_launch_command)
+
+    result = {
+        "status": "PASS",
+        "package_xml_name": package_xml_name,
+        "build_command_packages_select": build_command_packages,
+        "fake_hardware_launch_package": fake_launch_package,
+        "blockers": [],
+    }
+
+    if package_xml_error:
+        result["blockers"].append(package_xml_error)
+    else:
+        if catalog_entry.package_name != package_xml_name:
+            result["blockers"].append(
+                f"catalog_package_name_mismatch: package_name={catalog_entry.package_name!r} package.xml name={package_xml_name!r}"
+            )
+        if catalog_entry.build_package_name != package_xml_name:
+            result["blockers"].append(
+                f"catalog_build_package_name_mismatch: build_package_name={catalog_entry.build_package_name!r} package.xml name={package_xml_name!r}"
+            )
+
+    if build_command_packages != [catalog_entry.build_package_name]:
+        result["blockers"].append(
+            "build_command_package_selection_mismatch: "
+            f"--packages-select={build_command_packages!r} build_package_name={catalog_entry.build_package_name!r}"
+        )
+    if fake_launch_package != catalog_entry.package_name:
+        result["blockers"].append(
+            f"fake_hardware_launch_package_mismatch: launch_package={fake_launch_package!r} package_name={catalog_entry.package_name!r}"
+        )
+
+    if result["blockers"]:
+        result["status"] = "BLOCKED"
+    return result
 
 
 def _mesh_index_result(status: str, blocker: str | None = None) -> dict:
@@ -244,6 +338,7 @@ def main() -> int:
             "guided_build_launch_readiness": {"status": "SKIPPED"},
             "build": {"status": "SKIPPED"},
             "launch_smoke": {"status": "SKIPPED"},
+            "package_contract": {"status": "SKIPPED"},
             "mesh_index_validation": {"status": "SKIPPED"},
             "mesh_index": {"status": "SKIPPED"},
             "blockers": [],
@@ -265,6 +360,9 @@ def main() -> int:
                 "missing_files": missing_required_files,
             }
             if scene_dir.exists():
+                package_contract = _check_package_contract(catalog_entry, scene_dir)
+                row["package_contract"] = package_contract
+                row["blockers"].extend(package_contract.get("blockers", []))
                 mesh_index = _check_mesh_index_contract(scene_dir)
                 row["mesh_index_validation"] = mesh_index
                 row["mesh_index"] = mesh_index
@@ -299,11 +397,25 @@ def main() -> int:
 
         row["static_validation"] = {"status": "PASS" if not missing_required_files else "FAIL", "missing_files": missing_required_files}
 
+        package_contract = _check_package_contract(catalog_entry, scene_dir)
+        row["package_contract"] = package_contract
+        if package_contract["status"] != "PASS":
+            row["blockers"].extend(package_contract.get("blockers", []))
+
         mesh_index = _check_mesh_index_contract(scene_dir)
         row["mesh_index_validation"] = mesh_index
         row["mesh_index"] = mesh_index
         if mesh_index["status"] != "PASS":
             row["blockers"].extend(mesh_index.get("blockers", []))
+
+        if package_contract["status"] != "PASS":
+            row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
+            if missing_required_files:
+                row["blockers"] = [f"missing_required_file: {m}" for m in missing_required_files] + row["blockers"]
+            row["blocker"] = _join_blockers(row["blockers"])
+            report["per_scene"].append(row)
+            continue
 
         if missing_required_files:
             row["status"] = "FAIL"

@@ -115,16 +115,12 @@ def load_supported_scene_catalog(path: Path) -> tuple[dict[str, Any], list[Suppo
             errors.append(f"{scene_name}: known_blocker must be non-empty when status is 'blocked'")
         if status == "supported" and known_blocker:
             errors.append(f"{scene_name}: known_blocker must be empty when status is 'supported'")
-        if package_name != build_package_name:
-            errors.append(f"{scene_name}: package_name and build_package_name should match unless intentionally documented")
         if not authoring_files:
             errors.append(f"{scene_name}: authoring_files must list at least one file")
         if not generated_files:
             errors.append(f"{scene_name}: generated_files must list at least one file")
         if scene_name not in validation_command:
             errors.append(f"{scene_name}: validation_command must name the scene explicitly")
-        if build_package_name not in build_command:
-            errors.append(f"{scene_name}: build_command must use build_package_name")
         if "use_fake_hardware:=true" not in fake_hardware_launch_command:
             errors.append(f"{scene_name}: fake_hardware_launch_command must explicitly set use_fake_hardware:=true")
         if "ros2 launch" not in fake_hardware_launch_command:

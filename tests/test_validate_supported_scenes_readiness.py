@@ -73,6 +73,7 @@ def _assert_readiness_fields(row: dict) -> None:
     assert "missing_authoring_files" in row
     assert "missing_generated_files" in row
     assert "validation_result" in row
+    assert "package_contract" in row
     assert "mesh_index_validation" in row
 
 
@@ -354,3 +355,124 @@ def test_blocked_scene_preserves_known_blocker_and_reports_mesh_issue(tmp_path: 
     assert row["blockers"][0] == "awaiting launch repair"
     assert row["mesh_index_validation"]["status"] == "NO_RENDERABLE_ITEMS"
     assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
+
+
+def test_package_xml_name_mismatch_blocks_supported_scene(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/pkg_mismatch", "actual_package")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "pkg_mismatch",
+            "scenes/pkg_mismatch",
+            package_name="catalog_package",
+            build_package_name="actual_package",
+            build_command="colcon build --symlink-install --packages-select actual_package",
+            fake_hardware_launch_command="ros2 launch catalog_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        ),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["package_contract"]["package_xml_name"] == "actual_package"
+    assert row["package_contract"]["status"] == "BLOCKED"
+    assert any("catalog_package_name_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_build_package_name_mismatch_blocks_supported_scene(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/build_pkg_mismatch", "actual_package")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "build_pkg_mismatch",
+            "scenes/build_pkg_mismatch",
+            package_name="actual_package",
+            build_package_name="stale_build_package",
+            build_command="colcon build --symlink-install --packages-select stale_build_package",
+            fake_hardware_launch_command="ros2 launch actual_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        ),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["package_contract"]["package_xml_name"] == "actual_package"
+    assert row["package_contract"]["build_command_packages_select"] == ["stale_build_package"]
+    assert any("catalog_build_package_name_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_build_command_package_selection_mismatch_blocks_supported_scene(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/build_command_mismatch", "actual_package")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "build_command_mismatch",
+            "scenes/build_command_mismatch",
+            package_name="actual_package",
+            build_package_name="actual_package",
+            build_command="colcon build --symlink-install --packages-select stale_build_package",
+            fake_hardware_launch_command="ros2 launch actual_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        ),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["package_contract"]["build_command_packages_select"] == ["stale_build_package"]
+    assert any("build_command_package_selection_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_fake_hardware_launch_package_mismatch_blocks_supported_scene(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/launch_pkg_mismatch", "actual_package")
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "launch_pkg_mismatch",
+            "scenes/launch_pkg_mismatch",
+            package_name="actual_package",
+            build_package_name="actual_package",
+            build_command="colcon build --symlink-install --packages-select actual_package",
+            fake_hardware_launch_command="ros2 launch stale_launch_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        ),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["validation_result"] == "BLOCKED"
+    assert row["package_contract"]["fake_hardware_launch_package"] == "stale_launch_package"
+    assert any("fake_hardware_launch_package_mismatch" in blocker for blocker in row["blockers"])
+
+
+def test_blocked_scene_preserves_known_blocker_and_reports_package_mismatch(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/blocked_pkg_mismatch", "actual_package")
+    known_blocker = "awaiting package regeneration"
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry(
+            "blocked_pkg_mismatch",
+            "scenes/blocked_pkg_mismatch",
+            status="blocked",
+            known_blocker=known_blocker,
+            package_name="catalog_package",
+            build_package_name="actual_package",
+            build_command="colcon build --symlink-install --packages-select actual_package",
+            fake_hardware_launch_command="ros2 launch catalog_package demo.launch.py use_fake_hardware:=true launch_rviz:=true",
+        ),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["blocker"] == known_blocker
+    assert row["blockers"][0] == known_blocker
+    assert row["package_contract"]["status"] == "BLOCKED"
+    assert any("catalog_package_name_mismatch" in blocker for blocker in row["blockers"])
