@@ -61,3 +61,16 @@ TEST(Scene3DMeshPreviewRegression, KeepsScene3DDiagnosticsSummaryLine)
   EXPECT_NE(src.find("Scene3D: editable=%1, mesh=%2, generated=%3, fallback=%4, missing=%5, locked=%6"), std::string::npos);
   EXPECT_NE(src.find("Scene3D warnings: missing_mesh=%1, unresolved_package_uri=%2, unsupported_extension=%3, stale_or_absolute_only_mesh_index=%4"), std::string::npos);
 }
+
+TEST(Scene3DMeshPreviewRegression, KeepsMeshLoadFailureReasonDiagnostics)
+{
+  const std::string src = load_file(std::string(WORKCELL_BUILDER_SOURCE_DIR) + "/gui/scene3d_viewport_widget.cpp");
+  ASSERT_FALSE(src.empty());
+  EXPECT_NE(src.find("package_uri_unresolved"), std::string::npos);
+  EXPECT_NE(src.find("stale_path"), std::string::npos);
+  EXPECT_NE(src.find("file_not_found"), std::string::npos);
+  EXPECT_NE(src.find("row[\"load_failure_reason\"]"), std::string::npos);
+  EXPECT_NE(src.find("mesh missing on disk (reason: %1)"), std::string::npos);
+  EXPECT_NE(src.find("ensure_mesh_cached(it, mesh_source)"), std::string::npos);
+  EXPECT_NE(src.find("ensure_mesh_cached(item, mesh_source)"), std::string::npos);
+}
