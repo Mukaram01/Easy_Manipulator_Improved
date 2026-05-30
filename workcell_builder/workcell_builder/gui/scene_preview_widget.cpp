@@ -361,6 +361,7 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.labels_suppressed_overlap = counters.labels_suppressed_overlap;
   out.hierarchy_child_row_count = counters.hierarchy_child_row_count;
   out.last_paint_completed = counters.last_paint_completed;
+  out.smoke_fallback_render_used = counters.smoke_fallback_render_used;
   return out;
 }
 
