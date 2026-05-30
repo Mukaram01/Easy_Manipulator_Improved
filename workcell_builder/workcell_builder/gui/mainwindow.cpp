@@ -1106,8 +1106,13 @@ bool MainWindow::open_scene_builder_for_selected_scene(const QString & source_ac
   visual_index_script_missing_reported_scene_key_.clear();
   visual_index_regen_failure_reported_scene_key_.clear();
   visual_index_regen_throttle_session_active_ = false;
-  append_studio_log(
-    QString("%1: opened Scene Builder for '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
+  emitted_scene_diagnostic_log_keys_.clear();
+  scene_diagnostic_payload_revision_ = 0;
+  append_scene_diagnostic_log_once(
+    QStringLiteral("scene_load"),
+    0,
+    0,
+    QString("%1: loaded scene '%2' at %3.").arg(source_action, selected_scene_name(), selected_scene_path()));
   return true;
 }
 
@@ -3703,6 +3708,22 @@ void MainWindow::append_studio_log(const QString & message)
     studio_log_->append(message);
   }
   statusBar()->showMessage(message);
+}
+
+bool MainWindow::scene3d_debug_logging_enabled() const
+{
+  const auto * viewport = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
+  return (viewport && viewport->debug_overlays_mode) || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
+}
+
+bool MainWindow::append_scene_diagnostic_log_once(const QString & event, int payload_revision, int payload_count, const QString & message)
+{
+  const QString scene = selected_scene_state_.name.trimmed().isEmpty() ? selected_scene_name() : selected_scene_state_.name.trimmed();
+  const QString key = QStringLiteral("%1|%2|rev=%3|count=%4").arg(scene, event).arg(payload_revision).arg(payload_count);
+  if (emitted_scene_diagnostic_log_keys_.contains(key)) return false;
+  emitted_scene_diagnostic_log_keys_.insert(key);
+  append_studio_log(message);
+  return true;
 }
 
 void MainWindow::show_not_wired_message(const QString & action_label)
@@ -6590,14 +6611,16 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     append_studio_log("Scene3D blocker: current layer filters hide all items. Re-enable editable layout, mesh preview, primitive fallback, or locked generated URDF visuals.");
   }
   scene_preview_widget_->set_preview_items(filtered_items);
-  append_studio_log(
-    QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
-      .arg(all_scene_preview_items_.size())
-      .arg(filtered_items.size()));
-  append_studio_log(
-    QString("Scene3D diagnostics: visible item count after filters=%1/%2")
-      .arg(filtered_items.size())
-      .arg(all_scene_preview_items_.size()));
+  if (scene3d_debug_logging_enabled()) {
+    append_studio_log(
+      QString("Scene3D diagnostics {model_items_count=%1, filtered_visible_count=%2}")
+        .arg(all_scene_preview_items_.size())
+        .arg(filtered_items.size()));
+    append_studio_log(
+      QString("Scene3D diagnostics: visible item count after filters=%1/%2")
+        .arg(filtered_items.size())
+        .arg(all_scene_preview_items_.size()));
+  }
   if (log_change) {
     append_studio_log(
       QString("Scene3D preview-only visibility updated: editable=%1 urdf_visuals=%2 mesh=%3 primitives=%4 overlays=%5 warnings=%6 (visible %7/%8). No files changed.")
@@ -7410,10 +7433,12 @@ void MainWindow::populate_scene_hierarchy()
     if (!group) continue;
     hierarchy_child_row_count += group->childCount();
   }
-  append_studio_log(QString("Scene3D diagnostics {hierarchy_child_row_count=%1, selected_scene_name=%2, selected_item_id=%3}")
-                      .arg(hierarchy_child_row_count)
-                      .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("(none)") : selected_scene_state_.name)
-                      .arg(current_selected_scene_item_id_.isEmpty() ? QStringLiteral("(none)") : current_selected_scene_item_id_));
+  if (scene3d_debug_logging_enabled()) {
+    append_studio_log(QString("Scene3D diagnostics {hierarchy_child_row_count=%1, selected_scene_name=%2, selected_item_id=%3}")
+                        .arg(hierarchy_child_row_count)
+                        .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("(none)") : selected_scene_state_.name)
+                        .arg(current_selected_scene_item_id_.isEmpty() ? QStringLiteral("(none)") : current_selected_scene_item_id_));
+  }
 
   editable_layout_item_count_ = model.provenance_status.editable_layout_count;
   preview_fallback_item_count_ = model.provenance_status.generated_or_legacy_preview_count + model.provenance_status.static_fallback_preview_count;
@@ -7436,15 +7461,17 @@ void MainWindow::populate_scene_hierarchy()
     apply_scene3d_preview_layer_filters(false);
 
     const auto scene3d_full_payload_counters = scene_preview_widget_->render_debug_counters();
-    append_studio_log(QString(
-      "Scene3D full payload committed: scene=%1 editable=%2 preview=%3 total=%4 visible=%5 mesh=%6 locked=%7")
-      .arg(selected_scene_state_.name)
-      .arg(scene3d_full_payload_counters.editable_layout_count)
-      .arg(qMax(0, scene3d_full_payload_counters.viewport_received_count - scene3d_full_payload_counters.editable_layout_count))
-      .arg(scene3d_full_payload_counters.viewport_received_count)
-      .arg(scene3d_full_payload_counters.visible_count)
-      .arg(scene3d_full_payload_counters.mesh_backed_count)
-      .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
+    ++scene_diagnostic_payload_revision_;
+    append_scene_diagnostic_log_once(
+      QStringLiteral("full_payload_commit"),
+      scene_diagnostic_payload_revision_,
+      scene3d_full_payload_counters.viewport_received_count,
+      QString("Scene3D full payload committed: scene=%1 total=%2 visible=%3 mesh=%4 locked=%5")
+        .arg(selected_scene_state_.name)
+        .arg(scene3d_full_payload_counters.viewport_received_count)
+        .arg(scene3d_full_payload_counters.visible_count)
+        .arg(scene3d_full_payload_counters.mesh_backed_count)
+        .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
   }
   preview_warning_details_ = preview_warning_details;
 
@@ -7521,7 +7548,7 @@ void MainWindow::populate_scene_hierarchy()
     .arg(scene_fallback_rendered)
     .arg(scene_locked_rendered)
     .arg(scene_skipped));
-  if (!skip_reason_counts.isEmpty()) {
+  if (scene3d_debug_logging_enabled() && !skip_reason_counts.isEmpty()) {
     QStringList top_reason_tokens;
     for (auto it = skip_reason_counts.cbegin(); it != skip_reason_counts.cend(); ++it) top_reason_tokens << QString("%1=%2").arg(it.key()).arg(it.value());
     append_studio_log(QString("Scene3D canvas skip reasons: %1").arg(top_reason_tokens.join(' ')));
@@ -7543,7 +7570,7 @@ void MainWindow::populate_scene_hierarchy()
   if (perception_line != last_perception_summary_log_) { append_studio_log(perception_line); last_perception_summary_log_ = perception_line; }
   if (camera_line != last_camera_summary_log_) { append_studio_log(camera_line); last_camera_summary_log_ = camera_line; }
   if (preview_line != last_preview_summary_log_) { append_studio_log(preview_line); last_preview_summary_log_ = preview_line; }
-  append_studio_log(scene3d_boundary_diag);
+  if (scene3d_debug_logging_enabled()) append_studio_log(scene3d_boundary_diag);
 }
 
 void MainWindow::populate_asset_catalog()
