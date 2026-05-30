@@ -5039,19 +5039,27 @@ void MainWindow::refresh_scene_builder_view_chips()
     launch_ready = s.has_launch_demo && s.has_package_xml;
     if (scene_preview_widget_) {
       const auto counters = scene_preview_widget_->render_debug_counters();
-      const int rendered = counters.rendered_count;
-      const int mesh_count = counters.mesh_rendered_count;
-      const int mesh_backed_count = counters.mesh_backed_count;
-      const int generated_fallback_count = counters.generated_fallback_count;
-      const int primitive_fallback_count = counters.primitive_fallback_count;
-      if (rendered <= 0 && mesh_backed_count <= 0) {
-        preview_chip_status = QStringLiteral("Unavailable");
-      } else if (mesh_count > 0 || (!counters.last_paint_completed && mesh_backed_count > 0)) {
+      const QString quality = counters.visual_quality_status.trimmed().toUpper();
+      const int mesh_source_count = counters.mesh_source_count > 0 ? counters.mesh_source_count : counters.mesh_backed_count;
+      const int mesh_rendered_count = counters.mesh_rendered_count;
+      const int urdf_primitive_source_count = counters.urdf_primitive_source_count;
+      const int urdf_primitive_rendered_count = counters.urdf_primitive_rendered_count;
+      const bool source_render_ratio_failed =
+        (mesh_source_count > 0 && mesh_rendered_count <= 0) ||
+        (urdf_primitive_source_count > 0 && urdf_primitive_rendered_count <= 0);
+      const bool high_mesh_source_low_render =
+        mesh_source_count >= 4 && mesh_rendered_count > 0 && mesh_rendered_count * 2 < mesh_source_count;
+
+      if (quality == QStringLiteral("FAIL") || source_render_ratio_failed) {
+        preview_chip_status = QStringLiteral("Failed");
+      } else if (quality == QStringLiteral("WARNING") || high_mesh_source_low_render) {
+        preview_chip_status = QStringLiteral("Warning");
+      } else if (quality == QStringLiteral("PASS")) {
         preview_chip_status = QStringLiteral("Available");
-      } else if (generated_fallback_count > 0 || primitive_fallback_count > 0 || counters.smoke_fallback_render_used) {
+      } else if (counters.rendered_count > 0 || counters.visible_count > 0 || counters.smoke_fallback_render_used) {
         preview_chip_status = QStringLiteral("Fallback");
       } else {
-        preview_chip_status = QStringLiteral("Warning");
+        preview_chip_status = QStringLiteral("Unavailable");
       }
     }
   }

@@ -641,9 +641,20 @@ private:
       candidate_json["visible"] = candidate.is_visible;
       candidate_json["parent_object_name"] = candidate.parent_object_name;
       candidate_json["viewport_received_count"] = candidate.counters.viewport_received_count;
+      candidate_json["total_payload_count"] = candidate.counters.total_payload_count;
       candidate_json["render_cache_count"] = candidate.counters.render_cache_count;
       candidate_json["rendered_count"] = candidate.counters.rendered_count;
       candidate_json["visible_count"] = candidate.counters.visible_count;
+      candidate_json["mesh_source_count"] = candidate.counters.mesh_source_count;
+      candidate_json["mesh_rendered_count"] = candidate.counters.mesh_rendered_count;
+      candidate_json["urdf_primitive_source_count"] = candidate.counters.urdf_primitive_source_count;
+      candidate_json["urdf_primitive_rendered_count"] = candidate.counters.urdf_primitive_rendered_count;
+      candidate_json["placeholder_count"] = candidate.counters.placeholder_count;
+      candidate_json["missing_geometry_count"] = candidate.counters.missing_geometry_count;
+      candidate_json["wireframe_fallback_count"] = candidate.counters.wireframe_fallback_count;
+      candidate_json["overlay_helper_count"] = candidate.counters.overlay_helper_count;
+      candidate_json["visual_quality_status"] = candidate.counters.visual_quality_status;
+      candidate_json["visual_quality_warnings"] = QJsonArray::fromStringList(candidate.counters.visual_quality_warnings);
       candidate_json["last_paint_completed"] = candidate.counters.last_paint_completed;
       viewport_candidates_json.append(candidate_json);
     }
@@ -715,6 +726,7 @@ private:
       }
       const auto rc = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
       counters["preview_items_count"] = rc.preview_items_count;
+      counters["total_payload_count"] = rc.total_payload_count;
       counters["viewport_received_count"] = rc.viewport_received_count;
       counters["render_cache_count"] = rc.render_cache_count;
       counters["visible_count"] = rc.visible_count;
@@ -722,8 +734,16 @@ private:
       counters["skipped_count"] = rc.skipped_count;
       counters["unique_visible_item_count"] = rc.unique_visible_item_count;
       counters["mesh_backed_count"] = rc.mesh_backed_count;
-      counters["placeholder_count"] = rc.placeholder_count;
+      counters["mesh_source_count"] = rc.mesh_source_count;
       counters["mesh_rendered_count"] = rc.mesh_rendered_count;
+      counters["urdf_primitive_source_count"] = rc.urdf_primitive_source_count;
+      counters["urdf_primitive_rendered_count"] = rc.urdf_primitive_rendered_count;
+      counters["placeholder_count"] = rc.placeholder_count;
+      counters["missing_geometry_count"] = rc.missing_geometry_count;
+      counters["wireframe_fallback_count"] = rc.wireframe_fallback_count;
+      counters["overlay_helper_count"] = rc.overlay_helper_count;
+      counters["visual_quality_status"] = rc.visual_quality_status;
+      counters["visual_quality_warnings"] = QJsonArray::fromStringList(rc.visual_quality_warnings);
       counters["generated_fallback_count"] = rc.generated_fallback_count;
       counters["editable_layout_count"] = rc.editable_layout_count;
       counters["primitive_fallback_count"] = rc.primitive_fallback_count;
@@ -746,14 +766,18 @@ private:
       qInfo() << "Scene3D smoke hierarchy ingest: scene=" << opts_.scene_name
               << "hierarchy_rows=" << rc.hierarchy_child_row_count;
     } else {
-      for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
+      for (const QString & key : {QStringLiteral("preview_items_count"), QStringLiteral("total_payload_count"), QStringLiteral("viewport_received_count"), QStringLiteral("render_cache_count"),
                                   QStringLiteral("visible_count"), QStringLiteral("rendered_count"), QStringLiteral("skipped_count"),
-                                  QStringLiteral("unique_visible_item_count"), QStringLiteral("mesh_backed_count"), QStringLiteral("placeholder_count"),
-                                  QStringLiteral("mesh_rendered_count"), QStringLiteral("generated_fallback_count"), QStringLiteral("editable_layout_count"),
+                                  QStringLiteral("unique_visible_item_count"), QStringLiteral("mesh_backed_count"), QStringLiteral("mesh_source_count"),
+                                  QStringLiteral("mesh_rendered_count"), QStringLiteral("urdf_primitive_source_count"), QStringLiteral("urdf_primitive_rendered_count"),
+                                  QStringLiteral("placeholder_count"), QStringLiteral("missing_geometry_count"), QStringLiteral("wireframe_fallback_count"),
+                                  QStringLiteral("overlay_helper_count"), QStringLiteral("generated_fallback_count"), QStringLiteral("editable_layout_count"),
                                   QStringLiteral("primitive_fallback_count"), QStringLiteral("locked_generated_urdf_visual_count"),
                                   QStringLiteral("overlay_count"), QStringLiteral("labels_drawn"), QStringLiteral("labels_suppressed_overlap")}) {
         counters[key] = 0;
       }
+      counters["visual_quality_status"] = QStringLiteral("UNAVAILABLE");
+      counters["visual_quality_warnings"] = QJsonArray{QStringLiteral("scene3d_viewport_widget_missing")};
       counters["last_paint_completed"] = false;
       counters["paint_cycle_completed"] = false;
       counters["active_viewport_received_count"] = 0;
@@ -790,36 +814,22 @@ private:
       warnings_.append("active_viewport_counter_handoff_failed");
       blockers_.append("active_viewport_counter_handoff_failed");
     }
-    const bool fallback_render_path_active =
-      counters.value("generated_fallback_count").toInt() > 0 ||
-      counters.value("primitive_fallback_count").toInt() > 0 ||
-      counters.value("editable_layout_count").toInt() > 0 ||
-      counters.value("smoke_fallback_render_used").toBool(false);
-    const bool paint_completed = counters.value("last_paint_completed").toBool(false);
-    const bool has_mesh_payload_pending_paint =
-      !paint_completed && counters.value("mesh_backed_count").toInt() > 0;
-    const bool has_mesh_or_meaningful_fallback =
-      counters.value("mesh_rendered_count").toInt() > 0 ||
-      has_mesh_payload_pending_paint ||
-      fallback_render_path_active;
-    const bool smoke_fallback_render_used =
-      counters.value("smoke_fallback_render_used").toBool(false);
-    const bool mesh_payload_failed_after_paint =
-      paint_completed &&
-      !smoke_fallback_render_used &&
-      counters.value("mesh_backed_count").toInt() > 0 &&
-      counters.value("mesh_rendered_count").toInt() <= 0;
-    const bool has_layout_mesh_warning_with_visible_fallback =
-      counters.value("visible_count").toInt() > 0 && fallback_render_path_active &&
-      (counters.value("placeholder_count").toInt() > 0 ||
-       counters.value("locked_generated_urdf_visual_count").toInt() > 0 ||
-       mesh_payload_failed_after_paint);
+    const QString visual_quality_status = counters.value("visual_quality_status").toString(QStringLiteral("UNAVAILABLE")).toUpper();
+    const int mesh_source_count = counters.value("mesh_source_count").toInt(counters.value("mesh_backed_count").toInt());
+    const int mesh_rendered_count = counters.value("mesh_rendered_count").toInt();
+    const int urdf_primitive_source_count = counters.value("urdf_primitive_source_count").toInt();
+    const int urdf_primitive_rendered_count = counters.value("urdf_primitive_rendered_count").toInt();
+    const bool source_render_ratio_failed =
+      (mesh_source_count > 0 && mesh_rendered_count <= 0) ||
+      (urdf_primitive_source_count > 0 && urdf_primitive_rendered_count <= 0);
 
     QString derived_preview_status = QStringLiteral("Unavailable");
-    if (has_layout_mesh_warning_with_visible_fallback) {
+    if (visual_quality_status == QStringLiteral("FAIL") || source_render_ratio_failed) {
+      derived_preview_status = QStringLiteral("Failed");
+    } else if (visual_quality_status == QStringLiteral("WARNING")) {
       derived_preview_status = QStringLiteral("Warning");
-    } else if (has_mesh_or_meaningful_fallback) {
-      derived_preview_status = fallback_render_path_active ? QStringLiteral("Fallback") : QStringLiteral("Available");
+    } else if (visual_quality_status == QStringLiteral("PASS")) {
+      derived_preview_status = QStringLiteral("Available");
     } else if (has_active_items) {
       derived_preview_status = QStringLiteral("Fallback");
     }
@@ -842,8 +852,8 @@ private:
     if (render_ready) {
       const int rendered_count = counters.value("rendered_count").toInt();
       const int unique_visible = counters.value("unique_visible_item_count").toInt();
-      const int classified = counters.value("mesh_rendered_count").toInt() + counters.value("generated_fallback_count").toInt() +
-        counters.value("editable_layout_count").toInt() + counters.value("overlay_count").toInt();
+      const int classified = counters.value("mesh_rendered_count").toInt() + counters.value("urdf_primitive_rendered_count").toInt() +
+        counters.value("wireframe_fallback_count").toInt() + counters.value("overlay_helper_count").toInt();
       if ((rendered_count > 0 && classified == 0) || unique_visible <= 1) blockers_.append("visual_quality_failed");
     }
     root["readiness_markers"] = readiness_markers;
