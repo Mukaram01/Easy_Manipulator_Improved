@@ -23,6 +23,7 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QLabel>
+#include <QFont>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
@@ -56,6 +57,7 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsPolygonItem>
 #include <QGraphicsSimpleTextItem>
+#include <QGraphicsSceneHoverEvent>
 #include <QScrollBar>
 #include <QPen>
 #include <QBrush>
@@ -83,6 +85,7 @@
 #include <QDrag>
 #include <QMimeData>
 #include <QSet>
+#include <QVector>
 #include <QRegularExpression>
 #include <QHBoxLayout>
 #include <QJsonDocument>
@@ -309,12 +312,46 @@ class DraggableCanvasItem : public QGraphicsRectItem {
 public:
   explicit DraggableCanvasItem(const QRectF & r): QGraphicsRectItem(r) {}
   std::function<QPointF(const QPointF &)> position_filter;
+  QGraphicsSimpleTextItem * label_item{nullptr};
+  bool label_visible_by_default{false};
+
+  void set_label_item(QGraphicsSimpleTextItem * label, bool visible_by_default)
+  {
+    label_item = label;
+    label_visible_by_default = visible_by_default;
+    setAcceptHoverEvents(label_item != nullptr);
+    update_label_visibility();
+  }
+
 protected:
   QVariant itemChange(GraphicsItemChange change, const QVariant &value) override {
     if (change == ItemPositionChange && scene() && position_filter) {
       return position_filter(value.toPointF());
     }
-    return QGraphicsRectItem::itemChange(change, value);
+    const QVariant result = QGraphicsRectItem::itemChange(change, value);
+    if (change == ItemSelectedHasChanged) {
+      update_label_visibility();
+    }
+    return result;
+  }
+
+  void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override
+  {
+    update_label_visibility(true);
+    QGraphicsRectItem::hoverEnterEvent(event);
+  }
+
+  void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override
+  {
+    update_label_visibility(false);
+    QGraphicsRectItem::hoverLeaveEvent(event);
+  }
+
+private:
+  void update_label_visibility(bool hovered = false)
+  {
+    if (!label_item) return;
+    label_item->setVisible(label_visible_by_default || hovered || isSelected());
   }
 };
 
@@ -769,6 +806,127 @@ static QColor category_color(const QString & category)
   if (c.contains("safety")) return QColor("#ff595e");
   if (c.contains("import") || c.contains("stl")) return QColor("#adb5bd");
   return QColor("#5b6472");
+}
+
+static QString compact_canvas_label(QString label)
+{
+  label = label.trimmed();
+  if (label.isEmpty()) return QStringLiteral("item");
+  label.replace('\\', '/');
+  if (label.contains('/')) {
+    label = QFileInfo(label).completeBaseName();
+  }
+  if (label.endsWith(QStringLiteral(".yaml"), Qt::CaseInsensitive) ||
+      label.endsWith(QStringLiteral(".xacro"), Qt::CaseInsensitive) ||
+      label.endsWith(QStringLiteral(".urdf"), Qt::CaseInsensitive)) {
+    label = QFileInfo(label).completeBaseName();
+  }
+  label.replace(QRegularExpression(QStringLiteral("[_-]+")), QStringLiteral("_"));
+  constexpr int kMaxLabelChars = 24;
+  if (label.size() <= kMaxLabelChars) return label;
+  const QStringList tokens = label.split('_', Qt::SkipEmptyParts);
+  if (tokens.size() > 1) {
+    const QString candidate = tokens.back();
+    if (candidate.size() >= 5 && candidate.size() <= kMaxLabelChars) return candidate;
+  }
+  return label.left(10) + QStringLiteral("…") + label.right(9);
+}
+
+static bool is_generated_urdf_preview_layer(const QString & source_layer)
+{
+  const QString layer = canonical_scene3d_token(source_layer);
+  return layer == QStringLiteral("locked_generated_urdf_visual") ||
+         layer == QStringLiteral("generated_urdf_visual") ||
+         layer == QStringLiteral("generated_preview");
+}
+
+static bool is_important_canvas_anchor(const QString & category, const QString & role)
+{
+  const QString token = normalized_slug(category + QStringLiteral("_") + role);
+  return token.contains(QStringLiteral("robot")) ||
+         token.contains(QStringLiteral("table")) ||
+         token.contains(QStringLiteral("support_surface")) ||
+         token.contains(QStringLiteral("conveyor")) ||
+         token.contains(QStringLiteral("bin")) ||
+         token.contains(QStringLiteral("camera")) ||
+         token.contains(QStringLiteral("sensor"));
+}
+
+static qreal canvas_item_z_value(
+  const QString & category,
+  const QString & role,
+  const QString & source_layer,
+  bool locked)
+{
+  const QString layer = canonical_scene3d_token(source_layer);
+  const QString token = normalized_slug(category + QStringLiteral("_") + role);
+  if (token.contains(QStringLiteral("warning"))) return 80.0;
+  if (layer == QStringLiteral("overlay")) return -30.0;
+  if (token.contains(QStringLiteral("reach")) || token.contains(QStringLiteral("fov")) || token.contains(QStringLiteral("trajectory"))) return -20.0;
+  if (layer == QStringLiteral("primitive_fallback")) return locked ? 8.0 : 16.0;
+  if (layer == QStringLiteral("editable_layout")) return 30.0;
+  if (is_important_canvas_anchor(category, role)) return locked ? 18.0 : 30.0;
+  if (locked || is_generated_urdf_preview_layer(layer)) return 6.0;
+  return 22.0;
+}
+
+static bool should_show_2d_label(
+  const workcell_builder::WorkcellStudioCanvasItem & entry,
+  const QString & selected_id)
+{
+  const QString id = QString::fromStdString(entry.id).trimmed();
+  const QString category = QString::fromStdString(entry.type);
+  const QString role = QString::fromStdString(entry.role);
+  QString source_layer = QStringLiteral("locked_generated_urdf_visual");
+  switch (entry.provenance) {
+    case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
+      source_layer = QStringLiteral("editable_layout");
+      break;
+    case workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview:
+      source_layer = QStringLiteral("primitive_fallback");
+      break;
+    case workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+    default:
+      source_layer = QStringLiteral("locked_generated_urdf_visual");
+      break;
+  }
+  if (!selected_id.isEmpty() && id == selected_id) return true;
+  if (!entry.warnings.empty() || normalized_slug(category).contains(QStringLiteral("warning"))) return true;
+  if (source_layer == QStringLiteral("editable_layout") && !entry.locked) return true;
+  if (entry.locked && is_generated_urdf_preview_layer(source_layer)) return false;
+  return is_important_canvas_anchor(category, role);
+}
+
+static bool place_2d_label_without_overlap(
+  QGraphicsSimpleTextItem * label,
+  const QRectF & item_scene_rect,
+  QVector<QRectF> * occupied_label_rects,
+  qreal minimum_gap = 4.0)
+{
+  if (!label || !occupied_label_rects) return false;
+  const QSizeF label_size = label->boundingRect().size();
+  const QVector<QPointF> candidates = {
+    item_scene_rect.topLeft() + QPointF(0.0, -label_size.height() - minimum_gap),
+    item_scene_rect.topRight() + QPointF(minimum_gap, -label_size.height() - minimum_gap),
+    item_scene_rect.bottomLeft() + QPointF(0.0, minimum_gap),
+    item_scene_rect.bottomRight() + QPointF(minimum_gap, minimum_gap),
+    QPointF(item_scene_rect.center().x() - label_size.width() / 2.0, item_scene_rect.top() - label_size.height() - minimum_gap),
+  };
+  for (const QPointF & candidate : candidates) {
+    const QRectF candidate_rect(candidate, label_size);
+    bool overlaps = false;
+    for (const QRectF & occupied : *occupied_label_rects) {
+      if (candidate_rect.adjusted(-minimum_gap, -minimum_gap, minimum_gap, minimum_gap).intersects(occupied)) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (overlaps) continue;
+    label->setPos(candidate);
+    occupied_label_rects->push_back(candidate_rect);
+    return true;
+  }
+  return false;
 }
 
 QPointF default_xy_for_category(const QString & category){
@@ -4679,20 +4837,36 @@ void MainWindow::rebuild_digital_twin_canvas()
 
   if (toggle_grid_box_ && toggle_grid_box_->isChecked()) {
     QPen grid_pen(QColor("#1f2a36")); grid_pen.setWidth(1);
-    for (int x = -400; x <= 800; x += 40) digital_twin_scene_->addLine(x, -300, x, 600, grid_pen);
-    for (int y = -300; y <= 600; y += 40) digital_twin_scene_->addLine(-400, y, 800, y, grid_pen);
+    for (int x = -400; x <= 800; x += 40) {
+      auto * line = digital_twin_scene_->addLine(x, -300, x, 600, grid_pen);
+      line->setZValue(canvas_item_z_value("grid", "helper_overlay", "overlay", true));
+    }
+    for (int y = -300; y <= 600; y += 40) {
+      auto * line = digital_twin_scene_->addLine(-400, y, 800, y, grid_pen);
+      line->setZValue(canvas_item_z_value("grid", "helper_overlay", "overlay", true));
+    }
   }
   QPen axis_pen(QColor("#3a4b5c")); axis_pen.setWidth(2);
-  digital_twin_scene_->addLine(-400, 0, 800, 0, axis_pen); digital_twin_scene_->addLine(0, -300, 0, 600, axis_pen);
+  auto * x_axis = digital_twin_scene_->addLine(-400, 0, 800, 0, axis_pen);
+  x_axis->setZValue(canvas_item_z_value("axis", "helper_overlay", "overlay", true));
+  auto * y_axis = digital_twin_scene_->addLine(0, -300, 0, 600, axis_pen);
+  y_axis->setZValue(canvas_item_z_value("axis", "helper_overlay", "overlay", true));
   auto * origin = digital_twin_scene_->addEllipse(-4, -4, 8, 8, QPen(QColor("#d9e2ec")), QBrush(QColor("#d9e2ec")));
+  origin->setZValue(canvas_item_z_value("origin", "helper_overlay", "overlay", true) + 1.0);
   origin->setToolTip("World origin marker");
 
   if (selected_scene_index_ < 0) return;
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
 
-  if (!show_reach_overlay_box_ || show_reach_overlay_box_->isChecked()) digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
+  QVector<QRectF> occupied_label_rects;
+
+  if (!show_reach_overlay_box_ || show_reach_overlay_box_->isChecked()) {
+    auto * reach = digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
+    reach->setZValue(canvas_item_z_value("reach", "helper_overlay", "overlay", true));
+  }
   auto * robot_base = digital_twin_scene_->addEllipse(-14, -14, 28, 28, QPen(QColor("#60a5fa"), 2), QBrush(QColor("#1d4ed8")));
+  robot_base->setZValue(canvas_item_z_value("robot", "base", "editable_layout", false));
   robot_base->setToolTip("Robot base marker");
 
   for (const auto & entry : model.items) {
@@ -4731,35 +4905,73 @@ void MainWindow::rebuild_digital_twin_canvas()
         break;
     }
     item->setData(RoleSourceLayer, source_layer);
+    item->setZValue(canvas_item_z_value(category, QString::fromStdString(entry.role), source_layer, entry.locked));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
     digital_twin_scene_->addItem(item);
 
     if (toggle_labels_box_ && toggle_labels_box_->isChecked()) {
-      auto * txt = digital_twin_scene_->addSimpleText(QString::fromStdString(entry.label));
-      txt->setBrush(QBrush(QColor("#d8dee9"))); txt->setPos(item->pos() + QPointF(0, -18));
+      const bool secondary_label = entry.locked || source_layer != QStringLiteral("editable_layout");
+      const bool visible_by_default = should_show_2d_label(entry, preserved_selected_id);
+      QString label_text = QString::fromStdString(entry.label);
+      if (label_text.trimmed().isEmpty()) label_text = QString::fromStdString(entry.id);
+      auto * txt = digital_twin_scene_->addSimpleText(compact_canvas_label(label_text));
+      QFont label_font = txt->font();
+      label_font.setPointSize(secondary_label ? 7 : 8);
+      txt->setFont(label_font);
+      txt->setBrush(QBrush(secondary_label ? QColor("#a7b0bd") : QColor("#d8dee9")));
+      txt->setZValue(item->zValue() + 2.0);
+      const bool placed = place_2d_label_without_overlap(txt, item->sceneBoundingRect(), &occupied_label_rects);
+      if (!placed && is_important_canvas_anchor(category, QString::fromStdString(entry.role)) &&
+          source_layer != QStringLiteral("editable_layout") && item->data(RoleWarning).toString().isEmpty() &&
+          item->data(RoleId).toString().trimmed() != preserved_selected_id) {
+        delete txt;
+        txt = nullptr;
+      } else {
+        if (!placed) txt->setPos(item->sceneBoundingRect().topLeft() + QPointF(0, -txt->boundingRect().height() - 2));
+        item->set_label_item(txt, visible_by_default);
+      }
     }
     if ((!show_camera_fov_overlay_box_ || show_camera_fov_overlay_box_->isChecked()) && category.contains("camera", Qt::CaseInsensitive)) {
       QPolygonF fov; fov << QPointF(item->pos().x()+12, item->pos().y()+12) << QPointF(item->pos().x()+150, item->pos().y()-40) << QPointF(item->pos().x()+150, item->pos().y()+64);
-      digital_twin_scene_->addPolygon(fov, QPen(QColor("#ffd166"), 2), QBrush(QColor(255, 209, 102, 45))); // camera FOV wedge/cone
+      auto * fov_item = digital_twin_scene_->addPolygon(fov, QPen(QColor("#ffd166"), 2), QBrush(QColor(255, 209, 102, 45))); // camera FOV wedge/cone
+      fov_item->setZValue(canvas_item_z_value("camera_fov", "helper_overlay", "overlay", true));
     }
     if (!show_pick_place_overlay_box_ || show_pick_place_overlay_box_->isChecked()) {
-      if (category.contains("pick", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
-      if (category.contains("place", Qt::CaseInsensitive)) digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
+      if (category.contains("pick", Qt::CaseInsensitive)) {
+        auto * pick_overlay = digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
+        pick_overlay->setZValue(canvas_item_z_value("pick_zone", "helper_overlay", "overlay", true));
+      }
+      if (category.contains("place", Qt::CaseInsensitive)) {
+        auto * place_overlay = digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
+        place_overlay->setZValue(canvas_item_z_value("place_zone", "helper_overlay", "overlay", true));
+      }
     }
     if (toggle_warnings_box_ && toggle_warnings_box_->isChecked() && !item->data(RoleWarning).toString().isEmpty()) {
-      auto * w = digital_twin_scene_->addSimpleText(QString("⚠ %1").arg(item->data(RoleWarning).toString()));
-      w->setBrush(QBrush(QColor("#ff8e72"))); w->setPos(item->pos() + QPointF(0, item->boundingRect().height() + 4));
+      auto * w = digital_twin_scene_->addSimpleText(QString("⚠ %1").arg(compact_canvas_label(item->data(RoleWarning).toString())));
+      QFont warning_font = w->font();
+      warning_font.setPointSize(7);
+      w->setFont(warning_font);
+      w->setBrush(QBrush(QColor("#ff8e72")));
+      w->setZValue(canvas_item_z_value("warning", "label", "overlay", true));
+      if (!place_2d_label_without_overlap(w, item->sceneBoundingRect().adjusted(0, item->boundingRect().height() + 2, 0, item->boundingRect().height() + 2), &occupied_label_rects, 2.0)) {
+        w->setPos(item->sceneBoundingRect().bottomLeft() + QPointF(0, 2));
+      }
     }
   }
 
   if (model.items.empty()) {
-    digital_twin_scene_->addSimpleText("Scene selected but no previewable layout metadata found. Run Generate Preview/Readiness Pack or add layout items.")->setPos(-360, -260);
+    auto * empty_label = digital_twin_scene_->addSimpleText("No previewable layout metadata. Generate preview/readiness or add layout items.");
+    empty_label->setZValue(canvas_item_z_value("warning", "label", "overlay", true));
+    empty_label->setPos(-360, -260);
     append_studio_log(QString("Scene canvas: '%1' has 0 editable layout items and 0 URDF visual preview locked items. Missing files may include environment.yaml, scene_manifest.yaml, layout/workcell_studio_layout.yaml.").arg(selected_scene_name()));
   } else {
     append_studio_log(QString("Scene canvas: loaded %1 item(s) for '%2' from %3.").arg(model.items.size()).arg(selected_scene_name(), selected_scene_path()));
   }
-  if (!show_trajectory_overlay_box_ || show_trajectory_overlay_box_->isChecked()) digital_twin_scene_->addLine(20, 10, 180, -60, QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
+  if (!show_trajectory_overlay_box_ || show_trajectory_overlay_box_->isChecked()) {
+    auto * trajectory = digital_twin_scene_->addLine(20, 10, 180, -60, QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
+    trajectory->setZValue(canvas_item_z_value("trajectory", "helper_overlay", "overlay", true));
+  }
   if (toggle_warnings_box_ && toggle_warnings_box_->isChecked()) {
     QStringList issues;
     if (!s.has_environment_yaml) issues << "missing environment.yaml";
@@ -4768,7 +4980,15 @@ void MainWindow::rebuild_digital_twin_canvas()
     auto task = load_scene_task_intent_summary(s.scene_dir);
     if (task.status != "READY") issues << "missing task intent";
     if (task.tool_id == "unknown") issues << "missing robot/gripper metadata";
-    if (!issues.isEmpty()) digital_twin_scene_->addSimpleText("Safety Warning Overlay: " + issues.join(" | "))->setPos(-380, -280);
+    if (!issues.isEmpty()) {
+      auto * safety_warning = digital_twin_scene_->addSimpleText("⚠ " + compact_canvas_label(issues.join(" | ")));
+      QFont safety_font = safety_warning->font();
+      safety_font.setPointSize(7);
+      safety_warning->setFont(safety_font);
+      safety_warning->setBrush(QBrush(QColor("#ff8e72")));
+      safety_warning->setZValue(canvas_item_z_value("warning", "label", "overlay", true));
+      safety_warning->setPos(-380, -280);
+    }
   }
   if (!preserved_selected_id.isEmpty()) {
     apply_scene_selection(preserved_selected_id, QStringLiteral("unknown"), false, false);
