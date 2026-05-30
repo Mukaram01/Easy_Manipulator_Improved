@@ -240,7 +240,18 @@ private:
     double roll{ 0.0 };
     double pitch{ 0.0 };
     double yaw{ 0.0 };
+    double dim_x{ 0.0 };
+    double dim_y{ 0.0 };
+    double dim_z{ 0.0 };
     QString pose_text;
+  };
+  struct EditableLayoutSelectionTarget
+  {
+    bool ok{ false };
+    SelectedSceneItemState state;
+    QString source_path;
+    QString blocker;
+    QGraphicsItem * fallback_item{ nullptr };
   };
   bool is_pick_source_candidate(const SelectedSceneItemState & state) const;
   bool is_place_target_candidate(const SelectedSceneItemState & state) const;
@@ -291,6 +302,9 @@ private:
   void copy_selection_transform_to_clipboard();
   void paste_selection_transform_from_clipboard();
   void refresh_selection_transform_editor_from_item(QGraphicsItem * item);
+  void refresh_selection_transform_editor_from_state(const SelectedSceneItemState & state);
+  EditableLayoutSelectionTarget resolve_selected_editable_layout_target() const;
+  QGraphicsItem * find_canvas_item_by_stable_id(const QString & id) const;
   void refresh_robot_base_pose_inspector();
   void apply_robot_base_pose_from_inspector();
   void reset_robot_base_pose_from_snapshot();
