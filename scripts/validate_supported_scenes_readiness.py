@@ -252,7 +252,27 @@ def main() -> int:
             "artifact_paths": {},
         }
 
-        if not enabled:
+        if catalog_entry.status == "blocked":
+            report["scenes_checked"].append(scene_name)
+            catalog_blocker = catalog_entry.known_blocker
+            row["status"] = "BLOCKED"
+            row["validation_result"] = "BLOCKED"
+            row["known_blocker"] = catalog_blocker
+            row["blocker"] = catalog_blocker
+            row["blockers"] = [catalog_blocker]
+            row["static_validation"] = {
+                "status": "PASS" if not missing_required_files else "FAIL",
+                "missing_files": missing_required_files,
+            }
+            if scene_dir.exists():
+                mesh_index = _check_mesh_index_contract(scene_dir)
+                row["mesh_index_validation"] = mesh_index
+                row["mesh_index"] = mesh_index
+                row["blockers"].extend(mesh_index.get("blockers", []))
+            report["per_scene"].append(row)
+            continue
+
+        if not enabled or catalog_entry.status == "disabled":
             report["scenes_skipped"].append(scene_name)
             row["status"] = "SKIPPED"
             row["validation_result"] = "SKIPPED"
@@ -284,15 +304,6 @@ def main() -> int:
         row["mesh_index"] = mesh_index
         if mesh_index["status"] != "PASS":
             row["blockers"].extend(mesh_index.get("blockers", []))
-
-        if str(catalog_entry.status).lower() == "blocked":
-            row["status"] = "BLOCKED"
-            row["validation_result"] = "BLOCKED"
-            catalog_blocker = catalog_entry.known_blocker or "scene_blocked_in_catalog"
-            row["blockers"].insert(0, catalog_blocker)
-            row["blocker"] = _join_blockers(row["blockers"])
-            report["per_scene"].append(row)
-            continue
 
         if missing_required_files:
             row["status"] = "FAIL"
