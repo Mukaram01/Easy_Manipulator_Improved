@@ -206,6 +206,7 @@ public:
     int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
     bool last_paint_completed{ false };
+    bool smoke_fallback_render_used{ false };
   };
   RenderDebugCounters render_debug_counters() const;
 

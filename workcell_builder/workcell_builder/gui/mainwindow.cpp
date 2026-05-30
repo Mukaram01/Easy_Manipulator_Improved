@@ -7095,9 +7095,6 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool launch_ready = has("launch/demo.launch.py");
   const bool package_xml_ready = has("package.xml");
   const bool cmake_ready = has("CMakeLists.txt");
-  const bool environment_yaml_ready = has("environment.yaml");
-  const bool environment_layout_ready = has("environment_layout.yaml");
-  const bool studio_layout_ready = has("layout/workcell_studio_layout.yaml");
   const auto editable_layout_inspection = workcell_builder::inspect_editable_layout_entries(dir);
   const bool scene_xacro_ready = has("urdf/scene.urdf.xacro") || s.has_scene_urdf_xacro;
   const bool placeholder_launch_only = launch_ready && !scene_xacro_ready;
@@ -7109,7 +7106,6 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const bool validation_gate_ready = validation_report_ready && !validation_stale_;
   const bool export_ready = yaml_ready && launch_ready;
   const bool fake_hardware_ready = launch_artifacts_ready_ && validation_gate_ready;
-  const bool preview_only_scene = !editable_layout_ready && (launch_ready || yaml_ready);
 
   int classified_editable_count = 0;
   int classified_generated_count = 0;
