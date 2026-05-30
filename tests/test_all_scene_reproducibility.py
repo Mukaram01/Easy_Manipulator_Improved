@@ -23,9 +23,9 @@ def test_validator_emits_per_scene_report_and_contract_keys():
     import yaml
 
     catalog = yaml.safe_load((repo_root / "scenes" / "supported_scenes.yaml").read_text(encoding="utf-8"))
-    expected_names = {entry["scene_name"] for entry in catalog["scenes"] if entry.get("enabled", True)}
+    expected_entries = {entry["scene_name"]: entry for entry in catalog["scenes"] if entry.get("enabled", True)}
     names = {s.get("scene_name") for s in scenes}
-    assert expected_names == names
+    assert set(expected_entries) == names
     assert payload.get("supported_scene_catalog", "").endswith("scenes/supported_scenes.yaml")
 
     expected_keys = {
@@ -52,6 +52,12 @@ def test_validator_emits_per_scene_report_and_contract_keys():
         assert scene["status"] in {"PASS", "WARN", "FAIL", "SKIP", "BLOCKED"}
         assert isinstance(scene["support_level"], str) and scene["support_level"]
         assert isinstance(scene["catalog_status"], str) and scene["catalog_status"]
+        catalog_entry = expected_entries[scene["scene_name"]]
+        assert scene["support_level"] == catalog_entry["support_level"]
+        assert scene["catalog_status"] == catalog_entry["status"]
+        assert scene["known_blocker"] == catalog_entry["known_blocker"]
+        assert "use_fake_hardware:=true" in scene["fake_hardware_smoke_command"]
+        assert scene["fake_hardware_smoke_command"] == catalog_entry["fake_hardware_launch_command"]
         assert isinstance(scene["known_blocker"], str)
         assert isinstance(scene["blockers"], list)
         assert isinstance(scene["warnings"], list)
@@ -222,3 +228,31 @@ def test_missing_mesh_index_regeneration_is_opt_in(tmp_path, monkeypatch):
 
     assert audit.mesh_index_regeneration_status == "skipped_missing_regeneration_disabled"
     assert any("--regenerate-missing-mesh-indexes" in blocker for blocker in audit.blockers)
+
+
+def test_audit_scene_reports_malformed_mesh_index_clearly(tmp_path, minimal_scene_factory):
+    from scripts.validate_all_workcell_studio_scenes import audit_scene
+
+    scene_dir, _ = minimal_scene_factory("fixture_all_scene_bad_mesh", mesh_index_payload="{not-json")
+
+    audit = audit_scene(repo_root=tmp_path, scene_dir=scene_dir)
+
+    assert audit.status == "FAIL"
+    assert audit.mesh_index_regeneration_status == "not_needed"
+    assert audit.mesh_index_renderable_items == 0
+    assert any("generated mesh index unreadable: error: JSONDecodeError" in blocker for blocker in audit.blockers)
+
+
+def test_audit_scene_reports_non_renderable_mesh_index_clearly(tmp_path, minimal_scene_factory):
+    from scripts.validate_all_workcell_studio_scenes import audit_scene
+
+    scene_dir, _ = minimal_scene_factory(
+        "fixture_all_scene_empty_mesh",
+        mesh_index_payload={"items": [{"render_expected": False}]},
+    )
+
+    audit = audit_scene(repo_root=tmp_path, scene_dir=scene_dir)
+
+    assert audit.status == "FAIL"
+    assert audit.mesh_index_renderable_items == 0
+    assert "generated mesh index has no renderable items" in audit.blockers
