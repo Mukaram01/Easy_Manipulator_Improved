@@ -73,6 +73,7 @@ def _assert_readiness_fields(row: dict) -> None:
     assert "missing_authoring_files" in row
     assert "missing_generated_files" in row
     assert "validation_result" in row
+    assert "mesh_index_validation" in row
 
 
 def test_disabled_and_experimental_skipped(tmp_path: Path):
@@ -129,7 +130,7 @@ def test_missing_required_file_is_fail(tmp_path: Path):
     assert row["validation_result"] == "FAIL"
     assert row["missing_authoring_files"] == ["environment.yaml"]
     assert row["missing_generated_files"] == ["generated/scene_visual_mesh_index.json"]
-    assert row["blocker"] == "missing_required_file: environment.yaml; missing_required_file: generated/scene_visual_mesh_index.json"
+    assert row["blocker"].startswith("missing_required_file: environment.yaml; missing_required_file: generated/scene_visual_mesh_index.json")
     assert "missing_required_file: environment.yaml" in row["blockers"]
 
 
@@ -157,7 +158,7 @@ def test_catalog_blocked_scene_uses_known_blocker(tmp_path: Path):
     _assert_readiness_fields(row)
     assert row["status"] == "BLOCKED"
     assert row["validation_result"] == "BLOCKED"
-    assert row["blocker"] == "awaiting generated launch repair"
+    assert row["blocker"].startswith("awaiting generated launch repair")
     assert row["missing_authoring_files"] == []
     assert row["missing_generated_files"] == []
 
@@ -208,11 +209,11 @@ def test_malformed_mesh_index_reports_clear_contract_failure(tmp_path: Path):
     row = payload["per_scene"][0]
 
     assert row["status"] == "FAIL"
-    assert row["mesh_index"]["status"] == "FAIL"
-    assert any("mesh_index_contract_malformed: generated/scene_visual_mesh_index.json" in b for b in row["blockers"])
+    assert row["mesh_index_validation"]["status"] == "INVALID_JSON"
+    assert any("mesh_index_validation_invalid_json: generated/scene_visual_mesh_index.json" in b for b in row["blockers"])
 
 
-def test_empty_mesh_index_reports_clear_contract_failure(tmp_path: Path):
+def test_zero_renderable_mesh_index_reports_clear_contract_failure(tmp_path: Path):
     _write_scene(tmp_path / "scenes/empty_mesh", "empty_mesh")
     (tmp_path / "scenes/empty_mesh/generated/scene_visual_mesh_index.json").write_text(
         json.dumps({"visual_items": []}), encoding="utf-8"
@@ -224,6 +225,56 @@ def test_empty_mesh_index_reports_clear_contract_failure(tmp_path: Path):
     row = payload["per_scene"][0]
 
     assert row["status"] == "FAIL"
-    assert row["mesh_index"]["status"] == "FAIL"
-    assert row["mesh_index"]["renderable_items"] == 0
-    assert "mesh_index_contract_empty: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
+    assert row["mesh_index_validation"]["status"] == "NO_RENDERABLE_ITEMS"
+    assert row["mesh_index_validation"]["renderable_items"] == 0
+    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
+
+
+def test_missing_mesh_index_reports_clear_validation_failure(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/missing_mesh", "missing_mesh")
+    (tmp_path / "scenes/missing_mesh/generated/scene_visual_mesh_index.json").unlink()
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("missing_mesh", "scenes/missing_mesh")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index_validation"]["status"] == "MISSING_FILE"
+    assert "mesh_index_validation_missing_file: generated/scene_visual_mesh_index.json" in row["blockers"]
+
+
+def test_malformed_mesh_index_item_entries_are_blockers(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/malformed_items", "malformed_items")
+    (tmp_path / "scenes/malformed_items/generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"items": [{"render_expected": True}, "not-an-object"]}), encoding="utf-8"
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([_entry("malformed_items", "scenes/malformed_items")])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "FAIL"
+    assert row["mesh_index_validation"]["status"] == "MALFORMED_ITEMS"
+    assert row["mesh_index_validation"]["malformed_items"] == [{"index": 1, "reason": "item_not_object"}]
+    assert "mesh_index_validation_malformed_items: generated/scene_visual_mesh_index.json contains 1 malformed item entries" in row["blockers"]
+
+
+def test_blocked_scene_preserves_known_blocker_and_reports_mesh_issue(tmp_path: Path):
+    _write_scene(tmp_path / "scenes/blocked_bad_mesh", "blocked_bad_mesh")
+    (tmp_path / "scenes/blocked_bad_mesh/generated/scene_visual_mesh_index.json").write_text(
+        json.dumps({"visual_items": []}), encoding="utf-8"
+    )
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(yaml.safe_dump(_catalog([
+        _entry("blocked_bad_mesh", "scenes/blocked_bad_mesh", status="blocked", known_blocker="awaiting launch repair"),
+    ])), encoding="utf-8")
+
+    payload = _run(tmp_path, reg)
+    row = payload["per_scene"][0]
+
+    assert row["status"] == "BLOCKED"
+    assert row["blockers"][0] == "awaiting launch repair"
+    assert row["mesh_index_validation"]["status"] == "NO_RENDERABLE_ITEMS"
+    assert "mesh_index_validation_no_renderable_items: generated/scene_visual_mesh_index.json contains 0 renderable items" in row["blockers"]
