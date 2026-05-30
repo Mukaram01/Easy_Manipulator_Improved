@@ -403,11 +403,13 @@ void ScenePreviewWidget::refresh_info_chip()
   }
 
   const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
-  const auto counters = viewport ? viewport->last_render_counters : Scene3DViewportWidget::RenderDebugCounters{};
+  const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("mesh_rendered_count=%1 fallback_count=%2 overlay_count=%3 labels_drawn=%4 labels_suppressed_overlap=%5 hierarchy_child_row_count=%6 selected_scene_name=%7 selected_item_id=%8")
-                                  .arg(counters.mesh_rendered_count).arg(counters.generated_fallback_count)
+  const QString smoke_stats = QString("mesh_backed_count=%1 mesh_rendered_count=%2 paint_completed=%3 fallback_count=%4 overlay_count=%5 labels_drawn=%6 labels_suppressed_overlap=%7 hierarchy_child_row_count=%8 selected_scene_name=%9 selected_item_id=%10")
+                                  .arg(counters.mesh_backed_count).arg(counters.mesh_rendered_count)
+                                  .arg(counters.last_paint_completed ? QStringLiteral("true") : QStringLiteral("false"))
+                                  .arg(counters.generated_fallback_count)
                                   .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed_overlap)
                                   .arg(counters.hierarchy_child_row_count)
                                   .arg(preview_scene_name_.isEmpty() ? QStringLiteral("(none)") : preview_scene_name_)
