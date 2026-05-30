@@ -81,6 +81,7 @@ public:
   struct RenderDebugCounters
   {
     int preview_items_count{ 0 };
+    int total_payload_count{ 0 };
     int viewport_received_count{ 0 };
     int render_cache_count{ 0 };
     int visible_count{ 0 };
@@ -88,13 +89,21 @@ public:
     int skipped_count{ 0 };
     int unique_visible_item_count{ 0 };
     int mesh_backed_count{ 0 };
-    int placeholder_count{ 0 };
+    int mesh_source_count{ 0 };
     int mesh_rendered_count{ 0 };
+    int urdf_primitive_source_count{ 0 };
+    int urdf_primitive_rendered_count{ 0 };
+    int placeholder_count{ 0 };
+    int missing_geometry_count{ 0 };
+    int wireframe_fallback_count{ 0 };
+    int overlay_helper_count{ 0 };
     int generated_fallback_count{ 0 };
     int editable_layout_count{ 0 };
     int primitive_fallback_count{ 0 };
     int locked_generated_urdf_visual_count{ 0 };
     int overlay_count{ 0 };
+    QString visual_quality_status{ QStringLiteral("UNAVAILABLE") };
+    QStringList visual_quality_warnings;
     int labels_drawn{ 0 };
     int labels_suppressed_overlap{ 0 };
     int hierarchy_child_row_count{ 0 };
@@ -159,7 +168,8 @@ private:
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
   bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
-                                   int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr);
+                                   int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr,
+                                   int * out_urdf_primitive_count = nullptr, int * out_missing_geometry_count = nullptr);
   QString gizmo_mode_label() const;
   void draw_robot_base_with_axis(const ScenePreviewWidget::PreviewItem & it);
   void draw_table_slab(const ScenePreviewWidget::PreviewItem & it);

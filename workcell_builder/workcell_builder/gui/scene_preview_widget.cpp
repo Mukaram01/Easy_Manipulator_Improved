@@ -352,6 +352,7 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   RenderDebugCounters out;
   out.preview_items_count = preview_items_.size();
+  out.total_payload_count = preview_items_.size();
   out.viewport_received_count = counters.viewport_received_count;
   out.render_cache_count = counters.render_cache_count;
   out.visible_count = counters.visible_count;
@@ -359,13 +360,21 @@ ScenePreviewWidget::RenderDebugCounters ScenePreviewWidget::render_debug_counter
   out.skipped_count = counters.skipped_count;
   out.unique_visible_item_count = counters.unique_visible_item_count;
   out.mesh_backed_count = counters.mesh_backed_count;
-  out.placeholder_count = counters.placeholder_count;
-  out.overlay_count = counters.overlay_count;
+  out.mesh_source_count = counters.mesh_source_count;
   out.mesh_rendered_count = counters.mesh_rendered_count;
+  out.urdf_primitive_source_count = counters.urdf_primitive_source_count;
+  out.urdf_primitive_rendered_count = counters.urdf_primitive_rendered_count;
+  out.placeholder_count = counters.placeholder_count;
+  out.missing_geometry_count = counters.missing_geometry_count;
+  out.wireframe_fallback_count = counters.wireframe_fallback_count;
+  out.overlay_helper_count = counters.overlay_helper_count;
+  out.overlay_count = counters.overlay_count;
   out.generated_fallback_count = counters.generated_fallback_count;
   out.editable_layout_count = counters.editable_layout_count;
   out.primitive_fallback_count = counters.primitive_fallback_count;
   out.locked_generated_urdf_visual_count = counters.locked_generated_urdf_visual_count;
+  out.visual_quality_status = counters.visual_quality_status;
+  out.visual_quality_warnings = counters.visual_quality_warnings;
   out.labels_drawn = counters.labels_drawn;
   out.labels_suppressed_overlap = counters.labels_suppressed_overlap;
   out.hierarchy_child_row_count = counters.hierarchy_child_row_count;
@@ -416,12 +425,13 @@ void ScenePreviewWidget::refresh_info_chip()
   const auto counters = viewport ? viewport->render_debug_counters() : Scene3DViewportWidget::RenderDebugCounters{};
   const QString compact_stats = QString("Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6")
                                   .arg(physical_count).arg(mesh_count).arg(box_count).arg(missing_count).arg(overlay_count).arg(locked_urdf_count);
-  const QString smoke_stats = QString("mesh_backed_count=%1 mesh_rendered_count=%2 paint_completed=%3 fallback_count=%4 overlay_count=%5 labels_drawn=%6 labels_suppressed_overlap=%7 hierarchy_child_row_count=%8 selected_scene_name=%9 selected_item_id=%10")
-                                  .arg(counters.mesh_backed_count).arg(counters.mesh_rendered_count)
+  const QString smoke_stats = QString("quality=%1 mesh=%2/%3 urdf_prim=%4/%5 missing=%6 placeholder=%7 wireframe=%8 helpers=%9 paint_completed=%10 selected_scene_name=%11 selected_item_id=%12")
+                                  .arg(counters.visual_quality_status)
+                                  .arg(counters.mesh_rendered_count).arg(counters.mesh_source_count)
+                                  .arg(counters.urdf_primitive_rendered_count).arg(counters.urdf_primitive_source_count)
+                                  .arg(counters.missing_geometry_count).arg(counters.placeholder_count)
+                                  .arg(counters.wireframe_fallback_count).arg(counters.overlay_helper_count)
                                   .arg(counters.last_paint_completed ? QStringLiteral("true") : QStringLiteral("false"))
-                                  .arg(counters.generated_fallback_count)
-                                  .arg(counters.overlay_count).arg(counters.labels_drawn).arg(counters.labels_suppressed_overlap)
-                                  .arg(counters.hierarchy_child_row_count)
                                   .arg(preview_scene_name_.isEmpty() ? QStringLiteral("(none)") : preview_scene_name_)
                                   .arg(selected_preview_item_id_.isEmpty() ? QStringLiteral("(none)") : selected_preview_item_id_);
   info_chip_label_->setText(QString("Scene: %1\nMode: %2\n%3\n%4  Warn: %5  Task: %6")
