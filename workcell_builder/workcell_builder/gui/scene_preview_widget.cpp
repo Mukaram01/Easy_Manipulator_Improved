@@ -207,7 +207,7 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     v->update();
     refresh_info_chip();
   });
-  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
+  static_cast<Scene3DViewportWidget *>(simple_3d_view_)->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
   static_cast<Scene3DViewportWidget *>(simple_3d_view_)->status_message_cb = [this](const QString & message) {
     emit studio_log_requested(message);
   };
@@ -230,8 +230,105 @@ void ScenePreviewWidget::set_3d_available(bool available, const QString & reason
   refresh_mode_and_state();
 }
 void ScenePreviewWidget::on_mode_changed(int){ refresh_mode_and_state(); }
-void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items){ preview_items_ = items; auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_); viewport->ingest_preview_items(preview_items_); emit studio_log_requested(QString("Scene3D diagnostics {preview_items_count=%1, viewport_received_count=%2}").arg(preview_items_.size()).arg(viewport->render_debug_counters().viewport_received_count)); const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; }); static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = selected_preview_item_id_; if (!selected_preview_item_id_.isEmpty()) { emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_)); } viewport->fit_include_overlays = false; viewport->fit_scene(); emit studio_log_requested(preview_status_summary_.isEmpty() ? QString("Preview items loaded: %1.").arg(preview_items_.size()) : preview_status_summary_); fit_fallback_scene_to_items(false); refresh_info_chip(); update(); }
-void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name){ preview_scene_name_ = scene_name.trimmed().isEmpty() ? "No scene" : scene_name.trimmed(); auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->scene_name = preview_scene_name_; refresh_info_chip(); v->update(); }
+void ScenePreviewWidget::set_preview_items(const QVector<PreviewItem> & items)
+{
+  preview_items_ = items;
+  ++preview_payload_revision_;
+  auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  viewport->ingest_preview_items(preview_items_);
+  const bool has_selected = std::any_of(preview_items_.cbegin(), preview_items_.cend(), [this](const PreviewItem & it){ return it.id == selected_preview_item_id_; });
+  viewport->selected_id = selected_preview_item_id_;
+  if (diagnostic_debug_logging_enabled() && !selected_preview_item_id_.isEmpty()) {
+    emit studio_log_requested(has_selected ? QString("Preview selection restored after refresh: %1").arg(selected_preview_item_id_) : QString("Preview selection retained after refresh; id is hidden by filters or absent from the visible preview payload: %1").arg(selected_preview_item_id_));
+  }
+  viewport->fit_include_overlays = false;
+  viewport->fit_scene();
+  emit_scene_diagnostic_once(
+    QStringLiteral("payload_commit"),
+    preview_items_.size(),
+    QStringLiteral("Scene3D payload committed: scene=%1 rev=%2 items=%3 visible=%4 mesh=%5 fallback=%6")
+      .arg(preview_scene_name_)
+      .arg(preview_payload_revision_)
+      .arg(preview_items_.size())
+      .arg(viewport->render_debug_counters().visible_count)
+      .arg(viewport->render_debug_counters().mesh_backed_count)
+      .arg(viewport->render_debug_counters().primitive_fallback_count));
+  fit_fallback_scene_to_items(false);
+  refresh_info_chip();
+  emit_visual_quality_assessment_once();
+  update();
+}
+void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
+{
+  const QString normalized_scene_name = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
+  if (preview_scene_name_ != normalized_scene_name) {
+    preview_scene_name_ = normalized_scene_name;
+    preview_payload_revision_ = 0;
+    last_visual_quality_revision_logged_ = -1;
+    emitted_scene_diagnostic_keys_.clear();
+    emit_scene_diagnostic_once(
+      QStringLiteral("scene_load"),
+      0,
+      QStringLiteral("Scene loaded: %1").arg(preview_scene_name_));
+  } else {
+    preview_scene_name_ = normalized_scene_name;
+  }
+  auto * v = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  v->scene_name = preview_scene_name_;
+  refresh_info_chip();
+  v->update();
+}
+
+bool ScenePreviewWidget::diagnostic_debug_logging_enabled() const
+{
+  const auto * viewport = static_cast<Scene3DViewportWidget *>(simple_3d_view_);
+  return (viewport && viewport->debug_overlays_mode) || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
+}
+
+bool ScenePreviewWidget::emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message)
+{
+  const QString scene = preview_scene_name_.trimmed().isEmpty() ? QStringLiteral("No scene") : preview_scene_name_.trimmed();
+  const QString key = QStringLiteral("%1|%2|rev=%3|count=%4").arg(scene, event).arg(preview_payload_revision_).arg(payload_count);
+  if (emitted_scene_diagnostic_keys_.contains(key)) return false;
+  emitted_scene_diagnostic_keys_.insert(key);
+  emit studio_log_requested(message);
+  return true;
+}
+
+void ScenePreviewWidget::emit_visual_quality_assessment_once()
+{
+  if (last_visual_quality_revision_logged_ == preview_payload_revision_) return;
+  last_visual_quality_revision_logged_ = preview_payload_revision_;
+  int physical_count = 0;
+  int mesh_count = 0;
+  int primitive_count = 0;
+  int missing_count = 0;
+  int overlay_count = 0;
+  for (const auto & item : preview_items_) {
+    const QString role = item.role.trimmed().toLower();
+    const QString category = item.category.trimmed().toLower();
+    const QString source_layer = item.source_layer.trimmed().toLower();
+    const bool overlay = role.contains(QStringLiteral("overlay")) || category.contains(QStringLiteral("overlay")) || source_layer.contains(QStringLiteral("overlay"));
+    if (overlay) { ++overlay_count; continue; }
+    ++physical_count;
+    if (item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty()) ++mesh_count;
+    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++primitive_count;
+    else ++missing_count;
+  }
+  emit_scene_diagnostic_once(
+    QStringLiteral("visual_quality"),
+    preview_items_.size(),
+    QStringLiteral("Scene3D visual quality: scene=%1 rev=%2 physical=%3 mesh=%4 primitive=%5 missing=%6 overlays=%7 warnings=%8")
+      .arg(preview_scene_name_)
+      .arg(preview_payload_revision_)
+      .arg(physical_count)
+      .arg(mesh_count)
+      .arg(primitive_count)
+      .arg(missing_count)
+      .arg(overlay_count)
+      .arg(total_warning_count()));
+}
+
 void ScenePreviewWidget::set_preview_status_summary(const QString & summary){ preview_status_summary_ = summary.trimmed(); refresh_info_chip(); }
 void ScenePreviewWidget::set_task_overlay_model(const TaskOverlayModel & model){ overlay_model_ = model; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->task_overlay = model; refresh_info_chip(); simple_3d_view_->update(); }
 void ScenePreviewWidget::set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels){
@@ -341,8 +438,8 @@ void ScenePreviewWidget::set_epd_detection_overlays(const QVector<EpdDetectionOv
 void ScenePreviewWidget::set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels){ auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->show_camera_fov=camera_fov; v->show_pick_coverage=pick_coverage; v->show_epd_detections=epd_detections; v->show_detection_labels=detection_labels; v->update(); }
 
 
-void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->reach_overlay = model; emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
-void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->collision_overlay = model; emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_reachability_overlay_model(const ReachabilityOverlayModel & model){ reachability_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->reach_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("reachability overlay loaded: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
+void ScenePreviewWidget::set_collision_overlay_model(const CollisionOverlayModel & model){ collision_overlay_model_ = model; auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->collision_overlay = model; if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("collision preview checks complete: warning count=%1").arg(model.warnings.size())); refresh_info_chip(); simple_3d_view_->update(); }
 
 void ScenePreviewWidget::set_label_mode(LabelMode mode){ Q_UNUSED(mode); auto *v=static_cast<Scene3DViewportWidget *>(simple_3d_view_); v->label_mode = LabelMode::Selected; if (labels_selector_) labels_selector_->setCurrentText("Selected"); v->update(); }
 

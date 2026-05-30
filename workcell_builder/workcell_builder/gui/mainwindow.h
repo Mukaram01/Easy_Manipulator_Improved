@@ -24,6 +24,7 @@
 #include <QString>
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include <QLineEdit>
 #include <QPointF>
 #include <atomic>
@@ -128,6 +129,8 @@ private:
   void build_studio_header_actions();
   void apply_studio_theme();
   void append_studio_log(const QString & message);
+  bool append_scene_diagnostic_log_once(const QString & event, int payload_revision, int payload_count, const QString & message);
+  bool scene3d_debug_logging_enabled() const;
   void show_not_wired_message(const QString & action_label);
   QString selected_scene_name() const;
   QString selected_scene_path() const;
@@ -683,6 +686,8 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  QSet<QString> emitted_scene_diagnostic_log_keys_;
+  int scene_diagnostic_payload_revision_{ 0 };
   QString visual_index_script_missing_reported_scene_key_;
   QString visual_index_regen_failure_reported_scene_key_;
   bool visual_index_regen_throttle_session_active_{ false };

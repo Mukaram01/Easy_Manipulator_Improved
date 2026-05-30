@@ -1250,7 +1250,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     if (out_placeholder_count) ++(*out_placeholder_count);
     if (out_missing_geometry_count) ++(*out_missing_geometry_count);
     ++last_render_counters.generated_fallback_count;
-    if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("missing geometry"), it.source_path);
+    if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_MISSING_GEOMETRY: no mesh metadata or explicit primitive dimensions"), it.source_path);
     return false;
   }
   if (item_has_explicit_dimensions(it)) {
@@ -1258,7 +1258,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
       if (out_placeholder_count) ++(*out_placeholder_count);
-      warn_mesh_fallback_once(it.id, QStringLiteral("mesh-only mode: primitive fallback suppressed"), it.source_path);
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: primitive fallback available but disabled"), it.source_path);
       return false;
     }
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
@@ -1370,36 +1370,62 @@ bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreview
          role == "real_urdf_primitive";
 }
 
-bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const
+bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
+                                                               const ScenePreviewWidget::PreviewItem * item,
+                                                               QString * out_failure_reason) const
 {
+  if (out_failure_reason) out_failure_reason->clear();
   QFileInfo info(path);
-  if (!info.exists() || !info.isFile()) return false;
+  if (!info.exists() || !info.isFile()) {
+    if (out_failure_reason) *out_failure_reason = mesh_load_failure_reason_for_item(path, item);
+    return false;
+  }
   out_canonical = info.canonicalFilePath();
   if (out_canonical.isEmpty()) out_canonical = info.absoluteFilePath();
+  if (out_canonical.isEmpty() && out_failure_reason) *out_failure_reason = mesh_load_failure_reason_for_item(path, item);
   return !out_canonical.isEmpty();
 }
 
 bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path)
 {
-  const QString key = QStringLiteral("%1|%2|%3").arg(item_id, reason, path);
+  const QString scene_key = scene_name.trimmed().isEmpty() ? QStringLiteral("No scene") : scene_name.trimmed();
+  const QString path_key = path.trimmed().isEmpty() ? QStringLiteral("<none>") : path.trimmed();
+  const QString key = QStringLiteral("%1|%2|%3|%4").arg(scene_key, item_id, reason, path_key);
   if (warned_mesh_fallbacks_.contains(key)) return false;
   warned_mesh_fallbacks_.insert(key);
-  qWarning().noquote() << QStringLiteral("Mesh preview fallback for %1: %2").arg(item_id, reason);
+  const QString reason_code = reason.section(QLatin1Char(':'), 0, 0).trimmed();
+  qWarning().noquote() << QStringLiteral("Scene3D render fallback: scene=%1 item=%2 reason_code=%3 detail=%4 path=%5")
+                            .arg(scene_key,
+                                 item_id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item_id.trimmed(),
+                                 reason_code.isEmpty() ? QStringLiteral("REJECT_UNKNOWN") : reason_code,
+                                 reason,
+                                 path_key);
   return true;
 }
 
-const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const QString & path)
+const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item,
+                                                                                           const QString & path)
 {
   const QFileInfo input_info(path);
   QString canonical;
-  if (!try_resolve_canonical_mesh_path(path, canonical)) canonical = input_info.absoluteFilePath();
+  QString load_failure_reason;
+  if (!try_resolve_canonical_mesh_path(path, canonical, &item, &load_failure_reason)) canonical = input_info.absoluteFilePath();
   auto it = mesh_cache_.find(canonical);
   if (it != mesh_cache_.end()) return it.value();
   MeshCacheEntry entry;
   entry.loaded = true;
+  entry.requested_path = path;
+  entry.package_uri = item.package_uri;
+  entry.resolved_source_path_original = item.resolved_source_path_original;
+  entry.source_path_resolution_outcome = item.source_path_resolution_outcome;
+  entry.resolved_source_path_stale = item.resolved_source_path_stale;
+  entry.load_failure_reason = load_failure_reason;
   if (!input_info.exists() || !input_info.isFile()) {
     entry.valid = false;
-    entry.warning = QStringLiteral("mesh missing on disk");
+    if (entry.load_failure_reason.trimmed().isEmpty()) {
+      entry.load_failure_reason = mesh_load_failure_reason_for_item(path, &item);
+    }
+    entry.warning = QStringLiteral("mesh missing on disk (reason: %1)").arg(entry.load_failure_reason);
     return mesh_cache_.insert(canonical, entry).value();
   }
   QFile file(canonical);
@@ -1485,6 +1511,12 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["loaded"] = e.loaded;
     row["valid"] = e.valid;
     row["warning"] = e.warning;
+    row["load_failure_reason"] = e.load_failure_reason;
+    row["requested_path"] = e.requested_path;
+    row["package_uri"] = e.package_uri;
+    row["resolved_source_path_stale"] = e.resolved_source_path_stale;
+    row["resolved_source_path_original"] = e.resolved_source_path_original;
+    row["source_path_resolution_outcome"] = e.source_path_resolution_outcome;
     row["oversized"] = e.oversized;
     const QString parser = (e.parser_type == "stl" || e.parser_type == "dae") ? e.parser_type : QStringLiteral("unsupported");
     row["parser_type"] = parser;
@@ -1508,7 +1540,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     for (const auto & item : items) {
       const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
       QString canonical_source;
-      if (!try_resolve_canonical_mesh_path(mesh_source, canonical_source)) canonical_source = QFileInfo(mesh_source).absoluteFilePath();
+      if (!try_resolve_canonical_mesh_path(mesh_source, canonical_source, &item)) canonical_source = QFileInfo(mesh_source).absoluteFilePath();
       if (canonical_source != canonical_path) continue;
       QVector3D raw_span, final_span;
       QString reason;
@@ -1540,20 +1572,20 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     // explicit branch kept for static mesh-preview contract checks
   }
   const auto warn_for_mode = [&](const QString & reason, const QString & path) {
-    if (meshes_only_mode) warn_mesh_fallback_once(it.id, reason, path);
+    if (meshes_only_mode || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS")) warn_mesh_fallback_once(it.id, reason, path);
   };
 
   if (!it.has_mesh_metadata) {
-    warn_for_mode(QStringLiteral("mesh metadata missing"), it.source_path);
+    warn_for_mode(QStringLiteral("REJECT_MESH_METADATA_MISSING: mesh metadata missing"), it.source_path);
     return false;
   }
 
   const QString mesh_source = !it.mesh_path.trimmed().isEmpty() ? it.mesh_path : it.source_path;
   if (mesh_source.trimmed().isEmpty()) {
-    warn_for_mode(QStringLiteral("mesh source missing"), mesh_source);
+    warn_for_mode(QStringLiteral("REJECT_MESH_SOURCE_MISSING: mesh source missing"), mesh_source);
     return false;
   }
-  const MeshCacheEntry & entry = ensure_mesh_cached(mesh_source);
+  const MeshCacheEntry & entry = ensure_mesh_cached(it, mesh_source);
   auto reject = [&](const QString & code, const QString & detail = QString()) {
     const QString reason = detail.isEmpty() ? code : QStringLiteral("%1: %2").arg(code, detail);
     warn_for_mode(reason, mesh_source);
@@ -1769,8 +1801,54 @@ void Scene3DViewportWidget::draw_box_outline(double cx, double cy, double cz, do
   glEnd();
   glEnable(GL_CULL_FACE);
 }
-void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent)
-{ glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.25f : 1.0f); glBegin(GL_TRIANGLE_FAN); glVertex3f(cx, cy, cz); for (int i = 0; i <= 32; ++i) { const double a = 2.0 * M_PI * i / 32.0; glVertex3f(cx + radius * qCos(a), cy, cz + radius * qSin(a)); } glEnd(); Q_UNUSED(height); }
+void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent, int segment_count)
+{
+  const int segments = qMax(3, segment_count);
+  const double safe_radius = qMax(0.0, radius);
+  const double y_bottom = cy;
+  const double y_top = cy + height;
+
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+
+  // Side wall. The cylinder is Y-up to match the viewport's box helper, where
+  // the height axis starts at cy and extends by the supplied height argument.
+  glBegin(GL_QUADS);
+  for (int i = 0; i < segments; ++i) {
+    const double a0 = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    const double a1 = 2.0 * M_PI * static_cast<double>(i + 1) / static_cast<double>(segments);
+    const double x0 = cx + safe_radius * qCos(a0);
+    const double z0 = cz + safe_radius * qSin(a0);
+    const double x1 = cx + safe_radius * qCos(a1);
+    const double z1 = cz + safe_radius * qSin(a1);
+    glVertex3f(static_cast<GLfloat>(x0), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(z0));
+    glVertex3f(static_cast<GLfloat>(x0), static_cast<GLfloat>(y_top), static_cast<GLfloat>(z0));
+    glVertex3f(static_cast<GLfloat>(x1), static_cast<GLfloat>(y_top), static_cast<GLfloat>(z1));
+    glVertex3f(static_cast<GLfloat>(x1), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(z1));
+  }
+  glEnd();
+
+  // Bottom cap.
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3f(static_cast<GLfloat>(cx), static_cast<GLfloat>(y_bottom), static_cast<GLfloat>(cz));
+  for (int i = 0; i <= segments; ++i) {
+    const double a = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    glVertex3f(static_cast<GLfloat>(cx + safe_radius * qCos(a)),
+               static_cast<GLfloat>(y_bottom),
+               static_cast<GLfloat>(cz + safe_radius * qSin(a)));
+  }
+  glEnd();
+
+  // Top cap.
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3f(static_cast<GLfloat>(cx), static_cast<GLfloat>(y_top), static_cast<GLfloat>(cz));
+  for (int i = segments; i >= 0; --i) {
+    const double a = 2.0 * M_PI * static_cast<double>(i) / static_cast<double>(segments);
+    glVertex3f(static_cast<GLfloat>(cx + safe_radius * qCos(a)),
+               static_cast<GLfloat>(y_top),
+               static_cast<GLfloat>(cz + safe_radius * qSin(a)));
+  }
+  glEnd();
+}
 void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
 {
   const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);
@@ -1848,7 +1926,7 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
 {
   const QString mesh_source = !item.mesh_path.trimmed().isEmpty() ? item.mesh_path : item.source_path;
   if (mesh_source.trimmed().isEmpty()) return false;
-  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(mesh_source);
+  const MeshCacheEntry & cache = const_cast<Scene3DViewportWidget *>(this)->ensure_mesh_cached(item, mesh_source);
   if (!cache.loaded || !cache.valid || !cache.has_bounds) return false;
 
   QMatrix4x4 transform;

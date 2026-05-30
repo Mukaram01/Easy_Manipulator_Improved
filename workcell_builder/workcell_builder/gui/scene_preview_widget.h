@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QVector>
 #include <QStringList>
+#include <QSet>
 
 class QComboBox;
 class QLabel;
@@ -239,6 +240,9 @@ private:
   void fit_fallback_scene_to_items(bool include_overlays = false);
   void reset_fallback_scene_view();
   void refresh_info_chip();
+  bool diagnostic_debug_logging_enabled() const;
+  bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
+  void emit_visual_quality_assessment_once();
   int total_warning_count() const;
   bool task_is_ready() const;
 
@@ -275,4 +279,7 @@ private:
   QString selected_preview_item_id_;
   QString preview_status_summary_;
   MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
+  int preview_payload_revision_{ 0 };
+  int last_visual_quality_revision_logged_{ -1 };
+  QSet<QString> emitted_scene_diagnostic_keys_;
 };

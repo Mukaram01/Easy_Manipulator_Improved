@@ -159,7 +159,8 @@ private:
   void camera_matrices(QMatrix4x4 & out_proj, QMatrix4x4 & out_view) const;
   void draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent = false);
   void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
-  void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color, bool translucent = false);
+  void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color,
+                     bool translucent = false, int segment_count = 32);
   void draw_frustum(const QColor & color, bool translucent = true);
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
@@ -209,6 +210,12 @@ private:
     QString parser_type;
     QString parse_status;
     QString parse_error;
+    QString load_failure_reason;
+    QString requested_path;
+    QString package_uri;
+    QString resolved_source_path_original;
+    QString source_path_resolution_outcome;
+    bool resolved_source_path_stale{ false };
     InternalTriangleMesh mesh;
     bool has_bounds{ false };
     QVector3D local_min;
@@ -222,9 +229,11 @@ private:
   };
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> warned_mesh_fallbacks_;
-  bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical) const;
+  bool try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
+                                       const ScenePreviewWidget::PreviewItem * item = nullptr,
+                                       QString * out_failure_reason = nullptr) const;
   bool warn_mesh_fallback_once(const QString & item_id, const QString & reason, const QString & path);
-  const MeshCacheEntry & ensure_mesh_cached(const QString & path);
+  const MeshCacheEntry & ensure_mesh_cached(const ScenePreviewWidget::PreviewItem & item, const QString & path);
   bool validate_mesh_final_span(const ScenePreviewWidget::PreviewItem & it,
                                 const MeshCacheEntry & entry,
                                 const QString & mesh_source,
