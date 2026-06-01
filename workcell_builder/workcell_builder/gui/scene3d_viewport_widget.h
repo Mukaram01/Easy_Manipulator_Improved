@@ -122,6 +122,9 @@ public:
                                            InternalTriangleMesh & out_mesh, QString & out_error,
                                            double * out_unit_meter = nullptr,
                                            int triangle_limit = 100000);
+  static bool parse_obj_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                       InternalTriangleMesh & out_mesh, QString & out_error,
+                                       int triangle_limit = 100000);
   static bool compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max);
   static bool should_attempt_mesh_draw_for_mode_for_test(ScenePreviewWidget::MeshPreviewMode mode,
                                                          bool cache_loaded, bool cache_valid);
@@ -214,6 +217,7 @@ private:
     QString parse_status;
     QString parse_error;
     QString load_failure_reason;
+    QString failure_reason_code;
     QString requested_path;
     QString package_uri;
     QString resolved_source_path_original;

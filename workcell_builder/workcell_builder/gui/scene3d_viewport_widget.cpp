@@ -149,6 +149,34 @@ void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counte
   counters.visual_quality_warnings = warnings;
 }
 
+
+QString mesh_load_failure_reason_for_item(const QString & path, const ScenePreviewWidget::PreviewItem * item)
+{
+  const QString trimmed_path = path.trimmed();
+  if (item) {
+    const QString outcome = item->source_path_resolution_outcome.trimmed().toLower();
+    if (item->resolved_source_path_stale || outcome.contains(QStringLiteral("stale"))) return QStringLiteral("stale_path");
+    if (trimmed_path.startsWith(QStringLiteral("package://"), Qt::CaseInsensitive) ||
+        !item->package_uri.trimmed().isEmpty() || outcome.contains(QStringLiteral("package_uri"))) {
+      if (outcome.contains(QStringLiteral("unresolved")) || outcome.contains(QStringLiteral("missing")) ||
+          trimmed_path.startsWith(QStringLiteral("package://"), Qt::CaseInsensitive)) {
+        return QStringLiteral("package_uri_unresolved");
+      }
+    }
+  }
+  return QStringLiteral("file_not_found");
+}
+
+QString mesh_parse_failure_code(const QString & parse_error)
+{
+  const QString normalized = parse_error.trimmed().toLower();
+  if (normalized.contains(QStringLiteral("no triangles")) || normalized.contains(QStringLiteral("contains no triangles"))) {
+    return QStringLiteral("zero_triangle_mesh");
+  }
+  if (normalized.contains(QStringLiteral("exceeds limit"))) return QStringLiteral("unreasonable_bounds");
+  return QStringLiteral("parse_failed");
+}
+
 bool parse_ascii_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                      QString & out_error, int triangle_limit)
 {
@@ -222,7 +250,8 @@ bool parse_binary_stl(const QByteArray & bytes, Scene3DViewportWidget::InternalT
     }
     out_mesh.triangles.push_back(tri);
   }
-  return !out_mesh.triangles.isEmpty();
+  if (out_mesh.triangles.isEmpty()) { out_error = "binary STL contains no triangles"; return false; }
+  return true;
 }
 
 bool looks_like_ascii_stl(const QByteArray & bytes)
@@ -231,6 +260,84 @@ bool looks_like_ascii_stl(const QByteArray & bytes)
   return prefix.startsWith("solid") && prefix.contains("facet");
 }
 
+
+
+bool parse_obj_face_vertex_index(const QString & token, int vertex_count, int & out_index)
+{
+  const QString vertex_token = token.section(QLatin1Char('/'), 0, 0).trimmed();
+  if (vertex_token.isEmpty()) return false;
+  bool ok = false;
+  const int raw_index = vertex_token.toInt(&ok);
+  if (!ok || raw_index == 0) return false;
+  const int zero_based = raw_index > 0 ? raw_index - 1 : vertex_count + raw_index;
+  if (zero_based < 0 || zero_based >= vertex_count) return false;
+  out_index = zero_based;
+  return true;
+}
+
+bool parse_obj_bytes(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
+                     QString & out_error, int triangle_limit)
+{
+  const QString text = QString::fromUtf8(bytes);
+  const QStringList lines = text.split(QRegExp("\\r?\\n"));
+  QVector<QVector3D> vertices;
+  vertices.reserve(lines.size());
+  for (int line_number = 0; line_number < lines.size(); ++line_number) {
+    QString line = lines.at(line_number).trimmed();
+    const int comment_pos = line.indexOf(QLatin1Char('#'));
+    if (comment_pos >= 0) line = line.left(comment_pos).trimmed();
+    if (line.isEmpty()) continue;
+    const QStringList parts = line.split(QRegExp("\\s+"), Qt::SkipEmptyParts);
+    if (parts.isEmpty()) continue;
+    const QString kind = parts.first();
+    if (kind == QStringLiteral("v")) {
+      if (parts.size() < 4) {
+        out_error = QStringLiteral("obj vertex on line %1 has fewer than 3 coordinates").arg(line_number + 1);
+        return false;
+      }
+      bool ok_x = false, ok_y = false, ok_z = false;
+      const float x = parts.at(1).toFloat(&ok_x);
+      const float y = parts.at(2).toFloat(&ok_y);
+      const float z = parts.at(3).toFloat(&ok_z);
+      if (!ok_x || !ok_y || !ok_z || !qIsFinite(x) || !qIsFinite(y) || !qIsFinite(z)) {
+        out_error = QStringLiteral("obj vertex on line %1 has invalid coordinates").arg(line_number + 1);
+        return false;
+      }
+      vertices.push_back(QVector3D(x, y, z));
+      continue;
+    }
+    if (kind != QStringLiteral("f")) continue;
+    if (parts.size() < 4) continue;
+    QVector<int> face_indices;
+    face_indices.reserve(parts.size() - 1);
+    for (int i = 1; i < parts.size(); ++i) {
+      int vertex_index = -1;
+      if (!parse_obj_face_vertex_index(parts.at(i), vertices.size(), vertex_index)) {
+        out_error = QStringLiteral("obj face on line %1 references invalid vertex '%2'").arg(line_number + 1).arg(parts.at(i));
+        return false;
+      }
+      face_indices.push_back(vertex_index);
+    }
+    const int base = face_indices.first();
+    for (int i = 1; i + 1 < face_indices.size(); ++i) {
+      Scene3DViewportWidget::InternalTriangleMesh::Triangle tri;
+      tri.vertices[0] = vertices.at(base);
+      tri.vertices[1] = vertices.at(face_indices.at(i));
+      tri.vertices[2] = vertices.at(face_indices.at(i + 1));
+      tri.normal = QVector3D::crossProduct(tri.vertices[1] - tri.vertices[0], tri.vertices[2] - tri.vertices[0]);
+      out_mesh.triangles.push_back(tri);
+      if (out_mesh.triangles.size() > triangle_limit) {
+        out_error = QStringLiteral("mesh triangle count exceeds limit");
+        return false;
+      }
+    }
+  }
+  if (out_mesh.triangles.isEmpty()) {
+    out_error = QStringLiteral("obj contains no triangles");
+    return false;
+  }
+  return true;
+}
 
 bool parse_collada_bytes(const QByteArray & bytes, Scene3DViewportWidget::InternalTriangleMesh & out_mesh,
                          QString & out_error, double * out_unit_meter, int triangle_limit)
@@ -1375,6 +1482,15 @@ bool Scene3DViewportWidget::parse_collada_bytes_for_test(const QByteArray & byte
   return parse_collada_bytes(bytes, out_mesh, out_error, out_unit_meter, triangle_limit);
 }
 
+bool Scene3DViewportWidget::parse_obj_bytes_for_test(const QByteArray & bytes, const QString & source_hint,
+                                                     InternalTriangleMesh & out_mesh, QString & out_error,
+                                                     int triangle_limit)
+{
+  Q_UNUSED(source_hint);
+  out_mesh.triangles.clear();
+  return parse_obj_bytes(bytes, out_mesh, out_error, triangle_limit);
+}
+
 bool Scene3DViewportWidget::compute_mesh_bounds_for_test(const InternalTriangleMesh & mesh, QVector3D & out_min, QVector3D & out_max)
 {
   if (mesh.triangles.isEmpty()) return false;
@@ -1461,7 +1577,7 @@ bool Scene3DViewportWidget::warn_mesh_fallback_once(const QString & item_id, con
   if (warned_mesh_fallbacks_.contains(key)) return false;
   warned_mesh_fallbacks_.insert(key);
   const QString reason_code = reason.section(QLatin1Char(':'), 0, 0).trimmed();
-  qWarning().noquote() << QStringLiteral("Scene3D render fallback: scene=%1 item=%2 reason_code=%3 detail=%4 path=%5")
+  qWarning().noquote() << QStringLiteral("Scene3D render fallback: scene=%1 item_id=%2 reason_code=%3 detail=%4 mesh_path=%5")
                             .arg(scene_key,
                                  item_id.trimmed().isEmpty() ? QStringLiteral("<unknown>") : item_id.trimmed(),
                                  reason_code.isEmpty() ? QStringLiteral("REJECT_UNKNOWN") : reason_code,
@@ -1487,16 +1603,19 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   entry.source_path_resolution_outcome = item.source_path_resolution_outcome;
   entry.resolved_source_path_stale = item.resolved_source_path_stale;
   entry.load_failure_reason = load_failure_reason;
+  entry.failure_reason_code = load_failure_reason;
   if (!input_info.exists() || !input_info.isFile()) {
     entry.valid = false;
     if (entry.load_failure_reason.trimmed().isEmpty()) {
       entry.load_failure_reason = mesh_load_failure_reason_for_item(path, &item);
     }
-    entry.warning = QStringLiteral("mesh missing on disk (reason: %1)").arg(entry.load_failure_reason);
+    entry.failure_reason_code = entry.load_failure_reason.trimmed().isEmpty() ? QStringLiteral("file_not_found") : entry.load_failure_reason;
+    entry.warning = QStringLiteral("mesh missing on disk (reason_code: %1)").arg(entry.failure_reason_code);
     return mesh_cache_.insert(canonical, entry).value();
   }
   QFile file(canonical);
   if (!file.open(QIODevice::ReadOnly)) {
+    entry.failure_reason_code = QStringLiteral("parse_failed");
     entry.warning = QStringLiteral("mesh unreadable");
     return mesh_cache_.insert(canonical, entry).value();
   }
@@ -1509,16 +1628,28 @@ const Scene3DViewportWidget::MeshCacheEntry & Scene3DViewportWidget::ensure_mesh
   } else if (ext == QStringLiteral("dae")) {
     entry.parser_type = QStringLiteral("dae");
     entry.valid = parse_collada_bytes_for_test(bytes, canonical, entry.mesh, parse_error, &entry.dae_unit_meter, kMeshTriangleLimit);
+  } else if (ext == QStringLiteral("obj")) {
+    entry.parser_type = QStringLiteral("obj");
+    entry.valid = parse_obj_bytes_for_test(bytes, canonical, entry.mesh, parse_error, kMeshTriangleLimit);
   } else {
     entry.parser_type = ext;
     entry.valid = false;
+    entry.failure_reason_code = QStringLiteral("unsupported_extension");
     parse_error = QStringLiteral("unsupported mesh format: .%1").arg(ext.isEmpty() ? QStringLiteral("<none>") : ext);
   }
   entry.parse_error = parse_error;
+  if (entry.valid && entry.mesh.triangles.isEmpty()) {
+    entry.valid = false;
+    parse_error = QStringLiteral("%1 contains no triangles").arg(entry.parser_type);
+    entry.parse_error = parse_error;
+  }
   entry.parse_status = entry.valid ? QStringLiteral("ok") : QStringLiteral("error");
   if (!entry.valid) {
     entry.oversized = parse_error.contains("exceeds limit");
-    entry.warning = QStringLiteral("%1 (%2)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), parse_error);
+    if (entry.failure_reason_code.trimmed().isEmpty()) entry.failure_reason_code = mesh_parse_failure_code(parse_error);
+    entry.warning = QStringLiteral("%1 reason_code=%2 (%3)").arg(entry.oversized ? QStringLiteral("mesh oversized") : QStringLiteral("mesh invalid"), entry.failure_reason_code, parse_error);
+  } else {
+    entry.failure_reason_code.clear();
   }
   if (entry.valid && entry.parser_type == QStringLiteral("dae") && entry.dae_unit_meter > 0.0 && qIsFinite(entry.dae_unit_meter)) {
     Scene3DViewportWidget::InternalTriangleMesh pre_unit_mesh = entry.mesh;
@@ -1579,16 +1710,17 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
     row["valid"] = e.valid;
     row["warning"] = e.warning;
     row["load_failure_reason"] = e.load_failure_reason;
+    row["failure_reason_code"] = e.failure_reason_code;
     row["requested_path"] = e.requested_path;
     row["package_uri"] = e.package_uri;
     row["resolved_source_path_stale"] = e.resolved_source_path_stale;
     row["resolved_source_path_original"] = e.resolved_source_path_original;
     row["source_path_resolution_outcome"] = e.source_path_resolution_outcome;
     row["oversized"] = e.oversized;
-    const QString parser = (e.parser_type == "stl" || e.parser_type == "dae") ? e.parser_type : QStringLiteral("unsupported");
+    const QString parser = (e.parser_type == "stl" || e.parser_type == "dae" || e.parser_type == "obj") ? e.parser_type : QStringLiteral("unsupported");
     row["parser_type"] = parser;
     row["parse_error"] = e.parse_error;
-    row["rejected_reason_code"] = e.parse_status;
+    row["rejected_reason_code"] = e.failure_reason_code.trimmed().isEmpty() ? e.parse_status : e.failure_reason_code;
     row["triangle_count"] = static_cast<int>(e.mesh.triangles.size());
     row["has_bounds"] = e.has_bounds;
     row["local_min"] = QJsonArray{e.local_min.x(), e.local_min.y(), e.local_min.z()};
@@ -1616,6 +1748,7 @@ QJsonArray Scene3DViewportWidget::mesh_diagnostics_export() const
       gd["item_id"] = item.id;
       gd["accepted"] = accepted;
       gd["reason"] = reason;
+      gd["reason_code"] = accepted ? QStringLiteral("ok") : QStringLiteral("unreasonable_bounds");
       gd["raw_span"] = QJsonArray{raw_span.x(), raw_span.y(), raw_span.z()};
       gd["final_span"] = QJsonArray{final_span.x(), final_span.y(), final_span.z()};
       guard_details.append(gd);
@@ -1659,14 +1792,14 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
     return false;
   };
   if (!entry.loaded || !entry.valid || entry.oversized || entry.mesh.triangles.isEmpty()) {
-    if (!entry.loaded) return reject(QStringLiteral("REJECT_NOT_LOADED"));
-    if (!entry.valid) return reject(QStringLiteral("REJECT_PARSE_INVALID"), entry.warning);
-    if (entry.oversized) return reject(QStringLiteral("REJECT_OVERSIZED"), entry.warning);
-    return reject(QStringLiteral("REJECT_EMPTY_TRIANGLES"), entry.warning);
+    if (!entry.loaded) return reject(QStringLiteral("parse_failed"));
+    if (!entry.valid) return reject(entry.failure_reason_code.trimmed().isEmpty() ? QStringLiteral("parse_failed") : entry.failure_reason_code, entry.warning);
+    if (entry.oversized) return reject(QStringLiteral("unreasonable_bounds"), entry.warning);
+    return reject(QStringLiteral("zero_triangle_mesh"), entry.warning);
   }
   QString final_span_reason;
   if (!validate_mesh_final_span(it, entry, mesh_source, final_span_reason)) {
-    return reject(QStringLiteral("REJECT_GUARD_FINAL_SPAN"), final_span_reason);
+    return reject(QStringLiteral("unreasonable_bounds"), final_span_reason);
   }
 
   glPushMatrix();
