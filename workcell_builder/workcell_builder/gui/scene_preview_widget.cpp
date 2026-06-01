@@ -15,6 +15,24 @@ void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & 
   emit self->studio_log_requested(QString("Overlay-fit warning: overlay bounds are %1x physical bounds; use Fit Scene to keep physical meshes legible.")
                                       .arg(QString::number(ratio, 'f', 1)));
 }
+
+bool preview_item_has_primitive_visual_backing(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (item.sx <= 0.001 || item.sy <= 0.001 || item.sz <= 0.001) return false;
+  const QString tokens = QStringLiteral("%1|%2|%3|%4|%5")
+    .arg(item.source_layer, item.active_visual_source, item.mesh_type, item.role, item.category)
+    .toLower();
+  return tokens.contains(QStringLiteral("primitive")) ||
+         tokens.contains(QStringLiteral("|box")) ||
+         tokens.contains(QStringLiteral("cylinder")) ||
+         tokens.contains(QStringLiteral("sphere"));
+}
+
+bool preview_item_has_mesh_visual_backing(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (preview_item_has_primitive_visual_backing(item)) return false;
+  return item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty();
+}
 }
 
 
@@ -311,8 +329,8 @@ void ScenePreviewWidget::emit_visual_quality_assessment_once()
     const bool overlay = role.contains(QStringLiteral("overlay")) || category.contains(QStringLiteral("overlay")) || source_layer.contains(QStringLiteral("overlay"));
     if (overlay) { ++overlay_count; continue; }
     ++physical_count;
-    if (item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty()) ++mesh_count;
-    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++primitive_count;
+    if (preview_item_has_mesh_visual_backing(item)) ++mesh_count;
+    else if (preview_item_has_primitive_visual_backing(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001)) ++primitive_count;
     else ++missing_count;
   }
   emit_scene_diagnostic_once(
@@ -508,9 +526,9 @@ void ScenePreviewWidget::refresh_info_chip()
       continue;
     }
     ++physical_count;
-    const bool mesh_backed = item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty();
+    const bool mesh_backed = preview_item_has_mesh_visual_backing(item);
     if (mesh_backed) ++mesh_count;
-    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++box_count;
+    else if (preview_item_has_primitive_visual_backing(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001)) ++box_count;
     else ++missing_count;
 
     if (item.locked && !item.editable &&

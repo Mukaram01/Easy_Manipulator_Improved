@@ -74,17 +74,60 @@ double snap_rotation_value(double raw_rad, Scene3DViewportWidget::SnapMode mode)
   return step_rad > 0.0 ? std::round(raw_rad / step_rad) * step_rad : raw_rad;
 }
 
-bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
+bool item_has_explicit_primitive_dimensions(const ScenePreviewWidget::PreviewItem & item)
 {
+  return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+}
+
+QString scene3d_visual_token_mix(const ScenePreviewWidget::PreviewItem & item)
+{
+  return QStringLiteral("%1|%2|%3|%4|%5|%6")
+    .arg(item.source_layer,
+         item.active_visual_source,
+         item.mesh_type,
+         item.role,
+         item.category,
+         item.mesh_load_warning)
+    .trimmed()
+    .toLower();
+}
+
+bool item_has_primitive_visual_backing(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (!item_has_explicit_primitive_dimensions(item)) return false;
+  const QString tokens = scene3d_visual_token_mix(item);
+  return tokens.contains(QStringLiteral("primitive")) ||
+         tokens.contains(QStringLiteral(" urdf box")) ||
+         tokens.contains(QStringLiteral("|box")) ||
+         tokens.contains(QStringLiteral("cylinder")) ||
+         tokens.contains(QStringLiteral("sphere"));
+}
+
+bool item_has_mesh_visual_backing(const ScenePreviewWidget::PreviewItem & item)
+{
+  if (item_has_primitive_visual_backing(item)) return false;
   return item.mesh_available ||
          item.has_mesh_metadata ||
          !item.mesh_path.trimmed().isEmpty() ||
          !item.source_path.trimmed().isEmpty();
 }
 
-bool item_has_explicit_primitive_dimensions(const ScenePreviewWidget::PreviewItem & item)
+bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
 {
-  return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+  return item_has_mesh_visual_backing(item) || item_has_primitive_visual_backing(item);
+}
+
+bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString tokens = scene3d_visual_token_mix(item);
+  const bool generated_or_locked = item.locked ||
+    tokens.contains(QStringLiteral("generated_urdf_visual")) ||
+    tokens.contains(QStringLiteral("locked_generated_urdf_visual")) ||
+    tokens.contains(QStringLiteral("generated preview"));
+  if (!generated_or_locked || item.linked_to_editable_layout_state) return false;
+  if (!item_has_explicit_primitive_dimensions(item)) return false;
+  if (item_has_primitive_visual_backing(item)) return false;
+  return item_has_mesh_visual_backing(item);
 }
 
 void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counters)
@@ -630,8 +673,8 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     unique_visible_ids.insert(it.id);
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
-    if (!overlay_helper && item_has_credible_mesh_handoff(it)) ++mesh_source_count;
-    if (!overlay_helper && generated_urdf && !item_has_credible_mesh_handoff(it) && item_has_explicit_primitive_dimensions(it)) ++urdf_primitive_source_count;
+    if (!overlay_helper && item_has_mesh_visual_backing(it)) ++mesh_source_count;
+    if (!overlay_helper && generated_urdf && item_has_primitive_visual_backing(it)) ++urdf_primitive_source_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
     if (overlay_helper) overlay_items.push_back(&it);
@@ -803,8 +846,8 @@ void Scene3DViewportWidget::paintGL()
     else {
       physical_items.push_back(it);
       ++physical_item_count;
-      if (item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
-      if (generated_urdf && !item_has_credible_mesh_handoff(*it) && item_has_explicit_primitive_dimensions(*it)) {
+      if (item_has_mesh_visual_backing(*it)) ++mesh_source_count;
+      if (generated_urdf && item_has_primitive_visual_backing(*it)) {
         ++urdf_primitive_source_count;
       }
     }
@@ -848,10 +891,10 @@ void Scene3DViewportWidget::paintGL()
         missing_geometry_count += item_missing_geometry_count;
         wireframe_box_count += item_wireframe_box_count;
       }
-      if (it->id == selected_id) {
+      if (it->id == selected_id && !is_raw_generated_bounds_only_item(*it)) {
         const ItemBounds bounds = item_bounds_for_role(*it);
         const bool editable = item_is_editable_for_gizmo(*it);
-        draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor("#94a3b8"));
+        draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, editable ? QColor("#f8fafc") : QColor(148, 163, 184, 132));
         // draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor("#f8fafc"));
       }
     }
@@ -1102,9 +1145,9 @@ bool Scene3DViewportWidget::render_smoke_fallback_frame(QImage * out_image)
     if (overlay_helper) ++overlay_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
-    if (!overlay_helper && item_has_credible_mesh_handoff(it)) {
+    if (!overlay_helper && item_has_mesh_visual_backing(it)) {
       ++mesh_source_count;
-    } else if (!overlay_helper && generated_urdf && item_has_explicit_dimensions(it)) {
+    } else if (!overlay_helper && generated_urdf && item_has_primitive_visual_backing(it)) {
       ++urdf_primitive_source_count;
       ++urdf_primitive_rendered_count;
       ++wireframe_fallback_count;
@@ -1229,7 +1272,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
   if (helper_overlay) {
     if (item_has_explicit_dimensions(it)) {
-      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 120), 1.2f);
+      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 58), 0.75f);
       if (out_wireframe_count) ++(*out_wireframe_count);
       return false;
     }
@@ -1243,6 +1286,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
     if (out_mesh_count) ++(*out_mesh_count);
     return true;
+  }
+  if (is_raw_generated_bounds_only_item(it)) {
+    // Keep the generated payload selectable/inspectable, but do not draw its raw AABB over a mesh source.
+    draw_missing_geometry_marker(it);
+    if (out_placeholder_count) ++(*out_placeholder_count);
+    if (out_missing_geometry_count) ++(*out_missing_geometry_count);
+    ++last_render_counters.generated_fallback_count;
+    return false;
   }
   const QString missing_reason = placeholder_reason_for_item(it);
   if (!missing_reason.isEmpty()) {
@@ -1261,8 +1312,14 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
       warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: primitive fallback available but disabled"), it.source_path);
       return false;
     }
-    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#94a3b8"), 1.2f);
+    const bool generated_primitive = (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && item_has_primitive_visual_backing(it);
+    if (generated_primitive) {
+      draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(203, 213, 225, 215), false);
+      if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
+      return true;
+    }
+    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 42), true);
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 72), 0.9f);
     if (out_wireframe_count) ++(*out_wireframe_count);
     if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !item_has_credible_mesh_handoff(it)) {
       if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
@@ -1768,7 +1825,8 @@ void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)
 {
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+  const float alpha = translucent ? qMin(0.35f, static_cast<float>(color.alphaF())) : static_cast<float>(color.alphaF());
+  glColor4f(color.redF(), color.greenF(), color.blueF(), alpha);
   const double x = cx, y = cy, z = cz;
   glBegin(GL_QUADS);
   glVertex3f(x, y, z); glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x, y + sy, z);
@@ -1781,7 +1839,7 @@ void Scene3DViewportWidget::draw_box_outline(double cx, double cy, double cz, do
 {
   glDisable(GL_CULL_FACE);
   glLineWidth(line_width);
-  glColor4f(color.redF(), color.greenF(), color.blueF(), 1.0f);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), color.alphaF());
   const double x = cx, y = cy, z = cz;
   glBegin(GL_LINES);
   glVertex3f(x, y, z); glVertex3f(x + sx, y, z);
@@ -1808,7 +1866,8 @@ void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, doubl
   const double y_bottom = cy;
   const double y_top = cy + height;
 
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+  const float alpha = translucent ? qMin(0.35f, static_cast<float>(color.alphaF())) : static_cast<float>(color.alphaF());
+  glColor4f(color.redF(), color.greenF(), color.blueF(), alpha);
 
   // Side wall. The cylinder is Y-up to match the viewport's box helper, where
   // the height axis starts at cy and extends by the supplied height argument.
