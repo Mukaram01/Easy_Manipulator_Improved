@@ -26,6 +26,12 @@ struct WorkcellStudioCanvasItem {
   double x{0.0}, y{0.0}, z{0.0}, roll{0.0}, pitch{0.0}, yaw{0.0}, width{0.25}, depth{0.25}, height{0.25}, radius{0.0};
   std::string mesh_path;
   std::string mesh_type;
+  std::string primitive_geometry_type;
+  double primitive_radius{0.0};
+  double primitive_length{0.0};
+  bool has_material_color{false};
+  double material_r{0.0}, material_g{0.0}, material_b{0.0}, material_a{1.0};
+  std::string material_name;
   double mesh_scale_x{1.0}, mesh_scale_y{1.0}, mesh_scale_z{1.0};
   double mesh_r{0.0}, mesh_p{0.0}, mesh_y{0.0};
   bool has_mesh_metadata{false};

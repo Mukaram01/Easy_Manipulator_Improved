@@ -161,6 +161,8 @@ private:
   void draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width = 2.5f);
   void draw_cylinder(double cx, double cy, double cz, double radius, double height, const QColor & color,
                      bool translucent = false, int segment_count = 32);
+  void draw_sphere(double cx, double cy, double cz, double radius, const QColor & color,
+                   bool translucent = false, int slice_count = 24, int stack_count = 12);
   void draw_frustum(const QColor & color, bool translucent = true);
   void draw_ground_grid_pass();
   void draw_world_axes_pass();
@@ -168,6 +170,7 @@ private:
   bool robot_bounds_from_rendered_visuals(QVector3D & out_min, QVector3D & out_max) const;
   bool item_has_explicit_dimensions(const ScenePreviewWidget::PreviewItem & item) const;
   QString placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const;
+  bool draw_urdf_primitive_geometry(const ScenePreviewWidget::PreviewItem & it, const QColor & color);
   bool draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count = nullptr,
                                    int * out_mesh_count = nullptr, int * out_wireframe_count = nullptr,
                                    int * out_urdf_primitive_count = nullptr, int * out_missing_geometry_count = nullptr);
