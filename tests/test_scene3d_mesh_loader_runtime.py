@@ -49,9 +49,40 @@ def test_stl_loader_runtime_paths_cover_ascii_and_binary_payloads(
 
 
 def test_mesh_loader_fallback_is_per_item_not_global_collapsed_box():
-    assert 'draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count);' in VIEW_CPP
-    assert 'if (draw_mesh_preview_if_available(it, item_color(it), true)) {' in VIEW_CPP
+    assert 'draw_truthful_item_geometry(*it, &item_placeholder_count, &item_mesh_backed_count, &item_wireframe_box_count,' in VIEW_CPP
+    assert 'if (draw_mesh_preview_if_available(it, item_color(it), true)) return;' in VIEW_CPP
     assert 'if (out_placeholder_count) ++(*out_placeholder_count);' in VIEW_CPP
-    assert 'mesh_backed_count += item_mesh_backed_count;' in VIEW_CPP
+    assert 'mesh_rendered_count += item_mesh_backed_count;' in VIEW_CPP
     assert 'placeholder_count += item_placeholder_count;' in VIEW_CPP
     assert 'Preview warning: URDF visual mesh unavailable; using primitive fallback' in MAIN_CPP
+
+
+def test_mesh_loader_recognizes_stl_dae_and_obj_extensions_and_exports_reason_codes():
+    for token in [
+        'ext == QStringLiteral("stl")',
+        'ext == QStringLiteral("dae")',
+        'ext == QStringLiteral("obj")',
+        'parse_obj_bytes_for_test',
+        'parse_obj_bytes',
+        'row["failure_reason_code"]',
+        'row["rejected_reason_code"]',
+    ]:
+        assert token in VIEW_CPP
+
+    for reason_code in [
+        'file_not_found',
+        'unsupported_extension',
+        'parse_failed',
+        'zero_triangle_mesh',
+        'stale_path',
+        'package_uri_unresolved',
+        'unreasonable_bounds',
+    ]:
+        assert reason_code in VIEW_CPP
+
+
+def test_obj_loader_triangulates_polygon_faces_and_rejects_zero_triangle_meshes():
+    assert 'parse_obj_face_vertex_index' in VIEW_CPP
+    assert 'for (int i = 1; i + 1 < face_indices.size(); ++i)' in VIEW_CPP
+    assert 'obj contains no triangles' in VIEW_CPP
+    assert 'zero_triangle_mesh' in VIEW_CPP
