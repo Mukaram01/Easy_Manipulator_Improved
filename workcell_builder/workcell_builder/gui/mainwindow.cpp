@@ -2288,7 +2288,13 @@ void MainWindow::setup_studio_shell()
   connect_button(copy_build_cmd, [this](){ QApplication::clipboard()->setText("source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select workcell_builder"); });
   connect_button(copy_source_cmd, [this](){ QApplication::clipboard()->setText("source install/setup.bash"); });
   connect_button(open_logs_cmd, [this](){ open_diagnostics_folder(); });
-  connect_action(fit_button, [this](){ if (digital_twin_canvas_ && digital_twin_canvas_->scene()) digital_twin_canvas_->fitInView(digital_twin_canvas_->scene()->itemsBoundingRect().adjusted(-24,-24,24,24), Qt::KeepAspectRatio); });
+  connect_action(fit_button, [this](){
+    if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return;
+    auto * scene = digital_twin_canvas_->scene();
+    if (!scene->property("workcellPhysicalBoundsValid").toBool()) return;
+    const QRectF bounds = scene->property("workcellPhysicalBounds").toRectF();
+    if (bounds.isValid() && !bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24,-24,24,24), Qt::KeepAspectRatio);
+  });
   connect_action(fit_robot_button, [this](){
     if (!scene_preview_widget_) return;
     auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
@@ -4853,38 +4859,77 @@ void MainWindow::rebuild_digital_twin_canvas()
     connect(digital_twin_scene_, &QGraphicsScene::selectionChanged, this, &MainWindow::on_canvas_selection_changed);
   }
   digital_twin_scene_->clear();
+  digital_twin_scene_->setProperty("workcellPhysicalBoundsValid", false);
+  digital_twin_scene_->setProperty("workcellPhysicalBounds", QRectF());
+  digital_twin_scene_->setProperty("workcellOverlayBoundsValid", false);
+  digital_twin_scene_->setProperty("workcellOverlayBounds", QRectF());
   digital_twin_scene_->setSceneRect(-400, -300, 1200, 900);
   digital_twin_canvas_->setBackgroundBrush(QColor("#10161f"));
+
+  QRectF overlay_bounds;
+  bool has_overlay_bounds = false;
+  const auto add_overlay_bounds = [&](const QRectF & bounds) {
+    if (!bounds.isValid() || bounds.isNull()) return;
+    if (!has_overlay_bounds) {
+      overlay_bounds = bounds;
+      has_overlay_bounds = true;
+    } else {
+      overlay_bounds = overlay_bounds.united(bounds);
+    }
+  };
 
   if (toggle_grid_box_ && toggle_grid_box_->isChecked()) {
     QPen grid_pen(QColor("#1f2a36")); grid_pen.setWidth(1);
     for (int x = -400; x <= 800; x += 40) {
       auto * line = digital_twin_scene_->addLine(x, -300, x, 600, grid_pen);
       line->setZValue(canvas_item_z_value("grid", "helper_overlay", "overlay", true));
+      add_overlay_bounds(line->sceneBoundingRect());
     }
     for (int y = -300; y <= 600; y += 40) {
       auto * line = digital_twin_scene_->addLine(-400, y, 800, y, grid_pen);
       line->setZValue(canvas_item_z_value("grid", "helper_overlay", "overlay", true));
+      add_overlay_bounds(line->sceneBoundingRect());
     }
   }
   QPen axis_pen(QColor("#3a4b5c")); axis_pen.setWidth(2);
   auto * x_axis = digital_twin_scene_->addLine(-400, 0, 800, 0, axis_pen);
   x_axis->setZValue(canvas_item_z_value("axis", "helper_overlay", "overlay", true));
+  add_overlay_bounds(x_axis->sceneBoundingRect());
   auto * y_axis = digital_twin_scene_->addLine(0, -300, 0, 600, axis_pen);
   y_axis->setZValue(canvas_item_z_value("axis", "helper_overlay", "overlay", true));
+  add_overlay_bounds(y_axis->sceneBoundingRect());
   auto * origin = digital_twin_scene_->addEllipse(-4, -4, 8, 8, QPen(QColor("#d9e2ec")), QBrush(QColor("#d9e2ec")));
   origin->setZValue(canvas_item_z_value("origin", "helper_overlay", "overlay", true) + 1.0);
   origin->setToolTip("World origin marker");
+  add_overlay_bounds(origin->sceneBoundingRect());
 
-  if (selected_scene_index_ < 0) return;
+  if (selected_scene_index_ < 0) {
+    if (has_overlay_bounds) {
+      digital_twin_scene_->setProperty("workcellOverlayBoundsValid", true);
+      digital_twin_scene_->setProperty("workcellOverlayBounds", overlay_bounds);
+    }
+    return;
+  }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
 
   QVector<QRectF> occupied_label_rects;
+  QRectF physical_bounds;
+  bool has_physical_bounds = false;
+  const auto add_physical_bounds = [&](const QRectF & bounds) {
+    if (!bounds.isValid() || bounds.isNull()) return;
+    if (!has_physical_bounds) {
+      physical_bounds = bounds;
+      has_physical_bounds = true;
+    } else {
+      physical_bounds = physical_bounds.united(bounds);
+    }
+  };
 
   if (!show_reach_overlay_box_ || show_reach_overlay_box_->isChecked()) {
     auto * reach = digital_twin_scene_->addEllipse(-150, -150, 300, 300, QPen(QColor("#2dd4bf"), 2, Qt::DashLine)); // robot reach circle/arc
     reach->setZValue(canvas_item_z_value("reach", "helper_overlay", "overlay", true));
+    add_overlay_bounds(reach->sceneBoundingRect());
   }
   auto * robot_base = digital_twin_scene_->addEllipse(-14, -14, 28, 28, QPen(QColor("#60a5fa"), 2), QBrush(QColor("#1d4ed8")));
   robot_base->setZValue(canvas_item_z_value("robot", "base", "editable_layout", false));
@@ -4930,6 +4975,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
     item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
     digital_twin_scene_->addItem(item);
+    add_physical_bounds(item->sceneBoundingRect());
 
     if (toggle_labels_box_ && toggle_labels_box_->isChecked()) {
       const bool secondary_label = entry.locked || source_layer != QStringLiteral("editable_layout");
@@ -4951,21 +4997,25 @@ void MainWindow::rebuild_digital_twin_canvas()
       } else {
         if (!placed) txt->setPos(item->sceneBoundingRect().topLeft() + QPointF(0, -txt->boundingRect().height() - 2));
         item->set_label_item(txt, visible_by_default);
+        add_overlay_bounds(txt->sceneBoundingRect());
       }
     }
     if ((!show_camera_fov_overlay_box_ || show_camera_fov_overlay_box_->isChecked()) && category.contains("camera", Qt::CaseInsensitive)) {
       QPolygonF fov; fov << QPointF(item->pos().x()+12, item->pos().y()+12) << QPointF(item->pos().x()+150, item->pos().y()-40) << QPointF(item->pos().x()+150, item->pos().y()+64);
       auto * fov_item = digital_twin_scene_->addPolygon(fov, QPen(QColor("#ffd166"), 2), QBrush(QColor(255, 209, 102, 45))); // camera FOV wedge/cone
       fov_item->setZValue(canvas_item_z_value("camera_fov", "helper_overlay", "overlay", true));
+      add_overlay_bounds(fov_item->sceneBoundingRect());
     }
     if (!show_pick_place_overlay_box_ || show_pick_place_overlay_box_->isChecked()) {
       if (category.contains("pick", Qt::CaseInsensitive)) {
         auto * pick_overlay = digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#00d1b2"),2,Qt::DashLine));
         pick_overlay->setZValue(canvas_item_z_value("pick_zone", "helper_overlay", "overlay", true));
+        add_overlay_bounds(pick_overlay->sceneBoundingRect());
       }
       if (category.contains("place", Qt::CaseInsensitive)) {
         auto * place_overlay = digital_twin_scene_->addRect(item->sceneBoundingRect().adjusted(-4,-4,4,4), QPen(QColor("#ff7b72"),2,Qt::DashLine));
         place_overlay->setZValue(canvas_item_z_value("place_zone", "helper_overlay", "overlay", true));
+        add_overlay_bounds(place_overlay->sceneBoundingRect());
       }
     }
     if (toggle_warnings_box_ && toggle_warnings_box_->isChecked() && !item->data(RoleWarning).toString().isEmpty()) {
@@ -4978,6 +5028,7 @@ void MainWindow::rebuild_digital_twin_canvas()
       if (!place_2d_label_without_overlap(w, item->sceneBoundingRect().adjusted(0, item->boundingRect().height() + 2, 0, item->boundingRect().height() + 2), &occupied_label_rects, 2.0)) {
         w->setPos(item->sceneBoundingRect().bottomLeft() + QPointF(0, 2));
       }
+      add_overlay_bounds(w->sceneBoundingRect());
     }
   }
 
@@ -4985,6 +5036,7 @@ void MainWindow::rebuild_digital_twin_canvas()
     auto * empty_label = digital_twin_scene_->addSimpleText("No previewable layout metadata. Generate preview/readiness or add layout items.");
     empty_label->setZValue(canvas_item_z_value("warning", "label", "overlay", true));
     empty_label->setPos(-360, -260);
+    add_overlay_bounds(empty_label->sceneBoundingRect());
     append_studio_log(QString("Scene canvas: '%1' has 0 editable layout items and 0 URDF visual preview locked items. Missing files may include environment.yaml, scene_manifest.yaml, layout/workcell_studio_layout.yaml.").arg(selected_scene_name()));
   } else {
     append_studio_log(QString("Scene canvas: loaded %1 item(s) for '%2' from %3.").arg(model.items.size()).arg(selected_scene_name(), selected_scene_path()));
@@ -4992,6 +5044,7 @@ void MainWindow::rebuild_digital_twin_canvas()
   if (!show_trajectory_overlay_box_ || show_trajectory_overlay_box_->isChecked()) {
     auto * trajectory = digital_twin_scene_->addLine(20, 10, 180, -60, QPen(QColor("#38bdf8"), 2, Qt::DashDotLine));
     trajectory->setZValue(canvas_item_z_value("trajectory", "helper_overlay", "overlay", true));
+    add_overlay_bounds(trajectory->sceneBoundingRect());
   }
   if (toggle_warnings_box_ && toggle_warnings_box_->isChecked()) {
     QStringList issues;
@@ -5009,14 +5062,18 @@ void MainWindow::rebuild_digital_twin_canvas()
       safety_warning->setBrush(QBrush(QColor("#ff8e72")));
       safety_warning->setZValue(canvas_item_z_value("warning", "label", "overlay", true));
       safety_warning->setPos(-380, -280);
+      add_overlay_bounds(safety_warning->sceneBoundingRect());
     }
   }
   if (!preserved_selected_id.isEmpty()) {
     apply_scene_selection(preserved_selected_id, QStringLiteral("unknown"), false, false);
   }
-  if (digital_twin_canvas_ && digital_twin_canvas_->scene()) {
-    const QRectF bounds = digital_twin_canvas_->scene()->itemsBoundingRect();
-    if (!bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24, -24, 24, 24), Qt::KeepAspectRatio);
+  digital_twin_scene_->setProperty("workcellPhysicalBoundsValid", has_physical_bounds);
+  digital_twin_scene_->setProperty("workcellPhysicalBounds", physical_bounds);
+  digital_twin_scene_->setProperty("workcellOverlayBoundsValid", has_overlay_bounds);
+  digital_twin_scene_->setProperty("workcellOverlayBounds", overlay_bounds);
+  if (digital_twin_canvas_ && digital_twin_canvas_->scene() && has_physical_bounds) {
+    digital_twin_canvas_->fitInView(physical_bounds.adjusted(-24, -24, 24, 24), Qt::KeepAspectRatio);
   }
   refresh_minimap_card();
 }
