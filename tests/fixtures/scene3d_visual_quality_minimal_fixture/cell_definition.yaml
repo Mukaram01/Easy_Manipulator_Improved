@@ -1,0 +1,12 @@
+schema_version: workcell_studio_cell_definition/v1
+cell_name: scene3d_visual_quality_minimal_fixture
+robot:
+  model: synthetic_placeholder
+tool:
+  model: synthetic_fixture_tool
+environment:
+  objects:
+    - id: synthetic_mesh_box
+      type: fixture
+    - id: synthetic_primitive_box
+      type: support_surface

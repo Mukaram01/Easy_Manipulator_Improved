@@ -1,0 +1,8 @@
+scene_name: scene3d_visual_quality_minimal_fixture
+objects:
+  - id: synthetic_mesh_box
+    mesh: meshes/synthetic_mesh_box.stl
+  - id: synthetic_primitive_box
+    geometry:
+      type: box
+      size: [0.2, 0.2, 0.1]

@@ -1,0 +1,10 @@
+schema_version: workcell_studio_layout/v1
+items:
+  - id: synthetic_mesh_box
+    pose:
+      xyz: [0.0, 0.0, 0.05]
+      rpy: [0.0, 0.0, 0.0]
+  - id: synthetic_primitive_box
+    pose:
+      xyz: [0.4, 0.0, 0.05]
+      rpy: [0.0, 0.0, 0.0]
