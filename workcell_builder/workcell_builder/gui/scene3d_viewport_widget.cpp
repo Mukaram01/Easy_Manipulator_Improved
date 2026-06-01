@@ -82,9 +82,19 @@ bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item
          !item.source_path.trimmed().isEmpty();
 }
 
+bool item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString type = item.primitive_geometry_type.trimmed().toLower().replace(QLatin1Char('-'), QLatin1Char('_')).replace(QLatin1Char(' '), QLatin1Char('_'));
+  if (type == QStringLiteral("box")) return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+  if (type == QStringLiteral("cylinder")) return item.primitive_radius > 0.001 && item.primitive_length > 0.001;
+  if (type == QStringLiteral("sphere")) return item.primitive_radius > 0.001;
+  if (type == QStringLiteral("capsule")) return item.primitive_radius > 0.001 && item.primitive_length > 0.001;
+  return false;
+}
+
 bool item_has_explicit_primitive_dimensions(const ScenePreviewWidget::PreviewItem & item)
 {
-  return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+  return item_has_valid_urdf_primitive(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001);
 }
 
 void finalize_visual_quality(Scene3DViewportWidget::RenderDebugCounters & counters)
@@ -496,6 +506,12 @@ bool is_critical_label_role(NormalizedRole role)
 }
 QColor item_color(const ScenePreviewWidget::PreviewItem & it)
 {
+  if (it.has_material_color) {
+    QColor c;
+    c.setRgbF(qBound(0.0, it.material_r, 1.0), qBound(0.0, it.material_g, 1.0),
+              qBound(0.0, it.material_b, 1.0), qBound(0.0, it.material_a, 1.0));
+    return c;
+  }
   switch (classify_item_role(it)) {
     case NormalizedRole::RobotBase: return QColor("#a78bfa");
     case NormalizedRole::Table: return QColor("#64748b");
@@ -1216,8 +1232,49 @@ bool Scene3DViewportWidget::item_has_explicit_dimensions(const ScenePreviewWidge
 QString Scene3DViewportWidget::placeholder_reason_for_item(const ScenePreviewWidget::PreviewItem & item) const
 {
   if (item_has_credible_mesh_handoff(item)) return QString();
-  if (item_has_explicit_dimensions(item)) return QString();
+  if (item_has_valid_urdf_primitive(item) || item_has_explicit_dimensions(item)) return QString();
   return QStringLiteral("missing geometry");
+}
+
+
+bool Scene3DViewportWidget::draw_urdf_primitive_geometry(const ScenePreviewWidget::PreviewItem & it, const QColor & color)
+{
+  const QString type = normalized_token(it.primitive_geometry_type);
+  if (!item_has_valid_urdf_primitive(it)) return false;
+
+  glPushMatrix();
+  glTranslated(it.x, it.y, it.z);
+  glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
+  glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
+  glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  if (it.visual_origin_applied) {
+    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
+    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+  }
+  glScaled(it.mesh_scale_x, it.mesh_scale_y, it.mesh_scale_z);
+
+  if (type == QStringLiteral("box")) {
+    draw_box(-it.sx * 0.5, -it.sy * 0.5, -it.sz * 0.5, it.sx, it.sy, it.sz, color, color.alphaF() < 0.99);
+  } else if (type == QStringLiteral("cylinder")) {
+    const double r = it.primitive_radius;
+    const double h = it.primitive_length;
+    draw_cylinder(0.0, -h * 0.5, 0.0, r, h, color, color.alphaF() < 0.99, 32);
+  } else if (type == QStringLiteral("sphere")) {
+    draw_sphere(0.0, 0.0, 0.0, it.primitive_radius, color, color.alphaF() < 0.99, 24, 12);
+  } else if (type == QStringLiteral("capsule")) {
+    const double r = it.primitive_radius;
+    const double h = it.primitive_length;
+    draw_cylinder(0.0, -h * 0.5, 0.0, r, h, color, color.alphaF() < 0.99, 32);
+    draw_sphere(0.0, -h * 0.5, 0.0, r, color, color.alphaF() < 0.99, 24, 8);
+    draw_sphere(0.0, h * 0.5, 0.0, r, color, color.alphaF() < 0.99, 24, 8);
+  } else {
+    glPopMatrix();
+    return false;
+  }
+  glPopMatrix();
+  return true;
 }
 
 bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget::PreviewItem & it, int * out_placeholder_count,
@@ -1237,7 +1294,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   }
   // Always try mesh-backed draw first for physical items.
   QColor visual_color = item_color(it);
-  if (is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) {
+  if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !it.has_material_color) {
     visual_color = QColor("#cfd4da");
   }
   if (draw_mesh_preview_if_available(it, visual_color, true)) {
@@ -1253,6 +1310,19 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     if (show_warning_labels) warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_MISSING_GEOMETRY: no mesh metadata or explicit primitive dimensions"), it.source_path);
     return false;
   }
+  if (item_has_valid_urdf_primitive(it)) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+      draw_missing_geometry_marker(it);
+      ++last_render_counters.generated_fallback_count;
+      if (out_placeholder_count) ++(*out_placeholder_count);
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: URDF primitive available but disabled"), it.source_path);
+      return false;
+    }
+    if (draw_urdf_primitive_geometry(it, visual_color)) {
+      if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
+      return true;
+    }
+  }
   if (item_has_explicit_dimensions(it)) {
     if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
       draw_missing_geometry_marker(it);
@@ -1264,9 +1334,6 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
     draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#94a3b8"), 1.2f);
     if (out_wireframe_count) ++(*out_wireframe_count);
-    if ((is_generated_urdf_visual_item(it) || is_locked_urdf_item(it)) && !item_has_credible_mesh_handoff(it)) {
-      if (out_urdf_primitive_count) ++(*out_urdf_primitive_count);
-    }
     return false;
   }
   draw_missing_geometry_marker(it);
@@ -1366,8 +1433,8 @@ bool Scene3DViewportWidget::should_draw_as_wireframe_for_test(const ScenePreview
 {
   Q_UNUSED(mode);
   const QString role = render_role_for_test(item);
-  return role == "helper_overlay" || role == "missing_mesh_fallback" || role == "generated_urdf_primitive" ||
-         role == "real_urdf_primitive";
+  if (item_has_valid_urdf_primitive(item)) return false;
+  return role == "helper_overlay" || role == "missing_mesh_fallback";
 }
 
 bool Scene3DViewportWidget::try_resolve_canonical_mesh_path(const QString & path, QString & out_canonical,
@@ -1607,6 +1674,12 @@ bool Scene3DViewportWidget::draw_mesh_preview_if_available(const ScenePreviewWid
   glRotated(qRadiansToDegrees(it.roll), 1.0, 0.0, 0.0);
   glRotated(qRadiansToDegrees(it.pitch), 0.0, 1.0, 0.0);
   glRotated(qRadiansToDegrees(it.yaw), 0.0, 0.0, 1.0);
+  if (it.visual_origin_applied) {
+    glTranslated(it.visual_origin_x, it.visual_origin_y, it.visual_origin_z);
+    glRotated(qRadiansToDegrees(it.visual_origin_roll), 1.0, 0.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_pitch), 0.0, 1.0, 0.0);
+    glRotated(qRadiansToDegrees(it.visual_origin_yaw), 0.0, 0.0, 1.0);
+  }
   glRotated(qRadiansToDegrees(it.mesh_r), 1.0, 0.0, 0.0);
   glRotated(qRadiansToDegrees(it.mesh_p), 0.0, 1.0, 0.0);
   glRotated(qRadiansToDegrees(it.mesh_y), 0.0, 0.0, 1.0);
@@ -1768,14 +1841,18 @@ void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::
 
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)
 {
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+  glDisable(GL_CULL_FACE);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
   const double x = cx, y = cy, z = cz;
   glBegin(GL_QUADS);
   glVertex3f(x, y, z); glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x, y + sy, z);
-  glVertex3f(x, y, z + sz); glVertex3f(x + sx, y, z + sz); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x, y + sy, z + sz);
+  glVertex3f(x, y, z + sz); glVertex3f(x, y + sy, z + sz); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x + sx, y, z + sz);
+  glVertex3f(x, y, z); glVertex3f(x, y, z + sz); glVertex3f(x + sx, y, z + sz); glVertex3f(x + sx, y, z);
+  glVertex3f(x, y + sy, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x, y + sy, z + sz);
   glVertex3f(x, y, z); glVertex3f(x, y + sy, z); glVertex3f(x, y + sy, z + sz); glVertex3f(x, y, z + sz);
-  glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x + sx, y, z + sz);
+  glVertex3f(x + sx, y, z); glVertex3f(x + sx, y, z + sz); glVertex3f(x + sx, y + sy, z + sz); glVertex3f(x + sx, y + sy, z);
   glEnd();
+  glEnable(GL_CULL_FACE);
 }
 void Scene3DViewportWidget::draw_box_outline(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, float line_width)
 {
@@ -1808,7 +1885,7 @@ void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, doubl
   const double y_bottom = cy;
   const double y_top = cy + height;
 
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : 1.0f);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
 
   // Side wall. The cylinder is Y-up to match the viewport's box helper, where
   // the height axis starts at cy and extends by the supplied height argument.
@@ -1849,6 +1926,32 @@ void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, doubl
   }
   glEnd();
 }
+
+void Scene3DViewportWidget::draw_sphere(double cx, double cy, double cz, double radius, const QColor & color, bool translucent, int slice_count, int stack_count)
+{
+  const int slices = qMax(6, slice_count);
+  const int stacks = qMax(4, stack_count);
+  const double r = qMax(0.0, radius);
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
+  for (int stack = 0; stack < stacks; ++stack) {
+    const double phi0 = -M_PI_2 + M_PI * static_cast<double>(stack) / static_cast<double>(stacks);
+    const double phi1 = -M_PI_2 + M_PI * static_cast<double>(stack + 1) / static_cast<double>(stacks);
+    glBegin(GL_QUAD_STRIP);
+    for (int slice = 0; slice <= slices; ++slice) {
+      const double theta = 2.0 * M_PI * static_cast<double>(slice) / static_cast<double>(slices);
+      const double c = qCos(theta);
+      const double s = qSin(theta);
+      glVertex3f(static_cast<GLfloat>(cx + r * qCos(phi0) * c),
+                 static_cast<GLfloat>(cy + r * qSin(phi0)),
+                 static_cast<GLfloat>(cz + r * qCos(phi0) * s));
+      glVertex3f(static_cast<GLfloat>(cx + r * qCos(phi1) * c),
+                 static_cast<GLfloat>(cy + r * qSin(phi1)),
+                 static_cast<GLfloat>(cz + r * qCos(phi1) * s));
+    }
+    glEnd();
+  }
+}
+
 void Scene3DViewportWidget::draw_frustum(const QColor & color, bool translucent)
 {
   const double h = qDegreesToRadians(camera_overlay.horizontal_fov_deg * 0.5);
@@ -1934,6 +2037,12 @@ bool Scene3DViewportWidget::mesh_world_bounds_for_item(const ScenePreviewWidget:
   transform.rotate(qRadiansToDegrees(item.roll), 1.0f, 0.0f, 0.0f);
   transform.rotate(qRadiansToDegrees(item.pitch), 0.0f, 1.0f, 0.0f);
   transform.rotate(qRadiansToDegrees(item.yaw), 0.0f, 0.0f, 1.0f);
+  if (item.visual_origin_applied) {
+    transform.translate(item.visual_origin_x, item.visual_origin_y, item.visual_origin_z);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_roll), 1.0f, 0.0f, 0.0f);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_pitch), 0.0f, 1.0f, 0.0f);
+    transform.rotate(qRadiansToDegrees(item.visual_origin_yaw), 0.0f, 0.0f, 1.0f);
+  }
   transform.rotate(qRadiansToDegrees(item.mesh_r), 1.0f, 0.0f, 0.0f);
   transform.rotate(qRadiansToDegrees(item.mesh_p), 0.0f, 1.0f, 0.0f);
   transform.rotate(qRadiansToDegrees(item.mesh_y), 0.0f, 0.0f, 1.0f);

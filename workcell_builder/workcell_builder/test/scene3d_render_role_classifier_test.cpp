@@ -73,6 +73,26 @@ TEST(Scene3DRenderRoleClassifier, MeshesModeDoesNotDrawFallbackSolid)
   EXPECT_TRUE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(missing, ScenePreviewWidget::MeshPreviewMode::Meshes));
 }
 
+TEST(Scene3DRenderRoleClassifier, ValidUrdfPrimitivesAreSolidNotWireframeFallback)
+{
+  auto primitive = make_item("urdf_cylinder");
+  primitive.locked = true;
+  primitive.editable = false;
+  primitive.lock_reason = "Generated URDF visual";
+  primitive.source_layer = "generated_urdf_visual";
+  primitive.active_visual_source = "urdf_primitive";
+  primitive.mesh_available = false;
+  primitive.has_mesh_metadata = false;
+  primitive.mesh_path.clear();
+  primitive.primitive_geometry_type = "cylinder";
+  primitive.primitive_radius = 0.05;
+  primitive.primitive_length = 0.20;
+
+  EXPECT_EQ(Scene3DViewportWidget::render_role_for_test(primitive), "generated_urdf_primitive");
+  EXPECT_TRUE(Scene3DViewportWidget::should_draw_as_solid_for_test(primitive, ScenePreviewWidget::MeshPreviewMode::Auto));
+  EXPECT_FALSE(Scene3DViewportWidget::should_draw_as_wireframe_for_test(primitive, ScenePreviewWidget::MeshPreviewMode::Auto));
+}
+
 TEST(Scene3DRenderRoleClassifier, AcceptsCanonicalAndLegacyGeneratedUrdfTokens)
 {
   auto canonical = make_item("canonical");

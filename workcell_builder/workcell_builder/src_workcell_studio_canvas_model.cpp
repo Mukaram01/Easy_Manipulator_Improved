@@ -258,6 +258,27 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   push_default_item("object_a", "object", "object", "Object", "environment.yaml", 0.6, 0.1, 0, 0, 0, 0, 0.08, 0.08, 0.08, 0, false);
   push_default_item("home_pose", "safety", "safety/home", "config/workcell_builder_task_intent.yaml", "config/workcell_builder_task_intent.yaml", -0.4, 0.5, 0, 0, 0, 0, 0.14, 0.14, 0.14, 0, true);
 
+
+  const auto copy_primitive_metadata = [&](WorkcellStudioCanvasItem & item, const YAML::Node & node) {
+    const std::string primitive_type = read_string_or_warn(yaml_map_key(node, "primitive_geometry_type"), "items[].primitive_geometry_type",
+      read_string_or_warn(yaml_map_key(node, "geometry_type"), "items[].geometry_type", ""));
+    if (!primitive_type.empty() && primitive_type != "mesh") item.primitive_geometry_type = primitive_type;
+    item.primitive_radius = read_double_or_warn(yaml_map_key(node, "primitive_radius"), "items[].primitive_radius",
+      read_double_or_warn(yaml_map_key(node, "radius"), "items[].radius", item.primitive_radius));
+    item.primitive_length = read_double_or_warn(yaml_map_key(node, "primitive_length"), "items[].primitive_length",
+      read_double_or_warn(yaml_map_key(node, "length"), "items[].length", item.primitive_length));
+    item.material_name = read_string_or_warn(yaml_map_key(node, "material_name"), "items[].material_name", item.material_name);
+    const YAML::Node material = yaml_map_key(node, "material");
+    const YAML::Node color = yaml_node_is_map(material) ? yaml_map_key(material, "color") : yaml_map_key(node, "material_color");
+    if (yaml_node_is_sequence(color) && color.size() >= 3) {
+      item.has_material_color = true;
+      item.material_r = read_double_or_warn(yaml_seq_index(color, 0), "items[].material.color[0]", item.material_r);
+      item.material_g = read_double_or_warn(yaml_seq_index(color, 1), "items[].material.color[1]", item.material_g);
+      item.material_b = read_double_or_warn(yaml_seq_index(color, 2), "items[].material.color[2]", item.material_b);
+      item.material_a = read_double_or_warn(yaml_seq_index(color, 3), "items[].material.color[3]", item.material_a);
+    }
+  };
+
   const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
   YAML::Node layout_items = yaml_map_key(layout, "items");
   const bool schema_current = (schema_version == "workcell_studio_layout/v1");
@@ -276,6 +297,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         if (item.id == id) {
           matched_existing = true;
           item.provenance = WorkcellStudioItemProvenance::EditableLayout;
+          copy_primitive_metadata(item, node);
           YAML::Node pose = yaml_map_key(node, "pose");
           if (pose.IsDefined() && pose.IsMap()) {
             YAML::Node xyz = yaml_map_key(pose, "xyz");
@@ -316,6 +338,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", "layout/workcell_studio_layout.yaml");
         extra.source_file = source_file.empty() ? "layout/workcell_studio_layout.yaml" : source_file;
         extra.provenance = WorkcellStudioItemProvenance::EditableLayout;
+        copy_primitive_metadata(extra, node);
         YAML::Node pose = yaml_map_key(node, "pose");
         if (pose.IsDefined() && pose.IsMap()) {
           YAML::Node xyz = yaml_map_key(pose, "xyz");

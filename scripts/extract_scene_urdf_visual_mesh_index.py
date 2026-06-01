@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.3"
+EXTRACTOR_VERSION = "2.4"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 
 def read_yaml(path):
@@ -124,6 +124,12 @@ def resolve_mesh_uri(uri, package_map):
 
 def extract_from_urdf(xml_text, package_map):
     root=ET.fromstring(xml_text); items=[]; idx=0
+    global_materials={}
+    for mat in [m for m in list(root) if tag_name(m)=='material']:
+        name=mat.attrib.get('name','')
+        color=next((c for c in list(mat) if tag_name(c)=='color'),None)
+        if name and color is not None:
+            global_materials[name]=parse_vec(color.attrib.get('rgba',''),4,1.0)
     links={l.attrib.get('name',''):l for l in root.iter() if tag_name(l)=='link'}
     joints=[]
     for j in root.iter():
@@ -161,12 +167,22 @@ def extract_from_urdf(xml_text, package_map):
             vxyz=parse_vec((origin.attrib.get('xyz') if origin is not None else ''),3,0.0); vrpy=parse_vec((origin.attrib.get('rpy') if origin is not None else ''),3,0.0)
             link_tf, link_status, chain, root_link, unresolved = link_world_tf(lname)
             if link_tf is None: link_tf=identity_tf()
-            final_tf=matmul4(link_tf, tf_from_xyz_rpy(vxyz,vrpy)); pose=xyz_rpy_from_tf(final_tf)
-            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
+            pose=xyz_rpy_from_tf(link_tf)
+            material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
+            material={'name':'','color':None}
+            if material_node is not None:
+                material['name']=material_node.attrib.get('name','')
+                color_node=next((c for c in list(material_node) if tag_name(c)=='color'),None)
+                if color_node is not None:
+                    material['color']=parse_vec(color_node.attrib.get('rgba',''),4,1.0)
+                elif material['name'] in global_materials:
+                    material['color']=global_materials[material['name']]
+            common={'id':item_id,'link':lname,'visual':vname,'parent_link':root_link or '','pose':pose,'visual_origin':{'xyz':vxyz,'rpy':vrpy},'material':material,'link_transform_status':link_status,'transform_status':link_status,'transform_chain':chain,'render_expected':True}
             mesh=next((c for c in list(geom) if tag_name(c)=='mesh'),None)
             box=next((c for c in list(geom) if tag_name(c)=='box'),None)
             cyl=next((c for c in list(geom) if tag_name(c)=='cylinder'),None)
             sph=next((c for c in list(geom) if tag_name(c)=='sphere'),None)
+            cap=next((c for c in list(geom) if tag_name(c)=='capsule'),None)
             warning=unresolved
             if mesh is not None:
                 mesh_uri=mesh.attrib.get('filename',''); resolved_path, skip_reason=resolve_mesh_uri(mesh_uri, package_map)
@@ -178,6 +194,8 @@ def extract_from_urdf(xml_text, package_map):
                 items.append({**common,'geometry_type':'cylinder','radius':float(cyl.attrib.get('radius','0.05') or 0.05),'length':float(cyl.attrib.get('length','0.1') or 0.1),'resolved':True,'warning':warning or ''})
             elif sph is not None:
                 items.append({**common,'geometry_type':'sphere','radius':float(sph.attrib.get('radius','0.05') or 0.05),'resolved':True,'warning':warning or ''})
+            elif cap is not None:
+                items.append({**common,'geometry_type':'capsule','radius':float(cap.attrib.get('radius','0.05') or 0.05),'length':float(cap.attrib.get('length',cap.attrib.get('height','0.1')) or 0.1),'resolved':True,'warning':warning or ''})
             idx+=1
     return items
 
@@ -242,7 +260,7 @@ def main():
         report['candidate_mesh_count']=report.get('candidate_mesh_count',0)+len(items)
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
-        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'primitive_fallback_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere')),'stale_index':False,'status':'PASS' if safe else 'WARN'})
+        report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':0,'stale_index':False,'status':'PASS' if safe else 'WARN'})
         if a.require_xacro and mode != 'xacro_expanded': return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')

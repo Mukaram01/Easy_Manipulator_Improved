@@ -6876,6 +6876,15 @@ void MainWindow::populate_scene_hierarchy()
     p.sz = item.height;
     p.mesh_path = QString::fromStdString(item.mesh_path);
     p.mesh_type = QString::fromStdString(item.mesh_type);
+    p.primitive_geometry_type = QString::fromStdString(item.primitive_geometry_type);
+    p.primitive_radius = item.primitive_radius;
+    p.primitive_length = item.primitive_length;
+    p.has_material_color = item.has_material_color;
+    p.material_r = item.material_r;
+    p.material_g = item.material_g;
+    p.material_b = item.material_b;
+    p.material_a = item.material_a;
+    p.material_name = QString::fromStdString(item.material_name);
     p.mesh_scale_x = item.mesh_scale_x;
     p.mesh_scale_y = item.mesh_scale_y;
     p.mesh_scale_z = item.mesh_scale_z;
@@ -7044,7 +7053,7 @@ void MainWindow::populate_scene_hierarchy()
           }
           const QString geometry_type = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "geometry_type"));
           if (geometry_type == "mesh") ++mesh_item_count;
-          else if (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere") ++primitive_item_count;
+          else if (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere" || geometry_type == "capsule") ++primitive_item_count;
           else ++unknown_item_count;
           const bool render_expected = workcell_builder::yaml_map_key(v, "render_expected").as<bool>(false);
           const YAML::Node pose = workcell_builder::yaml_map_key(v, "pose");
@@ -7133,7 +7142,7 @@ void MainWindow::populate_scene_hierarchy()
           p.robot_base_frame = chain_base_frame.trimmed().isEmpty() ? QStringLiteral("unknown") : chain_base_frame;
           p.source_layer = QStringLiteral("generated_urdf_visual");
           p.active_visual_source = (geometry_type == "mesh") ? QStringLiteral("mesh_preview")
-                                                              : QStringLiteral("primitive_fallback");
+                                                              : QStringLiteral("urdf_primitive");
           p.linked_to_editable_layout_state = false;
           p.editable = false;
           p.selectable = true;
@@ -7185,6 +7194,17 @@ void MainWindow::populate_scene_hierarchy()
           p.mesh_scale_x = workcell_builder::yaml_seq_index(scale,0).as<double>(1.0);
           p.mesh_scale_y = workcell_builder::yaml_seq_index(scale,1).as<double>(1.0);
           p.mesh_scale_z = workcell_builder::yaml_seq_index(scale,2).as<double>(1.0);
+          p.primitive_geometry_type = geometry_type;
+          const YAML::Node material = workcell_builder::yaml_map_key(v, "material");
+          p.material_name = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(material, "name"));
+          const YAML::Node material_color = workcell_builder::yaml_map_key(material, "color");
+          if (material_color && material_color.IsSequence() && material_color.size() >= 3) {
+            p.has_material_color = true;
+            p.material_r = workcell_builder::yaml_seq_index(material_color,0).as<double>(0.0);
+            p.material_g = workcell_builder::yaml_seq_index(material_color,1).as<double>(0.0);
+            p.material_b = workcell_builder::yaml_seq_index(material_color,2).as<double>(0.0);
+            p.material_a = workcell_builder::yaml_seq_index(material_color,3).as<double>(1.0);
+          }
           p.sx = 0.25;
           p.sy = 0.25;
           p.sz = 0.25;
@@ -7196,17 +7216,28 @@ void MainWindow::populate_scene_hierarchy()
           } else if (geometry_type == "cylinder") {
             const double radius = workcell_builder::yaml_map_key(v, "radius").as<double>(0.1);
             const double length = workcell_builder::yaml_map_key(v, "length").as<double>(0.2);
+            p.primitive_radius = radius;
+            p.primitive_length = length;
             p.sx = radius * 2.0;
             p.sy = radius * 2.0;
             p.sz = length;
           } else if (geometry_type == "sphere") {
             const double radius = workcell_builder::yaml_map_key(v, "radius").as<double>(0.1);
+            p.primitive_radius = radius;
             p.sx = radius * 2.0;
             p.sy = radius * 2.0;
             p.sz = radius * 2.0;
+          } else if (geometry_type == "capsule") {
+            const double radius = workcell_builder::yaml_map_key(v, "radius").as<double>(0.1);
+            const double length = workcell_builder::yaml_map_key(v, "length").as<double>(0.2);
+            p.primitive_radius = radius;
+            p.primitive_length = length;
+            p.sx = radius * 2.0;
+            p.sy = radius * 2.0;
+            p.sz = length + radius * 2.0;
           }
           const QString lower_name = (p.display_name + " " + p.id + " " + p.role).toLower();
-          if (p.sx <= 0.001 || p.sy <= 0.001 || p.sz <= 0.001 || (p.sx == 0.25 && p.sy == 0.25 && p.sz == 0.25)) {
+          if (geometry_type.trimmed().isEmpty() && (p.sx <= 0.001 || p.sy <= 0.001 || p.sz <= 0.001 || (p.sx == 0.25 && p.sy == 0.25 && p.sz == 0.25))) {
             if (lower_name.contains("base")) { p.sx = 0.45; p.sy = 0.45; p.sz = 0.22; }
             else if (lower_name.contains("shoulder") || lower_name.contains("upper_arm") || lower_name.contains("forearm")) { p.sx = 0.14; p.sy = 0.14; p.sz = 0.52; }
             else if (lower_name.contains("wrist")) { p.sx = 0.10; p.sy = 0.10; p.sz = 0.18; }
@@ -7217,7 +7248,7 @@ void MainWindow::populate_scene_hierarchy()
             else { p.sx = 0.08; p.sy = 0.08; p.sz = 0.08; }
           }
           const bool resolved = workcell_builder::yaml_map_key(v, "resolved").as<bool>(false);
-          const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
+          const bool is_primitive = (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere" || geometry_type == "capsule");
           bool mesh_fallback = false;
           if (geometry_type == "mesh") {
             if (p.mesh_path.trimmed().isEmpty()) {
@@ -7280,8 +7311,14 @@ void MainWindow::populate_scene_hierarchy()
             const QString warning = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(v, "warning"));
             if (!warning.isEmpty()) p.warnings << warning;
           } else {
-            p.mesh_available = true;
-            p.has_mesh_metadata = true;
+            if (is_primitive) {
+              p.mesh_available = false;
+              p.has_mesh_metadata = false;
+              p.active_visual_source = QStringLiteral("urdf_primitive");
+            } else {
+              p.mesh_available = true;
+              p.has_mesh_metadata = true;
+            }
           }
           if (unresolved_package_uri) ++unresolved_package_uri_count;
           if (unresolved_package_uri && !is_primitive) add_skip_reason(QStringLiteral("missing_source_path"));
