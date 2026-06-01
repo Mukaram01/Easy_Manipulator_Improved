@@ -1,0 +1,22 @@
+{
+  "scene_name": "scene3d_visual_quality_minimal_fixture",
+  "safe_for_preview": true,
+  "visual_items": [
+    {
+      "id": "synthetic_mesh_box",
+      "geometry": {"mesh": {"filename": "package://scene3d_visual_quality_minimal_fixture/meshes/synthetic_mesh_box.stl"}},
+      "mesh_path": "meshes/synthetic_mesh_box.stl",
+      "resolved": true,
+      "render_expected": true,
+      "pose": {"xyz": [0.0, 0.0, 0.05], "rpy": [0.0, 0.0, 0.0]}
+    },
+    {
+      "id": "synthetic_primitive_box",
+      "geometry": {"box": {"size": [0.2, 0.2, 0.1]}},
+      "geometry_type": "box",
+      "resolved": true,
+      "render_expected": true,
+      "pose": {"xyz": [0.4, 0.0, 0.05], "rpy": [0.0, 0.0, 0.0]}
+    }
+  ]
+}

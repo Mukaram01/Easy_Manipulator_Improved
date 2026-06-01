@@ -1,0 +1,4 @@
+schema_version: workcell_studio_scene_manifest/v1
+scene_name: scene3d_visual_quality_minimal_fixture
+generated_files:
+  visual_mesh_index: generated/scene_visual_mesh_index.json
