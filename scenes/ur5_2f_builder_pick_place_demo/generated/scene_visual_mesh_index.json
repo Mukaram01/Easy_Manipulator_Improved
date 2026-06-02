@@ -1,31 +1,629 @@
 {
   "scene_name": "ur5_2f_builder_pick_place_demo",
-  "visual_count": 0,
-  "resolved": 0,
+  "visual_count": 11,
+  "resolved": 11,
   "unresolved": 0,
-  "generated_at": "2026-05-29T08:28:58.327092+00:00",
-  "extractor_version": "2.3",
-  "extraction_mode": "best_effort_recursive",
+  "generated_at": "2026-06-02T21:13:48.891341+00:00",
+  "extractor_version": "2.4",
+  "extraction_mode": "repo_local_xacro_expanded",
   "xacro_available": true,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/urdf/scene.urdf.xacro",
-  "source_mtime": 1780041434.6750066,
+  "source_mtime": 1780422990.547572,
   "source_expanded_urdf_path": "",
-  "fallback_reason": "error: substitution args not supported:  No module named 'ament_index_python'\nwhen processing file: /workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/urdf/scene.urdf.xacro",
-  "safe_for_preview": false,
+  "fallback_reason": "repo-local xacro fallback used after xacro failure: error: substitution args not supported:  No module named 'ament_index_python'\nwhen processing file: /workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/generated/scene_preview.find_resolved.xacro; unresolved packages in local package map: ur_description; fallback warnings: include has unresolved substitution: $(find ur_description)/urdf/ur_macro.xacro; skipped unsupported xacro tag/macros call: ur_robot; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property; skipped unsupported xacro tag/macros call: property",
+  "safe_for_preview": true,
   "unresolved_placeholder_count": 0,
   "has_transform_collapse_warning": false,
-  "candidate_mesh_count": 0,
-  "emitted_visual_count": 0,
-  "transform_status_counts": {},
-  "mesh_format_counts": {},
-  "renderable_mesh_count": 0,
-  "renderable_item_count": 0,
+  "candidate_mesh_count": 11,
+  "emitted_visual_count": 11,
+  "transform_status_counts": {
+    "unresolved": 9,
+    "resolved": 2
+  },
+  "mesh_format_counts": {
+    ".dae": 10,
+    ".stl": 1
+  },
+  "renderable_mesh_count": 11,
+  "renderable_item_count": 11,
   "stale_index": false,
   "stale_reasons": [],
-  "visual_items": [],
+  "visual_items": [
+    {
+      "id": "urdf_visual_0_gripper_base_link_visual_0",
+      "link": "gripper_base_link",
+      "visual": "visual_0",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          1.5707,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_1_gripper_finger1_knuckle_link_visual_1",
+      "link": "gripper_finger1_knuckle_link",
+      "visual": "visual_1",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          -0.030595855369987067,
+          2.9477101585523277e-06,
+          0.05490746372541945
+        ],
+        "rpy": [
+          -1.5708926535897934,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(revolute)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_2_gripper_finger2_knuckle_link_visual_2",
+      "link": "gripper_finger2_knuckle_link",
+      "visual": "visual_2",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          0.03060643292212599,
+          -2.9477101585523277e-06,
+          0.0549015683051297
+        ],
+        "rpy": [
+          1.5707,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(revolute)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_3_gripper_finger1_finger_link_visual_3",
+      "link": "gripper_finger1_finger_link",
+      "visual": "visual_3",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          -0.0620822929733175,
+          5.980659890074578e-06,
+          0.050824972144091395
+        ],
+        "rpy": [
+          -1.5708926535897934,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_knuckle_link(revolute)",
+        "gripper_finger1_knuckle_link->gripper_finger1_finger_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_4_gripper_finger2_finger_link_visual_4",
+      "link": "gripper_finger2_finger_link",
+      "visual": "visual_4",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          0.06209208343448689,
+          -5.980659890070722e-06,
+          0.05081301082436674
+        ],
+        "rpy": [
+          1.5707,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_knuckle_link(revolute)",
+        "gripper_finger2_knuckle_link->gripper_finger2_finger_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_5_gripper_finger1_inner_knuckle_link_visual_5",
+      "link": "gripper_finger1_inner_knuckle_link",
+      "visual": "visual_5",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          -0.012694083490425183,
+          1.2233502932953727e-06,
+          0.061421223065334096
+        ],
+        "rpy": [
+          -1.5708926535897934,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_inner_knuckle_link(continuous)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_6_gripper_finger2_inner_knuckle_link_visual_6",
+      "link": "gripper_finger2_inner_knuckle_link",
+      "visual": "visual_6",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          0.012705916273891988,
+          -1.2233502932953727e-06,
+          0.061418776364758856
+        ],
+        "rpy": [
+          1.5707,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_inner_knuckle_link(continuous)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_7_gripper_finger1_finger_tip_link_visual_7",
+      "link": "gripper_finger1_finger_tip_link",
+      "visual": "visual_7",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          -0.05028934548501654,
+          4.845180770578397e-06,
+          0.10446444276611555
+        ],
+        "rpy": [
+          -1.5708926535897934,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger1_inner_knuckle_link(continuous)",
+        "gripper_finger1_inner_knuckle_link->gripper_finger1_finger_tip_link(continuous)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_8_gripper_finger2_finger_tip_link_visual_8",
+      "link": "gripper_finger2_finger_tip_link",
+      "visual": "visual_8",
+      "parent_link": "tool0",
+      "pose": {
+        "xyz": [
+          0.05030947000154197,
+          -4.845180770573793e-06,
+          0.10445475240461935
+        ],
+        "rpy": [
+          1.5707,
+          -1.5706999999997038,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "unresolved",
+      "transform_status": "unresolved",
+      "transform_chain": [
+        "tool0->gripper_base_link(fixed)",
+        "gripper_base_link->gripper_finger2_inner_knuckle_link(continuous)",
+        "gripper_finger2_inner_knuckle_link->gripper_finger2_finger_tip_link(continuous)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "source_path": "package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": "missing_parent:tool0"
+    },
+    {
+      "id": "urdf_visual_9_table_None",
+      "link": "table_",
+      "visual": "None_",
+      "parent_link": "world",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "aluminum",
+        "color": [
+          0.549,
+          0.557,
+          0.529,
+          1.0
+        ]
+      },
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->table_(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://workbench_description/meshes/visual/table.stl",
+      "source_path": "package://workbench_description/meshes/visual/table.stl",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/meshes/visual/table.stl",
+      "resolved": true,
+      "mesh_scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    },
+    {
+      "id": "urdf_visual_10_camera_link_visual_10",
+      "link": "camera_link",
+      "visual": "visual_10",
+      "parent_link": "world",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "name": "",
+        "color": null
+      },
+      "link_transform_status": "resolved",
+      "transform_status": "resolved",
+      "transform_chain": [
+        "world->table_(fixed)",
+        "table_->camera_bottom_screw_frame(fixed)",
+        "camera_bottom_screw_frame->camera_link(fixed)"
+      ],
+      "render_expected": true,
+      "geometry_type": "mesh",
+      "package_uri": "package://realsense2_description/meshes/d435.dae",
+      "source_path": "package://realsense2_description/meshes/d435.dae",
+      "resolved_source_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/meshes/d435.dae",
+      "resolved": true,
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "render_skip_reason": "",
+      "warning": ""
+    }
+  ],
   "xacro_command": [
-    "xacro",
-    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/urdf/scene.urdf.xacro",
+    "/root/.pyenv/versions/3.12.13/bin/xacro",
+    "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/generated/scene_preview.find_resolved.xacro",
     "-o",
     "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_builder_pick_place_demo/generated/expanded_scene_preview.urdf",
     "use_fake_hardware:=true",
@@ -41,22 +639,10 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
       },
       {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
-      },
-      {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description/package.xml"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
       },
       {
         "package_name": "workbench_description",
@@ -65,16 +651,10 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
       },
       {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
+        "package_name": "table_clamp_camera_mount_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
-      },
-      {
-        "package_name": "sorting_bin_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description/package.xml"
       },
       {
         "package_name": "overhead_camera_gantry_description",
@@ -83,16 +663,22 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/overhead_camera_gantry_description/package.xml"
       },
       {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
       },
       {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
+        "package_name": "sorting_bin_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description/package.xml"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
       },
       {
         "package_name": "pipe_camera_stand_description",
@@ -101,28 +687,28 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description/package.xml"
       },
       {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "package_name": "flat_plate_camera_bracket_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
       },
       {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
+        "package_name": "realsense2_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
       },
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
       },
       {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "package_name": "robotiq_85_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
       },
       {
         "package_name": "robotiq_3f_moveit_config",
@@ -137,16 +723,40 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
       },
       {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
       },
       {
-        "package_name": "robotiq_85_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
+      },
+      {
+        "package_name": "panda_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
+      },
+      {
+        "package_name": "panda_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config/package.xml"
       },
       {
         "package_name": "ur5_moveit_config",
@@ -167,28 +777,16 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config/package.xml"
       },
       {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config/package.xml"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
       },
       {
         "package_name": "fanuc_moveit_config",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
         "source_tier": "repo_assets",
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
-      },
-      {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
       }
     ],
     "shadowed_packages": [],
@@ -199,18 +797,8 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "realsense2_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
@@ -219,13 +807,8 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "tslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "sorting_bin_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
+        "package_name": "table_clamp_camera_mount_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
         "source_tier": "repo_assets"
       },
       {
@@ -234,13 +817,18 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "flat_plate_camera_bracket_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
+        "package_name": "sorting_bin_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/sorting_bin_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "tslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
@@ -249,23 +837,23 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "package_name": "flat_plate_camera_bracket_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
+        "package_name": "realsense2_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "package_name": "robotiq_85_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
         "source_tier": "repo_assets"
       },
       {
@@ -279,13 +867,33 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "robotiq_85_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "panda_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "panda_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
         "source_tier": "repo_assets"
       },
       {
@@ -304,23 +912,13 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets"
       },
       {
         "package_name": "fanuc_moveit_config",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
         "source_tier": "repo_assets"
       }
     ]
