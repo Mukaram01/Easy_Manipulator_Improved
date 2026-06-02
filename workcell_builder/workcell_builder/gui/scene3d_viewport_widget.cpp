@@ -582,7 +582,12 @@ bool is_locked_urdf_item(const ScenePreviewWidget::PreviewItem & it)
          lock_reason.contains("robotmodel") || lock_reason.contains("urdf visual");
 }
 
-
+bool is_raw_generated_bounds_only_item(const ScenePreviewWidget::PreviewItem & it)
+{
+  const bool generated_or_locked = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
+  if (!generated_or_locked || !item_has_explicit_primitive_dimensions(it)) return false;
+  return item_has_credible_mesh_handoff(it) || item_has_valid_urdf_primitive(it);
+}
 
 
 bool is_overlay_visual_role(NormalizedRole role)
@@ -754,7 +759,7 @@ void Scene3DViewportWidget::ingest_preview_items(const QVector<ScenePreviewWidge
     const bool generated_urdf = is_generated_urdf_visual_item(it) || is_locked_urdf_item(it);
     const bool overlay_helper = is_overlay_only_item(it) || is_overlay_visual_role(role);
     if (!overlay_helper && item_has_credible_mesh_handoff(it)) ++mesh_source_count;
-    if (!overlay_helper && generated_urdf && !item_has_credible_mesh_handoff(it) && item_has_explicit_primitive_dimensions(it)) ++urdf_primitive_source_count;
+    if (!overlay_helper && generated_urdf && item_has_valid_urdf_primitive(it)) ++urdf_primitive_source_count;
     if (generated_urdf) ++locked_urdf_count;
     if (it.linked_to_editable_layout_state) ++editable_layout_count;
     if (overlay_helper) overlay_items.push_back(&it);
@@ -927,7 +932,7 @@ void Scene3DViewportWidget::paintGL()
       physical_items.push_back(it);
       ++physical_item_count;
       if (item_has_credible_mesh_handoff(*it)) ++mesh_source_count;
-      if (generated_urdf && !item_has_credible_mesh_handoff(*it) && item_has_explicit_primitive_dimensions(*it)) {
+      if (generated_urdf && item_has_valid_urdf_primitive(*it)) {
         ++urdf_primitive_source_count;
       }
     }
@@ -1393,7 +1398,7 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
   const bool helper_overlay = is_overlay_only_item(it) || source_layer == "overlay" || visual_source == "overlay";
   if (helper_overlay) {
     if (item_has_explicit_dimensions(it)) {
-      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 120), 1.2f);
+      draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 58), 0.75f);
       if (out_wireframe_count) ++(*out_wireframe_count);
       return false;
     }
@@ -1431,15 +1436,18 @@ bool Scene3DViewportWidget::draw_truthful_item_geometry(const ScenePreviewWidget
     }
   }
   if (item_has_explicit_dimensions(it)) {
-    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes) {
+    if (mesh_preview_mode == ScenePreviewWidget::MeshPreviewMode::Meshes || is_raw_generated_bounds_only_item(it)) {
       draw_missing_geometry_marker(it);
       ++last_render_counters.generated_fallback_count;
       if (out_placeholder_count) ++(*out_placeholder_count);
-      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_PRIMITIVE_SUPPRESSED_BY_MESH_ONLY_MODE: primitive fallback available but disabled"), it.source_path);
+      if (out_missing_geometry_count) ++(*out_missing_geometry_count);
+      warn_mesh_fallback_once(it.id, QStringLiteral("REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: mesh or URDF primitive source should provide geometry"), it.source_path);
       return false;
     }
-    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(148, 163, 184, 56), true);
-    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor("#94a3b8"), 1.2f);
+    const QColor fallback_fill = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 72) : QColor(148, 163, 184, 28);
+    const QColor fallback_line = it.linked_to_editable_layout_state ? QColor(148, 163, 184, 150) : QColor(148, 163, 184, 76);
+    draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_fill, true);
+    draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, fallback_line, it.linked_to_editable_layout_state ? 1.1f : 0.75f);
     if (out_wireframe_count) ++(*out_wireframe_count);
     return false;
   }
@@ -1946,7 +1954,7 @@ void Scene3DViewportWidget::draw_camera_body_with_frustum(const ScenePreviewWidg
   draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it));
   if (show_camera_fov) draw_frustum(QColor(56, 189, 248, 58), true);
 }
-void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 64), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 110), 1.0f); }
+void Scene3DViewportWidget::draw_pick_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 36), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(34, 197, 94, 78), 0.75f); }
 void Scene3DViewportWidget::draw_place_target_bin(const ScenePreviewWidget::PreviewItem & it)
 {
   draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, item_color(it), true);
@@ -1961,11 +1969,11 @@ void Scene3DViewportWidget::draw_object_cube(const ScenePreviewWidget::PreviewIt
 }
 void Scene3DViewportWidget::draw_missing_geometry_marker(const ScenePreviewWidget::PreviewItem & it)
 {
-  const double marker = 0.08;
-  draw_box(it.x, it.y, it.z, marker, marker, marker, QColor("#ef4444"), true);
-  draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor("#fca5a5"), 2.0f);
+  const double marker = 0.045;
+  draw_box(it.x, it.y, it.z, marker, marker, marker, QColor(239, 68, 68, 96), true);
+  draw_box_outline(it.x, it.y, it.z, marker, marker, marker, QColor(252, 165, 165, 150), 1.0f);
 }
-void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 60), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 110), 1.0f); }
+void Scene3DViewportWidget::draw_safety_zone(const ScenePreviewWidget::PreviewItem & it) { draw_box(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 32), true); draw_box_outline(it.x, it.y, it.z, it.sx, it.sy, it.sz, QColor(245, 158, 11, 72), 0.75f); }
 void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::PreviewItem & it)
 {
   const double cube = qMax(0.04, qMin(it.sx, qMin(it.sy, it.sz)));
@@ -1975,7 +1983,7 @@ void Scene3DViewportWidget::draw_warning_badge_anchor(const ScenePreviewWidget::
 void Scene3DViewportWidget::draw_box(double cx, double cy, double cz, double sx, double sy, double sz, const QColor & color, bool translucent)
 {
   glDisable(GL_CULL_FACE);
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? qMin(0.35f, static_cast<float>(color.alphaF())) : color.alphaF());
   const double x = cx, y = cy, z = cz;
   glBegin(GL_QUADS);
   glVertex3f(x, y, z); glVertex3f(x + sx, y, z); glVertex3f(x + sx, y + sy, z); glVertex3f(x, y + sy, z);
@@ -2018,7 +2026,7 @@ void Scene3DViewportWidget::draw_cylinder(double cx, double cy, double cz, doubl
   const double y_bottom = cy;
   const double y_top = cy + height;
 
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? qMin(0.35f, static_cast<float>(color.alphaF())) : color.alphaF());
 
   // Side wall. The cylinder is Y-up to match the viewport's box helper, where
   // the height axis starts at cy and extends by the supplied height argument.
@@ -2065,7 +2073,7 @@ void Scene3DViewportWidget::draw_sphere(double cx, double cy, double cz, double 
   const int slices = qMax(6, slice_count);
   const int stacks = qMax(4, stack_count);
   const double r = qMax(0.0, radius);
-  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? 0.35f : color.alphaF());
+  glColor4f(color.redF(), color.greenF(), color.blueF(), translucent ? qMin(0.35f, static_cast<float>(color.alphaF())) : color.alphaF());
   for (int stack = 0; stack < stacks; ++stack) {
     const double phi0 = -M_PI_2 + M_PI * static_cast<double>(stack) / static_cast<double>(stacks);
     const double phi1 = -M_PI_2 + M_PI * static_cast<double>(stack + 1) / static_cast<double>(stacks);
