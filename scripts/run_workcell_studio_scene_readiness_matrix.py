@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Build a Workcell Studio supported-scene readiness matrix.
+"""Build an offline Workcell Studio scene readiness matrix from the supported-scene catalog.
 
-The matrix intentionally reports evidence and blockers without launching real robot
-motion.  Launch smoke checks are represented as command records and are safely
-skipped when ROS 2 Humble is not available in the current environment.
+The matrix is intentionally fake-hardware-first: it derives or records only safe
+`ros2 launch ... use_fake_hardware:=true ...` commands and does not execute ROS
+launches or publish to any robot/control topics.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
 import shutil
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,295 +22,492 @@ from typing import Any
 import yaml  # type: ignore
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT_DEFAULT = SCRIPT_DIR.parents[0]
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog
+from check_scene_readiness import check_readiness  # noqa: E402
+from supported_scene_catalog import default_catalog_path, load_supported_scene_catalog  # noqa: E402
+from validate_builder_generated_scene import validate_scene as validate_builder_scene  # noqa: E402
+from validate_cell_definition import load_yaml as load_cell_yaml  # noqa: E402
+from validate_cell_definition import validate_cell_definition  # noqa: E402
+from validate_scene3d_visual_quality_matrix import evaluate_scene as evaluate_scene3d_visual_quality  # noqa: E402
 
 SCHEMA_VERSION = "workcell_studio_scene_readiness_matrix/v1"
 PASS = "PASS"
-WARN = "WARN"
 FAIL = "FAIL"
 BLOCKED = "BLOCKED"
-SKIP = "SKIP"
+VALID_STATES = {PASS, FAIL, BLOCKED}
 
-CORE_REQUIRED_FILES = (
-    "package.xml",
-    "CMakeLists.txt",
-    "environment.yaml",
-    "scene_manifest.yaml",
-    "cell_definition.yaml",
-    "launch/demo.launch.py",
+REQUIRED_CATEGORY_FILES: tuple[tuple[str, str, bool], ...] = (
+    ("package_xml", "package.xml", True),
+    ("cmakelists_txt", "CMakeLists.txt", True),
+    ("environment_yaml", "environment.yaml", True),
+    ("cell_definition_yaml", "cell_definition.yaml", True),
+    ("scene_manifest_yaml", "scene_manifest.yaml", True),
+    ("layout_workcell_studio_layout_yaml", "layout/workcell_studio_layout.yaml", True),
+    ("launch_demo_launch_py", "launch/demo.launch.py", True),
+    ("urdf_scene_urdf_xacro", "urdf/scene.urdf.xacro", True),
+    ("generated_scene_visual_mesh_index_json", "generated/scene_visual_mesh_index.json", True),
+    ("generated_scene_package_readiness_json", "generated/scene_package_readiness.json", False),
 )
-VISUAL_MESH_INDEX = "generated/scene_visual_mesh_index.json"
+LOCAL_REF_KEY_HINTS = ("path", "file", "uri", "xacro", "urdf", "mesh", "launch", "config", "layout", "manifest")
+LOCAL_REF_EXTENSIONS = (
+    ".yaml",
+    ".yml",
+    ".json",
+    ".xml",
+    ".xacro",
+    ".urdf",
+    ".srdf",
+    ".rviz",
+    ".py",
+    ".stl",
+    ".dae",
+    ".obj",
+)
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def _result(status: str, message: str, **extra: Any) -> dict[str, Any]:
+    if status not in VALID_STATES:
+        raise ValueError(f"invalid readiness status: {status}")
+    payload = {"status": status, "message": message}
+    payload.update(extra)
+    return payload
 
 
-def _load_yaml(path: Path) -> tuple[Any | None, str | None]:
-    if not path.exists():
-        return None, f"missing_file: {path.name}"
+def _load_yaml_file(path: Path) -> tuple[Any | None, str | None]:
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8")), None
-    except Exception as exc:  # noqa: BLE001 - reports are diagnostic by design.
-        return None, f"yaml_parse_error: {path.name}: {exc.__class__.__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{exc.__class__.__name__}: {exc}"
 
 
-def _load_json(path: Path) -> tuple[Any | None, str | None]:
-    if not path.exists():
-        return None, f"missing_file: {path.name}"
+def _load_json_file(path: Path) -> tuple[Any | None, str | None]:
     try:
         return json.loads(path.read_text(encoding="utf-8")), None
-    except Exception as exc:  # noqa: BLE001 - reports are diagnostic by design.
-        return None, f"json_parse_error: {path.name}: {exc.__class__.__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{exc.__class__.__name__}: {exc}"
 
 
-def _status_from_blockers(blockers: list[str]) -> str:
-    return PASS if not blockers else BLOCKED
+def _check_file(scene_dir: Path, rel_path: str, *, required: bool) -> dict[str, Any]:
+    path = scene_dir / rel_path
+    if path.is_file():
+        return _result(PASS, f"{rel_path} exists", path=str(path))
+    if required:
+        return _result(FAIL, f"missing required file: {rel_path}", path=str(path))
+    return _result(PASS, f"optional/generated-if-present file is not present: {rel_path}", path=str(path), optional=True)
 
 
-def _dedupe(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            out.append(item)
-    return out
+def _safe_launch_command_from_catalog(command: str, package_name: str) -> tuple[str, list[str]]:
+    """Return a safe fake-hardware launch command and warnings.
+
+    Catalog commands are accepted only when they are a ROS launch invocation for
+    demo.launch.py and explicitly set use_fake_hardware:=true. Unsafe or missing
+    commands are replaced with a derived fake-hardware command from package_name.
+    """
+    derived = f"ros2 launch {package_name} demo.launch.py use_fake_hardware:=true launch_rviz:=true"
+    warnings: list[str] = []
+    raw = command.strip()
+    if not raw:
+        return derived, ["catalog fake_hardware_launch_command missing; derived safe fake-hardware command"]
+
+    try:
+        tokens = shlex.split(raw)
+    except ValueError as exc:
+        return derived, [f"catalog fake_hardware_launch_command could not be parsed ({exc}); derived safe fake-hardware command"]
+
+    unsafe_reasons: list[str] = []
+    if len(tokens) < 4 or tokens[0] != "ros2" or tokens[1] != "launch":
+        unsafe_reasons.append("command is not a ros2 launch invocation")
+    if "demo.launch.py" not in tokens:
+        unsafe_reasons.append("command does not launch demo.launch.py")
+    if "use_fake_hardware:=true" not in tokens:
+        unsafe_reasons.append("command does not explicitly set use_fake_hardware:=true")
+    if any(tok == "use_fake_hardware:=false" for tok in tokens):
+        unsafe_reasons.append("command explicitly disables fake hardware")
+    if any(tok.startswith(("real_hardware:=true", "use_real_hardware:=true", "send_to_robot:=true")) for tok in tokens):
+        unsafe_reasons.append("command includes real-hardware/send-to-robot flag")
+    if any(tok in {";", "&&", "||", "|", ">", "<"} for tok in tokens):
+        unsafe_reasons.append("command includes shell control/redirection token")
+
+    if unsafe_reasons:
+        return derived, ["catalog fake_hardware_launch_command rejected as unsafe: " + "; ".join(unsafe_reasons)]
+
+    if "launch_rviz:=true" not in tokens:
+        warnings.append("catalog command is safe but does not include launch_rviz:=true")
+    return raw, warnings
 
 
-def _required_files_for_entry(entry: Any) -> list[str]:
-    required = [*CORE_REQUIRED_FILES, *getattr(entry, "required_files", [])]
-    return _dedupe([rel for rel in required if rel])
+def _check_fake_hardware_launch(entry: Any, launch_exists: bool) -> tuple[dict[str, Any], str, list[str]]:
+    package_name = entry.package_name or entry.build_package_name or entry.scene_name
+    command, warnings = _safe_launch_command_from_catalog(entry.fake_hardware_launch_command, package_name)
+    status = PASS if launch_exists else FAIL
+    message = "safe fake-hardware launch command recorded" if launch_exists else "cannot derive runnable launch command because launch/demo.launch.py is missing"
+    return (
+        _result(
+            status,
+            message,
+            command=command,
+            package_name=package_name,
+            build_package_name=entry.build_package_name,
+            warnings=warnings,
+            safety="not executed; fake hardware explicitly required",
+        ),
+        command,
+        warnings,
+    )
 
 
-def _relative_reference_values(value: Any, parent_key: str = "") -> list[tuple[str, str]]:
-    """Return likely local file references from a manifest-like structure."""
+def _iter_manifest_refs(value: Any, *, key_path: str = "") -> list[tuple[str, str]]:
     refs: list[tuple[str, str]] = []
     if isinstance(value, dict):
         for key, child in value.items():
-            child_key = f"{parent_key}.{key}" if parent_key else str(key)
-            refs.extend(_relative_reference_values(child, child_key))
-        return refs
-    if isinstance(value, list):
+            child_key = str(key)
+            child_path = f"{key_path}.{child_key}" if key_path else child_key
+            refs.extend(_iter_manifest_refs(child, key_path=child_path))
+    elif isinstance(value, list):
         for idx, child in enumerate(value):
-            refs.extend(_relative_reference_values(child, f"{parent_key}[{idx}]"))
-        return refs
-    if not isinstance(value, str):
-        return refs
-
-    normalized = value.strip()
-    if not normalized or "://" in normalized or normalized.startswith(("package://", "$(", "${", "/")):
-        return refs
-    key = parent_key.lower()
-    suffixes = ("path", "file", "files", "reference", "references", "urdf", "xacro", "launch", "layout", "environment")
-    looks_like_file = "/" in normalized or "." in Path(normalized).name
-    if looks_like_file and (key.endswith(suffixes) or any(part in key for part in ("files", "assets", "generated_assets"))):
-        refs.append((parent_key, normalized))
+            refs.extend(_iter_manifest_refs(child, key_path=f"{key_path}[{idx}]"))
+    elif isinstance(value, str):
+        stripped = value.strip()
+        lowered_key = key_path.lower()
+        lowered_value = stripped.lower()
+        if not stripped:
+            return refs
+        if stripped.startswith(("package://", "http://", "https://", "model://")):
+            return refs
+        looks_fileish = lowered_value.endswith(LOCAL_REF_EXTENSIONS) or any(hint in lowered_key for hint in LOCAL_REF_KEY_HINTS)
+        if looks_fileish and not any(ch in stripped for ch in "\n\r"):
+            refs.append((key_path, stripped))
     return refs
 
 
-def _manifest_reference_blockers(scene_dir: Path) -> list[str]:
-    manifest, error = _load_yaml(scene_dir / "scene_manifest.yaml")
+def _check_manifest_refs(scene_dir: Path) -> dict[str, Any]:
+    manifest = scene_dir / "scene_manifest.yaml"
+    if not manifest.is_file():
+        return _result(BLOCKED, "scene_manifest.yaml is missing; local-file references cannot be checked")
+    payload, error = _load_yaml_file(manifest)
     if error:
-        return [f"manifest_reference_failure: {error}"]
-    refs = _relative_reference_values(manifest)
-    blockers: list[str] = []
-    for key, rel in refs:
-        if rel.startswith("../") or "/../" in rel:
-            blockers.append(f"manifest_reference_failure: {key} -> {rel} escapes scene directory")
+        return _result(FAIL, f"scene_manifest.yaml is not parseable: {error}")
+    refs = _iter_manifest_refs(payload)
+    missing: list[dict[str, str]] = []
+    checked: list[dict[str, str]] = []
+    for key_path, ref in refs:
+        # Ignore package names and launch arguments that do not look like relative files.
+        if ref.startswith("$") or ":=" in ref or ref in {"true", "false"}:
             continue
-        if not (scene_dir / rel).exists():
-            blockers.append(f"manifest_reference_failure: {key} -> {rel} missing")
-    return blockers
+        ref_path = Path(ref)
+        if ref_path.is_absolute():
+            missing.append({"field": key_path, "reference": ref, "reason": "absolute path is not a local scene-relative file"})
+            continue
+        candidate = (scene_dir / ref_path).resolve()
+        checked.append({"field": key_path, "reference": ref, "path": str(candidate)})
+        if not candidate.exists():
+            missing.append({"field": key_path, "reference": ref, "reason": "referenced file does not exist"})
+    if missing:
+        return _result(FAIL, f"{len(missing)} manifest local-file reference(s) are missing or unsafe", checked=checked, missing=missing)
+    return _result(PASS, f"manifest local-file references resolved ({len(checked)} checked)", checked=checked)
 
 
-def _cell_definition_blockers(scene_dir: Path) -> list[str]:
-    cell_path = scene_dir / "cell_definition.yaml"
-    data, error = _load_yaml(cell_path)
+def _check_cell_definition(scene_dir: Path) -> dict[str, Any]:
+    path = scene_dir / "cell_definition.yaml"
+    if not path.is_file():
+        return _result(BLOCKED, "cell_definition.yaml is missing; validation cannot run")
+    try:
+        loaded, parser_name, notes = load_cell_yaml(path)
+        summary = validate_cell_definition(loaded, path, parser_name, notes)
+    except Exception as exc:  # noqa: BLE001
+        return _result(FAIL, f"cell_definition.yaml validation failed to run: {exc.__class__.__name__}: {exc}")
+    status = PASS if summary.ok else FAIL
+    return _result(
+        status,
+        "cell_definition.yaml validates" if status == PASS else "cell_definition.yaml has validation errors",
+        parser=summary.parser,
+        errors=summary.errors,
+        warnings=summary.warnings,
+        notes=summary.notes,
+        capabilities=summary.capability_summary,
+        environment_layout=summary.environment_layout_summary,
+        grasp_strategy=summary.grasp_strategy_summary,
+    )
+
+
+def _check_scene3d(scene_name: str, scene_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    visual = evaluate_scene3d_visual_quality(
+        scene_name=scene_name,
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+    blockers = [str(item) for item in visual.get("blockers", [])]
+    warnings = [str(item) for item in visual.get("warnings", [])]
+    visual_status = str(visual.get("visual_quality_status") or "").upper()
+    summary_state = PASS if visual_status == PASS else FAIL
+    if not mesh_index.is_file() or not smoke_json.is_file():
+        summary_state = BLOCKED
+    visual_result = _result(
+        summary_state,
+        "Scene3D visual-quality evidence passes" if summary_state == PASS else "Scene3D visual-quality evidence is blocked or failing",
+        visual_quality_status=visual.get("visual_quality_status"),
+        mesh_index_path=str(mesh_index),
+        smoke_json=str(smoke_json),
+        blockers=blockers,
+        warnings=warnings,
+        counters={
+            "total_payload_count": visual.get("total_payload_count", 0),
+            "mesh_source_count": visual.get("mesh_source_count", 0),
+            "primitive_source_count": visual.get("primitive_source_count", 0),
+            "mesh_rendered_count": visual.get("mesh_rendered_count", 0),
+            "primitive_rendered_count": visual.get("primitive_rendered_count", 0),
+            "physical_rendered_count": visual.get("physical_rendered_count", 0),
+            "credible_physical_rendered_count": visual.get("credible_physical_rendered_count", 0),
+            "helper_overlay_count": visual.get("helper_overlay_count", 0),
+            "diagnostic_fallback_count": visual.get("diagnostic_fallback_count", 0),
+        },
+    )
+
+    source_count = int(visual.get("mesh_source_count") or 0) + int(visual.get("primitive_source_count") or 0)
+    physical_rendered = int(visual.get("physical_rendered_count") or 0)
+    if not mesh_index.is_file():
+        physical_state = BLOCKED
+        physical_message = "mesh-index evidence is missing; physical visual evidence cannot be evaluated"
+    elif not smoke_json.is_file():
+        physical_state = BLOCKED
+        physical_message = "Scene3D GUI smoke evidence is missing; physical rendered evidence cannot be evaluated"
+    elif source_count <= 0:
+        physical_state = FAIL
+        physical_message = "mesh index does not contain credible mesh or primitive source geometry"
+    elif physical_rendered <= 0:
+        physical_state = FAIL
+        physical_message = "no credible physical mesh/primitive render evidence was recorded"
+    elif blockers:
+        physical_state = FAIL
+        physical_message = "physical render evidence exists but visual-quality blockers remain"
+    else:
+        physical_state = PASS
+        physical_message = "credible physical mesh/primitive visual evidence is present"
+    physical_result = _result(
+        physical_state,
+        physical_message,
+        source_geometry_count=source_count,
+        physical_rendered_count=physical_rendered,
+        mesh_failure_summary_by_reason_code=visual.get("mesh_failure_summary_by_reason_code", {}),
+    )
+    return visual_result, physical_result
+
+
+def _check_readiness_json(scene_dir: Path) -> dict[str, Any]:
+    path = scene_dir / "generated" / "scene_package_readiness.json"
+    if not path.is_file():
+        return _result(PASS, "optional/generated-if-present readiness JSON is not present", optional=True, path=str(path))
+    payload, error = _load_json_file(path)
     if error:
-        return [f"schema_validation_blocker: cell_definition.yaml: {error}"]
-    if not isinstance(data, dict):
-        return ["schema_validation_blocker: cell_definition.yaml root must be a YAML map"]
-    # Synthetic fixtures and legacy generated scenes use a few different shapes;
-    # require enough identity to prove this is not an empty placeholder.
-    identity_keys = {"robot", "robot_model", "workcell", "cell", "metadata", "scene"}
-    if not any(key in data for key in identity_keys):
-        return ["schema_validation_blocker: cell_definition.yaml missing robot/workcell identity"]
-    return []
+        return _result(FAIL, f"generated/scene_package_readiness.json is not valid JSON: {error}", path=str(path))
+    return _result(PASS, "generated/scene_package_readiness.json is present and parseable", path=str(path), summary=payload)
 
 
-def _visual_status(scene_dir: Path) -> tuple[str, list[str], dict[str, Any]]:
-    index_path = scene_dir / VISUAL_MESH_INDEX
-    payload, error = _load_json(index_path)
-    if error:
-        return BLOCKED, [f"visual_evidence_blocked: missing_file: {VISUAL_MESH_INDEX}"], {"path": str(index_path)}
-    if not isinstance(payload, dict):
-        return BLOCKED, [f"visual_evidence_blocked: invalid_json_shape: {VISUAL_MESH_INDEX} root must be an object"], {"path": str(index_path)}
-
-    visual_quality_status = str(
-        payload.get("visual_quality_status")
-        or payload.get("visual_status")
-        or payload.get("status")
-        or PASS
-    ).upper()
-    if visual_quality_status in {BLOCKED, FAIL}:
-        reasons = payload.get("blocker_reasons") or payload.get("blockers") or ["visual quality report blocked scene"]
-        if not isinstance(reasons, list):
-            reasons = [str(reasons)]
-        return BLOCKED, [f"visual_quality_blocked: {reason}" for reason in reasons], {"path": str(index_path), "payload_status": visual_quality_status}
-
-    items = payload.get("visual_items") if isinstance(payload.get("visual_items"), list) else payload.get("items")
-    if not isinstance(items, list) or not items:
-        return BLOCKED, [f"visual_evidence_blocked: {VISUAL_MESH_INDEX} has no visual_items/items evidence"], {"path": str(index_path)}
-    return PASS, [], {"path": str(index_path), "visual_item_count": len(items), "payload_status": visual_quality_status}
+def _ros_humble_available() -> bool:
+    return Path("/opt/ros/humble/setup.bash").is_file() or os.environ.get("ROS_DISTRO") == "humble"
 
 
-def ros_humble_available() -> bool:
-    return Path("/opt/ros/humble/setup.bash").exists() and shutil.which("ros2") is not None
+def _workcell_builder_executable_found(repo_root: Path) -> bool:
+    if shutil.which("workcell_builder"):
+        return True
+    for candidate in (
+        repo_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
+        repo_root / "build" / "workcell_builder" / "workcell_builder",
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return True
+    return False
 
 
-def derive_fake_hardware_launch_command(entry: Any) -> str:
-    command = str(getattr(entry, "fake_hardware_launch_command", "") or "").strip()
-    package_name = str(getattr(entry, "package_name", "") or getattr(entry, "scene_name", "")).strip()
-    if not command:
-        command = f"ros2 launch {package_name} demo.launch.py use_fake_hardware:=true launch_rviz:=true"
-    if "use_fake_hardware:=" not in command:
-        command = f"{command} use_fake_hardware:=true"
-    elif "use_fake_hardware:=true" not in command:
-        command = command.replace("use_fake_hardware:=false", "use_fake_hardware:=true")
-    return command
+def _ros_launch_smoke_state(ros_available: bool, launch_check: dict[str, Any]) -> dict[str, Any]:
+    if launch_check.get("status") != PASS:
+        return _result(BLOCKED, "ROS launch smoke not evaluated because no safe launch command is available")
+    if not ros_available:
+        return _result(BLOCKED, "ROS Humble is not available in this environment; safe fake-hardware launch command recorded but not executed", command=launch_check.get("command"))
+    return _result(BLOCKED, "offline readiness matrix does not execute ros2 launch; run the recorded safe fake-hardware command in a sourced ROS workspace", command=launch_check.get("command"))
 
 
-def _launch_command_record(entry: Any, *, ros_available: bool | None = None) -> tuple[str, dict[str, Any], list[str]]:
-    command = derive_fake_hardware_launch_command(entry)
-    safety_blockers: list[str] = []
-    if "use_fake_hardware:=true" not in command:
-        safety_blockers.append("unsafe_launch_command: missing use_fake_hardware:=true")
-    if "use_fake_hardware:=false" in command or "real_hardware:=true" in command:
-        safety_blockers.append("unsafe_launch_command: command appears to enable real hardware")
-
-    available = ros_humble_available() if ros_available is None else ros_available
-    if not available:
-        return SKIP, {
-            "name": "fake_hardware_launch_smoke",
-            "command": command,
-            "status": SKIP,
-            "executed": False,
-            "safely_skipped": True,
-            "reason": "ROS Humble unavailable in this environment; launch smoke was not executed and is not treated as a scene failure.",
-        }, safety_blockers
-
-    return PASS if not safety_blockers else BLOCKED, {
-        "name": "fake_hardware_launch_smoke",
-        "command": command,
-        "status": "READY_TO_RUN" if not safety_blockers else BLOCKED,
-        "executed": False,
-        "safely_skipped": True,
-        "reason": "Launch command derived only; no robot motion commanded by readiness matrix.",
-    }, safety_blockers
+def _overall_status(categories: dict[str, dict[str, Any]], catalog_status: str, known_blocker: str) -> str:
+    if catalog_status == "blocked" and known_blocker:
+        return BLOCKED
+    states = [str(item.get("status")) for item in categories.values()]
+    if FAIL in states:
+        return FAIL
+    if BLOCKED in states:
+        return BLOCKED
+    return PASS
 
 
-def recommended_next_action(category_statuses: dict[str, str], blockers: list[str]) -> str:
-    if any("missing_file:" in blocker for blocker in blockers):
-        return "Regenerate the scene package or restore the missing required file, then rerun the readiness matrix."
-    if category_statuses.get("manifest_references") == BLOCKED:
-        return "Fix scene_manifest.yaml local file references so every referenced scene-local artifact exists."
-    if category_statuses.get("visual_evidence") == BLOCKED or category_statuses.get("visual_quality") == BLOCKED:
-        return "Regenerate generated/scene_visual_mesh_index.json and rerun visual-quality validation."
-    if category_statuses.get("launch_smoke") == SKIP:
-        return "Install/source ROS 2 Humble in a ROS workspace to run the fake-hardware launch smoke check."
-    return "Validate / Plan & Simulate using fake hardware."
-
-
-def evaluate_scene(repo_root: Path, entry: Any, *, ros_available: bool | None = None) -> dict[str, Any]:
-    scene_dir = repo_root / getattr(entry, "scene_path", f"scenes/{getattr(entry, 'scene_name', '')}")
-    file_blockers = [f"missing_file: {rel}" for rel in _required_files_for_entry(entry) if not (scene_dir / rel).exists()]
-    schema_blockers = _cell_definition_blockers(scene_dir)
-    manifest_blockers = _manifest_reference_blockers(scene_dir)
-    visual_overall_status, visual_blockers, visual_evidence = _visual_status(scene_dir)
-    launch_status, launch_record, safety_blockers = _launch_command_record(entry, ros_available=ros_available)
-
-    category_statuses = {
-        "file_presence": _status_from_blockers(file_blockers),
-        "schema_validation": _status_from_blockers(schema_blockers),
-        "manifest_references": _status_from_blockers(manifest_blockers),
-        "visual_evidence": PASS if visual_overall_status == PASS else BLOCKED,
-        "visual_quality": visual_overall_status,
-        "launch_smoke": launch_status,
-        "safety": _status_from_blockers(safety_blockers),
+def _evaluate_scene(repo_root: Path, entry: Any, ros_available: bool) -> dict[str, Any]:
+    scene_dir = (repo_root / entry.scene_path).resolve()
+    scene_exists = scene_dir.is_dir()
+    categories: dict[str, dict[str, Any]] = {
+        "scene_package_exists": _result(PASS if scene_exists else FAIL, "scene package directory exists" if scene_exists else "scene package directory is missing", path=str(scene_dir)),
     }
-    blocker_reasons = [*file_blockers, *schema_blockers, *manifest_blockers, *visual_blockers, *safety_blockers]
-    overall_status = PASS if not blocker_reasons else BLOCKED
-    if overall_status == PASS and launch_status == SKIP:
-        # Environment-only launch skips should not turn an otherwise healthy scene into a failure.
-        overall_status = PASS
 
+    for key, rel_path, required in REQUIRED_CATEGORY_FILES:
+        categories[key] = _check_readiness_json(scene_dir) if key == "generated_scene_package_readiness_json" else _check_file(scene_dir, rel_path, required=required)
+
+    categories["cell_definition_validation"] = _check_cell_definition(scene_dir)
+    categories["manifest_local_file_references"] = _check_manifest_refs(scene_dir)
+
+    scene3d_summary, physical_visual = _check_scene3d(entry.scene_name, scene_dir)
+    categories["scene3d_visual_quality_summary"] = scene3d_summary
+    categories["credible_physical_visual_evidence"] = physical_visual
+
+    launch_check, launch_command, launch_warnings = _check_fake_hardware_launch(entry, (scene_dir / "launch" / "demo.launch.py").is_file())
+    categories["fake_hardware_launch_command_derivation"] = launch_check
+    categories["ros_launch_smoke_skip_evaluation_state"] = _ros_launch_smoke_state(ros_available, launch_check)
+
+    builder_report: dict[str, Any] | None = None
+    readiness_report: dict[str, Any] | None = None
+    if scene_exists:
+        try:
+            builder_report = validate_builder_scene(scene_dir)
+        except Exception as exc:  # noqa: BLE001
+            builder_report = {"ok": False, "errors": [f"validate_builder_generated_scene failed: {exc.__class__.__name__}: {exc}"]}
+        try:
+            readiness_report = check_readiness(None, scene_dir, strict=False)
+        except Exception as exc:  # noqa: BLE001
+            readiness_report = {"result": "FAIL", "errors": [f"check_scene_readiness failed: {exc.__class__.__name__}: {exc}"]}
+
+    overall = _overall_status(categories, entry.status, entry.known_blocker)
     return {
-        "scene_name": getattr(entry, "scene_name", scene_dir.name),
-        "package_name": getattr(entry, "package_name", scene_dir.name),
+        "scene_name": entry.scene_name,
         "scene_path": str(scene_dir),
-        "support_level": getattr(entry, "support_level", "supported"),
-        "catalog_status": getattr(entry, "status", "supported"),
-        "known_blocker": getattr(entry, "known_blocker", ""),
-        "overall_status": overall_status,
-        "category_statuses": category_statuses,
-        "blocker_reasons": blocker_reasons,
-        "recommended_next_action": recommended_next_action(category_statuses, blocker_reasons),
-        "command_records": [launch_record],
-        "visual_evidence": visual_evidence,
+        "package_name": entry.package_name,
+        "build_package_name": entry.build_package_name,
+        "support_level": entry.support_level,
+        "catalog_status": entry.status,
+        "known_blocker": entry.known_blocker,
+        "overall_status": overall,
+        "categories": categories,
+        "commands": {
+            "validation_command": entry.validation_command,
+            "build_command": entry.build_command,
+            "fake_hardware_launch_command": launch_command,
+        },
+        "safe_command_warnings": launch_warnings,
+        "builder_generated_scene_validation": builder_report,
+        "offline_scene_readiness": readiness_report,
     }
 
 
-def build_readiness_matrix(repo_root: Path, *, catalog_path: Path | None = None, ros_available: bool | None = None) -> dict[str, Any]:
-    repo_root = repo_root.resolve()
-    catalog_path = catalog_path or default_catalog_path(repo_root)
-    _catalog, entries, catalog_errors = load_supported_scene_catalog(catalog_path)
-    enabled_entries = [entry for entry in entries if entry.enabled]
-    scenes = [evaluate_scene(repo_root, entry, ros_available=ros_available) for entry in enabled_entries]
-    totals = {PASS: 0, WARN: 0, FAIL: 0, BLOCKED: 0, SKIP: 0}
-    for scene in scenes:
-        totals[scene["overall_status"]] = totals.get(scene["overall_status"], 0) + 1
-    command_records = [record for scene in scenes for record in scene.get("command_records", [])]
-    overall_status = PASS if totals.get(BLOCKED, 0) == 0 and not catalog_errors else BLOCKED
+def _write_markdown(payload: dict[str, Any], path: Path) -> None:
+    lines = [
+        "# Workcell Studio Scene Readiness Matrix",
+        "",
+        f"- schema_version: `{payload['schema_version']}`",
+        f"- generated_at: `{payload['generated_at']}`",
+        f"- repo_root: `{payload['repo_root']}`",
+        f"- workspace_root: `{payload['workspace_root']}`",
+        f"- scene_count: `{payload['scene_count']}`",
+        f"- ros_humble_available: `{payload['ros_humble_available']}`",
+        f"- workcell_builder_executable_found: `{payload['workcell_builder_executable_found']}`",
+        "",
+        "## Totals",
+        "",
+        "| Status | Count |",
+        "|---|---:|",
+    ]
+    for status in (PASS, FAIL, BLOCKED):
+        lines.append(f"| {status} | {payload['totals'].get(status, 0)} |")
+    lines.extend(["", "## Scenes", "", "| Scene | Catalog | Overall | Package | Fake-hardware command | First blocker/failure |", "|---|---|---|---|---|---|"])
+    for scene in payload["scenes"]:
+        first_problem = ""
+        for category in scene["categories"].values():
+            if category.get("status") in {FAIL, BLOCKED}:
+                first_problem = str(category.get("message", ""))
+                break
+        if not first_problem:
+            first_problem = "-"
+        command = scene["commands"].get("fake_hardware_launch_command", "")
+        lines.append(
+            f"| {scene['scene_name']} | {scene['catalog_status']} | {scene['overall_status']} | {scene['package_name']} | `{command}` | {first_problem} |"
+        )
+    lines.extend(["", "## Category Matrix", ""])
+    for scene in payload["scenes"]:
+        lines.extend([f"### {scene['scene_name']}", "", "| Category | Status | Message |", "|---|---|---|"])
+        for category_name, result in scene["categories"].items():
+            lines.append(f"| {category_name} | {result.get('status')} | {str(result.get('message', '')).replace('|', '/')} |")
+        lines.append("")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build_matrix(repo_root: Path, catalog_path: Path, output_dir: Path) -> dict[str, Any]:
+    catalog, entries, catalog_errors = load_supported_scene_catalog(catalog_path)
+    ros_available = _ros_humble_available()
+    builder_found = _workcell_builder_executable_found(repo_root)
+
+    enabled_supported_entries = [
+        entry
+        for entry in entries
+        if entry.enabled and entry.support_level == "supported" and entry.status != "disabled"
+    ]
+    scenes = [_evaluate_scene(repo_root, entry, ros_available) for entry in enabled_supported_entries]
+    totals = Counter(scene["overall_status"] for scene in scenes)
+    for status in (PASS, FAIL, BLOCKED):
+        totals.setdefault(status, 0)
+
+    commands = {
+        "matrix_command": "python3 scripts/run_workcell_studio_scene_readiness_matrix.py",
+        "catalog": str(catalog_path),
+        "outputs": {
+            "json": str(output_dir / "scene_readiness_summary.json"),
+            "markdown": str(output_dir / "scene_readiness_summary.md"),
+        },
+        "safe_launch_policy": "Commands are recorded only when they explicitly use use_fake_hardware:=true; ros2 launch is not executed by this matrix.",
+    }
     return {
         "schema_version": SCHEMA_VERSION,
-        "generated_at_utc": _utc_now(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "repo_root": str(repo_root),
+        "workspace_root": str(repo_root.parent),
         "catalog_path": str(catalog_path),
-        "overall_status": overall_status,
-        "scene_count": len(scenes),
-        "totals": totals,
+        "catalog_schema_version": catalog.get("schema_version"),
         "catalog_errors": catalog_errors,
+        "scene_count": len(scenes),
+        "totals": dict(totals),
         "scenes": scenes,
-        "command_records": command_records,
+        "commands": commands,
+        "ros_humble_available": ros_available,
+        "workcell_builder_executable_found": builder_found,
     }
 
 
-def write_readiness_matrix(report: dict[str, Any], output: Path) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    return output
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT_DEFAULT)
+    parser.add_argument("--catalog", type=Path, default=None, help="defaults to <repo>/scenes/supported_scenes.yaml")
+    parser.add_argument("--output-dir", type=Path, default=None, help="defaults to <repo>/build/workcell_studio_scene_readiness")
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build Workcell Studio supported-scene readiness matrix JSON.")
-    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
-    parser.add_argument("--catalog", type=Path, default=None)
-    parser.add_argument("--output", type=Path, default=Path("build/workcell_studio/scene_readiness_matrix.json"))
-    parser.add_argument("--json", action="store_true", help="Print the JSON report to stdout")
-    args = parser.parse_args(argv)
+    args = parse_args(argv)
+    repo_root = args.repo_root.resolve()
+    catalog_path = (args.catalog.resolve() if args.catalog else default_catalog_path(repo_root).resolve())
+    output_dir = (args.output_dir.resolve() if args.output_dir else (repo_root / "build" / "workcell_studio_scene_readiness").resolve())
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    output = args.output
-    if not output.is_absolute():
-        output = args.repo_root / output
-    report = build_readiness_matrix(args.repo_root, catalog_path=args.catalog)
-    write_readiness_matrix(report, output)
-    if args.json:
-        print(json.dumps(report, indent=2))
-    return 0 if report["overall_status"] == PASS else 1
+    payload = build_matrix(repo_root, catalog_path, output_dir)
+    json_path = output_dir / "scene_readiness_summary.json"
+    md_path = output_dir / "scene_readiness_summary.md"
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_markdown(payload, md_path)
+
+    print(f"Wrote JSON: {json_path}")
+    print(f"Wrote Markdown: {md_path}")
+    print("Summary " + " ".join(f"{status}={payload['totals'].get(status, 0)}" for status in (PASS, FAIL, BLOCKED)))
+    # This is a reporting matrix: non-zero only for invalid catalog plumbing, not
+    # for blocked/failing scenes that the report is meant to surface.
+    return 2 if payload.get("catalog_errors") else 0
 
 
 if __name__ == "__main__":
