@@ -389,3 +389,63 @@ def test_runtime_acceptance_markdown_handles_missing_secondary_checks(tmp_path):
     assert out_md.exists()
     text = out_md.read_text(encoding='utf-8')
     assert 'missing_secondary_checks' in text
+
+
+def test_runtime_acceptance_editable_layout_fixture_is_selectable_and_editable(tmp_path):
+    repo, scene_root, main_path, preview_path, viewport_path, scene = _write_scene_fixture(
+        tmp_path,
+        _passing_smoke(
+            viewport_received_count=2,
+            render_cache_count=2,
+            rendered_count=2,
+            selectable_count=2,
+            hierarchy_rows_count=2,
+            mesh_rendered_count=1,
+            assembled_preview_item_count=2,
+            filtered_visible_candidate_count=2,
+        ),
+        editable_items=1,
+        mesh_items=1,
+        locked_items=0,
+        overlay_items=0,
+    )
+
+    result = runtime.evaluate_scene(repo, scene_root, main_path, preview_path, viewport_path, scene, None)
+
+    assert result["counts"]["editable_layout_count"] == 1
+    assert result["interaction_contract"]["editable_layout_selectable_count"] == 1
+    assert result["interaction_contract"]["editable_layout_editable_count"] == 1
+    assert result["counts"]["selectable_count"] > 0
+    assert result["secondary_checks"]["selection_callback_wired"] is True
+    assert result["secondary_checks"]["inspector_callback_wired"] is True
+    assert result["pass"] is True
+
+
+def test_runtime_acceptance_locked_generated_preview_is_visible_diagnosable_and_not_editable(tmp_path):
+    repo, scene_root, main_path, preview_path, viewport_path, scene = _write_scene_fixture(
+        tmp_path,
+        _passing_smoke(
+            viewport_received_count=2,
+            render_cache_count=2,
+            rendered_count=2,
+            selectable_count=1,
+            hierarchy_rows_count=2,
+            mesh_rendered_count=1,
+            assembled_preview_item_count=2,
+            filtered_visible_candidate_count=1,
+        ),
+        editable_items=1,
+        mesh_items=1,
+        locked_items=1,
+        overlay_items=0,
+    )
+
+    result = runtime.evaluate_scene(repo, scene_root, main_path, preview_path, viewport_path, scene, None)
+
+    assert result["counts"]["locked_generated_urdf_visual_count"] == 1
+    assert result["layers"]["locked_generated_urdf_visual_hidden_default"] == 1
+    assert result["visibility_contract"]["hidden_by_filters_count"] >= 1
+    assert result["interaction_contract"]["locked_generated_urdf_diagnosable_count"] == 1
+    assert result["interaction_contract"]["locked_generated_urdf_editable_count"] == 0
+    assert result["counts"]["locked_generated_urdf_editable_count"] == 0
+    assert result["pass"] is True

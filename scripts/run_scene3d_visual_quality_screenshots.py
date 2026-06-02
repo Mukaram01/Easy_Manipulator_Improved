@@ -109,6 +109,7 @@ _BLOCKER_CATEGORY_KEYS = (
     "placeholder_missing_geometry_dominates",
     "overlay_helper_dominates",
     "no_physical_scene_items_rendered",
+    "mesh_missing_on_disk",
 )
 
 _BLOCKER_ACTION_TEXT = {
@@ -120,6 +121,7 @@ _BLOCKER_ACTION_TEXT = {
     "placeholder_missing_geometry_dominates": "replace dominant placeholder/missing-geometry visuals with mesh or primitive geometry",
     "overlay_helper_dominates": "render physical scene items; overlay helpers cannot prove visual quality",
     "no_physical_scene_items_rendered": "render at least one physical mesh, primitive, or fallback scene item",
+    "mesh_missing_on_disk": "restore the missing mesh asset on disk or update the scene mesh path",
 }
 
 

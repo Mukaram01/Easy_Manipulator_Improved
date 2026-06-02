@@ -110,7 +110,7 @@ def test_visual_quality_screenshot_runner_captures_required_summaries(tmp_path: 
     repo.mkdir()
     os.symlink(ROOT / "scripts", repo / "scripts", target_is_directory=True)
     (repo / "workcell_builder").mkdir()
-    _write_scene(repo, "demo_scene", failure_reason="mesh_missing_on_disk")
+    _write_scene(repo, "demo_scene")
     fake_exe = tmp_path / "workcell_builder"
     _write_fake_executable(fake_exe)
     out = tmp_path / "out"
@@ -143,7 +143,7 @@ def test_visual_quality_screenshot_runner_captures_required_summaries(tmp_path: 
     assert result["screenshot_path"].endswith("scene3d_gui_smoke_demo_scene.png")
     assert result["visual_quality_counter_summary"]["mesh_rendered_count"] == 1
     assert result["primitive_render_summary"]["primitive_rendered_count"] == 1
-    assert result["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {"mesh_missing_on_disk": 1}
+    assert result["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {}
     assert Path(result["smoke_json"]).exists()
     assert Path(result["screenshot_path"]).exists()
 
@@ -216,3 +216,126 @@ def test_visual_quality_screenshot_runner_reports_blockers_in_json_and_markdown_
     assert "capture or attach the Scene3D smoke screenshot" in markdown
     assert "overlay helpers cannot prove visual quality" in markdown
     assert "render at least one physical mesh, primitive, or fallback scene item" in markdown
+
+
+def _write_fake_executable_for_scene_counters(path: Path, counters_by_scene: dict[str, dict]) -> None:
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        f"counters_by_scene={counters_by_scene!r}\n"
+        "args=sys.argv[1:]\n"
+        "out=pathlib.Path(args[args.index('--smoke-output')+1])\n"
+        "png=pathlib.Path(args[args.index('--smoke-screenshot')+1]) if '--smoke-screenshot' in args else None\n"
+        "scene=args[args.index('--scene')+1] if '--scene' in args else pathlib.Path(args[args.index('--scene-path')+1]).name\n"
+        "payload={'schema':'workcell_studio_scene3d_gui_smoke/v1','status':'PASS','scene':scene,'counters':counters_by_scene[scene]}\n"
+        "out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(payload))\n"
+        "png.parent.mkdir(parents=True, exist_ok=True); png.write_bytes(b'png') if png else None\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+
+
+def test_visual_quality_screenshot_runner_summarizes_healthy_and_blocked_visual_fixtures(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    os.symlink(ROOT / "scripts", repo / "scripts", target_is_directory=True)
+    (repo / "workcell_builder").mkdir()
+    healthy_mesh_scene = _write_scene(repo, "healthy_mesh_scene")
+    healthy_primitive_scene = _write_scene(repo, "healthy_primitive_scene")
+    missing_mesh_scene = _write_scene(repo, "missing_mesh_scene", failure_reason="mesh_missing_on_disk")
+    overlay_only_scene = _write_scene(repo, "overlay_only_scene")
+    raw_bounds_only_scene = _write_scene(repo, "raw_bounds_only_scene")
+    _write_json(
+        healthy_mesh_scene / "generated" / "scene_visual_mesh_index.json",
+        {"safe_for_preview": True, "visual_items": [{"id": "mesh", "geometry": {"mesh": {"filename": "package://demo/meshes/tool.stl"}}, "resolved": True}]},
+    )
+    _write_json(
+        healthy_primitive_scene / "generated" / "scene_visual_mesh_index.json",
+        {"safe_for_preview": True, "visual_items": [{"id": "primitive", "geometry": {"box": {"size": [1, 1, 1]}}, "resolved": True}]},
+    )
+    _write_json(
+        overlay_only_scene / "generated" / "scene_visual_mesh_index.json",
+        {"safe_for_preview": True, "visual_items": [{"id": "mesh", "geometry": {"mesh": {"filename": "package://demo/meshes/tool.stl"}}, "resolved": True}]},
+    )
+    _write_json(
+        raw_bounds_only_scene / "generated" / "scene_visual_mesh_index.json",
+        {"safe_for_preview": True, "visual_items": [{"id": "mesh", "geometry": {"mesh": {"filename": "package://demo/meshes/tool.stl"}}, "resolved": True}]},
+    )
+    fake_exe = tmp_path / "visual_fixture_workcell_builder"
+    _write_fake_executable_for_scene_counters(
+        fake_exe,
+        {
+            "healthy_mesh_scene": {"rendered_count": 1, "mesh_rendered_count": 1, "primitive_rendered_count": 0},
+            "healthy_primitive_scene": {"rendered_count": 1, "mesh_rendered_count": 0, "primitive_rendered_count": 1},
+            "missing_mesh_scene": {"rendered_count": 0, "mesh_rendered_count": 0, "primitive_rendered_count": 0},
+            "overlay_only_scene": {
+                "rendered_count": 3,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "overlay_helper_count": 2,
+                "label_count": 1,
+            },
+            "raw_bounds_only_scene": {
+                "rendered_count": 1,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "raw_generated_bounds_count": 1,
+            },
+        },
+    )
+    out = tmp_path / "out"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--workspace-root",
+            str(repo),
+            "--executable",
+            str(fake_exe),
+            "--scene",
+            "healthy_mesh_scene",
+            "--scene",
+            "healthy_primitive_scene",
+            "--scene",
+            "missing_mesh_scene",
+            "--scene",
+            "overlay_only_scene",
+            "--scene",
+            "raw_bounds_only_scene",
+            "--output-dir",
+            str(out),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((out / "scene3d_visual_quality_screenshots_summary.json").read_text(encoding="utf-8"))
+    by_scene = {result["scene"]: result for result in summary["results"]}
+
+    assert by_scene["healthy_mesh_scene"]["status"] == "PASS"
+    assert by_scene["healthy_mesh_scene"]["visual_quality_evaluation"]["mesh_source_count"] > 0
+    assert by_scene["healthy_mesh_scene"]["visual_quality_evaluation"]["mesh_rendered_count"] > 0
+    assert by_scene["healthy_primitive_scene"]["status"] == "PASS"
+    assert by_scene["healthy_primitive_scene"]["visual_quality_evaluation"]["primitive_source_count"] > 0
+    assert by_scene["healthy_primitive_scene"]["visual_quality_evaluation"]["primitive_rendered_count"] > 0
+
+    assert by_scene["missing_mesh_scene"]["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {"mesh_missing_on_disk": 1}
+    assert "mesh_missing_on_disk" in by_scene["missing_mesh_scene"]["blocker_reasons"]
+    assert summary["blocker_reason_summary"]["mesh_missing_on_disk"] == 1
+
+    assert by_scene["overlay_only_scene"]["visual_quality_evaluation"]["physical_rendered_count"] == 0
+    assert "no_physical_scene_items_rendered" in by_scene["overlay_only_scene"]["blocker_reasons"]
+    assert by_scene["raw_bounds_only_scene"]["visual_quality_evaluation"]["physical_rendered_count"] == 0
+    assert by_scene["raw_bounds_only_scene"]["visual_quality_evaluation"]["raw_generated_bounds_count"] == 1
+    assert by_scene["raw_bounds_only_scene"]["status"] == "BLOCKED"
+
+    markdown = (out / "scene3d_visual_quality_screenshots_summary.md").read_text(encoding="utf-8")
+    assert "- mesh_missing_on_disk: 1" in markdown
+    assert "mesh_missing_on_disk=1" in markdown

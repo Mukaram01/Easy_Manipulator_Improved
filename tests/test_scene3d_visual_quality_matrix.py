@@ -540,3 +540,199 @@ def test_visual_quality_matrix_cli_writes_json(tmp_path: Path) -> None:
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["schema"] == "workcell_studio_scene3d_visual_quality_matrix/v1"
     assert payload["pass"] is True
+
+
+def _mesh_only_index(*, resolved: bool = True, reason_code: str | None = None) -> dict:
+    mesh_item = {
+        "id": "healthy_mesh_item" if resolved else "missing_mesh_item",
+        "geometry": {"mesh": {"filename": "package://demo/meshes/part.stl"}},
+        "resolved": resolved,
+    }
+    if reason_code:
+        mesh_item["reason_code"] = reason_code
+    return {"safe_for_preview": True, "visual_items": [mesh_item]}
+
+
+def _primitive_only_index() -> dict:
+    return {
+        "safe_for_preview": True,
+        "visual_items": [
+            {"id": "healthy_primitive_item", "geometry": {"cylinder": {"radius": 0.15, "length": 0.4}}},
+        ],
+    }
+
+
+def test_visual_quality_matrix_has_healthy_mesh_backed_fixture_requiring_mesh_source_and_render(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "healthy_mesh_backed_scene",
+        _mesh_only_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 1,
+                "mesh_rendered_count": 1,
+                "primitive_rendered_count": 0,
+                "placeholder_count": 0,
+                "wireframe_fallback_count": 0,
+            },
+        },
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="healthy_mesh_backed_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["visual_quality_status"] == "PASS"
+    assert result["mesh_source_count"] > 0
+    assert result["mesh_rendered_count"] > 0
+    assert result["primitive_source_count"] == 0
+    assert result["primitive_rendered_count"] == 0
+    assert result["physical_rendered_count"] == result["mesh_rendered_count"]
+    assert result["blockers"] == []
+
+
+def test_visual_quality_matrix_has_healthy_urdf_primitive_fixture_requiring_primitive_source_and_render(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "healthy_urdf_primitive_scene",
+        _primitive_only_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 1,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 1,
+                "placeholder_count": 0,
+                "wireframe_fallback_count": 0,
+                "generated_fallback_count": 0,
+            },
+        },
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="healthy_urdf_primitive_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["visual_quality_status"] == "PASS"
+    assert result["mesh_source_count"] == 0
+    assert result["mesh_rendered_count"] == 0
+    assert result["primitive_source_count"] > 0
+    assert result["primitive_rendered_count"] > 0
+    assert result["physical_rendered_count"] == result["primitive_rendered_count"]
+    assert result["blockers"] == []
+
+
+def test_visual_quality_matrix_reports_missing_mesh_reason_code_in_matrix_summary(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write_scene(
+        repo,
+        "missing_mesh_scene",
+        _mesh_only_index(resolved=False, reason_code="mesh_missing_on_disk"),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 0,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+            },
+        },
+    )
+    catalog = _write_catalog(
+        repo,
+        {
+            "scene_name": "missing_mesh_scene",
+            "package_name": "missing_mesh_scene",
+            "scene_path": "scenes/missing_mesh_scene",
+            "support_level": "supported",
+            "status": "supported",
+            "enabled": True,
+        },
+    )
+    fixture = _write_scene(repo, "synthetic_visual_quality_fixture", _mesh_and_primitive_index(), _passing_smoke())
+
+    payload = matrix.build_matrix(repo_root=repo, supported_scenes=catalog, synthetic_fixture=fixture)
+    scene = next(scene for scene in payload["scenes"] if scene["scene_name"] == "missing_mesh_scene")
+
+    assert payload["pass"] is False
+    assert scene["visual_quality_status"] == "FAIL"
+    assert scene["mesh_source_count"] > 0
+    assert scene["mesh_rendered_count"] == 0
+    assert scene["mesh_failure_summary_by_reason_code"] == {"mesh_missing_on_disk": 1}
+    assert "mesh_missing_on_disk" in scene["blocker_reasons"]
+
+
+def test_visual_quality_matrix_overlay_only_fixture_with_positive_helper_counters_still_fails(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "overlay_only_positive_helpers_scene",
+        _mesh_only_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 3,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "overlay_helper_count": 2,
+                "label_count": 1,
+            },
+        },
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="overlay_only_positive_helpers_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["rendered_count"] > 0
+    assert result["helper_overlay_count"] > 0
+    assert result["physical_rendered_count"] == 0
+    assert result["visual_quality_status"] == "FAIL"
+    assert "no_physical_scene_items_rendered" in result["blocker_reasons"]
+
+
+def test_visual_quality_matrix_raw_generated_bounds_fixture_does_not_count_as_physical_render_success(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "raw_generated_bounds_fixture_scene",
+        _mesh_only_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 1,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "raw_generated_bounds_count": 1,
+            },
+        },
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="raw_generated_bounds_fixture_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["raw_generated_bounds_count"] == 1
+    assert result["diagnostic_fallback_count"] == 1
+    assert result["physical_rendered_count"] == 0
+    assert result["visual_quality_status"] == "FAIL"
+    assert "raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources" in result["blockers"]
