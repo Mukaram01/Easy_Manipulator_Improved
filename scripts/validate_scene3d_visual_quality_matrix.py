@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -117,6 +118,54 @@ def _visual_items(mesh_index: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
+MESH_FAILURE_REASON_KEYS = {
+    "reason_code",
+    "failure_reason_code",
+    "mesh_failure_reason_code",
+    "fallback_reason",
+    "error_code",
+}
+
+
+def _reason_code_for_item(item: dict[str, Any]) -> str:
+    for key in MESH_FAILURE_REASON_KEYS:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower().replace(" ", "_")
+    if item.get("resolved") is False:
+        return "unresolved_mesh_without_reason_code"
+    return "unknown"
+
+
+def mesh_failure_summary_from_index(mesh_index: dict[str, Any], mesh_index_path: Path) -> dict[str, Any]:
+    if mesh_index.get("_load_error"):
+        return {
+            "mesh_index_path": str(mesh_index_path),
+            "total_failed_meshes": 0,
+            "by_reason_code": {"mesh_index_unreadable": 1},
+            "error": mesh_index["_load_error"],
+        }
+    reasons: Counter[str] = Counter()
+    top_reason = mesh_index.get("fallback_reason")
+    if isinstance(top_reason, str) and top_reason.strip() and not mesh_index.get("safe_for_preview", True):
+        reasons[top_reason.strip().lower().replace(" ", "_")] += 1
+    for item in _visual_items(mesh_index):
+        if item.get("resolved") is False and (_looks_like_mesh(item) or item.get("render_expected", False)):
+            reasons[_reason_code_for_item(item)] += 1
+    unresolved = mesh_index.get("unresolved")
+    if isinstance(unresolved, list):
+        for raw in unresolved:
+            if isinstance(raw, dict):
+                reasons[_reason_code_for_item(raw)] += 1
+            elif isinstance(raw, str) and raw.strip():
+                reasons[raw.strip().lower().replace(" ", "_")] += 1
+    return {
+        "mesh_index_path": str(mesh_index_path),
+        "total_failed_meshes": int(sum(reasons.values())),
+        "by_reason_code": dict(sorted(reasons.items())),
+    }
+
+
 def classify_source_geometry(mesh_index: dict[str, Any]) -> tuple[int, int, int, int]:
     """Return total payload, mesh source, primitive source, missing geometry counts."""
     items = _visual_items(mesh_index)
@@ -227,13 +276,21 @@ def evaluate_scene(
 
     mesh_index: dict[str, Any] = {}
     if not mesh_index_path.exists():
-        blockers.append(f"missing mesh/source payload: {mesh_index_path}")
+        add_blocker(f"missing mesh/source payload: {mesh_index_path}", "mesh_index_missing")
     else:
         mesh_index = _load_json(mesh_index_path)
         if mesh_index.get("_load_error"):
             blockers.append(f"could not read mesh/source payload: {mesh_index_path}: {mesh_index['_load_error']}")
 
     total_payload_count, mesh_source_count, primitive_source_count, missing_geometry_count = classify_source_geometry(mesh_index)
+    mesh_failure_summary = mesh_failure_summary_from_index(mesh_index, mesh_index_path) if mesh_index else {
+        "mesh_index_path": str(mesh_index_path),
+        "total_failed_meshes": 0,
+        "by_reason_code": {"mesh_index_missing": 1},
+    }
+    for reason_code, count in mesh_failure_summary.get("by_reason_code", {}).items():
+        for _ in range(_as_int(count)):
+            add_blocker(f"{reason_code}: mesh source could not be resolved for preview", str(reason_code))
 
     smoke_payload: dict[str, Any] = {}
     smoke_exists = bool(smoke_json_path and smoke_json_path.exists())
@@ -302,6 +359,7 @@ def evaluate_scene(
         "missing_geometry_count": missing_geometry_count,
         "wireframe_fallback_count": wireframe_fallback_count,
         "rendered_count": rendered_count,
+        "mesh_failure_summary_by_reason_code": mesh_failure_summary,
         "visual_quality_status": visual_quality_status,
         "warnings": warnings,
         "blockers": blockers,

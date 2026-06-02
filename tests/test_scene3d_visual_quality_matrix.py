@@ -318,3 +318,148 @@ def test_visual_quality_matrix_cli_writes_json(tmp_path: Path) -> None:
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["schema"] == "workcell_studio_scene3d_visual_quality_matrix/v1"
     assert payload["pass"] is True
+
+
+def _mesh_only_index(*, resolved: bool = True, reason_code: str | None = None) -> dict:
+    item = {"id": "healthy_mesh", "geometry": {"mesh": {"filename": "package://demo/meshes/healthy.stl"}}, "resolved": resolved}
+    if reason_code:
+        item["reason_code"] = reason_code
+    return {"safe_for_preview": resolved, "visual_items": [item]}
+
+
+def _primitive_only_index() -> dict:
+    return {"safe_for_preview": True, "visual_items": [{"id": "healthy_primitive", "geometry": {"box": {"size": [1.0, 1.0, 0.1]}}}]}
+
+
+def _smoke_with_counts(**counts: int) -> dict:
+    merged = {
+        "rendered_count": 0,
+        "mesh_rendered_count": 0,
+        "primitive_rendered_count": 0,
+        "placeholder_count": 0,
+        "wireframe_fallback_count": 0,
+    }
+    merged.update(counts)
+    return {"schema": "workcell_studio_scene3d_gui_smoke/v1", "status": "PASS", "render_debug_counters": merged}
+
+
+def test_visual_quality_matrix_mesh_backed_fixture_requires_mesh_source_and_render_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    healthy = _write_scene(repo, "healthy_mesh_scene", _mesh_only_index(), _smoke_with_counts(rendered_count=1, mesh_rendered_count=1))
+    missing_render = _write_scene(repo, "mesh_without_render_scene", _mesh_only_index(), _smoke_with_counts(rendered_count=1, mesh_rendered_count=0))
+
+    healthy_result = matrix.evaluate_scene(
+        scene_name="healthy_mesh_scene",
+        scene_dir=healthy,
+        mesh_index_path=healthy / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=healthy / "generated" / "scene3d_gui_smoke.json",
+    )
+    missing_render_result = matrix.evaluate_scene(
+        scene_name="mesh_without_render_scene",
+        scene_dir=missing_render,
+        mesh_index_path=missing_render / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=missing_render / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert healthy_result["visual_quality_status"] == "PASS"
+    assert healthy_result["mesh_source_count"] > 0
+    assert healthy_result["mesh_rendered_count"] > 0
+    assert missing_render_result["visual_quality_status"] == "FAIL"
+    assert "mesh_source_count > 0 requires mesh_rendered_count > 0" in missing_render_result["blockers"]
+
+
+def test_visual_quality_matrix_urdf_primitive_fixture_requires_source_and_render_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    healthy = _write_scene(repo, "healthy_primitive_scene", _primitive_only_index(), _smoke_with_counts(rendered_count=1, primitive_rendered_count=1))
+    missing_render = _write_scene(repo, "primitive_without_render_scene", _primitive_only_index(), _smoke_with_counts(rendered_count=1, primitive_rendered_count=0))
+
+    healthy_result = matrix.evaluate_scene(
+        scene_name="healthy_primitive_scene",
+        scene_dir=healthy,
+        mesh_index_path=healthy / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=healthy / "generated" / "scene3d_gui_smoke.json",
+    )
+    missing_render_result = matrix.evaluate_scene(
+        scene_name="primitive_without_render_scene",
+        scene_dir=missing_render,
+        mesh_index_path=missing_render / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=missing_render / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert healthy_result["visual_quality_status"] == "PASS"
+    assert healthy_result["primitive_source_count"] > 0
+    assert healthy_result["primitive_rendered_count"] > 0
+    assert missing_render_result["visual_quality_status"] == "FAIL"
+    assert "primitive_source_count > 0 requires primitive_rendered_count > 0" in missing_render_result["blockers"]
+
+
+def test_visual_quality_matrix_reports_missing_mesh_reason_code(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(repo, "missing_mesh_scene", _mesh_only_index(resolved=False, reason_code="mesh_missing_on_disk"), _smoke_with_counts(rendered_count=0))
+    catalog = _write_catalog(
+        repo,
+        {
+            "scene_name": "missing_mesh_scene",
+            "package_name": "missing_mesh_scene",
+            "scene_path": "scenes/missing_mesh_scene",
+            "support_level": "supported",
+            "status": "supported",
+            "enabled": True,
+        },
+    )
+
+    fixture = _write_scene(repo, "synthetic_visual_quality_fixture", _mesh_and_primitive_index(), _passing_smoke())
+    payload = matrix.build_matrix(repo_root=repo, supported_scenes=catalog, synthetic_fixture=fixture)
+    result = next(scene for scene in payload["scenes"] if scene["scene_name"] == "missing_mesh_scene")
+
+    assert payload["pass"] is False
+    assert result["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {"mesh_missing_on_disk": 1}
+    assert "mesh_missing_on_disk" in result["blocker_reasons"]
+    assert any(blocker.startswith("mesh_missing_on_disk:") for blocker in result["blockers"])
+
+
+def test_visual_quality_matrix_rejects_overlay_only_render_counters_without_physical_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "overlay_only_scene",
+        {"safe_for_preview": True, "visual_items": [{"id": "pick_zone_overlay", "source_layer": "overlay", "helper": True, "renderable": False}]},
+        _smoke_with_counts(rendered_count=3, overlay_helper_count=3),
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="overlay_only_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["mesh_source_count"] == 0
+    assert result["primitive_source_count"] == 0
+    assert result["mesh_rendered_count"] == 0
+    assert result["primitive_rendered_count"] == 0
+    assert "source geometry classification missing; rendered_count alone cannot prove visual quality" in result["blockers"]
+
+
+def test_visual_quality_matrix_rejects_raw_generated_bounds_only_fallback_boxes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "raw_bounds_only_scene",
+        {"safe_for_preview": True, "visual_items": [{"id": "raw_generated_bounds", "raw_generated_bounds": [0, 0, 0, 1, 1, 1]}]},
+        _smoke_with_counts(rendered_count=1, placeholder_count=1),
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="raw_bounds_only_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["missing_geometry_count"] == 1
+    assert result["placeholder_count"] == 1
+    assert result["mesh_rendered_count"] + result["primitive_rendered_count"] == 0
+    assert "source geometry classification missing; rendered_count alone cannot prove visual quality" in result["blockers"]

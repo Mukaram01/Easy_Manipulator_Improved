@@ -145,8 +145,12 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
     primitive_fallback_count = int(mesh_index.get("unresolved_placeholder_count") or 0)
 
     generated_items = generated_layout.get("items") or []
-    locked_generated_urdf_visual_count = sum(
-        1 for item in generated_items if normalize_layer_token(item.get("source")) == "locked_generated_urdf_visual"
+    locked_generated_items = [
+        item for item in generated_items if normalize_layer_token(item.get("source")) == "locked_generated_urdf_visual"
+    ]
+    locked_generated_urdf_visual_count = len(locked_generated_items)
+    locked_generated_urdf_visual_editable_count = sum(
+        1 for item in locked_generated_items if bool(item.get("editable")) and not bool(item.get("locked"))
     )
 
     overlay_count = 0
@@ -289,6 +293,9 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "selectable_count": _runtime_counter(runtime_counts, "selectable_count"),
             "hierarchy_rows_count": _runtime_counter(runtime_counts, "hierarchy_rows_count"),
             "mesh_rendered_count": _runtime_counter(runtime_counts, "mesh_rendered_count"),
+            "editable_physical_item_count": _runtime_counter(runtime_counts, "editable_physical_item_count"),
+            "selectable_physical_item_count": _runtime_counter(runtime_counts, "selectable_physical_item_count"),
+            "locked_generated_urdf_visual_editable_count": locked_generated_urdf_visual_editable_count,
             "assembled_preview_item_count": assembled_preview_item_count,
             "filtered_visible_candidate_count": filtered_visible_candidate_count,
         },
@@ -312,6 +319,14 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "smoke_json": str(smoke_path),
         },
         "source_layer_counts": source_layer_counts,
+        "interaction_contract": {
+            "editable_layout_selectable_count": editable_layout_count,
+            "editable_layout_editable_count": _runtime_counter(runtime_counts, "editable_physical_item_count"),
+            "selectable_physical_item_count": _runtime_counter(runtime_counts, "selectable_physical_item_count"),
+            "locked_generated_urdf_visual_visible_count": locked_generated_urdf_visual_count,
+            "locked_generated_urdf_visual_diagnosable_count": locked_generated_urdf_visual_count,
+            "locked_generated_urdf_visual_editable_count": locked_generated_urdf_visual_editable_count,
+        },
         "runtime_evidence": runtime_evidence,
         "default_filter_visibility_evidence": {
             "assembled_preview_item_count": assembled_preview_item_count,
