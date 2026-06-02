@@ -92,6 +92,12 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
             "primitive_source_count",
             "primitive_rendered_count",
             "physical_rendered_count",
+            "credible_physical_rendered_count",
+            "helper_overlay_count",
+            "helper_overlay_counts",
+            "physical_fit_bounds_count",
+            "helper_overlay_fit_bounds_count",
+            "valid_physical_fallback_count",
             "placeholder_count",
             "raw_generated_bounds_count",
             "missing_geometry_box_count",
@@ -113,6 +119,97 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
         assert scene["visual_quality_status"] == "PASS"
         assert scene["blocker_reasons"] == []
 
+
+
+def test_visual_quality_matrix_rejects_overlay_only_render_evidence_even_when_rendered_count_positive(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "overlay_only_scene",
+        _mesh_and_primitive_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "counters": {
+                "rendered_count": 7,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "overlay_helper_count": 2,
+                "overlay_count": 2,
+                "label_count": 1,
+                "warning_anchor_count": 1,
+                "fov_helper_count": 1,
+                "reach_helper_count": 1,
+                "safety_zone_count": 1,
+                "physical_fit_bounds_count": 0,
+                "overlay_fit_bounds_count": 7,
+            },
+        },
+    )
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="overlay_only_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["rendered_count"] == 7
+    assert result["physical_rendered_count"] == 0
+    assert result["helper_overlay_count"] == 7
+    assert result["helper_overlay_counts"] == {
+        "overlay_helper_count": 2,
+        "overlay_count": 2,
+        "label_count": 1,
+        "warning_anchor_count": 1,
+        "fov_helper_count": 1,
+        "reach_helper_count": 1,
+        "safety_zone_count": 1,
+    }
+    assert "no_physical_scene_items_rendered" in result["blocker_reasons"]
+    assert "overlay_helper_dominates" in result["blocker_reasons"]
+    assert any("helper/overlay count is the only render evidence" in blocker for blocker in result["blockers"])
+    assert any("helper/overlay count is greater than or equal" in blocker for blocker in result["blockers"])
+
+
+def test_visual_quality_matrix_rejects_helper_overlay_fit_bounds_dominance(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "overlay_fit_bounds_scene",
+        _mesh_and_primitive_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 4,
+                "mesh_rendered_count": 2,
+                "primitive_rendered_count": 2,
+                "overlay_helper_count": 1,
+                "physical_fit_bounds_count": 2,
+                "helper_overlay_fit_bounds_count": 2,
+            },
+        },
+    )
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="overlay_fit_bounds_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["physical_rendered_count"] == 4
+    assert result["physical_fit_bounds_count"] == 2
+    assert result["helper_overlay_fit_bounds_count"] == 2
+    assert "overlay_helper_dominates" in result["blocker_reasons"]
+    assert any("helper/overlay fit-bounds counters dominate" in blocker for blocker in result["blockers"])
 
 def test_visual_quality_matrix_rejects_rendered_count_only_and_missing_primitive_render_counter(tmp_path: Path) -> None:
     repo = tmp_path / "repo"

@@ -13,6 +13,37 @@ SCHEMA = "workcell_studio_scene3d_visual_quality_matrix/v1"
 SMOKE_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 PHYSICAL_ITEM_DOMINANCE_RATIO = 0.5
 DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO = 0.5
+VALID_PHYSICAL_FALLBACK_DOMINANCE_RATIO = 0.5
+
+HELPER_OVERLAY_COUNTERS = (
+    "overlay_helper_count",
+    "overlay_count",
+    "label_count",
+    "labels_drawn",
+    "warning_anchor_count",
+    "fov_helper_count",
+    "reach_helper_count",
+    "safety_zone_count",
+)
+PHYSICAL_FIT_BOUNDS_COUNTERS = (
+    "physical_fit_bounds_count",
+    "physical_fit_bound_count",
+    "physical_bounds_count",
+    "fit_bounds_physical_count",
+)
+HELPER_OVERLAY_FIT_BOUNDS_COUNTERS = (
+    "overlay_fit_bounds_count",
+    "overlay_fit_bound_count",
+    "helper_fit_bounds_count",
+    "helper_overlay_fit_bounds_count",
+    "fit_bounds_overlay_count",
+)
+VALID_PHYSICAL_FALLBACK_COUNTERS = (
+    "valid_physical_fallback_count",
+    "physical_fallback_count",
+    "physical_fallback_rendered_count",
+    "collision_primitive_rendered_count",
+)
 
 MESH_KEYS = {"mesh", "mesh_path", "mesh_uri", "mesh_filename", "filename", "resource", "uri"}
 PRIMITIVE_TYPES = {"box", "cube", "cylinder", "sphere", "capsule", "cone", "primitive"}
@@ -54,6 +85,29 @@ def _counter(payload: dict[str, Any], *keys: str) -> int:
             if key in source:
                 return _as_int(source.get(key))
     return 0
+
+
+def _counter_values(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for key in keys:
+        value = _counter(payload, key)
+        if value > 0:
+            counts[key] = value
+    return counts
+
+
+def _helper_overlay_counts(payload: dict[str, Any]) -> tuple[dict[str, int], int]:
+    counts = _counter_values(payload, HELPER_OVERLAY_COUNTERS)
+    overlay_family_count = max(counts.get("overlay_helper_count", 0), counts.get("overlay_count", 0))
+    helper_overlay_count = overlay_family_count
+    for key, value in counts.items():
+        if key not in {"overlay_helper_count", "overlay_count"}:
+            helper_overlay_count += value
+    return counts, helper_overlay_count
+
+
+def _max_counter(payload: dict[str, Any], keys: tuple[str, ...]) -> int:
+    return max((_counter(payload, key) for key in keys), default=0)
 
 
 def _list_field(payload: dict[str, Any], *keys: str) -> list[Any]:
@@ -273,9 +327,21 @@ def evaluate_scene(
         "missing_geometry_fallback_count",
     )
     rendered_count = _counter(smoke_payload, "rendered_count")
+    helper_overlay_counts, helper_overlay_count = _helper_overlay_counts(smoke_payload)
+    physical_fit_bounds_count = _max_counter(smoke_payload, PHYSICAL_FIT_BOUNDS_COUNTERS)
+    helper_overlay_fit_bounds_count = _max_counter(smoke_payload, HELPER_OVERLAY_FIT_BOUNDS_COUNTERS)
+    valid_physical_fallback_count = _max_counter(smoke_payload, VALID_PHYSICAL_FALLBACK_COUNTERS)
 
     credible_source_count = mesh_source_count + primitive_source_count
-    physical_rendered_count = mesh_rendered_count + primitive_rendered_count
+    credible_physical_rendered_count = mesh_rendered_count + primitive_rendered_count
+    physical_rendered_count = credible_physical_rendered_count
+    valid_physical_fallback_dominates = False
+    if valid_physical_fallback_count > 0:
+        valid_fallback_limit = credible_physical_rendered_count * VALID_PHYSICAL_FALLBACK_DOMINANCE_RATIO
+        if credible_physical_rendered_count > 0 and valid_physical_fallback_count <= valid_fallback_limit:
+            physical_rendered_count += valid_physical_fallback_count
+        else:
+            valid_physical_fallback_dominates = True
     diagnostic_fallback_count = (
         raw_generated_bounds_count
         + placeholder_count
@@ -298,8 +364,35 @@ def evaluate_scene(
         warnings.append(
             "diagnostic fallback evidence present; physical_rendered_count excludes raw bounds, placeholders, and wireframes"
         )
+    if helper_overlay_count > 0:
+        warnings.append("helper/overlay render evidence present; physical_rendered_count excludes helper overlays")
+    if valid_physical_fallback_dominates:
+        add_blocker(
+            "valid physical fallback counters dominate credible mesh/primitive render evidence; physical_rendered_count excludes them",
+            "physical_fallback_dominates",
+        )
     if missing_geometry_count > 0:
         warnings.append(f"{missing_geometry_count} source payload item(s) lack mesh or primitive geometry")
+
+    if helper_overlay_count > 0 and physical_rendered_count <= 0 and rendered_count > 0:
+        add_blocker(
+            "no_physical_scene_items_rendered: helper/overlay count is the only render evidence; rendered_count cannot prove Scene3D visual quality",
+            "no_physical_scene_items_rendered",
+        )
+    if helper_overlay_count > 0 and helper_overlay_count >= physical_rendered_count:
+        add_blocker(
+            "overlay_helper_dominates: helper/overlay count is greater than or equal to physical_rendered_count; render physical scene items instead of relying on overlays",
+            "overlay_helper_dominates",
+        )
+    if (
+        physical_fit_bounds_count > 0
+        and helper_overlay_fit_bounds_count >= physical_fit_bounds_count
+        and helper_overlay_fit_bounds_count > 0
+    ):
+        add_blocker(
+            "overlay_helper_dominates: helper/overlay fit-bounds counters dominate physical fit-bounds counters; fit the camera to physical scene bounds",
+            "overlay_helper_dominates",
+        )
 
     if credible_source_count > 0 and physical_rendered_count <= 0 and raw_generated_bounds_count > 0:
         blockers.append("raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources")
@@ -341,6 +434,12 @@ def evaluate_scene(
         "primitive_source_count": primitive_source_count,
         "primitive_rendered_count": primitive_rendered_count,
         "physical_rendered_count": physical_rendered_count,
+        "credible_physical_rendered_count": credible_physical_rendered_count,
+        "valid_physical_fallback_count": valid_physical_fallback_count,
+        "helper_overlay_count": helper_overlay_count,
+        "helper_overlay_counts": helper_overlay_counts,
+        "physical_fit_bounds_count": physical_fit_bounds_count,
+        "helper_overlay_fit_bounds_count": helper_overlay_fit_bounds_count,
         "placeholder_count": placeholder_count,
         "raw_generated_bounds_count": raw_generated_bounds_count,
         "missing_geometry_box_count": missing_geometry_box_count,

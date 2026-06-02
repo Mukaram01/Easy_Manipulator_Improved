@@ -48,6 +48,26 @@ _COUNTER_KEYS = (
     "missing_geometry_count",
     "wireframe_fallback_count",
     "overlay_helper_count",
+    "overlay_count",
+    "label_count",
+    "labels_drawn",
+    "warning_anchor_count",
+    "fov_helper_count",
+    "reach_helper_count",
+    "safety_zone_count",
+    "physical_fit_bounds_count",
+    "physical_fit_bound_count",
+    "physical_bounds_count",
+    "fit_bounds_physical_count",
+    "overlay_fit_bounds_count",
+    "overlay_fit_bound_count",
+    "helper_fit_bounds_count",
+    "helper_overlay_fit_bounds_count",
+    "fit_bounds_overlay_count",
+    "valid_physical_fallback_count",
+    "physical_fallback_count",
+    "physical_fallback_rendered_count",
+    "collision_primitive_rendered_count",
     "locked_generated_urdf_visual_count",
     "editable_layout_count",
     "visual_quality_status",
@@ -274,6 +294,32 @@ def _as_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _counter_max(counter_summary: dict[str, Any], visual_quality: dict[str, Any], *keys: str) -> int:
+    counter_values = [_as_int(counter_summary.get(key)) for key in keys]
+    visual_quality_values = [_as_int(visual_quality.get(key)) for key in keys]
+    return max([*counter_values, *visual_quality_values], default=0)
+
+
+def _helper_overlay_count(counter_summary: dict[str, Any], visual_quality: dict[str, Any]) -> int:
+    overlay_family_count = max(
+        _counter_max(counter_summary, visual_quality, "overlay_helper_count"),
+        _counter_max(counter_summary, visual_quality, "overlay_count"),
+    )
+    helper_counter_keys = (
+        "label_count",
+        "labels_drawn",
+        "warning_anchor_count",
+        "fov_helper_count",
+        "reach_helper_count",
+        "safety_zone_count",
+    )
+    return overlay_family_count + sum(_counter_max(counter_summary, visual_quality, key) for key in helper_counter_keys)
+
+
+def _fit_bounds_count(counter_summary: dict[str, Any], visual_quality: dict[str, Any], *keys: str) -> int:
+    return _counter_max(counter_summary, visual_quality, *keys)
+
+
 def _add_reason(reasons: list[str], reason: str) -> None:
     if reason and reason not in reasons:
         reasons.append(reason)
@@ -303,9 +349,13 @@ def _normalize_blocker_text(text: str) -> str | None:
         or "wireframe_fallback_count dominates" in lowered
     ):
         return "placeholder_missing_geometry_dominates"
-    if "overlay_helper_dominates" in lowered or ("overlay helper" in lowered and "dominat" in lowered):
+    if (
+        "overlay_helper_dominates" in lowered
+        or ("overlay helper" in lowered and "dominat" in lowered)
+        or ("helper/overlay" in lowered and ("dominat" in lowered or "greater than or equal" in lowered))
+    ):
         return "overlay_helper_dominates"
-    if "no_physical_scene_items_rendered" in lowered:
+    if "no_physical_scene_items_rendered" in lowered or "only render evidence" in lowered:
         return "no_physical_scene_items_rendered"
     return lowered.split(":", 1)[0].strip().replace(" ", "_")
 
@@ -353,9 +403,29 @@ def _normalized_blocker_reasons(
     placeholder_count = max(_as_int(counter_summary.get("placeholder_count")), _as_int(visual_quality.get("placeholder_count")))
     missing_geometry_count = max(_as_int(counter_summary.get("missing_geometry_count")), _as_int(visual_quality.get("missing_geometry_count")))
     wireframe_fallback_count = max(_as_int(counter_summary.get("wireframe_fallback_count")), _as_int(visual_quality.get("wireframe_fallback_count")))
-    overlay_helper_count = _as_int(counter_summary.get("overlay_helper_count"))
+    overlay_helper_count = _helper_overlay_count(counter_summary, visual_quality)
     rendered_count = max(_as_int(counter_summary.get("rendered_count")), _as_int(visual_quality.get("rendered_count")))
-    physical_rendered_count = mesh_rendered_count + primitive_rendered_count + placeholder_count + wireframe_fallback_count
+    physical_rendered_count = max(
+        _as_int(visual_quality.get("physical_rendered_count")),
+        mesh_rendered_count + primitive_rendered_count,
+    )
+    physical_fit_bounds_count = _fit_bounds_count(
+        counter_summary,
+        visual_quality,
+        "physical_fit_bounds_count",
+        "physical_fit_bound_count",
+        "physical_bounds_count",
+        "fit_bounds_physical_count",
+    )
+    helper_overlay_fit_bounds_count = _fit_bounds_count(
+        counter_summary,
+        visual_quality,
+        "helper_overlay_fit_bounds_count",
+        "overlay_fit_bounds_count",
+        "overlay_fit_bound_count",
+        "helper_fit_bounds_count",
+        "fit_bounds_overlay_count",
+    )
     source_count = mesh_source_count + primitive_source_count
 
     if mesh_source_count > 0 and mesh_rendered_count <= 0:
@@ -366,7 +436,13 @@ def _normalized_blocker_reasons(
     credible_rendered_count = mesh_rendered_count + primitive_rendered_count
     if placeholder_or_missing_count > max(credible_rendered_count, 0) and placeholder_or_missing_count > 0:
         _add_reason(reasons, "placeholder_missing_geometry_dominates")
-    if overlay_helper_count > max(physical_rendered_count, 0) and overlay_helper_count > 0:
+    if overlay_helper_count >= max(physical_rendered_count, 0) and overlay_helper_count > 0:
+        _add_reason(reasons, "overlay_helper_dominates")
+    if (
+        physical_fit_bounds_count > 0
+        and helper_overlay_fit_bounds_count >= physical_fit_bounds_count
+        and helper_overlay_fit_bounds_count > 0
+    ):
         _add_reason(reasons, "overlay_helper_dominates")
     if source_count > 0 and physical_rendered_count <= 0:
         _add_reason(reasons, "no_physical_scene_items_rendered")

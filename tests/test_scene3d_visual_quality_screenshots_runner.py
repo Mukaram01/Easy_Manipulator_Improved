@@ -67,7 +67,9 @@ def _write_failing_fake_executable(path: Path) -> None:
         "payload={'schema':'workcell_studio_scene3d_gui_smoke/v1','status':'PASS','scene':scene,'counters':{"
         "'rendered_count':4,'mesh_source_count':1,'mesh_rendered_count':0,'urdf_primitive_source_count':1,"
         "'urdf_primitive_rendered_count':0,'primitive_rendered_count':0,'primitive_fallback_count':0,'placeholder_count':0,"
-        "'missing_geometry_count':2,'wireframe_fallback_count':0,'overlay_helper_count':4,'visual_quality_status':'FAIL'}}\n"
+        "'missing_geometry_count':2,'wireframe_fallback_count':0,'overlay_helper_count':4,'overlay_count':4,"
+        "'label_count':1,'warning_anchor_count':1,'fov_helper_count':1,'reach_helper_count':1,'safety_zone_count':1,"
+        "'physical_fit_bounds_count':1,'helper_overlay_fit_bounds_count':4,'visual_quality_status':'FAIL'}}\n"
         "out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(payload))\n"
         "sys.exit(0)\n",
         encoding="utf-8",
@@ -198,7 +200,12 @@ def test_visual_quality_screenshot_runner_reports_blockers_in_json_and_markdown_
         assert "mesh_source_not_rendered" in result["blocker_reasons"]
         assert "urdf_primitive_source_not_rendered" in result["blocker_reasons"]
         assert "overlay_helper_dominates" in result["blocker_reasons"]
+        assert "no_physical_scene_items_rendered" in result["blocker_reasons"]
+        assert result["visual_quality_counter_summary"]["overlay_count"] == 4
+        assert result["visual_quality_counter_summary"]["label_count"] == 1
+        assert result["visual_quality_counter_summary"]["helper_overlay_fit_bounds_count"] == 4
         assert "capture or attach the Scene3D smoke screenshot" in result["blocker_text"]
+        assert "overlay helpers cannot prove visual quality" in result["blocker_text"]
 
     markdown = (out / "scene3d_visual_quality_screenshots_summary.md").read_text(encoding="utf-8")
     assert "| Scene | Status | Smoke JSON | Screenshot | Blockers | Mesh failure reasons |" in markdown
@@ -208,3 +215,4 @@ def test_visual_quality_screenshot_runner_reports_blockers_in_json_and_markdown_
     assert "synthetic_failing_b" in markdown
     assert "capture or attach the Scene3D smoke screenshot" in markdown
     assert "overlay helpers cannot prove visual quality" in markdown
+    assert "render at least one physical mesh, primitive, or fallback scene item" in markdown
