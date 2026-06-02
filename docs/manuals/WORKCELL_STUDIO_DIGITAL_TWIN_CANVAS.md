@@ -52,14 +52,33 @@ python3 scripts/run_scene3d_visual_quality_screenshots.py \
   --xvfb
 ```
 
-To run the same capture for every enabled entry in the supported scene catalog, use:
+To run the same capture for every enabled entry in the supported scene catalog, use this strict all-scene acceptance command:
 
 ```bash
-python3 scripts/run_scene3d_visual_quality_screenshots.py \
-  --supported-scenes scenes/supported_scenes.yaml \
-  --synthetic-fixture tests/fixtures/scene3d_visual_quality_minimal_fixture \
-  --output-dir build/scene3d_visual_quality_screenshots \
-  --xvfb
+python3 scripts/run_scene3d_visual_quality_screenshots.py --supported-scenes scenes/supported_scenes.yaml --synthetic-fixture tests/fixtures/scene3d_visual_quality_minimal_fixture --output-dir build/scene3d_visual_quality_screenshots --xvfb
 ```
+
+The strict all-scene run writes both machine-readable and review-friendly summary artifacts:
+
+- `build/scene3d_visual_quality_screenshots/scene3d_visual_quality_screenshots_summary.json`
+- `build/scene3d_visual_quality_screenshots/scene3d_visual_quality_screenshots_summary.md`
+
+Result meanings:
+
+- `PASS`: credible physical mesh/primitive evidence rendered, no blockers.
+- `FAIL`: runner completed but behavior-based visual quality blockers exist.
+- `BLOCKED`: screenshot/smoke capture could not provide required evidence, or prerequisite files are missing/unreadable.
+
+Common blocker reasons and how to read them:
+
+- Missing screenshot: capture did not produce the expected image artifact, so visual evidence cannot be reviewed.
+- Smoke JSON missing/unreadable: the per-scene smoke runner did not write parseable JSON, so counters and evidence paths cannot be trusted.
+- Mesh source exists but mesh render count is zero: scene metadata or generated URDF points at mesh-backed geometry, but the renderer did not render any mesh instances.
+- URDF primitive source exists but primitive render count is zero: generated primitive geometry exists, but the renderer did not render primitive-backed scene items.
+- Placeholder/missing geometry dominates: missing-mesh placeholders or fallback markers outweigh credible physical geometry evidence.
+- Overlay/helper visuals dominate: helper graphics such as axes, bounds, labels, grids, guides, or selection affordances dominate the capture instead of physical scene items.
+- No physical scene items rendered: the screenshot/smoke evidence contains no credible robot, tool, fixture, table, conveyor, object, bin, zone, or other physical workcell item.
+
+Helper overlays and raw generated fallback bounds do not count as physical render success. A scene only earns physical render credit from credible mesh-backed visuals or legitimate URDF primitive visuals representing actual workcell geometry.
 
 Scene names are only CLI inputs and report labels. Rendering remains data-driven from each scene package or generated fixture; do not add scene-specific render branches to make one target pass.
