@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+import scripts.run_scene3d_visual_quality_screenshots as screenshots
 import scripts.validate_scene3d_visual_quality_matrix as matrix
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,6 +96,7 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
             "wireframe_fallback_count",
             "visual_quality_status",
             "warnings",
+            "blocker_reasons",
         ):
             assert field in scene
         assert scene["mesh_source_count"] == 1
@@ -103,6 +105,7 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
         assert scene["primitive_rendered_count"] == 1
         assert scene["placeholder_count"] == 0
         assert scene["visual_quality_status"] == "PASS"
+        assert scene["blocker_reasons"] == []
 
 
 def test_visual_quality_matrix_rejects_rendered_count_only_and_missing_primitive_render_counter(tmp_path: Path) -> None:
@@ -182,6 +185,99 @@ def test_visual_quality_matrix_rejects_primitive_placeholders_and_wireframe_domi
     assert "valid URDF primitives must not increment placeholder_count" in scene["blockers"]
     assert "wireframe_fallback_count dominates visible physical items" in scene["blockers"]
 
+
+def test_evaluate_scene_blocks_missing_smoke_json_with_reason_code(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = repo / "scenes" / "missing_smoke_scene"
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    _write_json(mesh_index, _mesh_and_primitive_index())
+    missing_smoke = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="missing_smoke_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=missing_smoke,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert "smoke_json_missing" in result["blocker_reasons"]
+    assert any(blocker.startswith("smoke_json_missing:") for blocker in result["blockers"])
+    assert not any("smoke JSON not found" in warning for warning in result["warnings"])
+
+
+def test_evaluate_scene_blocks_unreadable_smoke_json_with_reason_code(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = repo / "scenes" / "unreadable_smoke_scene"
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    _write_json(mesh_index, _mesh_and_primitive_index())
+    smoke_json.parent.mkdir(parents=True, exist_ok=True)
+    smoke_json.write_text("{not valid json", encoding="utf-8")
+
+    result = matrix.evaluate_scene(
+        scene_name="unreadable_smoke_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert "smoke_json_unreadable" in result["blocker_reasons"]
+    assert any(blocker.startswith("smoke_json_unreadable:") for blocker in result["blockers"])
+
+
+def test_evaluate_scene_blocks_missing_screenshot_with_reason_code(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(repo, "missing_screenshot_scene", _mesh_and_primitive_index(), _passing_smoke())
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    screenshot = scene_dir / "generated" / "scene3d_gui_smoke.png"
+
+    result = matrix.evaluate_scene(
+        scene_name="missing_screenshot_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+        screenshot_path=screenshot,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert "screenshot_missing" in result["blocker_reasons"]
+    assert any(blocker.startswith("screenshot_missing:") for blocker in result["blockers"])
+    assert not any("screenshot not found" in warning for warning in result["warnings"])
+
+
+
+def test_screenshot_runner_marks_visual_quality_blocker_reasons_blocked(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    output_dir = tmp_path / "out"
+    scene_dir = _write_scene(repo, "runner_scene", _mesh_and_primitive_index(), _passing_smoke())
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    missing_screenshot = output_dir / "scene3d_gui_smoke_runner_scene.png"
+
+    def fake_run_smoke_for_target(**kwargs):
+        return 0, smoke_json, missing_screenshot, _passing_smoke(), [], "fake smoke command"
+
+    monkeypatch.setattr(screenshots, "_run_smoke_for_target", fake_run_smoke_for_target)
+
+    result = screenshots.build_result_for_target(
+        repo_root=repo,
+        workspace_root=repo,
+        executable=None,
+        target={
+            "target_kind": "explicit_scene",
+            "scene_name": "runner_scene",
+            "scene_path": str(scene_dir),
+        },
+        output_dir=output_dir,
+        timeout_sec=1.0,
+        xvfb=False,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert "screenshot_missing" in result["blocker_reasons"]
+    assert result["visual_quality_evaluation"]["blocker_reasons"] == ["screenshot_missing"]
 
 def test_visual_quality_matrix_cli_writes_json(tmp_path: Path) -> None:
     repo = tmp_path / "repo"

@@ -338,11 +338,17 @@ def build_result_for_target(
     )
     counter_summary = _counter_summary(smoke_payload)
     all_blockers = list(wrapper_blockers)
+    all_blocker_reasons = list(wrapper_blockers)
     if isinstance(smoke_payload.get("blockers"), list):
         all_blockers.extend(str(x) for x in smoke_payload["blockers"])
+    if isinstance(smoke_payload.get("blocker_reasons"), list):
+        all_blocker_reasons.extend(str(x) for x in smoke_payload["blocker_reasons"])
     all_blockers.extend(str(x) for x in visual_quality.get("blockers", []))
+    if isinstance(visual_quality.get("blocker_reasons"), list):
+        all_blocker_reasons.extend(str(x) for x in visual_quality["blocker_reasons"])
+    all_blocker_reasons = list(dict.fromkeys(reason for reason in all_blocker_reasons if reason))
     status = "PASS" if rc == 0 and not all_blockers and str(smoke_payload.get("status", "")).upper() in {"PASS", "OK"} else "FAIL"
-    if str(smoke_payload.get("status", "")).upper() == "BLOCKED" or wrapper_blockers:
+    if str(smoke_payload.get("status", "")).upper() == "BLOCKED" or wrapper_blockers or all_blocker_reasons:
         status = "BLOCKED"
     return {
         "scene": target["scene_name"],
@@ -359,6 +365,7 @@ def build_result_for_target(
         "mesh_failure_summary_by_reason_code": mesh_failure_summary(mesh_index),
         "visual_quality_evaluation": visual_quality,
         "blockers": all_blockers,
+        "blocker_reasons": all_blocker_reasons,
     }
 
 
@@ -421,15 +428,16 @@ def main(argv: list[str] | None = None) -> int:
         f"- FAIL: {totals['FAIL']}",
         f"- BLOCKED: {totals['BLOCKED']}",
         "",
-        "| Scene | Status | Smoke JSON | Screenshot | Mesh failure reasons |",
-        "|---|---|---|---|---|",
+        "| Scene | Status | Smoke JSON | Screenshot | Blocker reasons | Mesh failure reasons |",
+        "|---|---|---|---|---|---|",
     ]
     for result in results:
         reasons = result["mesh_failure_summary_by_reason_code"].get("by_reason_code", {})
         reason_text = ", ".join(f"{k}={v}" for k, v in reasons.items()) or "none"
+        blocker_reason_text = ", ".join(str(reason) for reason in result.get("blocker_reasons", [])) or "none"
         md.append(
             f"| {result['scene']} | {result['status']} | `{result['smoke_json']}` | "
-            f"`{result['screenshot_path']}` | {reason_text} |"
+            f"`{result['screenshot_path']}` | {blocker_reason_text} | {reason_text} |"
         )
     (output_dir / "scene3d_visual_quality_screenshots_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print(json.dumps(payload, indent=2))
