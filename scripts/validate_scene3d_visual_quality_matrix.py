@@ -218,6 +218,12 @@ def evaluate_scene(
 ) -> dict[str, Any]:
     warnings: list[str] = []
     blockers: list[str] = []
+    blocker_reasons: list[str] = []
+
+    def add_blocker(message: str, reason: str | None = None) -> None:
+        blockers.append(message)
+        if reason and reason not in blocker_reasons:
+            blocker_reasons.append(reason)
 
     mesh_index: dict[str, Any] = {}
     if not mesh_index_path.exists():
@@ -234,11 +240,14 @@ def evaluate_scene(
     if smoke_exists and smoke_json_path is not None:
         smoke_payload = _load_json(smoke_json_path)
         if smoke_payload.get("_load_error"):
-            blockers.append(f"could not read smoke JSON: {smoke_json_path}: {smoke_payload['_load_error']}")
+            add_blocker(
+                f"smoke_json_unreadable: could not read smoke JSON: {smoke_json_path}: {smoke_payload['_load_error']}",
+                "smoke_json_unreadable",
+            )
         elif smoke_payload.get("schema") not in {SMOKE_SCHEMA, None}:
             warnings.append(f"unexpected smoke schema: {smoke_payload.get('schema')!r}")
     elif smoke_json_path is not None:
-        warnings.append(f"smoke JSON not found: {smoke_json_path}")
+        add_blocker(f"smoke_json_missing: smoke JSON not found: {smoke_json_path}", "smoke_json_missing")
     else:
         warnings.append("smoke JSON not provided")
 
@@ -267,7 +276,7 @@ def evaluate_scene(
         warnings.append(f"{missing_geometry_count} source payload item(s) lack mesh or primitive geometry")
 
     if screenshot_path is not None and not screenshot_path.exists():
-        warnings.append(f"screenshot not found: {screenshot_path}")
+        add_blocker(f"screenshot_missing: screenshot not found: {screenshot_path}", "screenshot_missing")
 
     if synthetic_fixture:
         if mesh_source_count < 1 or primitive_source_count < 1:
@@ -296,6 +305,7 @@ def evaluate_scene(
         "visual_quality_status": visual_quality_status,
         "warnings": warnings,
         "blockers": blockers,
+        "blocker_reasons": blocker_reasons,
     }
 
 
