@@ -30,13 +30,14 @@ common_generated_files: &common_generated_files
   - urdf/scene.urdf.xacro
   - launch/demo.launch.py
   - generated/scene_visual_mesh_index.json
+  - generated/scene3d_gui_smoke.json
 scenes:
   - scene_name: suction_test
     package_name: suction_test
     scene_path: scenes/suction_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
@@ -48,7 +49,7 @@ scenes:
     scene_path: scenes/ur10_2f_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur10_2f_test --json
@@ -60,7 +61,7 @@ scenes:
     scene_path: scenes/ur3_suction_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur3_suction_test --json
@@ -72,7 +73,7 @@ scenes:
     scene_path: scenes/ur5_2f_builder_pick_place_demo
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_builder_pick_place_demo --json
@@ -83,8 +84,8 @@ scenes:
     package_name: ur5_2f_sorting_test
     scene_path: scenes/ur5_2f_sorting_test
     support_level: supported
-    status: supported
-    known_blocker: ""
+    status: blocked
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual-quality FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false, generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable, and primitive_source_count > 0 requires primitive_rendered_count > 0."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_sorting_test --json
@@ -96,7 +97,7 @@ scenes:
     scene_path: scenes/ur5_2f_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_2f_test --json
@@ -108,7 +109,7 @@ scenes:
     scene_path: scenes/ur5_3f_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_3f_test --json
@@ -120,7 +121,7 @@ scenes:
     scene_path: scenes/ur5_airpick4_test
     support_level: supported
     status: blocked
-    known_blocker: "mesh-index/renderable-item contract failure: generic extractor produced 0 renderable visual_items because local xacro expansion failed (No module named 'ament_index_python')"
+    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D visual evidence FAIL because generated/scene_visual_mesh_index.json has safe_for_preview=false with 0 credible mesh/primitive source geometry after best-effort xacro fallback (xacro executable unavailable), and generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/ur5_airpick4_test --json
