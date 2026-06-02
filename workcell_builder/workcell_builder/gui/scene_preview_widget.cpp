@@ -1,7 +1,61 @@
 #include "scene_preview_widget.h"
 
+#include <QRectF>
+#include <QtGlobal>
+
 namespace {
 constexpr double kOverlayFitDominanceRatio = 4.0;
+
+QString normalized_preview_token(const QString & value)
+{
+  return value.trimmed().toLower().replace('-', '_').replace(' ', '_');
+}
+
+bool preview_item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)
+{
+  return item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty();
+}
+
+bool preview_item_has_valid_urdf_primitive(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString type = normalized_preview_token(item.primitive_geometry_type);
+  if (type == QStringLiteral("box")) return item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001;
+  if (type == QStringLiteral("cylinder")) return item.primitive_radius > 0.001 && item.primitive_length > 0.001;
+  if (type == QStringLiteral("sphere")) return item.primitive_radius > 0.001;
+  if (type == QStringLiteral("capsule")) return item.primitive_radius > 0.001 && item.primitive_length > 0.001;
+  return false;
+}
+
+bool preview_item_is_overlay_or_helper(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString role = normalized_preview_token(item.role);
+  const QString category = normalized_preview_token(item.category);
+  const QString source_layer = normalized_preview_token(item.source_layer);
+  const QString lock_reason = normalized_preview_token(item.lock_reason);
+  return role.contains("overlay") || role.contains("helper") || role.contains("guide") ||
+         role.contains("warning_anchor") || role.contains("warning_badge") ||
+         role.contains("safety_zone") || category.contains("overlay") || category.contains("helper") ||
+         category.contains("safety") || source_layer.contains("overlay") || lock_reason.contains("overlay");
+}
+
+bool preview_item_is_generated_or_locked_urdf(const ScenePreviewWidget::PreviewItem & item)
+{
+  const QString category = normalized_preview_token(item.category);
+  const QString source_layer = normalized_preview_token(item.source_layer);
+  const QString visual_source = normalized_preview_token(item.active_visual_source);
+  const QString lock_reason = normalized_preview_token(item.lock_reason);
+  return source_layer.contains("generated_urdf") || source_layer.contains("locked_generated_urdf") ||
+         visual_source.contains("generated_urdf") || visual_source.contains("locked_generated_urdf") ||
+         category.contains("urdf") || lock_reason.contains("urdf") || lock_reason.contains("robot_model") ||
+         lock_reason.contains("robotmodel");
+}
+
+bool preview_item_is_raw_generated_bounds_only(const ScenePreviewWidget::PreviewItem & item)
+{
+  return preview_item_is_generated_or_locked_urdf(item) &&
+         item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001 &&
+         (preview_item_has_credible_mesh_handoff(item) || preview_item_has_valid_urdf_primitive(item));
+}
 
 void maybe_warn_overlay_fit_dominance(ScenePreviewWidget * self, const QRectF & physical_bounds, const QRectF & overlay_bounds)
 {
@@ -305,14 +359,10 @@ void ScenePreviewWidget::emit_visual_quality_assessment_once()
   int missing_count = 0;
   int overlay_count = 0;
   for (const auto & item : preview_items_) {
-    const QString role = item.role.trimmed().toLower();
-    const QString category = item.category.trimmed().toLower();
-    const QString source_layer = item.source_layer.trimmed().toLower();
-    const bool overlay = role.contains(QStringLiteral("overlay")) || category.contains(QStringLiteral("overlay")) || source_layer.contains(QStringLiteral("overlay"));
-    if (overlay) { ++overlay_count; continue; }
+    if (preview_item_is_overlay_or_helper(item)) { ++overlay_count; continue; }
     ++physical_count;
-    if (item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty()) ++mesh_count;
-    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++primitive_count;
+    if (preview_item_has_credible_mesh_handoff(item)) ++mesh_count;
+    else if (preview_item_has_valid_urdf_primitive(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001)) ++primitive_count;
     else ++missing_count;
   }
   emit_scene_diagnostic_once(
@@ -400,10 +450,9 @@ QRectF ScenePreviewWidget::rendered_items_bounds_2d(bool include_overlays) const
   QRectF bounds;
   auto include_in_fit_bounds = [include_overlays](const PreviewItem & it) {
     if (include_overlays) return true;
-    const QString role = it.role.trimmed().toLower();
-    const QString category = it.category.trimmed().toLower();
-    const QString mix = role + "|" + category;
-    return !mix.contains("safety_zone") && !mix.contains("safety") && !mix.contains("warning_anchor") && !mix.contains("warning_badge");
+    if (preview_item_is_overlay_or_helper(it)) return false;
+    if (preview_item_is_raw_generated_bounds_only(it)) return false;
+    return true;
   };
   for (const auto & it : preview_items_) {
     if (!include_in_fit_bounds(it)) continue;
@@ -497,20 +546,18 @@ void ScenePreviewWidget::refresh_info_chip()
   int locked_urdf_count = 0;
   int physical_count = 0;
   for (const auto & item : preview_items_) {
-    const QString role = item.role.trimmed().toLower();
     const QString category = item.category.trimmed().toLower();
     const QString lock_reason = item.lock_reason.trimmed().toLower();
-    const bool overlay_only = role.contains("overlay") || role.contains("helper") || role.contains("guide") ||
-                              role.contains("warning_anchor") || role.contains("warning_badge") ||
-                              category.contains("overlay") || lock_reason.contains("overlay");
-    if (overlay_only) {
+    if (preview_item_is_overlay_or_helper(item)) {
       ++overlay_count;
       continue;
     }
     ++physical_count;
-    const bool mesh_backed = item.mesh_available || item.has_mesh_metadata || !item.mesh_path.trimmed().isEmpty() || !item.source_path.trimmed().isEmpty();
+    const bool mesh_backed = preview_item_has_credible_mesh_handoff(item);
+    const bool raw_generated_bounds = preview_item_is_raw_generated_bounds_only(item);
     if (mesh_backed) ++mesh_count;
-    else if (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001) ++box_count;
+    else if (preview_item_has_valid_urdf_primitive(item) || (item.sx > 0.001 && item.sy > 0.001 && item.sz > 0.001 && !raw_generated_bounds)) ++box_count;
+    else if (raw_generated_bounds) ++mesh_count;
     else ++missing_count;
 
     if (item.locked && !item.editable &&
