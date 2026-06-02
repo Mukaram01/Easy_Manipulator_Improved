@@ -80,6 +80,28 @@ _MESH_FAILURE_REASON_KEYS = (
 
 _MESH_HINT_KEYS = ("mesh", "mesh_path", "mesh_uri", "mesh_filename", "filename", "resource", "uri", "mesh_extension")
 
+_BLOCKER_CATEGORY_KEYS = (
+    "missing_screenshot",
+    "smoke_json_missing",
+    "smoke_json_unreadable",
+    "mesh_source_not_rendered",
+    "urdf_primitive_source_not_rendered",
+    "placeholder_missing_geometry_dominates",
+    "overlay_helper_dominates",
+    "no_physical_scene_items_rendered",
+)
+
+_BLOCKER_ACTION_TEXT = {
+    "missing_screenshot": "capture or attach the Scene3D smoke screenshot",
+    "smoke_json_missing": "run the Scene3D GUI smoke command so the smoke JSON is written",
+    "smoke_json_unreadable": "fix or regenerate the malformed Scene3D smoke JSON",
+    "mesh_source_not_rendered": "fix mesh handoff/rendering so mesh-backed source items render",
+    "urdf_primitive_source_not_rendered": "fix URDF primitive rendering counters so primitive source items render",
+    "placeholder_missing_geometry_dominates": "replace dominant placeholder/missing-geometry visuals with mesh or primitive geometry",
+    "overlay_helper_dominates": "render physical scene items; overlay helpers cannot prove visual quality",
+    "no_physical_scene_items_rendered": "render at least one physical mesh, primitive, or fallback scene item",
+}
+
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,6 +265,133 @@ def _primitive_summary(counter_summary: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or isinstance(value, bool):
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _add_reason(reasons: list[str], reason: str) -> None:
+    if reason and reason not in reasons:
+        reasons.append(reason)
+
+
+def _normalize_blocker_text(text: str) -> str | None:
+    lowered = text.strip().lower()
+    if not lowered:
+        return None
+    if "smoke_json_missing" in lowered:
+        return "smoke_json_missing"
+    if "smoke_json_unreadable" in lowered:
+        return "smoke_json_unreadable"
+    if "screenshot_missing" in lowered or "missing_screenshot" in lowered:
+        return "missing_screenshot"
+    if "mesh_source_not_rendered" in lowered or "mesh_source_count > 0 requires mesh_rendered_count > 0" in lowered:
+        return "mesh_source_not_rendered"
+    if (
+        "urdf_primitive_source_not_rendered" in lowered
+        or "primitive_source_not_rendered" in lowered
+        or "primitive_source_count > 0 requires primitive_rendered_count > 0" in lowered
+    ):
+        return "urdf_primitive_source_not_rendered"
+    if (
+        "placeholder_missing_geometry_dominates" in lowered
+        or "valid urdf primitives must not increment placeholder_count" in lowered
+        or "wireframe_fallback_count dominates" in lowered
+    ):
+        return "placeholder_missing_geometry_dominates"
+    if "overlay_helper_dominates" in lowered or ("overlay helper" in lowered and "dominat" in lowered):
+        return "overlay_helper_dominates"
+    if "no_physical_scene_items_rendered" in lowered:
+        return "no_physical_scene_items_rendered"
+    return lowered.split(":", 1)[0].strip().replace(" ", "_")
+
+
+def _normalized_blocker_reasons(
+    *,
+    wrapper_blockers: list[str],
+    smoke_payload: dict[str, Any],
+    visual_quality: dict[str, Any],
+    counter_summary: dict[str, Any],
+    screenshot: Path,
+) -> list[str]:
+    reasons: list[str] = []
+    candidate_text: list[str] = [str(x) for x in wrapper_blockers]
+    for key in ("blockers", "blocker_reasons"):
+        values = smoke_payload.get(key)
+        if isinstance(values, list):
+            candidate_text.extend(str(x) for x in values)
+    for key in ("blockers", "blocker_reasons"):
+        values = visual_quality.get(key)
+        if isinstance(values, list):
+            candidate_text.extend(str(x) for x in values)
+    for text in candidate_text:
+        normalized = _normalize_blocker_text(text)
+        if normalized:
+            _add_reason(reasons, normalized)
+
+    if not screenshot.exists():
+        _add_reason(reasons, "missing_screenshot")
+    if smoke_payload.get("_load_error"):
+        _add_reason(reasons, "smoke_json_unreadable")
+
+    mesh_source_count = max(_as_int(counter_summary.get("mesh_source_count")), _as_int(visual_quality.get("mesh_source_count")))
+    mesh_rendered_count = max(_as_int(counter_summary.get("mesh_rendered_count")), _as_int(visual_quality.get("mesh_rendered_count")))
+    primitive_source_count = max(
+        _as_int(counter_summary.get("urdf_primitive_source_count")),
+        _as_int(counter_summary.get("primitive_source_count")),
+        _as_int(visual_quality.get("primitive_source_count")),
+    )
+    primitive_rendered_count = max(
+        _as_int(counter_summary.get("urdf_primitive_rendered_count")),
+        _as_int(counter_summary.get("primitive_rendered_count")),
+        _as_int(visual_quality.get("primitive_rendered_count")),
+    )
+    placeholder_count = max(_as_int(counter_summary.get("placeholder_count")), _as_int(visual_quality.get("placeholder_count")))
+    missing_geometry_count = max(_as_int(counter_summary.get("missing_geometry_count")), _as_int(visual_quality.get("missing_geometry_count")))
+    wireframe_fallback_count = max(_as_int(counter_summary.get("wireframe_fallback_count")), _as_int(visual_quality.get("wireframe_fallback_count")))
+    overlay_helper_count = _as_int(counter_summary.get("overlay_helper_count"))
+    rendered_count = max(_as_int(counter_summary.get("rendered_count")), _as_int(visual_quality.get("rendered_count")))
+    physical_rendered_count = mesh_rendered_count + primitive_rendered_count + placeholder_count + wireframe_fallback_count
+    source_count = mesh_source_count + primitive_source_count
+
+    if mesh_source_count > 0 and mesh_rendered_count <= 0:
+        _add_reason(reasons, "mesh_source_not_rendered")
+    if primitive_source_count > 0 and primitive_rendered_count <= 0:
+        _add_reason(reasons, "urdf_primitive_source_not_rendered")
+    placeholder_or_missing_count = placeholder_count + missing_geometry_count + wireframe_fallback_count
+    credible_rendered_count = mesh_rendered_count + primitive_rendered_count
+    if placeholder_or_missing_count > max(credible_rendered_count, 0) and placeholder_or_missing_count > 0:
+        _add_reason(reasons, "placeholder_missing_geometry_dominates")
+    if overlay_helper_count > max(physical_rendered_count, 0) and overlay_helper_count > 0:
+        _add_reason(reasons, "overlay_helper_dominates")
+    if source_count > 0 and physical_rendered_count <= 0:
+        _add_reason(reasons, "no_physical_scene_items_rendered")
+    if rendered_count > 0 and overlay_helper_count >= rendered_count and physical_rendered_count <= 0:
+        _add_reason(reasons, "no_physical_scene_items_rendered")
+
+    return reasons
+
+
+def _blocker_reason_summary(results: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {key: 0 for key in _BLOCKER_CATEGORY_KEYS}
+    for result in results:
+        reason_set = set(str(reason) for reason in result.get("blocker_reasons", []))
+        for key in _BLOCKER_CATEGORY_KEYS:
+            if key in reason_set:
+                counts[key] += 1
+    return counts
+
+
+def _blocker_reason_text(reasons: list[str]) -> str:
+    if not reasons:
+        return "none"
+    return "; ".join(_BLOCKER_ACTION_TEXT.get(reason, reason) for reason in reasons)
+
+
 def _run_smoke_for_target(
     *,
     repo_root: Path,
@@ -338,15 +487,17 @@ def build_result_for_target(
     )
     counter_summary = _counter_summary(smoke_payload)
     all_blockers = list(wrapper_blockers)
-    all_blocker_reasons = list(wrapper_blockers)
     if isinstance(smoke_payload.get("blockers"), list):
         all_blockers.extend(str(x) for x in smoke_payload["blockers"])
-    if isinstance(smoke_payload.get("blocker_reasons"), list):
-        all_blocker_reasons.extend(str(x) for x in smoke_payload["blocker_reasons"])
     all_blockers.extend(str(x) for x in visual_quality.get("blockers", []))
-    if isinstance(visual_quality.get("blocker_reasons"), list):
-        all_blocker_reasons.extend(str(x) for x in visual_quality["blocker_reasons"])
-    all_blocker_reasons = list(dict.fromkeys(reason for reason in all_blocker_reasons if reason))
+    all_blocker_reasons = _normalized_blocker_reasons(
+        wrapper_blockers=wrapper_blockers,
+        smoke_payload=smoke_payload,
+        visual_quality=visual_quality,
+        counter_summary=counter_summary,
+        screenshot=screenshot,
+    )
+    blocker_categories = {key: key in all_blocker_reasons for key in _BLOCKER_CATEGORY_KEYS}
     status = "PASS" if rc == 0 and not all_blockers and str(smoke_payload.get("status", "")).upper() in {"PASS", "OK"} else "FAIL"
     if str(smoke_payload.get("status", "")).upper() == "BLOCKED" or wrapper_blockers or all_blocker_reasons:
         status = "BLOCKED"
@@ -366,6 +517,8 @@ def build_result_for_target(
         "visual_quality_evaluation": visual_quality,
         "blockers": all_blockers,
         "blocker_reasons": all_blocker_reasons,
+        "blocker_categories": blocker_categories,
+        "blocker_text": _blocker_reason_text(all_blocker_reasons),
     }
 
 
@@ -408,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     totals = dict(Counter(str(result["status"]) for result in results))
     for key in ("PASS", "FAIL", "BLOCKED"):
         totals.setdefault(key, 0)
+    blocker_reason_summary = _blocker_reason_summary(results)
     payload = {
         "schema": SCHEMA,
         "repo_root": str(repo_root),
@@ -416,6 +570,8 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": str(output_dir),
         "scene_count": len(results),
         "totals": totals,
+        "blocker_reason_summary": blocker_reason_summary,
+        **blocker_reason_summary,
         "results": results,
         "pass": totals.get("FAIL", 0) == 0 and totals.get("BLOCKED", 0) == 0,
     }
@@ -428,13 +584,17 @@ def main(argv: list[str] | None = None) -> int:
         f"- FAIL: {totals['FAIL']}",
         f"- BLOCKED: {totals['BLOCKED']}",
         "",
-        "| Scene | Status | Smoke JSON | Screenshot | Blocker reasons | Mesh failure reasons |",
+        "## Blocker category summary",
+        "",
+        *[f"- {key}: {blocker_reason_summary[key]}" for key in _BLOCKER_CATEGORY_KEYS],
+        "",
+        "| Scene | Status | Smoke JSON | Screenshot | Blockers | Mesh failure reasons |",
         "|---|---|---|---|---|---|",
     ]
     for result in results:
         reasons = result["mesh_failure_summary_by_reason_code"].get("by_reason_code", {})
         reason_text = ", ".join(f"{k}={v}" for k, v in reasons.items()) or "none"
-        blocker_reason_text = ", ".join(str(reason) for reason in result.get("blocker_reasons", [])) or "none"
+        blocker_reason_text = result.get("blocker_text") or _blocker_reason_text([str(reason) for reason in result.get("blocker_reasons", [])])
         md.append(
             f"| {result['scene']} | {result['status']} | `{result['smoke_json']}` | "
             f"`{result['screenshot_path']}` | {blocker_reason_text} | {reason_text} |"
