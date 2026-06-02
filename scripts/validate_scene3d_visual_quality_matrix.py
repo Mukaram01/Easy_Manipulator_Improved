@@ -12,6 +12,7 @@ import yaml
 SCHEMA = "workcell_studio_scene3d_visual_quality_matrix/v1"
 SMOKE_SCHEMA = "workcell_studio_scene3d_gui_smoke/v1"
 PHYSICAL_ITEM_DOMINANCE_RATIO = 0.5
+DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO = 0.5
 
 MESH_KEYS = {"mesh", "mesh_path", "mesh_uri", "mesh_filename", "filename", "resource", "uri"}
 PRIMITIVE_TYPES = {"box", "cube", "cylinder", "sphere", "capsule", "cone", "primitive"}
@@ -253,9 +254,34 @@ def evaluate_scene(
 
     mesh_rendered_count = _counter(smoke_payload, "mesh_rendered_count", "mesh_backed_count")
     primitive_rendered_count = _counter(smoke_payload, "primitive_rendered_count", "urdf_primitive_rendered_count")
-    placeholder_count = _counter(smoke_payload, "placeholder_count", "placeholder_box_count", "primitive_fallback_count")
+    # Diagnostic fallback evidence is useful for debugging viewport plumbing, but it is not
+    # proof that a scene rendered its physical mesh/URDF-primitive geometry truthfully.
+    placeholder_count = _counter(smoke_payload, "placeholder_count", "placeholder_box_count")
     wireframe_fallback_count = _counter(smoke_payload, "wireframe_fallback_count", "wireframe_box_count")
+    raw_generated_bounds_count = _counter(
+        smoke_payload,
+        "raw_generated_bounds_count",
+        "generated_bounds_count",
+        "generated_fallback_count",
+        "raw_generated_fallback_count",
+        "bounds_fallback_count",
+    )
+    missing_geometry_box_count = _counter(
+        smoke_payload,
+        "missing_geometry_box_count",
+        "missing_geometry_rendered_count",
+        "missing_geometry_fallback_count",
+    )
     rendered_count = _counter(smoke_payload, "rendered_count")
+
+    credible_source_count = mesh_source_count + primitive_source_count
+    physical_rendered_count = mesh_rendered_count + primitive_rendered_count
+    diagnostic_fallback_count = (
+        raw_generated_bounds_count
+        + placeholder_count
+        + wireframe_fallback_count
+        + max(0, missing_geometry_box_count - placeholder_count)
+    )
 
     if mesh_source_count > 0 and mesh_rendered_count <= 0:
         blockers.append("mesh_source_count > 0 requires mesh_rendered_count > 0")
@@ -263,17 +289,31 @@ def evaluate_scene(
         blockers.append("primitive_source_count > 0 requires primitive_rendered_count > 0")
     if primitive_source_count > 0 and placeholder_count > missing_geometry_count:
         blockers.append("valid URDF primitives must not increment placeholder_count")
-    if total_payload_count > 0 and mesh_source_count + primitive_source_count <= 0:
+    if total_payload_count > 0 and credible_source_count <= 0:
         blockers.append("source geometry classification missing; rendered_count alone cannot prove visual quality")
     if rendered_count == total_payload_count and total_payload_count > 0:
         warnings.append("rendered_count equals total_payload_count; pass still requires mesh/primitive-specific rendered counts")
 
-    visible_physical_count = mesh_rendered_count + primitive_rendered_count + placeholder_count + wireframe_fallback_count
+    if diagnostic_fallback_count > 0:
+        warnings.append(
+            "diagnostic fallback evidence present; physical_rendered_count excludes raw bounds, placeholders, and wireframes"
+        )
+    if missing_geometry_count > 0:
+        warnings.append(f"{missing_geometry_count} source payload item(s) lack mesh or primitive geometry")
+
+    if credible_source_count > 0 and physical_rendered_count <= 0 and raw_generated_bounds_count > 0:
+        blockers.append("raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources")
+    if credible_source_count > 0 and physical_rendered_count > 0 and raw_generated_bounds_count > 0:
+        if raw_generated_bounds_count > int(physical_rendered_count * DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO):
+            blockers.append("raw/generated fallback bounds dominate physical render evidence despite mesh or URDF primitive sources")
+    if credible_source_count > 0 and physical_rendered_count > 0 and diagnostic_fallback_count > 0:
+        if diagnostic_fallback_count > int(physical_rendered_count * DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO):
+            blockers.append("diagnostic fallback evidence dominates physical render evidence despite mesh or URDF primitive sources")
+
+    visible_physical_count = physical_rendered_count
     if wireframe_fallback_count > 0 and visible_physical_count > 0:
         if wireframe_fallback_count > int(visible_physical_count * PHYSICAL_ITEM_DOMINANCE_RATIO):
             blockers.append("wireframe_fallback_count dominates visible physical items")
-    if missing_geometry_count > 0:
-        warnings.append(f"{missing_geometry_count} source payload item(s) lack mesh or primitive geometry")
 
     if screenshot_path is not None and not screenshot_path.exists():
         add_blocker(f"screenshot_missing: screenshot not found: {screenshot_path}", "screenshot_missing")
@@ -285,6 +325,8 @@ def evaluate_scene(
             blockers.append("synthetic fixture must render both one mesh and one primitive")
         if placeholder_count != 0:
             blockers.append("synthetic fixture must render mesh and primitive without placeholder boxes")
+        if diagnostic_fallback_count != 0:
+            blockers.append("synthetic fixture must render mesh and primitive without diagnostic fallback bounds or boxes")
 
     visual_quality_status = "PASS" if not blockers else "FAIL"
     return {
@@ -298,7 +340,11 @@ def evaluate_scene(
         "mesh_rendered_count": mesh_rendered_count,
         "primitive_source_count": primitive_source_count,
         "primitive_rendered_count": primitive_rendered_count,
+        "physical_rendered_count": physical_rendered_count,
         "placeholder_count": placeholder_count,
+        "raw_generated_bounds_count": raw_generated_bounds_count,
+        "missing_geometry_box_count": missing_geometry_box_count,
+        "diagnostic_fallback_count": diagnostic_fallback_count,
         "missing_geometry_count": missing_geometry_count,
         "wireframe_fallback_count": wireframe_fallback_count,
         "rendered_count": rendered_count,

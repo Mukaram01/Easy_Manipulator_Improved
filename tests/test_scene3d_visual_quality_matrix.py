@@ -91,7 +91,11 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
             "mesh_rendered_count",
             "primitive_source_count",
             "primitive_rendered_count",
+            "physical_rendered_count",
             "placeholder_count",
+            "raw_generated_bounds_count",
+            "missing_geometry_box_count",
+            "diagnostic_fallback_count",
             "missing_geometry_count",
             "wireframe_fallback_count",
             "visual_quality_status",
@@ -103,7 +107,9 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
         assert scene["mesh_rendered_count"] == 1
         assert scene["primitive_source_count"] == 1
         assert scene["primitive_rendered_count"] == 1
+        assert scene["physical_rendered_count"] == 2
         assert scene["placeholder_count"] == 0
+        assert scene["diagnostic_fallback_count"] == 0
         assert scene["visual_quality_status"] == "PASS"
         assert scene["blocker_reasons"] == []
 
@@ -185,6 +191,125 @@ def test_visual_quality_matrix_rejects_primitive_placeholders_and_wireframe_domi
     assert "valid URDF primitives must not increment placeholder_count" in scene["blockers"]
     assert "wireframe_fallback_count dominates visible physical items" in scene["blockers"]
 
+
+
+def test_visual_quality_matrix_rejects_raw_generated_bounds_only_visible_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "raw_bounds_only_scene",
+        _mesh_and_primitive_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 2,
+                "mesh_rendered_count": 0,
+                "primitive_rendered_count": 0,
+                "generated_fallback_count": 2,
+                "placeholder_count": 0,
+                "wireframe_fallback_count": 0,
+            },
+        },
+    )
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="raw_bounds_only_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["physical_rendered_count"] == 0
+    assert result["raw_generated_bounds_count"] == 2
+    assert result["diagnostic_fallback_count"] == 2
+    assert "raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources" in result["blockers"]
+
+
+def test_visual_quality_matrix_rejects_mesh_scene_with_excessive_raw_generated_fallback_bounds(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "mesh_with_excessive_raw_bounds_scene",
+        _mesh_and_primitive_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 4,
+                "mesh_rendered_count": 1,
+                "primitive_rendered_count": 1,
+                "raw_generated_bounds_count": 2,
+                "placeholder_count": 0,
+                "wireframe_fallback_count": 0,
+            },
+        },
+    )
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="mesh_with_excessive_raw_bounds_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "FAIL"
+    assert result["physical_rendered_count"] == 2
+    assert result["raw_generated_bounds_count"] == 2
+    assert result["diagnostic_fallback_count"] == 2
+    assert "raw/generated fallback bounds dominate physical render evidence despite mesh or URDF primitive sources" in result["blockers"]
+    assert "diagnostic fallback evidence dominates physical render evidence despite mesh or URDF primitive sources" in result["blockers"]
+
+
+def test_visual_quality_matrix_allows_valid_urdf_primitive_render_without_placeholder_inflation(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    primitive_index = {
+        "safe_for_preview": True,
+        "visual_items": [
+            {"id": "primitive_item", "geometry": {"cylinder": {"radius": 0.2, "length": 0.8}}},
+        ],
+    }
+    scene_dir = _write_scene(
+        repo,
+        "primitive_scene",
+        primitive_index,
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "render_debug_counters": {
+                "rendered_count": 1,
+                "mesh_rendered_count": 0,
+                "urdf_primitive_rendered_count": 1,
+                "primitive_fallback_count": 1,
+                "placeholder_count": 0,
+                "wireframe_fallback_count": 0,
+                "generated_fallback_count": 0,
+            },
+        },
+    )
+    mesh_index = scene_dir / "generated" / "scene_visual_mesh_index.json"
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+
+    result = matrix.evaluate_scene(
+        scene_name="primitive_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=mesh_index,
+        smoke_json_path=smoke_json,
+    )
+
+    assert result["visual_quality_status"] == "PASS"
+    assert result["mesh_source_count"] == 0
+    assert result["primitive_source_count"] == 1
+    assert result["primitive_rendered_count"] == 1
+    assert result["physical_rendered_count"] == 1
+    assert result["placeholder_count"] == 0
+    assert result["diagnostic_fallback_count"] == 0
+    assert result["blockers"] == []
 
 def test_evaluate_scene_blocks_missing_smoke_json_with_reason_code(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
