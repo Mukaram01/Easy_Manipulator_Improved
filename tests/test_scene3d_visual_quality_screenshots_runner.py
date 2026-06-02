@@ -42,13 +42,33 @@ def _write_fake_executable(path: Path) -> None:
         "args=sys.argv[1:]\n"
         "out=pathlib.Path(args[args.index('--smoke-output')+1])\n"
         "png=pathlib.Path(args[args.index('--smoke-screenshot')+1]) if '--smoke-screenshot' in args else None\n"
-        "scene=args[args.index('--scene')+1] if '--scene' in args else pathlib.Path(args[args.index('--scene-path')+1]).name\n"
+        "scene=args[args.index('--scene')+1] if '--scene' in args "
+        "else pathlib.Path(args[args.index('--scene-path')+1]).name\n"
         "payload={'schema':'workcell_studio_scene3d_gui_smoke/v1','status':'PASS','scene':scene,'counters':{"
         "'rendered_count':2,'mesh_source_count':1,'mesh_rendered_count':1,'urdf_primitive_source_count':1,"
         "'urdf_primitive_rendered_count':1,'primitive_fallback_count':1,'placeholder_count':0,"
         "'missing_geometry_count':0,'wireframe_fallback_count':0,'visual_quality_status':'PASS'}}\n"
         "out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(payload))\n"
         "png.parent.mkdir(parents=True, exist_ok=True); png.write_bytes(b'png') if png else None\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+
+
+def _write_failing_fake_executable(path: Path) -> None:
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "args=sys.argv[1:]\n"
+        "out=pathlib.Path(args[args.index('--smoke-output')+1])\n"
+        "scene=args[args.index('--scene')+1] if '--scene' in args "
+        "else pathlib.Path(args[args.index('--scene-path')+1]).name\n"
+        "payload={'schema':'workcell_studio_scene3d_gui_smoke/v1','status':'PASS','scene':scene,'counters':{"
+        "'rendered_count':4,'mesh_source_count':1,'mesh_rendered_count':0,'urdf_primitive_source_count':1,"
+        "'urdf_primitive_rendered_count':0,'primitive_rendered_count':0,'primitive_fallback_count':0,'placeholder_count':0,"
+        "'missing_geometry_count':2,'wireframe_fallback_count':0,'overlay_helper_count':4,'visual_quality_status':'FAIL'}}\n"
+        "out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(payload))\n"
         "sys.exit(0)\n",
         encoding="utf-8",
     )
@@ -124,3 +144,67 @@ def test_visual_quality_screenshot_runner_captures_required_summaries(tmp_path: 
     assert result["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {"mesh_missing_on_disk": 1}
     assert Path(result["smoke_json"]).exists()
     assert Path(result["screenshot_path"]).exists()
+
+
+def test_visual_quality_screenshot_runner_reports_blockers_in_json_and_markdown_for_synthetic_failures(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    os.symlink(ROOT / "scripts", repo / "scripts", target_is_directory=True)
+    (repo / "workcell_builder").mkdir()
+    _write_scene(repo, "synthetic_failing_a")
+    _write_scene(repo, "synthetic_failing_b")
+    fake_exe = tmp_path / "failing_workcell_builder"
+    _write_failing_fake_executable(fake_exe)
+    out = tmp_path / "out"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--workspace-root",
+            str(repo),
+            "--executable",
+            str(fake_exe),
+            "--scene",
+            "synthetic_failing_a",
+            "--scene",
+            "synthetic_failing_b",
+            "--output-dir",
+            str(out),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((out / "scene3d_visual_quality_screenshots_summary.json").read_text(encoding="utf-8"))
+    assert summary["missing_screenshot"] == 2
+    assert summary["smoke_json_missing"] == 0
+    assert summary["smoke_json_unreadable"] == 0
+    assert summary["blocker_reason_summary"]["missing_screenshot"] == 2
+    assert summary["blocker_reason_summary"]["mesh_source_not_rendered"] == 2
+    assert summary["blocker_reason_summary"]["urdf_primitive_source_not_rendered"] == 2
+    assert summary["blocker_reason_summary"]["placeholder_missing_geometry_dominates"] == 2
+    assert summary["blocker_reason_summary"]["overlay_helper_dominates"] == 2
+    assert summary["blocker_reason_summary"]["no_physical_scene_items_rendered"] == 2
+    for result in summary["results"]:
+        assert result["status"] == "BLOCKED"
+        assert result["blocker_categories"]["missing_screenshot"] is True
+        assert "missing_screenshot" in result["blocker_reasons"]
+        assert "mesh_source_not_rendered" in result["blocker_reasons"]
+        assert "urdf_primitive_source_not_rendered" in result["blocker_reasons"]
+        assert "overlay_helper_dominates" in result["blocker_reasons"]
+        assert "capture or attach the Scene3D smoke screenshot" in result["blocker_text"]
+
+    markdown = (out / "scene3d_visual_quality_screenshots_summary.md").read_text(encoding="utf-8")
+    assert "| Scene | Status | Smoke JSON | Screenshot | Blockers | Mesh failure reasons |" in markdown
+    assert "- missing_screenshot: 2" in markdown
+    assert "- mesh_source_not_rendered: 2" in markdown
+    assert "synthetic_failing_a" in markdown
+    assert "synthetic_failing_b" in markdown
+    assert "capture or attach the Scene3D smoke screenshot" in markdown
+    assert "overlay helpers cannot prove visual quality" in markdown

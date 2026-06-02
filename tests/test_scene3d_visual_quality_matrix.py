@@ -276,7 +276,7 @@ def test_screenshot_runner_marks_visual_quality_blocker_reasons_blocked(tmp_path
     )
 
     assert result["status"] == "BLOCKED"
-    assert "screenshot_missing" in result["blocker_reasons"]
+    assert "missing_screenshot" in result["blocker_reasons"]
     assert result["visual_quality_evaluation"]["blocker_reasons"] == ["screenshot_missing"]
 
 def test_visual_quality_matrix_cli_writes_json(tmp_path: Path) -> None:
