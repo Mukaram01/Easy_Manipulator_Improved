@@ -124,3 +124,71 @@ def test_visual_quality_screenshot_runner_captures_required_summaries(tmp_path: 
     assert result["mesh_failure_summary_by_reason_code"]["by_reason_code"] == {"mesh_missing_on_disk": 1}
     assert Path(result["smoke_json"]).exists()
     assert Path(result["screenshot_path"]).exists()
+
+
+def _write_overlay_only_executable(path: Path) -> None:
+    path.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "args=sys.argv[1:]\n"
+        "out=pathlib.Path(args[args.index('--smoke-output')+1])\n"
+        "png=pathlib.Path(args[args.index('--smoke-screenshot')+1]) if '--smoke-screenshot' in args else None\n"
+        "scene=args[args.index('--scene')+1] if '--scene' in args else pathlib.Path(args[args.index('--scene-path')+1]).name\n"
+        "payload={'schema':'workcell_studio_scene3d_gui_smoke/v1','status':'PASS','scene':scene,'counters':{"
+        "'rendered_count':5,'mesh_rendered_count':0,'urdf_primitive_rendered_count':0,"
+        "'overlay_helper_count':2,'overlay_count':2,'label_count':1,'warning_anchor_count':1,"
+        "'fov_helper_count':1,'reach_helper_count':1,'safety_zone_count':1,"
+        "'physical_fit_bounds_count':0,'overlay_fit_bounds_count':3}}\n"
+        "out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(payload))\n"
+        "png.parent.mkdir(parents=True, exist_ok=True); png.write_bytes(b'png') if png else None\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+
+
+def test_visual_quality_screenshot_runner_reports_overlay_domination_blockers_in_json_and_markdown(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    os.symlink(ROOT / "scripts", repo / "scripts", target_is_directory=True)
+    (repo / "workcell_builder").mkdir()
+    _write_scene(repo, "overlay_scene")
+    fake_exe = tmp_path / "workcell_builder_overlay"
+    _write_overlay_only_executable(fake_exe)
+    out = tmp_path / "out"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--workspace-root",
+            str(repo),
+            "--executable",
+            str(fake_exe),
+            "--scene",
+            "overlay_scene",
+            "--output-dir",
+            str(out),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    summary = json.loads((out / "scene3d_visual_quality_screenshots_summary.json").read_text(encoding="utf-8"))
+    result = summary["results"][0]
+    assert result["status"] == "BLOCKED"
+    assert result["visual_quality_counter_summary"]["overlay_helper_count"] == 2
+    assert result["visual_quality_counter_summary"]["label_count"] == 1
+    assert "overlay_helper_domination" in result["blocker_reasons"]
+    assert "overlay_only_render_evidence" in result["blocker_reasons"]
+    assert "overlay_fit_bounds_domination" in result["blocker_reasons"]
+    assert any("helper/overlay render counters dominate physical rendered evidence" in blocker for blocker in result["blockers"])
+    markdown = (out / "scene3d_visual_quality_screenshots_summary.md").read_text(encoding="utf-8")
+    assert "Actionable blockers" in markdown
+    assert "overlay_helper_domination" in markdown
+    assert "helper/overlay render counters dominate physical rendered evidence" in markdown

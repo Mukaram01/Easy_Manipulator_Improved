@@ -94,6 +94,15 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
             "placeholder_count",
             "missing_geometry_count",
             "wireframe_fallback_count",
+            "physical_rendered_count",
+            "helper_overlay_count",
+            "overlay_helper_count",
+            "overlay_count",
+            "label_count",
+            "warning_anchor_count",
+            "fov_helper_count",
+            "reach_helper_count",
+            "safety_zone_count",
             "visual_quality_status",
             "warnings",
             "blocker_reasons",
@@ -104,6 +113,8 @@ def test_visual_quality_matrix_emits_required_fields_and_synthetic_fixture_passe
         assert scene["primitive_source_count"] == 1
         assert scene["primitive_rendered_count"] == 1
         assert scene["placeholder_count"] == 0
+        assert scene["physical_rendered_count"] == 2
+        assert scene["helper_overlay_count"] == 0
         assert scene["visual_quality_status"] == "PASS"
         assert scene["blocker_reasons"] == []
 
@@ -278,6 +289,85 @@ def test_screenshot_runner_marks_visual_quality_blocker_reasons_blocked(tmp_path
     assert result["status"] == "BLOCKED"
     assert "screenshot_missing" in result["blocker_reasons"]
     assert result["visual_quality_evaluation"]["blocker_reasons"] == ["screenshot_missing"]
+
+def _overlay_only_smoke() -> dict:
+    return {
+        "schema": "workcell_studio_scene3d_gui_smoke/v1",
+        "status": "PASS",
+        "counters": {
+            "rendered_count": 5,
+            "mesh_rendered_count": 0,
+            "primitive_rendered_count": 0,
+            "overlay_helper_count": 2,
+            "overlay_count": 2,
+            "label_count": 1,
+            "warning_anchor_count": 1,
+            "fov_helper_count": 1,
+            "reach_helper_count": 1,
+            "safety_zone_count": 1,
+            "physical_fit_bounds_count": 0,
+            "overlay_fit_bounds_count": 3,
+        },
+    }
+
+
+def test_visual_quality_matrix_rejects_overlay_only_render_evidence_even_with_rendered_count(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(repo, "overlay_only_scene", _mesh_and_primitive_index(), _overlay_only_smoke())
+    result = matrix.evaluate_scene(
+        scene_name="overlay_only_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["rendered_count"] == 5
+    assert result["physical_rendered_count"] == 0
+    assert result["helper_overlay_count"] == 7
+    assert result["overlay_helper_count"] == 2
+    assert result["overlay_count"] == 2
+    assert result["label_count"] == 1
+    assert result["warning_anchor_count"] == 1
+    assert result["fov_helper_count"] == 1
+    assert result["reach_helper_count"] == 1
+    assert result["safety_zone_count"] == 1
+    assert result["visual_quality_status"] == "FAIL"
+    assert "overlay_helper_domination" in result["blocker_reasons"]
+    assert "overlay_only_render_evidence" in result["blocker_reasons"]
+    assert "overlay_fit_bounds_domination" in result["blocker_reasons"]
+
+
+def test_visual_quality_matrix_ignores_dominating_physical_fallback_for_physical_rendered_count(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(
+        repo,
+        "fallback_dominated_scene",
+        _mesh_and_primitive_index(),
+        {
+            "schema": "workcell_studio_scene3d_gui_smoke/v1",
+            "status": "PASS",
+            "counters": {
+                "rendered_count": 10,
+                "mesh_rendered_count": 1,
+                "primitive_rendered_count": 1,
+                "physical_fallback_count": 8,
+                "overlay_helper_count": 3,
+            },
+        },
+    )
+
+    result = matrix.evaluate_scene(
+        scene_name="fallback_dominated_scene",
+        scene_dir=scene_dir,
+        mesh_index_path=scene_dir / "generated" / "scene_visual_mesh_index.json",
+        smoke_json_path=scene_dir / "generated" / "scene3d_gui_smoke.json",
+    )
+
+    assert result["physical_fallback_raw_count"] == 8
+    assert result["physical_fallback_count"] == 0
+    assert result["physical_rendered_count"] == 2
+    assert "overlay_helper_domination" in result["blocker_reasons"]
+
 
 def test_visual_quality_matrix_cli_writes_json(tmp_path: Path) -> None:
     repo = tmp_path / "repo"

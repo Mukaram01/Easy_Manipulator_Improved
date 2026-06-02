@@ -48,6 +48,19 @@ _COUNTER_KEYS = (
     "missing_geometry_count",
     "wireframe_fallback_count",
     "overlay_helper_count",
+    "overlay_count",
+    "label_count",
+    "warning_anchor_count",
+    "fov_helper_count",
+    "reach_helper_count",
+    "safety_zone_count",
+    "helper_overlay_count",
+    "physical_rendered_count",
+    "physical_fit_bounds_count",
+    "helper_fit_bounds_count",
+    "overlay_fit_bounds_count",
+    "physical_items_in_fit_bounds_count",
+    "overlay_items_in_fit_bounds_count",
     "locked_generated_urdf_visual_count",
     "editable_layout_count",
     "visual_quality_status",
@@ -428,16 +441,17 @@ def main(argv: list[str] | None = None) -> int:
         f"- FAIL: {totals['FAIL']}",
         f"- BLOCKED: {totals['BLOCKED']}",
         "",
-        "| Scene | Status | Smoke JSON | Screenshot | Blocker reasons | Mesh failure reasons |",
-        "|---|---|---|---|---|---|",
+        "| Scene | Status | Smoke JSON | Screenshot | Blocker reasons | Actionable blockers | Mesh failure reasons |",
+        "|---|---|---|---|---|---|---|",
     ]
     for result in results:
         reasons = result["mesh_failure_summary_by_reason_code"].get("by_reason_code", {})
         reason_text = ", ".join(f"{k}={v}" for k, v in reasons.items()) or "none"
         blocker_reason_text = ", ".join(str(reason) for reason in result.get("blocker_reasons", [])) or "none"
+        blocker_text = "; ".join(str(blocker).replace("|", "/") for blocker in result.get("blockers", [])) or "none"
         md.append(
             f"| {result['scene']} | {result['status']} | `{result['smoke_json']}` | "
-            f"`{result['screenshot_path']}` | {blocker_reason_text} | {reason_text} |"
+            f"`{result['screenshot_path']}` | {blocker_reason_text} | {blocker_text} | {reason_text} |"
         )
     (output_dir / "scene3d_visual_quality_screenshots_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print(json.dumps(payload, indent=2))
