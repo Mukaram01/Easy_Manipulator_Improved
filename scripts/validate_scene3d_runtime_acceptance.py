@@ -138,6 +138,8 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
 
     layout_items = layout.get("items") or []
     editable_layout_count = len(layout_items)
+    editable_layout_selectable_count = sum(1 for item in layout_items if bool(item.get("selectable", True)))
+    editable_layout_editable_count = sum(1 for item in layout_items if bool(item.get("editable", True)))
 
     visual_items = mesh_index.get("visual_items") or []
     safe_for_preview = bool(mesh_index.get("safe_for_preview"))
@@ -145,9 +147,11 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
     primitive_fallback_count = int(mesh_index.get("unresolved_placeholder_count") or 0)
 
     generated_items = generated_layout.get("items") or []
-    locked_generated_urdf_visual_count = sum(
-        1 for item in generated_items if normalize_layer_token(item.get("source")) == "locked_generated_urdf_visual"
-    )
+    locked_generated_urdf_visual_items = [
+        item for item in generated_items if normalize_layer_token(item.get("source")) == "locked_generated_urdf_visual"
+    ]
+    locked_generated_urdf_visual_count = len(locked_generated_urdf_visual_items)
+    locked_generated_urdf_editable_count = sum(1 for item in locked_generated_urdf_visual_items if bool(item.get("editable")))
 
     overlay_count = 0
     if preview_metadata:
@@ -170,6 +174,12 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
 
     if not blockers and visible_after_default_filters == 0:
         blockers.append("no visible scene items after default filters")
+    if editable_layout_count > 0 and editable_layout_selectable_count <= 0:
+        blockers.append("editable layout items must remain selectable")
+    if editable_layout_count > 0 and editable_layout_editable_count <= 0:
+        blockers.append("editable layout items must remain editable")
+    if locked_generated_urdf_editable_count > 0:
+        blockers.append("locked/generated URDF preview items must not be editable")
 
     smoke_path = Path(smoke_json_path) if smoke_json_path else runtime_smoke_json_default(repo_root, scenes_root, scene)
     runtime_evidence: dict = {"path": str(smoke_path), "valid": False}
@@ -277,9 +287,12 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
         "blockers": blockers,
         "counts": {
             "editable_layout_count": editable_layout_count,
+            "editable_layout_selectable_count": editable_layout_selectable_count,
+            "editable_layout_editable_count": editable_layout_editable_count,
             "primitive_fallback_count": primitive_fallback_count,
             "mesh_preview_count": mesh_preview_count,
             "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
+            "locked_generated_urdf_editable_count": locked_generated_urdf_editable_count,
             "overlay_count": overlay_count,
             "missing_count": missing_count,
             "viewport_received_count": _runtime_counter(runtime_counts, "viewport_received_count"),
@@ -312,6 +325,13 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             "smoke_json": str(smoke_path),
         },
         "source_layer_counts": source_layer_counts,
+        "interaction_contract": {
+            "editable_layout_selectable_count": editable_layout_selectable_count,
+            "editable_layout_editable_count": editable_layout_editable_count,
+            "locked_generated_urdf_visual_count": locked_generated_urdf_visual_count,
+            "locked_generated_urdf_editable_count": locked_generated_urdf_editable_count,
+            "locked_generated_urdf_diagnosable_count": locked_generated_urdf_visual_count,
+        },
         "runtime_evidence": runtime_evidence,
         "default_filter_visibility_evidence": {
             "assembled_preview_item_count": assembled_preview_item_count,

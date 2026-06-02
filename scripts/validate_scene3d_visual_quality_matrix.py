@@ -46,6 +46,16 @@ VALID_PHYSICAL_FALLBACK_COUNTERS = (
 )
 
 MESH_KEYS = {"mesh", "mesh_path", "mesh_uri", "mesh_filename", "filename", "resource", "uri"}
+MESH_FAILURE_REASON_KEYS = (
+    "reason_code",
+    "failure_reason_code",
+    "mesh_failure_reason_code",
+    "mesh_failure_reason",
+    "failure_reason",
+    "unresolved_reason",
+    "reason",
+    "warning",
+)
 PRIMITIVE_TYPES = {"box", "cube", "cylinder", "sphere", "capsule", "cone", "primitive"}
 
 
@@ -212,6 +222,35 @@ def classify_source_geometry(mesh_index: dict[str, Any]) -> tuple[int, int, int,
     return total_payload_count, mesh_source_count, primitive_source_count, missing_geometry_count
 
 
+def _mesh_failure_reason_for_item(item: dict[str, Any]) -> str | None:
+    for key in MESH_FAILURE_REASON_KEYS:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower().replace(" ", "_")
+    if item.get("resolved") is False and _looks_like_mesh(item):
+        return "unresolved_mesh_without_reason_code"
+    return None
+
+
+def mesh_failure_summary(mesh_index: dict[str, Any]) -> dict[str, int]:
+    reasons: dict[str, int] = {}
+    for item in _visual_items(mesh_index):
+        if item.get("resolved") is False and _looks_like_mesh(item):
+            reason = _mesh_failure_reason_for_item(item) or "unresolved_mesh_without_reason_code"
+            reasons[reason] = reasons.get(reason, 0) + 1
+    unresolved = mesh_index.get("unresolved")
+    if isinstance(unresolved, list):
+        for raw in unresolved:
+            if isinstance(raw, dict):
+                reason = _mesh_failure_reason_for_item(raw) or "unresolved_mesh_without_reason_code"
+            elif isinstance(raw, str) and raw.strip():
+                reason = raw.strip().lower().replace(" ", "_")
+            else:
+                continue
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return dict(sorted(reasons.items()))
+
+
 def _scene_entries(catalog_path: Path) -> list[dict[str, Any]]:
     catalog = _load_yaml(catalog_path)
     scenes = catalog.get("scenes")
@@ -289,6 +328,7 @@ def evaluate_scene(
             blockers.append(f"could not read mesh/source payload: {mesh_index_path}: {mesh_index['_load_error']}")
 
     total_payload_count, mesh_source_count, primitive_source_count, missing_geometry_count = classify_source_geometry(mesh_index)
+    mesh_failure_reasons = mesh_failure_summary(mesh_index)
 
     smoke_payload: dict[str, Any] = {}
     smoke_exists = bool(smoke_json_path and smoke_json_path.exists())
@@ -373,6 +413,8 @@ def evaluate_scene(
         )
     if missing_geometry_count > 0:
         warnings.append(f"{missing_geometry_count} source payload item(s) lack mesh or primitive geometry")
+    for reason, count in mesh_failure_reasons.items():
+        add_blocker(f"{reason}: {count} mesh-backed source item(s) could not be resolved", reason)
 
     if helper_overlay_count > 0 and physical_rendered_count <= 0 and rendered_count > 0:
         add_blocker(
@@ -431,6 +473,7 @@ def evaluate_scene(
         "total_payload_count": total_payload_count,
         "mesh_source_count": mesh_source_count,
         "mesh_rendered_count": mesh_rendered_count,
+        "mesh_failure_summary_by_reason_code": mesh_failure_reasons,
         "primitive_source_count": primitive_source_count,
         "primitive_rendered_count": primitive_rendered_count,
         "physical_rendered_count": physical_rendered_count,
