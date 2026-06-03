@@ -32,7 +32,7 @@ def test_minimal_environment_layout_has_no_backup_or_studio_log_calls():
 def test_save_layout_changes_contains_backup_before_write_tokens():
     cpp = MAINWINDOW_CPP.read_text(encoding="utf-8")
     body = _extract_function_body(cpp, "void MainWindow::save_layout_changes()")
-    assert '"environment_layout."' in body
+    assert 'layout_backup' in body
     assert '".bak.yaml"' in body
     assert "append_studio_log" in body
 
@@ -41,4 +41,27 @@ def test_no_preview_regressions_for_known_tokens():
     mainwindow_cpp = MAINWINDOW_CPP.read_text(encoding="utf-8")
     scene_preview_cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
     assert "QPolygonF{" not in scene_preview_cpp
-    assert "select_preview_item(item->" not in mainwindow_cpp
+    assert "select_preview_item(item->data(RoleId).toString().trimmed())" in mainwindow_cpp
+
+
+def test_save_layout_failure_feedback_contract_tokens():
+    cpp = MAINWINDOW_CPP.read_text(encoding="utf-8")
+    body = _extract_function_body(cpp, "void MainWindow::save_layout_changes()")
+
+    required_tokens = [
+        "Save Layout failed: Scene3D canvas is not initialized; no file was written.",
+        "Save Layout failed: no scene selected; no file was written.",
+        "canonical layout path could not be computed for scene_root=%1 selected_scene_index=%2",
+        "Save Layout failed: action=Save Layout scene=%1 selected_scene_index=%2 scene_root=%3 target=%4 blocker=%5; no file was written.",
+        "Save Layout blocked: Scene3D canvas is not initialized; no file was written.",
+        "Save Layout blocked: no scene selected; no file was written.",
+        "Save Layout blocked: canonical layout path could not be computed; no file was written.",
+        "cannot create required directory",
+        "malformed layout YAML at %1 and backup failed (%2)",
+        "invalid id '%1' for YAML/package compatibility",
+    ]
+    for token in required_tokens:
+        assert token in body
+
+    assert "if (!digital_twin_scene_) return;" not in body
+    assert "if (layout_path.empty()) return;" not in body
