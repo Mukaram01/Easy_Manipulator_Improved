@@ -313,7 +313,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   WorkcellStudioCanvasModel m; m.scene_name = scene_name; m.status = "WARNINGS";
   std::string deterministic_fallback_reason;
   bool deterministic_fallback_layout = false;
-  bool warned_incomplete_placement_metadata = false;
   const auto enable_deterministic_fallback = [&](const std::string & reason) {
     if (deterministic_fallback_layout) return;
     deterministic_fallback_layout = true;
@@ -643,8 +642,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       }
     }
     if (incomplete_placement_metadata) {
-      warned_incomplete_placement_metadata = true;
-      enable_deterministic_fallback(layout_source_file + " has incomplete placement metadata");
+      enable_deterministic_fallback("layout/workcell_studio_layout.yaml has incomplete placement metadata");
     }
   } else if (layout_ok) {
     enable_deterministic_fallback(layout_source_file + " has invalid or missing schema_version");
@@ -664,7 +662,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       else if (item.id == "object_a" || item.role == "object") { item.x = -0.25; item.y = 0.10; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
     }
     m.warnings.push_back("Using deterministic 3D fallback layout because all editable layout sources are missing or invalid.");
-    if (!deterministic_fallback_reason.empty() && !warned_incomplete_placement_metadata) m.warnings.push_back("Fallback detail: " + deterministic_fallback_reason + ".");
+    if (!deterministic_fallback_reason.empty()) m.warnings.push_back("Fallback detail: " + deterministic_fallback_reason + ".");
   }
 
   std::vector<fs::path> probed_visuals;

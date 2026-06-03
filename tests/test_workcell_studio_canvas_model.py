@@ -8,7 +8,7 @@ def test_canvas_model_files_and_tokens():
     assert h.exists() and c.exists()
     text = c.read_text()
     for t in ['robot','reach','table','conveyor','camera','pick_zone','place_zone','bin','object','warning','Malformed or missing environment.yaml',
-              'deterministic_fallback_layout', 'Using deterministic 3D fallback layout because']:
+              'deterministic_fallback_layout', 'Using deterministic 3D fallback layout because all editable layout sources are missing or invalid.']:
         assert t in text
     cm_text = cm.read_text()
     for token in ['src_workcell_studio_canvas_model.cpp', 'find_package(OpenGL REQUIRED)', 'OpenGL::GL', 'Qt5::Widgets']:
@@ -33,7 +33,8 @@ def test_canvas_model_fallback_role_anchor_tokens_and_log_token_present():
         "item.role == \"camera\"",
         "item.role.find(\"safety\") != std::string::npos",
         "item.role == \"object\"",
-        "Using deterministic 3D fallback layout because layout metadata is incomplete.",
+        "Using deterministic 3D fallback layout because all editable layout sources are missing or invalid.",
+        "Fallback detail: ",
         "layout/workcell_studio_layout.yaml has incomplete placement metadata",
     ]:
         assert token in c
