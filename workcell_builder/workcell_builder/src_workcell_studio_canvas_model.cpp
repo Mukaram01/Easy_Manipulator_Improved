@@ -457,14 +457,16 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (camera && camera.IsMap()) items->push_back(YAML::Clone(camera));
   };
 
-  const std::string canonical_schema_version = layout_status.loaded ?
+  const std::string canonical_schema_version = canonical_layout_status.loaded ?
     read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
-  const YAML::Node canonical_layout_items = layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
+  const YAML::Node canonical_layout_items = canonical_layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
   const bool canonical_schema_current = (canonical_schema_version == "workcell_studio_layout/v1");
   const bool canonical_schema_legacy = canonical_schema_version.empty() && canonical_layout_items.IsSequence();
-  const bool canonical_layout_usable = layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
+  const bool canonical_layout_usable = canonical_layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
 
   YAML::Node effective_layout;
+  bool layout_source_is_environment_layout = false;
+  std::string layout_source_file = "layout/workcell_studio_layout.yaml";
   if (canonical_layout_usable) {
     effective_layout = layout;
     layout_ok = true;
@@ -475,11 +477,11 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       "Loaded empty canonical layout metadata from " :
       "Loaded canonical layout from ") + layout_path.string());
   } else {
-    if (layout_status.exists) {
-      const std::string reason = layout_status.loaded ?
-        "invalid or missing schema_version" : layout_parse_reason(layout_status);
+    if (canonical_layout_status.exists) {
+      const std::string reason = canonical_layout_status.loaded ?
+        "invalid or missing schema_version" : layout_parse_reason(canonical_layout_status);
       append_layout_load_message("Failed to load layout " + layout_path.string() + ": " + reason + "; using next fallback");
-      const std::string parse_reason = layout_status.parse_warning ? (": " + layout_status.reason) : "";
+      const std::string parse_reason = canonical_layout_status.parse_warning ? (": " + canonical_layout_status.reason) : "";
       m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml (" + layout_path.string() + ")" + parse_reason +
                            "; falling back safely. Repair guidance: run YAML validation (e.g., `yamllint`) and fix syntax/indentation.");
     }
@@ -499,6 +501,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         layout_ok = true;
         m.layout_source_path = legacy_layout_path.string();
         m.layout_source_kind = "legacy";
+        layout_source_is_environment_layout = true;
+        layout_source_file = "environment_layout.yaml";
         append_layout_load_message("Imported legacy layout from " + legacy_layout_path.string());
       }
     } else if (legacy_layout_status.exists) {
@@ -513,7 +517,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     m.layout_source_path.clear();
     m.layout_source_kind = "locked_preview_fallback";
     append_layout_load_message("No editable layout source found; using locked preview fallback");
-    if (layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
+    if (canonical_layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
     else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
   }
 
@@ -587,59 +591,60 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
             }
           }
         }
-      }
-      if (!matched_existing) {
-        WorkcellStudioCanvasItem extra;
-        extra.id = id;
-        extra.type = read_string_or_warn(yaml_map_key(node, "type"), "items[].type", "object");
-        extra.role = read_string_or_warn(yaml_map_key(node, "role"), "items[].role", "preview");
-        const auto category = read_string_or_warn(yaml_map_key(node, "category"), "items[].category", "Custom / Imported");
-        if (category == "Pick/Place Zones") extra.type = "zone";
-        std::string label = read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", "");
-        if (label.empty()) label = read_string_or_warn(yaml_map_key(node, "name"), "items[].name", id);
-        extra.label = label.empty() ? id : label;
-        std::string source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "");
-        if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", layout_source_file);
-        extra.source_file = source_file.empty() ? layout_source_file : source_file;
-        extra.provenance = WorkcellStudioItemProvenance::EditableLayout;
-        copy_primitive_metadata(extra, node);
-        YAML::Node pose = yaml_map_key(node, "pose");
-        if (pose.IsDefined() && pose.IsMap()) {
-          YAML::Node xyz = yaml_map_key(pose, "xyz");
-          if (xyz.IsDefined() && xyz.IsSequence()) {
-            extra.x = read_double_or_warn(yaml_seq_index(xyz, 0), "items[].pose.xyz[0]", extra.x);
-            extra.y = read_double_or_warn(yaml_seq_index(xyz, 1), "items[].pose.xyz[1]", extra.y);
-            extra.z = read_double_or_warn(yaml_seq_index(xyz, 2), "items[].pose.xyz[2]", extra.z);
-          } else if (xyz.IsDefined()) add_warning("items[].pose.xyz", "expected sequence; using defaults");
-          YAML::Node rpy = yaml_map_key(pose, "rpy");
-          if (rpy.IsDefined() && rpy.IsSequence()) {
-            extra.roll = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].pose.rpy[0]", extra.roll);
-            extra.pitch = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].pose.rpy[1]", extra.pitch);
-            extra.yaw = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].pose.rpy[2]", extra.yaw);
-          } else if (rpy.IsDefined()) add_warning("items[].pose.rpy", "expected sequence; using defaults");
-        } else if (pose.IsDefined()) add_warning("items[].pose", "expected map; using defaults");
-        YAML::Node size = yaml_map_key(node, "size");
-        if (yaml_node_is_defined(size)) {
-          if (yaml_node_is_map(size)) {
-            extra.width = read_double_or_warn(yaml_map_key(size, "width"), "items[].size.width", extra.width);
-            extra.depth = read_double_or_warn(yaml_map_key(size, "depth"), "items[].size.depth", extra.depth);
-            extra.height = read_double_or_warn(yaml_map_key(size, "height"), "items[].size.height", extra.height);
-          } else if (yaml_node_is_sequence(size)) {
-            extra.width = read_double_or_warn(yaml_seq_index(size, 0), "items[].size[0]", extra.width);
-            extra.depth = read_double_or_warn(yaml_seq_index(size, 1), "items[].size[1]", extra.depth);
-            extra.height = read_double_or_warn(yaml_seq_index(size, 2), "items[].size[2]", extra.height);
+        if (!matched_existing) {
+          WorkcellStudioCanvasItem extra;
+          extra.id = id;
+          extra.type = read_string_or_warn(yaml_map_key(node, "type"), "items[].type", "object");
+          extra.role = read_string_or_warn(yaml_map_key(node, "role"), "items[].role", "preview");
+          const auto category = read_string_or_warn(yaml_map_key(node, "category"), "items[].category", "Custom / Imported");
+          extra.category = category;
+          if (category == "Pick/Place Zones") extra.type = "zone";
+          std::string label = read_string_or_warn(yaml_map_key(node, "display_name"), "items[].display_name", "");
+          if (label.empty()) label = read_string_or_warn(yaml_map_key(node, "name"), "items[].name", id);
+          extra.label = label.empty() ? id : label;
+          std::string source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "");
+          if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", layout_source_file);
+          extra.source_file = source_file.empty() ? layout_source_file : source_file;
+          extra.provenance = WorkcellStudioItemProvenance::EditableLayout;
+          copy_primitive_metadata(extra, node);
+          YAML::Node pose = yaml_map_key(node, "pose");
+          if (pose.IsDefined() && pose.IsMap()) {
+            YAML::Node xyz = yaml_map_key(pose, "xyz");
+            if (xyz.IsDefined() && xyz.IsSequence()) {
+              extra.x = read_double_or_warn(yaml_seq_index(xyz, 0), "items[].pose.xyz[0]", extra.x);
+              extra.y = read_double_or_warn(yaml_seq_index(xyz, 1), "items[].pose.xyz[1]", extra.y);
+              extra.z = read_double_or_warn(yaml_seq_index(xyz, 2), "items[].pose.xyz[2]", extra.z);
+            } else if (xyz.IsDefined()) add_warning("items[].pose.xyz", "expected sequence; using defaults");
+            YAML::Node rpy = yaml_map_key(pose, "rpy");
+            if (rpy.IsDefined() && rpy.IsSequence()) {
+              extra.roll = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].pose.rpy[0]", extra.roll);
+              extra.pitch = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].pose.rpy[1]", extra.pitch);
+              extra.yaw = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].pose.rpy[2]", extra.yaw);
+            } else if (rpy.IsDefined()) add_warning("items[].pose.rpy", "expected sequence; using defaults");
+          } else if (pose.IsDefined()) add_warning("items[].pose", "expected map; using defaults");
+          YAML::Node size = yaml_map_key(node, "size");
+          if (yaml_node_is_defined(size)) {
+            if (yaml_node_is_map(size)) {
+              extra.width = read_double_or_warn(yaml_map_key(size, "width"), "items[].size.width", extra.width);
+              extra.depth = read_double_or_warn(yaml_map_key(size, "depth"), "items[].size.depth", extra.depth);
+              extra.height = read_double_or_warn(yaml_map_key(size, "height"), "items[].size.height", extra.height);
+            } else if (yaml_node_is_sequence(size)) {
+              extra.width = read_double_or_warn(yaml_seq_index(size, 0), "items[].size[0]", extra.width);
+              extra.depth = read_double_or_warn(yaml_seq_index(size, 1), "items[].size[1]", extra.depth);
+              extra.height = read_double_or_warn(yaml_seq_index(size, 2), "items[].size[2]", extra.height);
+            } else {
+              add_warning("items[].size", "expected map or sequence; using defaults");
+            }
           } else {
-            add_warning("items[].size", "expected map or sequence; using defaults");
+            const YAML::Node dimensions = yaml_map_key(node, "dimensions");
+            if (yaml_node_is_sequence(dimensions)) {
+              extra.width = read_double_or_warn(yaml_seq_index(dimensions, 0), "items[].dimensions[0]", extra.width);
+              extra.depth = read_double_or_warn(yaml_seq_index(dimensions, 1), "items[].dimensions[1]", extra.depth);
+              extra.height = read_double_or_warn(yaml_seq_index(dimensions, 2), "items[].dimensions[2]", extra.height);
+            }
           }
-        } else {
-          const YAML::Node dimensions = yaml_map_key(node, "dimensions");
-          if (yaml_node_is_sequence(dimensions)) {
-            extra.width = read_double_or_warn(yaml_seq_index(dimensions, 0), "items[].dimensions[0]", extra.width);
-            extra.depth = read_double_or_warn(yaml_seq_index(dimensions, 1), "items[].dimensions[1]", extra.depth);
-            extra.height = read_double_or_warn(yaml_seq_index(dimensions, 2), "items[].dimensions[2]", extra.height);
-          }
+          m.items.push_back(extra);
         }
-        m.items.push_back(extra);
       }
     }
     if (incomplete_placement_metadata) {

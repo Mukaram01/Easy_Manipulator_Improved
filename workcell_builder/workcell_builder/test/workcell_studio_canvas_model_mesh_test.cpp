@@ -576,6 +576,141 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems
   EXPECT_EQ(items[1]["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
 }
 
+TEST(WorkcellStudioCanvasMesh, PreviewToEditableLayoutRoundTripKeepsGeneratedPreviewLocked)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_preview_to_editable_round_trip";
+  fs::remove_all(root);
+  fs::create_directories(root / "layout");
+
+  write_file(root / "environment.yaml", "robot: ur5\nend_effector: robotiq_2f\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: generated_fixture\nplace_target: bin_a\n");
+
+  workcell_builder::WorkcellStudioCanvasModel preview;
+  preview.scene_name = "demo";
+
+  workcell_builder::WorkcellStudioCanvasItem generated_fixture;
+  generated_fixture.id = "generated_fixture";
+  generated_fixture.label = "Generated Fixture";
+  generated_fixture.type = "fixture";
+  generated_fixture.category = "fixtures";
+  generated_fixture.role = "workholding";
+  generated_fixture.x = 0.11;
+  generated_fixture.y = -0.22;
+  generated_fixture.z = 0.33;
+  generated_fixture.roll = 0.44;
+  generated_fixture.pitch = -0.55;
+  generated_fixture.yaw = 0.66;
+  generated_fixture.width = 0.77;
+  generated_fixture.depth = 0.88;
+  generated_fixture.height = 0.99;
+  generated_fixture.source_file = "urdf/scene.urdf.xacro";
+  generated_fixture.source_package = "generated_scene_pkg";
+  generated_fixture.mesh_path = "package://fixture_asset_pkg/meshes/visual/generated_fixture.stl";
+  generated_fixture.mesh_source_package = "fixture_asset_pkg";
+  generated_fixture.mesh_scale_x = 1.1;
+  generated_fixture.mesh_scale_y = 1.2;
+  generated_fixture.mesh_scale_z = 1.3;
+  generated_fixture.has_mesh_metadata = true;
+  generated_fixture.locked = true;
+  generated_fixture.editable = false;
+  generated_fixture.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+  preview.items.push_back(generated_fixture);
+
+  workcell_builder::WorkcellStudioCanvasItem static_fallback = generated_fixture;
+  static_fallback.id = "static_fallback_fixture";
+  static_fallback.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
+  preview.items.push_back(static_fallback);
+
+  workcell_builder::WorkcellStudioCanvasItem overlay_helper = generated_fixture;
+  overlay_helper.id = "reach_overlay_helper";
+  overlay_helper.type = "reach";
+  overlay_helper.category = "overlay";
+  overlay_helper.role = "overlay";
+  preview.items.push_back(overlay_helper);
+
+  const auto result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "demo", preview);
+  EXPECT_EQ(result.source_used, "preview_model");
+  EXPECT_EQ(result.editable_items_created, 1u);
+  EXPECT_EQ(result.skipped_static_fallback_items, 1u);
+  EXPECT_EQ(result.skipped_unsafe_or_missing_metadata_items, 1u);
+  EXPECT_EQ(result.skipped_locked_items, 0u);
+
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", result.layout);
+  const YAML::Node saved = load_yaml_file(root / "layout" / "workcell_studio_layout.yaml");
+  const YAML::Node saved_items = saved["items"];
+  ASSERT_TRUE(saved_items && saved_items.IsSequence());
+  ASSERT_EQ(saved_items.size(), 1u);
+
+  const YAML::Node copied = saved_items[0];
+  ASSERT_TRUE(copied && copied.IsMap());
+  EXPECT_EQ(copied["id"].as<std::string>(), "generated_fixture__editable_copy");
+  EXPECT_NE(copied["id"].as<std::string>(), generated_fixture.id);
+  EXPECT_EQ(copied["source_layer"].as<std::string>(), "editable_layout");
+  EXPECT_TRUE(copied["editable"].as<bool>());
+  EXPECT_FALSE(copied["locked"].as<bool>());
+  EXPECT_EQ(copied["display_name"].as<std::string>(), generated_fixture.label);
+  EXPECT_EQ(copied["type"].as<std::string>(), generated_fixture.type);
+  EXPECT_EQ(copied["category"].as<std::string>(), generated_fixture.category);
+  EXPECT_EQ(copied["role"].as<std::string>(), generated_fixture.role);
+  EXPECT_DOUBLE_EQ(copied["pose"]["xyz"][0].as<double>(), generated_fixture.x);
+  EXPECT_DOUBLE_EQ(copied["pose"]["xyz"][1].as<double>(), generated_fixture.y);
+  EXPECT_DOUBLE_EQ(copied["pose"]["xyz"][2].as<double>(), generated_fixture.z);
+  EXPECT_DOUBLE_EQ(copied["pose"]["rpy"][0].as<double>(), generated_fixture.roll);
+  EXPECT_DOUBLE_EQ(copied["pose"]["rpy"][1].as<double>(), generated_fixture.pitch);
+  EXPECT_DOUBLE_EQ(copied["pose"]["rpy"][2].as<double>(), generated_fixture.yaw);
+  EXPECT_DOUBLE_EQ(copied["dimensions"][0].as<double>(), generated_fixture.width);
+  EXPECT_DOUBLE_EQ(copied["dimensions"][1].as<double>(), generated_fixture.depth);
+  EXPECT_DOUBLE_EQ(copied["dimensions"][2].as<double>(), generated_fixture.height);
+  EXPECT_EQ(copied["mesh"]["path"].as<std::string>(), generated_fixture.mesh_path);
+  EXPECT_EQ(copied["mesh"]["source"].as<std::string>(), generated_fixture.source_file);
+  EXPECT_EQ(copied["mesh"]["source_package"].as<std::string>(), generated_fixture.mesh_source_package);
+  EXPECT_DOUBLE_EQ(copied["mesh"]["scale"][0].as<double>(), generated_fixture.mesh_scale_x);
+  EXPECT_DOUBLE_EQ(copied["mesh"]["scale"][1].as<double>(), generated_fixture.mesh_scale_y);
+  EXPECT_DOUBLE_EQ(copied["mesh"]["scale"][2].as<double>(), generated_fixture.mesh_scale_z);
+  EXPECT_EQ(copied["source_package"].as<std::string>(), generated_fixture.source_package);
+  EXPECT_EQ(copied["mesh_source_package"].as<std::string>(), generated_fixture.mesh_source_package);
+  EXPECT_EQ(copied["preview_source_id"].as<std::string>(), generated_fixture.id);
+  EXPECT_EQ(copied["provenance"]["original_source_id"].as<std::string>(), generated_fixture.id);
+  EXPECT_EQ(copied["provenance"]["preview_source_id"].as<std::string>(), generated_fixture.id);
+  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "locked_generated_urdf_visual");
+  EXPECT_EQ(copied["provenance"]["original_source_file"].as<std::string>(), generated_fixture.source_file);
+
+  const auto reloaded = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  bool found_reloaded_copy = false;
+  for (const auto & item : reloaded.items) {
+    if (item.id != "generated_fixture__editable_copy") continue;
+    found_reloaded_copy = true;
+    EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::EditableLayout);
+    EXPECT_TRUE(item.editable);
+    EXPECT_FALSE(item.locked);
+    EXPECT_EQ(item.source_file, "editable_layout");
+    EXPECT_EQ(item.label, generated_fixture.label);
+    EXPECT_EQ(item.type, generated_fixture.type);
+    EXPECT_EQ(item.category, generated_fixture.category);
+    EXPECT_EQ(item.role, generated_fixture.role);
+    EXPECT_DOUBLE_EQ(item.x, generated_fixture.x);
+    EXPECT_DOUBLE_EQ(item.y, generated_fixture.y);
+    EXPECT_DOUBLE_EQ(item.z, generated_fixture.z);
+    EXPECT_DOUBLE_EQ(item.roll, generated_fixture.roll);
+    EXPECT_DOUBLE_EQ(item.pitch, generated_fixture.pitch);
+    EXPECT_DOUBLE_EQ(item.yaw, generated_fixture.yaw);
+    EXPECT_DOUBLE_EQ(item.width, generated_fixture.width);
+    EXPECT_DOUBLE_EQ(item.depth, generated_fixture.depth);
+    EXPECT_DOUBLE_EQ(item.height, generated_fixture.height);
+    EXPECT_EQ(item.mesh_source_package, generated_fixture.mesh_source_package);
+    EXPECT_TRUE(item.has_mesh_metadata);
+  }
+  EXPECT_TRUE(found_reloaded_copy);
+
+  ASSERT_EQ(preview.items[0].id, generated_fixture.id);
+  EXPECT_TRUE(preview.items[0].locked);
+  EXPECT_FALSE(preview.items[0].editable);
+  EXPECT_EQ(preview.items[0].provenance, workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview);
+
+  fs::remove_all(root);
+}
+
 TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalItemsOnly)
 {
   const fs::path root = fs::temp_directory_path() / "wc_bootstrap_preview_locked_physical";
