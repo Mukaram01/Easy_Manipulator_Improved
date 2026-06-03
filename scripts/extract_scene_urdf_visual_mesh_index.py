@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, os, re, shutil, subprocess, math, collections
+import argparse, copy, json, os, re, shutil, subprocess, math, collections
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENES_ROOT = ROOT / "scenes"
-EXTRACTOR_VERSION = "2.4"
+EXTRACTOR_VERSION = "2.5"
 PLACEHOLDER_RE = re.compile(r"(\$\{[^}]+\}|\$\(arg\s+[^)]+\)|\$\(find\s+[^)]+\))")
 
 def read_yaml(path):
@@ -84,34 +84,223 @@ def discover_package_map(scene_dir, workspace_root=None):
             diagnostics['resolution_paths'].append({'package_name':pkg_name,'root_path':str(pkg_dir),'source_tier':tier})
     return out, diagnostics
 
-def xacro_env(scene_dir, workspace_root=None):
-    rp=[str(ROOT),str(ROOT/'assets'),str(ROOT/'workcell_builder/workcell_builder/assets'),str(ROOT/'scenes')]
+def _package_search_paths(scene_dir=None, workspace_root=None):
+    roots=[ROOT, ROOT/'assets', ROOT/'workcell_builder/workcell_builder/assets', ROOT/'scenes']
+    if scene_dir:
+        roots.append(Path(scene_dir))
     if workspace_root:
-        ws = Path(workspace_root); rp += [str(ws/'install'), str(ws/'install/share'), str(ws/'src'), str(ws/'src/easy_manipulation_deployment/assets'), str(ws/'src/assets')]
-    if Path('/opt/ros/humble/share').exists(): rp.append('/opt/ros/humble/share')
+        ws=Path(workspace_root)
+        roots += [ws/'install/share', ws/'src', ws/'src/easy_manipulation_deployment/assets', ws/'src/assets']
+    if Path('/opt/ros/humble/share').exists():
+        roots.append(Path('/opt/ros/humble/share'))
+    package_dirs=[]
+    seen=set()
+    for root in roots:
+        if not root or not Path(root).exists():
+            continue
+        for pkg_xml in Path(root).rglob('package.xml'):
+            pkg_dir=pkg_xml.parent.resolve()
+            if pkg_dir not in seen:
+                seen.add(pkg_dir); package_dirs.append(pkg_dir)
+    return roots, package_dirs
+
+def xacro_env(scene_dir, workspace_root=None):
+    roots, package_dirs = _package_search_paths(scene_dir, workspace_root)
+    rp=[str(p) for p in [*roots, *package_dirs, *(p.parent for p in package_dirs)] if p]
     old=os.environ.get('ROS_PACKAGE_PATH','')
-    if old: rp.append(old)
-    env=dict(os.environ); env['ROS_PACKAGE_PATH']=':'.join(dict.fromkeys([p for p in rp if p])); env['AMENT_PREFIX_PATH']=os.environ.get('AMENT_PREFIX_PATH',''); return env
+    if old: rp.extend(old.split(':'))
+    env=dict(os.environ)
+    env['ROS_PACKAGE_PATH']=':'.join(dict.fromkeys([p for p in rp if p]))
+    env['AMENT_PREFIX_PATH']=os.environ.get('AMENT_PREFIX_PATH','')
+    return env
 
 def discover_xacro_command():
     if shutil.which('xacro'): return ['xacro'], True, ''
     if Path('/opt/ros/humble/bin/xacro').exists(): return ['/opt/ros/humble/bin/xacro'], True, ''
-    mod = subprocess.run(['python3', '-m', 'xacro', '--help'], capture_output=True, text=True)
-    if mod.returncode == 0: return ['python3', '-m', 'xacro'], True, ''
+    try:
+        mod = subprocess.run(['python3', '-m', 'xacro', '--help'], capture_output=True, text=True)
+        if mod.returncode == 0: return ['python3', '-m', 'xacro'], True, ''
+    except Exception as e:
+        return None, False, f"xacro executable unavailable ({e})"
     return None, False, "xacro executable unavailable"
+
+def _xacro_tag(e):
+    name=tag_name(e)
+    if e.tag.startswith('{'):
+        ns=e.tag.split('}',1)[0].strip('{')
+        if 'xacro' in ns:
+            return name
+    if ':' in e.tag:
+        prefix, local=e.tag.split(':',1)
+        if prefix == 'xacro': return local
+    return ''
+
+def _truthy(value):
+    return str(value).strip().lower() not in {'', '0', 'false', 'none', 'no'}
+
+def _eval_xacro_expr(expr, variables):
+    expr=str(expr).strip()
+    safe={'pi':math.pi, **{k:v for k,v in variables.items() if re.match(r'^[A-Za-z_]\w*$', str(k))}}
+    try:
+        return str(eval(expr, {'__builtins__':{}}, safe))
+    except Exception:
+        return str(variables.get(expr, '${'+expr+'}'))
+
+def _substitute_xacro_text(value, args, package_map):
+    if value is None:
+        return value
+    out=str(value)
+    def repl_arg(m): return str(args.get(m.group(1).strip(), m.group(0)))
+    def repl_find(m):
+        pkg=m.group(1).strip()
+        return str(package_map.get(pkg, m.group(0)))
+    out=re.sub(r"\$\(arg\s+([^)]+)\)", repl_arg, out)
+    out=re.sub(r"\$\(find\s+([^)]+)\)", repl_find, out)
+    def repl_brace(m): return _eval_xacro_expr(m.group(1), args)
+    out=re.sub(r"\$\{([^}]+)\}", repl_brace, out)
+    return out
+
+def _clean_xacro_tree(node, args, package_map):
+    node=copy.deepcopy(node)
+    if _xacro_tag(node):
+        return []
+    node.tag=tag_name(node)
+    node.attrib={k:_substitute_xacro_text(v,args,package_map) for k,v in node.attrib.items()}
+    if node.text:
+        node.text=_substitute_xacro_text(node.text,args,package_map)
+    cleaned=[]
+    for child in list(node):
+        xt=_xacro_tag(child)
+        if xt == 'if':
+            if _truthy(_substitute_xacro_text(child.attrib.get('value',''),args,package_map)):
+                for grand in list(child):
+                    cleaned.extend(_clean_xacro_tree(grand,args,package_map))
+        elif xt:
+            continue
+        else:
+            cleaned.extend(_clean_xacro_tree(child,args,package_map))
+    node[:]=cleaned
+    return [node]
+
+def _resolve_include_path(filename, package_map):
+    resolved=_substitute_xacro_text(filename, {}, package_map)
+    p=Path(resolved)
+    return p if p.exists() else None
+
+def _collect_lite_macros(path, package_map, macros, seen):
+    path=Path(path).resolve()
+    if path in seen or not path.exists():
+        return
+    seen.add(path)
+    try:
+        root=ET.parse(path).getroot()
+    except Exception:
+        return
+    for child in list(root):
+        xt=_xacro_tag(child)
+        if xt == 'include':
+            inc=_resolve_include_path(child.attrib.get('filename',''), package_map)
+            if inc: _collect_lite_macros(inc, package_map, macros, seen)
+        elif xt == 'macro' and child.attrib.get('name'):
+            macros[child.attrib['name']]={'params':child.attrib.get('params','').split(), 'body':list(child)}
+
+def _expand_lite_node(node, args, package_map, macros):
+    xt=_xacro_tag(node)
+    if xt in {'arg','include','macro'}:
+        return []
+    if xt == 'if':
+        if not _truthy(_substitute_xacro_text(node.attrib.get('value',''),args,package_map)):
+            return []
+        out=[]
+        for child in list(node): out.extend(_expand_lite_node(child,args,package_map,macros))
+        return out
+    if xt and xt in macros:
+        macro=macros[xt]
+        local=dict(args)
+        blocks={}
+        positional=[]
+        for param in macro['params']:
+            if param.startswith('*'):
+                blocks[param[1:]]=None
+            else:
+                positional.append(param.split(':=',1)[0])
+                if ':=' in param:
+                    k,d=param.split(':=',1); local[k]=_substitute_xacro_text(d,local,package_map)
+        for k,v in node.attrib.items(): local[k]=_substitute_xacro_text(v,args,package_map)
+        for child in list(node):
+            blocks[tag_name(child)] = child
+        out=[]
+        for child in macro['body']:
+            if _xacro_tag(child) == 'insert_block':
+                block=blocks.get(child.attrib.get('name',''))
+                if block is not None: out.extend(_clean_xacro_tree(block,local,package_map))
+            else:
+                out.extend(_expand_lite_node(child,local,package_map,macros))
+        return out
+    if xt:
+        return []
+    node=copy.deepcopy(node)
+    node.tag=tag_name(node)
+    node.attrib={k:_substitute_xacro_text(v,args,package_map) for k,v in node.attrib.items()}
+    if node.text: node.text=_substitute_xacro_text(node.text,args,package_map)
+    children=[]
+    for child in list(node): children.extend(_expand_lite_node(child,args,package_map,macros))
+    node[:]=children
+    return [node]
+
+def expand_xacro_lite(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
+    scene_dir = scene_dir or Path(urdf_path).parents[1]; xacro_args = dict(xacro_args or {})
+    package_map, diagnostics = discover_package_map(scene_dir, workspace_root=workspace_root)
+    try:
+        root=ET.parse(urdf_path).getroot()
+    except Exception as e:
+        return None, False, f'xacro lite parse failed: {e}', None
+    args=dict(xacro_args)
+    for child in list(root):
+        if _xacro_tag(child) == 'arg':
+            name=child.attrib.get('name')
+            if name and name not in args:
+                args[name]=_substitute_xacro_text(child.attrib.get('default',''), args, package_map)
+    macros={}
+    seen=set()
+    _collect_lite_macros(urdf_path, package_map, macros, seen)
+    expanded_root=ET.Element('robot', {'name': root.attrib.get('name', scene_dir.name)})
+    skipped=[]
+    for child in list(root):
+        xt=_xacro_tag(child)
+        if xt and xt not in {'if'} and xt not in macros:
+            if xt not in {'arg','include','macro'}:
+                skipped.append(xt)
+            continue
+        for out in _expand_lite_node(child,args,package_map,macros):
+            expanded_root.append(out)
+    xml_text=ET.tostring(expanded_root, encoding='unicode')
+    reason='xacro executable unavailable; used safe repo-local xacro-lite expansion'
+    if skipped:
+        reason += '; skipped unresolved macros: ' + ', '.join(sorted(set(skipped)))
+    return xml_text, True, reason, ['xacro-lite', str(urdf_path)]
 
 def expand_xacro(urdf_path, scene_dir=None, xacro_args=None, workspace_root=None):
     scene_dir = scene_dir or Path(urdf_path).parents[1]; xacro_args = xacro_args or {}
     xacro_base, xacro_available, reason = discover_xacro_command()
-    if not xacro_available: return None,False,reason,None
+    if not xacro_available:
+        return expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
     cmd=xacro_base+[str(urdf_path),'-o',str(scene_dir/'generated'/'expanded_scene_preview.urdf')]
     for k,v in xacro_args.items(): cmd.append(f'{k}:={v}')
     try:
         (scene_dir/'generated').mkdir(parents=True,exist_ok=True)
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=45,env=xacro_env(scene_dir, workspace_root=workspace_root))
-        if p.returncode!=0: return None,True,(p.stderr or p.stdout or 'xacro failed').strip(),cmd
+        if p.returncode!=0:
+            lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
+            if lite_xml:
+                return lite_xml, True, f"xacro failed ({(p.stderr or p.stdout or 'xacro failed').strip()}); {lite_reason}", lite_cmd
+            return None,True,(p.stderr or p.stdout or 'xacro failed').strip(),cmd
         out=scene_dir/'generated'/'expanded_scene_preview.urdf'; return out.read_text(errors='ignore'),True,'',cmd
-    except Exception as e: return None,True,f'xacro expansion failed: {e}',cmd
+    except Exception as e:
+        lite_xml, _, lite_reason, lite_cmd = expand_xacro_lite(urdf_path, scene_dir, xacro_args, workspace_root)
+        if lite_xml:
+            return lite_xml, True, f'xacro expansion failed: {e}; {lite_reason}', lite_cmd
+        return None,True,f'xacro expansion failed: {e}',cmd
 
 def resolve_mesh_uri(uri, package_map):
     u=(uri or '').strip()
@@ -167,7 +356,8 @@ def extract_from_urdf(xml_text, package_map):
             vxyz=parse_vec((origin.attrib.get('xyz') if origin is not None else ''),3,0.0); vrpy=parse_vec((origin.attrib.get('rpy') if origin is not None else ''),3,0.0)
             link_tf, link_status, chain, root_link, unresolved = link_world_tf(lname)
             if link_tf is None: link_tf=identity_tf()
-            pose=xyz_rpy_from_tf(link_tf)
+            visual_tf=tf_from_xyz_rpy(vxyz, vrpy)
+            pose=xyz_rpy_from_tf(matmul4(link_tf, visual_tf))
             material_node=next((c for c in list(visual) if tag_name(c)=='material'),None)
             material={'name':'','color':None}
             if material_node is not None:
@@ -226,7 +416,10 @@ def main():
                 if mode_hint and not xml_text: mode=str(mode_hint)
             else:
                 xml_text,err,xacro_cmd='', 'xacro expansion failed: unexpected extractor result', []
-            if xml_text: mode='xacro_expanded'; expanded_path='generated/expanded_scene_preview.urdf'
+            if xml_text:
+                mode='xacro_lite_expanded' if xacro_cmd and xacro_cmd[0] == 'xacro-lite' else 'xacro_expanded'
+                expanded_path='' if mode == 'xacro_lite_expanded' else 'generated/expanded_scene_preview.urdf'
+                fallback_reason=err if mode == 'xacro_lite_expanded' else ''
             else: fallback_reason=err or missing_reason
         if a.require_xacro and not xacro_avail:
             print('xacro executable unavailable (required)'); return 2
@@ -235,7 +428,7 @@ def main():
         try: items=extract_from_urdf(xml_text, package_map)
         except Exception: items=[]
         unresolved=[i for i in items if any(contains_placeholder(i.get(k,'')) for k in ('id','link','parent_link'))]
-        safe=bool(items) and (len(unresolved)==0) and (mode=='xacro_expanded')
+        safe=bool(items) and (len(unresolved)==0) and (mode in ('xacro_expanded','xacro_lite_expanded'))
         mesh_format_counts=dict(collections.Counter((Path(i.get('resolved_source_path') or i.get('source_path') or '').suffix.lower() or 'unknown') for i in items if i.get('geometry_type')=='mesh'))
         transform_status_counts=dict(collections.Counter(str(i.get('transform_status') or 'unknown') for i in items))
         renderable_count=sum(1 for i in items if i.get('render_expected', True))
@@ -251,8 +444,8 @@ def main():
         report['visual_count']+=len(items)
         report['resolved']+=sum(1 for i in items if i.get('resolved'))
         report['unresolved']+=sum(1 for i in items if not i.get('resolved'))
-        report['xacro_expanded_count']+=int(mode=='xacro_expanded')
-        report['best_effort_count']+=int(mode!='xacro_expanded')
+        report['xacro_expanded_count']+=int(mode in ('xacro_expanded','xacro_lite_expanded'))
+        report['best_effort_count']+=int(mode not in ('xacro_expanded','xacro_lite_expanded'))
         report.setdefault('mesh_format_counts', {})
         for ext,count in mesh_format_counts.items(): report['mesh_format_counts'][ext]=report['mesh_format_counts'].get(ext,0)+count
         report['renderable_mesh_count']=report.get('renderable_mesh_count',0)+renderable_mesh_count
@@ -261,7 +454,7 @@ def main():
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
         report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'xacro_available':payload['xacro_available'],'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':0,'stale_index':False,'status':'PASS' if safe else 'WARN'})
-        if a.require_xacro and mode != 'xacro_expanded': return 2
+        if a.require_xacro and mode not in ('xacro_expanded','xacro_lite_expanded'): return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')
     if a.fail_on_unexpanded and report['best_effort_count']>0: return 3
