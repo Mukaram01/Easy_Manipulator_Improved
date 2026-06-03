@@ -5571,6 +5571,36 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 }
 
 void MainWindow::save_layout_changes(){
+  const auto scene_name_for_save_log = [this]() {
+    if (selected_scene_state_.valid && !selected_scene_state_.name.trimmed().isEmpty()) {
+      return selected_scene_state_.name.trimmed();
+    }
+    if (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) {
+      return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name);
+    }
+    return QStringLiteral("<none>");
+  };
+  const auto scene_root_for_save_log = [this]() {
+    if (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) {
+      return QString::fromStdString(scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir.string());
+    }
+    return QStringLiteral("<none>");
+  };
+  const auto emit_save_layout_failure = [this, scene_name_for_save_log, scene_root_for_save_log](
+      const QString & blocker, const QString & target_path = QString(), const QString & exact_message = QString()) {
+    if (!exact_message.trimmed().isEmpty()) {
+      append_studio_log(exact_message);
+    }
+    const QString target = target_path.trimmed().isEmpty() ? QStringLiteral("<unknown>") : target_path.trimmed();
+    const QString detail = QString("Save Layout failed: action=Save Layout scene=%1 selected_scene_index=%2 scene_root=%3 target=%4 blocker=%5; no file was written.")
+      .arg(scene_name_for_save_log())
+      .arg(selected_scene_index_)
+      .arg(scene_root_for_save_log())
+      .arg(target)
+      .arg(blocker);
+    append_studio_log(detail);
+  };
+
   QString selected_preview_id;
   if (!current_selected_scene_item_id_.trimmed().isEmpty()) {
     selected_preview_id = current_selected_scene_item_id_.trimmed();
@@ -5580,18 +5610,42 @@ void MainWindow::save_layout_changes(){
     selected_preview_id = digital_twin_scene_->selectedItems().front()->data(RoleId).toString();
   }
   const QString stable_selected_id_before_refresh = selected_preview_id.trimmed();
-  if (!digital_twin_scene_) return;
+  if (!digital_twin_scene_) {
+    emit_save_layout_failure(
+      QStringLiteral("Scene3D canvas is not initialized"),
+      QString(),
+      QStringLiteral("Save Layout failed: Scene3D canvas is not initialized; no file was written."));
+    statusBar()->showMessage("Save Layout blocked: Scene3D canvas is not initialized; no file was written.", 6000);
+    return;
+  }
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
+    emit_save_layout_failure(
+      QStringLiteral("no scene selected"),
+      QString(),
+      QStringLiteral("Save Layout failed: no scene selected; no file was written."));
+    statusBar()->showMessage("Save Layout blocked: no scene selected; no file was written.", 6000);
+    return;
+  }
   const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
-  if (layout_path.empty()) return;
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
+  if (layout_path.empty()) {
+    const QString reason = QString("canonical layout path could not be computed for scene_root=%1 selected_scene_index=%2")
+      .arg(scene_root_for_save_log())
+      .arg(selected_scene_index_);
+    emit_save_layout_failure(reason);
+    statusBar()->showMessage("Save Layout blocked: canonical layout path could not be computed; no file was written.", 6000);
+    return;
+  }
   const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
   const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
     fs::create_directories(scene_dir / dir_name, mk_ec);
     if (mk_ec) {
-      append_studio_log(QString("Save Layout failed: cannot create %1/ (%2)")
-        .arg(dir_name, QString::fromStdString(mk_ec.message())));
+      emit_save_layout_failure(
+        QString("cannot create required directory '%1' (%2)")
+          .arg(dir_name, QString::fromStdString(mk_ec.message())),
+        QString::fromStdString((scene_dir / dir_name).string()));
+      QMessageBox::warning(this, "Save Layout", QString("Save Layout blocked: cannot create %1/. No file was written.").arg(dir_name));
       return;
     }
   }
@@ -5616,9 +5670,11 @@ void MainWindow::save_layout_changes(){
     boost::system::error_code ec;
     fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
-      append_studio_log(QString("Malformed layout YAML detected at %1; backup failed (%2). Save aborted.")
-        .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message())));
-      QMessageBox::warning(this, "Save Layout", "Malformed layout YAML backup failed. Not overwriting.");
+      emit_save_layout_failure(
+        QString("malformed layout YAML at %1 and backup failed (%2)")
+          .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message())),
+        QString::fromStdString(layout_path.string()));
+      QMessageBox::warning(this, "Save Layout", "Malformed layout YAML backup failed. Not overwriting. No file was written.");
       return;
     }
     append_studio_log(QString("Malformed layout YAML backed up to %1").arg(QString::fromStdString(backup.string())));
@@ -5667,8 +5723,10 @@ void MainWindow::save_layout_changes(){
     if (source_layer != QStringLiteral("editable_layout")) continue;
     const std::string item_id_std = item_id.toStdString();
     if (!workcell_builder::workcell_studio_is_valid_id(item_id_std)) {
-      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1").arg(item_id));
-      append_studio_log(QString("Save blocked: invalid id '%1'").arg(item_id));
+      QMessageBox::warning(this, "Save Layout", QString("Invalid ID for YAML/package compatibility: %1. No file was written.").arg(item_id));
+      emit_save_layout_failure(
+        QString("invalid id '%1' for YAML/package compatibility").arg(item_id),
+        QString::fromStdString(layout_path.string()));
       return;
     }
     editable_canvas_items.push_back(gi);
