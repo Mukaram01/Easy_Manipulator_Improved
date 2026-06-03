@@ -5462,18 +5462,41 @@ static fs::path manifest_declared_layout_path(const fs::path & scene_dir)
   }
 }
 
-static fs::path selected_scene_environment_layout_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
+static fs::path selected_scene_canonical_layout_save_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
 {
   if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
   const fs::path scene_dir = browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir;
-  const fs::path standard_workcell_layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  return scene_dir / "layout" / "workcell_studio_layout.yaml";
+}
+
+static std::vector<fs::path> selected_scene_layout_import_candidates(const fs::path & scene_dir)
+{
+  std::vector<fs::path> candidates;
+  const fs::path canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
   const fs::path legacy_environment_layout = scene_dir / "environment_layout.yaml";
   const fs::path manifest_layout = manifest_declared_layout_path(scene_dir);
 
-  if (!manifest_layout.empty()) return manifest_layout;
-  if (fs::exists(standard_workcell_layout)) return standard_workcell_layout;
-  if (fs::exists(legacy_environment_layout)) return legacy_environment_layout;
-  return standard_workcell_layout;
+  auto append_unique = [&candidates](const fs::path & candidate) {
+    if (candidate.empty()) return;
+    if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
+      candidates.push_back(candidate);
+    }
+  };
+
+  append_unique(canonical_layout);
+  append_unique(legacy_environment_layout);
+  append_unique(manifest_layout);
+  return candidates;
+}
+
+static fs::path selected_scene_existing_layout_import_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
+{
+  if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
+  const fs::path scene_dir = browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir;
+  for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir)) {
+    if (fs::exists(candidate)) return candidate;
+  }
+  return {};
 }
 
 static YAML::Node minimal_environment_layout(const std::string & scene_name)
@@ -5581,7 +5604,7 @@ void MainWindow::save_layout_changes(){
   }
   const QString stable_selected_id_before_refresh = selected_preview_id.trimmed();
   if (!digital_twin_scene_) return;
-  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  const fs::path layout_path = selected_scene_canonical_layout_save_path(scene_browser_result_, selected_scene_index_);
   if (layout_path.empty()) return;
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
   const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
@@ -5598,32 +5621,36 @@ void MainWindow::save_layout_changes(){
   const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ?
     scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
   YAML::Node root;
-  bool existing_layout_file = false;
+  fs::path imported_layout_path;
   bool malformed_existing = false;
-  if (fs::exists(layout_path)) {
-    existing_layout_file = true;
+  for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir)) {
+    if (!fs::exists(candidate)) continue;
+    imported_layout_path = candidate;
     try {
-      root = YAML::LoadFile(layout_path.string());
+      root = YAML::LoadFile(candidate.string());
     } catch (const YAML::Exception &) {
       malformed_existing = true;
     } catch (const std::exception &) {
       malformed_existing = true;
     }
+    break;
   }
   if (malformed_existing) {
     const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-    const fs::path backup = layout_path.parent_path() / (layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
+    const fs::path backup = imported_layout_path.parent_path() /
+      (imported_layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
     boost::system::error_code ec;
-    fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(imported_layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
       append_studio_log(QString("Malformed layout YAML detected at %1; backup failed (%2). Save aborted.")
-        .arg(QString::fromStdString(layout_path.string()), QString::fromStdString(ec.message())));
+        .arg(QString::fromStdString(imported_layout_path.string()), QString::fromStdString(ec.message())));
       QMessageBox::warning(this, "Save Layout", "Malformed layout YAML backup failed. Not overwriting.");
       return;
     }
     append_studio_log(QString("Malformed layout YAML backed up to %1").arg(QString::fromStdString(backup.string())));
     root = YAML::Node();
   }
+  const bool existing_layout_file = fs::exists(layout_path);
   const bool target_is_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
     layout_path.parent_path().filename().string() == "layout";
   if (!root || !root.IsMap()) {
@@ -6377,9 +6404,11 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
     const QString existing_id = gi->data(RoleId).toString().trimmed();
     if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
   }
-  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
-  const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
-  reserved_ids.insert(layout_ids.begin(), layout_ids.end());
+  const fs::path layout_path = selected_scene_existing_layout_import_path(scene_browser_result_, selected_scene_index_);
+  if (!layout_path.empty()) {
+    const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
+    reserved_ids.insert(layout_ids.begin(), layout_ids.end());
+  }
   const QString new_id = QString::fromStdString(
     workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
   const QString role_type = QString::fromStdString(
