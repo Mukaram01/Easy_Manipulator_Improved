@@ -182,6 +182,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const fs::path manifest_path = scene_dir / "scene_manifest.yaml";
   const fs::path task_path = scene_dir / "config" / "task_recipe.yaml";
   const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path legacy_layout_path = scene_dir / "environment_layout.yaml";
   const YamlLoadStatus env_status = read_yaml(env_path, &env);
   const YamlLoadStatus manifest_status = read_yaml(manifest_path, &manifest);
   const YamlLoadStatus task_status = read_yaml(task_path, &task);
@@ -189,11 +190,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const bool env_ok = env_status.loaded;
   const bool manifest_ok = manifest_status.loaded;
   const bool task_ok = task_status.loaded;
-  const bool layout_ok = layout_status.loaded;
-  if (!layout_ok) {
-    if (layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
-    else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
-  }
+  bool layout_ok = false;
   if (!env_ok) m.warnings.push_back(env_status.parse_warning ?
     ("environment.yaml parse warning (" + env_path.string() + "): " + env_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Malformed or missing environment.yaml");
@@ -203,12 +200,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   if (!task_ok) m.warnings.push_back(task_status.parse_warning ?
     ("task_recipe.yaml parse warning (" + task_path.string() + "): " + task_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Task intent missing");
-  if (!layout_ok && layout_status.exists) {
-    const std::string parse_reason = layout_status.parse_warning ? (": " + layout_status.reason) : "";
-    m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml (" + layout_path.string() + ")" + parse_reason +
-                         "; falling back safely. Repair guidance: run YAML validation (e.g., `yamllint`) and fix syntax/indentation.");
-  }
-
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";
   m.robot_summary = env_ok ? yaml_named_or_scalar(yaml_map_key(env, "robot"), "name") : "";
@@ -279,8 +270,93 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     }
   };
 
-  const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
-  YAML::Node layout_items = yaml_map_key(layout, "items");
+  const auto append_layout_load_message = [&m](const std::string & message) {
+    if (message.empty()) return;
+    if (!m.layout_load_message.empty()) m.layout_load_message += "\n";
+    m.layout_load_message += message;
+  };
+  const auto layout_parse_reason = [](const YamlLoadStatus & status) {
+    if (!status.reason.empty()) return status.reason;
+    return std::string("unknown parse error");
+  };
+  const auto append_legacy_source_items = [](const YAML::Node & root, YAML::Node * items) {
+    if (!root || !root.IsMap() || items == nullptr) return;
+    const std::array<const char *, 6> legacy_sequence_keys = {
+      "items", "assets", "placed_assets", "objects", "zones", "targets"
+    };
+    for (const char * key : legacy_sequence_keys) {
+      const YAML::Node seq = yaml_map_key(root, key);
+      if (!seq || !seq.IsSequence()) continue;
+      for (const auto & node : seq) {
+        if (node && node.IsMap()) items->push_back(YAML::Clone(node));
+      }
+    }
+    const YAML::Node camera = yaml_map_key(root, "camera");
+    if (camera && camera.IsMap()) items->push_back(YAML::Clone(camera));
+  };
+
+  const std::string canonical_schema_version = layout_status.loaded ?
+    read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
+  const YAML::Node canonical_layout_items = layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
+  const bool canonical_schema_current = (canonical_schema_version == "workcell_studio_layout/v1");
+  const bool canonical_schema_legacy = canonical_schema_version.empty() && canonical_layout_items.IsSequence();
+  const bool canonical_layout_usable = layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
+
+  YAML::Node effective_layout;
+  if (canonical_layout_usable) {
+    effective_layout = layout;
+    layout_ok = true;
+    m.layout_source_path = layout_path.string();
+    m.layout_source_kind = "canonical";
+    const bool empty_items = !canonical_layout_items.IsSequence() || canonical_layout_items.size() == 0;
+    append_layout_load_message((empty_items ?
+      "Loaded empty canonical layout metadata from " :
+      "Loaded canonical layout from ") + layout_path.string());
+  } else {
+    if (layout_status.exists) {
+      const std::string reason = layout_status.loaded ?
+        "invalid or missing schema_version" : layout_parse_reason(layout_status);
+      append_layout_load_message("Failed to load layout " + layout_path.string() + ": " + reason + "; using next fallback");
+      const std::string parse_reason = layout_status.parse_warning ? (": " + layout_status.reason) : "";
+      m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml (" + layout_path.string() + ")" + parse_reason +
+                           "; falling back safely. Repair guidance: run YAML validation (e.g., `yamllint`) and fix syntax/indentation.");
+    }
+
+    YAML::Node legacy_layout;
+    const YamlLoadStatus legacy_layout_status = read_yaml(legacy_layout_path, &legacy_layout);
+    if (legacy_layout_status.loaded) {
+      YAML::Node legacy_items(YAML::NodeType::Sequence);
+      append_legacy_source_items(legacy_layout, &legacy_items);
+      if (legacy_items.size() > 0) {
+        effective_layout = YAML::Node(YAML::NodeType::Map);
+        effective_layout["schema_version"] = "workcell_studio_layout/v1";
+        effective_layout["schema"] = "workcell_studio_layout/v1";
+        effective_layout["scene_name"] = scene_name;
+        effective_layout["scene_path"] = scene_dir.string();
+        effective_layout["items"] = legacy_items;
+        layout_ok = true;
+        m.layout_source_path = legacy_layout_path.string();
+        m.layout_source_kind = "legacy";
+        append_layout_load_message("Imported legacy layout from " + legacy_layout_path.string());
+      }
+    } else if (legacy_layout_status.exists) {
+      append_layout_load_message("Failed to load layout " + legacy_layout_path.string() + ": " +
+                                 layout_parse_reason(legacy_layout_status) + "; using next fallback");
+    }
+  }
+
+  if (layout_ok) {
+    layout = effective_layout;
+  } else {
+    m.layout_source_path.clear();
+    m.layout_source_kind = "locked_preview_fallback";
+    append_layout_load_message("No editable layout source found; using locked preview fallback");
+    if (layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
+    else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
+  }
+
+  const std::string schema_version = layout_ok ? read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
+  YAML::Node layout_items = layout_ok ? yaml_map_key(layout, "items") : YAML::Node();
   const bool schema_current = (schema_version == "workcell_studio_layout/v1");
   const bool schema_legacy = schema_version.empty() && layout_items.IsSequence();
   if (layout_ok && (schema_current || schema_legacy)) {
