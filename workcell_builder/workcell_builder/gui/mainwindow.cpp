@@ -7105,7 +7105,7 @@ void MainWindow::populate_scene_hierarchy()
     ScenePreviewWidget::PreviewItem p;
     p.id = QString::fromStdString(item.id);
     p.display_name = QString::fromStdString(item.label);
-    p.category = QString::fromStdString(item.type);
+    p.category = QString::fromStdString(item.category.empty() ? item.type : item.category);
     p.role = normalize_role(QString::fromStdString(item.role), p.category + " " + p.display_name);
     p.status = status_for_item(item);
     p.source_path = QString::fromStdString(item.source_file);
@@ -7155,7 +7155,7 @@ void MainWindow::populate_scene_hierarchy()
     p.tracking_id = QString::fromStdString(item.tracking_id);
     p.snapshot_source_file = QString::fromStdString(item.snapshot_source_file);
     p.alignment_warning = QString::fromStdString(item.alignment_warning);
-    p.editable = !item.locked;
+    p.editable = item.editable && !item.locked;
     switch (item.provenance) {
       case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
         p.source_layer = QStringLiteral("editable_layout");

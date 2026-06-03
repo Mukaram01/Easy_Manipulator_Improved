@@ -133,6 +133,101 @@ TEST(WorkcellStudioCanvasMesh, MissingFileProducesDeterministicWarning)
   EXPECT_TRUE(found);
 }
 
+TEST(WorkcellStudioCanvasMesh, CanonicalItemsOverrideMatchedDefaultsAndMapExtras)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_canonical_field_mapping";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot:\n  name: ur5\nend_effector:\n  name: robotiq\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(
+    root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "- id: table\n"
+    "  type: support_surface\n"
+    "  category: Tables / Workbenches\n"
+    "  role: fixture_table\n"
+    "  display_name: Canonical Assembly Table\n"
+    "  pose:\n"
+    "    xyz: [1.1, 2.2, 3.3]\n"
+    "    rpy: [0.1, 0.2, 0.3]\n"
+    "  dimensions: [2.0, 1.5, 0.4]\n"
+    "  source: canonical_environment.yaml\n"
+    "  source_package: table_pkg\n"
+    "  mesh:\n"
+    "    path: meshes/table.stl\n"
+    "    source_package: table_description\n"
+    "  locked: false\n"
+    "  editable: true\n"
+    "- id: custom_bin\n"
+    "  type: bin\n"
+    "  category: Bins / Trays / Totes\n"
+    "  role: sort_bin\n"
+    "  name: Extra Sort Bin\n"
+    "  pose:\n"
+    "    xyz: [-0.2, 0.4, 0.6]\n"
+    "    rpy: [0.0, 0.0, 1.57]\n"
+    "  size:\n"
+    "    width: 0.7\n"
+    "    depth: 0.5\n"
+    "    height: 0.3\n"
+    "  source_path: assets/bins/custom_bin.yaml\n"
+    "  mesh:\n"
+    "    path: package://bin_description/meshes/visual/bin.stl\n"
+    "    source_package: bin_description\n"
+    "  locked: true\n"
+    "  editable: false\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  const workcell_builder::WorkcellStudioCanvasItem * table = nullptr;
+  const workcell_builder::WorkcellStudioCanvasItem * custom_bin = nullptr;
+  for (const auto & item : model.items) {
+    if (item.id == "table") table = &item;
+    if (item.id == "custom_bin") custom_bin = &item;
+  }
+
+  ASSERT_NE(table, nullptr);
+  EXPECT_EQ(table->id, "table");
+  EXPECT_EQ(table->type, "support_surface");
+  EXPECT_EQ(table->category, "Tables / Workbenches");
+  EXPECT_EQ(table->role, "fixture_table");
+  EXPECT_EQ(table->label, "Canonical Assembly Table");
+  EXPECT_DOUBLE_EQ(table->x, 1.1);
+  EXPECT_DOUBLE_EQ(table->y, 2.2);
+  EXPECT_DOUBLE_EQ(table->z, 3.3);
+  EXPECT_DOUBLE_EQ(table->roll, 0.1);
+  EXPECT_DOUBLE_EQ(table->pitch, 0.2);
+  EXPECT_DOUBLE_EQ(table->yaw, 0.3);
+  EXPECT_DOUBLE_EQ(table->width, 2.0);
+  EXPECT_DOUBLE_EQ(table->depth, 1.5);
+  EXPECT_DOUBLE_EQ(table->height, 0.4);
+  EXPECT_EQ(table->source_file, "canonical_environment.yaml");
+  EXPECT_EQ(table->source_package, "table_pkg");
+  EXPECT_EQ(table->mesh_source_package, "table_description");
+  EXPECT_FALSE(table->locked);
+  EXPECT_TRUE(table->editable);
+
+  ASSERT_NE(custom_bin, nullptr);
+  EXPECT_EQ(custom_bin->type, "bin");
+  EXPECT_EQ(custom_bin->category, "Bins / Trays / Totes");
+  EXPECT_EQ(custom_bin->role, "sort_bin");
+  EXPECT_EQ(custom_bin->label, "Extra Sort Bin");
+  EXPECT_DOUBLE_EQ(custom_bin->x, -0.2);
+  EXPECT_DOUBLE_EQ(custom_bin->y, 0.4);
+  EXPECT_DOUBLE_EQ(custom_bin->z, 0.6);
+  EXPECT_DOUBLE_EQ(custom_bin->yaw, 1.57);
+  EXPECT_DOUBLE_EQ(custom_bin->width, 0.7);
+  EXPECT_DOUBLE_EQ(custom_bin->depth, 0.5);
+  EXPECT_DOUBLE_EQ(custom_bin->height, 0.3);
+  EXPECT_EQ(custom_bin->source_file, "assets/bins/custom_bin.yaml");
+  EXPECT_EQ(custom_bin->mesh_source_package, "bin_description");
+  EXPECT_TRUE(custom_bin->locked);
+  EXPECT_FALSE(custom_bin->editable);
+}
+
 TEST(WorkcellStudioCanvasMesh, LegacyMeshShapesNeverThrowAndFallbackSafely)
 {
   const std::vector<std::string> mesh_variants = {
