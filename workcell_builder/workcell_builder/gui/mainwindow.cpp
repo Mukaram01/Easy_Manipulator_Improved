@@ -5814,6 +5814,31 @@ void MainWindow::save_layout_changes(){
     editable_canvas_items.push_back(gi);
   }
 
+  fs::path effective_layout_path = layout_path;
+  const fs::path canonical_workcell_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  if (editable_canvas_items.empty()) {
+    effective_layout_path = canonical_workcell_layout_path;
+    root = YAML::Node(YAML::NodeType::Map);
+    root["schema_version"] = "workcell_studio_layout/v1";
+    root["schema"] = "workcell_studio_layout/v1";
+    root["scene_name"] = scene_name;
+    root["items"] = YAML::Node(YAML::NodeType::Sequence);
+    root["empty_layout_marker"] = true;
+  }
+
+  if (effective_layout_path != layout_path && fs::exists(effective_layout_path)) {
+    const fs::path effective_layout_backup = effective_layout_path.parent_path() /
+      (effective_layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
+    boost::system::error_code ec;
+    fs::copy_file(effective_layout_path, effective_layout_backup, fs::copy_option::overwrite_if_exists, ec);
+    if (!ec) {
+      append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(effective_layout_backup.string())));
+    } else {
+      append_studio_log(QString("Warning: backup before write failed (%1). Continuing save without backup.")
+        .arg(QString::fromStdString(ec.message())));
+    }
+  }
+
   auto existing_items_by_id = [](const YAML::Node & sequence) {
     YAML::Node out(YAML::NodeType::Map);
     if (!sequence || !sequence.IsSequence()) return out;
@@ -5826,9 +5851,9 @@ void MainWindow::save_layout_changes(){
     return out;
   };
 
-  const bool saving_workcell_layout = canonical_layout_path.filename().string() == "workcell_studio_layout.yaml" ||
+  const bool saving_workcell_layout = effective_layout_path.filename().string() == "workcell_studio_layout.yaml" ||
     workcell_builder::yaml_map_value_or_empty(root, "schema_version") == "workcell_studio_layout/v1" ||
-    (root["items"] && root["items"].IsSequence() && canonical_layout_path.parent_path().filename().string() == "layout");
+    (root["items"] && root["items"].IsSequence() && effective_layout_path.parent_path().filename().string() == "layout");
   const bool saving_placed_assets_layout = !saving_workcell_layout && root["placed_assets"] && root["placed_assets"].IsSequence();
 
   YAML::Node updated_placed(YAML::NodeType::Sequence);
@@ -5844,7 +5869,7 @@ void MainWindow::save_layout_changes(){
       if (saving_workcell_layout && !item["source"]) item["source"] = "layout/workcell_studio_layout.yaml";
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(canonical_layout_path.string())));
+        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(effective_layout_path.string())));
     }
     root[item_key] = updated_placed;
     if (saving_workcell_layout) {
@@ -5869,7 +5894,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(seq[i]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(effective_layout_path.string())));
       }
     }
     YAML::Node camera = root["camera"];
@@ -5880,7 +5905,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(root["camera"]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(effective_layout_path.string())));
       }
     }
     YAML::Node placed_assets = ensure_sequence_of_maps(root, "placed_assets");
@@ -5892,14 +5917,11 @@ void MainWindow::save_layout_changes(){
       placed_assets.push_back(item);
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
+        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(effective_layout_path.string())));
     }
   }
 
-  if (!imported_layout_path.empty() && editable_canvas_items.empty() && updated_placed && updated_placed.IsSequence()) {
-    root["items"] = updated_placed;
-  }
-  std::ofstream out(layout_path.string());
+  std::ofstream out(effective_layout_path.string());
   out << root;
   out.close();
   layout_dirty_ = false;
@@ -5907,18 +5929,15 @@ void MainWindow::save_layout_changes(){
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
-  if (!imported_layout_path.empty()) {
-    append_studio_log(QString("Save Layout: imported legacy layout from %1; wrote canonical layout to %2")
-      .arg(QString::fromStdString(imported_layout_path.string()), QString::fromStdString(canonical_layout_path.string())));
-  } else if (updated_placed.size() == 0) {
-    append_studio_log(QString("Save Layout: saved empty editable layout metadata to %1")
-      .arg(QString::fromStdString(canonical_layout_path.string())));
-  } else {
-    append_studio_log(QString("Save Layout: wrote canonical layout to %1")
-      .arg(QString::fromStdString(canonical_layout_path.string())));
-  }
   if (updated_placed.size() == 0) {
-    QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
+    const QString guidance = "Use Create editable layout from preview or add an item to persist editable objects.";
+    append_studio_log(QString("Save Layout: no editable items; saved canonical layout metadata to %1. %2")
+      .arg(QString::fromStdString(effective_layout_path.string()), guidance));
+    QMessageBox::information(this, "Save Layout",
+      QString("Save Layout: no editable items; saved canonical layout metadata to %1.\n%2")
+        .arg(QString::fromStdString(effective_layout_path.string()), guidance));
+  } else {
+    append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(effective_layout_path.string())));
   }
 
   YAML::Node environment(YAML::NodeType::Map);
