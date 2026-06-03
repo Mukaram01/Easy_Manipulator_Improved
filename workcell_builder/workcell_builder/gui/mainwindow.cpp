@@ -3187,6 +3187,16 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   const QString visual_backing = state.visual_backing_status.isEmpty() ? "unknown" : state.visual_backing_status;
   const QString type_class = state.item_type_classification.isEmpty() ? "unknown" : state.item_type_classification;
   const QString pose = state.pose_available ? (state.pose_text.isEmpty() ? QString("x=%1 y=%2 z=%3").arg(state.pose_x).arg(state.pose_y).arg(state.pose_z) : state.pose_text) : "pose unknown";
+  const bool editable_layout_contract = state.editable && state.linked_to_editable_layout_state && !state.locked;
+  const bool generated_or_preview_contract = state.generated_visual ||
+    source_layer.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    source_layer.compare(QStringLiteral("generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    source_layer.compare(QStringLiteral("primitive_fallback"), Qt::CaseInsensitive) == 0 ||
+    active_visual_source.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    active_visual_source.compare(QStringLiteral("generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
+    active_visual_source.compare(QStringLiteral("primitive_fallback"), Qt::CaseInsensitive) == 0;
+  const QString selection_contract_label = editable_layout_contract ? QStringLiteral("editable layout item") :
+    (generated_or_preview_contract ? QStringLiteral("inspection-only generated preview") : QStringLiteral("locked item cannot be edited"));
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("Locked: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("Locked: no");
   inspector_lines << "";
@@ -3194,6 +3204,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   inspector_lines << QString("Selected item role: %1").arg(role);
   inspector_lines << QString("Selected item category: %1").arg(role);
   inspector_lines << QString("Selected item ID: %1").arg(state.id);
+  inspector_lines << QString("Selected item editing mode: %1").arg(selection_contract_label);
   inspector_lines << QString("Selected item source: %1").arg(source);
   inspector_lines << QString("Selected item source_path: %1").arg(source);
   inspector_lines << QString("Selected item source_layer: %1").arg(source_layer);
