@@ -128,6 +128,166 @@ static fs::path resolve_mesh_candidate(const std::string & c, const fs::path & s
   return path;
 }
 
+
+static bool is_safe_scene_relative_path(const fs::path & candidate)
+{
+  if (candidate.empty() || candidate.is_absolute()) return false;
+  for (const auto & part : candidate) {
+    if (part.string() == "..") return false;
+  }
+  return true;
+}
+
+static double yaml_double_or_default(const YAML::Node & node, double fallback)
+{
+  double out = fallback;
+  return yaml_read_double(node, &out) ? out : fallback;
+}
+
+static fs::path manifest_declared_canvas_layout_path(const fs::path & scene_dir, const YAML::Node & manifest)
+{
+  try {
+    const YAML::Node files = yaml_map_key(manifest, "files");
+    std::string declared;
+    if (files && files.IsMap()) {
+      declared = yaml_map_value_or_empty(files, "layout");
+      if (declared.empty()) declared = yaml_map_value_or_empty(files, "editable_layout");
+      if (declared.empty()) declared = yaml_map_value_or_empty(files, "workcell_studio_layout");
+    }
+    if (declared.empty()) declared = yaml_map_value_or_empty(manifest, "layout");
+    const fs::path relative(declared);
+    if (!is_safe_scene_relative_path(relative)) return {};
+    return scene_dir / relative;
+  } catch (const YAML::Exception &) {
+    return {};
+  } catch (const std::exception &) {
+    return {};
+  }
+}
+
+static std::string canvas_item_id_from_node(const YAML::Node & node, const std::string & fallback_prefix, std::size_t index)
+{
+  std::string id = yaml_map_value_or_empty(node, "id");
+  if (id.empty()) id = yaml_map_value_or_empty(node, "name");
+  if (id.empty()) id = yaml_map_value_or_empty(node, "asset_id");
+  if (id.empty()) id = yaml_map_value_or_empty(node, "object_id");
+  if (id.empty()) id = yaml_map_value_or_empty(node, "target_id");
+  if (id.empty()) id = fallback_prefix + "_" + std::to_string(index + 1);
+  return id;
+}
+
+static void copy_canvas_pose_from_environment_node(const YAML::Node & source, YAML::Node * target)
+{
+  YAML::Node pose = yaml_map_key(source, "pose");
+  YAML::Node xyz;
+  YAML::Node rpy;
+  if (yaml_node_is_map(pose)) {
+    xyz = yaml_map_key(pose, "xyz");
+    rpy = yaml_map_key(pose, "rpy");
+  } else if (yaml_node_is_sequence(pose)) {
+    xyz = pose;
+  }
+  if (!yaml_node_is_defined(xyz)) {
+    const YAML::Node position = yaml_map_key(source, "position");
+    if (yaml_node_is_sequence(position)) xyz = position;
+    else if (yaml_node_is_map(position)) {
+      YAML::Node synthesized(YAML::NodeType::Sequence);
+      synthesized.push_back(yaml_double_or_default(yaml_map_key(position, "x"), 0.0));
+      synthesized.push_back(yaml_double_or_default(yaml_map_key(position, "y"), 0.0));
+      synthesized.push_back(yaml_double_or_default(yaml_map_key(position, "z"), 0.0));
+      xyz = synthesized;
+    }
+  }
+  if (!yaml_node_is_defined(rpy)) {
+    const YAML::Node orientation = yaml_map_key(source, "rpy");
+    if (yaml_node_is_sequence(orientation)) rpy = orientation;
+  }
+
+  YAML::Node out_pose(YAML::NodeType::Map);
+  out_pose["xyz"].push_back(yaml_double_or_default(yaml_seq_index(xyz, 0), 0.0));
+  out_pose["xyz"].push_back(yaml_double_or_default(yaml_seq_index(xyz, 1), 0.0));
+  out_pose["xyz"].push_back(yaml_double_or_default(yaml_seq_index(xyz, 2), 0.0));
+  out_pose["rpy"].push_back(yaml_double_or_default(yaml_seq_index(rpy, 0), 0.0));
+  out_pose["rpy"].push_back(yaml_double_or_default(yaml_seq_index(rpy, 1), 0.0));
+  out_pose["rpy"].push_back(yaml_double_or_default(yaml_seq_index(rpy, 2), 0.0));
+  (*target)["pose"] = out_pose;
+}
+
+static void copy_canvas_size_from_environment_node(const YAML::Node & source, YAML::Node * target)
+{
+  YAML::Node size = yaml_map_key(source, "size");
+  if (!yaml_node_is_defined(size)) size = yaml_map_key(source, "dimensions");
+  if (!yaml_node_is_defined(size)) size = yaml_map_key(source, "scale");
+  YAML::Node out_size(YAML::NodeType::Map);
+  if (yaml_node_is_map(size)) {
+    out_size["width"] = yaml_double_or_default(yaml_map_key(size, "width"), yaml_double_or_default(yaml_map_key(size, "x"), 0.25));
+    out_size["depth"] = yaml_double_or_default(yaml_map_key(size, "depth"), yaml_double_or_default(yaml_map_key(size, "y"), 0.25));
+    out_size["height"] = yaml_double_or_default(yaml_map_key(size, "height"), yaml_double_or_default(yaml_map_key(size, "z"), 0.25));
+  } else {
+    out_size["width"] = yaml_double_or_default(yaml_seq_index(size, 0), 0.25);
+    out_size["depth"] = yaml_double_or_default(yaml_seq_index(size, 1), 0.25);
+    out_size["height"] = yaml_double_or_default(yaml_seq_index(size, 2), 0.25);
+  }
+  (*target)["size"] = out_size;
+}
+
+static bool append_environment_layout_canvas_item(const YAML::Node & source, const std::string & section, std::size_t index, YAML::Node * items)
+{
+  if (!yaml_node_is_map(source)) return false;
+  YAML::Node item(YAML::NodeType::Map);
+  item["id"] = canvas_item_id_from_node(source, section, index);
+  std::string type = yaml_map_value_or_empty(source, "type");
+  if (type.empty()) type = yaml_map_value_or_empty(source, "role");
+  if (type.empty()) type = section == "camera" ? "camera" : (section == "zones" || section == "targets" ? "zone" : "object");
+  item["type"] = type;
+  item["role"] = yaml_map_value_or_empty(source, "role").empty() ? type : yaml_map_value_or_empty(source, "role");
+  const std::string display_name = yaml_map_value_or_empty(source, "display_name");
+  if (!display_name.empty()) item["display_name"] = display_name;
+  const std::string name = yaml_map_value_or_empty(source, "name");
+  if (!name.empty()) item["name"] = name;
+  item["category"] = section;
+  item["source_path"] = "environment_layout.yaml";
+  item["editable"] = true;
+  bool locked = false;
+  if (yaml_read_bool(yaml_map_key(source, "locked"), &locked)) item["locked"] = locked;
+  else item["locked"] = false;
+  copy_canvas_pose_from_environment_node(source, &item);
+  copy_canvas_size_from_environment_node(source, &item);
+  const YAML::Node mesh = yaml_map_key(source, "mesh");
+  if (yaml_node_is_defined(mesh)) item["mesh"] = YAML::Clone(mesh);
+  items->push_back(item);
+  return true;
+}
+
+static YAML::Node normalize_environment_layout_canvas_items(const YAML::Node & environment_layout)
+{
+  YAML::Node normalized(YAML::NodeType::Map);
+  normalized["schema_version"] = "workcell_studio_layout/v1";
+  YAML::Node items(YAML::NodeType::Sequence);
+  const std::array<const char *, 6> sequence_keys = {"items", "assets", "placed_assets", "objects", "zones", "targets"};
+  for (const char * key : sequence_keys) {
+    const YAML::Node section = yaml_map_key(environment_layout, key);
+    if (!yaml_node_is_sequence(section)) continue;
+    std::size_t index = 0;
+    for (const auto & node : section) {
+      append_environment_layout_canvas_item(node, key, index, &items);
+      ++index;
+    }
+  }
+  const YAML::Node camera = yaml_map_key(environment_layout, "camera");
+  if (yaml_node_is_map(camera)) {
+    append_environment_layout_canvas_item(camera, "camera", 0, &items);
+  } else if (yaml_node_is_sequence(camera)) {
+    std::size_t index = 0;
+    for (const auto & node : camera) {
+      append_environment_layout_canvas_item(node, "camera", index, &items);
+      ++index;
+    }
+  }
+  normalized["items"] = items;
+  return normalized;
+}
+
 static void probe_mesh_candidates(const fs::path & scene_dir, std::vector<fs::path> * visuals, std::vector<fs::path> * collisions)
 {
   const std::vector<fs::path> roots = {
@@ -186,7 +346,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const YamlLoadStatus env_status = read_yaml(env_path, &env);
   const YamlLoadStatus manifest_status = read_yaml(manifest_path, &manifest);
   const YamlLoadStatus task_status = read_yaml(task_path, &task);
-  const YamlLoadStatus layout_status = read_yaml(layout_path, &layout);
+  const YamlLoadStatus canonical_layout_status = read_yaml(layout_path, &layout);
   const bool env_ok = env_status.loaded;
   const bool manifest_ok = manifest_status.loaded;
   const bool task_ok = task_status.loaded;
@@ -220,6 +380,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     WorkcellStudioCanvasItem item;
     item.id = id;
     item.type = type;
+    item.category = type;
     item.role = role;
     item.label = label;
     item.source_file = source_file;
@@ -234,6 +395,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     item.height = height;
     item.radius = radius;
     item.locked = locked;
+    item.editable = !locked;
     item.provenance = WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
     m.items.push_back(item);
   };
@@ -364,15 +526,20 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     if (!layout_items.IsDefined() || !layout_items.IsSequence()) {
       if (layout_items.IsDefined()) add_warning("items", "expected sequence; skipping malformed items");
     } else {
-    for (const auto & node : layout_items) {
-      if (!node.IsMap()) { add_warning("items[]", "expected map item; skipping"); continue; }
-      const auto id = read_string_or_warn(yaml_map_key(node, "id"), "items[].id", "");
-      if (id.empty()) continue;
-      bool matched_existing = false;
-      for (auto & item : m.items) {
-        if (item.id == id) {
+      for (const auto & node : layout_items) {
+        if (!node.IsMap()) { add_warning("items[]", "expected map item; skipping"); continue; }
+        const auto id = read_string_or_warn(yaml_map_key(node, "id"), "items[].id", "");
+        if (id.empty()) continue;
+        bool matched_existing = false;
+        for (auto & item : m.items) {
+          if (item.id != id) continue;
           matched_existing = true;
           item.provenance = WorkcellStudioItemProvenance::EditableLayout;
+          if (layout_source_is_environment_layout) {
+            item.source_file = "environment_layout.yaml";
+            bool locked = false;
+            item.locked = yaml_read_bool(yaml_map_key(node, "locked"), &locked) ? locked : false;
+          }
           copy_primitive_metadata(item, node);
           YAML::Node pose = yaml_map_key(node, "pose");
           if (pose.IsDefined() && pose.IsMap()) {
@@ -398,6 +565,20 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           } else {
             incomplete_placement_metadata = true;
           }
+          YAML::Node size = yaml_map_key(node, "size");
+          if (yaml_node_is_defined(size)) {
+            if (yaml_node_is_map(size)) {
+              item.width = read_double_or_warn(yaml_map_key(size, "width"), "items[].size.width", item.width);
+              item.depth = read_double_or_warn(yaml_map_key(size, "depth"), "items[].size.depth", item.depth);
+              item.height = read_double_or_warn(yaml_map_key(size, "height"), "items[].size.height", item.height);
+            } else if (yaml_node_is_sequence(size)) {
+              item.width = read_double_or_warn(yaml_seq_index(size, 0), "items[].size[0]", item.width);
+              item.depth = read_double_or_warn(yaml_seq_index(size, 1), "items[].size[1]", item.depth);
+              item.height = read_double_or_warn(yaml_seq_index(size, 2), "items[].size[2]", item.height);
+            } else {
+              add_warning("items[].size", "expected map or sequence; using defaults");
+            }
+          }
         }
       }
       if (!matched_existing) {
@@ -411,8 +592,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         if (label.empty()) label = read_string_or_warn(yaml_map_key(node, "name"), "items[].name", id);
         extra.label = label.empty() ? id : label;
         std::string source_file = read_string_or_warn(yaml_map_key(node, "source_path"), "items[].source_path", "");
-        if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", "layout/workcell_studio_layout.yaml");
-        extra.source_file = source_file.empty() ? "layout/workcell_studio_layout.yaml" : source_file;
+        if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", layout_source_file);
+        extra.source_file = source_file.empty() ? layout_source_file : source_file;
         extra.provenance = WorkcellStudioItemProvenance::EditableLayout;
         copy_primitive_metadata(extra, node);
         YAML::Node pose = yaml_map_key(node, "pose");
@@ -444,19 +625,14 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
             add_warning("items[].size", "expected map or sequence; using defaults");
           }
         }
-        bool locked = false;
-        if (yaml_read_bool(yaml_map_key(node, "locked"), &locked)) extra.locked = locked;
-        else if (yaml_map_key(node, "locked").IsDefined()) add_warning("items[].locked", "expected scalar bool; using default");
-        m.items.push_back(extra);
       }
-    }
     }
     if (incomplete_placement_metadata) {
       warned_incomplete_placement_metadata = true;
-      enable_deterministic_fallback("layout/workcell_studio_layout.yaml has incomplete placement metadata");
+      enable_deterministic_fallback(layout_source_file + " has incomplete placement metadata");
     }
   } else if (layout_ok) {
-    enable_deterministic_fallback("layout/workcell_studio_layout.yaml has invalid or missing schema_version");
+    enable_deterministic_fallback(layout_source_file + " has invalid or missing schema_version");
   }
 
   if (deterministic_fallback_layout) {
@@ -472,7 +648,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       else if (item.id == "home_pose" || item.role.find("safety") != std::string::npos) { item.x = 0.0; item.y = 0.95; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
       else if (item.id == "object_a" || item.role == "object") { item.x = -0.25; item.y = 0.10; item.z = 0.0; item.roll = 0.0; item.pitch = 0.0; item.yaw = 0.0; }
     }
-    m.warnings.push_back("Using deterministic 3D fallback layout because layout metadata is incomplete.");
+    m.warnings.push_back("Using deterministic 3D fallback layout because all editable layout sources are missing or invalid.");
     if (!deterministic_fallback_reason.empty() && !warned_incomplete_placement_metadata) m.warnings.push_back("Fallback detail: " + deterministic_fallback_reason + ".");
   }
 
@@ -530,12 +706,18 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         } else if (yaml_node_is_map(mesh)) {
           item.has_mesh_metadata = true;
           const std::string path = get_optional_string(mesh, "path", "");
+          const std::string source_package = get_optional_string(mesh, "source_package", item.mesh_source_package);
+          if (!source_package.empty()) item.mesh_source_package = source_package;
           if (path.empty()) {
             item.mesh_available = false;
             item.mesh_path.clear();
             item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
           } else {
-            const fs::path resolved_path = resolve_mesh_candidate(path, scene_dir);
+            std::string candidate = path;
+            if (!source_package.empty() && path.rfind("package://", 0) != 0 && !fs::path(path).is_absolute()) {
+              candidate = "package://" + source_package + "/" + path;
+            }
+            const fs::path resolved_path = resolve_mesh_candidate(candidate, scene_dir);
             item.mesh_path = resolved_path.generic_string();
           }
           const YAML::Node scale = yaml_map_key(mesh, "scale");
@@ -717,12 +899,6 @@ bool is_save_layout_workflow_ready(const fs::path & scene_dir)
     fs::exists(scene_dir / "environment.yaml");
 }
 
-
-static double yaml_double_or_default(const YAML::Node & node, double fallback)
-{
-  double out = fallback;
-  return yaml_read_double(node, &out) ? out : fallback;
-}
 
 static std::string canonical_item_id_from_node(const YAML::Node & node)
 {
