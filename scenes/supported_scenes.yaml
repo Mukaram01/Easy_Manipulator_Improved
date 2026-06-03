@@ -37,7 +37,7 @@ scenes:
     scene_path: scenes/suction_test
     support_level: supported
     status: blocked
-    known_blocker: "post-regeneration readiness matrix: cell_definition_validation FAIL (cell_definition.yaml missing required top-level keys: camera, objects); Scene3D runtime smoke evidence remains blocked because generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable. The scene_visual_mesh_index.json artifact has been regenerated with repo-local xacro-lite expansion and is no longer the catalog blocker."
+    known_blocker: "local Scene3D GUI smoke cannot run because ROS Humble/ament/workcell_builder executable is unavailable in the container; generated/scene3d_gui_smoke.json records unable_to_resolve_workcell_builder_executable."
     authoring_files: *common_authoring_files
     generated_files: *common_generated_files
     validation_command: python3 scripts/validate_builder_generated_scene.py scenes/suction_test --json
