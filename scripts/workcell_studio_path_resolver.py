@@ -50,6 +50,25 @@ def resolve_install_setup(workspace_root: Path | None) -> Path | None:
     return setup if setup.exists() else None
 
 
+def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[Path]:
+    candidates: list[Path] = []
+
+    path_hit = shutil.which("workcell_builder")
+    if path_hit:
+        candidates.append(Path(path_hit))
+
+    if workspace_root:
+        candidates.extend([
+            workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
+            workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder",
+            workspace_root / "install" / "bin" / "workcell_builder",
+            workspace_root / "build" / "workcell_builder" / "workcell_builder",
+            workspace_root / "build" / "workcell_builder" / "workcell_builder" / "workcell_builder",
+        ])
+
+    return candidates
+
+
 def resolve_workcell_builder_executable(workspace_root: Path | None, explicit_executable: Path | str | None = None) -> Path | None:
     searched: list[Path] = []
     if explicit_executable:
@@ -58,20 +77,7 @@ def resolve_workcell_builder_executable(workspace_root: Path | None, explicit_ex
         _LAST["searched_executable_paths"] = [str(p) for p in searched]
         return exe if exe.exists() and os.access(exe, os.X_OK) else None
 
-    path_hit = shutil.which("workcell_builder")
-    if path_hit:
-        p = Path(path_hit)
-        searched.append(p)
-        if p.exists() and os.access(p, os.X_OK):
-            _LAST["searched_executable_paths"] = [str(x) for x in searched]
-            return p
-
-    if workspace_root:
-        searched.extend([
-            workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
-            workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder",
-            workspace_root / "install" / "bin" / "workcell_builder",
-        ])
+    searched.extend(workcell_builder_executable_candidates(workspace_root))
     _LAST["searched_executable_paths"] = [str(p) for p in searched]
     for p in searched:
         if p.exists() and os.access(p, os.X_OK):

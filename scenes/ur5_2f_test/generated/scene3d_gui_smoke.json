@@ -6,9 +6,11 @@
   "workspace_root": "/workspace/Easy_Manipulator_Improved",
   "executable": null,
   "searched_paths": [
-    "/workspace/Easy_Manipulator_Improved/install/workcell_builder/bin/workcell_builder",
     "/workspace/Easy_Manipulator_Improved/install/workcell_builder/lib/workcell_builder/workcell_builder",
-    "/workspace/Easy_Manipulator_Improved/build/workcell_builder/workcell_builder"
+    "/workspace/Easy_Manipulator_Improved/install/workcell_builder/bin/workcell_builder",
+    "/workspace/Easy_Manipulator_Improved/install/bin/workcell_builder",
+    "/workspace/Easy_Manipulator_Improved/build/workcell_builder/workcell_builder",
+    "/workspace/Easy_Manipulator_Improved/build/workcell_builder/workcell_builder/workcell_builder"
   ],
   "blockers": [
     "unable_to_resolve_workcell_builder_executable"
