@@ -351,67 +351,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   const bool manifest_ok = manifest_status.loaded;
   const bool task_ok = task_status.loaded;
   bool layout_ok = false;
-  bool layout_source_is_environment_layout = false;
-  std::string layout_source_file = "layout/workcell_studio_layout.yaml";
-
-  const auto layout_node_valid = [](const YAML::Node & candidate) {
-    const std::string schema_version = yaml_map_value_or_empty(candidate, "schema_version");
-    const YAML::Node items = yaml_map_key(candidate, "items");
-    const bool schema_current = (schema_version == "workcell_studio_layout/v1");
-    const bool schema_legacy = schema_version.empty() && yaml_node_is_sequence(items);
-    return (schema_current || schema_legacy) && yaml_node_is_sequence(items);
-  };
-  const auto warn_bad_layout = [&m](const std::string & label, const fs::path & path, const YamlLoadStatus & status) {
-    if (!status.exists) return;
-    if (status.parse_warning) {
-      m.warnings.push_back("Malformed " + label + " (" + path.string() + "): " + status.reason +
-                           "; trying next editable layout source before static preview fallback.");
-    } else if (status.loaded) {
-      m.warnings.push_back(label + " (" + path.string() + ") has invalid or missing editable layout schema/items; trying next editable layout source before static preview fallback.");
-    }
-  };
-
-  if (canonical_layout_status.loaded && layout_node_valid(layout)) {
-    layout_ok = true;
-  } else {
-    warn_bad_layout("layout/workcell_studio_layout.yaml", layout_path, canonical_layout_status);
-    YAML::Node legacy_layout;
-    const YamlLoadStatus legacy_layout_status = read_yaml(legacy_layout_path, &legacy_layout);
-    if (legacy_layout_status.loaded) {
-      YAML::Node normalized_legacy_layout = normalize_environment_layout_canvas_items(legacy_layout);
-      if (layout_node_valid(normalized_legacy_layout) && yaml_map_key(normalized_legacy_layout, "items").size() > 0) {
-        layout = normalized_legacy_layout;
-        layout_ok = true;
-        layout_source_is_environment_layout = true;
-        layout_source_file = "environment_layout.yaml";
-      } else {
-        warn_bad_layout("environment_layout.yaml", legacy_layout_path, legacy_layout_status);
-      }
-    } else {
-      warn_bad_layout("environment_layout.yaml", legacy_layout_path, legacy_layout_status);
-    }
-
-    if (!layout_ok && !canonical_layout_status.exists && !legacy_layout_status.exists && manifest_ok) {
-      const fs::path manifest_layout_path = manifest_declared_canvas_layout_path(scene_dir, manifest);
-      if (!manifest_layout_path.empty() && manifest_layout_path != layout_path && manifest_layout_path != legacy_layout_path) {
-        YAML::Node manifest_layout;
-        const YamlLoadStatus manifest_layout_status = read_yaml(manifest_layout_path, &manifest_layout);
-        if (manifest_layout_status.loaded && layout_node_valid(manifest_layout)) {
-          layout = manifest_layout;
-          layout_ok = true;
-          layout_source_file = manifest_layout_path.lexically_relative(scene_dir).generic_string();
-        } else {
-          warn_bad_layout("manifest-declared layout", manifest_layout_path, manifest_layout_status);
-        }
-      }
-    }
-  }
-
-  if (!layout_ok) {
-    if (canonical_layout_status.exists) enable_deterministic_fallback("all editable layout sources are missing or invalid; layout/workcell_studio_layout.yaml is invalid");
-    else if (fs::exists(legacy_layout_path)) enable_deterministic_fallback("all editable layout sources are missing or invalid; environment_layout.yaml is invalid");
-    else enable_deterministic_fallback("all editable layout sources are missing");
-  }
   if (!env_ok) m.warnings.push_back(env_status.parse_warning ?
     ("environment.yaml parse warning (" + env_path.string() + "): " + env_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Malformed or missing environment.yaml");
@@ -421,7 +360,6 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
   if (!task_ok) m.warnings.push_back(task_status.parse_warning ?
     ("task_recipe.yaml parse warning (" + task_path.string() + "): " + task_status.reason + ". Validate YAML syntax (e.g., `yamllint`) and retry.") :
     "Task intent missing");
-
   m.template_name = manifest_ok ? yaml_map_value_or_empty(manifest, "template_name") : "";
   if (m.template_name.empty()) m.template_name = "unknown_template";
   m.robot_summary = env_ok ? yaml_named_or_scalar(yaml_map_key(env, "robot"), "name") : "";
@@ -494,124 +432,93 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     }
   };
 
-
-  const auto read_optional_string_field = [&](const YAML::Node & node, const char * key, const std::string & context, std::string * out) {
-    const YAML::Node value = yaml_map_key(node, key);
-    if (!yaml_node_is_defined(value)) return false;
-    *out = read_string_or_warn(value, context, *out);
-    return true;
+  const auto append_layout_load_message = [&m](const std::string & message) {
+    if (message.empty()) return;
+    if (!m.layout_load_message.empty()) m.layout_load_message += "\n";
+    m.layout_load_message += message;
   };
-
-  const auto copy_dimension_sequence = [&](WorkcellStudioCanvasItem & item, const YAML::Node & dimensions, const std::string & context) {
-    if (!yaml_node_is_defined(dimensions)) return false;
-    if (!yaml_node_is_sequence(dimensions)) {
-      add_warning(context, "expected sequence; using defaults");
-      return true;
-    }
-    item.width = read_double_or_warn(yaml_seq_index(dimensions, 0), context + "[0]", item.width);
-    item.depth = read_double_or_warn(yaml_seq_index(dimensions, 1), context + "[1]", item.depth);
-    item.height = read_double_or_warn(yaml_seq_index(dimensions, 2), context + "[2]", item.height);
-    return true;
+  const auto layout_parse_reason = [](const YamlLoadStatus & status) {
+    if (!status.reason.empty()) return status.reason;
+    return std::string("unknown parse error");
   };
-
-  const auto apply_canonical_item_fields = [&](WorkcellStudioCanvasItem & item, const YAML::Node & node, bool preserve_stable_id, bool require_complete_pose) {
-    bool incomplete_pose = false;
-    if (!preserve_stable_id) read_optional_string_field(node, "id", "items[].id", &item.id);
-    read_optional_string_field(node, "type", "items[].type", &item.type);
-    if (read_optional_string_field(node, "category", "items[].category", &item.category) && item.type.empty()) item.type = item.category;
-    read_optional_string_field(node, "role", "items[].role", &item.role);
-    std::string display_name;
-    const bool has_display_name = read_optional_string_field(node, "display_name", "items[].display_name", &display_name);
-    std::string name;
-    const bool has_name = read_optional_string_field(node, "name", "items[].name", &name);
-    if (has_display_name && !display_name.empty()) item.label = display_name;
-    else if (has_name && !name.empty()) item.label = name;
-
-    YAML::Node pose = yaml_map_key(node, "pose");
-    if (yaml_node_is_defined(pose)) {
-      if (yaml_node_is_map(pose)) {
-        YAML::Node xyz = yaml_map_key(pose, "xyz");
-        if (yaml_node_is_defined(xyz) && yaml_node_is_sequence(xyz)) {
-          if (xyz.size() < 3) incomplete_pose = true;
-          item.x = read_double_or_warn(yaml_seq_index(xyz, 0), "items[].pose.xyz[0]", item.x);
-          item.y = read_double_or_warn(yaml_seq_index(xyz, 1), "items[].pose.xyz[1]", item.y);
-          item.z = read_double_or_warn(yaml_seq_index(xyz, 2), "items[].pose.xyz[2]", item.z);
-        } else if (yaml_node_is_defined(xyz)) {
-          add_warning("items[].pose.xyz", "expected sequence; using defaults");
-          incomplete_pose = true;
-        } else {
-          incomplete_pose = true;
-        }
-        YAML::Node rpy = yaml_map_key(pose, "rpy");
-        if (yaml_node_is_defined(rpy) && yaml_node_is_sequence(rpy)) {
-          if (rpy.size() < 3) incomplete_pose = true;
-          item.roll = read_double_or_warn(yaml_seq_index(rpy, 0), "items[].pose.rpy[0]", item.roll);
-          item.pitch = read_double_or_warn(yaml_seq_index(rpy, 1), "items[].pose.rpy[1]", item.pitch);
-          item.yaw = read_double_or_warn(yaml_seq_index(rpy, 2), "items[].pose.rpy[2]", item.yaw);
-        } else if (yaml_node_is_defined(rpy)) {
-          add_warning("items[].pose.rpy", "expected sequence; using defaults");
-          incomplete_pose = true;
-        } else {
-          incomplete_pose = true;
-        }
-      } else {
-        add_warning("items[].pose", "expected map; using defaults");
-        incomplete_pose = true;
-      }
-    } else if (require_complete_pose) {
-      incomplete_pose = true;
-    }
-
-    copy_dimension_sequence(item, yaml_map_key(node, "dimensions"), "items[].dimensions");
-    YAML::Node size = yaml_map_key(node, "size");
-    if (yaml_node_is_defined(size)) {
-      if (yaml_node_is_map(size)) {
-        item.width = read_double_or_warn(yaml_map_key(size, "width"), "items[].size.width", item.width);
-        item.depth = read_double_or_warn(yaml_map_key(size, "depth"), "items[].size.depth", item.depth);
-        item.height = read_double_or_warn(yaml_map_key(size, "height"), "items[].size.height", item.height);
-      } else if (yaml_node_is_sequence(size)) {
-        item.width = read_double_or_warn(yaml_seq_index(size, 0), "items[].size[0]", item.width);
-        item.depth = read_double_or_warn(yaml_seq_index(size, 1), "items[].size[1]", item.depth);
-        item.height = read_double_or_warn(yaml_seq_index(size, 2), "items[].size[2]", item.height);
-      } else {
-        add_warning("items[].size", "expected map or sequence; using defaults");
+  const auto append_legacy_source_items = [](const YAML::Node & root, YAML::Node * items) {
+    if (!root || !root.IsMap() || items == nullptr) return;
+    const std::array<const char *, 6> legacy_sequence_keys = {
+      "items", "assets", "placed_assets", "objects", "zones", "targets"
+    };
+    for (const char * key : legacy_sequence_keys) {
+      const YAML::Node seq = yaml_map_key(root, key);
+      if (!seq || !seq.IsSequence()) continue;
+      for (const auto & node : seq) {
+        if (node && node.IsMap()) items->push_back(YAML::Clone(node));
       }
     }
-
-    std::string source_path;
-    const bool has_source_path = read_optional_string_field(node, "source_path", "items[].source_path", &source_path);
-    std::string source;
-    const bool has_source = read_optional_string_field(node, "source", "items[].source", &source);
-    read_optional_string_field(node, "source_package", "items[].source_package", &item.source_package);
-    if (has_source_path && !source_path.empty()) item.source_file = source_path;
-    else if (has_source && !source.empty()) item.source_file = source;
-    else if (!item.source_package.empty()) item.source_file = item.source_package;
-
-    YAML::Node mesh = yaml_map_key(node, "mesh");
-    if (yaml_node_is_map(mesh)) {
-      item.has_mesh_metadata = true;
-      std::string mesh_path = item.mesh_path;
-      if (read_optional_string_field(mesh, "path", "items[].mesh.path", &mesh_path) && !mesh_path.empty()) item.mesh_path = mesh_path;
-      read_optional_string_field(mesh, "source_package", "items[].mesh.source_package", &item.mesh_source_package);
-    }
-
-    bool locked = item.locked;
-    if (yaml_read_bool(yaml_map_key(node, "locked"), &locked)) item.locked = locked;
-    else if (yaml_node_is_defined(yaml_map_key(node, "locked"))) add_warning("items[].locked", "expected scalar bool; using default");
-    bool editable = item.editable;
-    if (yaml_read_bool(yaml_map_key(node, "editable"), &editable)) {
-      item.editable = editable;
-      if (!editable) item.locked = true;
-      else if (!yaml_node_is_defined(yaml_map_key(node, "locked"))) item.locked = false;
-    } else if (yaml_node_is_defined(yaml_map_key(node, "editable"))) {
-      add_warning("items[].editable", "expected scalar bool; using default");
-    }
-    copy_primitive_metadata(item, node);
-    return incomplete_pose;
+    const YAML::Node camera = yaml_map_key(root, "camera");
+    if (camera && camera.IsMap()) items->push_back(YAML::Clone(camera));
   };
 
-  const std::string schema_version = read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "");
-  YAML::Node layout_items = yaml_map_key(layout, "items");
+  const std::string canonical_schema_version = layout_status.loaded ?
+    read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
+  const YAML::Node canonical_layout_items = layout_status.loaded ? yaml_map_key(layout, "items") : YAML::Node();
+  const bool canonical_schema_current = (canonical_schema_version == "workcell_studio_layout/v1");
+  const bool canonical_schema_legacy = canonical_schema_version.empty() && canonical_layout_items.IsSequence();
+  const bool canonical_layout_usable = layout_status.loaded && (canonical_schema_current || canonical_schema_legacy);
+
+  YAML::Node effective_layout;
+  if (canonical_layout_usable) {
+    effective_layout = layout;
+    layout_ok = true;
+    m.layout_source_path = layout_path.string();
+    m.layout_source_kind = "canonical";
+    const bool empty_items = !canonical_layout_items.IsSequence() || canonical_layout_items.size() == 0;
+    append_layout_load_message((empty_items ?
+      "Loaded empty canonical layout metadata from " :
+      "Loaded canonical layout from ") + layout_path.string());
+  } else {
+    if (layout_status.exists) {
+      const std::string reason = layout_status.loaded ?
+        "invalid or missing schema_version" : layout_parse_reason(layout_status);
+      append_layout_load_message("Failed to load layout " + layout_path.string() + ": " + reason + "; using next fallback");
+      const std::string parse_reason = layout_status.parse_warning ? (": " + layout_status.reason) : "";
+      m.warnings.push_back("Malformed layout/workcell_studio_layout.yaml (" + layout_path.string() + ")" + parse_reason +
+                           "; falling back safely. Repair guidance: run YAML validation (e.g., `yamllint`) and fix syntax/indentation.");
+    }
+
+    YAML::Node legacy_layout;
+    const YamlLoadStatus legacy_layout_status = read_yaml(legacy_layout_path, &legacy_layout);
+    if (legacy_layout_status.loaded) {
+      YAML::Node legacy_items(YAML::NodeType::Sequence);
+      append_legacy_source_items(legacy_layout, &legacy_items);
+      if (legacy_items.size() > 0) {
+        effective_layout = YAML::Node(YAML::NodeType::Map);
+        effective_layout["schema_version"] = "workcell_studio_layout/v1";
+        effective_layout["schema"] = "workcell_studio_layout/v1";
+        effective_layout["scene_name"] = scene_name;
+        effective_layout["scene_path"] = scene_dir.string();
+        effective_layout["items"] = legacy_items;
+        layout_ok = true;
+        m.layout_source_path = legacy_layout_path.string();
+        m.layout_source_kind = "legacy";
+        append_layout_load_message("Imported legacy layout from " + legacy_layout_path.string());
+      }
+    } else if (legacy_layout_status.exists) {
+      append_layout_load_message("Failed to load layout " + legacy_layout_path.string() + ": " +
+                                 layout_parse_reason(legacy_layout_status) + "; using next fallback");
+    }
+  }
+
+  if (layout_ok) {
+    layout = effective_layout;
+  } else {
+    m.layout_source_path.clear();
+    m.layout_source_kind = "locked_preview_fallback";
+    append_layout_load_message("No editable layout source found; using locked preview fallback");
+    if (layout_status.exists) enable_deterministic_fallback("layout/workcell_studio_layout.yaml is malformed");
+    else enable_deterministic_fallback("layout/workcell_studio_layout.yaml is missing");
+  }
+
+  const std::string schema_version = layout_ok ? read_string_or_warn(yaml_map_key(layout, "schema_version"), "schema_version", "") : "";
+  YAML::Node layout_items = layout_ok ? yaml_map_key(layout, "items") : YAML::Node();
   const bool schema_current = (schema_version == "workcell_studio_layout/v1");
   const bool schema_legacy = schema_version.empty() && layout_items.IsSequence();
   if (layout_ok && (schema_current || schema_legacy)) {

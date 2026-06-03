@@ -56,6 +56,89 @@ static std::set<std::string> editable_item_ids(const YAML::Node & layout)
   return ids;
 }
 
+
+TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsCanonicalLayoutSource)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_layout_status_canonical";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot: ur5\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(root / "layout" / "workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: table\n"
+    "    type: table\n"
+    "    role: table\n"
+    "    editable: true\n"
+    "    pose: {xyz: [0.1, 0.2, 0.0], rpy: [0.0, 0.0, 0.0]}\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(model.layout_source_kind, "canonical");
+  EXPECT_EQ(model.layout_source_path, (root / "layout" / "workcell_studio_layout.yaml").string());
+  EXPECT_EQ(model.layout_load_message, "Loaded canonical layout from " + (root / "layout" / "workcell_studio_layout.yaml").string());
+}
+
+TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsEmptyCanonicalLayoutMetadata)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_layout_status_empty_canonical";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot: ur5\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: workcell_studio_layout/v1\nitems: []\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(model.layout_source_kind, "canonical");
+  EXPECT_EQ(model.layout_load_message, "Loaded empty canonical layout metadata from " + (root / "layout" / "workcell_studio_layout.yaml").string());
+}
+
+TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsCanonicalFailureThenLegacyImport)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_layout_status_legacy";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot: ur5\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: [not valid YAML\n");
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
+    "placed_assets:\n"
+    "  - id: legacy_table\n"
+    "    type: table\n"
+    "    role: table\n"
+    "    editable: true\n"
+    "    pose: {xyz: [0.0, 0.0, 0.0], rpy: [0.0, 0.0, 0.0]}\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(model.layout_source_kind, "legacy");
+  EXPECT_EQ(model.layout_source_path, (root / "environment_layout.yaml").string());
+  EXPECT_NE(model.layout_load_message.find("Failed to load layout " + (root / "layout" / "workcell_studio_layout.yaml").string() + ": "), std::string::npos);
+  EXPECT_NE(model.layout_load_message.find("; using next fallback"), std::string::npos);
+  EXPECT_NE(model.layout_load_message.find("Imported legacy layout from " + (root / "environment_layout.yaml").string()), std::string::npos);
+}
+
+TEST(WorkcellStudioCanvasModelLayoutStatus, ReportsLockedPreviewFallbackWhenNoLayoutSourceExists)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_layout_status_no_source";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot: ur5\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(model.layout_source_kind, "locked_preview_fallback");
+  EXPECT_EQ(model.layout_load_message, "No editable layout source found; using locked preview fallback");
+}
+
 TEST(WorkcellStudioCanvasMesh, ResolvesAbsoluteAndPackagePaths)
 {
   const fs::path root = fs::temp_directory_path() / "wc_canvas_mesh_abs_pkg";

@@ -54,6 +54,7 @@ struct WorkcellStudioCanvasItem {
 };
 struct WorkcellStudioCanvasModel {
   std::string scene_name, template_name, robot_summary, tool_summary, status;
+  std::string layout_source_path, layout_source_kind, layout_load_message;
   bool fake_hardware_first{true}, no_robot_motion{true}, has_warnings{false};
   std::string pick_source, grasp_strategy, place_target, release_strategy;
   WorkcellStudioProvenanceStatus provenance_status;

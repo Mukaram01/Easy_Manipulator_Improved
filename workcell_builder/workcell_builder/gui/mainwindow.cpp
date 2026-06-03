@@ -4914,6 +4914,11 @@ void MainWindow::rebuild_digital_twin_canvas()
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const QString layout_load_message = QString::fromStdString(model.layout_load_message).trimmed();
+  if (!layout_load_message.isEmpty() && layout_load_message != last_layout_load_message_log_) {
+    append_studio_log(layout_load_message);
+    last_layout_load_message_log_ = layout_load_message;
+  }
 
   QVector<QRectF> occupied_label_rects;
   QRectF physical_bounds;
@@ -6907,6 +6912,11 @@ void MainWindow::populate_scene_hierarchy()
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_state_.index)];
   const fs::path d = s.scene_dir;
   const auto model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+  const QString layout_load_message = QString::fromStdString(model.layout_load_message).trimmed();
+  if (!layout_load_message.isEmpty() && layout_load_message != last_layout_load_message_log_) {
+    append_studio_log(layout_load_message);
+    last_layout_load_message_log_ = layout_load_message;
+  }
 
   auto normalize_role = [](const QString & raw_role, const QString & fallback_text) {
     const QString lower = (raw_role + " " + fallback_text).toLower();

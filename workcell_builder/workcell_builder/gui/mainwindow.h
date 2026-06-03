@@ -686,6 +686,7 @@ private:
   QString last_perception_summary_log_;
   QString last_camera_summary_log_;
   QString last_preview_summary_log_;
+  QString last_layout_load_message_log_;
   QSet<QString> emitted_scene_diagnostic_log_keys_;
   int scene_diagnostic_payload_revision_{ 0 };
   QString visual_index_script_missing_reported_scene_key_;
