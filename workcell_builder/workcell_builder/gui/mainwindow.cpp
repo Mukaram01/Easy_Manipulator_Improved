@@ -4939,17 +4939,26 @@ void MainWindow::rebuild_digital_twin_canvas()
 
   for (const auto & entry : model.items) {
     const QString category = QString::fromStdString(entry.type);
+    const bool is_editable_layout_item =
+      entry.provenance == workcell_builder::WorkcellStudioItemProvenance::EditableLayout && !entry.locked;
+    const bool is_editable_layout_provenance =
+      entry.provenance == workcell_builder::WorkcellStudioItemProvenance::EditableLayout;
+    const bool locked_for_canvas = !is_editable_layout_item;
+    const QString canvas_access_label = is_editable_layout_item
+      ? QStringLiteral("editable layout item")
+      : (is_editable_layout_provenance ? QStringLiteral("locked editable layout item") : QStringLiteral("inspection-only preview"));
     auto * item = new DraggableCanvasItem(QRectF(0, 0, std::max(20.0, entry.width * 100.0), std::max(20.0, entry.depth * 100.0)));
     item->setPos(entry.x * 100.0, entry.y * 100.0);
     item->setPen(QPen(category_color(category).lighter(130), 2));
     item->setBrush(QBrush(category_color(category), Qt::SolidPattern));
-    item->setToolTip(QString("%1 (%2)").arg(QString::fromStdString(entry.label), category));
+    item->setToolTip(QString("%1 (%2) — %3")
+      .arg(QString::fromStdString(entry.label), category, canvas_access_label));
     item->setData(RoleId, QString::fromStdString(entry.id));
     item->setData(RoleDisplayName, QString::fromStdString(entry.label));
     item->setData(RoleType, QString::fromStdString(entry.type));
     item->setData(RoleCategory, QString::fromStdString(entry.type));
     item->setData(RoleRole, QString::fromStdString(entry.role));
-    item->setData(RoleLocked, entry.locked);
+    item->setData(RoleLocked, locked_for_canvas);
     item->setData(RolePoseZ, entry.z);
     item->setData(RoleRoll, entry.roll); item->setData(RolePitch, entry.pitch); item->setData(RoleYaw, entry.yaw);
     item->setData(RoleSource, QString::fromStdString(entry.source_file));
@@ -4973,17 +4982,18 @@ void MainWindow::rebuild_digital_twin_canvas()
         break;
     }
     item->setData(RoleSourceLayer, source_layer);
-    item->setZValue(canvas_item_z_value(category, QString::fromStdString(entry.role), source_layer, entry.locked));
-    item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (entry.locked ? QGraphicsItem::GraphicsItemFlag(0) : QGraphicsItem::ItemIsMovable));
+    item->setZValue(canvas_item_z_value(category, QString::fromStdString(entry.role), source_layer, locked_for_canvas));
+    item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | (is_editable_layout_item ? QGraphicsItem::ItemIsMovable : QGraphicsItem::GraphicsItemFlag(0)));
     item->position_filter = [this](const QPointF & p){ return snap_canvas_position(p); };
     digital_twin_scene_->addItem(item);
     add_physical_bounds(item->sceneBoundingRect());
 
     if (toggle_labels_box_ && toggle_labels_box_->isChecked()) {
-      const bool secondary_label = entry.locked || source_layer != QStringLiteral("editable_layout");
+      const bool secondary_label = !is_editable_layout_item;
       const bool visible_by_default = should_show_2d_label(entry, preserved_selected_id);
       QString label_text = QString::fromStdString(entry.label);
       if (label_text.trimmed().isEmpty()) label_text = QString::fromStdString(entry.id);
+      if (!is_editable_layout_item) label_text = QStringLiteral("🔒 ") + label_text;
       auto * txt = digital_twin_scene_->addSimpleText(compact_canvas_label(label_text));
       QFont label_font = txt->font();
       label_font.setPointSize(secondary_label ? 7 : 8);
@@ -7095,7 +7105,7 @@ void MainWindow::populate_scene_hierarchy()
     ScenePreviewWidget::PreviewItem p;
     p.id = QString::fromStdString(item.id);
     p.display_name = QString::fromStdString(item.label);
-    p.category = QString::fromStdString(item.type);
+    p.category = QString::fromStdString(item.category.empty() ? item.type : item.category);
     p.role = normalize_role(QString::fromStdString(item.role), p.category + " " + p.display_name);
     p.status = status_for_item(item);
     p.source_path = QString::fromStdString(item.source_file);
@@ -7145,7 +7155,7 @@ void MainWindow::populate_scene_hierarchy()
     p.tracking_id = QString::fromStdString(item.tracking_id);
     p.snapshot_source_file = QString::fromStdString(item.snapshot_source_file);
     p.alignment_warning = QString::fromStdString(item.alignment_warning);
-    p.editable = !item.locked;
+    p.editable = item.editable && !item.locked;
     switch (item.provenance) {
       case workcell_builder::WorkcellStudioItemProvenance::EditableLayout:
         p.source_layer = QStringLiteral("editable_layout");
