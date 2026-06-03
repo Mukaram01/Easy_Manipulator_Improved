@@ -133,99 +133,127 @@ TEST(WorkcellStudioCanvasMesh, MissingFileProducesDeterministicWarning)
   EXPECT_TRUE(found);
 }
 
-TEST(WorkcellStudioCanvasMesh, CanonicalItemsOverrideMatchedDefaultsAndMapExtras)
+TEST(WorkcellStudioCanvasMesh, UsesEnvironmentLayoutAsEditableFallback)
 {
-  const fs::path root = fs::temp_directory_path() / "wc_canvas_canonical_field_mapping";
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_env_layout_fallback";
   fs::remove_all(root);
   fs::create_directories(root);
 
-  write_file(root / "environment.yaml", "robot:\n  name: ur5\nend_effector:\n  name: robotiq\n");
+  write_file(root / "environment.yaml", "robot: ur5\nend_effector: gripper\n");
   write_file(root / "scene_manifest.yaml", "template_name: demo\n");
   write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
-  write_file(
-    root / "layout" / "workcell_studio_layout.yaml",
-    "schema_version: workcell_studio_layout/v1\n"
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\n"
     "items:\n"
-    "- id: table\n"
-    "  type: support_surface\n"
-    "  category: Tables / Workbenches\n"
-    "  role: fixture_table\n"
-    "  display_name: Canonical Assembly Table\n"
-    "  pose:\n"
-    "    xyz: [1.1, 2.2, 3.3]\n"
-    "    rpy: [0.1, 0.2, 0.3]\n"
-    "  dimensions: [2.0, 1.5, 0.4]\n"
-    "  source: canonical_environment.yaml\n"
-    "  source_package: table_pkg\n"
-    "  mesh:\n"
-    "    path: meshes/table.stl\n"
-    "    source_package: table_description\n"
-    "  locked: false\n"
-    "  editable: true\n"
-    "- id: custom_bin\n"
-    "  type: bin\n"
-    "  category: Bins / Trays / Totes\n"
-    "  role: sort_bin\n"
-    "  name: Extra Sort Bin\n"
-    "  pose:\n"
-    "    xyz: [-0.2, 0.4, 0.6]\n"
-    "    rpy: [0.0, 0.0, 1.57]\n"
-    "  size:\n"
-    "    width: 0.7\n"
-    "    depth: 0.5\n"
-    "    height: 0.3\n"
-    "  source_path: assets/bins/custom_bin.yaml\n"
-    "  mesh:\n"
-    "    path: package://bin_description/meshes/visual/bin.stl\n"
-    "    source_package: bin_description\n"
-    "  locked: true\n"
-    "  editable: false\n");
+    "  - id: table\n"
+    "    type: table\n"
+    "    pose: {xyz: [1.0, 2.0, 3.0], rpy: [0.1, 0.2, 0.3]}\n"
+    "    size: {width: 1.1, depth: 1.2, height: 1.3}\n"
+    "assets:\n"
+    "  - id: asset_a\n"
+    "    type: fixture\n"
+    "placed_assets:\n"
+    "  - id: placed_a\n"
+    "    type: bin\n"
+    "objects:\n"
+    "  - id: object_b\n"
+    "    type: part\n"
+    "zones:\n"
+    "  - id: zone_a\n"
+    "    type: zone\n"
+    "targets:\n"
+    "  - id: target_a\n"
+    "    type: target\n"
+    "camera:\n"
+    "  id: camera\n"
+    "  type: camera\n"
+    "  locked: true\n");
 
   const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
-  const workcell_builder::WorkcellStudioCanvasItem * table = nullptr;
-  const workcell_builder::WorkcellStudioCanvasItem * custom_bin = nullptr;
+  std::set<std::string> editable_ids;
+  bool saw_table = false;
+  bool saw_camera = false;
   for (const auto & item : model.items) {
-    if (item.id == "table") table = &item;
-    if (item.id == "custom_bin") custom_bin = &item;
+    if (item.provenance != workcell_builder::WorkcellStudioItemProvenance::EditableLayout) continue;
+    editable_ids.insert(item.id);
+    EXPECT_EQ(item.source_file, "environment_layout.yaml");
+    if (item.id == "table") {
+      saw_table = true;
+      EXPECT_FALSE(item.locked);
+      EXPECT_DOUBLE_EQ(item.x, 1.0);
+      EXPECT_DOUBLE_EQ(item.y, 2.0);
+      EXPECT_DOUBLE_EQ(item.z, 3.0);
+      EXPECT_DOUBLE_EQ(item.roll, 0.1);
+      EXPECT_DOUBLE_EQ(item.pitch, 0.2);
+      EXPECT_DOUBLE_EQ(item.yaw, 0.3);
+      EXPECT_DOUBLE_EQ(item.width, 1.1);
+      EXPECT_DOUBLE_EQ(item.depth, 1.2);
+      EXPECT_DOUBLE_EQ(item.height, 1.3);
+    }
+    if (item.id == "camera") {
+      saw_camera = true;
+      EXPECT_TRUE(item.locked);
+    }
   }
+  EXPECT_TRUE(saw_table);
+  EXPECT_TRUE(saw_camera);
+  EXPECT_EQ(editable_ids.count("asset_a"), 1u);
+  EXPECT_EQ(editable_ids.count("placed_a"), 1u);
+  EXPECT_EQ(editable_ids.count("object_b"), 1u);
+  EXPECT_EQ(editable_ids.count("zone_a"), 1u);
+  EXPECT_EQ(editable_ids.count("target_a"), 1u);
+}
 
-  ASSERT_NE(table, nullptr);
-  EXPECT_EQ(table->id, "table");
-  EXPECT_EQ(table->type, "support_surface");
-  EXPECT_EQ(table->category, "Tables / Workbenches");
-  EXPECT_EQ(table->role, "fixture_table");
-  EXPECT_EQ(table->label, "Canonical Assembly Table");
-  EXPECT_DOUBLE_EQ(table->x, 1.1);
-  EXPECT_DOUBLE_EQ(table->y, 2.2);
-  EXPECT_DOUBLE_EQ(table->z, 3.3);
-  EXPECT_DOUBLE_EQ(table->roll, 0.1);
-  EXPECT_DOUBLE_EQ(table->pitch, 0.2);
-  EXPECT_DOUBLE_EQ(table->yaw, 0.3);
-  EXPECT_DOUBLE_EQ(table->width, 2.0);
-  EXPECT_DOUBLE_EQ(table->depth, 1.5);
-  EXPECT_DOUBLE_EQ(table->height, 0.4);
-  EXPECT_EQ(table->source_file, "canonical_environment.yaml");
-  EXPECT_EQ(table->source_package, "table_pkg");
-  EXPECT_EQ(table->mesh_source_package, "table_description");
-  EXPECT_FALSE(table->locked);
-  EXPECT_TRUE(table->editable);
+TEST(WorkcellStudioCanvasMesh, UsesSafeManifestLayoutOnlyAfterCanonicalAndLegacyMissing)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_manifest_layout_fallback";
+  fs::remove_all(root);
+  fs::create_directories(root);
 
-  ASSERT_NE(custom_bin, nullptr);
-  EXPECT_EQ(custom_bin->type, "bin");
-  EXPECT_EQ(custom_bin->category, "Bins / Trays / Totes");
-  EXPECT_EQ(custom_bin->role, "sort_bin");
-  EXPECT_EQ(custom_bin->label, "Extra Sort Bin");
-  EXPECT_DOUBLE_EQ(custom_bin->x, -0.2);
-  EXPECT_DOUBLE_EQ(custom_bin->y, 0.4);
-  EXPECT_DOUBLE_EQ(custom_bin->z, 0.6);
-  EXPECT_DOUBLE_EQ(custom_bin->yaw, 1.57);
-  EXPECT_DOUBLE_EQ(custom_bin->width, 0.7);
-  EXPECT_DOUBLE_EQ(custom_bin->depth, 0.5);
-  EXPECT_DOUBLE_EQ(custom_bin->height, 0.3);
-  EXPECT_EQ(custom_bin->source_file, "assets/bins/custom_bin.yaml");
-  EXPECT_EQ(custom_bin->mesh_source_package, "bin_description");
-  EXPECT_TRUE(custom_bin->locked);
-  EXPECT_FALSE(custom_bin->editable);
+  write_file(root / "environment.yaml", "robot: ur5\nend_effector: gripper\n");
+  write_file(root / "scene_manifest.yaml",
+    "template_name: demo\n"
+    "files:\n"
+    "  editable_layout: generated/editor_layout.yaml\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(root / "generated" / "editor_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\n"
+    "items:\n"
+    "  - id: manifest_item\n"
+    "    type: fixture\n"
+    "    pose: {xyz: [0.4, 0.5, 0.6], rpy: [0.0, 0.0, 0.0]}\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  bool found = false;
+  for (const auto & item : model.items) {
+    if (item.id != "manifest_item") continue;
+    found = true;
+    EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::EditableLayout);
+    EXPECT_EQ(item.source_file, "generated/editor_layout.yaml");
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST(WorkcellStudioCanvasMesh, RejectsUnsafeManifestLayoutPath)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_manifest_layout_unsafe";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  write_file(root / "environment.yaml", "robot: ur5\nend_effector: gripper\n");
+  write_file(root / "scene_manifest.yaml",
+    "template_name: demo\n"
+    "files:\n"
+    "  editable_layout: ../outside.yaml\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  for (const auto & item : model.items) {
+    EXPECT_NE(item.id, "outside_item");
+    if (item.id == "table") {
+      EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview);
+    }
+  }
 }
 
 TEST(WorkcellStudioCanvasMesh, LegacyMeshShapesNeverThrowAndFallbackSafely)
@@ -512,6 +540,7 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
   const YAML::Node fallback_before_layout = load_yaml_file(fallback_layout_path);
   ASSERT_TRUE(fallback_before_layout && fallback_before_layout.IsMap());
   fs::remove(fallback_layout_path);
+  fs::remove(fallback_scene / "environment_layout.yaml");
 
   const auto fallback_model = workcell_builder::build_workcell_studio_canvas_model(fallback_scene, scene_name);
   std::set<std::string> static_fallback_ids;
@@ -520,7 +549,7 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
       static_fallback_ids.insert(item.id);
     }
   }
-  ASSERT_FALSE(static_fallback_ids.empty()) << "missing layout should force static fallback-only preview metadata";
+  ASSERT_FALSE(static_fallback_ids.empty()) << "missing editable layout sources should force static fallback-only preview metadata";
   const auto fallback_starter_layout_summary = workcell_builder::build_starter_layout_entries_from_preview(fallback_model);
   EXPECT_EQ(fallback_starter_layout_summary.editable_items_created, 0u);
   EXPECT_TRUE(fallback_starter_layout_summary.layout["empty_layout_marker"].as<bool>());
