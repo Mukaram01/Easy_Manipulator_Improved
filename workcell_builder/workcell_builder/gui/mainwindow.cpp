@@ -1620,6 +1620,15 @@ void MainWindow::setup_studio_shell()
       if (!digital_twin_scene_) return;
       for (auto * item : digital_twin_scene_->items()) {
         if (item->data(RoleId).toString() != id) continue;
+        const bool locked_item = item->data(RoleLocked).toBool();
+        const QString source_layer = item->data(RoleSourceLayer).toString().trimmed();
+        const bool editable_source_layer =
+          source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0;
+        if (locked_item || !editable_source_layer) {
+          append_studio_log(QStringLiteral("Scene3D transform edit blocked: locked item cannot be edited or source layer is not editable_layout (id=%1, source_layer=%2)")
+              .arg(id, source_layer));
+          return;
+        }
         item->setPos(x * 100.0, y * 100.0);
         item->setData(RolePoseZ, z);
         item->setData(RoleRoll, r);
