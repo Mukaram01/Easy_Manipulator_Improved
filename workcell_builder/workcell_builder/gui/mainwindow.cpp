@@ -102,6 +102,8 @@
 #include <cmath>
 #include <exception>
 #include <ctime>
+#include <cerrno>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -5565,6 +5567,75 @@ static void write_dimensions_preserving_existing_shape(YAML::Node item, double w
   item["dimensions"] = yaml_sequence_from3(width, depth, height);
 }
 
+static QString yaml_write_failure_message(
+  const fs::path & path,
+  const QString & operation,
+  const QString & detail = QString())
+{
+  const QString detail_text = detail.trimmed().isEmpty() ? QStringLiteral("reason unavailable") : detail.trimmed();
+  return QString("%1 %2 for write (%3).")
+    .arg(operation, QString::fromStdString(path.string()), detail_text);
+}
+
+static QString errno_reason_if_available()
+{
+  if (errno == 0) {
+    return QStringLiteral("reason unavailable");
+  }
+  return QString::fromLocal8Bit(std::strerror(errno));
+}
+
+static bool write_yaml_file_checked(const fs::path & path, const YAML::Node & root, QString * error_string)
+{
+  if (error_string) *error_string = QString();
+
+  errno = 0;
+  std::ofstream out(path.string());
+  if (!out.good()) {
+    if (error_string) *error_string = yaml_write_failure_message(path, QStringLiteral("unable to open"), errno_reason_if_available());
+    return false;
+  }
+
+  try {
+    errno = 0;
+    out << root;
+  } catch (const std::exception & ex) {
+    const QString detail = QStringLiteral("write exception: %1").arg(QString::fromLocal8Bit(ex.what()));
+    out.close();
+    if (error_string) *error_string = yaml_write_failure_message(path, QStringLiteral("unable to write"), detail);
+    return false;
+  }
+
+  if (!out.good()) {
+    const QString detail = errno_reason_if_available();
+    out.close();
+    if (error_string) *error_string = yaml_write_failure_message(path, QStringLiteral("unable to write"), detail);
+    return false;
+  }
+
+  errno = 0;
+  out.close();
+  if (!out.good()) {
+    if (error_string) *error_string = yaml_write_failure_message(path, QStringLiteral("unable to close"), errno_reason_if_available());
+    return false;
+  }
+
+  boost::system::error_code exists_ec;
+  const bool exists = fs::exists(path, exists_ec);
+  if (exists_ec) {
+    if (error_string) *error_string = yaml_write_failure_message(
+      path, QStringLiteral("unable to verify"), QString::fromStdString(exists_ec.message()));
+    return false;
+  }
+  if (!exists) {
+    if (error_string) *error_string = yaml_write_failure_message(
+      path, QStringLiteral("unable to verify"), QStringLiteral("file does not exist after close"));
+    return false;
+  }
+
+  return true;
+}
+
 static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML::Node & existing)
 {
   YAML::Node item = (existing && existing.IsMap()) ? YAML::Clone(existing) : YAML::Node(YAML::NodeType::Map);
@@ -5673,11 +5744,11 @@ void MainWindow::save_layout_changes(){
     root["scene_name"] = scene_name;
   }
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-  const fs::path layout_backup = layout_path.parent_path() /
-    (layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
+  const fs::path layout_backup = canonical_layout_path.parent_path() /
+    (canonical_layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
   if (existing_layout_file) {
     boost::system::error_code ec;
-    fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(canonical_layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
     if (!ec) {
       append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string())));
     } else {
@@ -5713,9 +5784,9 @@ void MainWindow::save_layout_changes(){
     return out;
   };
 
-  const bool saving_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
+  const bool saving_workcell_layout = canonical_layout_path.filename().string() == "workcell_studio_layout.yaml" ||
     workcell_builder::yaml_map_value_or_empty(root, "schema_version") == "workcell_studio_layout/v1" ||
-    (root["items"] && root["items"].IsSequence() && layout_path.parent_path().filename().string() == "layout");
+    (root["items"] && root["items"].IsSequence() && canonical_layout_path.parent_path().filename().string() == "layout");
   const bool saving_placed_assets_layout = !saving_workcell_layout && root["placed_assets"] && root["placed_assets"].IsSequence();
 
   YAML::Node updated_placed(YAML::NodeType::Sequence);
@@ -5728,7 +5799,7 @@ void MainWindow::save_layout_changes(){
       if (saving_workcell_layout && !item["source"]) item["source"] = "layout/workcell_studio_layout.yaml";
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(layout_path.string())));
+        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(canonical_layout_path.string())));
     }
     root[item_key] = updated_placed;
     if (saving_workcell_layout) {
@@ -5753,7 +5824,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(seq[i]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
       }
     }
     YAML::Node camera = root["camera"];
@@ -5764,7 +5835,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(root["camera"]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
       }
     }
     YAML::Node placed_assets = ensure_sequence_of_maps(root, "placed_assets");
@@ -5776,19 +5847,24 @@ void MainWindow::save_layout_changes(){
       placed_assets.push_back(item);
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
     }
   }
 
-  std::ofstream out(layout_path.string());
-  out << root;
-  out.close();
+  QString canonical_write_error;
+  if (!write_yaml_file_checked(canonical_layout_path, root, &canonical_write_error)) {
+    const QString message = QStringLiteral("Save Layout failed: %1").arg(canonical_write_error);
+    append_studio_log(message);
+    QMessageBox::warning(this, "Save Layout", message);
+    return;
+  }
+
   layout_dirty_ = false;
   layout_saved_ = true;
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
-  append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
+  append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(canonical_layout_path.string())));
   if (updated_placed.size() == 0) {
     append_studio_log("Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
     QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
@@ -5811,11 +5887,15 @@ void MainWindow::save_layout_changes(){
   }
   environment["task_zones"] = task_zones;
   const fs::path environment_path = scene_dir / "environment.yaml";
-  std::ofstream env_out(environment_path.string());
-  env_out << environment;
-  env_out.close();
-  append_studio_log(QString("Save Layout: wrote environment metadata to %1")
-    .arg(QString::fromStdString(environment_path.string())));
+  QString environment_write_error;
+  if (write_yaml_file_checked(environment_path, environment, &environment_write_error)) {
+    append_studio_log(QString("Save Layout: wrote environment metadata to %1")
+      .arg(QString::fromStdString(environment_path.string())));
+  } else {
+    const QString message = QStringLiteral("Save Layout metadata write failed: %1").arg(environment_write_error);
+    append_studio_log(message);
+    QMessageBox::warning(this, "Save Layout", message);
+  }
   append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   refresh_scene_builder_left_explorer();
