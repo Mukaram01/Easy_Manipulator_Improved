@@ -23,7 +23,7 @@ def test_remove_action_is_layout_instance_only_and_non_destructive():
 
 def test_malformed_yaml_backup_marker_present():
     assert '.malformed_backup_' in CPP
-    assert 'Malformed environment_layout.yaml backup failed. Not overwriting.' in CPP
+    assert 'Malformed layout YAML backup failed. Not overwriting.' in CPP
 
 
 def test_ui_labels_present():
