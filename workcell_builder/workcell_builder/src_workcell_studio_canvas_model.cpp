@@ -1206,6 +1206,32 @@ static bool is_preview_item_visual_helper_only(const WorkcellStudioCanvasItem & 
 }
 
 
+
+static std::string sanitize_preview_id_for_editable_layout_id(const std::string & preview_id)
+{
+  std::string sanitized;
+  sanitized.reserve(preview_id.size());
+  bool last_was_separator = false;
+  for (const unsigned char c : preview_id) {
+    if (std::isalnum(c)) {
+      sanitized.push_back(static_cast<char>(std::tolower(c)));
+      last_was_separator = false;
+    } else if (!last_was_separator) {
+      sanitized.push_back('_');
+      last_was_separator = true;
+    }
+  }
+  while (!sanitized.empty() && sanitized.front() == '_') sanitized.erase(sanitized.begin());
+  while (!sanitized.empty() && sanitized.back() == '_') sanitized.pop_back();
+  if (sanitized.empty()) sanitized = "preview_item";
+  return sanitized;
+}
+
+static std::string editable_layout_copy_id_from_preview_id(const std::string & preview_id)
+{
+  return "editable_" + sanitize_preview_id_for_editable_layout_id(preview_id);
+}
+
 static YAML::Node new_workcell_studio_layout_root(const std::string & scene_name)
 {
   YAML::Node root(YAML::NodeType::Map);
@@ -1423,7 +1449,7 @@ static std::string preview_source_layer_for_provenance(const WorkcellStudioCanva
       return "static_fallback_preview";
     case WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
     default:
-      return "generated_or_legacy_preview";
+      return "locked_generated_urdf_visual";
   }
 }
 
@@ -1473,15 +1499,20 @@ static YAML::Node preview_item_to_layout_item(const WorkcellStudioCanvasItem & p
   if (!preview_item.source_package.empty()) item["source_package"] = preview_item.source_package;
   if (!preview_item.mesh_source_package.empty()) item["mesh_source_package"] = preview_item.mesh_source_package;
   item["source"] = "preview_model";
+  item["preview_source_id"] = preview_item.id;
   item["source_layer"] = "editable_layout";
   item["editable"] = true;
   item["locked"] = false;
 
   YAML::Node provenance(YAML::NodeType::Map);
+  const std::string source_layer = preview_source_layer_for_provenance(preview_item);
+  provenance["mode"] = "created_from_generated_preview";
+  provenance["source_layer"] = source_layer;
+  provenance["preview_source_id"] = preview_item.id;
   provenance["copy_kind"] = "editable_layout_copy";
   provenance["editable_layout_copy"] = true;
   provenance["original_source_id"] = preview_item.id;
-  provenance["original_source_layer"] = preview_source_layer_for_provenance(preview_item);
+  provenance["original_source_layer"] = source_layer;
   if (!preview_item.source_file.empty()) provenance["original_source_file"] = preview_item.source_file;
   provenance["copied_from"] = "preview_model";
   item["provenance"] = provenance;
@@ -1497,6 +1528,7 @@ WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(con
   root["schema_version"] = "workcell_studio_layout/v1";
   root["scene_name"] = model.scene_name;
   YAML::Node items(YAML::NodeType::Sequence);
+  std::set<std::string> ids;
   for (const auto & preview_item : model.items) {
     if (preview_item.provenance == WorkcellStudioItemProvenance::StaticFallbackPreview) {
       ++summary.skipped_static_fallback_items;
@@ -1506,8 +1538,9 @@ WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(con
       ++summary.skipped_unsafe_or_missing_metadata_items;
       continue;
     }
-    items.push_back(preview_item_to_layout_item(preview_item, preview_item.source_file));
-    ++summary.editable_items_created;
+    if (append_unique_item(&items, preview_item_to_layout_item(preview_item), &ids)) {
+      ++summary.editable_items_created;
+    }
   }
   root["empty_layout_marker"] = summary.editable_items_created == 0;
   root["items"] = items;

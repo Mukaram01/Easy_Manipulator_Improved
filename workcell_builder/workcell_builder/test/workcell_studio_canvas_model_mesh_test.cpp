@@ -1192,12 +1192,17 @@ TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutFallsBackThroughSourcesAnd
   EXPECT_EQ(copied["mesh"]["scale"][1].as<double>(), 2.5);
   EXPECT_EQ(copied["source_package"].as<std::string>(), "generated_scene_pkg");
   EXPECT_EQ(copied["mesh_source_package"].as<std::string>(), "asset_pkg");
+  EXPECT_EQ(copied["id"].as<std::string>(), "editable_safe_preview");
+  EXPECT_EQ(copied["preview_source_id"].as<std::string>(), "safe_preview");
   EXPECT_EQ(copied["source_layer"].as<std::string>(), "editable_layout");
   EXPECT_TRUE(copied["editable"].as<bool>());
   EXPECT_FALSE(copied["locked"].as<bool>());
+  EXPECT_EQ(copied["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
+  EXPECT_EQ(copied["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
+  EXPECT_EQ(copied["provenance"]["preview_source_id"].as<std::string>(), "safe_preview");
   EXPECT_EQ(copied["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
   EXPECT_EQ(copied["provenance"]["original_source_id"].as<std::string>(), "safe_preview");
-  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "generated_or_legacy_preview");
+  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "locked_generated_urdf_visual");
   EXPECT_EQ(copied["provenance"]["original_source_file"].as<std::string>(), "urdf/scene.urdf.xacro");
   EXPECT_FALSE(copied["confidence"].IsDefined());
   EXPECT_FALSE(copied["tracking_id"].IsDefined());

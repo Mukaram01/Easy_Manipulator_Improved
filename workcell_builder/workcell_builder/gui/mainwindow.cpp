@@ -110,6 +110,7 @@
 #include <iostream>
 #include <string>
 #include <utility>
+#include <vector>
 #include "workcell_builder_ui_utils.hpp"
 
 
@@ -755,7 +756,7 @@ static NewCellStateAudit audit_new_cell_state(
   const bool has_validation = exists("smoke/offline_smoke_report.json");
   out.completed_states << "CELL_DRAFT_CREATED";
   out.current_state = "CELL_DRAFT_CREATED";
-  out.next_recommended_action = "Use Recommended Layout / Add to Canvas";
+  out.next_recommended_action = "Create editable layout from preview / Add to Canvas";
   if (has_layout) { out.completed_states << "LAYOUT_CREATED" << "LAYOUT_SAVED"; out.current_state = "LAYOUT_SAVED"; out.next_recommended_action = "Save Layout"; }
   if (has_task_intent) { out.completed_states << "TASK_INTENT_CREATED"; out.current_state = "TASK_INTENT_CREATED"; out.next_recommended_action = "Generate/Update Task Intent"; }
   if (has_package) { out.completed_states << "SCENE_PACKAGE_GENERATED"; out.current_state = "SCENE_PACKAGE_GENERATED"; out.next_recommended_action = "Generate Scene Package"; }
@@ -1938,7 +1939,7 @@ void MainWindow::setup_studio_shell()
     "pending: Cell name set → click New Cell/New Scene<br/>"
     "pending: Robot selected (UR5 default) → verify robot<br/>"
     "pending: Tool selected (Robotiq 2F default) → verify end effector<br/>"
-    "pending: Environment layout created (table + pick zone + place zone + camera) → click Use Recommended Layout<br/>"
+    "pending: Environment layout created (table + pick zone + place zone + camera) → click Create editable layout from preview<br/>"
     "pending: Task intent created (pick_place) → click Generate/Update Task Intent<br/>"
     "pending: Scene files generated → click Generate Scene Package<br/>"
     "hint: Local build/run smoke test available<br/>"
@@ -3185,7 +3186,7 @@ MainWindow::EditableLayoutSelectionTarget MainWindow::resolve_selected_editable_
     return target;
   }
   if (!target.state.linked_to_editable_layout_state && source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) != 0) {
-    target.blocker = QStringLiteral("Selection '%1' is not linked to editable layout state (source_layer=%2). Use Recommended Layout/Add to Canvas before editing generated preview data.")
+    target.blocker = QStringLiteral("Selection '%1' is not linked to editable layout state (source_layer=%2). Create editable layout from preview/Add to Canvas before editing generated preview data.")
       .arg(stable_id, source_layer.isEmpty() ? QStringLiteral("unknown") : source_layer);
     return target;
   }
@@ -6018,28 +6019,89 @@ void MainWindow::save_layout_changes(){
 
 void MainWindow::create_starter_layout_from_preview()
 {
-  if (!has_selected_scene()) return;
+  const QString action_title = QStringLiteral("Create editable layout from preview");
+  const QString canonical_layout_path = QStringLiteral("layout/workcell_studio_layout.yaml");
+  if (!has_selected_scene()) {
+    const QString message = QStringLiteral("Create editable layout from preview blocked: no scene selected. Select a scene before writing %1.")
+      .arg(canonical_layout_path);
+    append_studio_log(message);
+    QMessageBox::information(this, action_title, message);
+    return;
+  }
+
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const auto preview_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
-  const auto bootstrap_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(
-    s.scene_dir, s.scene_name, preview_model);
-  const auto bootstrap_counts_message = [&bootstrap_result]() {
+  const std::vector<fs::path> yaml_candidates = {
+    s.scene_dir / "layout" / "workcell_studio_layout.yaml",
+    s.scene_dir / "environment_layout.yaml",
+    s.scene_dir / "environment.yaml",
+    s.scene_dir / "cell_definition.yaml",
+    s.scene_dir / "scene_manifest.yaml"
+  };
+  QStringList malformed_yaml_details;
+  for (const auto & candidate : yaml_candidates) {
+    if (!fs::exists(candidate)) continue;
+    try {
+      YAML::LoadFile(candidate.string());
+    } catch (const YAML::Exception & exc) {
+      malformed_yaml_details.push_back(QStringLiteral("%1 (%2)")
+        .arg(QString::fromStdString(candidate.string()), QString::fromStdString(exc.what())));
+    } catch (const std::exception & exc) {
+      malformed_yaml_details.push_back(QStringLiteral("%1 (%2)")
+        .arg(QString::fromStdString(candidate.string()), QString::fromStdString(exc.what())));
+    }
+  }
+  if (!malformed_yaml_details.isEmpty()) {
+    const QString message = QStringLiteral("Create editable layout from preview blocked: malformed YAML in preview/candidate scene files for '%1'. Target remains %2. Fix these files before conversion:\n- %3")
+      .arg(QString::fromStdString(s.scene_name), canonical_layout_path, malformed_yaml_details.join("\n- "));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
+    return;
+  }
+
+  workcell_builder::WorkcellStudioCanvasModel preview_model;
+  workcell_builder::WorkcellStudioEditableLayoutBootstrapResult bootstrap_result;
+  try {
+    preview_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
+    bootstrap_result = workcell_builder::bootstrap_editable_layout_from_scene_sources(
+      s.scene_dir, s.scene_name, preview_model);
+  } catch (const YAML::Exception & exc) {
+    const QString message = QStringLiteral("Create editable layout from preview blocked: malformed YAML while reading preview/candidate scene files for '%1'. Target remains %2. Details: %3")
+      .arg(QString::fromStdString(s.scene_name), canonical_layout_path, QString::fromStdString(exc.what()));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
+    return;
+  } catch (const std::exception & exc) {
+    const QString message = QStringLiteral("Create editable layout from preview blocked while reading preview/candidate scene files for '%1'. Target remains %2. Details: %3")
+      .arg(QString::fromStdString(s.scene_name), canonical_layout_path, QString::fromStdString(exc.what()));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
+    return;
+  }
+
+  const auto skipped_preview_items = bootstrap_result.skipped_locked_items +
+    bootstrap_result.skipped_static_fallback_items +
+    bootstrap_result.skipped_unsafe_or_missing_metadata_items;
+  const auto bootstrap_counts_message = [&bootstrap_result, skipped_preview_items, &canonical_layout_path]() {
     const auto count_text = [](std::size_t count) { return QString::fromStdString(std::to_string(count)); };
     QStringList blockers;
     for (const auto & blocker : bootstrap_result.blockers) {
       blockers.push_back(QString::fromStdString(blocker));
     }
     const QString blocker_text = blockers.isEmpty() ? QStringLiteral("none reported") : blockers.join("\n- ");
-    return QString("Cannot create editable layout from trusted bootstrap sources. "
+    return QString("No preview items available to convert. "
                    "Generate Scene Package first, fix the listed blockers, or add layout items manually.\n\n"
-                   "source used: %1\n"
-                   "editable items created: %2\n"
-                   "skipped locked items: %3\n"
-                   "skipped static fallback items: %4\n"
-                   "skipped unsafe/missing metadata items: %5\n"
-                   "blockers:\n- %6")
+                   "target: %1\n"
+                   "source used: %2\n"
+                   "editable items created: %3\n"
+                   "skipped locked/helper/unsupported preview items: %4\n"
+                   "skipped locked items: %5\n"
+                   "skipped static fallback items: %6\n"
+                   "skipped unsafe/missing metadata items: %7\n"
+                   "blockers:\n- %8")
+      .arg(canonical_layout_path)
       .arg(bootstrap_result.source_used.empty() ? QStringLiteral("<none>") : QString::fromStdString(bootstrap_result.source_used))
       .arg(count_text(bootstrap_result.editable_items_created))
+      .arg(count_text(skipped_preview_items))
       .arg(count_text(bootstrap_result.skipped_locked_items))
       .arg(count_text(bootstrap_result.skipped_static_fallback_items))
       .arg(count_text(bootstrap_result.skipped_unsafe_or_missing_metadata_items))
@@ -6047,8 +6109,10 @@ void MainWindow::create_starter_layout_from_preview()
   };
   if (bootstrap_result.editable_items_created == 0) {
     const QString message = bootstrap_counts_message();
-    append_studio_log(QString("Create Starter Layout failed: %1").arg(message));
-    QMessageBox::warning(this, "Create Starter Layout", message);
+    append_studio_log(message);
+    const QString status_text = QStringLiteral("No preview items available to convert.");
+    append_studio_log(status_text);
+    QMessageBox::warning(this, action_title, message);
     return;
   }
   const fs::path layout_dir = bootstrap_result.expected_output_dir;
@@ -6056,53 +6120,73 @@ void MainWindow::create_starter_layout_from_preview()
   boost::system::error_code ec;
   fs::create_directories(layout_dir, ec);
   if (ec) {
-    append_studio_log(QString("Create Starter Layout failed: cannot create layout directory (%1).").arg(QString::fromStdString(ec.message())));
+    const QString message = QStringLiteral("Create editable layout from preview failed: cannot create layout directory for %1 at %2 (%3).")
+      .arg(canonical_layout_path, QString::fromStdString(layout_dir.string()), QString::fromStdString(ec.message()));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
     return;
   }
   if (fs::exists(layout_file)) {
-    const auto response = QMessageBox::question(this, "Overwrite Existing Layout",
-      "layout/workcell_studio_layout.yaml already exists. Overwrite with recommended layout from trusted bootstrap sources?");
+    const auto response = QMessageBox::question(this, QStringLiteral("Overwrite Editable Layout"),
+      QStringLiteral("%1 already exists. Overwrite it with editable layout items converted from preview/candidate scene data?")
+        .arg(canonical_layout_path));
     if (response != QMessageBox::Yes) {
-      append_studio_log("Create Starter Layout cancelled by user.");
+      append_studio_log(QStringLiteral("Create editable layout from preview cancelled by user. Target: %1 (%2).")
+        .arg(canonical_layout_path, QString::fromStdString(layout_file.string())));
       return;
     }
     const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
     const fs::path backup = layout_dir / ("workcell_studio_layout." + stamp.toStdString() + ".bak.yaml");
     fs::copy_file(layout_file, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
-      append_studio_log(QString("Create Starter Layout failed: backup before overwrite failed (%1).").arg(QString::fromStdString(ec.message())));
-      QMessageBox::warning(this, "Create Starter Layout", "Backup before overwrite failed; aborting.");
+      const QString message = QStringLiteral("Create editable layout from preview failed: backup before overwrite failed for %1 at %2 (%3).")
+        .arg(canonical_layout_path, QString::fromStdString(layout_file.string()), QString::fromStdString(ec.message()));
+      append_studio_log(message);
+      QMessageBox::warning(this, action_title, message);
       return;
     }
-    append_studio_log(QString("Create Starter Layout: backup created at %1").arg(QString::fromStdString(backup.string())));
+    append_studio_log(QStringLiteral("Create editable layout from preview: backup created at %1 before writing %2 (%3).")
+      .arg(QString::fromStdString(backup.string()), canonical_layout_path, QString::fromStdString(layout_file.string())));
   }
   const YAML::Node layout = bootstrap_result.layout;
   std::ofstream out(layout_file.string());
   if (!out.good()) {
-    append_studio_log("Create Starter Layout failed: unable to open output file for write.");
+    const QString message = QStringLiteral("Create editable layout from preview failed: unable to open %1 for write at %2.")
+      .arg(canonical_layout_path, QString::fromStdString(layout_file.string()));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
     return;
   }
   out << layout;
   out.close();
   if (!out.good()) {
-    append_studio_log("Create Starter Layout failed: write error while saving starter layout.");
+    const QString message = QStringLiteral("Create editable layout from preview failed: write error while saving %1 at %2.")
+      .arg(canonical_layout_path, QString::fromStdString(layout_file.string()));
+    append_studio_log(message);
+    QMessageBox::warning(this, action_title, message);
     return;
   }
-  append_studio_log(QString("Use Recommended Layout: source=%1 editable=%2 skipped_locked=%3 skipped_static_fallback=%4 skipped_unsafe_metadata=%5")
+
+  const int generated_count = static_cast<int>(bootstrap_result.editable_items_created);
+  append_studio_log(QStringLiteral("Create editable layout from preview detail: source=%1 target=%2 absolute_target=%3 editable=%4 skipped_locked_helper_unsupported=%5 skipped_locked=%6 skipped_static_fallback=%7 skipped_unsafe_metadata=%8")
     .arg(QString::fromStdString(bootstrap_result.source_used))
-    .arg(static_cast<int>(bootstrap_result.editable_items_created))
+    .arg(canonical_layout_path)
+    .arg(QString::fromStdString(layout_file.string()))
+    .arg(generated_count)
+    .arg(static_cast<int>(skipped_preview_items))
     .arg(static_cast<int>(bootstrap_result.skipped_locked_items))
     .arg(static_cast<int>(bootstrap_result.skipped_static_fallback_items))
     .arg(static_cast<int>(bootstrap_result.skipped_unsafe_or_missing_metadata_items)));
-  const int generated_count = static_cast<int>(bootstrap_result.editable_items_created);
-  append_studio_log(QString("Create Starter Layout: current architecture uses canonical layout write-through for conversion; wrote the starter editable layout to %1, then refreshes Scene3D/2D/hierarchy/inspector. Subsequent move/edit operations remain dirty until Save Layout serializes layout/workcell_studio_layout.yaml again.")
-    .arg(QString::fromStdString(layout_file.string())));
-  append_studio_log(QString("Use Recommended Layout: wrote %1 editable layout item(s) to %2; locked/generated preview items were not marked editable and no environment_layout/runtime/ROS artifacts were bootstrapped.")
-    .arg(generated_count)
-    .arg(QString::fromStdString(layout_file.string())));
-  append_studio_log("Use Recommended Layout: added recommended editable layout items from trusted scene bootstrap sources.");
+  if (skipped_preview_items > 0) {
+    append_studio_log(QStringLiteral("Skipped %1 locked/helper/unsupported preview items.")
+      .arg(static_cast<int>(skipped_preview_items)));
+  }
+  append_studio_log(QStringLiteral("Create editable layout from preview: wrote editable layout to canonical target %1 (%2), then refreshes Scene3D/2D/hierarchy/inspector. Subsequent move/edit operations remain dirty until Save Layout serializes %1 again.")
+    .arg(canonical_layout_path, QString::fromStdString(layout_file.string())));
   mark_layout_dirty("Created editable layout from preview");
-  append_studio_log("Create Starter Layout: marked layout dirty after preview conversion so Save Layout can re-serialize the converted editable items.");
+  append_studio_log(QStringLiteral("Create editable layout from preview: marked layout dirty after preview conversion so Save Layout can re-serialize %1.")
+    .arg(canonical_layout_path));
+  append_studio_log(QStringLiteral("Created %1 editable layout items from preview.").arg(generated_count));
   refresh_scene_builder_left_explorer();
   refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
