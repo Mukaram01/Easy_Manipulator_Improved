@@ -38,7 +38,7 @@ self_test:
   # Tune these values for each physical workcell before production.
   enabled: true
   object:
-    id: commissioning_box
+    id: commissioning_object
     shape: box
     dimensions: [0.05, 0.05, 0.05]
     frame_id: world
@@ -54,40 +54,30 @@ self_test:
     allow_simulated_execution: true
 
 task_recipe:
-  # Future runtime/UI contract example plus commissioning defaults.
-  # Metadata-only in this release: validation/reporting only.
-  id: reject_or_place_demo
-  name: Reject Or Place Demo
-  type: reject
+  # Mirrors cell_definition.yaml and config/task_recipe.yaml for offline commissioning preview.
+  # Metadata-only in this release: no runtime, GUI, replay, live EPD, or perception-backed routing readiness is claimed here.
+  id: default_task
+  name: Default Pick Place Commissioning Task
+  type: pick_place
   enabled: true
   inputs:
-    perception_source: epd
-    required_attributes: [class, quality]
+    perception_mode: off
   pick:
-    object_source: perception
+    object_source: self_test
+    source_object: commissioning_object
     grasp_strategy: suction_only
     allowed_grasp_methods: [suction]
   decision_rules:
-    - id: accepted_to_good_bin
+    - id: default_place
       when:
-        attribute: quality
-        equals: accepted
-      destination: good_bin
-    - id: default_reject
-      when:
-        default: true
-      destination: reject_bin
+        always: true
+      destination: default_drop_zone
   destinations:
-    - id: good_bin
+    - id: default_drop_zone
       frame_id: world
-      pose_xyz: [0.32, 0.22, 0.12]
+      pose_xyz: [0.5, -0.3, 0.1]
       pose_rpy: [0.0, 0.0, 0.0]
       action: place
-    - id: reject_bin
-      frame_id: world
-      pose_xyz: [0.20, -0.02, 0.12]
-      pose_rpy: [0.0, 0.0, 0.0]
-      action: reject
   expected:
     allow_offline_validation: true
     min_valid_destinations: 1
