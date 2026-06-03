@@ -102,6 +102,8 @@
 #include <cmath>
 #include <exception>
 #include <ctime>
+#include <cerrno>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -5462,18 +5464,41 @@ static fs::path manifest_declared_layout_path(const fs::path & scene_dir)
   }
 }
 
-static fs::path selected_scene_environment_layout_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
+static fs::path selected_scene_canonical_layout_save_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
 {
   if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
   const fs::path scene_dir = browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir;
-  const fs::path standard_workcell_layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  return scene_dir / "layout" / "workcell_studio_layout.yaml";
+}
+
+static std::vector<fs::path> selected_scene_layout_import_candidates(const fs::path & scene_dir)
+{
+  std::vector<fs::path> candidates;
+  const fs::path canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml";
   const fs::path legacy_environment_layout = scene_dir / "environment_layout.yaml";
   const fs::path manifest_layout = manifest_declared_layout_path(scene_dir);
 
-  if (!manifest_layout.empty()) return manifest_layout;
-  if (fs::exists(standard_workcell_layout)) return standard_workcell_layout;
-  if (fs::exists(legacy_environment_layout)) return legacy_environment_layout;
-  return standard_workcell_layout;
+  auto append_unique = [&candidates](const fs::path & candidate) {
+    if (candidate.empty()) return;
+    if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end()) {
+      candidates.push_back(candidate);
+    }
+  };
+
+  append_unique(canonical_layout);
+  append_unique(legacy_environment_layout);
+  append_unique(manifest_layout);
+  return candidates;
+}
+
+static fs::path selected_scene_existing_layout_import_path(const workcell_builder::WorkcellStudioSceneBrowserResult & browser, int selected_scene_index)
+{
+  if (selected_scene_index < 0 || selected_scene_index >= static_cast<int>(browser.scenes.size())) return {};
+  const fs::path scene_dir = browser.scenes[static_cast<size_t>(selected_scene_index)].scene_dir;
+  for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir)) {
+    if (fs::exists(candidate)) return candidate;
+  }
+  return {};
 }
 
 static YAML::Node minimal_environment_layout(const std::string & scene_name)
@@ -5540,6 +5565,50 @@ static void write_dimensions_preserving_existing_shape(YAML::Node item, double w
     return;
   }
   item["dimensions"] = yaml_sequence_from3(width, depth, height);
+}
+
+
+static YAML::Node normalize_imported_layout_to_canonical_items(const YAML::Node & imported_root, const std::string & scene_name, const fs::path & scene_dir)
+{
+  YAML::Node root = (imported_root && imported_root.IsMap()) ? YAML::Clone(imported_root) : YAML::Node(YAML::NodeType::Map);
+  YAML::Node canonical_items(YAML::NodeType::Sequence);
+  QSet<QString> seen_ids;
+
+  auto append_item = [&](const YAML::Node & source) {
+    if (!source || !source.IsMap()) return;
+    YAML::Node item = YAML::Clone(source);
+    const QString id = QString::fromStdString(workcell_builder::yaml_map_value_or_empty(item, "id")).trimmed();
+    if (!id.isEmpty()) {
+      if (seen_ids.contains(id)) return;
+      seen_ids.insert(id);
+    }
+    if (!item["scene_name"] || !item["scene_name"].IsScalar()) item["scene_name"] = scene_name;
+    if (!item["scene_path"] || !item["scene_path"].IsScalar()) item["scene_path"] = scene_dir.string();
+    canonical_items.push_back(item);
+  };
+
+  const std::array<const char *, 6> legacy_sequence_keys = {
+    "items", "assets", "placed_assets", "objects", "zones", "targets"
+  };
+  for (const char * key : legacy_sequence_keys) {
+    const YAML::Node seq = root[key];
+    if (!seq || !seq.IsSequence()) continue;
+    for (std::size_t i = 0; i < seq.size(); ++i) append_item(seq[i]);
+  }
+  const YAML::Node camera = root["camera"];
+  if (camera && camera.IsMap()) append_item(camera);
+
+  for (const char * key : legacy_sequence_keys) root.remove(key);
+  root.remove("camera");
+  root["schema_version"] = "workcell_studio_layout/v1";
+  root["schema"] = "workcell_studio_layout/v1";
+  root["scene_name"] = scene_name;
+  root["scene_path"] = scene_dir.string();
+  root["items"] = canonical_items;
+  YAML::Node meta = ensure_map_node(root, "metadata");
+  meta["canonical_layout_path"] = "layout/workcell_studio_layout.yaml";
+  meta["legacy_import_normalized_keys"] = "items,assets,placed_assets,objects,zones,targets,camera";
+  return root;
 }
 
 static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML::Node & existing)
@@ -5636,6 +5705,8 @@ void MainWindow::save_layout_changes(){
     return;
   }
   const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
+  const fs::path canonical_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path layout_path = canonical_layout_path;
   const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
@@ -5652,23 +5723,44 @@ void MainWindow::save_layout_changes(){
   const std::string scene_name = (selected_scene_index_ >= 0 && selected_scene_index_ < static_cast<int>(scene_browser_result_.scenes.size())) ?
     scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
   YAML::Node root;
-  bool existing_layout_file = false;
+  fs::path imported_layout_path;
   bool malformed_existing = false;
-  if (fs::exists(layout_path)) {
+  fs::path imported_layout_path;
+  if (fs::exists(canonical_layout_path)) {
     existing_layout_file = true;
     try {
-      root = YAML::LoadFile(layout_path.string());
+      root = YAML::LoadFile(canonical_layout_path.string());
     } catch (const YAML::Exception &) {
       malformed_existing = true;
     } catch (const std::exception &) {
       malformed_existing = true;
     }
+  } else {
+    std::vector<fs::path> import_candidates;
+    const fs::path manifest_layout = manifest_declared_layout_path(scene_dir);
+    if (!manifest_layout.empty() && manifest_layout != canonical_layout_path) import_candidates.push_back(manifest_layout);
+    import_candidates.push_back(scene_dir / "environment_layout.yaml");
+
+    for (const auto & candidate : import_candidates) {
+      if (candidate.empty() || candidate == canonical_layout_path || !fs::exists(candidate)) continue;
+      try {
+        root = normalize_imported_layout_to_canonical_items(YAML::LoadFile(candidate.string()), scene_name, scene_dir);
+        imported_layout_path = candidate;
+        break;
+      } catch (const YAML::Exception & exc) {
+        append_studio_log(QString("Save Layout: cannot import malformed legacy layout from %1 (%2).")
+          .arg(QString::fromStdString(candidate.string()), QString::fromStdString(exc.what())));
+      } catch (const std::exception & exc) {
+        append_studio_log(QString("Save Layout: cannot import legacy layout from %1 (%2).")
+          .arg(QString::fromStdString(candidate.string()), QString::fromStdString(exc.what())));
+      }
+    }
   }
   if (malformed_existing) {
     const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-    const fs::path backup = layout_path.parent_path() / (layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
+    const fs::path backup = canonical_layout_path.parent_path() / (canonical_layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
     boost::system::error_code ec;
-    fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(canonical_layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
       emit_save_layout_failure(
         QString("malformed layout YAML at %1 and backup failed (%2)")
@@ -5680,33 +5772,23 @@ void MainWindow::save_layout_changes(){
     append_studio_log(QString("Malformed layout YAML backed up to %1").arg(QString::fromStdString(backup.string())));
     root = YAML::Node();
   }
-  const bool target_is_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
-    layout_path.parent_path().filename().string() == "layout";
   if (!root || !root.IsMap()) {
-    if (target_is_workcell_layout) {
-      root = YAML::Node(YAML::NodeType::Map);
-      root["schema_version"] = "workcell_studio_layout/v1";
-      root["schema"] = "workcell_studio_layout/v1";
-      root["items"] = YAML::Node(YAML::NodeType::Sequence);
-    } else {
-      root = minimal_environment_layout(scene_name);
-    }
+    root = YAML::Node(YAML::NodeType::Map);
+    root["items"] = YAML::Node(YAML::NodeType::Sequence);
+  } else {
+    root = normalize_imported_layout_to_canonical_items(root, scene_name, scene_dir);
   }
-  if (target_is_workcell_layout) {
-    root["schema_version"] = "workcell_studio_layout/v1";
-    if (!root["schema"] || !root["schema"].IsScalar()) root["schema"] = "workcell_studio_layout/v1";
-  } else if (!root["schema_version"] || !root["schema_version"].IsScalar()) {
-    root["schema_version"] = "environment_layout/v1";
-  }
-  if (!root["scene_name"] || !root["scene_name"].IsScalar()) {
-    root["scene_name"] = scene_name;
-  }
+  root["schema_version"] = "workcell_studio_layout/v1";
+  root["schema"] = "workcell_studio_layout/v1";
+  if (!root["scene_name"] || !root["scene_name"].IsScalar()) root["scene_name"] = scene_name;
+  if (!root["scene_path"] || !root["scene_path"].IsScalar()) root["scene_path"] = scene_dir.string();
+
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-  const fs::path layout_backup = layout_path.parent_path() /
-    (layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
+  const fs::path layout_backup = canonical_layout_path.parent_path() /
+    (canonical_layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
   if (existing_layout_file) {
     boost::system::error_code ec;
-    fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(canonical_layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
     if (!ec) {
       append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string())));
     } else {
@@ -5744,22 +5826,25 @@ void MainWindow::save_layout_changes(){
     return out;
   };
 
-  const bool saving_workcell_layout = layout_path.filename().string() == "workcell_studio_layout.yaml" ||
+  const bool saving_workcell_layout = canonical_layout_path.filename().string() == "workcell_studio_layout.yaml" ||
     workcell_builder::yaml_map_value_or_empty(root, "schema_version") == "workcell_studio_layout/v1" ||
-    (root["items"] && root["items"].IsSequence() && layout_path.parent_path().filename().string() == "layout");
+    (root["items"] && root["items"].IsSequence() && canonical_layout_path.parent_path().filename().string() == "layout");
   const bool saving_placed_assets_layout = !saving_workcell_layout && root["placed_assets"] && root["placed_assets"].IsSequence();
 
   YAML::Node updated_placed(YAML::NodeType::Sequence);
   if (saving_workcell_layout || saving_placed_assets_layout) {
     const char * item_key = saving_workcell_layout ? "items" : "placed_assets";
     YAML::Node existing_by_id = existing_items_by_id(root[item_key]);
+    if (!imported_layout_path.empty() && editable_canvas_items.empty() && root[item_key] && root[item_key].IsSequence()) {
+      updated_placed = YAML::Clone(root[item_key]);
+    }
     for (auto * gi : editable_canvas_items) {
       const std::string item_id = gi->data(RoleId).toString().toStdString();
       YAML::Node item = serialized_editable_canvas_item(gi, existing_by_id[item_id]);
       if (saving_workcell_layout && !item["source"]) item["source"] = "layout/workcell_studio_layout.yaml";
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(layout_path.string())));
+        .arg(QString::fromStdString(scene_name), gi->data(RoleId).toString(), QString::fromStdString(canonical_layout_path.string())));
     }
     root[item_key] = updated_placed;
     if (saving_workcell_layout) {
@@ -5784,7 +5869,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(seq[i]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
       }
     }
     YAML::Node camera = root["camera"];
@@ -5795,7 +5880,7 @@ void MainWindow::save_layout_changes(){
         saved_ids.insert(id);
         updated_placed.push_back(root["camera"]);
         append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+          .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
       }
     }
     YAML::Node placed_assets = ensure_sequence_of_maps(root, "placed_assets");
@@ -5807,10 +5892,13 @@ void MainWindow::save_layout_changes(){
       placed_assets.push_back(item);
       updated_placed.push_back(item);
       append_studio_log(QString("Inspector transform saved: scene=%1 id=%2 path=%3")
-        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(layout_path.string())));
+        .arg(QString::fromStdString(scene_name), id, QString::fromStdString(canonical_layout_path.string())));
     }
   }
 
+  if (!imported_layout_path.empty() && editable_canvas_items.empty() && updated_placed && updated_placed.IsSequence()) {
+    root["items"] = updated_placed;
+  }
   std::ofstream out(layout_path.string());
   out << root;
   out.close();
@@ -5819,9 +5907,17 @@ void MainWindow::save_layout_changes(){
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
   if (layout_state_label_) layout_state_label_->setText("Unsaved Layout Edits: none");
-  append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(layout_path.string())));
+  if (!imported_layout_path.empty()) {
+    append_studio_log(QString("Save Layout: imported legacy layout from %1; wrote canonical layout to %2")
+      .arg(QString::fromStdString(imported_layout_path.string()), QString::fromStdString(canonical_layout_path.string())));
+  } else if (updated_placed.size() == 0) {
+    append_studio_log(QString("Save Layout: saved empty editable layout metadata to %1")
+      .arg(QString::fromStdString(canonical_layout_path.string())));
+  } else {
+    append_studio_log(QString("Save Layout: wrote canonical layout to %1")
+      .arg(QString::fromStdString(canonical_layout_path.string())));
+  }
   if (updated_placed.size() == 0) {
-    append_studio_log("Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
     QMessageBox::information(this, "Save Layout", "Saved layout file, but no editable layout items exist. Use Create editable layout from preview or add an item.");
   }
 
@@ -5842,11 +5938,15 @@ void MainWindow::save_layout_changes(){
   }
   environment["task_zones"] = task_zones;
   const fs::path environment_path = scene_dir / "environment.yaml";
-  std::ofstream env_out(environment_path.string());
-  env_out << environment;
-  env_out.close();
-  append_studio_log(QString("Save Layout: wrote environment metadata to %1")
-    .arg(QString::fromStdString(environment_path.string())));
+  QString environment_write_error;
+  if (write_yaml_file_checked(environment_path, environment, &environment_write_error)) {
+    append_studio_log(QString("Save Layout: wrote environment metadata to %1")
+      .arg(QString::fromStdString(environment_path.string())));
+  } else {
+    const QString message = QStringLiteral("Save Layout metadata write failed: %1").arg(environment_write_error);
+    append_studio_log(message);
+    QMessageBox::warning(this, "Save Layout", message);
+  }
   append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   refresh_scene_builder_left_explorer();
@@ -6435,9 +6535,11 @@ void MainWindow::commit_armed_asset_placement(const QPointF & canvas_pos_px)
     const QString existing_id = gi->data(RoleId).toString().trimmed();
     if (!existing_id.isEmpty()) reserved_ids.insert(existing_id.toStdString());
   }
-  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
-  const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
-  reserved_ids.insert(layout_ids.begin(), layout_ids.end());
+  const fs::path layout_path = selected_scene_existing_layout_import_path(scene_browser_result_, selected_scene_index_);
+  if (!layout_path.empty()) {
+    const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
+    reserved_ids.insert(layout_ids.begin(), layout_ids.end());
+  }
   const QString new_id = QString::fromStdString(
     workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
   const QString role_type = QString::fromStdString(
