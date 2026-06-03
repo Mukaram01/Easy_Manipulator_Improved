@@ -568,12 +568,44 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems
   const YAML::Node items = summary.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 2u);
-  EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_safe_item");
   EXPECT_EQ(items[0]["mesh"]["path"].as<std::string>(), "meshes/visual/safe_item.stl");
   EXPECT_TRUE(items[1]["editable"].as<bool>());
   EXPECT_FALSE(items[1]["locked"].as<bool>());
-  EXPECT_EQ(items[1]["id"].as<std::string>(), "locked_item");
-  EXPECT_EQ(items[1]["provenance"].as<std::string>(), "editable_layout");
+  EXPECT_EQ(items[1]["id"].as<std::string>(), "editable_locked_item");
+  EXPECT_EQ(items[1]["preview_source_id"].as<std::string>(), "locked_item");
+  EXPECT_EQ(items[1]["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
+}
+
+TEST(WorkcellStudioCanvasMesh, PreviewCopyIdsAreStableSanitizedAndDeduplicated)
+{
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+
+  workcell_builder::WorkcellStudioCanvasItem preview;
+  preview.id = "Generated/Fixture A";
+  preview.type = "fixture";
+  preview.source_file = "urdf/scene.urdf.xacro";
+  preview.mesh_path = "meshes/visual/fixture_a.stl";
+  preview.has_mesh_metadata = true;
+  preview.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+
+  workcell_builder::WorkcellStudioCanvasItem duplicate = preview;
+  model.items = {preview, duplicate};
+
+  const auto summary = workcell_builder::build_starter_layout_entries_from_preview(model);
+  EXPECT_EQ(summary.total_preview_items, 2u);
+  EXPECT_EQ(summary.editable_items_created, 1u);
+
+  const YAML::Node items = summary.layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_generated_fixture_a");
+  EXPECT_EQ(items[0]["preview_source_id"].as<std::string>(), "Generated/Fixture A");
+  EXPECT_EQ(items[0]["source_layer"].as<std::string>(), "editable_layout");
+  EXPECT_EQ(items[0]["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
+  EXPECT_EQ(items[0]["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
+  EXPECT_EQ(items[0]["provenance"]["preview_source_id"].as<std::string>(), "Generated/Fixture A");
 }
 
 TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalItemsOnly)
@@ -611,10 +643,11 @@ TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalI
   const YAML::Node items = result.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 1u);
-  EXPECT_EQ(items[0]["id"].as<std::string>(), "robot_base");
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_robot_base");
   EXPECT_TRUE(items[0]["editable"].as<bool>());
   EXPECT_FALSE(items[0]["locked"].as<bool>());
-  EXPECT_EQ(items[0]["provenance"].as<std::string>(), "editable_layout");
+  EXPECT_EQ(items[0]["preview_source_id"].as<std::string>(), "robot_base");
+  EXPECT_EQ(items[0]["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
 
   EXPECT_TRUE(model.items[0].locked) << "preview fallback must not mutate the generated preview item lock guard";
 
@@ -1074,12 +1107,17 @@ TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutFallsBackThroughSourcesAnd
   EXPECT_EQ(copied["mesh"]["scale"][1].as<double>(), 2.5);
   EXPECT_EQ(copied["source_package"].as<std::string>(), "generated_scene_pkg");
   EXPECT_EQ(copied["mesh_source_package"].as<std::string>(), "asset_pkg");
+  EXPECT_EQ(copied["id"].as<std::string>(), "editable_safe_preview");
+  EXPECT_EQ(copied["preview_source_id"].as<std::string>(), "safe_preview");
   EXPECT_EQ(copied["source_layer"].as<std::string>(), "editable_layout");
   EXPECT_TRUE(copied["editable"].as<bool>());
   EXPECT_FALSE(copied["locked"].as<bool>());
+  EXPECT_EQ(copied["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
+  EXPECT_EQ(copied["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
+  EXPECT_EQ(copied["provenance"]["preview_source_id"].as<std::string>(), "safe_preview");
   EXPECT_EQ(copied["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
   EXPECT_EQ(copied["provenance"]["original_source_id"].as<std::string>(), "safe_preview");
-  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "generated_or_legacy_preview");
+  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "locked_generated_urdf_visual");
   EXPECT_EQ(copied["provenance"]["original_source_file"].as<std::string>(), "urdf/scene.urdf.xacro");
   EXPECT_FALSE(copied["confidence"].IsDefined());
   EXPECT_FALSE(copied["tracking_id"].IsDefined());
