@@ -568,44 +568,12 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems
   const YAML::Node items = summary.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 2u);
-  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_safe_item");
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item__editable_copy");
   EXPECT_EQ(items[0]["mesh"]["path"].as<std::string>(), "meshes/visual/safe_item.stl");
   EXPECT_TRUE(items[1]["editable"].as<bool>());
   EXPECT_FALSE(items[1]["locked"].as<bool>());
-  EXPECT_EQ(items[1]["id"].as<std::string>(), "editable_locked_item");
-  EXPECT_EQ(items[1]["preview_source_id"].as<std::string>(), "locked_item");
-  EXPECT_EQ(items[1]["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
-}
-
-TEST(WorkcellStudioCanvasMesh, PreviewCopyIdsAreStableSanitizedAndDeduplicated)
-{
-  workcell_builder::WorkcellStudioCanvasModel model;
-  model.scene_name = "demo";
-
-  workcell_builder::WorkcellStudioCanvasItem preview;
-  preview.id = "Generated/Fixture A";
-  preview.type = "fixture";
-  preview.source_file = "urdf/scene.urdf.xacro";
-  preview.mesh_path = "meshes/visual/fixture_a.stl";
-  preview.has_mesh_metadata = true;
-  preview.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
-
-  workcell_builder::WorkcellStudioCanvasItem duplicate = preview;
-  model.items = {preview, duplicate};
-
-  const auto summary = workcell_builder::build_starter_layout_entries_from_preview(model);
-  EXPECT_EQ(summary.total_preview_items, 2u);
-  EXPECT_EQ(summary.editable_items_created, 1u);
-
-  const YAML::Node items = summary.layout["items"];
-  ASSERT_TRUE(items && items.IsSequence());
-  ASSERT_EQ(items.size(), 1u);
-  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_generated_fixture_a");
-  EXPECT_EQ(items[0]["preview_source_id"].as<std::string>(), "Generated/Fixture A");
-  EXPECT_EQ(items[0]["source_layer"].as<std::string>(), "editable_layout");
-  EXPECT_EQ(items[0]["provenance"]["mode"].as<std::string>(), "created_from_generated_preview");
-  EXPECT_EQ(items[0]["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
-  EXPECT_EQ(items[0]["provenance"]["preview_source_id"].as<std::string>(), "Generated/Fixture A");
+  EXPECT_EQ(items[1]["id"].as<std::string>(), "locked_item__editable_copy");
+  EXPECT_EQ(items[1]["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
 }
 
 TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalItemsOnly)
@@ -643,17 +611,133 @@ TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalI
   const YAML::Node items = result.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
   ASSERT_EQ(items.size(), 1u);
-  EXPECT_EQ(items[0]["id"].as<std::string>(), "editable_robot_base");
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "robot_base__editable_copy");
   EXPECT_TRUE(items[0]["editable"].as<bool>());
   EXPECT_FALSE(items[0]["locked"].as<bool>());
-  EXPECT_EQ(items[0]["preview_source_id"].as<std::string>(), "robot_base");
-  EXPECT_EQ(items[0]["provenance"]["source_layer"].as<std::string>(), "locked_generated_urdf_visual");
+  EXPECT_EQ(items[0]["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
 
   EXPECT_TRUE(model.items[0].locked) << "preview fallback must not mutate the generated preview item lock guard";
 
   fs::remove_all(root);
 }
 
+TEST(WorkcellStudioCanvasMesh, PreviewStarterLayoutCopiesLockedGeneratedPhysicalItemsWithDistinctEditableProvenance)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_preview_distinct_editable_copy";
+  fs::remove_all(root);
+  fs::create_directories(root / "meshes" / "visual");
+  const fs::path mesh_path = root / "meshes" / "visual" / "fixture.stl";
+  write_file(mesh_path, "solid fixture\nendsolid fixture\n");
+
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+
+  workcell_builder::WorkcellStudioCanvasItem generated_fixture;
+  generated_fixture.id = "generated_fixture";
+  generated_fixture.type = "fixture";
+  generated_fixture.category = "fixtures";
+  generated_fixture.role = "workholding";
+  generated_fixture.label = "Generated Fixture";
+  generated_fixture.source_file = "urdf/scene.urdf.xacro";
+  generated_fixture.source_package = "generated_scene_pkg";
+  generated_fixture.mesh_source_package = "fixture_asset_pkg";
+  generated_fixture.x = 0.11;
+  generated_fixture.y = 0.22;
+  generated_fixture.z = 0.33;
+  generated_fixture.roll = 0.44;
+  generated_fixture.pitch = 0.55;
+  generated_fixture.yaw = 0.66;
+  generated_fixture.width = 0.77;
+  generated_fixture.depth = 0.88;
+  generated_fixture.height = 0.99;
+  generated_fixture.mesh_path = mesh_path.string();
+  generated_fixture.mesh_scale_x = 1.1;
+  generated_fixture.mesh_scale_y = 1.2;
+  generated_fixture.mesh_scale_z = 1.3;
+  generated_fixture.has_mesh_metadata = true;
+  generated_fixture.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+  generated_fixture.locked = true;
+  generated_fixture.editable = false;
+  model.items.push_back(generated_fixture);
+
+  workcell_builder::WorkcellStudioCanvasItem static_fallback = generated_fixture;
+  static_fallback.id = "static_fallback_fixture";
+  static_fallback.provenance = workcell_builder::WorkcellStudioItemProvenance::StaticFallbackPreview;
+  model.items.push_back(static_fallback);
+
+  workcell_builder::WorkcellStudioCanvasItem overlay_helper = generated_fixture;
+  overlay_helper.id = "reach_overlay_helper";
+  overlay_helper.type = "reach";
+  overlay_helper.role = "overlay";
+  model.items.push_back(overlay_helper);
+
+  const auto summary = workcell_builder::build_starter_layout_entries_from_preview(model);
+  EXPECT_EQ(summary.total_preview_items, 3u);
+  EXPECT_EQ(summary.skipped_locked_items, 0u);
+  EXPECT_EQ(summary.skipped_static_fallback_items, 1u);
+  EXPECT_EQ(summary.skipped_unsafe_or_missing_metadata_items, 1u);
+  EXPECT_EQ(summary.editable_items_created, 1u);
+
+  const YAML::Node items = summary.layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  ASSERT_EQ(items.size(), 1u);
+  const YAML::Node copied = items[0];
+  EXPECT_EQ(copied["id"].as<std::string>(), "generated_fixture__editable_copy");
+  EXPECT_NE(copied["id"].as<std::string>(), generated_fixture.id);
+  EXPECT_TRUE(copied["editable"].as<bool>());
+  EXPECT_FALSE(copied["locked"].as<bool>());
+  EXPECT_EQ(copied["source_layer"].as<std::string>(), "editable_layout");
+  EXPECT_EQ(copied["display_name"].as<std::string>(), "Generated Fixture");
+  EXPECT_EQ(copied["type"].as<std::string>(), "fixture");
+  EXPECT_EQ(copied["category"].as<std::string>(), "fixtures");
+  EXPECT_EQ(copied["role"].as<std::string>(), "workholding");
+  EXPECT_EQ(copied["pose"]["xyz"][0].as<double>(), 0.11);
+  EXPECT_EQ(copied["pose"]["rpy"][2].as<double>(), 0.66);
+  EXPECT_EQ(copied["dimensions"][0].as<double>(), 0.77);
+  EXPECT_EQ(copied["dimensions"][2].as<double>(), 0.99);
+  EXPECT_EQ(copied["mesh"]["path"].as<std::string>(), mesh_path.string());
+  EXPECT_EQ(copied["mesh"]["source"].as<std::string>(), "urdf/scene.urdf.xacro");
+  EXPECT_EQ(copied["mesh"]["source_package"].as<std::string>(), "fixture_asset_pkg");
+  EXPECT_EQ(copied["mesh"]["scale"][1].as<double>(), 1.2);
+  EXPECT_EQ(copied["source_package"].as<std::string>(), "generated_scene_pkg");
+  EXPECT_EQ(copied["mesh_source_package"].as<std::string>(), "fixture_asset_pkg");
+  EXPECT_EQ(copied["provenance"]["copy_kind"].as<std::string>(), "editable_layout_copy");
+  EXPECT_EQ(copied["provenance"]["original_source_id"].as<std::string>(), "generated_fixture");
+  EXPECT_EQ(copied["provenance"]["original_source_layer"].as<std::string>(), "generated_or_legacy_preview");
+  EXPECT_EQ(copied["provenance"]["original_source_file"].as<std::string>(), "urdf/scene.urdf.xacro");
+  EXPECT_NE(copied["provenance"]["original_source_id"].as<std::string>(), copied["id"].as<std::string>());
+  EXPECT_TRUE(model.items[0].locked);
+  EXPECT_FALSE(model.items[0].editable);
+  EXPECT_EQ(model.items[0].provenance, workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview);
+
+  write_file(root / "environment.yaml", "robot: ur5\nend_effector: robotiq_2f\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config" / "task_recipe.yaml", "pick_source: generated_fixture\nplace_target: bin_a\n");
+  write_yaml_file(root / "layout" / "workcell_studio_layout.yaml", summary.layout);
+
+  const auto reloaded = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  bool found_editable_copy = false;
+  bool found_original_locked_preview = false;
+  for (const auto & item : reloaded.items) {
+    if (item.id == "generated_fixture__editable_copy") {
+      found_editable_copy = true;
+      EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::EditableLayout);
+      EXPECT_TRUE(item.editable);
+      EXPECT_FALSE(item.locked);
+      EXPECT_EQ(item.label, "Generated Fixture");
+      EXPECT_EQ(item.width, 0.77);
+      EXPECT_EQ(item.height, 0.99);
+    }
+    if (item.id == "generated_fixture") {
+      found_original_locked_preview = item.locked && !item.editable &&
+        item.provenance == workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+    }
+  }
+  EXPECT_TRUE(found_editable_copy);
+  EXPECT_FALSE(found_original_locked_preview) << "the copied layout item must not masquerade as the original generated preview id";
+
+  fs::remove_all(root);
+}
 
 TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsafePreviewItems)
 {
@@ -1091,6 +1175,7 @@ TEST(WorkcellStudioCanvasMesh, BootstrapEditableLayoutFallsBackThroughSourcesAnd
   EXPECT_EQ(preview_result.source_used, "preview_model");
   ASSERT_EQ(preview_result.layout["items"].size(), 1u);
   const YAML::Node copied = preview_result.layout["items"][0];
+  EXPECT_EQ(copied["id"].as<std::string>(), "safe_preview__editable_copy");
   EXPECT_EQ(copied["display_name"].as<std::string>(), "Safe Preview Fixture");
   EXPECT_EQ(copied["type"].as<std::string>(), "fixture");
   EXPECT_EQ(copied["category"].as<std::string>(), "fixtures");

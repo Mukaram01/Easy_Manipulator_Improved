@@ -190,6 +190,7 @@ def _copy_contract_inputs(source_scene: Path, tmp_path: Path) -> Path:
 
 
 SCENE_ENTRIES = _enabled_available_scene_entries()
+REQUIRED_SAFETY_BOUNDARY_SCENES = {"ur5_2f_test", "suction_test", "ur5_2f_sorting_test"}
 
 
 @pytest.mark.parametrize("scene_entry", SCENE_ENTRIES, ids=_scene_id)
@@ -232,3 +233,24 @@ def test_supported_scene_contract_covers_enabled_catalog_not_two_scene_smoke_sub
     assert scene_names - {"ur10_2f_test", "suction_test"}, (
         "preview/selection contract tests must not exercise only ur10_2f_test or suction_test"
     )
+
+
+def test_required_supported_scenes_retain_locked_generated_preview_safety_boundaries(tmp_path: Path) -> None:
+    scene_entries_by_name = {_scene_id(entry): entry for entry in SCENE_ENTRIES}
+    missing = REQUIRED_SAFETY_BOUNDARY_SCENES - scene_entries_by_name.keys()
+    assert not missing, f"required supported scenes are missing from enabled catalog or checkout: {sorted(missing)}"
+
+    for scene_name in sorted(REQUIRED_SAFETY_BOUNDARY_SCENES):
+        scene_dir = _copy_contract_inputs(Path(scene_entries_by_name[scene_name]["scene_path_abs"]), tmp_path / scene_name)
+        preview = _build_preview_selection_contract(scene_dir)
+        locked_preview_items = [item for item in preview if item.source_layer == "locked_generated_urdf_visual"]
+        assert locked_preview_items, f"{scene_name} has no locked generated/legacy preview items"
+        for item in locked_preview_items:
+            assert item.locked is True, f"{scene_name}:{item.id} generated preview must stay locked"
+            assert item.editable is False, f"{scene_name}:{item.id} generated preview must not be editable"
+            assert item.linked_to_editable_layout_state is False, (
+                f"{scene_name}:{item.id} generated preview must not link directly to editable layout state"
+            )
+            assert _transform_controls_editable(item) is False, (
+                f"{scene_name}:{item.id} generated preview must not expose transform controls"
+            )

@@ -578,6 +578,13 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
             } else {
               add_warning("items[].size", "expected map or sequence; using defaults");
             }
+          } else {
+            const YAML::Node dimensions = yaml_map_key(node, "dimensions");
+            if (yaml_node_is_sequence(dimensions)) {
+              item.width = read_double_or_warn(yaml_seq_index(dimensions, 0), "items[].dimensions[0]", item.width);
+              item.depth = read_double_or_warn(yaml_seq_index(dimensions, 1), "items[].dimensions[1]", item.depth);
+              item.height = read_double_or_warn(yaml_seq_index(dimensions, 2), "items[].dimensions[2]", item.height);
+            }
           }
         }
       }
@@ -624,7 +631,15 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           } else {
             add_warning("items[].size", "expected map or sequence; using defaults");
           }
+        } else {
+          const YAML::Node dimensions = yaml_map_key(node, "dimensions");
+          if (yaml_node_is_sequence(dimensions)) {
+            extra.width = read_double_or_warn(yaml_seq_index(dimensions, 0), "items[].dimensions[0]", extra.width);
+            extra.depth = read_double_or_warn(yaml_seq_index(dimensions, 1), "items[].dimensions[1]", extra.depth);
+            extra.height = read_double_or_warn(yaml_seq_index(dimensions, 2), "items[].dimensions[2]", extra.height);
+          }
         }
+        m.items.push_back(extra);
       }
     }
     if (incomplete_placement_metadata) {
@@ -1438,10 +1453,16 @@ static std::string preview_source_layer_for_provenance(const WorkcellStudioCanva
   }
 }
 
+static std::string editable_copy_id_for_preview_item(const WorkcellStudioCanvasItem & preview_item)
+{
+  if (preview_item.id.empty()) return "editable_preview_copy";
+  return preview_item.id + "__editable_copy";
+}
+
 static YAML::Node preview_item_to_layout_item(const WorkcellStudioCanvasItem & preview_item)
 {
   YAML::Node item(YAML::NodeType::Map);
-  item["id"] = editable_layout_copy_id_from_preview_id(preview_item.id);
+  item["id"] = editable_copy_id_for_preview_item(preview_item);
   item["type"] = preview_item.type;
   if (!preview_item.category.empty()) item["category"] = preview_item.category;
   else item["category"] = preview_item.type;
