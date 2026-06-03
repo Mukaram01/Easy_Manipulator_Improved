@@ -219,6 +219,9 @@ private:
     QString id;
     QString display_name;
     QString role_or_category;
+    QString role;
+    QString category;
+    QString type;
     QString source_path;
     QString source_layer;
     QString active_visual_source;
@@ -446,6 +449,10 @@ private:
   QDoubleSpinBox * inspector_dim_x_{ nullptr };
   QDoubleSpinBox * inspector_dim_y_{ nullptr };
   QDoubleSpinBox * inspector_dim_z_{ nullptr };
+  QLineEdit * inspector_display_name_{ nullptr };
+  QLineEdit * inspector_role_{ nullptr };
+  QLineEdit * inspector_category_{ nullptr };
+  QLineEdit * inspector_type_{ nullptr };
   QCheckBox * inspector_live_update_box_{ nullptr };
   QPushButton * inspector_apply_button_{ nullptr };
   QPushButton * inspector_revert_button_{ nullptr };
