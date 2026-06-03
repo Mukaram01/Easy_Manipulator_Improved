@@ -1371,14 +1371,29 @@ static void append_environment_object_map_items(const YAML::Node & map, const st
   }
 }
 
+static std::string preview_source_layer_for_provenance(const WorkcellStudioCanvasItem & preview_item)
+{
+  switch (preview_item.provenance) {
+    case WorkcellStudioItemProvenance::EditableLayout:
+      return "editable_layout";
+    case WorkcellStudioItemProvenance::StaticFallbackPreview:
+      return "static_fallback_preview";
+    case WorkcellStudioItemProvenance::GeneratedOrLegacyPreview:
+    default:
+      return "generated_or_legacy_preview";
+  }
+}
+
 static YAML::Node preview_item_to_layout_item(const WorkcellStudioCanvasItem & preview_item)
 {
   YAML::Node item(YAML::NodeType::Map);
   item["id"] = preview_item.id;
   item["type"] = preview_item.type;
-  item["category"] = preview_item.type;
+  if (!preview_item.category.empty()) item["category"] = preview_item.category;
+  else item["category"] = preview_item.type;
   if (!preview_item.role.empty()) item["role"] = preview_item.role;
   if (!preview_item.label.empty()) item["display_name"] = preview_item.label;
+
   YAML::Node pose(YAML::NodeType::Map);
   pose["xyz"].push_back(preview_item.x);
   pose["xyz"].push_back(preview_item.y);
@@ -1387,16 +1402,40 @@ static YAML::Node preview_item_to_layout_item(const WorkcellStudioCanvasItem & p
   pose["rpy"].push_back(preview_item.pitch);
   pose["rpy"].push_back(preview_item.yaw);
   item["pose"] = pose;
+
   item["dimensions"].push_back(preview_item.width);
   item["dimensions"].push_back(preview_item.depth);
   item["dimensions"].push_back(preview_item.height);
+  if (!preview_item.primitive_geometry_type.empty()) item["primitive_geometry_type"] = preview_item.primitive_geometry_type;
+  if (preview_item.primitive_radius > 0.0) item["primitive_radius"] = preview_item.primitive_radius;
+  if (preview_item.primitive_length > 0.0) item["primitive_length"] = preview_item.primitive_length;
+
   YAML::Node mesh(YAML::NodeType::Map);
-  mesh["path"] = preview_item.mesh_path;
-  mesh["source"] = preview_item.source_file;
-  item["mesh"] = mesh;
+  if (!preview_item.mesh_path.empty()) mesh["path"] = preview_item.mesh_path;
+  if (!preview_item.source_file.empty()) mesh["source"] = preview_item.source_file;
+  if (!preview_item.mesh_source_package.empty()) mesh["source_package"] = preview_item.mesh_source_package;
+  if (preview_item.mesh_scale_x != 1.0 || preview_item.mesh_scale_y != 1.0 || preview_item.mesh_scale_z != 1.0) {
+    mesh["scale"].push_back(preview_item.mesh_scale_x);
+    mesh["scale"].push_back(preview_item.mesh_scale_y);
+    mesh["scale"].push_back(preview_item.mesh_scale_z);
+  }
+  if (mesh.size() > 0) item["mesh"] = mesh;
+
+  if (!preview_item.source_package.empty()) item["source_package"] = preview_item.source_package;
+  if (!preview_item.mesh_source_package.empty()) item["mesh_source_package"] = preview_item.mesh_source_package;
   item["source"] = "preview_model";
+  item["source_layer"] = "editable_layout";
   item["editable"] = true;
   item["locked"] = false;
+
+  YAML::Node provenance(YAML::NodeType::Map);
+  provenance["copy_kind"] = "editable_layout_copy";
+  provenance["editable_layout_copy"] = true;
+  provenance["original_source_id"] = preview_item.id;
+  provenance["original_source_layer"] = preview_source_layer_for_provenance(preview_item);
+  if (!preview_item.source_file.empty()) provenance["original_source_file"] = preview_item.source_file;
+  provenance["copied_from"] = "preview_model";
+  item["provenance"] = provenance;
   return item;
 }
 
