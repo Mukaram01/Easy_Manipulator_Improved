@@ -5710,7 +5710,8 @@ void MainWindow::save_layout_changes(){
     statusBar()->showMessage("Save Layout blocked: no scene selected; no file was written.", 6000);
     return;
   }
-  const fs::path layout_path = selected_scene_environment_layout_path(scene_browser_result_, selected_scene_index_);
+  const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
+  const fs::path layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
   if (layout_path.empty()) {
     const QString reason = QString("canonical layout path could not be computed for scene_root=%1 selected_scene_index=%2")
       .arg(scene_root_for_save_log())
@@ -5719,9 +5720,6 @@ void MainWindow::save_layout_changes(){
     statusBar()->showMessage("Save Layout blocked: canonical layout path could not be computed; no file was written.", 6000);
     return;
   }
-  const fs::path scene_dir = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir;
-  const fs::path canonical_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
-  const fs::path layout_path = canonical_layout_path;
   const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
@@ -5739,12 +5737,12 @@ void MainWindow::save_layout_changes(){
     scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_name : "unknown";
   YAML::Node root;
   fs::path imported_layout_path;
+  bool existing_layout_file = false;
   bool malformed_existing = false;
-  fs::path imported_layout_path;
-  if (fs::exists(canonical_layout_path)) {
+  if (fs::exists(layout_path)) {
     existing_layout_file = true;
     try {
-      root = YAML::LoadFile(canonical_layout_path.string());
+      root = YAML::LoadFile(layout_path.string());
     } catch (const YAML::Exception &) {
       malformed_existing = true;
     } catch (const std::exception &) {
@@ -5753,11 +5751,11 @@ void MainWindow::save_layout_changes(){
   } else {
     std::vector<fs::path> import_candidates;
     const fs::path manifest_layout = manifest_declared_layout_path(scene_dir);
-    if (!manifest_layout.empty() && manifest_layout != canonical_layout_path) import_candidates.push_back(manifest_layout);
+    if (!manifest_layout.empty() && manifest_layout != layout_path) import_candidates.push_back(manifest_layout);
     import_candidates.push_back(scene_dir / "environment_layout.yaml");
 
     for (const auto & candidate : import_candidates) {
-      if (candidate.empty() || candidate == canonical_layout_path || !fs::exists(candidate)) continue;
+      if (candidate.empty() || candidate == layout_path || !fs::exists(candidate)) continue;
       try {
         root = normalize_imported_layout_to_canonical_items(YAML::LoadFile(candidate.string()), scene_name, scene_dir);
         imported_layout_path = candidate;
@@ -5773,9 +5771,9 @@ void MainWindow::save_layout_changes(){
   }
   if (malformed_existing) {
     const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-    const fs::path backup = canonical_layout_path.parent_path() / (canonical_layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
+    const fs::path backup = layout_path.parent_path() / (layout_path.filename().string() + ".malformed_backup_" + stamp.toStdString());
     boost::system::error_code ec;
-    fs::copy_file(canonical_layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(layout_path, backup, fs::copy_option::overwrite_if_exists, ec);
     if (ec) {
       emit_save_layout_failure(
         QString("malformed layout YAML at %1 and backup failed (%2)")
@@ -5799,11 +5797,11 @@ void MainWindow::save_layout_changes(){
   if (!root["scene_path"] || !root["scene_path"].IsScalar()) root["scene_path"] = scene_dir.string();
 
   const QString backup_stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-  const fs::path layout_backup = canonical_layout_path.parent_path() /
-    (canonical_layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
+  const fs::path layout_backup = layout_path.parent_path() /
+    (layout_path.filename().string() + "." + backup_stamp.toStdString() + ".bak.yaml");
   if (existing_layout_file) {
     boost::system::error_code ec;
-    fs::copy_file(canonical_layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
+    fs::copy_file(layout_path, layout_backup, fs::copy_option::overwrite_if_exists, ec);
     if (!ec) {
       append_studio_log(QString("Backup before write created: %1").arg(QString::fromStdString(layout_backup.string())));
     } else {
@@ -5830,9 +5828,8 @@ void MainWindow::save_layout_changes(){
   }
 
   fs::path effective_layout_path = layout_path;
-  const fs::path canonical_workcell_layout_path = scene_dir / "layout" / "workcell_studio_layout.yaml";
   if (editable_canvas_items.empty()) {
-    effective_layout_path = canonical_workcell_layout_path;
+    effective_layout_path = layout_path;
     root = YAML::Node(YAML::NodeType::Map);
     root["schema_version"] = "workcell_studio_layout/v1";
     root["schema"] = "workcell_studio_layout/v1";
