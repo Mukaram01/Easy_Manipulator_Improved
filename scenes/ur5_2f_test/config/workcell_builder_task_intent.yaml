@@ -1,5 +1,5 @@
 schema: workcell_builder_task_intent/v1
-scene_package: /workspace/Easy_Manipulator_Improved/scenes/ur5_2f_test
+scene_package: scenes/ur5_2f_test
 task:
   id: ur5_2f_test_preview_task
   type: pick_place
@@ -11,18 +11,24 @@ pick:
     id: pick_zone_main
 place:
   target:
-    type: zone
-    id: place_zone_main
+    type: destination
+    id: bin_red
   release_strategy: tool_release
 grasp:
-  strategy: tool_profile_default
+  strategy_ref: finger_pinch_basic
   approach_axis: z_down
+  approach_distance_m: 0.12
   retreat_axis: z_up
+  retreat_distance_m: 0.10
 safety:
   preview_only: true
   use_fake_hardware: true
   execution_mode: simulation_preview
   no_robot_motion: true
+  metadata_only: true
+  runtime_io_applied: false
+  motion_started: false
+  ros_launch_started: false
 provenance:
   mode: generated_readiness_metadata
   sources:

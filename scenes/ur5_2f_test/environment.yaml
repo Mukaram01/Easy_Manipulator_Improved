@@ -30,12 +30,12 @@ camera:
 task:
   template: pick_place
   pick:
-    source_ref: 
-    object_ref: 
+    source_ref: pick_zone_main
+    object_ref: red_box_001
   place:
-    target_ref: 
+    target_ref: bin_red
   grasp:
-    strategy: auto
+    strategy: finger_pinch_basic
     approach_axis: z_down
     orientation_mode: vertical
     approach_distance_m: 0.12
@@ -79,10 +79,4 @@ metadata:
   scene_schema_version: workcell_scene/v1
   scene_schema_warnings:
     - camera disabled: no camera selection
-  scene_schema_blockers:
-    - Support surface/table must be selected
-    - Pick area must be selected
-    - Place target must be selected
-    - Grasp strategy must be selected
-    - Pick source is required
-    - Place target is required
+  scene_schema_blockers: []
