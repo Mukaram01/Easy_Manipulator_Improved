@@ -135,6 +135,66 @@ def _only_scene(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_ready_scene_records_launch_smoke_as_blocked_without_execution(tmp_path: Path, minimal_scene_factory: Any) -> None:
+def test_parse_args_accepts_supported_scenes_alias_for_catalog() -> None:
+    args = matrix.parse_args(["--supported-scenes", "scenes/supported_scenes.yaml"])
+
+    assert args.catalog == Path("scenes/supported_scenes.yaml")
+
+
+def test_parse_args_keeps_catalog_argument_for_backward_compatibility() -> None:
+    args = matrix.parse_args(["--catalog", "custom/catalog.yaml"])
+
+    assert args.catalog == Path("custom/catalog.yaml")
+
+
+def test_main_routes_supported_scenes_alias_to_build_matrix(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    catalog = tmp_path / "scenes" / "supported_scenes.yaml"
+    output_dir = tmp_path / "matrix_output"
+    captured: dict[str, Path] = {}
+
+    def fake_build_matrix(repo_root: Path, catalog_path: Path, output_path: Path) -> dict[str, Any]:
+        captured["repo_root"] = repo_root
+        captured["catalog_path"] = catalog_path
+        captured["output_dir"] = output_path
+        return {
+            "schema_version": matrix.SCHEMA_VERSION,
+            "generated_at": "2026-06-02T00:00:00+00:00",
+            "repo_root": str(repo_root),
+            "workspace_root": str(repo_root.parent),
+            "catalog_path": str(catalog_path),
+            "catalog_errors": [],
+            "scene_count": 0,
+            "totals": {matrix.PASS: 0, matrix.FAIL: 0, matrix.BLOCKED: 0},
+            "scenes": [],
+            "commands": {},
+            "ros_humble_available": False,
+            "workcell_builder_executable_found": False,
+        }
+
+    monkeypatch.setattr(matrix, "build_matrix", fake_build_matrix)
+    monkeypatch.setattr(matrix, "_write_markdown", lambda _payload, _path: None)
+
+    result = matrix.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--supported-scenes",
+            str(catalog),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert result == 0
+    assert captured["repo_root"] == tmp_path.resolve()
+    assert captured["catalog_path"] == catalog.resolve()
+    assert captured["output_dir"] == output_dir.resolve()
+
+
+def test_fully_healthy_synthetic_scene_produces_overall_pass(tmp_path: Path, minimal_scene_factory: Any) -> None:
     report = _single_scene_report(tmp_path, minimal_scene_factory, "healthy_scene")
 
     scene = _only_scene(report)

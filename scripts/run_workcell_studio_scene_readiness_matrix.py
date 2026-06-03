@@ -484,7 +484,14 @@ def build_matrix(repo_root: Path, catalog_path: Path, output_dir: Path) -> dict[
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT_DEFAULT)
-    parser.add_argument("--catalog", type=Path, default=None, help="defaults to <repo>/scenes/supported_scenes.yaml")
+    parser.add_argument(
+        "--catalog",
+        "--supported-scenes",
+        dest="catalog",
+        type=Path,
+        default=None,
+        help="supported-scene catalog path; defaults to <repo>/scenes/supported_scenes.yaml",
+    )
     parser.add_argument("--output-dir", type=Path, default=None, help="defaults to <repo>/build/workcell_studio_scene_readiness")
     return parser.parse_args(argv)
 
