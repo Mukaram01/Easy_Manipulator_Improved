@@ -60,6 +60,19 @@ TEST(LayoutSerializationContractTest, SelectionTransformEditorSupportsStateWitho
   EXPECT_NE(src.find("state.pose_available"), std::string::npos);
 }
 
+
+TEST(LayoutSerializationContractTest, Scene3DGizmoEditsOnlyEditableLayoutItems)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("scene3d_viewport->transform_changed_cb"), std::string::npos);
+  EXPECT_NE(src.find("const bool locked_item = item->data(RoleLocked).toBool()"), std::string::npos);
+  EXPECT_NE(src.find("item->data(RoleSourceLayer).toString().trimmed()"), std::string::npos);
+  EXPECT_NE(src.find("source_layer.compare(QStringLiteral(\"editable_layout\"), Qt::CaseInsensitive) == 0"), std::string::npos);
+  EXPECT_NE(src.find("if (locked_item || !editable_source_layer)"), std::string::npos);
+  EXPECT_NE(src.find("Scene3D transform edit blocked: locked item cannot be edited"), std::string::npos);
+  EXPECT_NE(src.find("mark_layout_dirty(\"Scene3D Gizmo Transform\")"), std::string::npos);
+}
+
 TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithOnlyLegacyEnvironmentLayoutWritesCanonical)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
