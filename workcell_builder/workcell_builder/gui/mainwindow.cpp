@@ -80,6 +80,7 @@
 #include <QProgressDialog>
 #include <QSettings>
 #include <QLineEdit>
+#include <QFormLayout>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QDrag>
@@ -2027,6 +2028,22 @@ void MainWindow::setup_studio_shell()
   inspector_dim_z_ = new QDoubleSpinBox(scene_builder); inspector_dim_z_->setPrefix("dz "); dim_grid->addWidget(inspector_dim_z_, 0, 2);
   selection_tab_layout->addLayout(dim_grid);
   selected_item_card_layout->addLayout(pose_grid);
+  auto * metadata_group = new QGroupBox("Metadata", scene_builder);
+  metadata_group->setObjectName("studioCard");
+  auto * metadata_form = new QFormLayout(metadata_group);
+  inspector_display_name_ = new QLineEdit(metadata_group);
+  inspector_display_name_->setPlaceholderText("Display name");
+  metadata_form->addRow("Display name", inspector_display_name_);
+  inspector_role_ = new QLineEdit(metadata_group);
+  inspector_role_->setReadOnly(true);
+  metadata_form->addRow("Role", inspector_role_);
+  inspector_category_ = new QLineEdit(metadata_group);
+  inspector_category_->setReadOnly(true);
+  metadata_form->addRow("Category", inspector_category_);
+  inspector_type_ = new QLineEdit(metadata_group);
+  inspector_type_->setReadOnly(true);
+  metadata_form->addRow("Type", inspector_type_);
+  selection_tab_layout->addWidget(metadata_group);
   inspector_live_update_box_ = new QCheckBox("Live update", scene_builder); inspector_live_update_box_->setChecked(false); selection_tab_layout->addWidget(inspector_live_update_box_);
   auto * transform_actions = new QHBoxLayout();
   inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_);
@@ -2916,8 +2933,12 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.id = item->data(0, TreeRoleId).toString().trimmed();
     if (state.id.isEmpty()) state.id = item->text(0).trimmed();
     state.display_name = item->text(0).trimmed();
-    state.role_or_category = item->data(0, TreeRoleRole).toString().trimmed();
-    if (state.role_or_category.isEmpty()) state.role_or_category = item->data(0, TreeRoleCategory).toString().trimmed();
+    state.role = item->data(0, TreeRoleRole).toString().trimmed();
+    state.category = item->data(0, TreeRoleCategory).toString().trimmed();
+    state.type = item->data(0, TreeRoleItemTypeClass).toString().trimmed();
+    state.role_or_category = state.role;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.category;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
     state.source_path = item->data(0, TreeRoleSource).toString().trimmed();
     state.source_layer = item->data(0, TreeRoleSourceLayer).toString().trimmed();
     state.active_visual_source = item->data(0, TreeRoleActiveVisualSource).toString().trimmed();
@@ -2950,9 +2971,12 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     state.id = item->data(RoleId).toString().trimmed();
     if (state.id.isEmpty()) state.id = fallback_id.trimmed();
     state.display_name = item->data(RoleDisplayName).toString().trimmed();
-    state.role_or_category = item->data(RoleRole).toString().trimmed();
-    if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleCategory).toString().trimmed();
-    if (state.role_or_category.isEmpty()) state.role_or_category = item->data(RoleType).toString().trimmed();
+    state.role = item->data(RoleRole).toString().trimmed();
+    state.category = item->data(RoleCategory).toString().trimmed();
+    state.type = item->data(RoleType).toString().trimmed();
+    state.role_or_category = state.role;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.category;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
     state.source_path = item->data(RoleSource).toString().trimmed();
     state.locked = item->data(RoleLocked).toBool();
     state.editable = !state.locked;
@@ -2982,7 +3006,12 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
     if (!item) return false;
     state.id = item->id.trimmed();
     state.display_name = item->display_name.trimmed();
-    state.role_or_category = item->role.trimmed();
+    state.role = item->role.trimmed();
+    state.category = item->category.trimmed();
+    state.type = item->mesh_type.trimmed();
+    state.role_or_category = state.role;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.category;
+    if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
     if (state.role_or_category.isEmpty()) state.role_or_category = item->category.trimmed();
     state.source_path = item->source_path.trimmed();
     state.source_layer = item->source_layer.trimmed();
@@ -6136,6 +6165,13 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
   SelectedSceneItemState state;
   state.valid = true;
   state.id = item->data(RoleId).toString().trimmed();
+  state.display_name = item->data(RoleDisplayName).toString().trimmed();
+  state.role = item->data(RoleRole).toString().trimmed();
+  state.category = item->data(RoleCategory).toString().trimmed();
+  state.type = item->data(RoleType).toString().trimmed();
+  state.role_or_category = state.role;
+  if (state.role_or_category.isEmpty()) state.role_or_category = state.category;
+  if (state.role_or_category.isEmpty()) state.role_or_category = state.type;
   state.source_layer = item->data(RoleSourceLayer).toString().trimmed();
   state.editable = !item->data(RoleLocked).toBool();
   state.locked = item->data(RoleLocked).toBool();
@@ -6167,6 +6203,13 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
   if (inspector_dim_x_) inspector_dim_x_->setValue(state.dim_x);
   if (inspector_dim_y_) inspector_dim_y_->setValue(state.dim_y);
   if (inspector_dim_z_) inspector_dim_z_->setValue(state.dim_z);
+  if (inspector_display_name_) {
+    inspector_display_name_->setText(state.display_name);
+    inspector_display_name_->setPlaceholderText(state.id.isEmpty() ? QStringLiteral("Display name") : state.id);
+  }
+  if (inspector_role_) inspector_role_->setText(state.role);
+  if (inspector_category_) inspector_category_->setText(state.category);
+  if (inspector_type_) inspector_type_->setText(state.type);
   for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) {
     if (sb) sb->setReadOnly(locked);
   }
@@ -6176,6 +6219,10 @@ void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSce
   if (inspector_apply_button_) inspector_apply_button_->setEnabled(!locked);
   if (inspector_revert_button_) inspector_revert_button_->setEnabled(true);
   if (inspector_live_update_box_) inspector_live_update_box_->setEnabled(!locked);
+  if (inspector_display_name_) inspector_display_name_->setReadOnly(locked);
+  for (auto * le : {inspector_role_, inspector_category_, inspector_type_}) {
+    if (le) le->setReadOnly(true);
+  }
   inspector_update_guard_ = false;
   refresh_robot_base_pose_inspector();
 }
@@ -6269,6 +6316,8 @@ void MainWindow::apply_inspector_pose_to_item()
   const QPointF old(target.state.pose_x * 100.0, target.state.pose_y * 100.0);
   const QPointF updated(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
 
+  QString updated_display_name;
+  bool metadata_changed = false;
   if (i) {
     i->setPos(updated);
     i->setData(RolePoseZ, inspector_z_->value());
@@ -6278,6 +6327,13 @@ void MainWindow::apply_inspector_pose_to_item()
     i->setData(RoleWidth, inspector_dim_x_->value());
     i->setData(RoleDepth, inspector_dim_y_->value());
     i->setData(RoleHeight, inspector_dim_z_->value());
+    if (inspector_display_name_) {
+      updated_display_name = inspector_display_name_->text().trimmed();
+      if (!updated_display_name.isEmpty()) {
+        metadata_changed = updated_display_name != i->data(RoleDisplayName).toString().trimmed();
+        if (metadata_changed) i->setData(RoleDisplayName, updated_display_name);
+      }
+    }
   }
 
   SelectedSceneItemState refreshed_state = target.state;
@@ -6291,6 +6347,11 @@ void MainWindow::apply_inspector_pose_to_item()
   refreshed_state.dim_x = inspector_dim_x_->value();
   refreshed_state.dim_y = inspector_dim_y_->value();
   refreshed_state.dim_z = inspector_dim_z_->value();
+  if (!updated_display_name.isEmpty()) refreshed_state.display_name = updated_display_name;
+  refreshed_state.role = target.state.role;
+  refreshed_state.category = target.state.category;
+  refreshed_state.type = target.state.type;
+  refreshed_state.role_or_category = target.state.role_or_category;
   refreshed_state.editable = true;
   refreshed_state.locked = false;
   refreshed_state.linked_to_editable_layout_state = true;
@@ -6299,6 +6360,9 @@ void MainWindow::apply_inspector_pose_to_item()
   undo_stack_.push_back({"pose_edit", item_id, old, updated, false, false});
   redo_stack_.clear();
   mark_layout_dirty("Inspector Pose/Dimensions Edit");
+  if (metadata_changed) {
+    mark_layout_dirty("Inspector Metadata Edit");
+  }
 
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
   append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 source=%3 xyz=[%4,%5,%6] rpy=[%7,%8,%9] dirty=true")
@@ -6309,6 +6373,10 @@ void MainWindow::apply_inspector_pose_to_item()
     .arg(inspector_roll_->value(), 0, 'g', 17)
     .arg(inspector_pitch_->value(), 0, 'g', 17)
     .arg(inspector_yaw_->value(), 0, 'g', 17));
+  if (metadata_changed) {
+    append_studio_log(QString("Inspector metadata edited: scene=%1 id=%2 display_name=%3 dirty=true")
+      .arg(selected_scene_name_for_log, item_id, updated_display_name));
+  }
   append_studio_log(QString("item updated: %1 source=%2 editable=true locked=false fallback_view_refreshed=%3")
     .arg(item_id, target.source_path, i ? QStringLiteral("true") : QStringLiteral("false")));
   refresh_selection_transform_editor_from_state(refreshed_state);
