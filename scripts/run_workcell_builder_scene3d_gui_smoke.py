@@ -9,7 +9,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
 ensure_repo_root_on_sys_path(__file__)
-from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable
+from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
 from scripts.scene_root_resolver import resolve_scene_root
 from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
@@ -19,12 +19,8 @@ def _tail(text: str, lines: int = 40) -> str:
     parts = (text or "").splitlines()
     return "\n".join(parts[-lines:])
 
-def _resolve_executable_candidates(workspace_root: Path) -> list[Path]:
-    c = []
-    path_hit = shutil.which("workcell_builder")
-    if path_hit: c.append(Path(path_hit))
-    c.extend([workspace_root / "install/workcell_builder/bin/workcell_builder", workspace_root / "install/workcell_builder/lib/workcell_builder/workcell_builder", workspace_root / "build/workcell_builder/workcell_builder"])
-    return c
+def _resolve_executable_candidates(workspace_root: Path | None) -> list[Path]:
+    return workcell_builder_executable_candidates(workspace_root)
 
 def build_cmd(exe: Path | str, args: argparse.Namespace) -> list[str]:
     cmd = [str(exe), "--scene3d-smoke"]
