@@ -550,19 +550,75 @@ TEST(WorkcellStudioCanvasMesh, BuildStarterLayoutSummarizesSkipsAndEditableItems
   warning_metadata.warnings.push_back("malformed metadata warning");
   model.items.push_back(warning_metadata);
 
+  workcell_builder::WorkcellStudioCanvasItem reach_overlay = safe;
+  reach_overlay.id = "robot_reach_overlay";
+  reach_overlay.type = "reach";
+  reach_overlay.role = "overlay";
+  reach_overlay.locked = true;
+  model.items.push_back(reach_overlay);
+
   const auto summary = workcell_builder::build_starter_layout_entries_from_preview(model);
-  EXPECT_EQ(summary.total_preview_items, 6u);
-  EXPECT_EQ(summary.skipped_locked_items, 1u);
+  EXPECT_EQ(summary.total_preview_items, 7u);
+  EXPECT_EQ(summary.skipped_locked_items, 0u);
   EXPECT_EQ(summary.skipped_static_fallback_items, 1u);
-  EXPECT_EQ(summary.skipped_unsafe_or_missing_metadata_items, 3u);
-  EXPECT_EQ(summary.editable_items_created, 1u);
+  EXPECT_EQ(summary.skipped_unsafe_or_missing_metadata_items, 4u);
+  EXPECT_EQ(summary.editable_items_created, 2u);
 
   EXPECT_FALSE(summary.layout["empty_layout_marker"].as<bool>());
   const YAML::Node items = summary.layout["items"];
   ASSERT_TRUE(items && items.IsSequence());
-  ASSERT_EQ(items.size(), 1u);
+  ASSERT_EQ(items.size(), 2u);
   EXPECT_EQ(items[0]["id"].as<std::string>(), "safe_item");
   EXPECT_EQ(items[0]["mesh"]["path"].as<std::string>(), "meshes/visual/safe_item.stl");
+  EXPECT_TRUE(items[1]["editable"].as<bool>());
+  EXPECT_FALSE(items[1]["locked"].as<bool>());
+  EXPECT_EQ(items[1]["id"].as<std::string>(), "locked_item");
+  EXPECT_EQ(items[1]["provenance"].as<std::string>(), "editable_layout");
+}
+
+TEST(WorkcellStudioCanvasMesh, BootstrapPreviewFallbackCopiesSafeLockedPhysicalItemsOnly)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_bootstrap_preview_locked_physical";
+  fs::remove_all(root);
+  fs::create_directories(root);
+
+  workcell_builder::WorkcellStudioCanvasModel model;
+  model.scene_name = "demo";
+
+  workcell_builder::WorkcellStudioCanvasItem locked_physical;
+  locked_physical.id = "robot_base";
+  locked_physical.type = "robot_base";
+  locked_physical.role = "robot";
+  locked_physical.source_file = "generated/robot.urdf.xacro";
+  locked_physical.mesh_path = "meshes/visual/robot_base.stl";
+  locked_physical.has_mesh_metadata = true;
+  locked_physical.provenance = workcell_builder::WorkcellStudioItemProvenance::GeneratedOrLegacyPreview;
+  locked_physical.locked = true;
+  model.items.push_back(locked_physical);
+
+  workcell_builder::WorkcellStudioCanvasItem locked_helper = locked_physical;
+  locked_helper.id = "robot_reach";
+  locked_helper.type = "reach";
+  locked_helper.role = "overlay";
+  model.items.push_back(locked_helper);
+
+  const auto result = workcell_builder::bootstrap_editable_layout_from_scene_sources(root, "demo", model);
+  EXPECT_EQ(result.source_used, "preview_model");
+  EXPECT_EQ(result.editable_items_created, 1u);
+  EXPECT_EQ(result.skipped_locked_items, 0u);
+  EXPECT_EQ(result.skipped_unsafe_or_missing_metadata_items, 1u);
+
+  const YAML::Node items = result.layout["items"];
+  ASSERT_TRUE(items && items.IsSequence());
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0]["id"].as<std::string>(), "robot_base");
+  EXPECT_TRUE(items[0]["editable"].as<bool>());
+  EXPECT_FALSE(items[0]["locked"].as<bool>());
+  EXPECT_EQ(items[0]["provenance"].as<std::string>(), "editable_layout");
+
+  EXPECT_TRUE(model.items[0].locked) << "preview fallback must not mutate the generated preview item lock guard";
+
+  fs::remove_all(root);
 }
 
 
@@ -613,7 +669,10 @@ TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsaf
   const std::set<std::string> after_editable_ids = editable_item_ids(after_layout);
   EXPECT_EQ(after_editable_ids.size(), starter_layout_summary.editable_items_created);
   for (const auto & id : locked_preview_ids) {
-    EXPECT_EQ(after_editable_ids.count(id), 0u) << "locked generated preview item was written editable: " << id;
+    const bool helper_locked_preview = id.find("reach") != std::string::npos || id.find("warning") != std::string::npos;
+    if (helper_locked_preview) {
+      EXPECT_EQ(after_editable_ids.count(id), 0u) << "helper/overlay locked preview item was written editable: " << id;
+    }
   }
 
   const fs::path fallback_scene = temp_root / (scene_name + "_fallback_only");

@@ -1162,6 +1162,34 @@ static bool has_safe_starter_layout_metadata(const WorkcellStudioCanvasItem & pr
   return true;
 }
 
+static std::string lowercase_copy(std::string value)
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+static bool contains_any_visual_helper_token(const std::string & value)
+{
+  if (value.empty()) return false;
+  const std::string lower = lowercase_copy(value);
+  const std::array<const char *, 14> helper_tokens = {
+    "reach", "roi", "fov", "warning", "blocker", "axis", "grid",
+    "label", "overlay", "helper", "annotation", "gizmo", "marker", "safety"
+  };
+  for (const char * token : helper_tokens) {
+    if (lower.find(token) != std::string::npos) return true;
+  }
+  return false;
+}
+
+static bool is_preview_item_visual_helper_only(const WorkcellStudioCanvasItem & preview_item)
+{
+  return contains_any_visual_helper_token(preview_item.id) ||
+    contains_any_visual_helper_token(preview_item.type) ||
+    contains_any_visual_helper_token(preview_item.role) ||
+    contains_any_visual_helper_token(preview_item.category);
+}
+
 
 static YAML::Node new_workcell_studio_layout_root(const std::string & scene_name)
 {
@@ -1449,41 +1477,15 @@ WorkcellStudioStarterLayoutSummary build_starter_layout_entries_from_preview(con
   root["scene_name"] = model.scene_name;
   YAML::Node items(YAML::NodeType::Sequence);
   for (const auto & preview_item : model.items) {
-    if (preview_item.locked) {
-      ++summary.skipped_locked_items;
-      continue;
-    }
     if (preview_item.provenance == WorkcellStudioItemProvenance::StaticFallbackPreview) {
       ++summary.skipped_static_fallback_items;
       continue;
     }
-    if (!has_safe_starter_layout_metadata(preview_item)) {
+    if (is_preview_item_visual_helper_only(preview_item) || !has_safe_starter_layout_metadata(preview_item)) {
       ++summary.skipped_unsafe_or_missing_metadata_items;
       continue;
     }
-    YAML::Node item(YAML::NodeType::Map);
-    item["id"] = preview_item.id;
-    item["type"] = preview_item.type;
-    item["category"] = preview_item.type;
-    YAML::Node pose(YAML::NodeType::Map);
-    pose["xyz"].push_back(preview_item.x);
-    pose["xyz"].push_back(preview_item.y);
-    pose["xyz"].push_back(preview_item.z);
-    pose["rpy"].push_back(preview_item.roll);
-    pose["rpy"].push_back(preview_item.pitch);
-    pose["rpy"].push_back(preview_item.yaw);
-    item["pose"] = pose;
-    item["dimensions"].push_back(preview_item.width);
-    item["dimensions"].push_back(preview_item.depth);
-    item["dimensions"].push_back(preview_item.height);
-    YAML::Node mesh(YAML::NodeType::Map);
-    mesh["path"] = preview_item.mesh_path;
-    mesh["source"] = preview_item.source_file;
-    item["mesh"] = mesh;
-    item["source"] = preview_item.source_file;
-    item["editable"] = true;
-    item["locked"] = false;
-    items.push_back(item);
+    items.push_back(preview_item_to_layout_item(preview_item, preview_item.source_file));
     ++summary.editable_items_created;
   }
   root["empty_layout_marker"] = summary.editable_items_created == 0;
@@ -1614,21 +1616,15 @@ WorkcellStudioEditableLayoutBootstrapResult bootstrap_editable_layout_from_scene
   YAML::Node candidate = new_workcell_studio_layout_root(scene_name);
   YAML::Node candidate_items = yaml_map_key(candidate, "items");
   std::set<std::string> ids;
-  std::size_t preview_locked = 0;
   std::size_t preview_static_fallback = 0;
   std::size_t preview_unsafe = 0;
   for (const auto & preview_item : preview_model.items) {
-    if (preview_item.locked) {
-      ++preview_locked;
-      ++result.skipped_locked_items;
-      continue;
-    }
     if (preview_item.provenance == WorkcellStudioItemProvenance::StaticFallbackPreview) {
       ++preview_static_fallback;
       ++result.skipped_static_fallback_items;
       continue;
     }
-    if (!has_safe_starter_layout_metadata(preview_item)) {
+    if (is_preview_item_visual_helper_only(preview_item) || !has_safe_starter_layout_metadata(preview_item)) {
       ++preview_unsafe;
       ++result.skipped_unsafe_or_missing_metadata_items;
       continue;
@@ -1638,13 +1634,10 @@ WorkcellStudioEditableLayoutBootstrapResult bootstrap_editable_layout_from_scene
   candidate["items"] = candidate_items;
   if (finish_if_items("preview_model", candidate)) return result;
 
-  if (!preview_model.items.empty() && preview_locked > 0 && preview_locked == preview_model.items.size()) {
-    result.blockers.push_back("preview locked-only");
-  }
-  if (!preview_model.items.empty() && preview_static_fallback > 0 && preview_static_fallback + preview_locked == preview_model.items.size()) {
+  if (!preview_model.items.empty() && preview_static_fallback > 0 && preview_static_fallback == preview_model.items.size()) {
     result.blockers.push_back("preview fallback-only");
   }
-  if (preview_unsafe > 0) result.blockers.push_back("unsafe/missing mesh metadata");
+  if (preview_unsafe > 0) result.blockers.push_back("unsafe/helper/missing mesh metadata");
 
   result.layout["empty_layout_marker"] = true;
   result.source_used.clear();
