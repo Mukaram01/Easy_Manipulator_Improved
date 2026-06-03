@@ -1,8 +1,18 @@
+schema_version: workcell_scene/v1
+scene:
+  id: suction_test
+  name: suction_test
 robot:
+  id: ur5
+  profile: ur5
   name: ur5
   brand: universal_robot
   filepath: ""
   base_link: base_link
+  planning_group: manipulator
+  base_frame: world
+  tool_link: tool0
+  home_named_target: home
   links:
     - base_link
     - shoulder_link
@@ -13,6 +23,198 @@ robot:
     - wrist_3_link
     - base
     - tool0
+tool:
+  id: single_suction
+  profile: single_suction
+  name: single_suction
+  type: suction
+  brand: single_suction_gripper
+  capability_family: vacuum_gripper
+  capabilities:
+    grasp_methods:
+      - suction
+    cup_count: 1
+    runtime_io_required: false
+  robot_link: tool0
+  grasp_frame: wrist_fixture
+  links:
+    - wrist_fixture
+    - suction_cup_link
+compatibility:
+  status: COMPATIBLE
+  robot: ur5
+  tool: single_suction
+  robot_profile: ur5
+  tool_profile: single_suction
+  supported_task_templates:
+    - pick_place
+  notes:
+    - Metadata describes a fake-hardware-first suction commissioning scene.
+    - Suction behavior is capability metadata only; no runtime IO or real-hardware command path is enabled.
+placed_objects: []
+camera:
+  enabled: false
+  camera_id: UNKNOWN_CAMERA
+  frame_id: UNKNOWN_FRAME
+  pose:
+    - -0.55
+    - 0.55
+    - 0.4
+    - 0.0
+    - 0.0
+    - 0.0
+  rgb_topic:
+  depth_topic:
+  pointcloud_topic:
+task:
+  id: default_task
+  template: pick_place
+  type: pick_place
+  mode: simulation_preview
+  source_object: commissioning_object
+  pick:
+    source_ref: pick_zone_main
+    object_ref: commissioning_object
+    object_source: commissioning_object
+  place:
+    target_ref: default_drop_zone
+    intent_target_ref: place_zone_main
+    target_aliases:
+      - place_zone_main
+    release_strategy: tool_release
+  destinations:
+    - id: default_drop_zone
+      frame: world
+      pose_xyz:
+        - 0.5
+        - -0.3
+        - 0.1
+      pose_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+  rules:
+    - id: default_place
+      when:
+        always: true
+      destination: default_drop_zone
+  grasp:
+    strategy: tool_profile_default
+    method: suction
+    allowed_grasp_methods:
+      - suction
+    approach_axis: z_down
+    retreat_axis: z_up
+    orientation_mode: vertical
+    approach_distance_m: 0.12
+    retreat_distance_m: 0.1
+    allowed_roll_angles_deg:
+      - 0.0
+    allowed_yaw_angles_deg:
+      - 0.0
+      - 90.0
+      - 180.0
+      - 270.0
+    tool_offset_xyz:
+      - 0.0
+      - 0.0
+      - 0.0
+    tool_offset_rpy:
+      - 0.0
+      - 0.0
+      - 0.0
+    suction_cups:
+      count: 1
+      layout: single
+      cup_links:
+        - suction_cup_link
+      grasp_frame: wrist_fixture
+workspace:
+  bounds:
+    x_min: -1.0
+    x_max: 1.0
+    y_min: -1.0
+    y_max: 1.0
+    z_min: 0.0
+    z_max: 1.8
+  zones:
+    - id: robot_base_exclusion
+      type: exclusion
+      shape: circle
+      frame: world
+      center_xyz:
+        - 0.0
+        - 0.0
+        - 0.0
+      radius_m: 0.18
+    - id: pick_zone_main
+      type: pick_zone
+      frame: world
+      shape: box
+      pose_xyz:
+        - 0.43
+        - 0.04
+        - 0.08
+      pose_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+      size_xyz:
+        - 0.2
+        - 0.2
+        - 0.1
+      object_ref: commissioning_object
+    - id: default_drop_zone
+      type: place_target
+      aliases:
+        - place_zone_main
+      frame: world
+      shape: box
+      pose_xyz:
+        - 0.5
+        - -0.3
+        - 0.1
+      pose_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+      size_xyz:
+        - 0.2
+        - 0.2
+        - 0.1
+    - id: place_zone_main
+      type: place_target
+      alias_of: default_drop_zone
+      frame: world
+      shape: box
+      pose_xyz:
+        - 0.5
+        - -0.3
+        - 0.1
+      pose_rpy:
+        - 0.0
+        - 0.0
+        - 0.0
+      size_xyz:
+        - 0.2
+        - 0.2
+        - 0.1
+safety:
+  fake_hardware_first: true
+  real_hardware_enabled: false
+  runtime_execution_enabled: false
+  motion_command_sent: false
+metadata:
+  generated_by: workcell_builder
+  scene_schema_version: workcell_scene/v1
+  source_files:
+    - environment.yaml
+    - cell_definition.yaml
+    - config/task_recipe.yaml
+    - config/workcell_builder_task_intent.yaml
+  scene_schema_warnings:
+    - camera disabled: no camera selection
+  scene_schema_blockers: []
 end_effector:
   name: single_suction
   brand: single_suction_gripper
@@ -20,9 +222,16 @@ end_effector:
   base_link: wrist_fixture
   robot_link: tool0
   ee_type: suction
+  type: suction
+  profile: single_suction
+  grasp_frame: wrist_fixture
   attributes:
     array_width: 1
     array_height: -1
+    cup_count: 1
+    allowed_grasp_methods:
+      - suction
+    runtime_io_required: false
   links:
     - wrist_fixture
     - suction_cup_link
