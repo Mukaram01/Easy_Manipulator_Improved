@@ -5769,7 +5769,7 @@ void MainWindow::save_layout_changes(){
     statusBar()->showMessage("Save Layout blocked: canonical layout path could not be computed; no file was written.", 6000);
     return;
   }
-  const std::array<const char *, 4> required_dirs = {"layout", "task", "generated", "plan_preview"};
+  const std::array<const char *, 1> required_dirs = {"layout"};
   for (const char * dir_name : required_dirs) {
     boost::system::error_code mk_ec;
     fs::create_directories(scene_dir / dir_name, mk_ec);
@@ -6001,32 +6001,8 @@ void MainWindow::save_layout_changes(){
     append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(effective_layout_path.string())));
   }
 
-  YAML::Node environment(YAML::NodeType::Map);
-  environment["scene_name"] = scene_name;
-  environment["fake_hardware_first"] = true;
-  environment["safety_note"] = "Preview metadata only. Not approval for real-hardware execution.";
-  YAML::Node task_zones(YAML::NodeType::Sequence);
-  for (const auto & node : updated_placed) {
-    const std::string type = workcell_builder::yaml_map_value_or_empty(node, "type");
-    if (type == "pick_zone" || type == "place_zone") {
-      YAML::Node zone(YAML::NodeType::Map);
-      zone["id"] = workcell_builder::yaml_map_value_or_empty(node, "id");
-      zone["type"] = type == "pick_zone" ? "pick" : "place";
-      zone["source"] = "existing_new_cell_flow";
-      task_zones.push_back(zone);
-    }
-  }
-  environment["task_zones"] = task_zones;
-  const fs::path environment_path = scene_dir / "environment.yaml";
-  QString environment_write_error;
-  if (write_yaml_file_checked(environment_path, environment, &environment_write_error)) {
-    append_studio_log(QString("Save Layout: wrote environment metadata to %1")
-      .arg(QString::fromStdString(environment_path.string())));
-  } else {
-    const QString message = QStringLiteral("Save Layout metadata write failed: %1").arg(environment_write_error);
-    append_studio_log(message);
-    QMessageBox::warning(this, "Save Layout", message);
-  }
+  append_studio_log(QString("Save Layout: serialized %1 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.")
+    .arg(static_cast<int>(updated_placed.size())));
   append_studio_log(QString("Save Layout: rebuilding Scene3D data after save (selection id snapshot='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   refresh_scene_builder_left_explorer();
@@ -6119,24 +6095,14 @@ void MainWindow::create_starter_layout_from_preview()
     .arg(static_cast<int>(bootstrap_result.skipped_static_fallback_items))
     .arg(static_cast<int>(bootstrap_result.skipped_unsafe_or_missing_metadata_items)));
   const int generated_count = static_cast<int>(bootstrap_result.editable_items_created);
-  append_studio_log(QString("Use Recommended Layout: wrote %1 item(s) to %2").arg(generated_count).arg(QString::fromStdString(layout_file.string())));
-  const auto environment_bootstrap = workcell_builder::bootstrap_environment_layout_from_editable_layout(
-    s.scene_dir, s.scene_name, layout);
-  if (!environment_bootstrap.ok) {
-    append_studio_log(QString("Use Recommended Layout: environment_layout.yaml bootstrap failed (%1).")
-      .arg(QString::fromStdString(environment_bootstrap.error)));
-    QMessageBox::warning(this, "Create Starter Layout",
-      QString("Editable layout was written, but environment_layout.yaml could not be bootstrapped:\n%1")
-        .arg(QString::fromStdString(environment_bootstrap.error)));
-  } else if (environment_bootstrap.wrote) {
-    append_studio_log(QString("Use Recommended Layout: wrote %1 editable/placeable item(s) to %2")
-      .arg(static_cast<int>(environment_bootstrap.placed_assets_written))
-      .arg(QString::fromStdString((s.scene_dir / "environment_layout.yaml").string())));
-  } else {
-    append_studio_log("Use Recommended Layout: environment_layout.yaml already contained the bootstrapped editable/placeable item set.");
-  }
+  append_studio_log(QString("Create Starter Layout: current architecture uses canonical layout write-through for conversion; wrote the starter editable layout to %1, then refreshes Scene3D/2D/hierarchy/inspector. Subsequent move/edit operations remain dirty until Save Layout serializes layout/workcell_studio_layout.yaml again.")
+    .arg(QString::fromStdString(layout_file.string())));
+  append_studio_log(QString("Use Recommended Layout: wrote %1 editable layout item(s) to %2; locked/generated preview items were not marked editable and no environment_layout/runtime/ROS artifacts were bootstrapped.")
+    .arg(generated_count)
+    .arg(QString::fromStdString(layout_file.string())));
   append_studio_log("Use Recommended Layout: added recommended editable layout items from trusted scene bootstrap sources.");
-  rebuild_digital_twin_canvas();
+  mark_layout_dirty("Created editable layout from preview");
+  append_studio_log("Create Starter Layout: marked layout dirty after preview conversion so Save Layout can re-serialize the converted editable items.");
   refresh_scene_builder_left_explorer();
   refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
@@ -7103,7 +7069,9 @@ void MainWindow::populate_scene_hierarchy()
     const QString visual_status = p.mesh_path.trimmed().isEmpty() ? (p.active_visual_source.contains("primitive") ? "primitive" : "missing") : "mesh";
     const QString state_badges = QString("%1 • %2 • %3 • %4")
       .arg(p.status.isEmpty() ? QStringLiteral("ready") : p.status)
-      .arg(p.editable ? QStringLiteral("editable") : QStringLiteral("locked"))
+      .arg(p.editable && p.source_layer == QStringLiteral("editable_layout")
+        ? QStringLiteral("editable layout item")
+        : (p.source_layer == QStringLiteral("editable_layout") ? QStringLiteral("locked editable layout item") : QStringLiteral("locked generated/preview item")))
       .arg(p.source_layer.isEmpty() ? QStringLiteral("unknown-layer") : p.source_layer)
       .arg(visual_status);
     auto * node = new QTreeWidgetItem(parent, {QString("%1 [%2]").arg(p.display_name, p.id), p.role, state_badges});
