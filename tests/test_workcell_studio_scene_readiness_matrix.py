@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -24,11 +25,98 @@ def _write_catalog(repo_root: Path, entries: list[dict[str, Any]]) -> Path:
     return path
 
 
+def _write_valid_cell_definition(scene_dir: Path, scene_name: str) -> None:
+    (scene_dir / "cell_definition.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "cell_definition/v1",
+                "cell": {"id": scene_name, "name": scene_name},
+                "robot": {
+                    "model": "ur5",
+                    "planning_group": "manipulator",
+                    "base_frame": "world",
+                    "tool_link": "tool0",
+                    "home_named_target": "home",
+                    "safe_joint_state": [],
+                },
+                "end_effector": {
+                    "id": "suction",
+                    "type": "suction",
+                    "brand": "generic",
+                    "grasp_frame": "tool0",
+                },
+                "camera": {"id": "fixture_camera", "frame": "world"},
+                "environment": {"frame": "world", "layout": "layout/workcell_studio_layout.yaml"},
+                "objects": [
+                    {
+                        "id": "commissioning_object",
+                        "type": "box",
+                        "pose_xyz": [0.3, 0.0, 0.1],
+                        "pose_rpy": [0.0, 0.0, 0.0],
+                        "dimensions": [0.05, 0.05, 0.05],
+                    }
+                ],
+                "task": {
+                    "id": "default_task",
+                    "type": "pick_place",
+                    "source_object": "commissioning_object",
+                    "destinations": [
+                        {
+                            "id": "default_drop_zone",
+                            "frame": "world",
+                            "pose_xyz": [0.5, -0.3, 0.1],
+                            "pose_rpy": [0.0, 0.0, 0.0],
+                        }
+                    ],
+                    "rules": [
+                        {
+                            "id": "default_place",
+                            "when": {"always": True},
+                            "destination": "default_drop_zone",
+                        }
+                    ],
+                },
+                "commissioning": {"self_test_enabled": True, "export_bundle": False},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _add_scene3d_pass_evidence(scene_dir: Path) -> None:
+    smoke_path = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    smoke_path.parent.mkdir(parents=True, exist_ok=True)
+    smoke_path.write_text(
+        json.dumps(
+            {
+                "schema": "workcell_studio_scene3d_gui_smoke/v1",
+                "primitive_rendered_count": 1,
+                "rendered_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _build_matrix(repo_root: Path, catalog: Path, *, ros_available: bool) -> dict[str, Any]:
+    original_ros_available = matrix._ros_humble_available
+    matrix._ros_humble_available = lambda: ros_available
+    try:
+        return matrix.build_matrix(repo_root, catalog_path=catalog, output_dir=repo_root / "build" / "matrix")
+    finally:
+        matrix._ros_humble_available = original_ros_available
+
+
 def _single_scene_report(tmp_path: Path, minimal_scene_factory: Any, name: str, **kwargs: Any) -> dict[str, Any]:
     ros_available = kwargs.pop("ros_available", True)
-    _scene_dir, entry = minimal_scene_factory(name, repo_root=tmp_path, **kwargs)
+    kwargs.setdefault("mesh_index_payload", {"items": [{"id": "fixture_box", "primitive_type": "box"}]})
+    scene_dir, entry = minimal_scene_factory(name, repo_root=tmp_path, **kwargs)
+    if (scene_dir / "cell_definition.yaml").exists():
+        _write_valid_cell_definition(scene_dir, name)
+    _add_scene3d_pass_evidence(scene_dir)
     catalog = _write_catalog(tmp_path, [entry])
-    return matrix.build_readiness_matrix(tmp_path, catalog_path=catalog, ros_available=ros_available)
+    return _build_matrix(tmp_path, catalog, ros_available=ros_available)
 
 
 def _only_scene(report: dict[str, Any]) -> dict[str, Any]:
@@ -37,14 +125,16 @@ def _only_scene(report: dict[str, Any]) -> dict[str, Any]:
     assert isinstance(report["totals"], dict)
     assert len(report["scenes"]) == 1
     scene = report["scenes"][0]
-    assert "category_statuses" in scene
-    assert "blocker_reasons" in scene
-    assert "recommended_next_action" in scene
-    assert "command_records" in scene
-    assert report["command_records"] == scene["command_records"]
+    assert "overall_status" in scene
+    assert isinstance(scene["categories"], dict)
+    assert isinstance(scene["commands"], dict)
+    assert "fake_hardware_launch_command" in scene["commands"]
+    assert isinstance(report["commands"], dict)
+    assert "safe_launch_policy" in report["commands"]
     return scene
 
 
+def test_ready_scene_records_launch_smoke_as_blocked_without_execution(tmp_path: Path, minimal_scene_factory: Any) -> None:
 def test_parse_args_accepts_supported_scenes_alias_for_catalog() -> None:
     args = matrix.parse_args(["--supported-scenes", "scenes/supported_scenes.yaml"])
 
@@ -108,11 +198,15 @@ def test_fully_healthy_synthetic_scene_produces_overall_pass(tmp_path: Path, min
     report = _single_scene_report(tmp_path, minimal_scene_factory, "healthy_scene")
 
     scene = _only_scene(report)
-    assert report["overall_status"] == "PASS"
-    assert report["totals"]["PASS"] == 1
-    assert scene["overall_status"] == "PASS"
-    assert all(status == "PASS" for status in scene["category_statuses"].values())
-    assert scene["blocker_reasons"] == []
+    assert report["totals"]["BLOCKED"] == 1
+    assert scene["overall_status"] == "BLOCKED"
+    assert all(
+        result["status"] == "PASS"
+        for name, result in scene["categories"].items()
+        if name != "ros_launch_smoke_skip_evaluation_state"
+    )
+    assert scene["categories"]["ros_launch_smoke_skip_evaluation_state"]["status"] == "BLOCKED"
+    assert "does not execute ros2 launch" in scene["categories"]["ros_launch_smoke_skip_evaluation_state"]["message"]
 
 
 def test_missing_package_xml_records_missing_file_blocker(tmp_path: Path, minimal_scene_factory: Any) -> None:
@@ -120,12 +214,14 @@ def test_missing_package_xml_records_missing_file_blocker(tmp_path: Path, minima
     (scene_dir / "package.xml").unlink()
     catalog = _write_catalog(tmp_path, [entry])
 
-    report = matrix.build_readiness_matrix(tmp_path, catalog_path=catalog, ros_available=True)
+    _write_valid_cell_definition(scene_dir, "missing_package_xml")
+    _add_scene3d_pass_evidence(scene_dir)
+    report = _build_matrix(tmp_path, catalog, ros_available=True)
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "BLOCKED"
-    assert scene["category_statuses"]["file_presence"] == "BLOCKED"
-    assert "missing_file: package.xml" in scene["blocker_reasons"]
+    assert scene["overall_status"] == "FAIL"
+    assert scene["categories"]["package_xml"]["status"] == "FAIL"
+    assert "missing required file: package.xml" in scene["categories"]["package_xml"]["message"]
 
 
 def test_missing_cell_definition_records_schema_or_file_blocker(tmp_path: Path, minimal_scene_factory: Any) -> None:
@@ -137,13 +233,10 @@ def test_missing_cell_definition_records_schema_or_file_blocker(tmp_path: Path, 
     )
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "BLOCKED"
-    assert scene["category_statuses"]["schema_validation"] == "BLOCKED"
-    assert any("cell_definition.yaml" in reason for reason in scene["blocker_reasons"])
-    assert any(
-        reason.startswith("schema_validation_blocker:") or reason.startswith("missing_file:")
-        for reason in scene["blocker_reasons"]
-    )
+    assert scene["overall_status"] == "FAIL"
+    assert scene["categories"]["cell_definition_yaml"]["status"] == "FAIL"
+    assert scene["categories"]["cell_definition_validation"]["status"] == "BLOCKED"
+    assert "cell_definition.yaml" in scene["categories"]["cell_definition_validation"]["message"]
 
 
 def test_bad_scene_manifest_local_reference_records_manifest_reference_failure(
@@ -163,13 +256,15 @@ def test_bad_scene_manifest_local_reference_records_manifest_reference_failure(
     )
     catalog = _write_catalog(tmp_path, [entry])
 
-    report = matrix.build_readiness_matrix(tmp_path, catalog_path=catalog, ros_available=True)
+    _write_valid_cell_definition(scene_dir, "bad_manifest_reference")
+    _add_scene3d_pass_evidence(scene_dir)
+    report = _build_matrix(tmp_path, catalog, ros_available=True)
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "BLOCKED"
-    assert scene["category_statuses"]["manifest_references"] == "BLOCKED"
-    assert any(reason.startswith("manifest_reference_failure:") for reason in scene["blocker_reasons"])
-    assert any("urdf/does_not_exist.xacro" in reason for reason in scene["blocker_reasons"])
+    assert scene["overall_status"] == "FAIL"
+    assert scene["categories"]["manifest_local_file_references"]["status"] == "FAIL"
+    missing_refs = scene["categories"]["manifest_local_file_references"]["missing"]
+    assert any(item["reference"] == "urdf/does_not_exist.xacro" for item in missing_refs)
 
 
 def test_missing_visual_mesh_index_blocks_visual_evidence(tmp_path: Path, minimal_scene_factory: Any) -> None:
@@ -181,13 +276,14 @@ def test_missing_visual_mesh_index_blocks_visual_evidence(tmp_path: Path, minima
     )
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "BLOCKED"
-    assert scene["category_statuses"]["visual_evidence"] == "BLOCKED"
-    assert any("visual_evidence_blocked" in reason for reason in scene["blocker_reasons"])
-    assert any("generated/scene_visual_mesh_index.json" in reason for reason in scene["blocker_reasons"])
+    assert scene["overall_status"] == "FAIL"
+    assert scene["categories"]["generated_scene_visual_mesh_index_json"]["status"] == "FAIL"
+    assert scene["categories"]["scene3d_visual_quality_summary"]["status"] == "BLOCKED"
+    visual_summary = scene["categories"]["scene3d_visual_quality_summary"]
+    assert "generated/scene_visual_mesh_index.json" in visual_summary["message"] or visual_summary["blockers"]
 
 
-def test_visual_quality_blocked_scene_propagates_blocked_visual_status(
+def test_visual_quality_failure_propagates_current_visual_category_status(
     tmp_path: Path,
     minimal_scene_factory: Any,
 ) -> None:
@@ -203,9 +299,10 @@ def test_visual_quality_blocked_scene_propagates_blocked_visual_status(
     )
 
     scene = _only_scene(report)
-    assert scene["overall_status"] == "BLOCKED"
-    assert scene["category_statuses"]["visual_quality"] == "BLOCKED"
-    assert any("visual_quality_blocked" in reason for reason in scene["blocker_reasons"])
+    assert scene["overall_status"] == "FAIL"
+    assert scene["categories"]["scene3d_visual_quality_summary"]["status"] == "FAIL"
+    assert scene["categories"]["scene3d_visual_quality_summary"]["visual_quality_status"] == "FAIL"
+    assert scene["categories"]["scene3d_visual_quality_summary"]["blockers"]
 
 
 def test_ros_humble_unavailable_records_launch_smoke_as_safely_skipped(
@@ -215,13 +312,12 @@ def test_ros_humble_unavailable_records_launch_smoke_as_safely_skipped(
     report = _single_scene_report(tmp_path, minimal_scene_factory, "ros_unavailable_scene", ros_available=False)
 
     scene = _only_scene(report)
-    launch_record = scene["command_records"][0]
-    assert scene["overall_status"] == "PASS"
-    assert scene["category_statuses"]["launch_smoke"] == "SKIP"
-    assert launch_record["status"] == "SKIP"
-    assert launch_record["executed"] is False
-    assert launch_record["safely_skipped"] is True
-    assert "ROS Humble unavailable" in launch_record["reason"]
+    launch_state = scene["categories"]["ros_launch_smoke_skip_evaluation_state"]
+    assert scene["overall_status"] == "BLOCKED"
+    assert launch_state["status"] == "BLOCKED"
+    assert "ROS Humble is not available" in launch_state["message"]
+    assert "ros2 launch ros_unavailable_scene demo.launch.py" in launch_state["command"]
+    assert scene["commands"]["fake_hardware_launch_command"] == launch_state["command"]
 
 
 def test_fake_hardware_launch_command_is_derived_with_fake_hardware_true(
@@ -239,10 +335,12 @@ def test_fake_hardware_launch_command_is_derived_with_fake_hardware_true(
     entry["fake_hardware_launch_command"] = "ros2 launch derived_fake_hardware_command demo.launch.py"
     catalog = _write_catalog(tmp_path, [entry])
 
-    report = matrix.build_readiness_matrix(tmp_path, catalog_path=catalog, ros_available=True)
+    _write_valid_cell_definition(scene_dir, "derived_fake_hardware_command")
+    _add_scene3d_pass_evidence(scene_dir)
+    report = _build_matrix(tmp_path, catalog, ros_available=True)
 
     scene = _only_scene(report)
-    command = scene["command_records"][0]["command"]
+    command = scene["commands"]["fake_hardware_launch_command"]
     assert scene_dir.name == "derived_fake_hardware_command"
     assert "ros2 launch derived_fake_hardware_command demo.launch.py" in command
     assert "use_fake_hardware:=true" in command
