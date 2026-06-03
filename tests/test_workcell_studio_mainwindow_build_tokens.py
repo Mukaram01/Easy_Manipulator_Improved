@@ -101,3 +101,32 @@ def test_save_layout_success_refreshes_workflow_rail_and_scene_chips_after_write
     assert write_layout_pos < close_layout_pos < write_environment_pos
     assert write_environment_pos < close_environment_pos < refresh_browser_pos
     assert refresh_browser_pos < refresh_workflow_pos < refresh_chips_pos
+
+def test_save_layout_empty_canvas_persists_canonical_workcell_layout_metadata():
+    source = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    save_match = re.search(
+        r"void MainWindow::save_layout_changes\(\)\{(?P<body>.*?)\n\}\n\nvoid MainWindow::create_starter_layout_from_preview",
+        source,
+        re.DOTALL,
+    )
+    assert save_match is not None
+    body = save_match.group("body")
+
+    empty_branch = re.search(
+        r"if \(editable_canvas_items\.empty\(\)\) \{(?P<branch>.*?)\n  \}",
+        body,
+        re.DOTALL,
+    )
+    assert empty_branch is not None
+    branch = empty_branch.group("branch")
+    assert 'scene_dir / "layout" / "workcell_studio_layout.yaml"' in body
+    assert "effective_layout_path = canonical_workcell_layout_path" in branch
+    assert 'root["schema_version"] = "workcell_studio_layout/v1";' in branch
+    assert 'root["scene_name"] = scene_name;' in branch
+    assert 'root["items"] = YAML::Node(YAML::NodeType::Sequence);' in branch
+    assert 'root["empty_layout_marker"] = true;' in branch
+    assert "std::ofstream out(effective_layout_path.string());" in body
+    assert "Save Layout: no editable items; saved canonical layout metadata to %1." in body
+    assert "Use Create editable layout from preview or add an item to persist editable objects." in body
+    assert "gi->data(RoleLocked).toBool()" in body
+    assert 'source_layer != QStringLiteral("editable_layout")' in body
