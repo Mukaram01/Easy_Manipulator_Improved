@@ -40,7 +40,7 @@ TEST(LayoutSerializationContractTest, MalformedLayoutBackupBehaviorStillPresent)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
   EXPECT_NE(src.find(".malformed_backup_"), std::string::npos);
-  EXPECT_NE(src.find("Malformed environment_layout.yaml detected"), std::string::npos);
+  EXPECT_NE(src.find("Malformed layout YAML detected"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, InspectorEditsResolveStableEditableLayoutTarget)
@@ -58,4 +58,25 @@ TEST(LayoutSerializationContractTest, SelectionTransformEditorSupportsStateWitho
   EXPECT_NE(src.find("refresh_selection_transform_editor_from_state"), std::string::npos);
   EXPECT_NE(src.find("refresh_selection_transform_editor_from_state(selected_item_state_)"), std::string::npos);
   EXPECT_NE(src.find("state.pose_available"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithOnlyLegacyEnvironmentLayoutWritesCanonical)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("selected_scene_canonical_layout_save_path"), std::string::npos);
+  EXPECT_NE(src.find("return scene_dir / \"layout\" / \"workcell_studio_layout.yaml\""), std::string::npos);
+  EXPECT_NE(src.find("selected_scene_layout_import_candidates"), std::string::npos);
+  EXPECT_NE(src.find("append_unique(canonical_layout);"), std::string::npos);
+  EXPECT_NE(src.find("append_unique(legacy_environment_layout);"), std::string::npos);
+  EXPECT_NE(src.find("append_unique(manifest_layout);"), std::string::npos);
+  EXPECT_EQ(src.find("static fs::path selected_scene_environment_layout_path"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithNonCanonicalManifestLayoutWritesCanonicalOnly)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  EXPECT_NE(src.find("const fs::path layout_path = selected_scene_canonical_layout_save_path(scene_browser_result_, selected_scene_index_);"), std::string::npos);
+  EXPECT_NE(src.find("for (const auto & candidate : selected_scene_layout_import_candidates(scene_dir))"), std::string::npos);
+  EXPECT_NE(src.find("root = YAML::LoadFile(candidate.string())"), std::string::npos);
+  EXPECT_NE(src.find("std::ofstream out(layout_path.string())"), std::string::npos);
 }
