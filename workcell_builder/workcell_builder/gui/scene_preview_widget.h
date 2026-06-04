@@ -216,6 +216,9 @@ public:
     int generated_fallback_count{ 0 };
     int editable_layout_count{ 0 };
     int primitive_fallback_count{ 0 };
+    int primitive_fallback_rendered_count{ 0 };
+    int valid_physical_fallback_count{ 0 };
+    int overlay_rendered_count{ 0 };
     int locked_generated_urdf_visual_count{ 0 };
     QString visual_quality_status{ QStringLiteral("UNAVAILABLE") };
     QStringList visual_quality_warnings;

@@ -1,31 +1,34 @@
 {
   "scene_name": "ur5_2f_test",
-  "visual_count": 11,
-  "resolved": 11,
+  "visual_count": 18,
+  "resolved": 18,
   "unresolved": 0,
-  "generated_at": "2026-06-04T15:59:53.460363+00:00",
+  "generated_at": "2026-06-04T17:13:33.002878+00:00",
   "extractor_version": "2.5",
   "extraction_mode": "xacro_lite_expanded",
   "xacro_available": false,
   "source_urdf_xacro_path": "/workspace/Easy_Manipulator_Improved/scenes/ur5_2f_test/urdf/scene.urdf.xacro",
-  "source_mtime": 1780588418.720323,
+  "source_mtime": 1780590022.157831,
   "source_expanded_urdf_path": "",
   "fallback_reason": "xacro executable unavailable; used safe repo-local xacro-lite expansion; skipped unresolved macros: ur_robot",
   "safe_for_preview": true,
   "unresolved_placeholder_count": 0,
   "has_transform_collapse_warning": false,
-  "candidate_mesh_count": 11,
-  "emitted_visual_count": 11,
+  "candidate_mesh_count": 18,
+  "emitted_visual_count": 18,
   "transform_status_counts": {
-    "unresolved": 9,
-    "resolved": 2
+    "static_fallback_parent": 9,
+    "resolved": 2,
+    "static_fallback": 7
   },
   "mesh_format_counts": {
     ".dae": 10,
     ".stl": 1
   },
   "renderable_mesh_count": 11,
-  "renderable_item_count": 11,
+  "renderable_item_count": 18,
+  "static_robot_primitive_fallback_count": 7,
+  "static_parent_resolved_count": 9,
   "stale_index": false,
   "stale_reasons": [],
   "visual_items": [
@@ -36,9 +39,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
+          1.06,
           0.0,
-          0.0,
-          0.0
+          0.28
         ],
         "rpy": [
           0.0,
@@ -63,7 +66,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)"
       ],
@@ -79,7 +82,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.06,
+          0.0,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_1_gripper_finger1_knuckle_link_visual_1",
@@ -88,9 +104,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.05490451627,
+          1.11490451627,
           0.03060114443,
-          0.0
+          0.28
         ],
         "rpy": [
           3.141592653589793,
@@ -115,7 +131,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger1_knuckle_link(revolute)"
@@ -132,7 +148,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.11490451627,
+          0.03060114443,
+          0.28
+        ],
+        "rpy": [
+          3.141592653589793,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_2_gripper_finger2_knuckle_link_visual_2",
@@ -141,9 +170,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.05490451627,
+          1.11490451627,
           -0.03060114443,
-          0.0
+          0.28
         ],
         "rpy": [
           0.0,
@@ -168,7 +197,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger2_knuckle_link(revolute)"
@@ -185,7 +214,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.11490451627,
+          -0.03060114443,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_3_gripper_finger1_finger_link_visual_3",
@@ -194,9 +236,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.050818991720000005,
+          1.11081899172,
           0.06208718878,
-          -3.85592834310391e-18
+          0.28
         ],
         "rpy": [
           3.141592653589793,
@@ -221,7 +263,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger1_knuckle_link(revolute)",
@@ -239,7 +281,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.11081899172,
+          0.06208718878,
+          0.28
+        ],
+        "rpy": [
+          3.141592653589793,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_4_gripper_finger2_finger_link_visual_4",
@@ -248,9 +303,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.050818991720000005,
+          1.11081899172,
           -0.06208718878,
-          0.0
+          0.28
         ],
         "rpy": [
           0.0,
@@ -275,7 +330,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger2_knuckle_link(revolute)",
@@ -293,7 +348,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.11081899172,
+          -0.06208718878,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_5_gripper_finger1_inner_knuckle_link_visual_5",
@@ -302,9 +370,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.06142,
+          1.12142,
           0.0127,
-          0.0
+          0.28
         ],
         "rpy": [
           3.141592653589793,
@@ -329,7 +397,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger1_inner_knuckle_link(continuous)"
@@ -346,7 +414,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.12142,
+          0.0127,
+          0.28
+        ],
+        "rpy": [
+          3.141592653589793,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_6_gripper_finger2_inner_knuckle_link_visual_6",
@@ -355,9 +436,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.06142,
+          1.12142,
           -0.0127,
-          0.0
+          0.28
         ],
         "rpy": [
           0.0,
@@ -382,7 +463,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger2_inner_knuckle_link(continuous)"
@@ -399,7 +480,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.12142,
+          -0.0127,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_7_gripper_finger1_finger_tip_link_visual_7",
@@ -408,9 +502,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.10445959806999999,
+          1.16445959807,
           0.05029940820999999,
-          -4.604599491421121e-18
+          0.28
         ],
         "rpy": [
           3.141592653589793,
@@ -435,7 +529,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger1_inner_knuckle_link(continuous)",
@@ -453,7 +547,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.16445959807,
+          0.05029940820999999,
+          0.28
+        ],
+        "rpy": [
+          3.141592653589793,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_8_gripper_finger2_finger_tip_link_visual_8",
@@ -462,9 +569,9 @@
       "parent_link": "tool0",
       "pose": {
         "xyz": [
-          0.10445959806999999,
+          1.16445959807,
           -0.05029940820999999,
-          0.0
+          0.28
         ],
         "rpy": [
           0.0,
@@ -489,7 +596,7 @@
         "color": null
       },
       "link_transform_status": "unresolved",
-      "transform_status": "unresolved",
+      "transform_status": "static_fallback_parent",
       "transform_chain": [
         "tool0->gripper_base_link(fixed)",
         "gripper_base_link->gripper_finger2_inner_knuckle_link(continuous)",
@@ -507,7 +614,20 @@
         1.0
       ],
       "render_skip_reason": "",
-      "warning": "missing_parent:tool0"
+      "warning": "static_parent_resolved:tool0 via Scene3D UR5 primitive fallback",
+      "chain_pose": {
+        "xyz": [
+          1.16445959807,
+          -0.05029940820999999,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ]
+      },
+      "static_parent_resolved": true
     },
     {
       "id": "urdf_visual_9_table_None",
@@ -619,6 +739,577 @@
       ],
       "render_skip_reason": "",
       "warning": ""
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_base",
+      "link": "base_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "cylinder",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.08
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.08
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "radius": 0.18,
+      "length": 0.16
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_shoulder",
+      "link": "shoulder_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.34
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.34
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.18,
+        0.18,
+        0.52
+      ]
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_upper_arm",
+      "link": "upper_arm_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          0.27,
+          0.0,
+          0.58
+        ],
+        "rpy": [
+          0.0,
+          0.35,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.27,
+          0.0,
+          0.58
+        ],
+        "rpy": [
+          0.0,
+          0.35,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.54,
+        0.11,
+        0.13
+      ]
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_forearm",
+      "link": "forearm_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          0.58,
+          0.0,
+          0.43
+        ],
+        "rpy": [
+          0.0,
+          -0.45,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.58,
+          0.0,
+          0.43
+        ],
+        "rpy": [
+          0.0,
+          -0.45,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.48,
+        0.1,
+        0.12
+      ]
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_wrist_1",
+      "link": "wrist_1_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          0.82,
+          0.0,
+          0.31
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.82,
+          0.0,
+          0.31
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.12,
+        0.1,
+        0.16
+      ]
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_wrist_2",
+      "link": "wrist_2_link",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          0.92,
+          0.0,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          0.92,
+          0.0,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.12,
+        0.1,
+        0.12
+      ]
+    },
+    {
+      "id": "urdf_static_fallback_ur5_static_tool0",
+      "link": "tool0",
+      "parent_link": "world",
+      "category": "robot_static_primitive_fallback",
+      "geometry_type": "box",
+      "pose": {
+        "xyz": [
+          1.02,
+          0.0,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "chain_pose": {
+        "xyz": [
+          1.02,
+          0.0,
+          0.28
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "world_pose": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "visual_origin": {
+        "xyz": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rpy": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "transform_status": "static_fallback",
+      "render_expected": true,
+      "resolved": true,
+      "primitive_fallback": true,
+      "fallback_reason": "ur_robot xacro macro unavailable; emitted bounded Scene3D-only robot primitive fallback",
+      "source_path": "",
+      "resolved_source_path": "",
+      "package_uri": "",
+      "mesh_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "material": {
+        "name": "scene3d_static_robot_fallback",
+        "color": [
+          0.72,
+          0.76,
+          0.82,
+          0.62
+        ]
+      },
+      "size": [
+        0.08,
+        0.08,
+        0.08
+      ]
     }
   ],
   "xacro_command": [
@@ -628,22 +1319,46 @@
   "package_resolution_diagnostics": {
     "resolved_packages": [
       {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "package_name": "panda_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config/package.xml"
       },
       {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
+        "package_name": "panda_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
       },
       {
-        "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "package_name": "ur10_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config/package.xml"
+      },
+      {
+        "package_name": "ur5_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config/package.xml"
+      },
+      {
+        "package_name": "ur3_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config/package.xml"
+      },
+      {
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
+      },
+      {
+        "package_name": "fanuc_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
       },
       {
         "package_name": "sorting_bin_description",
@@ -664,22 +1379,10 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/realsense2_description/package.xml"
       },
       {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
-      },
-      {
         "package_name": "flat_plate_camera_bracket_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
         "source_tier": "repo_assets",
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description/package.xml"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
       },
       {
         "package_name": "pipe_camera_stand_description",
@@ -688,64 +1391,40 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/pipe_camera_stand_description/package.xml"
       },
       {
+        "package_name": "table_clamp_camera_mount_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description/package.xml"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description/package.xml"
+      },
+      {
         "package_name": "tslot_camera_frame_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
         "source_tier": "repo_assets",
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description/package.xml"
       },
       {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description/package.xml"
       },
       {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
+        "package_name": "simple_conveyor_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description/package.xml"
       },
       {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "package_name": "workbench_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description/package.xml"
-      },
-      {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config/package.xml"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config/package.xml"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
-        "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description/package.xml"
       },
       {
         "package_name": "robotiq_3f_moveit_config",
@@ -760,16 +1439,22 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/package.xml"
       },
       {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/package.xml"
       },
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description/package.xml"
+      },
+      {
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
       },
       {
         "package_name": "robotiq_85_description",
@@ -778,27 +1463,53 @@
         "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/package.xml"
       },
       {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
         "source_tier": "repo_assets",
-        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config/package.xml"
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/package.xml"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "source_tier": "repo_assets",
+        "package_xml": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config/package.xml"
       }
     ],
     "shadowed_packages": [],
     "resolution_paths": [
       {
-        "package_name": "table_clamp_camera_mount_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "package_name": "panda_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "vslot_camera_frame_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
+        "package_name": "panda_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "simple_conveyor_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
+        "package_name": "ur10_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "ur5_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "ur3_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "fanuc_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "fanuc_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
         "source_tier": "repo_assets"
       },
       {
@@ -817,18 +1528,8 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "table_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
-        "source_tier": "repo_assets"
-      },
-      {
         "package_name": "flat_plate_camera_bracket_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/flat_plate_camera_bracket_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "workbench_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
         "source_tier": "repo_assets"
       },
       {
@@ -837,53 +1538,33 @@
         "source_tier": "repo_assets"
       },
       {
+        "package_name": "table_clamp_camera_mount_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_clamp_camera_mount_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "table_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/table_description",
+        "source_tier": "repo_assets"
+      },
+      {
         "package_name": "tslot_camera_frame_description",
         "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/tslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "panda_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_moveit_config",
+        "package_name": "vslot_camera_frame_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/vslot_camera_frame_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "panda_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/panda_robot/panda_description",
+        "package_name": "simple_conveyor_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/simple_conveyor_description",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "fanuc_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "fanuc_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/fanuc/fanuc_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur3_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur3_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur5_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur5_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "ur10_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/robots/universal_robot/ur10_moveit_config",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
-        "source_tier": "repo_assets"
-      },
-      {
-        "package_name": "single_suction_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
+        "package_name": "workbench_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/environment/workbench_description",
         "source_tier": "repo_assets"
       },
       {
@@ -897,13 +1578,18 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "onrobot_airpick4_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
+        "package_name": "single_suction_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_moveit_config",
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "onrobot_airpick4_description",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "package_name": "single_suction_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/single_suction_gripper/single_suction_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "robotiq_85_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
         "source_tier": "repo_assets"
       },
       {
@@ -912,8 +1598,13 @@
         "source_tier": "repo_assets"
       },
       {
-        "package_name": "robotiq_85_moveit_config",
-        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config",
+        "package_name": "onrobot_airpick4_description",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description",
+        "source_tier": "repo_assets"
+      },
+      {
+        "package_name": "onrobot_airpick4_moveit_config",
+        "root_path": "/workspace/Easy_Manipulator_Improved/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config",
         "source_tier": "repo_assets"
       }
     ]

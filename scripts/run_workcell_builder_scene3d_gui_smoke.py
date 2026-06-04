@@ -54,6 +54,97 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 
+def _resolve_single_scene_dir(repo_root: Path, scene: str | None, scene_path: Path | None) -> Path | None:
+    if scene_path:
+        p = scene_path if scene_path.is_absolute() else repo_root / scene_path
+        return p.resolve()
+    if scene:
+        return (repo_root / 'scenes' / scene).resolve()
+    return None
+
+
+def _dims_available(item: dict[str, Any]) -> bool:
+    g = str(item.get('geometry_type') or '').strip().lower()
+    if g == 'box':
+        size = item.get('size')
+        return isinstance(size, list) and len(size) >= 3 and all(float(x or 0) > 0 for x in size[:3])
+    if g == 'cylinder':
+        return float(item.get('radius') or 0) > 0 and float(item.get('length') or 0) > 0
+    if g == 'sphere':
+        return float(item.get('radius') or 0) > 0
+    if g == 'capsule':
+        return float(item.get('radius') or 0) > 0 and float(item.get('length') or 0) > 0
+    return False
+
+
+def _static_scene3d_visual_evidence(scene_dir: Path | None) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        'runtime_available': False,
+        'physical_mesh_items_rendered': 0,
+        'primitive_fallback_items_rendered': 0,
+        'zones_overlays_rendered': 0,
+        'skipped_helper_static_fallback_items': 0,
+        'unresolved_transform_items': 0,
+        'missing_mesh_items': 0,
+        'physical_mesh_items_renderable': 0,
+        'primitive_fallback_items_renderable': 0,
+        'zones_overlays_renderable': 0,
+        'source': 'generated/scene_visual_mesh_index.json',
+        'notes': ['runtime executable unavailable; counts are static/headless renderability evidence, not GUI-render PASS evidence'],
+    }
+    if scene_dir is None:
+        evidence['notes'].append('scene directory could not be resolved')
+        return evidence
+    index_path = scene_dir / 'generated' / 'scene_visual_mesh_index.json'
+    if not index_path.is_file():
+        evidence['notes'].append(f'mesh index missing: {index_path}')
+        return evidence
+    try:
+        payload = json.loads(index_path.read_text(encoding='utf-8'))
+    except Exception as exc:  # noqa: BLE001
+        evidence['notes'].append(f'mesh index unreadable: {exc}')
+        return evidence
+    items = payload.get('visual_items') or payload.get('items') or []
+    if not isinstance(items, list):
+        evidence['notes'].append('mesh index visual_items is not a list')
+        return evidence
+    for raw in items:
+        if not isinstance(raw, dict):
+            evidence['skipped_helper_static_fallback_items'] += 1
+            continue
+        geom = str(raw.get('geometry_type') or '').strip().lower()
+        category = str(raw.get('category') or '').strip().lower()
+        role = str(raw.get('role') or '').strip().lower()
+        transform_status = str(raw.get('transform_status') or '').strip().lower()
+        warning = ' '.join(str(raw.get(k) or '') for k in ('warning', 'render_skip_reason', 'fallback_reason')).lower()
+        if any(token in category or token in role for token in ('overlay', 'zone', 'helper', 'safety')):
+            evidence['zones_overlays_renderable'] += 1
+            continue
+        if transform_status and transform_status not in {'ok', 'resolved', 'static_fallback', 'static_fallback_parent'}:
+            evidence['unresolved_transform_items'] += 1
+        if 'missing_parent' in warning or 'missing_chain' in warning or 'unresolved transform' in warning:
+            evidence['unresolved_transform_items'] += 1
+        if bool(raw.get('primitive_fallback')) or transform_status == 'static_fallback':
+            if _dims_available(raw):
+                evidence['primitive_fallback_items_renderable'] += 1
+            else:
+                evidence['skipped_helper_static_fallback_items'] += 1
+            continue
+        if geom == 'mesh':
+            resolved = bool(raw.get('resolved'))
+            resolved_path = str(raw.get('resolved_source_path') or raw.get('resolved_path') or '').strip()
+            if resolved and resolved_path and Path(resolved_path).is_file():
+                evidence['physical_mesh_items_renderable'] += 1
+            else:
+                evidence['missing_mesh_items'] += 1
+            continue
+        if geom in {'box', 'cylinder', 'sphere', 'capsule'} and _dims_available(raw):
+            evidence['primitive_fallback_items_renderable'] += 1
+        else:
+            evidence['skipped_helper_static_fallback_items'] += 1
+    return evidence
+
+
 def _scene_package_markers_ok(scene_dir: Path) -> tuple[bool, list[str]]:
     required = ["package.xml", "scene_manifest.yaml", "cell_definition.yaml", "launch/demo.launch.py"]
     missing = [name for name in required if not (scene_dir / name).is_file()]
@@ -106,6 +197,8 @@ def main() -> int:
     exe = args.executable or resolve_workcell_builder_executable(workspace_root)
     if exe is None and not args.all_scenes:
         searched = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+        scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
+        static_evidence = _static_scene3d_visual_evidence(scene_dir)
         fail_payload = {
             "schema": EXPECTED_SCHEMA,
             "status": "FAIL",
@@ -115,8 +208,22 @@ def main() -> int:
             "executable": None,
             "searched_paths": searched,
             "blockers": ["unable_to_resolve_workcell_builder_executable"],
-            "warnings": [],
+            "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
             "screenshot_available": False,
+            "scene_dir": str(scene_dir) if scene_dir else None,
+            "static_scene3d_visual_evidence": static_evidence,
+            "render_debug_counters": {
+                "runtime_available": False,
+                "physical_mesh_items_rendered": 0,
+                "primitive_fallback_items_rendered": 0,
+                "zones_overlays_rendered": 0,
+                "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
+                "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
+                "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
+                "static_physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+                "static_primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+                "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+            },
         }
         _write_json(args.output, fail_payload)
         print("status=FAIL smoke_status=MISSING_EXECUTABLE")
