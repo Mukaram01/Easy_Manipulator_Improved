@@ -53,6 +53,62 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _subprocess_exception_to_text(exc: FileNotFoundError | PermissionError) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _executable_guidance() -> list[str]:
+    return [
+        "Build and source the ROS 2 workspace so workcell_builder is installed and on PATH.",
+        "Or pass --executable with the absolute path to an executable workcell_builder binary.",
+    ]
+
+
+def _write_blocked_executable_payload(
+    output: Path,
+    *,
+    repo_root: Path,
+    workspace_root: Path | None,
+    args: argparse.Namespace,
+    searched: list[str],
+    blocker: str,
+    exception: str | None = None,
+    status: str = "BLOCKED",
+) -> None:
+    scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
+    static_evidence = _static_scene3d_visual_evidence(scene_dir)
+    payload: dict[str, Any] = {
+        "schema": EXPECTED_SCHEMA,
+        "status": status,
+        "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+        "repo_root": str(repo_root),
+        "workspace_root": str(workspace_root) if workspace_root else None,
+        "executable": None,
+        "explicit_executable": str(args.executable) if args.executable else None,
+        "searched_paths": searched,
+        "blockers": [blocker],
+        "guidance": _executable_guidance(),
+        "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
+        "screenshot_available": False,
+        "scene_dir": str(scene_dir) if scene_dir else None,
+        "static_scene3d_visual_evidence": static_evidence,
+        "render_debug_counters": {
+            "runtime_available": False,
+            "physical_mesh_items_rendered": 0,
+            "primitive_fallback_items_rendered": 0,
+            "zones_overlays_rendered": 0,
+            "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
+            "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
+            "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
+            "static_physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+            "static_primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+            "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+        },
+    }
+    if exception:
+        payload["subprocess_exception"] = exception
+    _write_json(output, payload)
+
 
 def _resolve_single_scene_dir(repo_root: Path, scene: str | None, scene_path: Path | None) -> Path | None:
     if scene_path:
@@ -90,6 +146,7 @@ def _static_scene3d_visual_evidence(scene_dir: Path | None) -> dict[str, Any]:
         'primitive_fallback_items_renderable': 0,
         'zones_overlays_renderable': 0,
         'source': 'generated/scene_visual_mesh_index.json',
+        'evidence_kind': 'non_runtime_static_headless_renderability',
         'notes': ['runtime executable unavailable; counts are static/headless renderability evidence, not GUI-render PASS evidence'],
     }
     if scene_dir is None:
@@ -200,20 +257,45 @@ def main() -> int:
         searched = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
         scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
         static_evidence = _static_scene3d_visual_evidence(scene_dir)
+        message = (
+            "workcell_builder executable was not found; build workcell_builder in a ROS Humble "
+            "workspace and source install/setup.bash, or pass --executable"
+        )
         fail_payload = {
             "schema": EXPECTED_SCHEMA,
-            "status": "FAIL",
+            "status": "BLOCKED",
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "repo_root": str(repo_root),
-            "workspace_root": str(workspace_root),
+            "workspace_root": workspace_root_json,
             "executable": None,
             "searched_paths": searched,
             "executable_resolution": executable_resolution,
             "blockers": ["unable_to_resolve_workcell_builder_executable"],
+            "warnings": warnings,
+            "workspace_root": str(workspace_root) if workspace_root else None,
+            "explicit_executable": str(args.executable),
+            "searched_paths": searched,
+            "blockers": [blocker],
+            "guidance": _executable_guidance(),
+            "totals": {"PASS": 0, "FAIL": 0, "BLOCKED": 1, "LEGACY_INCOMPLETE": 0},
+            "results": [],
+        }
+        _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
+        print(f"status=BLOCKED smoke_status={blocker}")
+            "message": message,
+            "smoke_status": "MISSING_EXECUTABLE",
+            "blockers": ["workcell_builder_executable_missing"],
             "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
             "screenshot_available": False,
             "scene_dir": str(scene_dir) if scene_dir else None,
             "static_scene3d_visual_evidence": static_evidence,
+            "non_runtime_static_headless_renderability_counts": {
+                "runtime_available": False,
+                "physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+                "primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+                "zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+                "note": "Static/headless renderability counts are non-runtime evidence and do not prove GUI rendering passed.",
+            },
             "render_debug_counters": {
                 "runtime_available": False,
                 "physical_mesh_items_rendered": 0,
@@ -228,7 +310,7 @@ def main() -> int:
             },
         }
         _write_json(args.output, fail_payload)
-        print("status=FAIL smoke_status=MISSING_EXECUTABLE")
+        print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
         return 1
 
@@ -251,15 +333,36 @@ def main() -> int:
             scene_json = out_dir / f"scene3d_gui_smoke_{scene_name}.json"
             scene_png = out_dir / f"scene3d_gui_smoke_{scene_name}.png"
             cmd = [
-                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root), "--workspace-root", str(workspace_root),
+                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root),
                 "--scene", scene_name, "--output", str(scene_json), "--screenshot", str(scene_png),
             ]
+            if workspace_root is not None:
+                cmd += ["--workspace-root", str(workspace_root)]
             if exe:
                 cmd += ["--executable", str(exe)]
             cmd += ["--timeout-sec", str(args.timeout_sec)]
             if args.xvfb:
                 cmd.append("--xvfb")
-            proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+            proc = None
+            run_exception: str | None = None
+            try:
+                proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+            except (FileNotFoundError, PermissionError) as exc:
+                run_exception = _subprocess_exception_to_text(exc)
+                _write_blocked_executable_payload(
+                    scene_json,
+                    repo_root=repo_root,
+                    workspace_root=workspace_root,
+                    args=argparse.Namespace(
+                        scene=scene_name,
+                        scene_path=None,
+                        executable=args.executable,
+                        screenshot=scene_png,
+                    ),
+                    searched=list(describe_resolution().get("searched_executable_paths") or []),
+                    blocker="child_process_spawn_failed",
+                    exception=run_exception,
+                )
             payload: dict[str, Any] = {}
             if scene_json.exists():
                 try:
@@ -267,7 +370,14 @@ def main() -> int:
                 except Exception:
                     payload = {}
             smoke_status = str(payload.get("status", "FAIL")).upper()
-            result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            returncode = proc.returncode if proc is not None else None
+            result_status = "PASS" if (returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            if run_exception or smoke_status == "BLOCKED":
+                result_status = "BLOCKED"
+            if smoke_status == "BLOCKED":
+                result_status = "BLOCKED"
+            else:
+                result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
             blockers = list(payload.get("blockers", [])) if isinstance(payload.get("blockers"), list) else []
             blockers.extend(item.get("blockers", []))
             if item["scene_status"] == "BLOCKED":
@@ -276,7 +386,7 @@ def main() -> int:
             per_scene.append({
                 "scene": scene_name,
                 "status": result_status,
-                "returncode": proc.returncode,
+                "returncode": returncode,
                 "smoke_json": str(scene_json),
                 "smoke_png": str(scene_png),
                 "scene_metadata": item,
@@ -322,6 +432,8 @@ def main() -> int:
                 "status": "FAIL",
                 "scene": args.scene or sp.name,
                 "scene_path": str(sp),
+                "repo_root": str(repo_root),
+                "workspace_root": workspace_root_json,
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": [],
             }
@@ -346,7 +458,7 @@ def main() -> int:
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
-        "workspace_root": str(workspace_root),
+        "workspace_root": workspace_root_json,
         "executable": str(exe),
         "searched_paths": list(executable_resolution.get("searched_executable_paths") or []),
         "executable_resolution": executable_resolution,
@@ -357,12 +469,14 @@ def main() -> int:
         "stdout_log_path": str(stdout_log),
         "stderr_log_path": str(stderr_log),
         "screenshot_path": str(args.screenshot) if args.screenshot else None,
+        "resolution_warnings": resolution_warnings,
     }
 
     timed_out = False
     rc = None
     stdout = ""
     stderr = ""
+    subprocess_exception: str | None = None
     try:
         proc = subprocess.run(cmd, cwd=repo_root, env=child_env, text=True, capture_output=True, timeout=max(0.1, args.timeout_sec), check=False)
         rc = proc.returncode
@@ -375,6 +489,11 @@ def main() -> int:
             stdout = stdout.decode("utf-8", errors="replace")
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", errors="replace")
+    except (FileNotFoundError, PermissionError) as exc:
+        rc = None
+        stdout = ""
+        stderr = _subprocess_exception_to_text(exc)
+        subprocess_exception = stderr
 
     stdout_log.parent.mkdir(parents=True, exist_ok=True)
     stdout_log.write_text(stdout, encoding="utf-8")
@@ -387,6 +506,12 @@ def main() -> int:
     blockers = list(xwarn)
     warnings: list[str] = []
     if timed_out: blockers.append("child_process_timed_out")
+    if subprocess_exception:
+        blockers.append("child_process_spawn_failed")
+        if isinstance(subprocess_exception, str) and subprocess_exception.startswith("FileNotFoundError"):
+            blockers.append("workcell_builder_executable_not_found_at_run_time")
+        elif isinstance(subprocess_exception, str) and subprocess_exception.startswith("PermissionError"):
+            blockers.append("workcell_builder_executable_permission_denied_at_run_time")
     if rc not in (0, None): blockers.append("child_process_returned_nonzero")
 
     if args.output.exists():
@@ -395,6 +520,13 @@ def main() -> int:
         try:
             payload=json.loads(args.output.read_text(encoding="utf-8"))
             app_status=payload.get("status","UNKNOWN")
+            payload["repo_root"] = str(repo_root)
+            payload["workspace_root"] = workspace_root_json
+            payload.setdefault("executable", str(exe))
+            if resolution_warnings:
+                existing_warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
+                payload["warnings"] = [*existing_warnings, *[w for w in resolution_warnings if w not in existing_warnings]]
+            _write_json(args.output, payload)
         except Exception:
             payload = {}
         if args.scene_path:
@@ -411,6 +543,25 @@ def main() -> int:
                 _write_json(args.output, payload)
                 print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
+        screenshot_missing = bool(args.screenshot and rc == 0 and not args.screenshot.exists())
+        if args.screenshot:
+            payload["screenshot_path"] = str(args.screenshot)
+            payload["screenshot_available"] = bool(args.screenshot.exists())
+        if screenshot_missing:
+            blockers = list(payload.get("blockers") or [])
+            if "screenshot_missing" not in blockers:
+                blockers.append("screenshot_missing")
+            payload["blockers"] = blockers
+            payload["status"] = "FAIL"
+            _write_json(args.output, payload)
+            print(f"status=FAIL smoke_status=SCREENSHOT_MISSING wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
+            print("child_command=" + diag["child_command"])
+            print("stdout_log_path=" + str(stdout_log))
+            print("stderr_log_path=" + str(stderr_log))
+            return 0
+
+        if args.screenshot and payload:
+            _write_json(args.output, payload)
         print(f"status=PASS smoke_status=APP_JSON_PRESENT wrapper_status=PASS app_status={app_status} returncode={rc} timed_out={timed_out}")
         print("child_command=" + diag["child_command"])
         print("stdout_log_path=" + str(stdout_log))
@@ -425,10 +576,13 @@ def main() -> int:
 
     fail_payload = {
         **diag,
-        "status": "FAIL",
+        "status": "BLOCKED" if subprocess_exception else "FAIL",
         "blockers": blockers,
         "warnings": warnings,
     }
+    if subprocess_exception:
+        fail_payload["subprocess_exception"] = subprocess_exception
+        fail_payload["guidance"] = _executable_guidance()
     _write_json(args.output, fail_payload)
     print("status=FAIL smoke_status=WRAPPER_FAIL_JSON")
     print("child_command=" + diag["child_command"])

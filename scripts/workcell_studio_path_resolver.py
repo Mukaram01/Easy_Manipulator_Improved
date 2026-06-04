@@ -97,6 +97,9 @@ def resolve_workcell_builder_executable(workspace_root: Path | None, explicit_ex
         _record_executable_search(searched, resolved)
         return resolved
 
+    _LAST.pop("explicit_executable", None)
+    _LAST.pop("explicit_executable_exists", None)
+    _LAST.pop("explicit_executable_is_executable", None)
     searched.extend(workcell_builder_executable_candidates(workspace_root))
     for p in searched:
         if p.exists() and os.access(p, os.X_OK):
