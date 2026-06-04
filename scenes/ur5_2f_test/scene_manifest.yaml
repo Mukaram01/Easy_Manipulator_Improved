@@ -9,6 +9,8 @@ files:
   layout: layout/workcell_studio_layout.yaml
   launch: launch/demo.launch.py
   urdf_xacro: urdf/scene.urdf.xacro
+  visual_mesh_index: generated/scene_visual_mesh_index.json
+  scene3d_gui_smoke: generated/scene3d_gui_smoke.json
 
 robot:
   model: ur5
