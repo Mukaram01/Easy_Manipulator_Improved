@@ -69,6 +69,46 @@ does **not** prove fake-hardware RViz/MoveIt readiness by itself. Treat it as
 Scene3D GUI evidence that complements, but does not replace, the fake-hardware
 RViz/MoveIt launch validation and broader scene readiness matrix.
 
+
+## Local `ur5_2f_test` real-workspace evidence runner
+
+Use the local runner when you want one repeatable command to collect the
+`ur5_2f_test` Workcell Builder build log, Scene3D GUI smoke JSON/screenshot,
+and readiness-matrix logs from a real ROS 2 Humble workspace. The runner is
+fake-hardware-first: it sources ROS Humble when available, builds only
+`workcell_builder`, runs the existing Scene3D GUI smoke runner, runs the
+offline readiness matrix, and does **not** invoke `ros2 launch` or start real
+robot drivers.
+
+From the repository checkout inside the ROS workspace, run:
+
+```bash
+cd /home/user/workcell_ws/src/easy_manipulation_deployment
+bash scripts/run_local_ur5_2f_workcell_validation.sh \
+  --workspace-root /home/user/workcell_ws \
+  --scene ur5_2f_test \
+  --output-dir build/workcell_studio/local_validation/ur5_2f_test
+```
+
+Expected evidence files under the output directory are:
+
+- `build_workcell_builder.log`
+- `scene3d_gui_smoke.json`
+- `scene3d_gui_smoke.png`
+- `readiness_matrix_stdout.log`
+- `readiness_matrix_stderr.log`
+- `readiness_summary.json` when the readiness matrix produces JSON
+- `validation_summary.md`
+
+The runner reports `BLOCKED` when ROS Humble or the built `workcell_builder`
+executable is unavailable, `FAIL` when the builder build or smoke command fails,
+and `PASS` only when the Scene3D smoke status is pass-like and both JSON and
+screenshot evidence are present. After a successful automated run, complete the
+manual GUI persistence check printed by the script: open Workcell Builder, open
+`ur5_2f_test`, confirm the robot/gripper/environment are visible, create an
+editable layout from preview, move an editable item, save, close/reopen, and
+confirm the moved item persists.
+
 ## Status definitions
 
 The matrix uses these status values:
