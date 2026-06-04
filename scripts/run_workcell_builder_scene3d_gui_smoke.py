@@ -90,6 +90,7 @@ def _static_scene3d_visual_evidence(scene_dir: Path | None) -> dict[str, Any]:
         'primitive_fallback_items_renderable': 0,
         'zones_overlays_renderable': 0,
         'source': 'generated/scene_visual_mesh_index.json',
+        'evidence_kind': 'non_runtime_static_headless_renderability',
         'notes': ['runtime executable unavailable; counts are static/headless renderability evidence, not GUI-render PASS evidence'],
     }
     if scene_dir is None:
@@ -199,19 +200,32 @@ def main() -> int:
         searched = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
         scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
         static_evidence = _static_scene3d_visual_evidence(scene_dir)
+        message = (
+            "workcell_builder executable was not found; build workcell_builder in a ROS Humble "
+            "workspace and source install/setup.bash, or pass --executable"
+        )
         fail_payload = {
             "schema": EXPECTED_SCHEMA,
-            "status": "FAIL",
+            "status": "BLOCKED",
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "repo_root": str(repo_root),
             "workspace_root": str(workspace_root),
             "executable": None,
             "searched_paths": searched,
-            "blockers": ["unable_to_resolve_workcell_builder_executable"],
+            "message": message,
+            "smoke_status": "MISSING_EXECUTABLE",
+            "blockers": ["workcell_builder_executable_missing"],
             "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
             "screenshot_available": False,
             "scene_dir": str(scene_dir) if scene_dir else None,
             "static_scene3d_visual_evidence": static_evidence,
+            "non_runtime_static_headless_renderability_counts": {
+                "runtime_available": False,
+                "physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+                "primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+                "zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+                "note": "Static/headless renderability counts are non-runtime evidence and do not prove GUI rendering passed.",
+            },
             "render_debug_counters": {
                 "runtime_available": False,
                 "physical_mesh_items_rendered": 0,
@@ -226,7 +240,7 @@ def main() -> int:
             },
         }
         _write_json(args.output, fail_payload)
-        print("status=FAIL smoke_status=MISSING_EXECUTABLE")
+        print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
         return 1
 
@@ -265,7 +279,10 @@ def main() -> int:
                 except Exception:
                     payload = {}
             smoke_status = str(payload.get("status", "FAIL")).upper()
-            result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            if smoke_status == "BLOCKED":
+                result_status = "BLOCKED"
+            else:
+                result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
             blockers = list(payload.get("blockers", [])) if isinstance(payload.get("blockers"), list) else []
             blockers.extend(item.get("blockers", []))
             if item["scene_status"] == "BLOCKED":
