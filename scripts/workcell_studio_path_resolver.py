@@ -53,15 +53,19 @@ def resolve_install_setup(workspace_root: Path | None) -> Path | None:
 def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[Path]:
     candidates: list[Path] = []
 
+    if workspace_root:
+        candidates.extend([
+            workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder",
+            workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
+            workspace_root / "install" / "bin" / "workcell_builder",
+        ])
+
     path_hit = shutil.which("workcell_builder")
     if path_hit:
         candidates.append(Path(path_hit))
 
     if workspace_root:
         candidates.extend([
-            workspace_root / "install" / "workcell_builder" / "lib" / "workcell_builder" / "workcell_builder",
-            workspace_root / "install" / "workcell_builder" / "bin" / "workcell_builder",
-            workspace_root / "install" / "bin" / "workcell_builder",
             workspace_root / "build" / "workcell_builder" / "workcell_builder",
             workspace_root / "build" / "workcell_builder" / "workcell_builder" / "workcell_builder",
         ])
@@ -69,25 +73,39 @@ def workcell_builder_executable_candidates(workspace_root: Path | None) -> list[
     return candidates
 
 
+def _record_executable_search(searched: list[Path], resolved: Path | None) -> None:
+    _LAST["searched_executable_paths"] = [str(p) for p in searched]
+    _LAST["workcell_builder_executable_candidates"] = [
+        {
+            "path": str(p),
+            "exists": p.exists(),
+            "is_file": p.is_file(),
+            "executable": os.access(p, os.X_OK),
+            "selected": resolved is not None and p == resolved,
+        }
+        for p in searched
+    ]
+    _LAST["resolved_workcell_builder_executable"] = str(resolved) if resolved else None
+
+
 def resolve_workcell_builder_executable(workspace_root: Path | None, explicit_executable: Path | str | None = None) -> Path | None:
     searched: list[Path] = []
     if explicit_executable:
         exe = Path(explicit_executable).expanduser().resolve()
         searched.append(exe)
-        _LAST["explicit_executable"] = str(exe)
-        _LAST["searched_executable_paths"] = [str(p) for p in searched]
-        _LAST["explicit_executable_exists"] = exe.exists()
-        _LAST["explicit_executable_is_executable"] = exe.exists() and os.access(exe, os.X_OK)
-        return exe if _LAST["explicit_executable_is_executable"] else None
+        resolved = exe if exe.exists() and os.access(exe, os.X_OK) else None
+        _record_executable_search(searched, resolved)
+        return resolved
 
     _LAST.pop("explicit_executable", None)
     _LAST.pop("explicit_executable_exists", None)
     _LAST.pop("explicit_executable_is_executable", None)
     searched.extend(workcell_builder_executable_candidates(workspace_root))
-    _LAST["searched_executable_paths"] = [str(p) for p in searched]
     for p in searched:
         if p.exists() and os.access(p, os.X_OK):
+            _record_executable_search(searched, p)
             return p
+    _record_executable_search(searched, None)
     return None
 
 
