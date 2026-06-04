@@ -9,7 +9,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from scripts.workcell_studio_script_bootstrap import ensure_repo_root_on_sys_path
 ensure_repo_root_on_sys_path(__file__)
-from scripts.workcell_studio_path_resolver import resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
+from scripts.workcell_studio_path_resolver import describe_resolution, resolve_repo_root, resolve_workspace_root, resolve_workcell_builder_executable, workcell_builder_executable_candidates
 from scripts.scene_root_resolver import resolve_scene_root
 from scripts.scene3d_scene_discovery import discover_scene3d_scenes
 
@@ -111,6 +111,124 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _ros_humble_available() -> bool:
+    return Path("/opt/ros/humble/setup.bash").is_file() or os.environ.get("ROS_DISTRO") == "humble"
+
+
+def _as_int(value: Any) -> int:
+    try:
+        if value is None or isinstance(value, bool):
+            return 0
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _counter(payload: dict[str, Any], *keys: str) -> int:
+    sources = [payload]
+    for nested_key in ("counters", "render_debug_counters"):
+        nested = payload.get(nested_key)
+        if isinstance(nested, dict):
+            sources.append(nested)
+    for source in sources:
+        for key in keys:
+            if key in source:
+                return _as_int(source.get(key))
+    return 0
+
+
+def _physical_rendered_count(payload: dict[str, Any]) -> int:
+    mesh_count = _counter(payload, "physical_mesh_items_rendered", "mesh_rendered_count", "mesh_backed_count")
+    primitive_count = _counter(
+        payload,
+        "primitive_fallback_items_rendered",
+        "primitive_rendered_count",
+        "urdf_primitive_rendered_count",
+        "valid_physical_fallback_count",
+        "physical_fallback_count",
+        "physical_fallback_rendered_count",
+        "collision_primitive_rendered_count",
+    )
+    physical_total = _counter(payload, "physical_rendered_count", "credible_physical_rendered_count")
+    return max(physical_total, mesh_count + primitive_count)
+
+
+def _mark_runtime_available(payload: dict[str, Any], runtime_available: bool) -> None:
+    payload["runtime_available"] = runtime_available
+    counters = payload.setdefault("render_debug_counters", {})
+    if isinstance(counters, dict):
+        counters["runtime_available"] = runtime_available
+
+
+def _enforce_physical_render_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+    _mark_runtime_available(payload, True)
+    if _physical_rendered_count(payload) > 0:
+        return payload
+    blockers = payload.get("blockers")
+    if not isinstance(blockers, list):
+        blockers = []
+    if "scene_rendered_no_physical_items" not in blockers:
+        blockers.append("scene_rendered_no_physical_items")
+    payload["blockers"] = blockers
+    payload["status"] = "FAIL"
+    payload["physical_rendered_count"] = 0
+    return payload
+def _subprocess_exception_to_text(exc: FileNotFoundError | PermissionError) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _executable_guidance() -> list[str]:
+    return [
+        "Build and source the ROS 2 workspace so workcell_builder is installed and on PATH.",
+        "Or pass --executable with the absolute path to an executable workcell_builder binary.",
+    ]
+
+
+def _write_blocked_executable_payload(
+    output: Path,
+    *,
+    repo_root: Path,
+    workspace_root: Path | None,
+    args: argparse.Namespace,
+    searched: list[str],
+    blocker: str,
+    exception: str | None = None,
+    status: str = "BLOCKED",
+) -> None:
+    scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
+    static_evidence = _static_scene3d_visual_evidence(scene_dir)
+    payload: dict[str, Any] = {
+        "schema": EXPECTED_SCHEMA,
+        "status": status,
+        "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+        "repo_root": str(repo_root),
+        "workspace_root": str(workspace_root) if workspace_root else None,
+        "executable": None,
+        "explicit_executable": str(args.executable) if args.executable else None,
+        "searched_paths": searched,
+        "blockers": [blocker],
+        "guidance": _executable_guidance(),
+        "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
+        "screenshot_available": False,
+        "scene_dir": str(scene_dir) if scene_dir else None,
+        "static_scene3d_visual_evidence": static_evidence,
+        "render_debug_counters": {
+            "runtime_available": False,
+            "physical_mesh_items_rendered": 0,
+            "primitive_fallback_items_rendered": 0,
+            "zones_overlays_rendered": 0,
+            "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
+            "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
+            "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
+            "static_physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+            "static_primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+            "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+        },
+    }
+    if exception:
+        payload["subprocess_exception"] = exception
+    _write_json(output, payload)
+
 
 def _resolve_single_scene_dir(repo_root: Path, scene: str | None, scene_path: Path | None) -> Path | None:
     if scene_path:
@@ -148,6 +266,7 @@ def _static_scene3d_visual_evidence(scene_dir: Path | None) -> dict[str, Any]:
         'primitive_fallback_items_renderable': 0,
         'zones_overlays_renderable': 0,
         'source': 'generated/scene_visual_mesh_index.json',
+        'evidence_kind': 'non_runtime_static_headless_renderability',
         'notes': ['runtime executable unavailable; counts are static/headless renderability evidence, not GUI-render PASS evidence'],
     }
     if scene_dir is None:
@@ -224,7 +343,7 @@ def _discover_scene_targets(repo_root: Path) -> list[dict[str, Any]]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root", type=Path, default=_REPO_ROOT)
-    ap.add_argument("--workspace-root", type=Path, default=_REPO_ROOT)
+    ap.add_argument("--workspace-root", type=Path, default=None)
     ap.add_argument("--executable", type=Path, default=None)
     ap.add_argument("--scene", default=None)
     ap.add_argument("--all-scenes", action="store_true")
@@ -254,23 +373,53 @@ def main() -> int:
     workspace_root = resolve_workspace_root(repo_root, args.workspace_root)
     ros_env = _ros_humble_environment()
     exe = args.executable or resolve_workcell_builder_executable(workspace_root)
+    workspace_root = resolve_workspace_root(repo_root, args.workspace_root) or repo_root
+    exe = resolve_workcell_builder_executable(workspace_root, args.executable)
+    executable_resolution = describe_resolution()
     if exe is None and not args.all_scenes:
-        searched = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
+        searched = list(executable_resolution.get("searched_executable_paths") or [str(p) for p in _resolve_executable_candidates(workspace_root)])
         scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
         static_evidence = _static_scene3d_visual_evidence(scene_dir)
+        message = (
+            "workcell_builder executable was not found; build workcell_builder in a ROS Humble "
+            "workspace and source install/setup.bash, or pass --executable"
+        )
         fail_payload = {
             "schema": EXPECTED_SCHEMA,
-            "status": "FAIL",
+            "status": "BLOCKED",
+            "runtime_available": False,
             "scene": args.scene or (args.scene_path.name if args.scene_path else None),
             "repo_root": str(repo_root),
-            "workspace_root": str(workspace_root),
+            "workspace_root": workspace_root_json,
             "executable": None,
             "searched_paths": searched,
+            "executable_resolution": executable_resolution,
             "blockers": ["unable_to_resolve_workcell_builder_executable"],
+            "warnings": warnings,
+            "workspace_root": str(workspace_root) if workspace_root else None,
+            "explicit_executable": str(args.executable),
+            "searched_paths": searched,
+            "blockers": [blocker],
+            "guidance": _executable_guidance(),
+            "totals": {"PASS": 0, "FAIL": 0, "BLOCKED": 1, "LEGACY_INCOMPLETE": 0},
+            "results": [],
+        }
+        _write_json(out_dir / "scene3d_gui_smoke_summary.json", summary)
+        print(f"status=BLOCKED smoke_status={blocker}")
+            "message": message,
+            "smoke_status": "MISSING_EXECUTABLE",
+            "blockers": ["workcell_builder_executable_missing"],
             "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
             "screenshot_available": False,
             "scene_dir": str(scene_dir) if scene_dir else None,
             "static_scene3d_visual_evidence": static_evidence,
+            "non_runtime_static_headless_renderability_counts": {
+                "runtime_available": False,
+                "physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+                "primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+                "zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+                "note": "Static/headless renderability counts are non-runtime evidence and do not prove GUI rendering passed.",
+            },
             "render_debug_counters": {
                 "runtime_available": False,
                 "physical_mesh_items_rendered": 0,
@@ -288,8 +437,41 @@ def main() -> int:
         if not ros_env["ros_humble_available"]:
             _record_ros_humble_missing(fail_payload, as_blocker=True)
         _write_json(args.output, fail_payload)
-        print("status=FAIL smoke_status=MISSING_EXECUTABLE")
+        print("status=BLOCKED smoke_status=MISSING_EXECUTABLE")
         print("searched_paths=" + " | ".join(searched))
+        return 1
+
+    if not _ros_humble_available() and not args.all_scenes:
+        scene_dir = _resolve_single_scene_dir(repo_root, args.scene, args.scene_path)
+        static_evidence = _static_scene3d_visual_evidence(scene_dir)
+        fail_payload = {
+            "schema": EXPECTED_SCHEMA,
+            "status": "BLOCKED",
+            "runtime_available": False,
+            "scene": args.scene or (args.scene_path.name if args.scene_path else None),
+            "repo_root": str(repo_root),
+            "workspace_root": str(workspace_root),
+            "executable": str(exe),
+            "blockers": ["ros_humble_unavailable"],
+            "warnings": ["runtime_gui_unavailable_static_scene3d_visual_evidence_recorded"],
+            "screenshot_available": False,
+            "scene_dir": str(scene_dir) if scene_dir else None,
+            "static_scene3d_visual_evidence": static_evidence,
+            "render_debug_counters": {
+                "runtime_available": False,
+                "physical_mesh_items_rendered": 0,
+                "primitive_fallback_items_rendered": 0,
+                "zones_overlays_rendered": 0,
+                "skipped_helper_static_fallback_items": static_evidence.get("skipped_helper_static_fallback_items", 0),
+                "unresolved_transform_items": static_evidence.get("unresolved_transform_items", 0),
+                "missing_mesh_items": static_evidence.get("missing_mesh_items", 0),
+                "static_physical_mesh_items_renderable": static_evidence.get("physical_mesh_items_renderable", 0),
+                "static_primitive_fallback_items_renderable": static_evidence.get("primitive_fallback_items_renderable", 0),
+                "static_zones_overlays_renderable": static_evidence.get("zones_overlays_renderable", 0),
+            },
+        }
+        _write_json(args.output, fail_payload)
+        print("status=BLOCKED smoke_status=ROS_HUMBLE_UNAVAILABLE")
         return 1
 
     if args.all_scenes:
@@ -311,15 +493,36 @@ def main() -> int:
             scene_json = out_dir / f"scene3d_gui_smoke_{scene_name}.json"
             scene_png = out_dir / f"scene3d_gui_smoke_{scene_name}.png"
             cmd = [
-                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root), "--workspace-root", str(workspace_root),
+                sys.executable, str(Path(__file__).resolve()), "--repo-root", str(repo_root),
                 "--scene", scene_name, "--output", str(scene_json), "--screenshot", str(scene_png),
             ]
+            if workspace_root is not None:
+                cmd += ["--workspace-root", str(workspace_root)]
             if exe:
                 cmd += ["--executable", str(exe)]
             cmd += ["--timeout-sec", str(args.timeout_sec)]
             if args.xvfb:
                 cmd.append("--xvfb")
-            proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+            proc = None
+            run_exception: str | None = None
+            try:
+                proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+            except (FileNotFoundError, PermissionError) as exc:
+                run_exception = _subprocess_exception_to_text(exc)
+                _write_blocked_executable_payload(
+                    scene_json,
+                    repo_root=repo_root,
+                    workspace_root=workspace_root,
+                    args=argparse.Namespace(
+                        scene=scene_name,
+                        scene_path=None,
+                        executable=args.executable,
+                        screenshot=scene_png,
+                    ),
+                    searched=list(describe_resolution().get("searched_executable_paths") or []),
+                    blocker="child_process_spawn_failed",
+                    exception=run_exception,
+                )
             payload: dict[str, Any] = {}
             if scene_json.exists():
                 try:
@@ -327,7 +530,14 @@ def main() -> int:
                 except Exception:
                     payload = {}
             smoke_status = str(payload.get("status", "FAIL")).upper()
-            result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            returncode = proc.returncode if proc is not None else None
+            result_status = "PASS" if (returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
+            if run_exception or smoke_status == "BLOCKED":
+                result_status = "BLOCKED"
+            if smoke_status == "BLOCKED":
+                result_status = "BLOCKED"
+            else:
+                result_status = "PASS" if (proc.returncode == 0 and smoke_status in {"PASS", "OK"}) else "FAIL"
             blockers = list(payload.get("blockers", [])) if isinstance(payload.get("blockers"), list) else []
             blockers.extend(item.get("blockers", []))
             if item["scene_status"] == "BLOCKED":
@@ -336,7 +546,7 @@ def main() -> int:
             per_scene.append({
                 "scene": scene_name,
                 "status": result_status,
-                "returncode": proc.returncode,
+                "returncode": returncode,
                 "smoke_json": str(scene_json),
                 "smoke_png": str(scene_png),
                 "scene_metadata": item,
@@ -348,6 +558,8 @@ def main() -> int:
                 _write_json(scene_json, payload)
         summary = {
             "schema": EXPECTED_SCHEMA, "mode": "all_scenes", "output_dir": str(out_dir), "totals": totals, "results": per_scene,
+            "repo_root": str(repo_root), "workspace_root": str(workspace_root), "executable": str(exe) if exe else None,
+            "executable_resolution": executable_resolution,
             "supported_scene_count": len(per_scene),
             "legacy_incomplete_count": len(legacy_incomplete),
             "ignored_non_scene_count": len(ignored_non_scenes),
@@ -381,8 +593,11 @@ def main() -> int:
             fail_payload = {
                 "schema": EXPECTED_SCHEMA,
                 "status": "FAIL",
+                "runtime_available": False,
                 "scene": args.scene or sp.name,
                 "scene_path": str(sp),
+                "repo_root": str(repo_root),
+                "workspace_root": workspace_root_json,
                 "blockers": [f"scene_path_missing_required_files:{','.join(missing)}"],
                 "warnings": [],
             }
@@ -426,14 +641,18 @@ def main() -> int:
             stale_path.unlink()
     child_env = os.environ.copy()
     child_env.update(extra_env)
+    searched_paths = [str(p) for p in _resolve_executable_candidates(workspace_root or repo_root)]
     diag = {
         "schema": EXPECTED_SCHEMA,
+        "runtime_available": True,
         "scene": args.scene or (args.scene_path.name if args.scene_path else None),
         "scene_path": str(args.scene_path) if args.scene_path else None,
         "repo_root": str(repo_root),
-        "workspace_root": str(workspace_root),
+        "workspace_root": workspace_root_json,
         "executable": str(exe),
         **ros_env,
+        "resolved_executable": str(exe),
+        "searched_paths": searched_paths,
         "child_command": " ".join(shlex.quote(x) for x in cmd),
         "cwd": str(repo_root),
         "env": {k: child_env.get(k, "") for k in ["DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "QT_OPENGL", "LIBGL_ALWAYS_SOFTWARE", "XDG_SESSION_TYPE"]},
@@ -441,12 +660,14 @@ def main() -> int:
         "stdout_log_path": str(stdout_log),
         "stderr_log_path": str(stderr_log),
         "screenshot_path": str(args.screenshot) if args.screenshot else None,
+        "resolution_warnings": resolution_warnings,
     }
 
     timed_out = False
     rc = None
     stdout = ""
     stderr = ""
+    subprocess_exception: str | None = None
     try:
         proc = subprocess.run(cmd, cwd=repo_root, env=child_env, text=True, capture_output=True, timeout=max(0.1, args.timeout_sec), check=False)
         rc = proc.returncode
@@ -459,6 +680,11 @@ def main() -> int:
             stdout = stdout.decode("utf-8", errors="replace")
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", errors="replace")
+    except (FileNotFoundError, PermissionError) as exc:
+        rc = None
+        stdout = ""
+        stderr = _subprocess_exception_to_text(exc)
+        subprocess_exception = stderr
 
     stdout_log.parent.mkdir(parents=True, exist_ok=True)
     stdout_log.write_text(stdout, encoding="utf-8")
@@ -473,14 +699,20 @@ def main() -> int:
     if not ros_env["ros_humble_available"]:
         _append_unique(warnings, "ros_humble_missing")
     if timed_out: blockers.append("child_process_timed_out")
+    if subprocess_exception:
+        blockers.append("child_process_spawn_failed")
+        if isinstance(subprocess_exception, str) and subprocess_exception.startswith("FileNotFoundError"):
+            blockers.append("workcell_builder_executable_not_found_at_run_time")
+        elif isinstance(subprocess_exception, str) and subprocess_exception.startswith("PermissionError"):
+            blockers.append("workcell_builder_executable_permission_denied_at_run_time")
     if rc not in (0, None): blockers.append("child_process_returned_nonzero")
 
     if args.output.exists():
-        app_status="UNKNOWN"
-        payload: dict[str, Any] = {}
         try:
             payload=json.loads(args.output.read_text(encoding="utf-8"))
+            payload = _enforce_physical_render_evidence(payload)
             app_status=payload.get("status","UNKNOWN")
+            _write_json(args.output, payload)
         except Exception:
             payload = {}
         _add_ros_humble_context(payload)
@@ -488,19 +720,58 @@ def main() -> int:
             _record_ros_humble_missing(payload, as_blocker=True)
             payload["status"] = "FAIL"
             app_status = "FAIL"
+            payload = json.loads(args.output.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("app smoke JSON root is not an object")
+        except Exception as exc:  # noqa: BLE001
+            blockers.append(f"app_smoke_json_unreadable:{exc}")
+            fail_payload = {
+                **diag,
+                "status": "FAIL",
+                "wrapper_status": "FAIL",
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+            _write_json(args.output, fail_payload)
+            print(f"status=FAIL smoke_status=APP_JSON_UNREADABLE error={exc}")
+            print("child_command=" + diag["child_command"])
+            print("stdout_log_path=" + str(stdout_log))
+            print("stderr_log_path=" + str(stderr_log))
+            return 1
+
+        app_status = str(payload.get("status", "UNKNOWN") or "UNKNOWN")
+        wrapper_status = "BLOCKED" if timed_out else ("FAIL" if rc not in (0, None) else "PASS")
+        wrapper_evidence = {
+            "wrapper_status": wrapper_status,
+            "resolved_executable": diag["resolved_executable"],
+            "searched_paths": diag["searched_paths"],
+            "repo_root": diag["repo_root"],
+            "workspace_root": diag["workspace_root"],
+            "scene_path": diag["scene_path"],
+            "child_command": diag["child_command"],
+            "child_returncode": rc,
+            "timed_out": timed_out,
+            "stdout_log_path": str(stdout_log),
+            "stderr_log_path": str(stderr_log),
+            "stdout_tail": stdout_tail,
+            "stderr_tail": stderr_tail,
+            "screenshot_path": diag["screenshot_path"],
+            "screenshot_available": diag["screenshot_available"],
+        }
+        payload.update(wrapper_evidence)
         if args.scene_path:
             expected_scene_path = str(args.scene_path.resolve())
             counters = payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
             actual_scene_path = str(counters.get("inspector_scene_path") or counters.get("selected_scene_path") or "").strip()
             if Path(actual_scene_path).as_posix() != Path(expected_scene_path).as_posix():
-                blockers = list(payload.get("blockers") or [])
-                blockers.append("explicit_scene_path_not_loaded")
+                scene_path_blockers = list(payload.get("blockers") or [])
+                scene_path_blockers.append("explicit_scene_path_not_loaded")
                 payload["status"] = "FAIL"
                 payload["expected_scene_path"] = expected_scene_path
                 payload["actual_scene_path"] = actual_scene_path
-                payload["blockers"] = blockers
+                payload["blockers"] = scene_path_blockers
                 _write_json(args.output, payload)
-                print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
+                print(f"status=FAIL smoke_status=EXPLICIT_SCENE_PATH_MISMATCH wrapper_status={wrapper_status} expected_scene_path={expected_scene_path} actual_scene_path={actual_scene_path}")
                 return 1
         _write_json(args.output, payload)
         wrapper_pass = rc == 0 and ros_env["ros_humble_available"]
@@ -510,6 +781,21 @@ def main() -> int:
         print("stdout_log_path=" + str(stdout_log))
         print("stderr_log_path=" + str(stderr_log))
         return 0 if wrapper_pass else 1
+        wrapper_status = "PASS" if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else "FAIL"
+        print(f"status={wrapper_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
+        print("child_command=" + diag["child_command"])
+        print("stdout_log_path=" + str(stdout_log))
+        print("stderr_log_path=" + str(stderr_log))
+        return 0 if rc == 0 and str(app_status).upper() in {"PASS", "OK"} else 1
+        _write_json(args.output, payload)
+        effective_status = app_status
+        if app_status.upper() not in {"FAIL", "BLOCKED"} and wrapper_status != "PASS":
+            effective_status = wrapper_status
+        print(f"status={effective_status} smoke_status=APP_JSON_PRESENT wrapper_status={wrapper_status} app_status={app_status} returncode={rc} timed_out={timed_out}")
+        print("child_command=" + diag["child_command"])
+        print("stdout_log_path=" + str(stdout_log))
+        print("stderr_log_path=" + str(stderr_log))
+        return 0 if wrapper_status == "PASS" and app_status.upper() not in {"FAIL", "BLOCKED"} else 1
 
     blockers.append("app_smoke_json_missing")
     if "--scene3d-smoke" in diag["child_command"] and "--smoke-output" in diag["child_command"]:
@@ -519,12 +805,15 @@ def main() -> int:
 
     fail_payload = {
         **diag,
-        "status": "FAIL",
+        "status": "BLOCKED" if subprocess_exception else "FAIL",
         "blockers": blockers,
         "warnings": warnings,
     }
     if not ros_env["ros_humble_available"]:
         _record_ros_humble_missing(fail_payload, as_blocker=bool(args.executable))
+    if subprocess_exception:
+        fail_payload["subprocess_exception"] = subprocess_exception
+        fail_payload["guidance"] = _executable_guidance()
     _write_json(args.output, fail_payload)
     print("status=FAIL smoke_status=WRAPPER_FAIL_JSON")
     print("child_command=" + diag["child_command"])

@@ -106,6 +106,26 @@ def _counter_values(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str,
     return counts
 
 
+def _runtime_available_from_smoke(payload: dict[str, Any], smoke_exists: bool) -> bool:
+    if not smoke_exists:
+        return False
+    for source in (payload, payload.get("counters"), payload.get("render_debug_counters")):
+        if isinstance(source, dict) and isinstance(source.get("runtime_available"), bool):
+            return bool(source.get("runtime_available"))
+    status = _stringify(payload.get("status"))
+    blockers = [str(item).lower() for item in payload.get("blockers", [])] if isinstance(payload.get("blockers"), list) else []
+    if status == "blocked" and any(
+        token in blocker
+        for blocker in blockers
+        for token in ("unable_to_resolve_workcell_builder_executable", "ros_humble_unavailable", "runtime_unavailable")
+    ):
+        return False
+    # Older smoke files did not carry runtime_available.  If a smoke payload exists
+    # and is not an explicit runtime-unavailable BLOCKED report, treat it as an
+    # app-launched runtime payload so legacy/synthetic fixtures remain evaluable.
+    return True
+
+
 def _helper_overlay_counts(payload: dict[str, Any]) -> tuple[dict[str, int], int]:
     counts = _counter_values(payload, HELPER_OVERLAY_COUNTERS)
     overlay_family_count = max(counts.get("overlay_helper_count", 0), counts.get("overlay_count", 0))
@@ -346,6 +366,10 @@ def evaluate_scene(
     else:
         warnings.append("smoke JSON not provided")
 
+    runtime_available = _runtime_available_from_smoke(smoke_payload, smoke_exists)
+    if not runtime_available:
+        warnings.append("Scene3D runtime unavailable; static renderability counts are diagnostic context, not GUI render proof")
+
     mesh_rendered_count = _counter(smoke_payload, "mesh_rendered_count", "mesh_backed_count")
     primitive_rendered_count = _counter(smoke_payload, "primitive_rendered_count", "urdf_primitive_rendered_count")
     # Diagnostic fallback evidence is useful for debugging viewport plumbing, but it is not
@@ -389,14 +413,23 @@ def evaluate_scene(
         + max(0, missing_geometry_box_count - placeholder_count)
     )
 
-    if mesh_source_count > 0 and mesh_rendered_count <= 0:
-        blockers.append("mesh_source_count > 0 requires mesh_rendered_count > 0")
-    if primitive_source_count > 0 and primitive_rendered_count <= 0:
-        blockers.append("primitive_source_count > 0 requires primitive_rendered_count > 0")
-    if primitive_source_count > 0 and placeholder_count > missing_geometry_count:
-        blockers.append("valid URDF primitives must not increment placeholder_count")
-    if total_payload_count > 0 and credible_source_count <= 0:
-        blockers.append("source geometry classification missing; rendered_count alone cannot prove visual quality")
+    if runtime_available:
+        if credible_source_count > 0 and physical_rendered_count <= 0:
+            add_blocker(
+                "scene_rendered_no_physical_items: Scene3D runtime launched but physical mesh/primitive render counters are zero",
+                "scene_rendered_no_physical_items",
+            )
+        if mesh_source_count > 0 and mesh_rendered_count <= 0:
+            blockers.append("mesh_source_count > 0 requires mesh_rendered_count > 0")
+        if primitive_source_count > 0 and primitive_rendered_count <= 0:
+            blockers.append("primitive_source_count > 0 requires primitive_rendered_count > 0")
+        if primitive_source_count > 0 and placeholder_count > missing_geometry_count:
+            blockers.append("valid URDF primitives must not increment placeholder_count")
+        if total_payload_count > 0 and credible_source_count <= 0:
+            blockers.append("source geometry classification missing; rendered_count alone cannot prove visual quality")
+    elif smoke_payload.get("status") == "BLOCKED" or not smoke_exists:
+        if "scene3d_runtime_unavailable" not in blocker_reasons:
+            blocker_reasons.append("scene3d_runtime_unavailable")
     if rendered_count == total_payload_count and total_payload_count > 0:
         warnings.append("rendered_count equals total_payload_count; pass still requires mesh/primitive-specific rendered counts")
 
@@ -406,7 +439,7 @@ def evaluate_scene(
         )
     if helper_overlay_count > 0:
         warnings.append("helper/overlay render evidence present; physical_rendered_count excludes helper overlays")
-    if valid_physical_fallback_dominates:
+    if runtime_available and valid_physical_fallback_dominates:
         add_blocker(
             "valid physical fallback counters dominate credible mesh/primitive render evidence; physical_rendered_count excludes them",
             "physical_fallback_dominates",
@@ -416,18 +449,19 @@ def evaluate_scene(
     for reason, count in mesh_failure_reasons.items():
         add_blocker(f"{reason}: {count} mesh-backed source item(s) could not be resolved", reason)
 
-    if helper_overlay_count > 0 and physical_rendered_count <= 0 and rendered_count > 0:
+    if runtime_available and helper_overlay_count > 0 and physical_rendered_count <= 0 and rendered_count > 0:
         add_blocker(
             "no_physical_scene_items_rendered: helper/overlay count is the only render evidence; rendered_count cannot prove Scene3D visual quality",
             "no_physical_scene_items_rendered",
         )
-    if helper_overlay_count > 0 and helper_overlay_count >= physical_rendered_count:
+    if runtime_available and helper_overlay_count > 0 and helper_overlay_count >= physical_rendered_count:
         add_blocker(
             "overlay_helper_dominates: helper/overlay count is greater than or equal to physical_rendered_count; render physical scene items instead of relying on overlays",
             "overlay_helper_dominates",
         )
     if (
-        physical_fit_bounds_count > 0
+        runtime_available
+        and physical_fit_bounds_count > 0
         and helper_overlay_fit_bounds_count >= physical_fit_bounds_count
         and helper_overlay_fit_bounds_count > 0
     ):
@@ -436,17 +470,17 @@ def evaluate_scene(
             "overlay_helper_dominates",
         )
 
-    if credible_source_count > 0 and physical_rendered_count <= 0 and raw_generated_bounds_count > 0:
+    if runtime_available and credible_source_count > 0 and physical_rendered_count <= 0 and raw_generated_bounds_count > 0:
         blockers.append("raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources")
-    if credible_source_count > 0 and physical_rendered_count > 0 and raw_generated_bounds_count > 0:
+    if runtime_available and credible_source_count > 0 and physical_rendered_count > 0 and raw_generated_bounds_count > 0:
         if raw_generated_bounds_count > int(physical_rendered_count * DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO):
             blockers.append("raw/generated fallback bounds dominate physical render evidence despite mesh or URDF primitive sources")
-    if credible_source_count > 0 and physical_rendered_count > 0 and diagnostic_fallback_count > 0:
+    if runtime_available and credible_source_count > 0 and physical_rendered_count > 0 and diagnostic_fallback_count > 0:
         if diagnostic_fallback_count > int(physical_rendered_count * DIAGNOSTIC_FALLBACK_DOMINANCE_RATIO):
             blockers.append("diagnostic fallback evidence dominates physical render evidence despite mesh or URDF primitive sources")
 
     visible_physical_count = physical_rendered_count
-    if wireframe_fallback_count > 0 and visible_physical_count > 0:
+    if runtime_available and wireframe_fallback_count > 0 and visible_physical_count > 0:
         if wireframe_fallback_count > int(visible_physical_count * PHYSICAL_ITEM_DOMINANCE_RATIO):
             blockers.append("wireframe_fallback_count dominates visible physical items")
 
@@ -463,7 +497,7 @@ def evaluate_scene(
         if diagnostic_fallback_count != 0:
             blockers.append("synthetic fixture must render mesh and primitive without diagnostic fallback bounds or boxes")
 
-    visual_quality_status = "PASS" if not blockers else "FAIL"
+    visual_quality_status = "BLOCKED" if not runtime_available else ("PASS" if not blockers else "FAIL")
     return {
         "scene_name": scene_name,
         "scene_path": str(scene_dir),
@@ -490,6 +524,7 @@ def evaluate_scene(
         "missing_geometry_count": missing_geometry_count,
         "wireframe_fallback_count": wireframe_fallback_count,
         "rendered_count": rendered_count,
+        "runtime_available": runtime_available,
         "visual_quality_status": visual_quality_status,
         "warnings": warnings,
         "blockers": blockers,

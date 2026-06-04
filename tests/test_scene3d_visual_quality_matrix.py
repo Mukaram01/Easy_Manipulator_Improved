@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
 
 import scripts.run_scene3d_visual_quality_screenshots as screenshots
+import scripts.run_workcell_studio_scene_readiness_matrix as readiness_matrix
 import scripts.validate_scene3d_visual_quality_matrix as matrix
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -736,3 +738,71 @@ def test_visual_quality_matrix_raw_generated_bounds_fixture_does_not_count_as_ph
     assert result["physical_rendered_count"] == 0
     assert result["visual_quality_status"] == "FAIL"
     assert "raw/generated fallback bounds are the only visible evidence despite mesh or URDF primitive sources" in result["blockers"]
+
+
+def test_scene3d_smoke_runner_blocks_missing_requested_screenshot(tmp_path: Path) -> None:
+    repo = ROOT
+    exe = tmp_path / "fake_workcell_builder.py"
+    exe.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "out = sys.argv[sys.argv.index('--smoke-output') + 1]\n"
+        "payload = {'schema': 'workcell_studio_scene3d_gui_smoke/v1', 'status': 'PASS', 'blockers': [], 'counters': {'mesh_rendered_count': 1}}\n"
+        "open(out, 'w', encoding='utf-8').write(json.dumps(payload))\n",
+        encoding="utf-8",
+    )
+    exe.chmod(0o755)
+    output = tmp_path / "smoke.json"
+    screenshot = tmp_path / "missing.png"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path("scripts/run_workcell_builder_scene3d_gui_smoke.py")),
+            "--repo-root",
+            str(repo),
+            "--workspace-root",
+            str(repo),
+            "--executable",
+            str(exe),
+            "--scene",
+            "demo_scene",
+            "--output",
+            str(output),
+            "--screenshot",
+            str(screenshot),
+            "--timeout-sec",
+            "5",
+        ],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert proc.returncode == 0
+    assert payload["status"] == "FAIL"
+    assert "screenshot_missing" in payload["blockers"]
+    assert payload["screenshot_path"] == str(screenshot)
+    assert payload["screenshot_available"] is False
+    assert "child_process_returned_nonzero" not in payload["blockers"]
+    assert "explicit_scene_path_not_loaded" not in payload["blockers"]
+
+
+def test_readiness_matrix_scopes_missing_screenshot_to_scene3d_visual_category(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    scene_dir = _write_scene(repo, "matrix_missing_screenshot_scene", _mesh_and_primitive_index(), _passing_smoke())
+    smoke_json = scene_dir / "generated" / "scene3d_gui_smoke.json"
+    smoke_payload = json.loads(smoke_json.read_text(encoding="utf-8"))
+    smoke_payload["screenshot_path"] = str(scene_dir / "generated" / "scene3d_gui_smoke.png")
+    smoke_payload["screenshot_available"] = False
+    smoke_json.write_text(json.dumps(smoke_payload), encoding="utf-8")
+
+    visual_result, physical_result = readiness_matrix._check_scene3d("matrix_missing_screenshot_scene", scene_dir)
+
+    assert visual_result["status"] == "FAIL"
+    assert visual_result["screenshot_path"].endswith("generated/scene3d_gui_smoke.png")
+    assert "screenshot_missing" in visual_result["blocker_reasons"]
+    assert physical_result["status"] == "PASS"
+    assert physical_result["blockers"] == []
