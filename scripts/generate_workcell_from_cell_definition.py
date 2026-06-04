@@ -180,6 +180,84 @@ def _render_package_xml(package_name: str) -> str:
 """
 
 
+def _snapshot_input_file(path: Path | None) -> tuple[Path, str] | None:
+    if path is None or not path.is_file():
+        return None
+    return path, path.read_text(encoding="utf-8")
+
+
+def _write_snapshot(snapshot: tuple[Path, str] | None, destination: Path) -> bool:
+    if snapshot is None:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(snapshot[1], encoding="utf-8")
+    return True
+
+
+def _source_environment_yaml_path(cell_definition_path: Path) -> Path | None:
+    candidate = cell_definition_path.parent / "environment.yaml"
+    return candidate if candidate.is_file() else None
+
+
+def _source_workcell_studio_layout_path(cell_definition_path: Path) -> Path | None:
+    candidate = cell_definition_path.parent / "layout" / "workcell_studio_layout.yaml"
+    return candidate if candidate.is_file() else None
+
+
+def _render_environment_yaml(cell_def: dict[str, Any], scene_generator: Any, cell_definition_path: Path) -> str:
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
+    payload = {
+        "schema_version": "workcell_environment/v1",
+        "generated_from": str(cell_definition_path),
+        "frame": environment.get("frame", cell.get("planning_frame", "world")),
+        "robot": cell_def.get("robot", {}),
+        "end_effector": cell_def.get("end_effector", {}),
+        "camera": cell_def.get("camera", {}),
+        "environment": environment,
+        "objects": cell_def.get("objects", []),
+        "support_surfaces": environment.get("support_surfaces", []),
+        "assets": environment.get("assets", []),
+        "fake_hardware_first": True,
+        "runtime_execution_enabled": False,
+    }
+    return _header_yaml(cell_definition_path) + _yaml_text_from(scene_generator, payload)
+
+
+def _render_scene_urdf_xacro(package_name: str, cell_def: dict[str, Any], cell_definition_path: Path) -> str:
+    environment = cell_def.get("environment", {}) if isinstance(cell_def.get("environment"), dict) else {}
+    cell = cell_def.get("cell", {}) if isinstance(cell_def.get("cell"), dict) else {}
+    robot = cell_def.get("robot", {}) if isinstance(cell_def.get("robot"), dict) else {}
+    frame = str(environment.get("frame") or cell.get("planning_frame") or "world")
+    robot_model = str(robot.get("model") or "unknown_robot")
+    return (
+        '<?xml version="1.0"?>\n'
+        f'<!-- GENERATED FILE - DO NOT EDIT DIRECTLY. Generated from {cell_definition_path} -->\n'
+        f'<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="{package_name}">\n'
+        f'  <!-- Offline-safe placeholder URDF for Workcell Studio review; robot_model={robot_model}. -->\n'
+        f'  <link name="{frame}"/>\n'
+        '</robot>\n'
+    )
+
+
+def _render_scene_visual_mesh_index(package_name: str, cell_definition_path: Path) -> dict[str, Any]:
+    return {
+        "schema_version": "scene_visual_mesh_index/v1",
+        "scene_name": package_name,
+        "visual_count": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "safe_for_preview": True,
+        "source_urdf_xacro_path": "urdf/scene.urdf.xacro",
+        "generator": "scripts/generate_workcell_from_cell_definition.py",
+        "source_cell_definition": str(cell_definition_path),
+        "visual_items": [],
+        "notes": [
+            "Generated placeholder visual mesh index; regenerate from expanded URDF when approved mesh assets are available."
+        ],
+    }
+
+
 def _render_cmakelists(package_name: str) -> str:
     template_path = TEMPLATE_DIR / "CMakeLists_example.txt"
     if template_path.is_file():
@@ -575,6 +653,16 @@ def generate_package(
         print(f"FAIL: Output package already exists: {package_dir} (use --force to overwrite)")
         return 1
 
+    source_environment_snapshot = _snapshot_input_file(_source_environment_yaml_path(cell_definition_path))
+    resolved_layout_path = None
+    environment = loaded.get("environment", {}) if isinstance(loaded.get("environment"), dict) else {}
+    layout_ref = environment.get("layout")
+    if isinstance(layout_ref, str) and layout_ref.strip():
+        resolved_layout_path = _resolve_layout_path(layout_ref, cell_definition_path)
+    source_environment_layout_snapshot = _snapshot_input_file(resolved_layout_path)
+    source_workcell_layout_snapshot = _snapshot_input_file(_source_workcell_studio_layout_path(cell_definition_path))
+    source_cell_definition_snapshot = _snapshot_input_file(cell_definition_path)
+
     if dry_run:
         print(f"PASS: dry-run successful for package '{package_name}'")
         print(f"WARN count: {len(warnings)}")
@@ -592,18 +680,18 @@ def generate_package(
     (package_dir / "urdf").mkdir(parents=True, exist_ok=True)
     (package_dir / "generated").mkdir(parents=True, exist_ok=True)
 
-    environment = loaded.get("environment", {}) if isinstance(loaded.get("environment"), dict) else {}
-    layout_ref = environment.get("layout")
-    if isinstance(layout_ref, str) and layout_ref.strip():
-        resolved_layout = _resolve_layout_path(layout_ref, cell_definition_path)
-        if resolved_layout and resolved_layout.is_file():
-            with resolved_layout.open("r", encoding="utf-8") as handle:
-                loaded_layout = yaml.safe_load(handle)
+    if not _write_snapshot(source_workcell_layout_snapshot, package_dir / "layout" / "workcell_studio_layout.yaml"):
+        layout_source = source_environment_layout_snapshot
+        if layout_source is not None:
+            loaded_layout = yaml.safe_load(layout_source[1])
             normalized_layout = _normalize_workcell_studio_layout(loaded_layout)
             (package_dir / "layout" / "workcell_studio_layout.yaml").write_text(
                 yaml.safe_dump(normalized_layout, sort_keys=False),
                 encoding="utf-8",
             )
+    if source_environment_layout_snapshot is not None:
+        _write_snapshot(source_environment_layout_snapshot, package_dir / "environment_layout.yaml")
+        _write_snapshot(source_environment_layout_snapshot, package_dir / "generated" / "environment_layout.yaml")
 
     scene_manifest_path = package_dir / "scene_manifest.yaml"
     workcell_yaml_path = package_dir / "workcell.yaml"
@@ -614,6 +702,10 @@ def generate_package(
 
     (package_dir / "package.xml").write_text(_render_package_xml(package_name), encoding="utf-8")
     (package_dir / "CMakeLists.txt").write_text(_render_cmakelists(package_name), encoding="utf-8")
+    if not _write_snapshot(source_environment_snapshot, package_dir / "environment.yaml"):
+        (package_dir / "environment.yaml").write_text(
+            _render_environment_yaml(loaded, scene_generator, cell_definition_path), encoding="utf-8"
+        )
     scene_manifest_path.write_text(scene_manifest_text, encoding="utf-8")
     workcell_yaml_path.write_text(scene_manifest_text, encoding="utf-8")
     task_recipe_path.write_text(task_recipe_text, encoding="utf-8")
@@ -632,7 +724,8 @@ def generate_package(
         encoding="utf-8",
     )
 
-    shutil.copy2(cell_definition_path, package_dir / "cell_definition.yaml")
+    if not _write_snapshot(source_cell_definition_snapshot, package_dir / "cell_definition.yaml"):
+        shutil.copy2(cell_definition_path, package_dir / "cell_definition.yaml")
 
     (package_dir / "launch" / "demo.launch.py").write_text(
         _render_demo_launch(package_name, cell_definition_path),
@@ -647,6 +740,14 @@ def generate_package(
     (package_dir / "urdf" / "README.md").write_text(
         _header_markdown(cell_definition_path)
         + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
+        encoding="utf-8",
+    )
+    (package_dir / "urdf" / "scene.urdf.xacro").write_text(
+        _render_scene_urdf_xacro(package_name, loaded, cell_definition_path),
+        encoding="utf-8",
+    )
+    (package_dir / "generated" / "scene_visual_mesh_index.json").write_text(
+        json.dumps(_render_scene_visual_mesh_index(package_name, cell_definition_path), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
