@@ -14,9 +14,19 @@ end_effector:
   type: suction
   brand: onrobot
   grasp_frame: tool0
+camera:
+  enabled: false
+  camera_id: UNKNOWN_CAMERA
+  frame_id: UNKNOWN_FRAME
 environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
+objects:
+  - id: commissioning_object
+    frame: world
+    pose_xyz: [0.46, 0.03, 0.08]
+    pose_rpy: [0.0, 0.0, 0.0]
+    dimensions: [0.05, 0.05, 0.05]
 task:
   id: default_task
   type: pick_place
